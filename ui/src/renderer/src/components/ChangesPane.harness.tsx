@@ -45,8 +45,6 @@ export class FakeClient {
   gitCheckpointDiffCalls: Array<{ dir: string; ref: string; against: string }> = []
   gitCheckpointRestoreCalls: Array<{ dir: string; ref: string }> = []
   gitCheckpointDeleteCalls: Array<{ dir: string; ref: string }> = []
-  gitCommitMessageCalls: string[] = []
-  gitPrContentCalls: string[] = []
   createSessionCalls: unknown[] = []
   private subs = new Map<string, Set<(msg: never) => void>>()
 
@@ -129,12 +127,6 @@ export class FakeClient {
   }
   gitCheckpointDelete(dir: string, ref: string): void {
     this.gitCheckpointDeleteCalls.push({ dir, ref })
-  }
-  gitCommitMessage(dir: string): void {
-    this.gitCommitMessageCalls.push(dir)
-  }
-  gitPrContent(dir: string): void {
-    this.gitPrContentCalls.push(dir)
   }
   createSession(p: unknown): void {
     this.createSessionCalls.push(p)

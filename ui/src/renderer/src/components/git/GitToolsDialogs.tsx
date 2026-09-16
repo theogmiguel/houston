@@ -2,7 +2,6 @@ import type { GitTools } from './useGitToolsSubscription'
 import { BranchesDialog } from './BranchesDialog'
 import { WorktreesDialog } from './WorktreesDialog'
 import { CheckpointsDialog } from './CheckpointsDialog'
-import { PrComposeModal } from './PrComposeModal'
 
 export interface GitToolsDialogsProps {
   open: 'branches' | 'worktrees' | 'checkpoints' | null
@@ -13,18 +12,6 @@ export interface GitToolsDialogsProps {
   fallbackBase: string | null
   onClose: () => void
   onAddWorkspace: (path: string) => void
-  compose: {
-    open: boolean
-    offered: boolean
-    title: string
-    body: string
-    generating: boolean
-    creating: boolean
-    error: string | null
-  }
-  onGeneratePr: () => void
-  onCreatePr: (title: string, body: string) => void
-  onCancelCompose: () => void
 }
 
 // All four Git dialogs in one place so ChangesPane's render stays a layout and
@@ -37,11 +24,7 @@ export function GitToolsDialogs({
   error,
   fallbackBase,
   onClose,
-  onAddWorkspace,
-  compose,
-  onGeneratePr,
-  onCreatePr,
-  onCancelCompose
+  onAddWorkspace
 }: GitToolsDialogsProps): React.JSX.Element {
   return (
     <>
@@ -92,19 +75,6 @@ export function GitToolsDialogs({
           onInspect={tools.inspectCheckpoint}
           onRestore={tools.restoreCheckpoint}
           onDelete={tools.deleteCheckpoint}
-        />
-      )}
-      {compose.open && compose.offered && (
-        <PrComposeModal
-          base={fallbackBase}
-          generating={compose.generating}
-          creating={compose.creating}
-          error={compose.error}
-          initialTitle={compose.title}
-          initialBody={compose.body}
-          onGenerate={onGeneratePr}
-          onCreate={onCreatePr}
-          onCancel={onCancelCompose}
         />
       )}
     </>

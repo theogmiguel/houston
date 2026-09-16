@@ -75,8 +75,6 @@ function baseProps(overrides: {
     historyCount: null,
     onClearHistory: () => {},
     historyIgnoreGlobs: null,
-    headlessWriter: null,
-    onHeadlessRoleSet: () => {},
     onHistoryIgnoreGlobsSet: () => {},
     onOpenLogsFolder: () => {},
     onContact: () => {},

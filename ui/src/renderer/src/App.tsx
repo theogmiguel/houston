@@ -26,7 +26,6 @@ import type {
 } from "./houston/client";
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
-import type { HeadlessRoleView } from "./houston/generated/HeadlessRoleView";
 import type { VoiceDevice } from "./houston/generated/VoiceDevice";
 import type { VoiceModelState } from "./houston/generated/VoiceModelState";
 import type { VoiceSettings } from "./houston/generated/VoiceSettings";
@@ -1003,7 +1002,6 @@ export function App(): React.JSX.Element {
             client.orchestrationSettingsGet();
             client.voiceSettingsGet();
             client.keymapGet();
-            client.headlessRolesGet();
             requestInboxForWorkspaces(
               (path) => client.inboxList(path),
               msg.workspaces,
@@ -1294,9 +1292,6 @@ export function App(): React.JSX.Element {
             break;
           case "command_history_ignore_globs":
             setHistoryIgnoreGlobs(msg.globs);
-            break;
-          case "headless_roles":
-            setHeadlessWriter(msg.writer);
             break;
           case "voice_settings":
             setVoiceSettings(msg.settings);
@@ -2478,9 +2473,6 @@ export function App(): React.JSX.Element {
     right: number;
     y: number;
   } | null>(null);
-  const [headlessWriter, setHeadlessWriter] = useState<HeadlessRoleView | null>(
-    null,
-  );
   const openAddPanePopover = useCallback(
     (anchor: PaneKey | null, rect: DOMRect): void => {
       setAddPanePopover({
@@ -3927,11 +3919,6 @@ export function App(): React.JSX.Element {
                         conn.client.orchestrationSet(v);
                       }}
                       historyIgnoreGlobs={historyIgnoreGlobs}
-                      headlessWriter={headlessWriter}
-                      onHeadlessRoleSet={(role, engine, model) => {
-                        if (conn.kind === "ready")
-                          conn.client.headlessRoleSet(role, engine, model);
-                      }}
                       onHistoryIgnoreGlobsSet={(globs) => {
                         if (conn.kind === "ready")
                           conn.client.commandHistoryIgnoreGlobsSet(globs);

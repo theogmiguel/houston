@@ -25,12 +25,8 @@ import type { PrReviewer } from './generated/PrReviewer'
 import type { PrListState } from './generated/PrListState'
 import type { PrListInvolvement } from './generated/PrListInvolvement'
 import type { PrStackHead } from './generated/PrStackHead'
-import type { HeadlessRoleKind } from './generated/HeadlessRoleKind'
 
 export type { AgentKind } from './generated/AgentKind'
-export type { HeadlessRoleKind } from './generated/HeadlessRoleKind'
-export type { HeadlessEngineOption } from './generated/HeadlessEngineOption'
-export type { HeadlessRoleView } from './generated/HeadlessRoleView'
 export type { SessionState } from './generated/SessionState'
 export type { SessionInfo } from './generated/SessionInfo'
 export type { AgentStatus } from './generated/AgentStatus'
@@ -767,14 +763,6 @@ export class HoustonClient {
     this.send({ type: 'git_checkpoint_delete', dir, ref })
   }
 
-  gitCommitMessage(dir: string): void {
-    this.send({ type: 'git_commit_message', dir })
-  }
-
-  gitPrContent(dir: string, base?: string): void {
-    this.send({ type: 'git_pr_content', dir, base })
-  }
-
   // PR replies carry the request id back; minting it here means a reply issued
   // before a panel remount still compares against a counter that only moves
   // forward, so a stale read can never paint over a newer one.
@@ -1256,14 +1244,6 @@ export class HoustonClient {
 
   commandHistoryIgnoreGlobsSet(globs: string[]): void {
     this.send({ type: 'command_history_ignore_globs_set', globs })
-  }
-
-  headlessRolesGet(): void {
-    this.send({ type: 'headless_roles_get' })
-  }
-
-  headlessRoleSet(role: HeadlessRoleKind, engine: AgentKind | null, model: string | null): void {
-    this.send({ type: 'headless_role_set', role, engine, model })
   }
 
   voiceSettingsGet(): void {

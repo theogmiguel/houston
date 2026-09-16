@@ -12,7 +12,6 @@ export interface GitErrorRouterParams {
   pendingPush: RefObject<string | null>
   pendingReview: RefObject<ReviewRequest | null>
   pendingTools: RefObject<string | null>
-  pendingCompose: RefObject<string | null>
   pushAfterCommitRef: RefObject<boolean>
   setReviewBusy: (busy: boolean) => void
   setReviewError: (message: string | null) => void
@@ -23,12 +22,11 @@ export interface GitErrorRouterParams {
   setStatusError: (message: string | null) => void
   setToolsBusy: (busy: boolean) => void
   setToolsError: (message: string | null) => void
-  claimComposeError: (message: string) => void
 }
 
 // One connection-wide error stream, claimed by whichever operation is in
-// flight. Tools and the PR compose own their pending refs so the pane's render
-// carries none of this routing.
+// flight. Tools own their pending ref so the pane's render carries none of
+// this routing.
 export function useGitErrorRouter({
   client,
   repoDir,
@@ -38,7 +36,6 @@ export function useGitErrorRouter({
   pendingPush,
   pendingReview,
   pendingTools,
-  pendingCompose,
   pushAfterCommitRef,
   setReviewBusy,
   setReviewError,
@@ -48,8 +45,7 @@ export function useGitErrorRouter({
   setPushing,
   setStatusError,
   setToolsBusy,
-  setToolsError,
-  claimComposeError
+  setToolsError
 }: GitErrorRouterParams): void {
   useEffect(() => {
     if (!client || !repoDir) return
@@ -58,10 +54,6 @@ export function useGitErrorRouter({
         pendingTools.current = null
         setToolsBusy(false)
         setToolsError(msg.message)
-        return
-      }
-      if (pendingCompose.current !== null) {
-        claimComposeError(msg.message)
         return
       }
       const resolution = resolveGitError(

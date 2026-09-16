@@ -11,13 +11,13 @@ describe('settingsSections — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Filled — fifteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
-    expect(SETTINGS_SECTIONS.length).toBe(15)
-    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(15)
+  it('Filled — fourteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
+    expect(SETTINGS_SECTIONS.length).toBe(14)
+    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(14)
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('usage')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('accounts')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('agent-setup')
-    expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('headless-roles')
+    expect(SETTINGS_SECTIONS.map((s) => s.id)).not.toContain('headless-roles')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).not.toContain('autopilot')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).not.toContain('bots')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).not.toContain('agent-defaults')
@@ -54,7 +54,6 @@ describe('settingsSections — state matrix', () => {
       'agent-setup',
       'workspace-defaults',
       'orchestration',
-      'headless-roles',
       'voice'
     ])
     expect(inGroup('data')).toEqual(['privacy', 'usage', 'daemon'])
@@ -104,7 +103,7 @@ describe('settingsSections — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Overflow — N/A: fifteen entries in four groups is a fixed, small, known-at-compile-time size; there is no scroll/truncation concern in the data itself.', () => {
+  it('Overflow — N/A: fourteen entries in four groups is a fixed, small, known-at-compile-time size; there is no scroll/truncation concern in the data itself.', () => {
     expect(true).toBe(true)
   })
 
@@ -124,12 +123,6 @@ describe('settingsSections — state matrix', () => {
     expect(new Set(ids).size).toBe(ids.length)
     const icons = SETTINGS_SECTIONS.map((s) => s.icon)
     expect(new Set(icons).size).toBe(icons.length)
-  })
-
-  it('Orchestration keeps its own mark, not the fan-out glyph headless roles now uses', () => {
-    const byId = new Map(SETTINGS_SECTIONS.map((s) => [s.id, s.icon]))
-    expect(byId.get('headless-roles')).toBe('sparkles')
-    expect(byId.get('orchestration')).toBe('fork')
   })
 
   it('every section carries at least one search keyword', () => {

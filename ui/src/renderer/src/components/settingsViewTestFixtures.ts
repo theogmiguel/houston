@@ -1,6 +1,5 @@
 import { NOTIFY_KINDS_DEFAULT } from '../notifyPrefs'
 import type { KeymapOverrides } from '../houston/client'
-import type { HeadlessRoleView } from '../houston/generated/HeadlessRoleView'
 import type { HostInfo, SettingsView } from './SettingsView'
 
 ;(globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = '0.0.0-test'
@@ -68,8 +67,6 @@ export function baseSettingsViewProps(): React.ComponentProps<typeof SettingsVie
     historyCount: null,
     onClearHistory: () => {},
     historyIgnoreGlobs: null,
-    headlessWriter: null,
-    onHeadlessRoleSet: () => {},
     onHistoryIgnoreGlobsSet: () => {},
     onOpenLogsFolder: () => {},
     onContact: () => {},
@@ -94,52 +91,6 @@ export function baseSettingsViewProps(): React.ComponentProps<typeof SettingsVie
     notifySound: true,
     onNotifySound: () => {},
     onNotifyPreview: () => {}
-  }
-}
-
-export function headlessRoleViewFixture(
-  overrides: Partial<HeadlessRoleView> = {}
-): HeadlessRoleView {
-  return {
-    role: 'writer',
-    engine: 'claude',
-    engine_is_default: true,
-    model: null,
-    model_is_default: true,
-    engines: [
-      {
-        engine: 'claude',
-        enabled: true,
-        reason: null,
-        verified: true,
-        models: ['haiku', 'sonnet', 'opus']
-      },
-      { engine: 'codex', enabled: true, reason: null, verified: false, models: [] },
-      {
-        engine: 'antigravity',
-        enabled: false,
-        reason:
-          "Panes only. Google's terms on third-party access are unclear, and a strike can reach your Google account.",
-        verified: false,
-        models: []
-      },
-      { engine: 'opencode', enabled: true, reason: null, verified: false, models: [] },
-      {
-        engine: 'cursor',
-        enabled: false,
-        reason: 'Panes only. No verified headless stream.',
-        verified: false,
-        models: []
-      },
-      {
-        engine: 'grok',
-        enabled: true,
-        reason: null,
-        verified: false,
-        models: ['grok-4.5', 'grok-composer-2.5-fast']
-      }
-    ],
-    ...overrides
   }
 }
 

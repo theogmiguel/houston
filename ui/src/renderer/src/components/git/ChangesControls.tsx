@@ -1,5 +1,4 @@
-import { SPIN_CLASS } from './DiffBody'
-import { IconArrowDown, IconLoaderCircle, IconSparkles } from '../icons'
+import { IconArrowDown } from '../icons'
 import { Icon } from '../Icon'
 import { Tooltip } from '../Tooltip'
 import { BTN_SECONDARY } from '../buttonChrome'
@@ -49,45 +48,6 @@ export function PullQuickButton({
       <button className={`btn ${BTN_SECONDARY}`} data-testid="changes-pull" disabled={busy} onClick={onPull}>
         <Icon glyph={IconArrowDown} role="small" />
         Pull ↓{behind}
-      </button>
-    </Tooltip>
-  )
-}
-
-export function GenerateCommitButton({
-  staged,
-  generating,
-  disabled,
-  onClick
-}: {
-  staged: number
-  generating: boolean
-  disabled: boolean
-  onClick: () => void
-}): React.JSX.Element {
-  return (
-    <Tooltip
-      label={
-        staged === 0
-          ? 'Stage something first — the message is written from the staged diff'
-          : 'Write a commit message with AI'
-      }
-      className="inline-flex"
-    >
-      <button
-        className={`btn ${BTN_SECONDARY} flex-none`}
-        data-testid="changes-generate-commit"
-        aria-label="Write a commit message with AI"
-        disabled={disabled || staged === 0 || generating}
-        onClick={onClick}
-      >
-        {generating ? (
-          <span className={SPIN_CLASS}>
-            <Icon glyph={IconLoaderCircle} role="small" />
-          </span>
-        ) : (
-          <Icon glyph={IconSparkles} role="small" />
-        )}
       </button>
     </Tooltip>
   )

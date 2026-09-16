@@ -6,7 +6,7 @@ import { SettingsView, type OrchestrationStateView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
 import { SETTINGS_ROW_REGISTRY } from '../settingsRowRegistry'
 import type { SettingsSectionId } from '../settingsSections'
-import { baseSettingsViewProps, headlessRoleViewFixture, hostInfoFixture } from './settingsViewTestFixtures'
+import { baseSettingsViewProps, hostInfoFixture } from './settingsViewTestFixtures'
 import type { VoiceSettings } from '../houston/generated/VoiceSettings'
 import type { KeymapOverrides } from '../houston/client'
 
@@ -58,9 +58,6 @@ function orchestrationStateFixture(): OrchestrationStateView {
 const SECTION_OVERRIDES: Partial<
   Record<SettingsSectionId, Partial<React.ComponentProps<typeof SettingsView>>>
 > = {
-  'headless-roles': {
-    headlessWriter: headlessRoleViewFixture({ role: 'writer' })
-  },
   orchestration: {
     orchestrationState: orchestrationStateFixture(),
     hostInfo: hostInfoFixture()
