@@ -197,7 +197,6 @@ describe('Sidebar rail — Settings mode state matrix', () => {
       'agent-setup',
       'workspace-defaults',
       'orchestration',
-      'headless-roles',
       'voice',
       'privacy',
       'usage',

@@ -236,6 +236,17 @@ describe('base.css @layer base inheritance traps', () => {
       }
     }
   })
+
+  it('.btn is the flex row its icon+label call sites assume', () => {
+    const btn = allRules.find((r) => r.selectors.includes('.btn'))
+    expect(btn, 'the .btn rule').toBeDefined()
+    const declarations = new Map(btn!.declarations.map((d) => [d.prop.toLowerCase(), d.value]))
+    expect(
+      declarations.get('display'),
+      'Icon.tsx renders block, so a .btn without a flex display stacks the label under the icon'
+    ).toBe('inline-flex')
+    expect(declarations.get('align-items')).toBe('center')
+  })
 })
 
 describe('parseRules / extractLayerBlocks regression coverage', () => {
