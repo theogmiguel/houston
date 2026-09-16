@@ -81,13 +81,7 @@ pub fn permission_reply_line(request_id: &Value, option_id: &str) -> String {
     .to_string()
 }
 
-fn wanted_kinds(
-    mode: Option<proto::ChatPermissionMode>,
-    one_shot: bool,
-) -> Option<&'static [&'static str]> {
-    if one_shot {
-        return Some(&["reject_once", "reject_always"]);
-    }
+fn wanted_kinds(mode: Option<proto::ChatPermissionMode>) -> Option<&'static [&'static str]> {
     match mode {
         Some(proto::ChatPermissionMode::AcceptEdits)
         | Some(proto::ChatPermissionMode::BypassPermissions) => {
@@ -99,10 +93,9 @@ fn wanted_kinds(
 
 pub fn auto_permission_answer(
     mode: Option<proto::ChatPermissionMode>,
-    one_shot: bool,
     options: &[proto::ChatQuestionOption],
 ) -> Option<String> {
-    let wanted = wanted_kinds(mode, one_shot)?;
+    let wanted = wanted_kinds(mode)?;
     options
         .iter()
         .find(|o| {
@@ -175,14 +168,13 @@ fn message_id(id: &Value) -> Option<String> {
     }
 }
 
-/// `permission_mode`/`one_shot` are `Mutex`es because `argv`/`stdin` take
-/// `&self` (the trait's shape): `decode`'s `&mut self` is the only place state
-/// can be written, and `Cell` is not `Sync`, which the trait requires.
+/// `permission_mode` is a `Mutex` because `argv`/`stdin` take `&self` (the
+/// trait's shape): `decode`'s `&mut self` is the only place state can be
+/// written, and `Cell` is not `Sync`, which the trait requires.
 pub struct AcpEngine {
     agent: &'static crate::acp::KnownAcpAgent,
     decoder: crate::acp::AcpDecoder,
     permission_mode: Mutex<Option<proto::ChatPermissionMode>>,
-    one_shot: Mutex<bool>,
     session_id: Option<String>,
     prompt: Mutex<String>,
     cwd: Mutex<std::path::PathBuf>,
@@ -197,7 +189,6 @@ impl AcpEngine {
             agent,
             decoder: crate::acp::AcpDecoder::new(),
             permission_mode: Mutex::new(None),
-            one_shot: Mutex::new(false),
             session_id: None,
             prompt: Mutex::new(String::new()),
             cwd: Mutex::new(std::path::PathBuf::new()),
@@ -211,13 +202,8 @@ impl AcpEngine {
         self.agent.argv[0]
     }
 
-    pub fn models(&self) -> &'static [&'static str] {
-        self.agent.primary_models
-    }
-
     pub fn argv(&self, req: &TurnRequest) -> Result<Vec<String>> {
         *self.permission_mode.lock().expect("acp engine lock") = req.permission_mode;
-        *self.one_shot.lock().expect("acp engine lock") = req.one_shot;
         *self.prompt.lock().expect("acp engine lock") = req.prompt.clone();
         *self.cwd.lock().expect("acp engine lock") = req.cwd.clone();
         let mut args: Vec<String> = self.agent.argv[1..].iter().map(|s| s.to_string()).collect();
@@ -290,15 +276,13 @@ impl AcpEngine {
                 .permission_mode
                 .lock()
                 .expect("acp engine lock")
-                .is_none()
-                && !*self.one_shot.lock().expect("acp engine lock");
+                .is_none();
             if asking {
                 out.push(Decoded::PermissionRequest { question });
                 return;
             }
             let mode = *self.permission_mode.lock().expect("acp engine lock");
-            let one_shot = *self.one_shot.lock().expect("acp engine lock");
-            if let Some(option) = auto_permission_answer(mode, one_shot, &question.options) {
+            if let Some(option) = auto_permission_answer(mode, &question.options) {
                 let raw_id = self.pending.remove(&question.id).expect("inserted above");
                 self.queued.push(permission_reply_line(&raw_id, &option));
             }
@@ -518,27 +502,15 @@ mod tests {
             proto::ChatPermissionMode::BypassPermissions,
         ] {
             assert_eq!(
-                auto_permission_answer(Some(mode), false, &options()),
+                auto_permission_answer(Some(mode), &options()),
                 Some("allow-once".to_string())
             );
         }
     }
 
     #[test]
-    fn one_shot_always_answers_reject_even_under_an_allow_mode() {
-        assert_eq!(
-            auto_permission_answer(
-                Some(proto::ChatPermissionMode::BypassPermissions),
-                true,
-                &options()
-            ),
-            Some("reject-once".to_string())
-        );
-    }
-
-    #[test]
     fn ask_mode_answers_nothing_thats_a_card() {
-        assert_eq!(auto_permission_answer(None, false, &options()), None);
+        assert_eq!(auto_permission_answer(None, &options()), None);
     }
 
     #[test]
@@ -723,24 +695,6 @@ mod tests {
             e.outbound(),
             vec![permission_reply_line(&json!(9), "allow-once")],
             "the decided answer goes straight back to the agent"
-        );
-    }
-
-    #[test]
-    fn decode_in_one_shot_answers_itself_even_under_bypass_and_emits_no_card() {
-        let mut e = engine();
-        let mut r = req();
-        r.one_shot = true;
-        r.permission_mode = Some(proto::ChatPermissionMode::BypassPermissions);
-        e.argv(&r).unwrap();
-        let out = e.decode(
-            r#"{"jsonrpc":"2.0","id":9,"method":"session/request_permission","params":{"toolCall":{},"options":[{"optionId":"allow-once","kind":"allow_once"},{"optionId":"reject-once","kind":"reject_once"}]}}"#,
-        );
-        assert!(out.is_empty(), "a one-shot call never gets a card: {out:?}");
-        assert_eq!(
-            e.outbound(),
-            vec![permission_reply_line(&json!(9), "reject-once")],
-            "a one-shot call rejects on its own"
         );
     }
 

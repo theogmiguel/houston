@@ -1,4 +1,4 @@
-# Wire protocol v108
+# Wire protocol v109
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -165,8 +165,6 @@ failure not given a typed refusal comes back as `error`.
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
-| `git_commit_message` | `dir` | `git_commit_message` (direct) — the writer role's model writes from the staged diff; failure is `error` in the reply, never a mutation |
-| `git_pr_content` | `dir`, `base?` (absent = the default branch) | `git_pr_content` (direct) — title and body from the branch's commits against the merge base; failure is `error` in the reply |
 | `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh` |
 | `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract |
 | `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — a `gh` problem is `gh` + `hint`, a failed read is `message` |
@@ -285,13 +283,6 @@ failure not given a typed refusal comes back as `error`.
 | `voice_model_delete` | `model_id` | `voice_model_state` + `voice_settings` (bcast) |
 | `voice_level_monitor` | `enabled` | `voice_level` every `VOICE_LEVEL_INTERVAL_MS` while anyone is monitoring. Opens the microphone; refcounted per connection as a set, and released on disconnect |
 
-### Houston's own agents
-
-| Message | Fields | Reply |
-|---|---|---|
-| `headless_roles_get` | — (the Writer role — "Write with AI" — resolved: engine, model, and every engine's own picker row) | direct reply `headless_roles` |
-| `headless_role_set` | `role` (`writer`), `engine?: AgentKind` (`null` = back to the default), `model?` (`null` = the engine's own default). Refused by name — the engine can't run headless, isn't installed, or the model isn't in that engine's own list — leaving the stored value untouched | `headless_roles` broadcast, or `error` |
-
 ### Host and usage
 
 | Message | Fields | Reply |
@@ -349,8 +340,6 @@ failure not given a typed refusal comes back as `error`.
 | `git_checkpoint_diff` | `dir`, `ref`, `patch`, `truncated`, `redacted` | direct reply to `git_checkpoint_diff` |
 | `git_pull` | `dir`, `status: GitPullStatus` | direct reply to `git_pull` |
 | `git_fetch` | `dir`, `summary` | direct reply to `git_fetch` |
-| `git_commit_message` | `dir`, `message?`, `error?` | direct reply to `git_commit_message`; exactly one of the two is present |
-| `git_pr_content` | `dir`, `title?`, `body?`, `error?` | direct reply to `git_pr_content`; `error` stands alone, and text without it is the suggestion |
 | `pr_status` | `dir`, `gh: GhState`, `has_upstream`, `pr?: PrInfo`, `hint?` | direct reply — a `gh` problem is reported in `gh` + `hint`, never as `error` |
 | `pr_create` | `dir`, `gh: GhState`, `pr?: PrInfo`, `message?` | direct reply — `message` carries `gh`'s own first stderr line on a genuine failure |
 | `pr_detail` | `dir`, `request`, `gh: GhState`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate |
@@ -387,7 +376,6 @@ failure not given a typed refusal comes back as `error`.
 | `voice_transcript` | `session`, `text`, `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start` |
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
-| `headless_roles` | `writer`: `HeadlessRoleView` (the role, resolved `engine`/`engine_is_default`, resolved `model?`/`model_is_default`, and `engines: HeadlessEngineOption[]` — `engine`, `enabled`, `reason?`, `verified`, `models`) | direct reply to `headless_roles_get`, **broadcast** after a set |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only |
@@ -557,12 +545,8 @@ ChatEffort         low | medium | high | xhigh | max
 ChatPermissionMode accept_edits | bypass_permissions
 ChatQuestion       id, kind (choice | permission), header?, prompt, options: [{label, description?}],
                    multi_select, allow_free_text, answered?
-                   — the headless adapters' decode vocabulary, carried into a Writer one-shot's
-                   `Decoded` events; not a wire message
+                   — the headless adapters' decode vocabulary; not a wire message
 ChatUsage          input_tokens?, output_tokens?, cost_usd?, duration_ms?
-HeadlessRoleKind   writer
-HeadlessEngineOption  engine, enabled, reason?, verified, models
-HeadlessRoleView   role, engine, engine_is_default, model?, model_is_default, engines: HeadlessEngineOption[]
 
 HostInfo           channel, state_dir, pid, port, protocol_version, app_version, build_commit, uptime_ms,
                    live_sessions, restore_budget, restore_deferred, orchestration_depth_in_use,
@@ -856,6 +840,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 109 | **"Write with AI" is removed.** Gone from the wire: `git_commit_message` and `git_pr_content` with their two server replies; `headless_roles_get`/`headless_role_set` with `ServerMsg::HeadlessRoles`; and with them `HeadlessRoleKind`, `HeadlessEngineOption` and `HeadlessRoleView`. The sparkles that wrote commit messages and pull-request text — and the Settings ▸ Houston's own agents section that chose their engine and model — are removed. There is no migration: the stored role keys simply have no reader. Pane agents, routines and the rest of source control are untouched |
 | 108 | **Bots are removed; routines stand alone.** Gone from the wire: `AgentList`/`AgentCreate`/`AgentUpdate`/`AgentDelete`/`AgentExport`/`AgentDuplicate` and their `agents`/`agent_created`/`agent_export_data`/`agent_limit_refused` replies; `AgentMemorySet`; `AgentSkillStarters`/`AgentSkillGet`/`AgentSkillSet`/`AgentSkillRemove`/`AgentSkillStarterInstall` and their `agent_skill_*` replies; `AgentMessagingGet`/`AgentMessagingSet` and `agent_messaging_state`; the whole chat surface (`ChatMessages`/`RunIndex`/`ChatSend`/`ChatStop`/`ChatAnswer`/`ChatMarkRead`/`ChatStartFresh`/`ChatEngineSupportGet` and `chat_history`/`run_rows`/`chat_event`/`chat_refused`/`chat_notice`/`chat_engine_support`); the record types behind them (`Agent`, `AgentInbox`, `AgentActivity`, `AgentMark`, `AgentMemoryFile`, `AgentLimitKind`, `AgentSkill`, `AgentSkillDoc`, `SkillStarter`, `AgentExportFile`, `AgentExportRoutine`, `AgentSkillExport`, `ReflectionMode`, `ChatThread`, `ChatRowKind`, `ChatToolStatus`, `ChatMessage`, `RunKicker`, `ChatEventKind`, `ChatRefusalKind`, `ChatEngineSupport`) and the `AGENT_*`/`CHAT_*`/`SKILL_*` caps. `Routine` loses `agent_id` and `continue_context`, `RoutineRun` loses `thread_id`: every routine is a standalone automation and every run is a pane session. `ROUTINES_PER_AGENT` is gone — `ROUTINES_TOTAL` is the only cap. At boot the `routines` table is rebuilt without the bot columns (data preserved), `routine_runs` without `thread_id`, and the `named_agents`/`agent_messages`/`agent_skill_sources`/`chat_threads`/`chat_messages` tables are dropped. `ChatEffort`/`ChatPermissionMode` stay (routine fields); `ChatQuestion`/`ChatUsage` stay as the preserved headless adapters' decode vocabulary. Pane agents, pane orchestration and Writer are untouched |
 | 107 | **Routines own their execution.** `Routine.agent_id` becomes optional — a routine with no bot is a standalone automation. `Routine` gains `engine`, `model?` and `effort?`, and `workspace_id` is re-anchored as the record's own working directory: a bot-owned routine inherits engine, model, effort and directory from its bot once, at create or at the boot migration (the `routines` table is rebuilt with `agent_id` nullable and backfilled from `named_agents`), and a fire never reads a bot's settings again. Every execution is an independent `RoutineRun` (`routine_runs` table): `trigger` (`schedule`\|`manual`), `status` (the new `RoutineRunStatus`, `running` plus `RoutineOutcome`'s arms), the pane's `session_id?` and the bot conversation's `thread_id?`, `error?` and timestamps. New `routine_run_now` starts one on exactly the scheduler's path, refused `already_running` (the new `RoutineErrorKind` arm) while the previous run is in flight; new `routine_runs` lists the records newest first (`ROUTINE_RUNS_PAGE`) and `routine_run_event` broadcasts every transition. A botless routine always runs as a terminal pane; bot-owned runs keep landing in the bot's conversation. A run still `running` when the daemon stops is closed as `failed` at the next boot |
 | 106 | **The update offer carries its notes, not a guessed installer URL.** `UpdateRelease` gains `notes` — GitHub's release body verbatim, empty when the release has none — and drops `asset_url`/`signature_url`. The app no longer picks a download from the release's asset list: its own signed updater manifest names the artifact for the running bundle, verifies it against the bundled public key and installs it, refused by name when the manifest or the signature disagrees. A nightly's exact identity comes from its controlled `Houston nightly <version>` release title, including build metadata; once installed, the commit suffix prevents that same rolling build from being offered again. The daemon still only asks GitHub and broadcasts what it found |

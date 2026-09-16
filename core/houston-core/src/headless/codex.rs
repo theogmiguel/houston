@@ -6,13 +6,9 @@ use serde_json::Value;
 #[derive(Default)]
 pub struct CodexEngine;
 
-/// A one-shot call always gets `read-only` regardless of permission mode — it
-/// has no permission to grant. The ask default is not representable in
-/// `codex exec`, which never prompts, so it maps to the same as accept-edits.
+/// `codex exec` never prompts: the ask default is not representable, so it maps
+/// to the same sandbox as accept-edits.
 fn sandbox_mode(req: &TurnRequest) -> &'static str {
-    if req.one_shot {
-        return "read-only";
-    }
     match req.permission_mode {
         Some(proto::ChatPermissionMode::BypassPermissions) => "danger-full-access",
         Some(proto::ChatPermissionMode::AcceptEdits) | None => "workspace-write",
@@ -268,15 +264,6 @@ mod tests {
             .argv(&r)
             .unwrap()
             .contains(&"danger-full-access".to_string()));
-    }
-
-    #[test]
-    fn one_shot_is_always_read_only_regardless_of_permission_mode() {
-        let mut r = req();
-        r.one_shot = true;
-        r.permission_mode = Some(proto::ChatPermissionMode::BypassPermissions);
-        let engine = CodexEngine;
-        assert!(engine.argv(&r).unwrap().contains(&"read-only".to_string()));
     }
 
     #[test]

@@ -20,7 +20,6 @@ pub mod frame_queue;
 pub mod fs_watch;
 pub mod gh;
 pub mod git;
-pub mod git_writer;
 pub mod handoff;
 pub mod headless;
 pub mod home_dir;

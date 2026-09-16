@@ -45,8 +45,4 @@ impl HeadlessEngine for GrokEngine {
     fn stdin_stays_open(&self) -> bool {
         self.0.stdin_stays_open()
     }
-
-    fn models(&self) -> &'static [&'static str] {
-        self.0.models()
-    }
 }
