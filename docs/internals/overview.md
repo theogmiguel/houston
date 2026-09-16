@@ -287,7 +287,7 @@ the runtime package.
   (`browser_click`, `browser_type`) pass a human confirmation gate.
 - **Secrets never touch the DB.** SSH passwords, passphrases and the Groq key live in the
   OS keychain (Secret Service via zbus); the DB holds a reference. `sanitize.rs` redacts
-  known secret shapes from anything persisted or shown to a one-shot child.
+  known secret shapes from anything persisted or shown to another agent.
 - **Other CLIs' config is written only through reversible markers.** Hook entries carry a
   `--houston-managed[=<channel>]` sentinel matched per whitespace token; MCP
   self-registration goes through `claude mcp add`, never the file. Houston reads
