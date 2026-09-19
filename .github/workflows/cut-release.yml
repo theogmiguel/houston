@@ -46,17 +46,19 @@ jobs:
 
       # First, before the version is computed, the commit is made or the tag is
       # pushed: a cut that cannot be published signed must not move anything.
-      - name: Require the updater signing secrets
+      - name: Require the release secrets
         env:
+          RELEASE_PUSH_SSH_KEY: ${{ secrets.RELEASE_PUSH_SSH_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           missing=()
+          [ -n "$RELEASE_PUSH_SSH_KEY" ] || missing+=(RELEASE_PUSH_SSH_KEY)
           [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY)
           [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
           if [ "${#missing[@]}" -ne 0 ]; then
-            echo "::error::this release is signed and the updater secrets are missing: ${missing[*]}. Set them under Settings -> Secrets and variables -> Actions; latest.json cannot carry a verifiable signature without them."
+            echo "::error::release secrets are missing: ${missing[*]}. Set them under Settings -> Secrets and variables -> Actions; the cut cannot update protected main or publish verifiable artifacts without them."
             exit 1
           fi
 
@@ -64,6 +66,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.RELEASE_PUSH_SSH_KEY }}
 
       - name: Resolve the refs and decide whether main may move
         env:
