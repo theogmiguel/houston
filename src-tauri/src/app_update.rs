@@ -259,9 +259,10 @@ fn updater_error(
 ) -> String {
     use tauri_plugin_updater::Error;
     match err {
-        Error::TargetsNotFound(offered) => format!(
-            "app_update_install: {endpoint} publishes no updater artifact for this build: it \
-             offers {offered:?} and this build needs {target:?}"
+        Error::TargetsNotFound(_searched) => format!(
+            "app_update_install: {endpoint} carries no entry for target {target:?}; this \
+             release does not ship an installer for this platform, so there is nothing to \
+             install"
         ),
         Error::TargetNotFound(missing) => format!(
             "app_update_install: {endpoint} does not publish {missing:?}, the updater artifact \
@@ -557,6 +558,21 @@ mod tests {
             !expected_version_matches("1.2.3", "  "),
             "an empty expected version must never satisfy the check"
         );
+    }
+
+    #[test]
+    fn a_release_without_this_platform_names_the_platform_not_a_broken_manifest() {
+        let err = updater_error(
+            "downloading",
+            MANIFEST_URL,
+            "windows-x86_64-nsis",
+            tauri_plugin_updater::Error::TargetsNotFound(vec![
+                "windows-x86_64-nsis".to_string(),
+                "windows-x86_64".to_string(),
+            ]),
+        );
+        assert!(err.contains("windows-x86_64-nsis"), "{err}");
+        assert!(err.contains("does not ship an installer"), "{err}");
     }
 
     #[test]

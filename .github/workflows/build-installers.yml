@@ -39,26 +39,11 @@ jobs:
       - id: check
         run: |
           set -euo pipefail
-          conf=$(jq -r .version src-tauri/tauri.conf.json)
-          crate=$(sed -n '0,/^version = /s/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml)
-          ui=$(jq -r .version ui/package.json)
-          # Scoped to the [workspace.package] table: core/Cargo.toml also
-          # carries `version = ` lines under [workspace.dependencies], and an
-          # unscoped first-match read picks up whichever comes first.
-          core=$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version = /{gsub(/^version = "|"$/,""); print; exit}' core/Cargo.toml)
-          echo "tauri.conf.json=$conf  src-tauri/Cargo.toml=$crate  ui/package.json=$ui  core/Cargo.toml=$core"
-          if [ -z "$conf" ] || [ -z "$crate" ] || [ -z "$ui" ] || [ -z "$core" ]; then
-            echo "::error::a manifest version came back empty -- expected a semver string in each of the four (got tauri.conf.json='$conf' src-tauri/Cargo.toml='$crate' ui/package.json='$ui' core/Cargo.toml='$core')"
-            exit 1
-          fi
-          if [ "$conf" != "$crate" ] || [ "$conf" != "$ui" ] || [ "$conf" != "$core" ]; then
-            echo "::error::version mismatch across the four manifests (tauri.conf.json=$conf src-tauri/Cargo.toml=$crate ui/package.json=$ui core/Cargo.toml=$core) -- they must agree before a release"
-            exit 1
-          fi
-          # The four above are what the bundle filenames read; both lockfiles
-          # carry the workspace crates' own versions and must move with them.
-          ./scripts/set-version.sh --check "$conf"
-          echo "version=$conf" >> "$GITHUB_OUTPUT"
+          version=$(./scripts/check-manifest-versions.sh)
+          # The four are what the bundle filenames read; both lockfiles carry
+          # the workspace crates' own versions and must move with them.
+          ./scripts/set-version.sh --check "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Record job timing
         if: always()
