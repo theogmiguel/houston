@@ -8,7 +8,6 @@ import type { GitWorktreeInfo } from '../../houston/generated/GitWorktreeInfo'
 import { BranchesDialog } from './BranchesDialog'
 import { CheckpointsDialog } from './CheckpointsDialog'
 import { WorktreesDialog } from './WorktreesDialog'
-import { PrComposeModal } from './PrComposeModal'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -297,49 +296,5 @@ describe('CheckpointsDialog', () => {
     expect(q('[data-testid="checkpoint-diff"]').textContent).toContain('redacted')
     expect(q('[data-testid="checkpoint-diff"]').textContent).toContain('+x')
     void rerender
-  })
-})
-
-describe('PrComposeModal', () => {
-  it('generates, edits and only then creates', () => {
-    const onGenerate = vi.fn()
-    const onCreate = vi.fn()
-    mount(
-      <PrComposeModal
-        base="main"
-        generating={false}
-        creating={false}
-        error={null}
-        initialTitle="Add staging"
-        initialBody="It helps."
-        onGenerate={onGenerate}
-        onCreate={onCreate}
-        onCancel={noop}
-      />
-    )
-    click(q('[data-testid="pr-compose-generate"]'))
-    expect(onGenerate).toHaveBeenCalledTimes(1)
-    expect(q<HTMLInputElement>('[data-testid="pr-compose-title-input"]').value).toBe('Add staging')
-
-    type(q<HTMLInputElement>('[data-testid="pr-compose-title-input"]'), 'Edited title')
-    type(q<HTMLTextAreaElement>('[data-testid="pr-compose-body-input"]'), 'Edited body')
-    click(q('[data-testid="pr-compose-create"]'))
-    expect(onCreate).toHaveBeenCalledWith('Edited title', 'Edited body')
-  })
-
-  it('refuses to create with an empty title and surfaces a generation error', () => {
-    mount(
-      <PrComposeModal
-        base={null}
-        generating={false}
-        creating={false}
-        error="the writer is not installed"
-        onGenerate={noop}
-        onCreate={noop}
-        onCancel={noop}
-      />
-    )
-    expect(q<HTMLButtonElement>('[data-testid="pr-compose-create"]').disabled).toBe(true)
-    expect(q('[data-testid="pr-compose-error"]').textContent).toContain('not installed')
   })
 })

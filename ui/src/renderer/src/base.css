@@ -1,5 +1,10 @@
 @layer base {
   .btn {
+    /* An icon is display:block (Icon.tsx), so the button itself must be the
+       flex row or the label breaks onto its own line. */
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
     border-radius: var(--tr-radius-button);
     border: 1px solid var(--border);
     background: var(--card-bg);

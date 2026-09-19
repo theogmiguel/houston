@@ -196,27 +196,7 @@ describe('Changes pane — git tools', () => {
     expect(h.client.gitPullCalls).toEqual(['/repo'])
   })
 
-  it('generate-commit fills the editable commit input from the reply', () => {
-    const h = mount({})
-    h.status([file({ path: 'src/app.ts', staged: true })])
-
-    click(q('[data-testid="changes-generate-commit"]'))
-    expect(h.client.gitCommitMessageCalls).toEqual(['/repo'])
-
-    act(() => {
-      h.client.emit({
-        type: 'git_commit_message',
-        dir: '/repo',
-        message: 'fix(git): keep the receipt',
-        error: null
-      })
-    })
-    expect(q<HTMLInputElement>('[data-testid="changes-commit-message"]')!.value).toBe(
-      'fix(git): keep the receipt'
-    )
-  })
-
-  it('Write PR with AI previews the generated text before any gh call', () => {
+  it('Create PR asks the daemon directly, with no compose step', () => {
     const h = mount({})
     h.status([file({ path: 'src/app.ts' })])
     act(() => {
@@ -230,39 +210,9 @@ describe('Changes pane — git tools', () => {
       })
     })
 
-    click(q('[data-testid="changes-create-pr-ai"]'))
-    expect(q('[data-testid="pr-compose-modal"]')).not.toBeNull()
-    expect(h.client.prComposeCalls).toEqual([])
-
-    click(q('[data-testid="pr-compose-generate"]'))
-    expect(h.client.gitPrContentCalls).toEqual(['/repo'])
-    act(() => {
-      h.client.emit({
-        type: 'git_pr_content',
-        dir: '/repo',
-        title: 'Add staging',
-        body: 'Why it helps.',
-        error: null
-      })
-    })
-    expect(q<HTMLInputElement>('[data-testid="pr-compose-title-input"]')!.value).toBe('Add staging')
-
-    type(q<HTMLTextAreaElement>('[data-testid="pr-compose-body-input"]')!, 'Edited body.')
-    click(q('[data-testid="pr-compose-create"]'))
-    expect(h.client.prComposeCalls).toEqual([
-      { dir: '/repo', title: 'Add staging', body: 'Edited body.' }
-    ])
-
-    act(() => {
-      h.client.emit({
-        type: 'pr_create',
-        dir: '/repo',
-        gh: 'ready',
-        pr: null,
-        message: 'gh refused: no commits between main and HEAD'
-      })
-    })
-    expect(q('[data-testid="pr-compose-error"]')?.textContent).toContain('gh refused')
-    expect(q('[data-testid="pr-compose-modal"]')).not.toBeNull()
+    expect(q('[data-testid="pr-compose-modal"]')).toBeNull()
+    click(q('[data-testid="changes-create-pr"]'))
+    expect(h.client.prCreateCalls).toEqual(['/repo'])
+    expect(h.client.prComposeCalls).toEqual([{ dir: '/repo', title: null, body: null }])
   })
 })

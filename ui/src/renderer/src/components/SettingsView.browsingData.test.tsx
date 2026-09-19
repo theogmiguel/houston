@@ -82,8 +82,6 @@ const props = (): React.ComponentProps<typeof SettingsView> => ({
   historyCount: null,
   onClearHistory: () => {},
   historyIgnoreGlobs: null,
-  headlessWriter: null,
-  onHeadlessRoleSet: () => {},
   onHistoryIgnoreGlobsSet: () => {},
   onOpenLogsFolder: () => {},
     onContact: () => {},

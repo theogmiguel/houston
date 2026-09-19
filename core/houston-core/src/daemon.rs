@@ -998,7 +998,6 @@ pub struct Daemon {
     stop_blocks: Mutex<HashMap<u32, u32>>,
     permission_episodes: Mutex<HashMap<u32, orchestrate::PermissionEpisodes>>,
     antigravity_roots: Mutex<HashMap<u32, String>>,
-    writer_cli_override: Mutex<Option<PathBuf>>,
     routine_runs: Mutex<HashMap<u32, RoutineRun>>,
     routine_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     routine_pane_cmd_override: Mutex<Option<Vec<String>>>,
@@ -2212,7 +2211,6 @@ impl Daemon {
             permission_episodes: Mutex::new(HashMap::new()),
             antigravity_roots: Mutex::new(HashMap::new()),
             browser_relay: Arc::new(crate::browser_relay::BrowserRelayState::new()),
-            writer_cli_override: Mutex::new(None),
             routine_runs: Mutex::new(HashMap::new()),
             routine_settle: Mutex::new(HashMap::new()),
             routine_pane_cmd_override: Mutex::new(None),
@@ -3537,159 +3535,6 @@ impl Daemon {
         crate::worktrees::create_named(repo, name, base, &dest)
     }
 
-    /// The writer role's engine, model and executable, resolved the way the
-    /// draft role resolves its own: the stored role view, then the engine's
-    /// program on PATH, with the test override standing in for that program.
-    fn writer_one_shot(&self) -> Option<(std::path::PathBuf, proto::AgentKind, Option<String>)> {
-        let view = self.headless_role_view(proto::HeadlessRoleKind::Writer);
-        let headless_engine = crate::headless::engine_for(view.engine)?;
-        let override_exe = (view.engine == proto::AgentKind::Claude)
-            .then(|| {
-                self.writer_cli_override
-                    .lock()
-                    .expect("writer cli lock")
-                    .clone()
-            })
-            .flatten();
-        let exe = match override_exe {
-            Some(p) => p,
-            None => crate::exe_path::resolve(headless_engine.program())?,
-        };
-        Some((exe, view.engine, view.model))
-    }
-
-    fn writer_error(
-        dir: &std::path::Path,
-        what: &str,
-        kind: crate::git_writer::WriterError,
-    ) -> String {
-        match kind {
-            crate::git_writer::WriterError::Failed => format!(
-                "the writer model call for {what} in {} failed; check the model in Settings → \
-                 Houston's own agents and try again",
-                dir.display()
-            ),
-            crate::git_writer::WriterError::Unreadable => format!(
-                "the writer model's reply for {what} in {} was not the expected JSON; try again",
-                dir.display()
-            ),
-        }
-    }
-
-    /// One-shot commit message from the staged diff. Nothing is committed here:
-    /// the reply fills the message control, and the user commits it.
-    pub async fn git_commit_message_with_ai(&self, dir: &std::path::Path) -> proto::ServerMsg {
-        let dir_s = dir.display().to_string();
-        let (patch, _truncated, _redacted) = match crate::git::staged_patch(dir) {
-            Ok(v) => v,
-            Err(e) => {
-                return proto::ServerMsg::GitCommitMessage {
-                    dir: dir_s,
-                    message: None,
-                    error: Some(e.to_string()),
-                }
-            }
-        };
-        if patch.trim().is_empty() {
-            return proto::ServerMsg::GitCommitMessage {
-                dir: dir_s,
-                message: None,
-                error: Some(
-                    "nothing staged to write a message from; stage a file first".to_string(),
-                ),
-            };
-        }
-        let files = match crate::git::status(dir) {
-            Ok(files) => files
-                .into_iter()
-                .filter(|f| f.staged)
-                .map(|f| f.path)
-                .collect::<Vec<_>>(),
-            Err(e) => {
-                return proto::ServerMsg::GitCommitMessage {
-                    dir: dir_s,
-                    message: None,
-                    error: Some(e.to_string()),
-                }
-            }
-        };
-        let Some((exe, engine, model)) = self.writer_one_shot() else {
-            return proto::ServerMsg::GitCommitMessage {
-                dir: dir_s,
-                message: None,
-                error: Some(
-                    "no writer model is available; pick one in Settings → Houston's own agents"
-                        .to_string(),
-                ),
-            };
-        };
-        match crate::git_writer::commit_message(&exe, dir, &files, &patch, engine, model).await {
-            Ok(s) => proto::ServerMsg::GitCommitMessage {
-                dir: dir_s,
-                message: Some(s.message()),
-                error: None,
-            },
-            Err(kind) => proto::ServerMsg::GitCommitMessage {
-                dir: dir_s,
-                message: None,
-                error: Some(Self::writer_error(dir, "the commit message", kind)),
-            },
-        }
-    }
-
-    /// One-shot pull request title and body from the branch's commits against
-    /// its base. Opening the pull request stays a separate, explicit action.
-    pub async fn git_pr_content_with_ai(
-        &self,
-        dir: &std::path::Path,
-        base: Option<&str>,
-    ) -> proto::ServerMsg {
-        let dir_s = dir.display().to_string();
-        let fail = |error: String| proto::ServerMsg::GitPrContent {
-            dir: dir_s.clone(),
-            title: None,
-            body: None,
-            error: Some(error),
-        };
-        let ctx = match crate::git::branch_context(dir, base) {
-            Ok(c) => c,
-            Err(e) => return fail(e.to_string()),
-        };
-        let Some(branch) = ctx.branch.clone() else {
-            return fail(format!(
-                "{} is on a detached HEAD; check out a branch before writing a pull request",
-                dir.display()
-            ));
-        };
-        if ctx.commits.is_empty() {
-            return fail(format!(
-                "branch {branch:?} has no commits against {} yet; nothing to describe",
-                ctx.base
-            ));
-        }
-        let Some((exe, engine, model)) = self.writer_one_shot() else {
-            return fail(
-                "no writer model is available; pick one in Settings → Houston's own agents"
-                    .to_string(),
-            );
-        };
-        let request = crate::git_writer::PrRequest {
-            branch: &branch,
-            base: &ctx.base,
-            commits: &ctx.commits,
-            patch: &ctx.patch,
-        };
-        match crate::git_writer::pr_content(&exe, dir, &request, engine, model).await {
-            Ok(s) => proto::ServerMsg::GitPrContent {
-                dir: dir_s,
-                title: Some(s.subject),
-                body: Some(s.body),
-                error: None,
-            },
-            Err(kind) => fail(Self::writer_error(dir, "the pull request text", kind)),
-        }
-    }
-
     fn broadcast_live_children(&self, parent: u32) {
         self.broadcast_child_counts(parent);
         self.mcp_notify.tools_changed_for_session(parent);
@@ -4830,12 +4675,6 @@ impl Daemon {
         self.routine_wake.notify_one();
         self.reap_reevaluate();
         Ok(self.routine_list())
-    }
-
-    /// Test-only override for the Writer role's CLI: the role otherwise
-    /// resolves its program from the stored engine, which no test can stub.
-    pub fn set_writer_cli_for_test(&self, program: PathBuf) {
-        *self.writer_cli_override.lock().expect("writer cli lock") = Some(program);
     }
 
     /// Test-only override for a routine run's argv: a fixture process stands in
@@ -13644,102 +13483,6 @@ impl Daemon {
         ) {
             tracing::warn!("operator-ended notice for parent {parent}: {e}");
         }
-    }
-}
-
-const HEADLESS_WRITER_ENGINE_KEY: &str = "headless_writer_engine";
-const HEADLESS_WRITER_MODEL_KEY: &str = "headless_writer_model";
-
-impl Daemon {
-    pub fn headless_role_view(&self, role: proto::HeadlessRoleKind) -> proto::HeadlessRoleView {
-        let engine_key = HEADLESS_WRITER_ENGINE_KEY;
-        let model_key = HEADLESS_WRITER_MODEL_KEY;
-        let stored_engine: Option<proto::AgentKind> = self
-            .db
-            .get_setting(engine_key)
-            .ok()
-            .flatten()
-            .and_then(|s| crate::db::from_wire(&s));
-        let engine = stored_engine.unwrap_or_else(crate::headless::default_engine);
-        let engine_is_default = stored_engine.is_none();
-
-        let models: &'static [&'static str] = crate::headless::engine_for(engine)
-            .map(|e| e.models())
-            .unwrap_or(&[]);
-        let stored_model = self.db.get_setting(model_key).ok().flatten();
-        let model = match stored_model {
-            Some(m) if models.is_empty() || models.contains(&m.as_str()) => Some(m),
-            Some(other) => {
-                tracing::warn!(
-                    "headless {role:?}: stored model {other:?} is not offered by {engine:?}; \
-                     using the engine default"
-                );
-                None
-            }
-            None => None,
-        };
-        let model_is_default = model.is_none();
-
-        proto::HeadlessRoleView {
-            role,
-            engine,
-            engine_is_default,
-            model,
-            model_is_default,
-            engines: crate::headless::engine_options(),
-        }
-    }
-
-    pub fn headless_roles_msg(&self) -> proto::ServerMsg {
-        proto::ServerMsg::HeadlessRoles {
-            writer: self.headless_role_view(proto::HeadlessRoleKind::Writer),
-        }
-    }
-
-    pub fn headless_role_set(
-        &self,
-        role: proto::HeadlessRoleKind,
-        engine: Option<proto::AgentKind>,
-        model: Option<String>,
-    ) -> Result<()> {
-        let engine_key = HEADLESS_WRITER_ENGINE_KEY;
-        let model_key = HEADLESS_WRITER_MODEL_KEY;
-        if let Some(kind) = engine {
-            let support = crate::headless::shared::engine_support(kind);
-            anyhow::ensure!(
-                support.can_chat,
-                "headless {role:?}: {kind:?} can't run headless — {}",
-                support.reason.unwrap_or_default()
-            );
-            let eng = crate::headless::engine_for(kind)
-                .expect("can_chat implies a registered headless engine");
-            anyhow::ensure!(
-                crate::exe_path::resolve(eng.program()).is_some(),
-                "headless {role:?}: {kind:?} is not found on PATH",
-            );
-        }
-        let resolved_engine = engine.unwrap_or_else(crate::headless::default_engine);
-        if let Some(m) = &model {
-            let list = crate::headless::engine_for(resolved_engine)
-                .map(|e| e.models())
-                .unwrap_or(&[]);
-            anyhow::ensure!(
-                list.is_empty() || list.contains(&m.as_str()),
-                "headless {role:?}: {m:?} is not a model {resolved_engine:?} offers — pick one \
-                 of {list:?}",
-            );
-        }
-        match engine {
-            Some(kind) => self
-                .db
-                .set_setting(engine_key, &crate::db::wire_name(&kind)?)?,
-            None => self.db.delete_setting(engine_key)?,
-        }
-        match model {
-            Some(m) => self.db.set_setting(model_key, &m)?,
-            None => self.db.delete_setting(model_key)?,
-        }
-        Ok(())
     }
 }
 

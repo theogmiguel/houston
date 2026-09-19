@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   GhState,
   HoustonClient,
@@ -17,7 +17,7 @@ import { META_ROW_CLS, SCM_CARD_ATTRS, SCM_CARD_CLS, SECTION_HEAD_CLS } from './
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../Disclosure'
 import { Icon } from '../Icon'
-import { IconLoaderCircle, IconPencil, IconSparkles } from '../icons'
+import { IconLoaderCircle, IconPencil } from '../icons'
 import { Tooltip } from '../Tooltip'
 import { prDecisionLabel } from './changes'
 import { SPIN_CLASS } from './DiffBody'
@@ -25,7 +25,6 @@ import { PrBrowse } from './PrBrowse'
 import { PrComments, PrThreads } from './PrDiscussion'
 import { PrFiles } from './PrFiles'
 import { PrEmptyStates } from './PrEmptyStates'
-import { PrComposeModal } from './PrComposeModal'
 import { PrLabelPicker, PrReactions, PrReviewerPicker } from './PrPickers'
 import { PrReviewBar } from './PrReviewBar'
 import { PrSummary } from './PrSummary'
@@ -37,7 +36,6 @@ import {
   type PrDetailController,
   type PrDetailView
 } from './usePrDetailSubscription'
-import { useGitWriter, type GitWriter } from './useGitWriter'
 
 export interface PullRequestTabProps {
   client: HoustonClient | null
@@ -306,17 +304,13 @@ function PrEmpty({
   pr,
   onShowChanges,
   onBrowse,
-  linkMessage,
-  writer,
-  offered
+  linkMessage
 }: {
   view: PrDetailView
   pr: PrDetailController
   onShowChanges?: () => void
   onBrowse: () => void
   linkMessage: React.ReactNode
-  writer: GitWriter
-  offered: boolean
 }): React.JSX.Element {
   return (
     <div className={SECTION_HEAD} data-testid="pr-detail-empty">
@@ -347,18 +341,6 @@ function PrEmpty({
                 onClick={pr.create}
               >
                 {pr.createBusy ? 'Creating…' : 'Create pull request'}
-              </button>
-            </Tooltip>
-            <Tooltip label="Write the title and body with AI">
-              <button
-                type="button"
-                className={`btn ${BTN_GHOST}`}
-                data-testid="pr-create-ai"
-                aria-label="Write the pull request with AI"
-                disabled={!offered || writer.compose.creating}
-                onClick={writer.openCompose}
-              >
-                <Icon glyph={IconSparkles} role="small" />
               </button>
             </Tooltip>
           </div>
@@ -401,19 +383,6 @@ function PrEmpty({
         <div className={ERROR_LINE} data-testid="pr-create-message">
           {pr.createMessage}
         </div>
-      )}
-      {writer.compose.open && offered && (
-        <PrComposeModal
-          base={null}
-          generating={writer.compose.generating}
-          creating={writer.compose.creating}
-          error={writer.compose.error}
-          initialTitle={writer.compose.title}
-          initialBody={writer.compose.body}
-          onGenerate={writer.generatePrContent}
-          onCreate={writer.createComposedPr}
-          onCancel={writer.cancelCompose}
-        />
       )}
     </div>
   )
@@ -965,18 +934,6 @@ export function PullRequestTab({
   refreshSignal = 0
 }: PullRequestTabProps): React.JSX.Element {
   const pr = usePrDetail(client, dir, active, refreshSignal)
-  const pendingCompose = useRef<string | null>(null)
-  const ignoreCommitMessage = useCallback((_message: string | null): void => {}, [])
-  const ignoreCommitError = useCallback((_message: string | null): void => {}, [])
-  const offered = pr.view?.gh === 'ready' && pr.view.hasUpstream && pr.view.link === null
-  const writer = useGitWriter({
-    client,
-    repoDir: dir,
-    offered,
-    pendingCompose,
-    onCommitMessage: ignoreCommitMessage,
-    onCommitError: ignoreCommitError
-  })
   const [browsing, setBrowsing] = useState(false)
   const list = usePrList(client, dir, active && browsing)
   const [method, setMethod] = useState<PrMergeMethod>('squash')
@@ -986,13 +943,6 @@ export function PullRequestTab({
   useEffect(() => {
     onPrPresenceChange?.(present, presenceTone)
   }, [onPrPresenceChange, presenceTone, present])
-
-  useEffect(() => {
-    if (!client || !dir) return
-    return client.subscribe('error', (message) => {
-      if (pendingCompose.current !== null) writer.composeFailed(message.message)
-    })
-  }, [client, dir, writer.composeFailed])
 
   useEffect(() => {
     setBrowsing(false)
@@ -1042,8 +992,6 @@ export function PullRequestTab({
         onShowChanges={onShowChanges}
         onBrowse={() => setBrowsing(true)}
         linkMessage={linkMessage}
-        writer={writer}
-        offered={offered}
       />
     )
   }

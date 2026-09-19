@@ -17,7 +17,7 @@ describe('settingsNav — a retired section id falls back to the first section',
     root = createRoot(host)
   })
 
-  it.each(['autopilot', 'bots'])(
+  it.each(['autopilot', 'bots', 'headless-roles'])(
     'a persisted `%s` id (from before the merge) loads as `appearance`, not itself',
     async (retired) => {
       localStorage.setItem(SECTION_KEY, retired)

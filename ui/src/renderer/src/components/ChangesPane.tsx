@@ -31,10 +31,9 @@ import { usePrSubscription, type PrState } from './git/usePrSubscription'
 import { useReviewSubscription, type ReviewNotice } from './git/useReviewSubscription'
 import { ReviewProviderModal } from './git/ReviewProviderModal'
 import { useGitToolsSubscription } from './git/useGitToolsSubscription'
-import { useGitWriter } from './git/useGitWriter'
 import { useGitErrorRouter } from './git/useGitErrorRouter'
 import { GitToolsBar } from './git/GitToolsBar'
-import { GenerateCommitButton, PullQuickButton, ToolsNoticeLine } from './git/ChangesControls'
+import { PullQuickButton, ToolsNoticeLine } from './git/ChangesControls'
 import { ScmNotice } from './git/ScmNotice'
 import { MARK_TONE, SCM_ROW_CLS, SECTION_HEAD_CLS } from './git/scmChrome'
 import { ConfirmModal } from './ConfirmModal'
@@ -96,7 +95,6 @@ function toEditorPath(dir: string, relPath: string): string {
 }
 
 type GitTools = ReturnType<typeof useGitToolsSubscription>
-type GitWriter = ReturnType<typeof useGitWriter>
 
 function prToneForSummary(pr: PrState | null): 'ok' | 'warn' | 'stop' {
   if (pr?.pr?.checks === 'failing') return 'stop'
@@ -126,8 +124,6 @@ function ChangesStrip({
   toolsError,
   behind,
   upstream,
-  offerCreatePr,
-  writer,
   onAddWorkspace
 }: {
   scope: 'working' | 'branch'
@@ -142,8 +138,6 @@ function ChangesStrip({
   toolsError: string | null
   behind: number
   upstream: string | null
-  offerCreatePr: boolean
-  writer: GitWriter
   onAddWorkspace: (path: string) => void
 }): React.JSX.Element {
   const labels = scopeLabels(defaultBase)
@@ -203,8 +197,6 @@ function ChangesStrip({
         behind={behind}
         upstream={upstream}
         fallbackBase={defaultBase}
-        offered={offerCreatePr}
-        writer={writer}
         onAddWorkspace={onAddWorkspace}
       />
     </div>
@@ -392,7 +384,6 @@ function ChangesFileList({
 function CommitBox({
   commitMsg,
   setCommitMsg,
-  writer,
   staged,
   client,
   pushBlocked,
@@ -408,7 +399,6 @@ function CommitBox({
 }: {
   commitMsg: string
   setCommitMsg: (message: string) => void
-  writer: GitWriter
   staged: number
   client: HoustonClient | null
   pushBlocked: string | null
@@ -434,12 +424,6 @@ function CommitBox({
           rows={2}
           className="flex-1 min-w-0 min-h-[var(--h-ctl)] resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-2)] py-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:border-[var(--border-focus)] focus-visible:outline-none"
         />
-        <GenerateCommitButton
-          staged={staged}
-          generating={writer.generatingCommit}
-          disabled={!client}
-          onClick={writer.generateCommit}
-        />
       </div>}
       <div data-testid="changes-actions" className="flex items-center gap-[var(--space-2)]">
         <span data-testid="changes-staged-count" className="font-mono text-[length:var(--tr-text-small-size)] text-[var(--text-faint)] whitespace-nowrap">
@@ -463,17 +447,6 @@ function CommitBox({
           </Tooltip>
           {offerCreatePr && (
             <>
-              <Tooltip label="Write the title and body with AI before opening" className="inline-flex">
-                <button
-                  className={`btn ${BTN_GHOST}`}
-                  data-testid="changes-create-pr-ai"
-                  aria-label="Write the pull request with AI"
-                  disabled={prBusy || !client}
-                  onClick={writer.openCompose}
-                >
-                  <Icon glyph={IconSparkles} role="small" />
-                </button>
-              </Tooltip>
               <button
                 className={`btn ${BTN_PRIMARY}`}
                 data-testid="changes-create-pr"
@@ -601,7 +574,6 @@ export function ChangesPane({
   const pendingPush = useRef<string | null>(null)
   const pendingReview = useRef<{ dir: string; agent: AgentKind } | null>(null)
   const pendingTools = useRef<string | null>(null)
-  const pendingCompose = useRef<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const pushAfterCommitRef = useRef(false)
   const onReviewPacketRef = useRef(onReviewPacket)
@@ -709,15 +681,6 @@ export function ChangesPane({
     pendingTools.current = null
   }, [repoDir])
 
-  const writer = useGitWriter({
-    client,
-    repoDir,
-    offered: pr?.gh === 'ready' && pr.hasUpstream && pr.pr === null,
-    pendingCompose,
-    onCommitMessage: (message) => setCommitMsg(message ?? ''),
-    onCommitError: setCommitError
-  })
-
   useGitErrorRouter({
     client,
     repoDir,
@@ -727,7 +690,6 @@ export function ChangesPane({
     pendingPush,
     pendingReview,
     pendingTools,
-    pendingCompose,
     pushAfterCommitRef,
     setReviewBusy,
     setReviewError,
@@ -737,8 +699,7 @@ export function ChangesPane({
     setPushing,
     setStatusError,
     setToolsBusy,
-    setToolsError,
-    claimComposeError: writer.composeFailed
+    setToolsError
   })
 
   useEffect(() => {
@@ -944,8 +905,6 @@ export function ChangesPane({
       toolsError={toolsError}
       behind={behind}
       upstream={upstream}
-      offerCreatePr={offerCreatePr}
-      writer={writer}
       onAddWorkspace={addWorkspace}
     />
   )
@@ -998,7 +957,6 @@ export function ChangesPane({
     <CommitBox
       commitMsg={commitMsg}
       setCommitMsg={setCommitMsg}
-      writer={writer}
       staged={staged}
       client={client}
       pushBlocked={pushBlocked}

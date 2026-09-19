@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 108;
+pub const PROTOCOL_VERSION: u32 = 109;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -1892,82 +1892,6 @@ impl ChatPermissionMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "snake_case")]
-pub enum ChatQuestionKind {
-    Choice,
-    Permission,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct ChatQuestionOption {
-    pub label: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct ChatQuestion {
-    pub id: String,
-    pub kind: ChatQuestionKind,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub header: Option<String>,
-    pub prompt: String,
-    pub options: Vec<ChatQuestionOption>,
-    pub multi_select: bool,
-    pub allow_free_text: bool,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub answered: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "snake_case")]
-pub enum HeadlessRoleKind {
-    /// The one-shot behind "write this with AI": commit messages and pull
-    /// request text, from a diff.
-    Writer,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct HeadlessEngineOption {
-    pub engine: AgentKind,
-    pub enabled: bool,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub reason: Option<String>,
-    pub verified: bool,
-    pub models: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct HeadlessRoleView {
-    pub role: HeadlessRoleKind,
-    pub engine: AgentKind,
-    pub engine_is_default: bool,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub model: Option<String>,
-    pub model_is_default: bool,
-    pub engines: Vec<HeadlessEngineOption>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct ChatUsage {
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub input_tokens: Option<u64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub output_tokens: Option<u64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub cost_usd: Option<f64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub duration_ms: Option<u64>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -2147,8 +2071,7 @@ pub enum ClientMsg {
         dir: String,
     },
     /// Opens the branch's pull request. `title`/`body` come from the compose
-    /// control (written by the writer model or typed); absent, `gh pr create
-    /// --fill` writes them from the commits.
+    /// control; absent, `gh pr create --fill` writes them from the commits.
     PrCreate {
         dir: String,
         #[serde(default)]
@@ -2411,19 +2334,6 @@ pub enum ClientMsg {
         dir: String,
         #[serde(rename = "ref")]
         r#ref: String,
-    },
-    /// Writes a commit message from the staged diff with the writer model; the
-    /// reply is a suggestion the user edits before committing.
-    GitCommitMessage {
-        dir: String,
-    },
-    /// Writes a pull request title and body from the branch's commits against
-    /// `base` (the default branch when absent).
-    GitPrContent {
-        dir: String,
-        #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        base: Option<String>,
     },
     HistoryClear {
         #[serde(default)]
@@ -2702,14 +2612,6 @@ pub enum ClientMsg {
     OrchestrationCapsSet {
         max_live_children: u32,
         max_spawn_depth: u32,
-    },
-    HeadlessRolesGet,
-    HeadlessRoleSet {
-        role: HeadlessRoleKind,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        engine: Option<AgentKind>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-        model: Option<String>,
     },
     CommandHistoryIgnoreGlobsGet,
     CommandHistoryIgnoreGlobsSet {
@@ -3022,22 +2924,6 @@ pub enum ServerMsg {
         dir: String,
         summary: String,
     },
-    GitCommitMessage {
-        dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        message: Option<String>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        error: Option<String>,
-    },
-    GitPrContent {
-        dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        title: Option<String>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        body: Option<String>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
-        error: Option<String>,
-    },
     AgentDetected {
         session: u32,
         agent: AgentKind,
@@ -3232,9 +3118,6 @@ pub enum ServerMsg {
     },
     CommandHistoryIgnoreGlobs {
         globs: Vec<String>,
-    },
-    HeadlessRoles {
-        writer: HeadlessRoleView,
     },
     UsageSummary {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]

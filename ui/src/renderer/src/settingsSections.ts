@@ -9,7 +9,6 @@ export type SettingsSectionId =
   | 'agent-setup'
   | 'workspace-defaults'
   | 'orchestration'
-  | 'headless-roles'
   | 'voice'
   | 'privacy'
   | 'usage'
@@ -25,7 +24,6 @@ export type SettingsIconKey =
   | 'user'
   | 'folder'
   | 'fork'
-  | 'sparkles'
   | 'mic'
   | 'database'
   | 'chart'
@@ -127,16 +125,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     keywords: [
       'spawn', 'spawning', 'agent spawns agent', 'children', 'child panes', 'depth',
       'hs-pane', 'caps', 'mailbox'
-    ]
-  },
-  {
-    id: 'headless-roles',
-    label: "Houston's own agents",
-    icon: 'sparkles',
-    group: 'agents',
-    keywords: [
-      'writer', 'write with ai', 'commit message', 'pull request', 'headless',
-      'engine', 'model'
     ]
   },
   {

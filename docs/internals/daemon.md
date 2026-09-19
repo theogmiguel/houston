@@ -49,7 +49,6 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | | `mcp.rs` | Reading four CLIs' MCP server lists into one comparable shape |
 | | `scope.rs` | The swarm scope directory: on-disk layout, atomic writes, mail message file format |
 | | `handoff.rs` | Handoff context curation and prompt assembly |
-| headless | `headless/` | The `HeadlessEngine` seam every headless caller drives: `claude.rs`, `codex.rs`, `acp.rs` (with `opencode.rs`/`grok.rs` as rows over it), `one_shot`; `shared.rs` holds the adapter plumbing and the engine-support table every engine reads |
 | | `agent_accounts.rs` | Account/config-dir path helpers |
 | | `skill_sync.rs` | Which skills each CLI can see |
 | | `routines.rs` | Routines — the pure half of the routine record |
@@ -409,56 +408,6 @@ pane is observed through its `RoutineRun` row and can be opened from the routine
   without one is refused by name. Full access is only valid with an isolated worktree.
 - A provider or launch combination that cannot open a pane is refused by name before a session
   is made (`EngineRefused`).
-
-## Headless engines
-
-Everything that runs an agent with no PTY — a routine run, the Writer role, a one-shot
-call — goes through one seam, `headless::HeadlessEngine`:
-`program` (the binary), `argv`, `stdin`, `decode` (one stdout line → `Decoded` events, the
-same enum for every engine), `reply` (how a pending question is answered on that wire), and
-for request/response wires `outbound` (lines queued after a decode) with `stdin_stays_open`.
-`engine_for(kind)` is the registry and the only source of `EngineSupport.can_chat`; a
-kind it does not know is refused by name in `headless::shared::engine_support`, per engine,
-and the refusal names that engine.
-
-- **Claude** wraps the stream-json argv, framing and decoder in `headless/shared.rs`;
-  permissions ride the `--permission-prompt-tool` MCP call. Stdin is written once and
-  closed.
-- **Codex** is `codex exec --json` with the prompt on argv. `exec` never prompts, so the
-  request's permission mode maps to a sandbox: `workspace-write` for accept edits (and for
-  ask, which is not representable), `danger-full-access` for bypass, `read-only` for a
-  one-shot call. `exec resume <id>` takes neither cwd nor sandbox. The purpose briefing
-  and Houston's MCP tools both ride `-c key=value` config overrides, which live and die
-  with the process: `developer_instructions` adds the briefing as a developer message
-  beside Codex's own base instructions (`model_instructions_file` would replace them), and
-  `mcp_servers.<name>.url`/`.bearer_token_env_var` are the same overrides a Codex *pane* is
-  spawned with.
-- **OpenCode and Grok** speak ACP. The engine writes `initialize` and `session/new` (or
-  `session/load`), queues `session/prompt` when the session id arrives, and answers
-  `session/request_permission` itself in accept-edits/bypass/one-shot mode; in ask mode the
-  question becomes a card and the reply is written back. A refused `session/load` falls back
-  to a fresh session in the same turn. This outbound ACP is headless-only; panes keep
-  `acp.rs`'s read-only behaviour.
-- **Antigravity and Cursor** are pane-only, refused by name with the sentences
-  `engine_support` gives each engine.
-
-A **one-shot** call (`TurnRequest.one_shot`) is the read-only, no-tool shape the Writer
-role uses: Claude gets `HEADLESS_ISOLATION_ARGS` (`--strict-mcp-config --mcp-config
-'{"mcpServers":{}}' --tools ""` — measured at 46,014 input tokens un-isolated against
-20,159 isolated, for the same answer), Codex gets `-s read-only`, and an ACP engine's
-permission request is answered with its reject option. Every headless child also has
-`PANE_IDENTITY_ENV` stripped (`headless::strip_pane_identity_env`): the two session ids
-and the three `mcp_launch` credential vars, so a daemon dogfooded inside a pane neither
-attributes its child's hooks to the outer pane nor lets the child authenticate as it.
-
-Each decoder is tested against recorded CLI stdout under `tests/fixtures/headless/<engine>/`
-(`.ndjson`, with a README naming the source). Codex, OpenCode and Grok ship hand-written
-fixtures from the vendors' documented streams and are marked *not verified* until a real
-recording lands; `docs/operations/release.md` carries the recording step.
-
-The one role with no creation moment — the Writer — has one engine + model row in
-Settings ("Houston's own agents"); a routine picks its engine where it is created.
-`run_chat_turn` resolves the engine's own binary.
 
 ## Settings and logging
 

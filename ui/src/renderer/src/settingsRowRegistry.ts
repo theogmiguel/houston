@@ -30,7 +30,6 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
     'Enable orchestration',
     'Mailbox retention'
   ],
-  'headless-roles': ['Writer'],
   voice: [
     'Groq API key',
     'Enable dictation',

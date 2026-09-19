@@ -91,8 +91,6 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
     historyCount: null,
     onClearHistory: () => {},
     historyIgnoreGlobs: null,
-    headlessWriter: null,
-    onHeadlessRoleSet: () => {},
     onHistoryIgnoreGlobsSet: () => {},
     onOpenLogsFolder: () => {},
     onContact: () => {},
@@ -120,7 +118,7 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
   }
 }
 
-function openSection(id: 'terminal' | 'voice' | 'appearance' | 'headless-roles'): void {
+function openSection(id: 'terminal' | 'voice' | 'appearance' | 'agent-setup'): void {
   act(() => setSettingsNavForTests({ section: id }))
 }
 
@@ -170,7 +168,7 @@ describe('SettingsView — every picker composes SELECT_CLS (dropdown-01)', () =
     act(() => {
       root.render(<SettingsView {...baseProps()} />)
     })
-    for (const id of ['appearance', 'terminal', 'voice', 'headless-roles'] as const) {
+    for (const id of ['appearance', 'terminal', 'voice', 'agent-setup'] as const) {
       act(() => setSettingsNavForTests({ section: id }))
       expect(container.querySelectorAll('select'), `native <select> in ${id}`).toHaveLength(0)
     }
