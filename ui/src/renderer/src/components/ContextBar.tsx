@@ -94,7 +94,7 @@ export function ContextBar({
             <i
               key={i}
               aria-hidden
-              className={`block h-[8px] w-[4px] rounded-[1px] ${
+              className={`block h-[8px] w-[4px] ${
                 i < filled ? 'bg-[var(--accent)]' : 'bg-[var(--divider)]'
               }`}
             />

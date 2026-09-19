@@ -1,10 +1,6 @@
-//! Claude context occupancy, read from the CLI's own transcript.
-//!
-//! The daemon learns a session's transcript path from the hook payload it
-//! already receives. This module turns the tail of that file into a used-token
-//! count and, from the model id, a window denominator. It never reads terminal
-//! output and never retains prompt or tool text: only integers, the model id
-//! and the reset flag cross this boundary.
+//! Claude context occupancy, read from the CLI's own transcript. The daemon
+//! learns the path from the hook payload it already receives; only integers,
+//! the model id and the reset flag cross this boundary.
 
 use std::path::Path;
 
@@ -27,11 +23,9 @@ pub fn read_claude_context(path: &Path) -> Option<ClaudeReading> {
     latest_claude_reading(&contents)
 }
 
-/// Scan transcript JSONL and return the newest usage or compaction event.
-///
-/// Claude writes one record per assistant content block, each repeating the
-/// whole message's `usage`; the last one is what a re-send occupies, so there is
-/// no summing here.
+/// Scan transcript JSONL for the newest usage or compaction event. Claude
+/// repeats one message's `usage` across its content blocks, so the last record
+/// is the occupancy and there is no summing here.
 pub fn latest_claude_reading(contents: &str) -> Option<ClaudeReading> {
     // Newest event wins, and it is near the end: scan backwards and stop at the
     // first matching record, so a large tail costs a substring scan, not a full

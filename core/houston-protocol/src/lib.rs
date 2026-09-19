@@ -788,11 +788,8 @@ pub enum ContextSource {
     Derived,
 }
 
-// A session's context-window occupancy, reported per provider. `used_tokens` is
-// the input side of the most recent turn (input + cache read + cache write);
-// output is excluded, matching the share of the window a re-send occupies. A
-// provider with no readable signal carries `state: Unknown` and the UI says so
-// rather than showing a zero.
+// A session's context-window occupancy. `used_tokens` is the input side of the
+// most recent turn; a provider with no readable signal carries `state: Unknown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionContext {

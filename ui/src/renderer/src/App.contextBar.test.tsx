@@ -45,6 +45,8 @@ describe('context downbar visibility', () => {
     expect(downbar).not.toBeNull()
     expect(downbar!.className).toContain('[grid-area:downbar]')
     expect(shell?.style.gridTemplateRows).toContain('var(--h-downbar)')
+    expect(shell?.style.gridTemplateAreas).toBe('"rail topbar" "rail grid" "rail downbar"')
+    expect(shell?.style.gridTemplateColumns).toContain('var(--w-rail)')
 
     act(() => setContextBarVisible(false))
 
