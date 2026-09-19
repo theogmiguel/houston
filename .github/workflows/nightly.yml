@@ -79,9 +79,11 @@ jobs:
           # The most recent stable bounds the generated notes; with no stable tag
           # yet, GitHub starts from the repository's first commit.
           previous_tag=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "sha=$sha"
+            echo "version=$version"
+            echo "previous_tag=$previous_tag"
+          } >> "$GITHUB_OUTPUT"
           echo "nightly version: $version (notes since ${previous_tag:-the first commit})"
 
       - name: Record job timing

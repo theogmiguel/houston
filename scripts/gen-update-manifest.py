@@ -30,6 +30,8 @@ ARCHES = {
     "i686": "i686",
     "i386": "i686",
 }
+EXPECTED_LINUX_ARCHES = {"x86_64", "aarch64"}
+EXPECTED_WINDOWS_ARCHES = {"x86_64"}
 
 # Order matters: the .tar.gz suffix is the AppImage updater payload in Tauri's
 # v1-compatible mode and would otherwise be read as an unknown artifact.
@@ -37,24 +39,24 @@ BUNDLES = (
     (
         "appimage_tar",
         re.compile(
-            r"^(?P<stem>.+)_(?P<version>[^_]+)_(?P<arch>amd64|aarch64|armv7|i686)\.AppImage\.tar\.gz$"
+            r"^Houston_(?P<version>[^_]+)_(?P<arch>amd64|aarch64|armv7|i686)\.AppImage\.tar\.gz$"
         ),
     ),
     (
         "appimage",
         re.compile(
-            r"^(?P<stem>.+)_(?P<version>[^_]+)_(?P<arch>amd64|aarch64|armv7|i686)\.AppImage$"
+            r"^Houston_(?P<version>[^_]+)_(?P<arch>amd64|aarch64|armv7|i686)\.AppImage$"
         ),
     ),
     (
         "deb",
         re.compile(
-            r"^(?P<stem>.+)_(?P<version>[^_]+)_(?P<arch>amd64|arm64|i386|armhf)\.deb$"
+            r"^Houston_(?P<version>[^_]+)_(?P<arch>amd64|arm64|i386|armhf)\.deb$"
         ),
     ),
     (
         "nsis",
-        re.compile(r"^(?P<stem>.+)_(?P<version>[^_]+)_(?P<arch>x64|arm64)-setup\.exe$"),
+        re.compile(r"^Houston_(?P<version>[^_]+)_(?P<arch>x64|arm64)-setup\.exe$"),
     ),
 )
 
@@ -129,7 +131,7 @@ def collect(
         if found is None:
             raise Refused(
                 f"unrecognised artifact {path.name}; expected only Houston_<version>_<arch>.AppImage, "
-                f"houston_<version>_<arch>.deb, Houston_<version>_<arch>-setup.exe, their .sig files, and nothing else"
+                f"Houston_<version>_<arch>.deb, Houston_<version>_<arch>-setup.exe, their .sig files, and nothing else"
             )
         kind, file_version, arch = found
         if file_version != artifact_version:
@@ -164,20 +166,26 @@ def collect(
             f"signature without a bundle: {', '.join(orphan_sigs)}.sig; the artifact set is incomplete"
         )
 
-    missing = []
-    if not linux:
-        missing.append("the Linux bundles")
-    for arch in sorted(linux):
+    problems = []
+    for arch in sorted(EXPECTED_LINUX_ARCHES - linux.keys()):
+        problems.append(f"missing the Linux bundles for {arch}")
+    for arch in sorted(EXPECTED_LINUX_ARCHES & linux.keys()):
         by_kind = linux[arch]
         if not {"appimage", "appimage_tar"} & by_kind.keys():
-            missing.append(f"the Linux AppImage for {arch}")
+            problems.append(f"missing the Linux AppImage for {arch}")
         if "deb" not in by_kind:
-            missing.append(f"the Linux .deb for {arch}")
-    if not windows:
-        missing.append("the Windows NSIS setup .exe")
-    if missing:
+            problems.append(f"missing the Linux .deb for {arch}")
+    for arch in sorted(EXPECTED_WINDOWS_ARCHES - windows.keys()):
+        problems.append(f"missing the Windows NSIS setup .exe for {arch}")
+    unexpected_linux = sorted(linux.keys() - EXPECTED_LINUX_ARCHES)
+    unexpected_windows = sorted(windows.keys() - EXPECTED_WINDOWS_ARCHES)
+    if unexpected_linux:
+        problems.append(f"unsupported Linux architecture(s) {', '.join(unexpected_linux)}")
+    if unexpected_windows:
+        problems.append(f"unsupported Windows architecture(s) {', '.join(unexpected_windows)}")
+    if problems:
         raise Refused(
-            f"missing {', '.join(missing)}; a release carries every platform's bundle"
+            f"invalid artifact set: {', '.join(problems)}; a release carries every official platform's bundle"
         )
     return linux, windows
 

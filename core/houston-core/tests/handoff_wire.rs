@@ -74,7 +74,7 @@ async fn handoff_streams_chunks_and_persists_markdown() {
     .await
     .unwrap();
     let source = expect_created(&mut ws).await.id;
-    collect_output_until(&mut ws, source, "the-source-history").await;
+    attach_and_collect_output_until(&mut ws, source, "the-source-history").await;
 
     let prompt_ps1 = project.path().join("gen.ps1");
     #[cfg(unix)]
@@ -172,7 +172,7 @@ async fn failed_generator_reports_an_error_naming_it() {
     .await
     .unwrap();
     let source = expect_created(&mut ws).await.id;
-    collect_output_until(&mut ws, source, "src").await;
+    attach_and_collect_output_until(&mut ws, source, "src").await;
 
     #[cfg(unix)]
     let gen: Vec<&str> = vec!["sh", "-c", "echo boom-details >&2; exit 3", "sh"];
@@ -214,7 +214,7 @@ async fn cancel_delivers_sigint_before_the_kill() {
     .await
     .unwrap();
     let source = expect_created(&mut ws).await.id;
-    collect_output_until(&mut ws, source, "src").await;
+    attach_and_collect_output_until(&mut ws, source, "src").await;
 
     let marker = project.path().join("got-sigint");
     let script = format!(
@@ -270,7 +270,7 @@ async fn cancel_kills_the_generator() {
     .await
     .unwrap();
     let source = expect_created(&mut ws).await.id;
-    collect_output_until(&mut ws, source, "src").await;
+    attach_and_collect_output_until(&mut ws, source, "src").await;
 
     #[cfg(unix)]
     let gen: Vec<&str> = vec!["sh", "-c", "echo started; sleep 600", "sh"];

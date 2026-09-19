@@ -29,6 +29,7 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
       previous_tag: ${{ steps.check.outputs.previous_tag }}
+      managed_by_cut: ${{ steps.check.outputs.managed_by_cut }}
       tauri_cli_version: ${{ steps.pin.outputs.tauri_cli_version }}
     steps:
       - name: Record start time
@@ -67,13 +68,24 @@ jobs:
               exit 1
             fi
           fi
+          managed_by_cut=false
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$(git cat-file -t "$GITHUB_REF_NAME")" = "tag" ]; then
+            tag_message=$(git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME")
+            if grep -qx 'Managed-By: cut-release' <<< "$tag_message"; then
+              managed_by_cut=true
+              echo "the Cut release run owns the builds and publication for $GITHUB_REF_NAME"
+            fi
+          fi
           # The four above are what the bundle filenames read; both lockfiles
           # carry the workspace crates' own versions and must move with them.
           ./scripts/set-version.sh --check "$conf"
           previous=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vFx "v$conf" | sort -V | tail -n1 || true)
           echo "previous stable tag: ${previous:-none}"
-          echo "version=$conf" >> "$GITHUB_OUTPUT"
-          echo "previous_tag=$previous" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$conf"
+            echo "previous_tag=$previous"
+            echo "managed_by_cut=$managed_by_cut"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Require the updater signing secrets for a real release
         if: github.ref_type == 'tag' && inputs.dry_run != true
@@ -103,6 +115,7 @@ jobs:
 
   linux-bundle:
     needs: version-guard
+    if: needs.version-guard.outputs.managed_by_cut != 'true'
     uses: ./.github/workflows/release-linux.yml
     with:
       version: ${{ needs.version-guard.outputs.version }}
@@ -112,6 +125,7 @@ jobs:
 
   windows-bundle:
     needs: version-guard
+    if: needs.version-guard.outputs.managed_by_cut != 'true'
     uses: ./.github/workflows/release-windows.yml
     with:
       version: ${{ needs.version-guard.outputs.version }}
@@ -123,7 +137,7 @@ jobs:
 
   publish:
     needs: [version-guard, linux-bundle, windows-bundle]
-    if: github.ref_type == 'tag' && inputs.dry_run != true
+    if: needs.version-guard.outputs.managed_by_cut != 'true' && github.ref_type == 'tag' && inputs.dry_run != true
     uses: ./.github/workflows/release-publish.yml
     with:
       tag: ${{ github.ref_name }}

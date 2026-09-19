@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 #![allow(dead_code)]
 
+use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use houston_core::daemon::{Daemon, DaemonConfig};
 use houston_core::server;
@@ -104,8 +105,31 @@ pub async fn next_control(ws: &mut WsStream) -> proto::ServerMsg {
 }
 
 pub async fn collect_output_until(ws: &mut WsStream, session: u32, needle: &str) -> String {
+    collect_output(ws, session, needle, false).await
+}
+
+pub async fn attach_and_collect_output_until(
+    ws: &mut WsStream,
+    session: u32,
+    needle: &str,
+) -> String {
+    collect_output(ws, session, needle, true).await
+}
+
+async fn collect_output(ws: &mut WsStream, session: u32, needle: &str, attach: bool) -> String {
     const BUDGET: Duration = Duration::from_secs(15);
+    if attach {
+        let message = serde_json::to_string(&proto::ClientMsg::SessionAttach {
+            session,
+            replay_bytes: None,
+            snapshot: Some(false),
+        })
+        .unwrap();
+        ws.send(Message::text(message)).await.unwrap();
+    }
+
     let mut acc = String::new();
+    let mut replay_received = !attach;
     let deadline = tokio::time::Instant::now() + BUDGET;
     loop {
         let Some(remaining) = deadline.checked_duration_since(tokio::time::Instant::now()) else {
@@ -122,11 +146,31 @@ pub async fn collect_output_until(ws: &mut WsStream, session: u32, needle: &str)
             ),
         };
         match frame.expect("socket closed").expect("socket error") {
+            Message::Text(text) => {
+                let msg: proto::ServerMsg = serde_json::from_str(&text).unwrap();
+                if let proto::ServerMsg::Scrollback {
+                    session: replay_session,
+                    data,
+                    ..
+                } = msg
+                {
+                    if replay_session == session {
+                        let bytes = base64::engine::general_purpose::STANDARD
+                            .decode(data)
+                            .unwrap();
+                        acc.push_str(&String::from_utf8_lossy(&bytes));
+                        replay_received = true;
+                        if acc.contains(needle) {
+                            return acc;
+                        }
+                    }
+                }
+            }
             Message::Binary(buf) => {
                 if let Some((id, _offset, payload)) = proto::decode_output_frame(&buf) {
                     if id == session {
                         acc.push_str(&String::from_utf8_lossy(payload));
-                        if acc.contains(needle) {
+                        if replay_received && acc.contains(needle) {
                             return acc;
                         }
                     }

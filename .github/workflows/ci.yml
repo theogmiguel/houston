@@ -10,7 +10,7 @@ on:
     # Push only, not pull_request: once these four jobs are required checks, a
     # docs-only PR that skipped them via paths-ignore could never satisfy a
     # required check and would never merge.
-    paths-ignore: &docs_only
+    paths-ignore:
       - '**/*.md'
       - 'docs/**'
       - '.gitignore'
@@ -175,7 +175,7 @@ jobs:
       # Same pinned tarball + Zig build.rs step release.yml's linux-bundle job
       # caches, scoped to core/ only — src-tauri isn't built here.
       - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: core/target/ghostty-vt
           key: ghostty-vt-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock') }}
@@ -188,6 +188,7 @@ jobs:
       # Linux gate uses. No oom-shield here — that's a local-machine concern.
       - name: cargo test --lib
         run: |
+          # shellcheck disable=SC2016
           dbus-run-session -- bash -c '
             eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
             cargo test --lib --manifest-path core/Cargo.toml'

@@ -87,9 +87,11 @@ jobs:
             echo "::error::ref resolves to $cut_sha but origin/main is $main_sha -- a stable release is cut from the tip of main and nothing else; only a release candidate may come off a side ref"
             exit 1
           fi
-          echo "MOVE_MAIN=$MOVE_MAIN" >> "$GITHUB_ENV"
-          echo "CUT_SHA=$cut_sha" >> "$GITHUB_ENV"
-          echo "MAIN_SHA=$main_sha" >> "$GITHUB_ENV"
+          {
+            echo "MOVE_MAIN=$MOVE_MAIN"
+            echo "CUT_SHA=$cut_sha"
+            echo "MAIN_SHA=$main_sha"
+          } >> "$GITHUB_ENV"
 
       - name: Compute the next version
         id: version
@@ -164,9 +166,11 @@ jobs:
             exit 1
           fi
           echo "previous tag for the generated notes: ${previous_tag:-none}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "previous_tag=$previous_tag"
+          } >> "$GITHUB_OUTPUT"
           echo "next version: $version (tag $tag)"
 
       - uses: dtolnay/rust-toolchain@stable
@@ -186,7 +190,7 @@ jobs:
           git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
             src-tauri/Cargo.lock ui/package.json core/Cargo.toml core/Cargo.lock
           git commit -m "release: v$VERSION"
-          git tag -m "release: v$VERSION" "v$VERSION"
+          git tag -m "release: v$VERSION" -m "Managed-By: cut-release" "v$VERSION"
 
       - name: Push the commit and the tag
         env:
@@ -195,10 +199,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$MOVE_MAIN" = "1" ]; then
-            # HEAD is a child of main's tip, so this only moves main forward and
-            # never rewrites it.
-            git push origin HEAD:main
-            git push origin "$TAG"
+            # Atomic keeps a rejected tag from leaving main on a release commit
+            # that no tag names, or vice versa.
+            git push --atomic origin HEAD:main "$TAG"
           else
             git push origin "$TAG"
             {
