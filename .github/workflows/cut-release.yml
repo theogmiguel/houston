@@ -195,7 +195,7 @@ jobs:
           git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
             src-tauri/Cargo.lock ui/package.json core/Cargo.toml core/Cargo.lock
           git commit -m "release: v$VERSION"
-          git tag -m "release: v$VERSION" -m "Managed-By: cut-release" "v$VERSION"
+          git tag -m "release: v$VERSION" "v$VERSION"
 
       - name: Push the commit and the tag
         env:
@@ -251,9 +251,8 @@ jobs:
     secrets: inherit
 
   publish:
-    # A tag pushed with this workflow's own GITHUB_TOKEN does not start another
-    # workflow, by GitHub's loop prevention -- so a run that only pushed a tag
-    # would silently build nothing. This job builds and publishes itself instead.
+    # The cut builds and publishes its own tag: no other workflow watches for
+    # the push, so a run that stopped after the push would ship nothing.
     needs: [prepare, linux-bundle, windows-bundle]
     if: >-
       always() &&

@@ -1,0 +1,94 @@
+name: Build installers
+
+# Manual only, and it files nothing: a dry run of the bundle pipeline. `ci.yml`
+# never builds an installer, so this is the only way to exercise the bundle
+# builds without cutting a version.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to build'
+        type: string
+        default: 'main'
+        required: true
+
+permissions:
+  contents: read
+
+# Version-PINNED, not a caret range — an unpinned CLI would change the bundle
+# under us. The one source of truth; a job output (below) is the only way to
+# hand it to a called workflow, since a reusable workflow's `with:` can't resolve `env`.
+env:
+  TAURI_CLI_VERSION: 2.11.4
+
+jobs:
+  version-guard:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tauri_cli_version: ${{ steps.pin.outputs.tauri_cli_version }}
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - id: pin
+        run: echo "tauri_cli_version=$TAURI_CLI_VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - id: check
+        run: |
+          set -euo pipefail
+          conf=$(jq -r .version src-tauri/tauri.conf.json)
+          crate=$(sed -n '0,/^version = /s/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml)
+          ui=$(jq -r .version ui/package.json)
+          # Scoped to the [workspace.package] table: core/Cargo.toml also
+          # carries `version = ` lines under [workspace.dependencies], and an
+          # unscoped first-match read picks up whichever comes first.
+          core=$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version = /{gsub(/^version = "|"$/,""); print; exit}' core/Cargo.toml)
+          echo "tauri.conf.json=$conf  src-tauri/Cargo.toml=$crate  ui/package.json=$ui  core/Cargo.toml=$core"
+          if [ -z "$conf" ] || [ -z "$crate" ] || [ -z "$ui" ] || [ -z "$core" ]; then
+            echo "::error::a manifest version came back empty -- expected a semver string in each of the four (got tauri.conf.json='$conf' src-tauri/Cargo.toml='$crate' ui/package.json='$ui' core/Cargo.toml='$core')"
+            exit 1
+          fi
+          if [ "$conf" != "$crate" ] || [ "$conf" != "$ui" ] || [ "$conf" != "$core" ]; then
+            echo "::error::version mismatch across the four manifests (tauri.conf.json=$conf src-tauri/Cargo.toml=$crate ui/package.json=$ui core/Cargo.toml=$core) -- they must agree before a release"
+            exit 1
+          fi
+          # The four above are what the bundle filenames read; both lockfiles
+          # carry the workspace crates' own versions and must move with them.
+          ./scripts/set-version.sh --check "$conf"
+          echo "version=$conf" >> "$GITHUB_OUTPUT"
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| version-guard | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  linux-bundle:
+    needs: version-guard
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      ref: ${{ inputs.ref }}
+      version: ${{ needs.version-guard.outputs.version }}
+      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      # This workflow files nothing, so signing is never required; the bundle
+      # workflow still signs when the updater key happens to be present.
+      require_signing: false
+    secrets: inherit
+
+  windows-bundle:
+    needs: version-guard
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      ref: ${{ inputs.ref }}
+      version: ${{ needs.version-guard.outputs.version }}
+      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      require_signing: false
+    secrets: inherit

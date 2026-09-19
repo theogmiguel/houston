@@ -17,10 +17,11 @@ ships anything:
   [`docs/operations/development.md`](development.md). `ci.yml` never builds
   an installer and never reads or bumps a version. Push to `main` as often as
   you like; no release comes out of it.
-- **`release.yml`** is the release. It runs only on a `v*` tag push, or by
-  hand (`gh workflow run release.yml`, `dry_run=true` builds without filing a
-  release). It builds both Linux architectures (x86_64 and aarch64) and the
-  Windows NSIS installer, then files a **draft** GitHub Release.
+- **`build-installers.yml`** is the manual dry run. It builds both Linux
+  architectures (x86_64 and aarch64) and the Windows NSIS installer from any
+  ref you name (`gh workflow run build-installers.yml`), and files nothing:
+  `ci.yml` never builds an installer, so this is the only way to exercise the
+  bundle pipeline without cutting a version.
 - **`release-publish.yml`** is the one place that files a release, called by
   every release workflow. It refuses a bundle set that is missing an artifact
   or its `.sig`, generates the release notes once and reuses them, and writes
@@ -51,8 +52,8 @@ commit, not from a version number nobody can install.
 
 ## Versions
 
-Four files carry the version, and `release.yml`'s `version-guard` job checks
-they agree before anything builds:
+Four files carry the version, and `build-installers.yml`'s `version-guard` job
+checks they agree before it builds anything:
 
 - `src-tauri/tauri.conf.json` (`.version`) — the bundle filenames and the
   deb/NSIS metadata come from here
@@ -169,14 +170,9 @@ smoke-tests it). Publishing a candidate as a normal release would make
 `kind` that was asked for — or, for a hand-pushed `v*-rc.*` tag, the version's
 own `-rc.` suffix.
 
-**Why the tag carries a workflow marker:** Cut release pushes through its
-deploy key so it can update protected `main`. Unlike `GITHUB_TOKEN`, that push
-does trigger `release.yml`. The annotated tag therefore carries
-`Managed-By: cut-release`; the triggered workflow verifies the tag and exits,
-while the Cut release run owns the one set of builds and the publication.
-
-`release.yml` is still there and still fires on a `v*` tag pushed by a person,
-which is the path a release cut by hand takes.
+Cut release pushes through its deploy key so it can update protected `main`.
+Nothing watches the pushed tag: the run itself builds the bundles and files the
+release.
 
 Pushing a `v*` tag triggers a real run, so don't push one before you mean it.
 To exercise the build without cutting a release, run the workflow from the
@@ -187,9 +183,8 @@ workflows run and upload their artifacts, and `publish` is skipped.
 
 | File | Holds | Trigger |
 |---|---|---|
-| `release.yml` | `version-guard`, the two `workflow_call`s, `publish` | `v*` tag, or manual |
+| `build-installers.yml` | `version-guard`, the two `workflow_call`s | manual |
 | `cut-release.yml` | `prepare` (version, commit, tag, push), the two `workflow_call`s, `publish` | manual |
-| `nightly.yml` | `guard`, the two `workflow_call`s, `roll`, `publish` | schedule, or manual |
 | `release-linux.yml` | the AppImage and `.deb` bundle jobs, one per architecture, plus the headless AppImage smoke matrix | `workflow_call` only |
 | `release-windows.yml` | the NSIS `.exe` bundle job | `workflow_call` only |
 | `release-publish.yml` | the `publish` job all three callers share | `workflow_call` only |

@@ -119,8 +119,8 @@ The [development runbook](docs/operations/development.md) contains exact command
   all four manifests and both lockfiles, commit, tag, build and create a draft release.
   Stable cuts require the tip of `main`, an unused tag and a version newer than the last
   stable release. See the [release runbook](docs/operations/release.md).
-- A manually pushed `v*` tag triggers `release.yml`; `nightly.yml` maintains a daily
-  prerelease from `main`. Push a tag only when a release is intended.
+- A manually pushed `v*` tag starts no workflow; releases are produced only by **Cut
+  release**. `build-installers.yml` builds both OSes and files nothing.
 
 ## Documentation
 
