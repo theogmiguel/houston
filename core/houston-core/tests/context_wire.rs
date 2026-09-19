@@ -204,6 +204,36 @@ mod context_downbar {
     }
 
     #[tokio::test]
+    async fn non_claude_provider_stays_not_tracked() {
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, dir) = a_pane(&daemon);
+
+        let t = transcript(
+            dir.path(),
+            "sess.jsonl",
+            &[
+                r#"{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":50000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}"#,
+            ],
+        );
+        let d = HookDrop {
+            agent: Some("codex".into()),
+            transcript_path: Some(t.display().to_string()),
+            ..drop_for("Stop", info.id)
+        };
+        drop_and_await_apply(state.path(), &d).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let listed = daemon.list();
+        let row = listed.iter().find(|s| s.id == info.id).unwrap();
+        assert!(
+            row.context.is_none(),
+            "a non-Claude pane carries no context, even with a readable transcript"
+        );
+
+        daemon.kill(info.id).ok();
+    }
+
+    #[tokio::test]
     async fn transcript_read_keeps_no_text() {
         let (_addr, state, daemon) = start_daemon_with_handle().await;
         let (info, dir) = a_pane(&daemon);

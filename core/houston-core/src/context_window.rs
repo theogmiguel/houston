@@ -147,7 +147,15 @@ fn read_tail(path: &Path, max: u64) -> Option<String> {
         return Some(text);
     }
     // The window may have split a line; drop the leading partial one.
-    text.find('\n').map(|pos| text[pos + 1..].to_string())
+    Some(drop_leading_partial(&text))
+}
+
+/// A tail that begins mid-line: everything after the first newline, or empty
+/// when the window holds no complete line.
+fn drop_leading_partial(text: &str) -> String {
+    text.find('\n')
+        .map(|pos| text[pos + 1..].to_string())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -210,9 +218,52 @@ mod tests {
     }
 
     #[test]
+    fn window_table_is_table_driven() {
+        let one_million = [
+            "claude-fable-5-1",
+            "claude-mythos-5-1",
+            "claude-fable-5",
+            "claude-mythos-5",
+            "claude-opus-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-sonnet-5",
+            "claude-sonnet-4-6",
+        ];
+        for model in one_million {
+            assert_eq!(model_window(model), Some(1_000_000), "{model}");
+        }
+        assert_eq!(model_window("claude-sonnet-4-5"), Some(200_000));
+        assert_eq!(model_window("gpt-5.6-sol"), None);
+    }
+
+    #[test]
     fn unknown_model_has_no_percentage() {
         assert_eq!(model_window("gpt-5.6-sol"), None);
         assert_eq!(model_window(""), None);
+    }
+
+    #[test]
+    fn absence_paths_return_none() {
+        assert!(latest_claude_reading("").is_none());
+        assert!(latest_claude_reading(r#"{"type":"user","message":{}}"#).is_none());
+        assert!(
+            latest_claude_reading(r#"{"type":"assistant","message":{"model":"m"}}"#).is_none(),
+            "an assistant record with no usage is not a reading"
+        );
+        assert!(
+            latest_claude_reading(r#"{"type":"system","subtype":"compact_boundary"}"#).is_none(),
+            "a boundary with no postTokens is not a reading"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_claude_context(&dir.path().join("missing.jsonl")).is_none());
+    }
+
+    #[test]
+    fn partial_first_line_is_dropped() {
+        assert_eq!(drop_leading_partial("alf-line\n{\"ok\":1}"), "{\"ok\":1}");
+        assert_eq!(drop_leading_partial("no newline here"), "");
     }
 
     #[test]

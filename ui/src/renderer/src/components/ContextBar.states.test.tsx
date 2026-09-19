@@ -23,10 +23,24 @@ const NON_CLAUDE = ['codex', 'cursor', 'grok', 'opencode', 'antigravity'] as con
 describe('context downbar', () => {
   it('renders the context strings without motion', () => {
     render(<ContextBar context={ctx()} />)
+    expect(screen.getByText('Context')).toBeTruthy()
     expect(screen.getByTestId('context-readout').textContent).toBe('150.0k / 200.0k (75%)')
     const meter = screen.getByTestId('context-meter')
     expect(meter.className).not.toMatch(/transition|anim/)
     expect(screen.getByTestId('context-state').textContent).toContain('as of')
+  })
+
+  it('renders every state word', () => {
+    const cases: [SessionContext['state'], string][] = [
+      ['working', 'working'],
+      ['near_limit', 'near limit'],
+      ['reset', 'after compact']
+    ]
+    for (const [state, word] of cases) {
+      const { unmount } = render(<ContextBar context={ctx({ state })} />)
+      expect(screen.getByTestId('context-state').textContent).toBe(word)
+      unmount()
+    }
   })
 
   it('accessible meter names both counts', () => {

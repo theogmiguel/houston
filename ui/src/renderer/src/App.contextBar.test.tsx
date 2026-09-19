@@ -40,8 +40,15 @@ describe('context downbar visibility', () => {
 
   it('hidden toggle removes the downbar row', async () => {
     await boot()
-    expect(harness!.container.querySelector('[data-testid="context-downbar"]')).not.toBeNull()
+    const shell = harness!.container.querySelector<HTMLElement>('[style*="grid-template-rows"]')
+    const downbar = harness!.container.querySelector<HTMLElement>('[data-testid="context-downbar"]')
+    expect(downbar).not.toBeNull()
+    expect(downbar!.className).toContain('[grid-area:downbar]')
+    expect(shell?.style.gridTemplateRows).toContain('var(--h-downbar)')
+
     act(() => setContextBarVisible(false))
+
     expect(harness!.container.querySelector('[data-testid="context-downbar"]')).toBeNull()
+    expect(shell?.style.gridTemplateRows).toContain('0px')
   })
 })
