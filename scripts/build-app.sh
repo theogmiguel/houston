@@ -34,10 +34,10 @@ command -v cargo-tauri >/dev/null || {
 
 if [ "${BUILD_APP_SHIELDED:-0}" != "1" ]; then
   export BUILD_APP_SHIELDED=1
-  exec ./scripts/oom-shield.sh "$0" \
-    --bundles "$BUNDLES" \
-    $([ "$SKIP_RENDERER" = "1" ] && echo --skip-renderer) \
-    $([ "$VERBOSE" = "1" ] && echo --verbose)
+  shield_args=("$0" --bundles "$BUNDLES")
+  [ "$SKIP_RENDERER" = "1" ] && shield_args+=(--skip-renderer)
+  [ "$VERBOSE" = "1" ] && shield_args+=(--verbose)
+  exec ./scripts/oom-shield.sh "${shield_args[@]}"
 fi
 
 if [ "$SKIP_RENDERER" = "0" ]; then
@@ -56,7 +56,9 @@ echo "[build-app] checking the terminal emulator pin…"
 ./scripts/check-ghostty-vt-pin.sh
 
 echo "[build-app] bundling ($BUNDLES)…"
-CARGO_BUILD_JOBS=3 cargo tauri build --bundles "$BUNDLES" $([ "$VERBOSE" = "1" ] && echo --verbose)
+tauri_args=(build --bundles "$BUNDLES")
+[ "$VERBOSE" = "1" ] && tauri_args+=(--verbose)
+CARGO_BUILD_JOBS=3 cargo tauri "${tauri_args[@]}"
 
 cp core/target/release/tr-helper src-tauri/target/release/tr-helper
 cp core/target/release/houston-core src-tauri/target/release/houston-core

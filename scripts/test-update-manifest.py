@@ -59,9 +59,9 @@ class ReleaseFixture:
         base = self.version.split("+", 1)[0]
         for name in (
             f"Houston_{base}_amd64.AppImage",
-            f"houston_{base}_amd64.deb",
+            f"Houston_{base}_amd64.deb",
             f"Houston_{base}_aarch64.AppImage",
-            f"houston_{base}_arm64.deb",
+            f"Houston_{base}_arm64.deb",
             f"Houston_{base}_x64-setup.exe",
         ):
             self.add_bundle(name)
@@ -128,12 +128,12 @@ class AssembleTests(unittest.TestCase):
         self.assertEqual(
             built["platforms"]["linux-aarch64-deb"]["url"],
             "https://github.com/theogmiguel/houston/releases/download/v1.2.3/"
-            "houston_1.2.3_arm64.deb",
+            "Houston_1.2.3_arm64.deb",
         )
         self.assertEqual(
             built["platforms"]["linux-x86_64-deb"]["url"],
             "https://github.com/theogmiguel/houston/releases/download/v1.2.3/"
-            "houston_1.2.3_amd64.deb",
+            "Houston_1.2.3_amd64.deb",
         )
         self.assertEqual(
             built["platforms"]["windows-x86_64-nsis"]["url"],
@@ -167,7 +167,7 @@ class AssembleTests(unittest.TestCase):
             built["platforms"]["linux-x86_64-appimage"]["url"],
         )
         self.assertIn(
-            "/releases/download/nightly/houston_0.10.0_arm64.deb",
+            "/releases/download/nightly/Houston_0.10.0_arm64.deb",
             built["platforms"]["linux-aarch64-deb"]["url"],
         )
 
@@ -184,23 +184,29 @@ class AssembleTests(unittest.TestCase):
             appimage["signature"], built["platforms"]["linux-x86_64"]["signature"]
         )
 
-    def test_only_the_bundles_present_get_platform_keys(self):
+    def test_a_missing_linux_architecture_is_refused(self):
         base = "1.2.3"
         self.release.add_bundle(f"Houston_{base}_amd64.AppImage")
-        self.release.add_bundle(f"houston_{base}_amd64.deb")
+        self.release.add_bundle(f"Houston_{base}_amd64.deb")
         self.release.add_bundle(f"Houston_{base}_x64-setup.exe")
 
-        built = self.release.generate()
-        self.assertEqual(
-            list(built["platforms"]),
-            [
-                "linux-x86_64",
-                "linux-x86_64-appimage",
-                "linux-x86_64-deb",
-                "windows-x86_64",
-                "windows-x86_64-nsis",
-            ],
-        )
+        message = self.refuse()
+        self.assertIn("Linux bundles for aarch64", message)
+
+    def test_an_unsupported_linux_architecture_is_refused(self):
+        self.release.add_all_bundles()
+        self.release.add_bundle("Houston_1.2.3_i686.AppImage")
+        self.release.add_bundle("Houston_1.2.3_i386.deb")
+
+        message = self.refuse()
+        self.assertIn("unsupported Linux architecture(s) i686", message)
+
+    def test_an_unsupported_windows_architecture_is_refused(self):
+        self.release.add_all_bundles()
+        self.release.add_bundle("Houston_1.2.3_arm64-setup.exe")
+
+        message = self.refuse()
+        self.assertIn("unsupported Windows architecture(s) aarch64", message)
 
     def test_release_candidate_keeps_its_suffix_in_filenames(self):
         self.release = ReleaseFixture(version="0.11.0-rc.1", tag="v0.11.0-rc.1")
@@ -220,28 +226,29 @@ class AssembleTests(unittest.TestCase):
 
     def test_a_signature_with_trailing_whitespace_is_accepted(self):
         base = "1.2.3"
-        self.release.add_bundle(f"Houston_{base}_amd64.AppImage", SIGNATURE + "\n")
-        self.release.add_bundle(f"houston_{base}_amd64.deb")
-        self.release.add_bundle(f"Houston_{base}_x64-setup.exe")
+        self.release.add_all_bundles()
+        (self.release.artifacts / f"Houston_{base}_amd64.AppImage.sig").write_text(
+            SIGNATURE + "\n"
+        )
 
         built = self.release.generate()
         self.assertEqual(built["platforms"]["linux-x86_64"]["signature"], SIGNATURE)
 
     def test_missing_signature_is_refused_by_name(self):
         self.release.add_all_bundles()
-        (self.release.artifacts / "houston_1.2.3_amd64.deb.sig").unlink()
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb.sig").unlink()
 
         message = self.refuse()
-        self.assertIn("houston_1.2.3_amd64.deb", message)
+        self.assertIn("Houston_1.2.3_amd64.deb", message)
         self.assertIn(".sig", message)
 
     def test_version_mismatch_is_refused(self):
         self.release.add_all_bundles()
-        (self.release.artifacts / "houston_1.2.3_amd64.deb").rename(
-            self.release.artifacts / "houston_1.1.0_amd64.deb"
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb").rename(
+            self.release.artifacts / "Houston_1.1.0_amd64.deb"
         )
-        (self.release.artifacts / "houston_1.2.3_amd64.deb.sig").rename(
-            self.release.artifacts / "houston_1.1.0_amd64.deb.sig"
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb.sig").rename(
+            self.release.artifacts / "Houston_1.1.0_amd64.deb.sig"
         )
 
         message = self.refuse()
@@ -250,8 +257,8 @@ class AssembleTests(unittest.TestCase):
 
     def test_a_missing_deb_for_one_architecture_is_refused(self):
         self.release.add_all_bundles()
-        (self.release.artifacts / "houston_1.2.3_arm64.deb").unlink()
-        (self.release.artifacts / "houston_1.2.3_arm64.deb.sig").unlink()
+        (self.release.artifacts / "Houston_1.2.3_arm64.deb").unlink()
+        (self.release.artifacts / "Houston_1.2.3_arm64.deb.sig").unlink()
 
         message = self.refuse()
         self.assertIn("Linux .deb for aarch64", message)
@@ -267,9 +274,9 @@ class AssembleTests(unittest.TestCase):
     def test_a_missing_windows_installer_is_refused(self):
         base = "1.2.3"
         self.release.add_bundle(f"Houston_{base}_amd64.AppImage")
-        self.release.add_bundle(f"houston_{base}_amd64.deb")
+        self.release.add_bundle(f"Houston_{base}_amd64.deb")
         self.release.add_bundle(f"Houston_{base}_aarch64.AppImage")
-        self.release.add_bundle(f"houston_{base}_arm64.deb")
+        self.release.add_bundle(f"Houston_{base}_arm64.deb")
 
         message = self.refuse()
         self.assertIn("Windows NSIS", message)
@@ -277,7 +284,7 @@ class AssembleTests(unittest.TestCase):
     def test_linux_bundles_alone_are_refused(self):
         base = "1.2.3"
         self.release.add_bundle(f"Houston_{base}_amd64.AppImage")
-        self.release.add_bundle(f"houston_{base}_amd64.deb")
+        self.release.add_bundle(f"Houston_{base}_amd64.deb")
 
         message = self.refuse()
         self.assertIn("Windows NSIS", message)
@@ -303,24 +310,28 @@ class AssembleTests(unittest.TestCase):
         message = self.refuse()
         self.assertIn("latest.json", message)
 
-    def test_two_bundles_of_one_kind_are_refused(self):
+    def test_a_wrong_product_name_is_refused(self):
         self.release.add_all_bundles()
-        self.release.add_bundle("Houston_1.2.3_amd64.deb")
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb").rename(
+            self.release.artifacts / "Other_1.2.3_amd64.deb"
+        )
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb.sig").rename(
+            self.release.artifacts / "Other_1.2.3_amd64.deb.sig"
+        )
 
         message = self.refuse()
-        self.assertIn("deb", message)
-        self.assertIn("x86_64", message)
+        self.assertIn("Other_1.2.3_amd64.deb", message)
 
     def test_empty_signature_is_refused(self):
         self.release.add_all_bundles()
-        (self.release.artifacts / "houston_1.2.3_amd64.deb.sig").write_text("")
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb.sig").write_text("")
 
         message = self.refuse()
-        self.assertIn("houston_1.2.3_amd64.deb.sig", message)
+        self.assertIn("Houston_1.2.3_amd64.deb.sig", message)
 
     def test_a_non_minisign_signature_is_refused(self):
         self.release.add_all_bundles()
-        (self.release.artifacts / "houston_1.2.3_amd64.deb.sig").write_text(
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb.sig").write_text(
             base64.b64encode(b"404: Not Found\n").decode()
         )
 
@@ -348,9 +359,9 @@ class AssembleTests(unittest.TestCase):
         base = "1.2.3"
         self.release.add_bundle(f"Houston_{base}_amd64.AppImage")
         self.release.add_bundle(f"Houston_{base}_amd64.AppImage.tar.gz")
-        self.release.add_bundle(f"houston_{base}_amd64.deb")
+        self.release.add_bundle(f"Houston_{base}_amd64.deb")
         self.release.add_bundle(f"Houston_{base}_aarch64.AppImage")
-        self.release.add_bundle(f"houston_{base}_arm64.deb")
+        self.release.add_bundle(f"Houston_{base}_arm64.deb")
         self.release.add_bundle(f"Houston_{base}_x64-setup.exe")
 
         built = self.release.generate()
@@ -395,7 +406,7 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual(written["version"], "1.2.3")
             self.assertEqual(written["platforms"]["linux-x86_64"]["signature"], SIGNATURE)
 
-            (release.artifacts / "houston_1.2.3_amd64.deb.sig").unlink()
+            (release.artifacts / "Houston_1.2.3_amd64.deb.sig").unlink()
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
                 status = manifest.main(
@@ -415,7 +426,7 @@ class CommandLineTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(status, 1)
-            self.assertIn("houston_1.2.3_amd64.deb", stderr.getvalue())
+            self.assertIn("Houston_1.2.3_amd64.deb", stderr.getvalue())
 
 
 if __name__ == "__main__":

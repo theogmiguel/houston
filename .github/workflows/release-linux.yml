@@ -104,7 +104,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             core/target/ghostty-vt
@@ -113,7 +113,7 @@ jobs:
 
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: cargo-tauri-${{ inputs.tauri_cli_version }}-ubuntu-22.04-${{ matrix.arch }}
@@ -174,7 +174,12 @@ jobs:
       - name: Build the bundles (renderer + protocol gate + appimage,deb)
         env:
           NO_STRIP: "true"
-        run: ./scripts/build-app.sh --bundles appimage,deb --verbose
+        run: |
+          set -euo pipefail
+          # A restored target cache must not contribute an older bundle or .sig.
+          rm -rf src-tauri/target/release/bundle/appimage \
+                 src-tauri/target/release/bundle/deb
+          ./scripts/build-app.sh --bundles appimage,deb --verbose
 
       # With createUpdaterArtifacts on, the CLI signs every updater-enabled
       # bundle it built -- the AppImage and the deb here -- so this step is the
@@ -199,38 +204,38 @@ jobs:
       - name: Collect artifacts
         run: |
           set -euo pipefail
+          shopt -s nullglob
           mkdir -p dist
           # *.sig and a v1-compatible build's .AppImage.tar.gz ride along: the
           # updater's signature is as much a release artifact as the bundle.
           find src-tauri/target/release/bundle -maxdepth 2 -type f \
             \( -name '*.AppImage' -o -name '*.deb' -o -name '*.sig' -o -name '*.AppImage.tar.gz' \) \
             -exec cp {} dist/ \;
-          appimage=$(find dist -name '*.AppImage' -print -quit)
-          [ -n "$appimage" ] || { echo "::error::no .AppImage in dist -- expected one from the appimage,deb bundle"; exit 1; }
-          deb=$(find dist -name '*.deb' -print -quit)
-          [ -n "$deb" ] || { echo "::error::no .deb in dist -- expected one from the appimage,deb bundle"; exit 1; }
-          # Listed into a variable first: `dpkg-deb -c | grep -q` closes the
-          # pipe early, and under `pipefail` that SIGPIPE reads as a failure of
-          # the check itself rather than of the thing being checked.
-          contents=$(dpkg-deb -c "$deb")
-          if ! printf '%s\n' "$contents" | grep -qE '\./usr/bin/tr-helper$'; then
-            echo "::error::$deb does not contain ./usr/bin/tr-helper -- bundle.externalBin did not ship the sidecar"
-            printf '%s\n' "$contents" | grep '/usr/bin/' || true
+          appimages=(dist/*.AppImage)
+          debs=(dist/*.deb)
+          if [ "${#appimages[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one AppImage in dist, found ${#appimages[@]}"
+            printf '  %s\n' "${appimages[@]}"
             exit 1
           fi
-          # houston-core and houston-supervisor (Detach, D2): the daemon is no
-          # longer hosted in-process, so both must ship beside the app the
-          # same way tr-helper does -- tauri.linux.conf.json's externalBin.
-          if ! printf '%s\n' "$contents" | grep -qE '\./usr/bin/houston-core$'; then
-            echo "::error::$deb does not contain ./usr/bin/houston-core -- bundle.externalBin did not ship the daemon sidecar"
-            printf '%s\n' "$contents" | grep '/usr/bin/' || true
+          if [ "${#debs[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one deb in dist, found ${#debs[@]}"
+            printf '  %s\n' "${debs[@]}"
             exit 1
           fi
-          if ! printf '%s\n' "$contents" | grep -qE '\./usr/bin/houston-supervisor$'; then
-            echo "::error::$deb does not contain ./usr/bin/houston-supervisor -- bundle.externalBin did not ship the supervisor sidecar"
-            printf '%s\n' "$contents" | grep '/usr/bin/' || true
-            exit 1
-          fi
+          appimage="${appimages[0]}"
+          deb="${debs[0]}"
+
+          package_root=$(mktemp -d)
+          trap 'rm -rf "$package_root"' EXIT
+          dpkg-deb -x "$deb" "$package_root/deb"
+          appimage_path=$(realpath "$appimage")
+          mkdir "$package_root/appimage"
+          (cd "$package_root/appimage" && "$appimage_path" --appimage-extract >/dev/null)
+          for name in houston houston-core houston-supervisor tr-helper; do
+            [ -f "$package_root/deb/usr/bin/$name" ] || { echo "::error::$deb does not contain usr/bin/$name"; exit 1; }
+            [ -f "$package_root/appimage/squashfs-root/usr/bin/$name" ] || { echo "::error::$appimage does not contain usr/bin/$name"; exit 1; }
+          done
           ls -lh dist
 
       # An unsigned run is a documented state; a signed run that lost a .sig is
@@ -250,7 +255,8 @@ jobs:
             fi
           done
           [ "$missing" -eq 0 ] || exit 1
-          echo "updater signatures: ${artifacts[@]/%/.sig}"
+          echo "updater signatures:"
+          printf '  %s.sig\n' "${artifacts[@]}"
 
       # The deb is the shape a user installs, so that is what is read: every
       # binary in it must be this architecture and ask glibc for nothing above
@@ -261,7 +267,7 @@ jobs:
           deb=$(find dist -name '*.deb' -print -quit)
           ./scripts/check-linux-abi.sh "$deb" "${{ matrix.arch }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: houston-${{ inputs.version }}-linux-${{ matrix.arch }}
           path: dist/
@@ -306,7 +312,7 @@ jobs:
         shell: bash
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: houston-${{ inputs.version }}-linux-x86_64
           path: dist

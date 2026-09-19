@@ -89,7 +89,7 @@ jobs:
       # than riding the workspace cache rust-cache manages and prunes.
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-tauri.exe
           key: cargo-tauri-${{ inputs.tauri_cli_version }}-windows-2022
@@ -97,27 +97,9 @@ jobs:
         if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
         run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
 
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
-
-      - name: Build the renderer, run the protocol gate, build the binary
-        shell: pwsh
-        run: ./scripts/build-app.ps1
-
-      - name: Assert the daemon sidecar was staged
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $core = Join-Path (Get-Location) 'src-tauri/target/release/houston-core.exe'
-          if (-not (Test-Path $core)) {
-            Write-Error "houston-core.exe missing at $core -- build-app.ps1 did not stage the daemon sidecar"
-            exit 1
-          }
-
       # Secrets cannot be used in an `if:`, so they are read into env here and
-      # tested; the chosen paths ride step outputs, and the updater path fails
-      # here when this is a real release, before anything is built.
+      # tested before the expensive build. A partial Azure configuration is a
+      # refusal, not a failure discovered after the installer exists.
       - name: Decide which signing paths this run takes
         id: signing
         shell: bash
@@ -125,10 +107,44 @@ jobs:
           REQUIRE_SIGNING: ${{ inputs.require_signing }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
           AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
         run: |
           set -euo pipefail
-          if [ -n "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME" ]; then
+          azure_values=(
+            "$AZURE_TENANT_ID"
+            "$AZURE_CLIENT_ID"
+            "$AZURE_CLIENT_SECRET"
+            "$AZURE_TRUSTED_SIGNING_ENDPOINT"
+            "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME"
+            "$AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME"
+          )
+          azure_names=(
+            AZURE_TENANT_ID
+            AZURE_CLIENT_ID
+            AZURE_CLIENT_SECRET
+            AZURE_TRUSTED_SIGNING_ENDPOINT
+            AZURE_TRUSTED_SIGNING_ACCOUNT_NAME
+            AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME
+          )
+          azure_present=0
+          azure_missing=()
+          for index in "${!azure_values[@]}"; do
+            if [ -n "${azure_values[$index]}" ]; then
+              azure_present=$((azure_present + 1))
+            else
+              azure_missing+=("${azure_names[$index]}")
+            fi
+          done
+          if [ "$azure_present" -gt 0 ] && [ "${#azure_missing[@]}" -gt 0 ]; then
+            echo "::error::Azure Trusted Signing is partially configured; missing: ${azure_missing[*]}. Set all six Azure secrets or remove all six to ship without Authenticode."
+            exit 1
+          fi
+          if [ "$azure_present" -eq "${#azure_values[@]}" ]; then
             echo "azure=true" >> "$GITHUB_OUTPUT"
           else
             echo "azure=false" >> "$GITHUB_OUTPUT"
@@ -165,6 +181,26 @@ jobs:
             fi
           fi
 
+      - name: Install renderer dependencies
+        run: bun install --frozen-lockfile
+        working-directory: ui
+
+      - name: Build the renderer, run the protocol gate, build the binary
+        shell: pwsh
+        run: ./scripts/build-app.ps1
+
+      - name: Assert the Windows sidecars were staged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @('houston-core.exe', 'tr-helper.exe')) {
+            $path = Join-Path (Get-Location) "src-tauri/target/release/$name"
+            if (-not (Test-Path $path)) {
+              Write-Error "$name missing at $path -- build-app.ps1 did not stage the sidecar"
+              exit 1
+            }
+          }
+
       # Signed, the bundler writes the updater .sig beside the installer; a
       # keyless dry run is told not to sign at all.
       - name: Bundle the NSIS installer
@@ -172,10 +208,17 @@ jobs:
         working-directory: src-tauri
         run: |
           $ErrorActionPreference = 'Stop'
+          $bundleDir = 'target/release/bundle/nsis'
+          if (Test-Path $bundleDir) {
+            Remove-Item -Recurse -Force $bundleDir
+          }
           if ('${{ steps.signing.outputs.updater }}' -eq 'true') {
             cargo tauri build --bundles nsis
           } else {
             cargo tauri build --bundles nsis --no-sign
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "cargo tauri build --bundles nsis failed with exit code $LASTEXITCODE"
           }
 
       - name: Sign the NSIS installer with Azure Trusted Signing
@@ -211,6 +254,9 @@ jobs:
             $signature = "$($installer.FullName).sig"
             Remove-Item $signature -Force -ErrorAction SilentlyContinue
             cargo tauri signer sign $installer.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "cargo tauri signer sign failed for $($installer.FullName) with exit code $LASTEXITCODE"
+            }
             if (-not (Test-Path $signature) -or (Get-Item $signature).Length -eq 0) {
               Write-Error "updater signature missing after signing $($installer.FullName) -- latest.json cannot be built"
               exit 1
@@ -238,12 +284,19 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force dist | Out-Null
-          Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis |
-            Where-Object { $_.Name -like '*.exe' -or $_.Name -like '*.exe.sig' } |
-            ForEach-Object { Copy-Item $_.FullName dist/ }
+          $installers = @(Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis -Filter *.exe)
+          if ($installers.Count -ne 1) {
+            Write-Error "expected exactly one NSIS installer, found $($installers.Count): $($installers.FullName -join ', ')"
+            exit 1
+          }
+          Copy-Item $installers[0].FullName dist/
+          $signature = "$($installers[0].FullName).sig"
+          if (Test-Path $signature) {
+            Copy-Item $signature dist/
+          }
           Get-ChildItem dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: houston-${{ inputs.version }}-windows
           path: dist/

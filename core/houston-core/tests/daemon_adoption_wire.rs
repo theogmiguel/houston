@@ -10,7 +10,9 @@ use tokio_tungstenite::tungstenite::Message;
 
 #[path = "common/mod.rs"]
 mod common;
-use common::{collect_output_until, connect_and_hello, create_custom_msg, expect_created};
+use common::{
+    attach_and_collect_output_until, collect_output_until, create_custom_msg, expect_created,
+};
 
 fn core_bin() -> &'static str {
     env!("CARGO_BIN_EXE_houston-core")
@@ -30,6 +32,29 @@ fn poll_until<T>(timeout: Duration, mut f: impl FnMut() -> Option<T>) -> T {
         }
         assert!(start.elapsed() < timeout, "timed out waiting for condition");
         std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+async fn connect_when_ready(addr: std::net::SocketAddr, token: &str) -> common::WsStream {
+    let deadline = tokio::time::Instant::now() + POLL_TIMEOUT;
+    let hello = serde_json::to_string(&proto::ClientMsg::Hello {
+        token: token.to_string(),
+        protocol: proto::PROTOCOL_VERSION,
+    })
+    .unwrap();
+    loop {
+        let error = match tokio_tungstenite::connect_async(format!("ws://{addr}/ws")).await {
+            Ok((mut ws, _)) => match ws.send(Message::text(&hello)).await {
+                Ok(()) => return ws,
+                Err(error) => error.to_string(),
+            },
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for the daemon WebSocket at {addr}: {error}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
 
@@ -134,7 +159,7 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
     );
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", before.port).parse().unwrap();
-    let mut ws = connect_and_hello(addr, &before.token).await;
+    let mut ws = connect_when_ready(addr, &before.token).await;
     let _ = common::next_control(&mut ws).await;
 
     let project = tempfile::tempdir().unwrap();
@@ -179,7 +204,7 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
         "a handoff is not a shutdown: the retiring generation must leave no clean marker"
     );
 
-    let mut ws2 = connect_and_hello(addr, &after.token).await;
+    let mut ws2 = connect_when_ready(addr, &after.token).await;
     let hello_ok = common::next_control(&mut ws2).await;
     match hello_ok {
         proto::ServerMsg::HelloOk { sessions, .. } => {
@@ -447,7 +472,7 @@ async fn supervised_daemon_with_session(
     let cfg_path = channel_dir.join("daemon.json");
     let before = poll_until(POLL_TIMEOUT, || read_daemon_json(&cfg_path));
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", before.port).parse().unwrap();
-    let mut ws = connect_and_hello(addr, &before.token).await;
+    let mut ws = connect_when_ready(addr, &before.token).await;
     let _ = common::next_control(&mut ws).await;
     ws.send(Message::text(create_custom_msg(cmd, project)))
         .await
@@ -558,7 +583,7 @@ async fn a_second_consecutive_handoff_carries_the_session_again() {
         });
         assert_eq!(next.port, before.port, "every handoff preserves the port");
 
-        let mut ws = connect_and_hello(addr, &next.token).await;
+        let mut ws = connect_when_ready(addr, &next.token).await;
         let _ = common::next_control(&mut ws).await;
         ws.send(Message::text(
             serde_json::to_string(&proto::ClientMsg::SessionAttach {
@@ -613,7 +638,7 @@ async fn a_real_exit_code_reaches_the_new_generation_through_the_supervisor() {
     });
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
-    let mut ws = connect_and_hello(addr, &after.token).await;
+    let mut ws = connect_when_ready(addr, &after.token).await;
     let _ = common::next_control(&mut ws).await;
     ws.send(Message::text(
         serde_json::to_string(&proto::ClientMsg::SessionAttach {
@@ -668,7 +693,7 @@ async fn a_signalled_session_finishes_through_the_supervisor_with_no_exit_code()
     });
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
-    let mut ws = connect_and_hello(addr, &after.token).await;
+    let mut ws = connect_when_ready(addr, &after.token).await;
     let _ = common::next_control(&mut ws).await;
     ws.send(Message::text(
         serde_json::to_string(&proto::ClientMsg::SessionAttach {
@@ -754,7 +779,7 @@ async fn queued_hooks_cross_the_boundary_exactly_once_and_in_order() {
         (std::fs::read_dir(&drop_dir).ok()?.count() == 0).then_some(())
     });
 
-    let mut ws = connect_and_hello(addr, &after.token).await;
+    let mut ws = connect_when_ready(addr, &after.token).await;
     let listed = match common::next_control(&mut ws).await {
         proto::ServerMsg::HelloOk { sessions, .. } => sessions,
         other => panic!("expected HelloOk, got {other:?}"),
@@ -823,7 +848,7 @@ async fn an_escape_sequence_split_across_the_handoff_continues_on_the_new_genera
     .await;
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", before.port).parse().unwrap();
 
-    let seen = collect_output_until(&mut ws, session_id, "CUTPOINT").await;
+    let seen = attach_and_collect_output_until(&mut ws, session_id, "CUTPOINT").await;
     assert!(seen.contains("CUTPOINT"));
 
     let mut pending_seen = false;
@@ -855,7 +880,7 @@ async fn an_escape_sequence_split_across_the_handoff_continues_on_the_new_genera
         (f.pid != before.pid && f.generation == Some(expected_generation)).then_some(f)
     });
 
-    let mut ws2 = connect_and_hello(addr, &after.token).await;
+    let mut ws2 = connect_when_ready(addr, &after.token).await;
     match common::next_control(&mut ws2).await {
         proto::ServerMsg::HelloOk {
             snapshot_attach, ..
@@ -952,7 +977,7 @@ async fn handoff_spawns_the_candidate_binary_the_caller_named() {
     );
 
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
-    let mut ws = connect_and_hello(addr, &after.token).await;
+    let mut ws = connect_when_ready(addr, &after.token).await;
     let _ = common::next_control(&mut ws).await;
     ws.send(Message::text(
         serde_json::to_string(&proto::ClientMsg::SessionAttach {

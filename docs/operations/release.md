@@ -147,10 +147,13 @@ The run stops before the version is computed and before anything is pushed.
   `main`'s current commit, the workflow pushes the tag and nothing else, and
   says so in the run summary. `main` is never fast-forwarded from somewhere
   else and is never force-pushed, under any input.
+- **A half-pushed stable cut.** The version commit and its tag are one atomic
+  push, so a rejected ref leaves neither one behind on the remote.
 - **An incomplete or mismatched artifact set.** `release-publish.yml` refuses
-  a bundle with no `.sig`, an arch missing its AppImage or deb, a filename
-  from another version, and any file the release does not expect; the error
-  names the offending file and what was expected.
+  a bundle with no `.sig`, either official Linux architecture missing its
+  AppImage or deb, the Windows x86_64 installer missing, a filename from
+  another version, and any file the release does not expect; the error names
+  the offending file and what was expected.
 
 An `rc` continues an open series rather than starting a new one: if a
 `vX.Y.Z-rc.N` exists whose base is above the latest stable, the next is
@@ -163,10 +166,11 @@ smoke-tests it). Publishing a candidate as a normal release would make
 `kind` that was asked for — or, for a hand-pushed `v*-rc.*` tag, the version's
 own `-rc.` suffix.
 
-**Why it builds and publishes itself** rather than letting the tag it pushes
-trigger `release.yml`: a tag pushed with a workflow's own `GITHUB_TOKEN` does
-not start another workflow — GitHub's loop prevention — so a cut-release that
-only pushed a tag would silently build nothing.
+**Why the tag carries a workflow marker:** Cut release pushes through its
+deploy key so it can update protected `main`. Unlike `GITHUB_TOKEN`, that push
+does trigger `release.yml`. The annotated tag therefore carries
+`Managed-By: cut-release`; the triggered workflow verifies the tag and exits,
+while the Cut release run owns the one set of builds and the publication.
 
 `release.yml` is still there and still fires on a `v*` tag pushed by a person,
 which is the path a release cut by hand takes.
@@ -330,9 +334,10 @@ What every release carries:
    `cargo tauri signer sign` after the optional Authenticode step; on Linux the
    bundler signs the AppImage and the deb as it writes them, and the workflow
    signs any it left unsigned.
-2. `release-publish.yml` verifies the set — one AppImage family and one deb per
-   Linux architecture, one NSIS installer, a `.sig` beside each, every filename
-   carrying the release's version — and refuses anything else.
+2. `release-publish.yml` verifies the set — one AppImage family and one deb for
+   Linux x86_64 and ARM64, one Windows x86_64 NSIS installer, a `.sig` beside
+   each, every filename carrying the release's version — and refuses anything
+   else.
 3. `latest.json` embeds each `.sig` file's contents under both the bare
    `linux-<arch>` / `windows-<arch>` key and the bundle-specific
    `-appimage`, `-deb` and `-nsis` keys, so a deb install and an AppImage

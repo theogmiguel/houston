@@ -41,7 +41,7 @@ async fn silent_generator_times_out() {
     .await
     .unwrap();
     let source = expect_created(&mut ws).await.id;
-    collect_output_until(&mut ws, source, "src").await;
+    attach_and_collect_output_until(&mut ws, source, "src").await;
 
     generate(&mut ws, source, vec!["sh", "-c", "sleep 600", "sh"]).await;
     let request = expect_started(&mut ws).await;
