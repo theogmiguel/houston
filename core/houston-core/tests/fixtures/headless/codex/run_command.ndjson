@@ -1,6 +1,0 @@
-{"type":"thread.started","thread_id":"01a069da-9814-7690-b690-e4d1e9190e85"}
-{"type":"turn.started"}
-{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"ls -la","aggregated_output":"","exit_code":null,"status":"in_progress"}}
-{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"ls -la","aggregated_output":"total 0\ndrwxr-xr-x 2 dev dev 4096 Sep  3 00:00 .\n","exit_code":0,"status":"completed"}}
-{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Ran `ls -la`; the directory is empty."}}
-{"type":"turn.completed","usage":{"input_tokens":812,"cached_input_tokens":0,"output_tokens":54}}

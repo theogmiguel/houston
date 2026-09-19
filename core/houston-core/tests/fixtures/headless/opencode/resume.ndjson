@@ -1,4 +1,0 @@
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}}
-{"jsonrpc":"2.0","id":2,"result":{}}
-{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_opencode_resumed","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Continuing from before."}}}}
-{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}

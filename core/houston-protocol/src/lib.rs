@@ -1892,50 +1892,6 @@ impl ChatPermissionMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "snake_case")]
-pub enum ChatQuestionKind {
-    Choice,
-    Permission,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct ChatQuestionOption {
-    pub label: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct ChatQuestion {
-    pub id: String,
-    pub kind: ChatQuestionKind,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub header: Option<String>,
-    pub prompt: String,
-    pub options: Vec<ChatQuestionOption>,
-    pub multi_select: bool,
-    pub allow_free_text: bool,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
-    pub answered: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-pub struct ChatUsage {
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub input_tokens: Option<u64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub output_tokens: Option<u64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub cost_usd: Option<f64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
-    pub duration_ms: Option<u64>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -2115,8 +2071,7 @@ pub enum ClientMsg {
         dir: String,
     },
     /// Opens the branch's pull request. `title`/`body` come from the compose
-    /// control (written by the writer model or typed); absent, `gh pr create
-    /// --fill` writes them from the commits.
+    /// control; absent, `gh pr create --fill` writes them from the commits.
     PrCreate {
         dir: String,
         #[serde(default)]
