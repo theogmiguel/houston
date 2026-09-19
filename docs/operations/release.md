@@ -1,37 +1,47 @@
 # Releasing
 
-## Two pipelines
+## The workflows
 
-There are two pipelines under `.github/workflows/`, and only one of them
-ships anything:
+Seven workflow files under `.github/workflows/`, in the order a release passes
+through them:
 
-- **`ci.yml`** is the gate. It runs four jobs — `safety-checks` (the
-  hermetic text-search scripts), `renderer-checks` (`ui`'s `bun run
-  typecheck` and `bun run test`), `core-checks` (`cargo fmt`, `cargo
-  clippy`, `cargo test --lib`, against `core/Cargo.toml`) and
-  `licence-inventory` (the committed third-party inventory still matches
-  both dependency graphs) — on every pull
-  request, and on every push to `main` except a docs-only change. The
-  integration suites, the `src-tauri` gates and the load-sensitive gates
-  still run locally by whoever lands the work, per
-  [`docs/operations/development.md`](development.md). `ci.yml` never builds
-  an installer and never reads or bumps a version. Push to `main` as often as
-  you like; no release comes out of it.
-- **`build-installers.yml`** is the manual dry run. It builds both Linux
-  architectures (x86_64 and aarch64) and the Windows NSIS installer from any
-  ref you name (`gh workflow run build-installers.yml`), and files nothing:
-  `ci.yml` never builds an installer, so this is the only way to exercise the
-  bundle pipeline without cutting a version.
-- **`release-publish.yml`** is the one place that files a release, called by
-  every release workflow. It refuses a bundle set that is missing an artifact
-  or its `.sig`, generates the release notes once and reuses them, and writes
-  `latest.json` with each signature embedded. A real release refuses to build
-  without the updater signing secrets; only a dry run builds unsigned.
+| File | What it is | Trigger |
+|---|---|---|
+| `ci.yml` | the gate; never builds an installer, never reads a version | PR, and push to `main` |
+| `cut-release.yml` | the cut: version, commit, tag, builds, files a **draft** | manual |
+| `release-linux.yml` | AppImage and `.deb` per architecture, plus the headless smoke matrix | `workflow_call` |
+| `release-windows.yml` | the NSIS installer | `workflow_call` |
+| `release-publish.yml` | the one job that files a draft release and writes `latest.json` | `workflow_call` |
+| `publish-draft.yml` | promotes a smoke-tested draft to public | manual, reviewed |
+| `build-installers.yml` | builds both OSes and files nothing | manual |
 
-So "a new commit on main" and "a new version" are different acts. The only
-thing that releases is a tag matching the manifest version, pushed on
-purpose. Never push a `v*` tag casually; nothing else in the repo can undo
-the build it starts.
+Only **`publish-draft.yml`** makes a release visible. A merge to `main` ships
+nothing, and pushing a `v*` tag by hand now does nothing at all.
+
+**`ci.yml`** runs four jobs — `safety-checks` (the hermetic text-search
+scripts), `renderer-checks` (`ui`'s `bun run typecheck` and `bun run test`),
+`core-checks` (`cargo fmt`, `cargo clippy`, `cargo test --lib`, against
+`core/Cargo.toml`) and `licence-inventory` (the committed third-party inventory
+still matches both dependency graphs) — on every pull request, and on every
+push to `main` except a docs-only change. The integration suites, the
+`src-tauri` gates and the load-sensitive gates still run locally by whoever
+lands the work, per [`docs/operations/development.md`](development.md).
+
+**`build-installers.yml`** is the manual dry run: it builds both Linux
+architectures and the Windows NSIS installer from any ref you name, and files
+nothing. Since `ci.yml` never builds an installer, it is the only way to
+exercise the bundle pipeline without cutting a version.
+
+**`release-publish.yml`** refuses a bundle set that is missing an artifact or
+its `.sig`, generates the release notes once and reuses them, and writes
+`latest.json` with each signature embedded. It files a draft, never a public
+release.
+
+**Stable releases currently ship Linux only.** The Windows installer is not at
+parity, so `cut-release.yml`'s `include_windows` defaults off: a Windows
+install is offered no update, and its updater reports that the release carries
+no installer for its platform. Ticking `include_windows` still works, and the
+default flips back once a Windows cut reaches parity.
 
 ## The rule: PRs land work, a release names a version
 
@@ -62,9 +72,6 @@ checks they agree before it builds anything:
 - `core/Cargo.toml` (`[workspace.package] version`) — inherited by every core
   crate, `tr-helper` included
 
-On a tag push, `GITHUB_REF_NAME` stripped of its `v` prefix must equal them
-too.
-
 Nothing in the tree forces the four to track each other, so **nothing edits
 them by hand**:
 
@@ -76,14 +83,18 @@ writes all four plus both `Cargo.lock` files in one go, and refuses a string
 that is not `X.Y.Z` or `X.Y.Z-rc.N` before it writes anything. The lockfiles
 are updated with `cargo update --workspace`, which rewrites the workspace
 crates' own entries and no dependency, so a version bump can never become a
-dependency bump by accident. `version-guard` stays as the check that nothing
-drifted afterwards.
+dependency bump by accident.
 
-The guard reads `core/Cargo.toml`'s version *scoped to the
+`scripts/check-manifest-versions.sh` is the check that nothing drifted: it
+reads the four, refuses an empty or disagreeing set, and prints the agreed
+version. `build-installers.yml`'s `version-guard` job runs it, and a resumed
+cut runs it against the tag's version.
+
+The script reads `core/Cargo.toml`'s version *scoped to the
 `[workspace.package]` table* — an unscoped first-match read would pick up a
 `version = ` line under `[workspace.dependencies]` instead.
 
-Tag format: `v*` (e.g. `v0.6.0`), matching `on: push: tags: ['v*']`.
+Tag format: `v*` (e.g. `v0.6.0`), created by **Cut release**.
 
 ## Release notes
 
@@ -106,24 +117,58 @@ Run **Cut release** from the Actions tab. That is the whole procedure.
 |---|---|
 | `kind` | `patch`, `minor`, `major` or `rc` |
 | `ref` | what to cut from; `main` by default |
-| `include_windows` | build Windows too; clear it for a Linux-only release |
+| `resume_tag` | an existing tag whose bundle jobs failed; rebuilds it without a version bump |
+| `include_windows` | build Windows too; off by default, because the installer is not at parity |
 
 It reads the tags to decide the next version, writes it with
 `scripts/set-version.sh`, commits, tags, pushes, builds the selected bundle jobs
-in parallel and files a **draft** release whose body is the generated notes. A
-Linux-only cut still requires both Linux architectures and both bundle formats;
-its manifest contains no Windows target and rejects any Windows artifact. Then
-you download the artifacts, install and run them, and publish the draft
-yourself — see "Smoke-test the bundle" below. A draft is where every release
+in parallel and files a **draft** release whose body is the generated notes.
+Windows or not, a cut requires both Linux architectures, each with an AppImage
+and a `.deb`; a Windows build adds the x86_64 NSIS installer. Then you download
+the artifacts, install and run them, and promote the draft with **Promote draft
+to public** — see "Smoke-test the bundle" below. A draft is where every release
 stops until a person has run it.
+
+A second cut started while one is running queues behind it
+(`concurrency: release-cut`); it is never cancelled, because a cut that has
+already pushed a tag must not be killed mid-flight. An `rc` queuing behind a
+stable cut is intended.
 
 Before `publish` runs, the Linux bundle workflow boots the built x86_64 AppImage
 on Ubuntu 22.04, Ubuntu 24.04, Debian 12 and current Fedora, headlessly: each
 job installs only the runtime libraries a desktop install already has, extracts
 the AppImage and runs `--version`, so a missing host dependency or a build that
-overran the glibc floor fails there. It runs for every caller — cut, tag push
-and nightly — and `publish` waits for it. A graphical run is still a person's
-job: a runner has no display.
+overran the glibc floor fails there. It runs for every caller of the bundle
+workflow, and `publish` waits for it. A graphical run is still a person's job:
+a runner has no display.
+
+### The lifecycle of a tag
+
+1. **Nothing.** PRs merge to `main`. No version exists.
+2. **Tag pushed, nothing built.** `prepare` computes the version, writes the
+   four manifests, commits and pushes commit and tag atomically. From here the
+   tag is permanent; nothing deletes it.
+3. **Building.** Both bundle jobs build *the tag*, not the dispatch ref. Linux
+   builds x86_64 and aarch64 natively, each producing an AppImage and a `.deb`;
+   Windows, when selected, builds the x86_64 NSIS installer. The Linux job then
+   boots the built x86_64 AppImage headlessly on the four distributions above.
+4. **Draft filed.** `release-publish.yml` generates the notes once, verifies
+   the artifact set, writes `latest.json` and files a draft. A draft's assets
+   are not publicly downloadable, so the URLs inside `latest.json` do not
+   resolve yet — that is precisely what makes this state safe.
+5. **Smoke-tested.** A person installs the artifact and runs it on a real
+   desktop. No runner can do this; they are headless and no webview
+   initializes.
+6. **Public.** `publish-draft.yml` flips the draft after a reviewer approves
+   the `stable-release` environment. `releases/latest` serves it, the
+   `latest.json` URLs resolve, and installed copies begin to be offered the
+   update.
+
+An interruption between the build and the draft leaves the tag with no release.
+`resume_tag` is how that is recovered: it rebuilds the existing tag, skipping
+the version computation, the commit and the push. Re-running a plain `patch`
+cut instead computes the *next* version — the release commit's version already
+exists — and strands the tag.
 
 Before any of that, it refuses a run whose secrets are missing. A real release
 needs `TAURI_SIGNING_PRIVATE_KEY` and
@@ -155,9 +200,22 @@ The run stops before the version is computed and before anything is pushed.
   push, so a rejected ref leaves neither one behind on the remote.
 - **An incomplete or mismatched artifact set.** `release-publish.yml` refuses
   a bundle with no `.sig`, either official Linux architecture missing its
-  AppImage or deb, the Windows x86_64 installer missing, a filename from
-  another version, and any file the release does not expect; the error names
-  the offending file and what was expected.
+  AppImage or deb, the Windows x86_64 installer missing when the cut included
+  Windows, a filename from another version, and any file the release does not
+  expect; the error names the offending file and what was expected.
+- **A second cut while one is running.** It queues behind the first
+  (`concurrency: release-cut`) and is never cancelled.
+- **A resume onto a published release.** Only a draft may be replaced; a
+  release that is already public is never rebuilt.
+- **A resume whose manifests disagree with its tag.** A resumed cut checks out
+  the tag it rebuilds and refuses a tree that does not carry that version.
+- **Publishing without a smoke test.** `publish-draft.yml` refuses until the
+  operator ticks the attestation, and **publishing something already public**
+  is refused for the same reason a re-cut is.
+
+The `stable-release` environment reviewer is the actual control; the checkbox
+is an attestation a person makes, and `publish-draft.yml` runs unprotected
+until that environment exists.
 
 An `rc` continues an open series rather than starting a new one: if a
 `vX.Y.Z-rc.N` exists whose base is above the latest stable, the next is
@@ -167,27 +225,18 @@ An `rc` continues an open series rather than starting a new one: if a
 An `rc` is filed as a **prerelease** (and still as a draft, until a person
 smoke-tests it). Publishing a candidate as a normal release would make
 `releases/latest` offer it to every stable install, so the flag follows the
-`kind` that was asked for — or, for a hand-pushed `v*-rc.*` tag, the version's
-own `-rc.` suffix.
+`kind` that was asked for — or, for a resumed tag, the version's own `-rc.`
+suffix.
 
 Cut release pushes through its deploy key so it can update protected `main`.
 Nothing watches the pushed tag: the run itself builds the bundles and files the
 release.
 
-Pushing a `v*` tag triggers a real run, so don't push one before you mean it.
-To exercise the build without cutting a release, run the workflow from the
-Actions tab with `dry_run=true` (the default for a manual run): both bundle
-workflows run and upload their artifacts, and `publish` is skipped.
+A `v*` tag pushed by hand starts nothing. The only runs that produce artifacts
+are **Cut release** and the manual `build-installers.yml` (which files
+nothing); promoting a draft is `publish-draft.yml`.
 
 ### One workflow file per OS
-
-| File | Holds | Trigger |
-|---|---|---|
-| `build-installers.yml` | `version-guard`, the two `workflow_call`s | manual |
-| `cut-release.yml` | `prepare` (version, commit, tag, push), the two `workflow_call`s, `publish` | manual |
-| `release-linux.yml` | the AppImage and `.deb` bundle jobs, one per architecture, plus the headless AppImage smoke matrix | `workflow_call` only |
-| `release-windows.yml` | the NSIS `.exe` bundle job | `workflow_call` only |
-| `release-publish.yml` | the `publish` job all three callers share | `workflow_call` only |
 
 Each OS file is self-contained: it declares its own runner pins, its own
 toolchain, its own caches and its own pinned Tauri CLI version, and takes the
@@ -198,56 +247,16 @@ change to the Linux packaging cannot accidentally move the Windows one.
 The two bundle workflows only read the tree and upload artifacts, so they
 carry the narrowest permissions they need; they receive the signing secrets
 through `secrets: inherit`. `release-publish.yml` is the one job that writes
-anything outward-facing, and it writes a draft for a stable cut and a
-prerelease for the nightly.
-
-### Nightly
-
-`nightly.yml` builds `main` once a day at 03:37 UTC — off the hour and off
-midnight, where GitHub's shared cron queue is contended — and by hand from the
-Actions tab. It refuses to run anywhere but this repository, so a fork that
-copied the tree does not start publishing nightlies.
-
-It republishes one rolling `nightly` tag and one `nightly` **prerelease**,
-replacing both each night. Prerelease is not a detail: Houston's stable check
-reads `releases/latest`, which is documented to skip prereleases, so a nightly
-published any other way would be offered to every user on stable. The nightly
-channel fetches `releases/tags/nightly` by name for the same reason.
-
-The tag moves only after every bundle job succeeds. The release itself is
-replaced by the publish job, and only after the notes and `latest.json` have
-been generated and verified — so a failed build, a failed notes call or a
-manifest refusal all leave last night's release and its assets in place instead
-of a gap. The first night has no previous tag or release; both steps say so and
-carry on, and the notes fall back to everything since the last stable tag (or
-the first commit). If the replacement itself is interrupted between its delete
-and its create, re-running the failed jobs files it; the bundles are still
-attached to the run.
-
-A nightly is signed like any other release: it carries the same per-artifact
-`.sig` files and its own `latest.json`, and the guard refuses the run without
-the updater secrets rather than publishing a manifest nothing can verify.
-
-Moving that tag is the one place in this repository where a ref that already
-exists is moved, and it is safe only because `nightly` is not a version anybody
-installs by name. `main` is never force-pushed by anything.
-
-A user opts in at Settings ▸ About ▸ Channel. An unrecognised or absent stored
-value reads as stable, so nothing puts somebody on untested builds by accident.
-
-The rolling tag does not carry a version, so its release title has the exact
-shape `Houston nightly <version>`. The version includes the build's short commit
-SHA; after installation the running build recognises that suffix and does not
-offer the same nightly again. A moved nightly at the same base version remains
-a different release and is offered normally.
+anything outward-facing, and it writes a draft.
 
 ### Windows signing: two paths, one secret
 
-The installer gets two independent signatures. The updater one is not optional:
-every real release signs the `.exe` with the Minisign key and publishes the
-`.sig`, and without it `latest.json` cannot be built at all. The Authenticode
-one is the optional half, and `release-windows.yml` takes one path or the other
-on the presence of a single secret, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME`:
+The Windows installer, when a cut builds one, gets two independent signatures.
+The updater one is not optional: a Windows cut signs the `.exe` with the
+Minisign key and publishes the `.sig`, and without it `latest.json` cannot be
+built at all. The Authenticode one is the optional half, and
+`release-windows.yml` takes one path or the other on the presence of a single
+secret, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME`:
 
 - **Absent** — the installer is built unsigned, SmartScreen warns on first run,
   and the job summary says so and names the missing secret. This is the
@@ -280,10 +289,9 @@ The daemon asks the releases API once at start, once a day, and whenever the
 About panel's **Check now** is pressed, and broadcasts what it found. The panel
 names the release, shows a teaser of its notes and links to the release page.
 
-**Install update** is the other half: the app fetches the channel's fixed
-manifest (`releases/latest/download/latest.json` on stable,
-`releases/download/nightly/latest.json` on nightly), picks the entry for this
-exact bundle (`linux-x86_64-deb`, `linux-x86_64-appimage`, `windows-x86_64-nsis`),
+**Install update** is the other half: the app fetches the fixed manifest
+`releases/latest/download/latest.json`, picks the entry for this exact bundle
+(`linux-x86_64-deb`, `linux-x86_64-appimage`, `windows-x86_64-nsis`),
 downloads it, verifies the artifact's signature against the public key in
 `src-tauri/tauri.conf.json`, and installs. It refuses by name when the manifest
 publishes nothing for this bundle, when the signature does not verify, when the
@@ -309,8 +317,7 @@ run without it:
 2. Repository → Settings → Secrets and variables → Actions: add
    `TAURI_SIGNING_PRIVATE_KEY` (the file's contents) and
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the passphrase). Every release
-   workflow refuses a run without them — a cut stops before it pushes anything,
-   and nightly fails rather than publishing an unsigned manifest.
+   workflow refuses a run without them; a cut stops before it pushes anything.
 3. Paste the **public** key into `src-tauri/tauri.conf.json` under
    `plugins → updater → pubkey` (a public key is not a secret and belongs in
    the tree). If the committed key and the signing secret are a different pair,
@@ -318,13 +325,12 @@ run without it:
 
 ### Public update feed
 
-The updater uses public release assets at
-`https://github.com/theogmiguel/houston/releases/latest/download/latest.json`
-(stable) and `.../download/nightly/latest.json` (nightly). Each published
-release attaches `latest.json` with the signatures of its release artifacts,
-so installed copies can select and verify the matching installer. The first published release establishes this
-feed; an end-to-end update is exercised by installing that release and moving
-to a subsequent stable release or nightly.
+The updater uses one public release asset:
+`https://github.com/theogmiguel/houston/releases/latest/download/latest.json`.
+Each published release attaches `latest.json` with the signatures of its
+release artifacts, so installed copies can select and verify the matching
+installer. The first published release establishes this feed; an end-to-end
+update is exercised by installing that release and moving to a subsequent one.
 
 What every release carries:
 
@@ -333,15 +339,15 @@ What every release carries:
    bundler signs the AppImage and the deb as it writes them, and the workflow
    signs any it left unsigned.
 2. `release-publish.yml` verifies the set — one AppImage family and one deb for
-   Linux x86_64 and ARM64, one Windows x86_64 NSIS installer, a `.sig` beside
-   each, every filename carrying the release's version — and refuses anything
-   else.
+   Linux x86_64 and ARM64, plus one Windows x86_64 NSIS installer when the cut
+   included Windows, a `.sig` beside each, every filename carrying the
+   release's version — and refuses anything else.
 3. `latest.json` embeds each `.sig` file's contents under both the bare
    `linux-<arch>` / `windows-<arch>` key and the bundle-specific
    `-appimage`, `-deb` and `-nsis` keys, so a deb install and an AppImage
    install each resolve their own payload.
-4. The manifest is published as a release asset, which is what makes the two
-   URLs above resolvable.
+4. The manifest is published as a release asset, which is what makes the URL
+   above resolvable.
 
 ### Repository settings a maintainer sets by hand
 
@@ -355,6 +361,10 @@ the repo does not carry them.
   `ci.yml` no longer skips jobs on a docs-only change. Give deploy keys the
   ruleset bypass; do not give users one. **Cut release** authenticates with the
   sole write-enabled deploy key and remains the only path around the PR rule.
+- **The `stable-release` environment**: create it under Settings ▸
+  Environments and add a required reviewer. `publish-draft.yml` names it, and
+  until it exists the promote workflow runs unprotected — the reviewer is the
+  only thing standing between a smoke-tested draft and the public.
 - **Discussions**: on, with an **Ideas** category. Feature requests are routed
   there by `.github/ISSUE_TEMPLATE/config.yml`, which points at it by URL.
 - **Private vulnerability reporting**: on. `SECURITY.md` sends reporters to the
@@ -376,8 +386,8 @@ the repo does not carry them.
 ## Fallback: cut locally
 
 When hosted release automation is unavailable, build and publish locally. The
-tag still uses the `v*` shape, so a later workflow re-run targets the same
-release:
+tag still uses the `v*` shape, so the workflows above can resume or promote the
+same release:
 
 ### 1. Gate it
 
@@ -464,12 +474,14 @@ Bundle output: `src-tauri/target/release/bundle/nsis/*.exe`.
 
 ### 3. Smoke-test the bundle
 
-A stable cut creates only a **draft**. CI now proves the built x86_64 AppImage
-*loads and answers* on the four distributions above, but not that the window
-opens: runners are headless, so no webview ever initializes there. Manual
-smoke-test is a hard requirement before publishing or handing anything out,
-local release or not: install the artifact and run it (`./scripts/linux-vm.sh
-app` on the testbed) first.
+A stable cut creates only a **draft**, and **Promote draft to public** is what
+makes it visible. CI proves the built x86_64 AppImage *loads and answers* on
+the four distributions above, but not that the window opens: runners are
+headless, so no webview ever initializes there. Manual smoke-test is a hard
+requirement before promoting or handing anything out, local release or not:
+install the artifact and run it (`./scripts/linux-vm.sh app` on the testbed)
+first. The graphical test is Linux only while cuts are Linux only; it extends
+to Windows on the first cut that ships a Windows installer.
 
 ### 4. Publish
 
@@ -505,7 +517,8 @@ publishing the draft would offer a candidate through `releases/latest`.
 Fully manual, and the same work `release-publish.yml` does — including its
 refusals: the manifest script rejects a set with a missing `.sig`, a missing
 architecture or a filename from another version, so the release never ships a
-manifest the updater cannot use.
+manifest the updater cannot use. This path ends at a draft too, and
+**Promote draft to public** is the same promotion a CI cut goes through.
 
 ## `install-desktop.sh`
 
