@@ -67,9 +67,9 @@ pub struct PrCreate {
     pub message: Option<String>,
 }
 
-/// Opens the branch's pull request. With a title and body the caller wrote
-/// (a person or the writer model), those are what GitHub gets; without them,
-/// `--fill` lets the commits write the text.
+/// Opens the branch's pull request. With a title and body the caller wrote,
+/// those are what GitHub gets; without them, `--fill` lets the commits write
+/// the text.
 pub fn pr_create(dir: &Path, title: Option<&str>, body: Option<&str>) -> PrCreate {
     if let (Some(title), Some(body)) = (title, body) {
         return pr_create_branch(dir, title, body, None, false);
