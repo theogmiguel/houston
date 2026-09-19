@@ -6,7 +6,7 @@ on:
         type: string
         required: true
       ref:
-        description: 'Commit to build; a cut passes the tag it just pushed. Empty builds the triggering ref, which is right for a tag push and for nightly'
+        description: 'Commit to build; a cut passes the tag it just pushed, and build-installers the ref it was given'
         type: string
         required: false
         default: ''

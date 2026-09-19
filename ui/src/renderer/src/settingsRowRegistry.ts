@@ -54,5 +54,5 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
   ],
   daemon: ['Keep Houston in the tray when the window closes', 'Stop daemon'],
   diagnostics: ['Copy diagnostics', 'Daemon logs'],
-  about: ['Houston', 'Contact', 'License', 'Third-party notices', 'Updates', 'Check for updates', 'Channel']
+  about: ['Houston', 'Contact', 'License', 'Third-party notices', 'Updates', 'Check for updates']
 }

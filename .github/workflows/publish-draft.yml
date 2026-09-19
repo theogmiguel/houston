@@ -1,0 +1,123 @@
+name: Promote draft to public
+
+# The only workflow that makes a release visible; it runs after a person has
+# installed and run the draft's artifact on a real desktop. The required
+# reviewer on the `stable-release` environment is the actual control.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag of the draft release to publish'
+        type: string
+        required: true
+      smoke_tested:
+        description: 'A person installed this build and ran it on a desktop'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-publish-gate
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Records who approved; a required reviewer is configured on this
+    # environment in repository settings, not here.
+    environment: stable-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse an unattested release
+        if: inputs.smoke_tested != true
+        run: |
+          echo "::error::smoke_tested is not ticked: nobody has installed this build and run it on a desktop, and that is the one check no runner can perform"
+          exit 1
+
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+
+      - name: Refuse a missing or already published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! release=$(gh release view "$TAG" --json isDraft,isPrerelease 2>/dev/null); then
+            echo "::error::no GitHub release exists for tag $TAG; a draft must be filed before it is promoted"
+            exit 1
+          fi
+          if [ "$(jq -r .isDraft <<< "$release")" != "true" ]; then
+            echo "::error::release $TAG is already public; promoting it again would rebuild nothing and change nothing, so this run refuses"
+            exit 1
+          fi
+          echo "prerelease=$(jq -r .isPrerelease <<< "$release")" >> "$GITHUB_ENV"
+
+      - name: Download the draft's assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "$TAG" --dir release-assets
+          if [ ! -f release-assets/latest.json ]; then
+            echo "::error::release $TAG carries no latest.json; a draft without one cannot be promoted"
+            exit 1
+          fi
+          # Held out of the generator's input: it refuses an artifact set that
+          # already contains a latest.json, since it is the file's author.
+          mv release-assets/latest.json shipped-latest.json
+          ls -lh release-assets
+
+      # The generator is the gate that decides what ships: its own tests run
+      # first, then it is run again over the attached files, and the regenerated
+      # manifest must describe exactly what was attached.
+      - name: Verify the asset set with the manifest generator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          gh release view "$TAG" --json body --jq '.body // ""' > notes.md
+          args=(
+            --repository "$GITHUB_REPOSITORY"
+            --tag "$TAG"
+            --version "$version"
+            --notes-file notes.md
+            --artifacts-dir release-assets
+            --output regenerated-latest.json
+          )
+          if ! jq -e '.platforms | keys | any(startswith("windows-"))' shipped-latest.json >/dev/null; then
+            args+=(--linux-only)
+          fi
+          python3 scripts/test-update-manifest.py
+          python3 scripts/gen-update-manifest.py "${args[@]}"
+          if ! diff <(jq -S '{version, platforms}' shipped-latest.json) \
+                    <(jq -S '{version, platforms}' regenerated-latest.json); then
+            echo "::error::the shipped latest.json does not match the attached assets; the release is not promotable"
+            exit 1
+          fi
+
+      - name: Make the release public
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          args=(--draft=false)
+          if [ "$prerelease" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release edit "$TAG" "${args[@]}"
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| promote | $(( $(date +%s) - JOB_START )) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "promoted $TAG to public (prerelease=$prerelease)" >> "$GITHUB_STEP_SUMMARY"

@@ -16,7 +16,7 @@ function routine(over: Partial<Routine> = {}): Routine {
   return {
     id: 1,
     engine: 'claude',
-    name: 'Nightly triage',
+    name: 'Inbox triage',
     prompt: 'Read the inbox.',
     cadence: { type: 'clock', hour: 9, minute: 0, weekdays: null },
     enabled: true,
@@ -75,7 +75,7 @@ describe('App — Routines wiring', () => {
     const { act } = await import('react')
     await openRoutines(container)
     act(() => deliverControl({ type: 'routines', running: [], routines: [routine()] }))
-    expect(container.textContent).toContain('Nightly triage')
+    expect(container.textContent).toContain('Inbox triage')
     expect(container.querySelector('[data-testid="routine-create"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="routine-run-now"]')).toBeTruthy()
   })

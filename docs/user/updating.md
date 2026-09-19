@@ -11,7 +11,8 @@ daemon starts, once a day after that, and whenever you press **Check now**.
 The request goes to GitHub's releases API and asks one question: what is the latest
 release. It carries nothing about you — not your version, not your operating system, not
 any identifier — and nothing comes back except the release's own public details. Draft
-releases are ignored; a prerelease is ignored on Stable and is what Nightly follows.
+releases are ignored, and so is a prerelease: a release candidate is cut as a tag and
+installed by hand, never offered as an update.
 
 **Switching it off.** Settings ▸ About ▸ *Check for updates*. Off means the request is
 never made, and the panel says so rather than going quiet. The current value is always on

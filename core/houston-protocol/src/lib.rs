@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 109;
+pub const PROTOCOL_VERSION: u32 = 110;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -507,33 +507,17 @@ impl Default for SessionPolicy {
     }
 }
 
-/// Nightly builds come off `main` unattended and are never smoke-tested, so this
-/// is opt-in and visible rather than a hidden key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "snake_case")]
-pub enum UpdateChannel {
-    #[default]
-    Stable,
-    Nightly,
-}
-
 /// Off means no request is ever made. On, the request carries nothing about the
 /// machine it came from: no version, no OS, no identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UpdatePolicy {
     pub check: bool,
-    #[serde(default)]
-    pub channel: UpdateChannel,
 }
 
 impl Default for UpdatePolicy {
     fn default() -> Self {
-        UpdatePolicy {
-            check: true,
-            channel: UpdateChannel::Stable,
-        }
+        UpdatePolicy { check: true }
     }
 }
 

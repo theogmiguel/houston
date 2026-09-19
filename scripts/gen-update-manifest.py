@@ -212,7 +212,7 @@ def assemble(
     if not REPOSITORY_RE.match(repository):
         raise Refused(f"repository {repository!r} is not owner/name; expected e.g. theogmiguel/houston")
     if not TAG_RE.match(tag):
-        raise Refused(f"tag {tag!r} is not a URL-safe git tag; expected e.g. v0.11.0 or nightly")
+        raise Refused(f"tag {tag!r} is not a URL-safe git tag; expected e.g. v0.11.0 or v0.12.0-rc.1")
 
     signatures: dict[str, str] = {}
     linux, windows = collect(

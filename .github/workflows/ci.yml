@@ -172,7 +172,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: core
-      # Same pinned tarball + Zig build.rs step release.yml's linux-bundle job
+      # Same pinned tarball + Zig build.rs step the release-linux bundle job
       # caches, scoped to core/ only — src-tauri isn't built here.
       - name: Cache the pinned libghostty-vt source and Zig
         uses: actions/cache@v5

@@ -31,7 +31,11 @@ cd "$tmp/work"
 git init -q .
 git add -A
 git -c user.email=mutation@local -c user.name=mutation commit -q -m pins --no-verify
-cp -r "$tmp/work" "$tmp/pristine"
+# Never copy the scratch repo's .git: on newer Git a detached
+# `git maintenance --auto` can remove .git/objects/maintenance.lock mid-`cp`,
+# aborting the mutation. The pristine copy restores only scripts/ and ui/.
+mkdir -p "$tmp/pristine"
+cp -r "$tmp/work/scripts" "$tmp/work/ui" "$tmp/pristine/"
 
 fails=0
 if ! env -u GITHUB_BASE_REF GITHUB_EVENT_NAME=push \

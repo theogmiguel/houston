@@ -1,0 +1,79 @@
+name: Build installers
+
+# Manual only, and it files nothing: a dry run of the bundle pipeline. `ci.yml`
+# never builds an installer, so this is the only way to exercise the bundle
+# builds without cutting a version.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to build'
+        type: string
+        default: 'main'
+        required: true
+
+permissions:
+  contents: read
+
+# Version-PINNED, not a caret range — an unpinned CLI would change the bundle
+# under us. The one source of truth; a job output (below) is the only way to
+# hand it to a called workflow, since a reusable workflow's `with:` can't resolve `env`.
+env:
+  TAURI_CLI_VERSION: 2.11.4
+
+jobs:
+  version-guard:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tauri_cli_version: ${{ steps.pin.outputs.tauri_cli_version }}
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - id: pin
+        run: echo "tauri_cli_version=$TAURI_CLI_VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - id: check
+        run: |
+          set -euo pipefail
+          version=$(./scripts/check-manifest-versions.sh)
+          # The four are what the bundle filenames read; both lockfiles carry
+          # the workspace crates' own versions and must move with them.
+          ./scripts/set-version.sh --check "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| version-guard | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  linux-bundle:
+    needs: version-guard
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      ref: ${{ inputs.ref }}
+      version: ${{ needs.version-guard.outputs.version }}
+      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      # This workflow files nothing, so signing is never required; the bundle
+      # workflow still signs when the updater key happens to be present.
+      require_signing: false
+    secrets: inherit
+
+  windows-bundle:
+    needs: version-guard
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      ref: ${{ inputs.ref }}
+      version: ${{ needs.version-guard.outputs.version }}
+      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      require_signing: false
+    secrets: inherit

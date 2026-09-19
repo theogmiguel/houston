@@ -13,10 +13,7 @@ async fn the_setting_off_means_the_check_makes_no_request() {
     let (_addr, _dir, daemon) = start_daemon_without_mail_loop().await;
 
     daemon
-        .update_policy_set(proto::UpdatePolicy {
-            check: false,
-            channel: proto::UpdateChannel::Stable,
-        })
+        .update_policy_set(proto::UpdatePolicy { check: false })
         .unwrap();
     assert_eq!(daemon.update_state(), proto::UpdateState::Disabled);
 
@@ -38,18 +35,12 @@ async fn the_policy_defaults_to_on_and_survives_a_round_trip() {
     );
 
     daemon
-        .update_policy_set(proto::UpdatePolicy {
-            check: false,
-            channel: proto::UpdateChannel::Stable,
-        })
+        .update_policy_set(proto::UpdatePolicy { check: false })
         .unwrap();
     assert!(!daemon.update_policy().check);
 
     daemon
-        .update_policy_set(proto::UpdatePolicy {
-            check: true,
-            channel: proto::UpdateChannel::Stable,
-        })
+        .update_policy_set(proto::UpdatePolicy { check: true })
         .unwrap();
     assert!(daemon.update_policy().check);
     assert_eq!(
@@ -89,10 +80,7 @@ async fn update_policy_set_off_is_broadcast_as_disabled() {
     let _hello_ok = next_control(&mut ws).await;
 
     let msg = serde_json::to_string(&proto::ClientMsg::UpdatePolicySet {
-        policy: proto::UpdatePolicy {
-            check: false,
-            channel: proto::UpdateChannel::Stable,
-        },
+        policy: proto::UpdatePolicy { check: false },
     })
     .unwrap();
     ws.send(Message::text(msg)).await.unwrap();
@@ -104,35 +92,4 @@ async fn update_policy_set_off_is_broadcast_as_disabled() {
             return;
         }
     }
-}
-
-// An answer found on one channel is not an answer about the other, so moving the
-// channel while the check stays on drops it back to `Unknown`.
-#[tokio::test]
-async fn changing_channel_while_checked_drops_the_standing_answer() {
-    let (_addr, _dir, daemon) = start_daemon_without_mail_loop().await;
-
-    daemon
-        .update_policy_set(proto::UpdatePolicy {
-            check: true,
-            channel: proto::UpdateChannel::Stable,
-        })
-        .unwrap();
-
-    daemon
-        .update_policy_set(proto::UpdatePolicy {
-            check: true,
-            channel: proto::UpdateChannel::Nightly,
-        })
-        .unwrap();
-    assert_eq!(
-        daemon.update_state(),
-        proto::UpdateState::Unknown,
-        "the standing answer was about stable, so it does not survive the switch to nightly"
-    );
-    assert_eq!(
-        daemon.update_policy().channel,
-        proto::UpdateChannel::Nightly,
-        "the channel round-trips through the settings row"
-    );
 }
