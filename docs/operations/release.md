@@ -105,10 +105,13 @@ Run **Cut release** from the Actions tab. That is the whole procedure.
 |---|---|
 | `kind` | `patch`, `minor`, `major` or `rc` |
 | `ref` | what to cut from; `main` by default |
+| `include_windows` | build Windows too; clear it for a Linux-only release |
 
 It reads the tags to decide the next version, writes it with
-`scripts/set-version.sh`, commits, tags, pushes, builds every bundle job in
-parallel and files a **draft** release whose body is the generated notes. Then
+`scripts/set-version.sh`, commits, tags, pushes, builds the selected bundle jobs
+in parallel and files a **draft** release whose body is the generated notes. A
+Linux-only cut still requires both Linux architectures and both bundle formats;
+its manifest contains no Windows target and rejects any Windows artifact. Then
 you download the artifacts, install and run them, and publish the draft
 yourself — see "Smoke-test the bundle" below. A draft is where every release
 stops until a person has run it.
