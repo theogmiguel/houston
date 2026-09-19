@@ -7,28 +7,12 @@ use crate::daemon::Daemon;
 
 // The settings row that carries the on/off choice; absent means on.
 const UPDATES_CHECK_KEY: &str = "updates_check";
-// The settings row that carries the channel name; absent or unknown means Stable.
-const UPDATES_CHANNEL_KEY: &str = "updates_channel";
 // One request a day sits far below any rate limit, and a release is never
 // more urgent than that.
 const CHECK_INTERVAL_HOURS: u64 = 24;
 // The repository the four manifests name. One constant, so a rename moves one line.
 const RELEASES_LATEST_URL: &str =
     "https://api.github.com/repos/theogmiguel/houston/releases/latest";
-// The nightly prerelease is a rolling tag, so it is fetched by name: `releases/latest`
-// is documented to skip prereleases and would never return it.
-const RELEASES_NIGHTLY_URL: &str =
-    "https://api.github.com/repos/theogmiguel/houston/releases/tags/nightly";
-// The nightly release title, as the publish workflow files it. The moving tag
-// carries no version, so this title is the only release identity on the payload.
-const NIGHTLY_TITLE_PREFIX: &str = "Houston nightly ";
-
-fn releases_url(channel: proto::UpdateChannel) -> &'static str {
-    match channel {
-        proto::UpdateChannel::Stable => RELEASES_LATEST_URL,
-        proto::UpdateChannel::Nightly => RELEASES_NIGHTLY_URL,
-    }
-}
 // GitHub refuses a request with no User-Agent. This one names the product and
 // nothing else: no version, no OS, no identifier.
 const USER_AGENT: &str = "houston";
@@ -59,44 +43,6 @@ pub fn same_release(a: &str, b: &str) -> bool {
     !a.is_empty() && a == b && parse_semver(a).is_some()
 }
 
-/// The version the nightly release title (`Houston nightly <version>`, as the
-/// publish workflow files it) carries; the moving `nightly` tag holds none. A
-/// title outside that shape gives no identity to check an install against.
-fn version_from_release_name(name: &str) -> Option<&str> {
-    let rest = name.strip_prefix(NIGHTLY_TITLE_PREFIX)?;
-    let token = trim_version(rest);
-    parse_semver(token).map(|_| token)
-}
-
-/// Whether the remote nightly names the commit this binary was built from, so
-/// the same nightly is not offered forever after it is installed: the running
-/// binary reports only its base `CARGO_PKG_VERSION`.
-pub fn nightly_names_this_build(remote: &str, build_commit: &str) -> bool {
-    if build_commit.is_empty() || build_commit == "unknown" {
-        return false;
-    }
-    let Some((_, metadata)) = remote.split_once('+') else {
-        return false;
-    };
-    let Some(rest) = metadata.strip_prefix("nightly.") else {
-        return false;
-    };
-    rest.rsplit('.').next() == Some(build_commit)
-}
-
-/// The daemon's whole availability decision for one fetched release.
-fn update_is_available(
-    remote: &str,
-    running: &str,
-    channel: proto::UpdateChannel,
-    build_commit: &str,
-) -> bool {
-    if channel == proto::UpdateChannel::Nightly && nightly_names_this_build(remote, build_commit) {
-        return false;
-    }
-    is_newer(remote, running, channel)
-}
-
 fn parse_semver(s: &str) -> Option<(u64, u64, u64)> {
     let s = s.trim();
     let s = s.strip_prefix('v').unwrap_or(s);
@@ -111,27 +57,20 @@ fn parse_semver(s: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
-/// Stable offers only a strictly newer release; a rolling nightly tag carries
-/// whatever version `main` is at, usually the running one, so Nightly must also
-/// offer an equal version.
-pub fn is_newer(remote: &str, running: &str, channel: proto::UpdateChannel) -> bool {
-    match compare_versions(remote, running) {
-        Ordering::Greater => true,
-        Ordering::Equal => channel == proto::UpdateChannel::Nightly,
-        Ordering::Less => false,
-    }
+/// Stable offers only a strictly newer release; an equal or older version is
+/// not an update.
+pub fn is_newer(remote: &str, running: &str) -> bool {
+    compare_versions(remote, running) == Ordering::Greater
 }
 
 fn first_chars(s: &str) -> String {
     s.chars().take(200).collect()
 }
 
-/// Reads a release body, rejecting a draft on both channels and a prerelease on
-/// Stable only. An error names the missing field and the body's first 200 characters.
-fn parse_latest_release(
-    body: &str,
-    channel: proto::UpdateChannel,
-) -> anyhow::Result<Option<proto::UpdateRelease>> {
+/// Reads a release body, rejecting a draft and a prerelease unconditionally: an
+/// rc must never reach a stable install, and a candidate is installed by hand.
+/// An error names the missing field and the body's first 200 characters.
+fn parse_latest_release(body: &str) -> anyhow::Result<Option<proto::UpdateRelease>> {
     let v: serde_json::Value = serde_json::from_str(body).map_err(|e| {
         anyhow!(
             "releases/latest body is not JSON ({e}); body starts: {}",
@@ -140,7 +79,7 @@ fn parse_latest_release(
     })?;
     let draft = v.get("draft").and_then(serde_json::Value::as_bool) == Some(true);
     let prerelease = v.get("prerelease").and_then(serde_json::Value::as_bool) == Some(true);
-    if draft || (prerelease && channel == proto::UpdateChannel::Stable) {
+    if draft || prerelease {
         return Ok(None);
     }
     let tag = v
@@ -167,33 +106,7 @@ fn parse_latest_release(
         .get("body")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    let version = match channel {
-        proto::UpdateChannel::Stable => tag.strip_prefix('v').unwrap_or(tag).to_string(),
-        // The rolling `nightly` tag carries no version; the release title does.
-        // A payload whose title does not is an error, never a release the panel
-        // cannot identify and an install cannot pin.
-        proto::UpdateChannel::Nightly => {
-            let name = v
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "nightly release payload has no string `name` carrying its version; \
-                         body starts: {}",
-                        first_chars(body)
-                    )
-                })?;
-            version_from_release_name(name)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "nightly release title {name:?} does not match the publish workflow's \
-                         {NIGHTLY_TITLE_PREFIX:?}<version> shape; body starts: {}",
-                        first_chars(body)
-                    )
-                })?
-                .to_string()
-        }
-    };
+    let version = tag.strip_prefix('v').unwrap_or(tag).to_string();
     Ok(Some(proto::UpdateRelease {
         version,
         notes: notes.to_string(),
@@ -207,13 +120,10 @@ impl Daemon {
             Ok(Some(v)) => v != "0",
             _ => true,
         };
-        // Only the exact stored string opts into nightly; an absent row or an
-        // unrecognised value is Stable, the conservative side, never untested builds.
-        let channel = match self.db().get_setting(UPDATES_CHANNEL_KEY) {
-            Ok(Some(v)) if v == "nightly" => proto::UpdateChannel::Nightly,
-            _ => proto::UpdateChannel::Stable,
-        };
-        proto::UpdatePolicy { check, channel }
+        // The stored `updates_channel` row is deliberately left in place,
+        // inert: a migration to delete one dead row costs more than it returns,
+        // and nothing reads it any more.
+        proto::UpdatePolicy { check }
     }
 
     pub fn update_state(&self) -> proto::UpdateState {
@@ -228,17 +138,8 @@ impl Daemon {
     }
 
     pub fn update_policy_set(&self, policy: proto::UpdatePolicy) -> anyhow::Result<()> {
-        let stored = self.update_policy();
         self.db()
             .set_setting(UPDATES_CHECK_KEY, if policy.check { "1" } else { "0" })?;
-        self.db().set_setting(
-            UPDATES_CHANNEL_KEY,
-            match policy.channel {
-                proto::UpdateChannel::Stable => "stable",
-                proto::UpdateChannel::Nightly => "nightly",
-            },
-        )?;
-        let channel_changed = stored.channel != policy.channel;
         {
             let mut state = self.update_state.lock().expect("update_state lock");
             *state = if policy.check {
@@ -247,7 +148,7 @@ impl Daemon {
                 proto::UpdateState::Disabled
             };
         }
-        if policy.check || channel_changed {
+        if policy.check {
             self.update_wake.notify_one();
         }
         Ok(())
@@ -263,15 +164,10 @@ impl Daemon {
         *self.update_state.lock().expect("update_state lock") = proto::UpdateState::Checking;
         self.broadcast_control(&self.update_snapshot());
 
-        let state = match self.fetch_latest(policy.channel).await {
+        let state = match self.fetch_latest().await {
             Ok(Some(release)) => {
                 let checked_at_ms = crate::daemon::now_ms();
-                if update_is_available(
-                    &release.version,
-                    env!("CARGO_PKG_VERSION"),
-                    policy.channel,
-                    crate::daemon::build_commit(),
-                ) {
+                if is_newer(&release.version, env!("CARGO_PKG_VERSION")) {
                     proto::UpdateState::Available {
                         release,
                         checked_at_ms,
@@ -292,21 +188,18 @@ impl Daemon {
         self.broadcast_control(&self.update_snapshot());
     }
 
-    async fn fetch_latest(
-        &self,
-        channel: proto::UpdateChannel,
-    ) -> anyhow::Result<Option<proto::UpdateRelease>> {
+    async fn fetch_latest(&self) -> anyhow::Result<Option<proto::UpdateRelease>> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .user_agent(USER_AGENT)
             .build()?;
         let response = client
-            .get(releases_url(channel))
+            .get(RELEASES_LATEST_URL)
             .send()
             .await?
             .error_for_status()?;
         let body = response.text().await?;
-        parse_latest_release(&body, channel)
+        parse_latest_release(&body)
     }
 
     pub async fn update_check_loop(&self) {
@@ -353,7 +246,7 @@ mod tests {
 
     #[test]
     fn unparseable_compares_equal() {
-        assert_eq!(compare_versions("nightly", "1.0.0"), Ordering::Equal);
+        assert_eq!(compare_versions("latest", "1.0.0"), Ordering::Equal);
         assert_eq!(compare_versions("1.0", "1.0.0"), Ordering::Equal);
         assert_eq!(compare_versions("", "1.0.0"), Ordering::Equal);
     }
@@ -361,23 +254,17 @@ mod tests {
     #[test]
     fn same_release_demands_the_full_identity() {
         assert!(same_release("1.2.3", "v1.2.3"));
-        assert!(same_release(
-            "0.10.0+nightly.20260916.abcdef1",
-            "0.10.0+nightly.20260916.abcdef1"
-        ));
+        assert!(same_release("0.11.0-rc.1", "0.11.0-rc.1"));
         assert!(
-            !same_release(
-                "0.10.0+nightly.20260916.abcdef1",
-                "0.10.0+nightly.20260917.abcdef1"
-            ),
-            "a moved nightly feed is a different release; build metadata is the identity"
+            !same_release("0.11.0-rc.1", "0.11.0-rc.2"),
+            "a moved candidate is a different release"
         );
         assert!(
-            !same_release("0.10.0+nightly.20260916.abcdef1", "0.10.0"),
-            "the base version is not the nightly's identity"
+            !same_release("0.11.0-rc.1", "0.11.0"),
+            "the base version is not the candidate's identity"
         );
         assert!(
-            !same_release("nightly", "nightly"),
+            !same_release("latest", "latest"),
             "an unidentifiable name never matches anything, even itself"
         );
         assert!(!same_release("", ""));
@@ -385,153 +272,22 @@ mod tests {
     }
 
     #[test]
-    fn a_nightly_release_takes_its_identity_from_the_release_title() {
-        let body = r#"{"tag_name":"nightly","name":"Houston nightly 0.10.0+nightly.20260916.abcdef1","html_url":"https://example.com/r","prerelease":true,"body":"notes"}"#;
-        let release = parse_latest_release(body, proto::UpdateChannel::Nightly)
-            .unwrap()
-            .expect("a release");
-        assert_eq!(release.version, "0.10.0+nightly.20260916.abcdef1");
-    }
-
-    #[test]
-    fn a_nightly_release_without_an_identifiable_title_is_an_error() {
-        let cases = [
-            (
-                r#"{"tag_name":"nightly","html_url":"https://example.com/r","prerelease":true}"#,
-                "name",
-            ),
-            (
-                r#"{"tag_name":"nightly","name":null,"html_url":"https://example.com/r","prerelease":true}"#,
-                "name",
-            ),
-            (
-                r#"{"tag_name":"nightly","name":"Houston nightly","html_url":"https://example.com/r","prerelease":true}"#,
-                "shape",
-            ),
-            (
-                r#"{"tag_name":"nightly","name":"Houston nightly 1.2","html_url":"https://example.com/r","prerelease":true}"#,
-                "shape",
-            ),
-            (
-                r#"{"tag_name":"nightly","name":"Nightly 1.2.3","html_url":"https://example.com/r","prerelease":true}"#,
-                "shape",
-            ),
-            (
-                r#"{"tag_name":"nightly","name":"Houston nightly 1.2.3 extra","html_url":"https://example.com/r","prerelease":true}"#,
-                "shape",
-            ),
-        ];
-        for (body, expected) in cases {
-            let err = parse_latest_release(body, proto::UpdateChannel::Nightly)
-                .expect_err(&format!("must refuse: {body}"));
-            assert!(err.to_string().contains(expected), "{err}");
-        }
-    }
-
-    #[test]
-    fn a_nightly_naming_this_build_is_not_an_update() {
-        let commit = "abcdef1";
-        assert!(!update_is_available(
-            "0.10.0+nightly.20260916.abcdef1",
-            "0.10.0",
-            proto::UpdateChannel::Nightly,
-            commit
-        ));
-        assert!(update_is_available(
-            "0.10.0+nightly.20260917.1234567",
-            "0.10.0",
-            proto::UpdateChannel::Nightly,
-            commit
-        ));
-        assert!(update_is_available(
-            "0.11.0+nightly.20260917.1234567",
-            "0.10.0",
-            proto::UpdateChannel::Nightly,
-            commit
-        ));
+    fn draft_and_prerelease_are_refused_unconditionally() {
+        let draft =
+            r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","draft":true,"assets":[]}"#;
+        assert!(parse_latest_release(draft).unwrap().is_none());
+        let pre = r#"{"tag_name":"v1.3.0-rc.1","name":"Houston 1.3.0-rc.1","html_url":"https://example.com/r","prerelease":true,"assets":[]}"#;
         assert!(
-            update_is_available("0.11.0", "0.10.0", proto::UpdateChannel::Stable, commit),
-            "stable never carries nightly metadata; its rule is untouched"
+            parse_latest_release(pre).unwrap().is_none(),
+            "a release candidate must never be offered to a stable install"
         );
     }
 
     #[test]
-    fn nightly_names_this_build_reads_only_the_controlled_suffix() {
-        assert!(nightly_names_this_build(
-            "0.10.0+nightly.20260916.abcdef1",
-            "abcdef1"
-        ));
-        assert!(!nightly_names_this_build(
-            "0.10.0+nightly.20260916.abcdef1",
-            "1234567"
-        ));
-        assert!(!nightly_names_this_build("0.10.0", "abcdef1"));
-        assert!(!nightly_names_this_build(
-            "0.10.0+nightly.20260916.abcdef1",
-            "unknown"
-        ));
-        assert!(!nightly_names_this_build(
-            "0.10.0+nightly.20260916.abcdef1",
-            ""
-        ));
-    }
-
-    #[test]
-    fn draft_and_prerelease_are_none() {
-        let draft =
-            r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","draft":true,"assets":[]}"#;
-        assert!(parse_latest_release(draft, proto::UpdateChannel::Stable)
-            .unwrap()
-            .is_none());
-        let pre = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","prerelease":true,"assets":[]}"#;
-        assert!(parse_latest_release(pre, proto::UpdateChannel::Stable)
-            .unwrap()
-            .is_none());
-    }
-
-    #[test]
-    fn prerelease_is_accepted_only_on_nightly() {
-        let pre = r#"{"tag_name":"v1.2.3","name":"Houston nightly 1.2.3+nightly.20260916.abcdef1","html_url":"https://example.com/r","prerelease":true,"assets":[]}"#;
-        assert!(parse_latest_release(pre, proto::UpdateChannel::Stable)
-            .unwrap()
-            .is_none());
-        assert!(parse_latest_release(pre, proto::UpdateChannel::Nightly)
-            .unwrap()
-            .is_some());
-    }
-
-    #[test]
-    fn draft_is_rejected_on_both_channels() {
-        let draft =
-            r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","draft":true,"assets":[]}"#;
-        assert!(parse_latest_release(draft, proto::UpdateChannel::Stable)
-            .unwrap()
-            .is_none());
-        assert!(parse_latest_release(draft, proto::UpdateChannel::Nightly)
-            .unwrap()
-            .is_none());
-    }
-
-    #[test]
-    fn is_newer_stable_requires_strictly_greater() {
-        assert!(is_newer("1.2.4", "1.2.3", proto::UpdateChannel::Stable));
-        assert!(!is_newer("1.2.3", "1.2.3", proto::UpdateChannel::Stable));
-        assert!(!is_newer("1.2.2", "1.2.3", proto::UpdateChannel::Stable));
-    }
-
-    #[test]
-    fn is_newer_nightly_also_accepts_equal() {
-        assert!(is_newer("1.2.4", "1.2.3", proto::UpdateChannel::Nightly));
-        assert!(is_newer("1.2.3", "1.2.3", proto::UpdateChannel::Nightly));
-        assert!(!is_newer("1.2.2", "1.2.3", proto::UpdateChannel::Nightly));
-    }
-
-    #[test]
-    fn releases_url_differs_per_channel() {
-        let stable = releases_url(proto::UpdateChannel::Stable);
-        let nightly = releases_url(proto::UpdateChannel::Nightly);
-        assert_ne!(stable, nightly);
-        assert!(nightly.ends_with("/tags/nightly"), "{nightly}");
+    fn only_a_strictly_newer_release_is_an_update() {
+        assert!(is_newer("1.2.4", "1.2.3"));
+        assert!(!is_newer("1.2.3", "1.2.3"));
+        assert!(!is_newer("1.2.2", "1.2.3"));
     }
 
     #[test]
@@ -546,9 +302,7 @@ mod tests {
             {"name":"Houston_1.2.3_amd64.AppImage","browser_download_url":"https://example.com/Houston.AppImage"}
           ]
         }"###;
-        let release = parse_latest_release(body, proto::UpdateChannel::Stable)
-            .unwrap()
-            .expect("a release");
+        let release = parse_latest_release(body).unwrap().expect("a release");
         assert_eq!(release.version, "1.2.3", "the leading v is stripped");
         assert_eq!(
             release.notes, "## What changed\n\n- a fix\n- a feature",
@@ -563,22 +317,18 @@ mod tests {
     #[test]
     fn a_release_with_no_body_carries_empty_notes() {
         let body = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r","body":null}"#;
-        let release = parse_latest_release(body, proto::UpdateChannel::Stable)
-            .unwrap()
-            .expect("a release");
+        let release = parse_latest_release(body).unwrap().expect("a release");
         assert_eq!(release.notes, "");
 
         let body = r#"{"tag_name":"v1.2.3","html_url":"https://example.com/r"}"#;
-        let release = parse_latest_release(body, proto::UpdateChannel::Stable)
-            .unwrap()
-            .expect("a release");
+        let release = parse_latest_release(body).unwrap().expect("a release");
         assert_eq!(release.notes, "");
     }
 
     #[test]
     fn missing_tag_name_error_names_the_field() {
         let body = r#"{"html_url":"https://example.com/r","assets":[]}"#;
-        let err = parse_latest_release(body, proto::UpdateChannel::Stable).unwrap_err();
+        let err = parse_latest_release(body).unwrap_err();
         assert!(err.to_string().contains("tag_name"), "{err}");
     }
 
@@ -604,10 +354,7 @@ mod tests {
         };
 
         daemon
-            .update_policy_set(proto::UpdatePolicy {
-                check: false,
-                channel: proto::UpdateChannel::Stable,
-            })
+            .update_policy_set(proto::UpdatePolicy { check: false })
             .unwrap();
 
         assert_eq!(daemon.update_state(), proto::UpdateState::Disabled);
@@ -616,7 +363,7 @@ mod tests {
     #[test]
     fn missing_html_url_error_names_the_field() {
         let body = r#"{"tag_name":"v1.2.3","assets":[]}"#;
-        let err = parse_latest_release(body, proto::UpdateChannel::Stable).unwrap_err();
+        let err = parse_latest_release(body).unwrap_err();
         assert!(err.to_string().contains("html_url"), "{err}");
     }
 }
