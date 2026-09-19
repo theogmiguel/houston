@@ -39,9 +39,8 @@ jobs:
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
-          # check-ratchets-only-tighten.sh compares every baseline pin against
-          # origin/<base> (PR) or HEAD~1 (push); a depth-1 clone has neither, and
-          # the guard fails rather than skip — no comparison is not evidence nothing moved.
+          # Ratchets compare origin/<base> (PR) or HEAD~1 (push), so they need history.
+          # The root commit is the one exception: it records the first baseline.
           fetch-depth: 0
       - name: check-watchdog.sh (tauri tracing-feature ban, monotonic clocks)
         run: bash scripts/check-watchdog.sh

@@ -18,16 +18,23 @@ RATCHETS=(
 )
 
 ref="${1:-}"
+root_baseline=0
 if [ -z "$ref" ]; then
   if [ -n "${GITHUB_BASE_REF:-}" ]; then
     ref="origin/$GITHUB_BASE_REF"
   elif [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
-    ref="HEAD~1"
+    if git rev-parse --verify --quiet 'HEAD^{commit}' >/dev/null &&
+      ! git cat-file -p HEAD | grep -q '^parent '; then
+      root_baseline=1
+    else
+      ref="HEAD~1"
+    fi
   else
     ref="HEAD"
   fi
 fi
-if ! git rev-parse --verify --quiet "$ref^{commit}" >/dev/null; then
+if [ "$root_baseline" -eq 0 ] &&
+  ! git rev-parse --verify --quiet "$ref^{commit}" >/dev/null; then
   echo "FAIL: cannot resolve the comparison ref \"$ref\" -- nothing to compare the" >&2
   echo "      pins against, so this guard has no evidence either way." >&2
   echo "      Expected a resolvable commit-ish. In CI, actions/checkout needs" >&2
@@ -82,6 +89,13 @@ for entry in "${RATCHETS[@]}"; do
 
   declare -A now=() before=()
   while IFS=$'\t' read -r k v; do [ -n "$k" ] && now["$k"]="$v"; done < <(extract "$name" "$kind" < "$file")
+
+  if [ "$root_baseline" -eq 1 ]; then
+    echo "ok: $file ($name) establishes ${#now[@]} pin(s) at the root commit"
+    total_pins=$((total_pins + ${#now[@]}))
+    unset now before
+    continue
+  fi
 
   if ! git cat-file -e "$ref:$file" 2>/dev/null; then
     echo "ok: $file ($name) is new at $ref -- ${#now[@]} pin(s) recorded, nothing to compare"
@@ -173,7 +187,11 @@ for entry in "${RATCHETS[@]}"; do
 done
 
 if [ "$fail" -eq 0 ]; then
-  msg="ok: ${#RATCHETS[@]} ratchet(s), $total_pins pin(s), none raised since $ref"
+  if [ "$root_baseline" -eq 1 ]; then
+    msg="ok: ${#RATCHETS[@]} ratchet(s), $total_pins pin(s), root baseline recorded"
+  else
+    msg="ok: ${#RATCHETS[@]} ratchet(s), $total_pins pin(s), none raised since $ref"
+  fi
   [ "$renames" -gt 0 ] && msg="$msg ($renames rename(s))"
   echo "$msg"
 fi
