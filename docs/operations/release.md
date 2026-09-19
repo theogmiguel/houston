@@ -121,15 +121,19 @@ overran the glibc floor fails there. It runs for every caller — cut, tag push
 and nightly — and `publish` waits for it. A graphical run is still a person's
 job: a runner has no display.
 
-Before any of that, it refuses a run whose secrets are missing: a real release
-is signed, so `TAURI_SIGNING_PRIVATE_KEY` and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must be repository secrets, or the run
-stops before the version is computed and before anything is pushed.
+Before any of that, it refuses a run whose secrets are missing. A real release
+needs `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to sign its artifacts, plus
+`RELEASE_PUSH_SSH_KEY` to write the version commit through protected `main`.
+The run stops before the version is computed and before anything is pushed.
 
 **What it refuses, and why each refusal exists.**
 
 - **Missing updater signing secrets.** A release nobody can verify is not a
   release; the error names the missing secret and where to set it.
+- **Missing release push key.** The version commit cannot bypass protected
+  `main` without the dedicated deploy key, so the cut stops before it creates
+  a commit or tag.
 - **A stable that is not strictly greater than the latest stable tag.** The
   arithmetic alone would not catch a repository whose tags and manifests have
   drifted, so the comparison is explicit and the error names the computed
@@ -345,16 +349,19 @@ the repo does not carry them.
   status checks `safety-checks`, `renderer-checks`, `core-checks` and
   `licence-inventory`. Every pull request must run all four — a required check
   that never runs stays pending and blocks the merge for ever, which is why
-  `ci.yml` no longer skips jobs on a docs-only change. **Cut release** pushes
-  its version commit to `main` with the workflow's own token, so the rule must
-  list the GitHub Actions app as a bypass actor; without that bypass the push
-  is refused and the run ends with no tag.
+  `ci.yml` no longer skips jobs on a docs-only change. Give deploy keys the
+  ruleset bypass; do not give users one. **Cut release** authenticates with the
+  sole write-enabled deploy key and remains the only path around the PR rule.
 - **Discussions**: on, with an **Ideas** category. Feature requests are routed
   there by `.github/ISSUE_TEMPLATE/config.yml`, which points at it by URL.
 - **Private vulnerability reporting**: on. `SECURITY.md` sends reporters to the
   advisory form, and that form only exists once the setting is enabled.
 - **Description, homepage and topics**: set all three so the repository is
   identifiable in search and its metadata matches the project page.
+- **Release push key.** Generate a dedicated Ed25519 key with no passphrase,
+  add its public half as the write-enabled deploy key `Houston Cut release`,
+  and store its private half as the Actions secret `RELEASE_PUSH_SSH_KEY`.
+  Remove both halves together when rotating it.
 - **Secrets.** `TAURI_SIGNING_PRIVATE_KEY` and
   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are **required**: every release workflow
   refuses a run without them, because a release without a verifiable signature
