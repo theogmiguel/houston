@@ -94,9 +94,12 @@ fn build_ghostty_vt() {
     let prefix = cache.join(format!("build-{revision}"));
     let lib = prefix.join("lib").join("libghostty-vt.a");
     {
+        // The extracted dependency lives inside Houston's worktree. Stop Git at
+        // its cache boundary so a Houston release tag is not read as Ghostty's.
         run(
             Command::new(&zig)
                 .current_dir(&src)
+                .env("GIT_CEILING_DIRECTORIES", &cache)
                 .arg("build")
                 .arg("-Demit-lib-vt")
                 .arg("-Doptimize=ReleaseFast")

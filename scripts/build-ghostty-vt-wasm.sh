@@ -74,7 +74,8 @@ if [[ ! -x "$zig" ]]; then
 fi
 
 prefix="$cache/wasm-$revision"
-( cd "$src" && nice -n 19 "$zig" build -Demit-lib-vt \
+git_ceiling="$(cd "$(dirname "$src")" && pwd -P)"
+( cd "$src" && GIT_CEILING_DIRECTORIES="$git_ceiling" nice -n 19 "$zig" build -Demit-lib-vt \
     -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall -Dstrip=true \
     "-Dlib-version-string=$version_string" -p "$prefix" )
 
