@@ -1,0 +1,6 @@
+{
+  "_note": "reconstructed from cursor.com/docs/hooks (this session's own fetch confirmed status/loop_count on subagentStop; the plan's D7 table names the same pair for stop) — not captured live. No text/last_assistant_message field: the plan's D7 table says Cursor's last-said text lives only in afterAgentResponse, never in stop's own payload.",
+  "conversation_id": "conv-cursor-docs-01",
+  "status": "completed",
+  "loop_count": 0
+}

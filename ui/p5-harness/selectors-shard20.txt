@@ -1,0 +1,20 @@
+.grid-menu
+.bell-menu
+.rpanel
+.term-dropzone
+.term-toast
+.handoff-overlay
+.anim-out
+.pane-title
+.head-actions .ico
+.ctx-item
+.url-input
+.agent-dot
+.pane-head
+.estatus
+.ehost
+.edot
+.rview
+.webview-host
+.boot
+.pane

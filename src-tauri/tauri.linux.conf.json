@@ -1,0 +1,5 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/tr-helper", "binaries/houston-core", "binaries/houston-supervisor"]
+  }
+}

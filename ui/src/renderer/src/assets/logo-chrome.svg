@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Houston">
+  <!-- Houston's mark for in-app chrome, at 20-28px. The app icon proper lives
+       in `ui/resources/` as two cuts; this is a third, and the only one the
+       renderer ships.
+
+       NO TILE, and that is the whole point. An app icon is a tile because
+       Linux and Windows hand it a square to fill; chrome is not, and a tiled
+       cut in the rail head paints its own near-black field, which reads as a
+       dark chip pasted onto the paper theme's light rail. Dropping the rect
+       also gives the drawing back the ~18% the corner radius spent on
+       padding: the disk goes rx 148 -> 196 inside an identical 24px box.
+
+       The mark self-inverts across the themes, which is why it survives both.
+       Measured against the rail-bg token: on dark the cyan carries it (jet
+       13.6:1, photon rim 15.9:1) while the hole is 1.08:1 and reads as negative
+       space inside the ring; on paper that flips exactly — the cyan falls to
+       1.1-1.25:1 and effectively disappears, and the hole (18.3:1) with the
+       disk's violet (5.9:1) carry the object alone. So the violet end of
+       `c-disk` is load-bearing on paper and must not be re-tuned cyan-ward.
+
+       No filters. `icon.svg`'s two feGaussianBlur regions are fine when a
+       build script rasterises them once, but here WebKitGTK and WebView2
+       rasterise on every paint at 24px, where the blur is haze over a third
+       of a pixel of source. The halo is a radial ramp instead: same read,
+       no filter, and it downsamples honestly. -->
+  <defs>
+    <!-- One gradient spans BOTH jets so the white core sits behind the
+         horizon and each beam is brightest where it clears it. Splitting it
+         per polygon would restart the ramp and put the bright end at the
+         tips. Both ends fade to zero: with no tile to stop them, the jets
+         have to end themselves. -->
+    <linearGradient id="c-jet" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0" />
+      <stop offset="27%" stop-color="#00F0FF" stop-opacity="0.9" />
+      <stop offset="39%" stop-color="#FFFFFF" />
+      <stop offset="61%" stop-color="#FFFFFF" />
+      <stop offset="73%" stop-color="#00F0FF" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="c-disk" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="50%" stop-color="#7000FF" />
+      <stop offset="100%" stop-color="#3A86FF" />
+    </linearGradient>
+
+    <radialGradient id="c-halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.5" />
+      <stop offset="55%" stop-color="#00F0FF" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <g transform="translate(256, 256)">
+    <!-- Relativistic jets. Hourglass, not a wedge: a jet pair is symmetric
+         about the hole and narrowest at its source, so the waist is at the
+         horizon and both tips flare. Drawn first so the horizon occludes the
+         middle, which is what makes them read as emerging from behind it.
+         The 32-unit waist is 1.5 device pixels at 24px — thin enough to stay
+         a beam, fat enough not to drop out. -->
+    <polygon points="-38,-256 38,-256 16,-12 16,12 38,256 -38,256 -16,12 -16,-12"
+             fill="url(#c-jet)" />
+
+    <circle r="180" fill="url(#c-halo)" />
+
+    <!-- Accretion disk. The rotation lives on the group so the front wave
+         below shares one frame with the back. -->
+    <g transform="rotate(-15)">
+      <ellipse rx="196" ry="54" fill="none" stroke="url(#c-disk)" stroke-width="42" />
+    </g>
+
+    <circle r="96" fill="#010308" />
+    <circle r="96" fill="none" stroke="#BDF3FF" stroke-width="11" opacity="0.9" />
+
+    <!-- The near side of the disk, passing in front of the horizon. Endpoints
+         are the ellipse evaluated at 165° and 15°, so this arc lies ON the
+         196x54 ellipse above rather than merely near it: pick endpoints that
+         miss and the renderer either rescales the radii (SVG's out-of-range
+         rule) or re-centres the arc to reach them, and the wave sits off the
+         disk it is meant to continue. -->
+    <g transform="rotate(-15)">
+      <path d="M -189.3 14.0 A 196 54 0 0 0 189.3 14.0" fill="none"
+            stroke="#9BEDFF" stroke-width="38" stroke-linecap="round" />
+    </g>
+  </g>
+</svg>

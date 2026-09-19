@@ -1,0 +1,26 @@
+{
+  "_note": "reconstructed from the plan's probe record, not captured: a permission prompt needs an interactive session, and this CLI's print mode denies instead of asking. tool_use_id in particular has never been observed on a real PermissionRequest \u2014 the plan lists it as still to confirm, and the daemon falls back to a generated key when it is absent",
+  "hook_event_name": "PermissionRequest",
+  "session_id": "14fd01dd-fdca-4061-b6d0-3e19c785b897",
+  "transcript_path": "/home/user/.claude/projects/-home-user-probe/14fd01dd.jsonl",
+  "cwd": "/home/user/probe",
+  "permission_mode": "default",
+  "prompt_id": "0f9d1f0c-7f1a-4a0a-9d3d-2b7f6c2a1e55",
+  "tool_name": "Bash",
+  "tool_use_id": "toolu_01PermissionProbeBash01",
+  "tool_input": {
+    "command": "touch probe-b.txt",
+    "description": "Create probe-b.txt"
+  },
+  "permission_suggestions": [
+    {
+      "type": "addRules",
+      "rules": [
+        {
+          "toolName": "Bash",
+          "ruleContent": "touch:*"
+        }
+      ]
+    }
+  ]
+}

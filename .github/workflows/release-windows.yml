@@ -1,0 +1,262 @@
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Manifest version from the caller, used to name the uploaded artifact'
+        type: string
+        required: true
+      ref:
+        description: 'Commit to build; a cut passes the tag it just pushed. Empty builds the triggering ref, which is right for a tag push and for nightly'
+        type: string
+        required: false
+        default: ''
+      tauri_cli_version:
+        description: 'Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth'
+        type: string
+        required: true
+      require_signing:
+        description: 'Fail when the updater signing secrets are absent; a real release passes true, a dry run false'
+        type: boolean
+        required: false
+        default: true
+    # Declared so a caller can see the contract; all are optional because a dry
+    # run passes no secrets. Callers use `secrets: inherit`.
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_TRUSTED_SIGNING_ENDPOINT:
+        required: false
+      AZURE_TRUSTED_SIGNING_ACCOUNT_NAME:
+        required: false
+      AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows-bundle:
+    # PINNED, not `windows-latest`: image churn breaking native toolchain
+    # detection is a documented failure mode, and this is the only job in the
+    # tree that builds on Windows, so nothing else would catch the drift.
+    runs-on: windows-2022
+    env:
+      HOUSTON_CHANNEL: dev
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+        shell: bash
+
+      - uses: actions/checkout@v5
+        with:
+          # A cut's default checkout is the pre-bump dispatch SHA, so it hands
+          # its new tag through here; empty means the triggering ref.
+          ref: ${{ inputs.ref }}
+
+      # The whole tree must be the release commit: the installer's filename and
+      # the binary's reported version come from manifests set together, and a
+      # checkout from the wrong ref is refused here, before anything is built.
+      - name: Require the checked-out tree to carry the release version
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          base="${VERSION%%+*}"
+          [ -n "$base" ] || { echo "::error::version input '$VERSION' has no base before its + build metadata"; exit 1; }
+          ./scripts/set-version.sh --check "$base"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+            src-tauri
+          key: release-windows
+          cache-on-failure: true
+      - uses: oven-sh/setup-bun@v2
+
+      # `cargo install` of the CLI is minutes of compile that never changes at
+      # a pinned version, so it gets its own cache keyed on that version rather
+      # than riding the workspace cache rust-cache manages and prunes.
+      - name: Cache the pinned Tauri CLI
+        id: tauri-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri.exe
+          key: cargo-tauri-${{ inputs.tauri_cli_version }}-windows-2022
+      - name: Install the pinned Tauri CLI
+        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
+
+      - name: Install renderer dependencies
+        run: bun install --frozen-lockfile
+        working-directory: ui
+
+      - name: Build the renderer, run the protocol gate, build the binary
+        shell: pwsh
+        run: ./scripts/build-app.ps1
+
+      - name: Assert the daemon sidecar was staged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $core = Join-Path (Get-Location) 'src-tauri/target/release/houston-core.exe'
+          if (-not (Test-Path $core)) {
+            Write-Error "houston-core.exe missing at $core -- build-app.ps1 did not stage the daemon sidecar"
+            exit 1
+          }
+
+      # Secrets cannot be used in an `if:`, so they are read into env here and
+      # tested; the chosen paths ride step outputs, and the updater path fails
+      # here when this is a real release, before anything is built.
+      - name: Decide which signing paths this run takes
+        id: signing
+        shell: bash
+        env:
+          REQUIRE_SIGNING: ${{ inputs.require_signing }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+        run: |
+          set -euo pipefail
+          if [ -n "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME" ]; then
+            echo "azure=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "azure=false" >> "$GITHUB_OUTPUT"
+          fi
+          updater=false
+          if [ "$REQUIRE_SIGNING" = "true" ]; then
+            missing=()
+            [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY)
+            [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+            if [ "${#missing[@]}" -ne 0 ]; then
+              echo "::error::this release is signed and the updater secrets are missing: ${missing[*]}. Set them under Settings -> Secrets and variables -> Actions (TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD); latest.json cannot carry a verifiable signature without them."
+              exit 1
+            fi
+            updater=true
+          elif [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            updater=true
+          fi
+          echo "updater=$updater" >> "$GITHUB_OUTPUT"
+          # The bundler hard-fails without a key ("A public key has been found,
+          # but no private key"), so the key must be in scope before the build;
+          # the keyless dry run is carried by --no-sign instead.
+          if [ "$updater" = "true" ]; then
+            {
+              echo "TAURI_SIGNING_PRIVATE_KEY<<HOUSTON_SIGNING_KEY_EOF"
+              printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY"
+              echo "HOUSTON_SIGNING_KEY_EOF"
+            } >> "$GITHUB_ENV"
+            if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+              {
+                echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD<<HOUSTON_SIGNING_PASSWORD_EOF"
+                printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+                echo "HOUSTON_SIGNING_PASSWORD_EOF"
+              } >> "$GITHUB_ENV"
+            fi
+          fi
+
+      # Signed, the bundler writes the updater .sig beside the installer; a
+      # keyless dry run is told not to sign at all.
+      - name: Bundle the NSIS installer
+        shell: pwsh
+        working-directory: src-tauri
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ('${{ steps.signing.outputs.updater }}' -eq 'true') {
+            cargo tauri build --bundles nsis
+          } else {
+            cargo tauri build --bundles nsis --no-sign
+          }
+
+      - name: Sign the NSIS installer with Azure Trusted Signing
+        if: steps.signing.outputs.azure == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          files-folder: src-tauri/target/release/bundle/nsis
+          files-folder-filter: exe
+
+      # After Authenticode, never before: signing the installer rewrites its
+      # bytes, and a Minisign signature over the pre-signing file would never
+      # verify. A stale Tauri-generated .sig is removed for the same reason.
+      - name: Sign the NSIS installer for the updater
+        if: steps.signing.outputs.updater == 'true'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installers = @(Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis -Filter *.exe)
+          if ($installers.Count -eq 0) {
+            Write-Error "no NSIS installer under src-tauri/target/release/bundle/nsis -- cargo tauri build did not bundle one"
+            exit 1
+          }
+          foreach ($installer in $installers) {
+            $signature = "$($installer.FullName).sig"
+            Remove-Item $signature -Force -ErrorAction SilentlyContinue
+            cargo tauri signer sign $installer.FullName
+            if (-not (Test-Path $signature) -or (Get-Item $signature).Length -eq 0) {
+              Write-Error "updater signature missing after signing $($installer.FullName) -- latest.json cannot be built"
+              exit 1
+            }
+          }
+
+      # Unsigned is the documented normal state today, so this path reports the
+      # gap and never fails the build.
+      - name: Note that the installer is unsigned
+        if: steps.signing.outputs.azure == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "The NSIS installer is unsigned, so SmartScreen will warn on first run. Signing stays off because the secret AZURE_TRUSTED_SIGNING_ACCOUNT_NAME is not set." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Note that the installer has no updater signature
+        if: steps.signing.outputs.updater == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "The NSIS installer has no updater Minisign signature: this run did not require signing and the TAURI_SIGNING_PRIVATE_KEY secret is not set." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis |
+            Where-Object { $_.Name -like '*.exe' -or $_.Name -like '*.exe.sig' } |
+            ForEach-Object { Copy-Item $_.FullName dist/ }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: houston-${{ inputs.version }}-windows
+          path: dist/
+          if-no-files-found: error
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| windows-bundle | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"

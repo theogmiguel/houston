@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "SubagentStart",
+  "agent_id": "sub-1",
+  "agent_type": "default",
+  "turn_id": "a1b2c3d4-0003"
+}

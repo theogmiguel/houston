@@ -1,0 +1,57 @@
+@layer properties, theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@source '.';
+@source not './**/*.test.ts';
+@source not './**/*.test.tsx';
+
+/* Registers Houston's semantic colour names as Tailwind tokens; deleting this
+   block silently drops every `bg-surface`/`text-primary` utility from the
+   build. The `var()` values only cover the pre-theme-attribute paint gap. */
+@theme {
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+
+  --text-3xl--line-height: 1.2;
+
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-background: var(--background);
+  --color-panel: var(--panel);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-border-active: var(--border-active);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent-surface);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-info: var(--info);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-selection: var(--selection);
+  --color-selected-fill: var(--selected-fill);
+  --color-hover-fill: var(--hover-fill);
+  --color-elevated-surface: var(--elevated-surface);
+  --color-overlay: var(--overlay);
+  --color-focus-ring: var(--focus-ring);
+  --color-divider: var(--divider);
+  --color-border-focus: var(--border-focus);
+}
+
+@keyframes git-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+

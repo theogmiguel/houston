@@ -1,0 +1,7 @@
+# A bare Command::new in the GUI-subsystem daemon spawns a console-subsystem
+# child with a window that flashes and steals focus. Enforced by clippy, not a
+# grep: only a Rust parser can exempt test code. Opt out with #[allow] instead.
+disallowed-methods = [
+  { path = "std::process::Command::new", reason = "use houston_core::spawn::command() so the child gets CREATE_NO_WINDOW on Windows (see core/houston-core/src/spawn.rs); tests may opt out with #![allow(clippy::disallowed_methods)]" },
+  { path = "tokio::process::Command::new", reason = "use houston_core::spawn::tokio_command() so the child gets CREATE_NO_WINDOW on Windows (see core/houston-core/src/spawn.rs); tests may opt out with #![allow(clippy::disallowed_methods)]" },
+]

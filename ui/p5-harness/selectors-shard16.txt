@@ -1,0 +1,9 @@
+# P5 #32 shard 16 (RenameTitle.tsx: `.pane-title-editable`, `.rename-pencil`,
+# `.rename-pencil:hover`) coverage selectors. The two ancestor-coupled reveal
+# selectors stay in styles.css (out of shard, rule 8) but must still resolve —
+# they are what the shard's states depend on.
+.pane-title-editable
+.rename-pencil
+.rename-pencil:hover
+.pane-head:hover .pane-title-editable
+.pane-head:hover .rename-pencil

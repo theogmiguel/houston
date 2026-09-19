@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "The renderer->plugin grants Houston needs, each reopened per D18's own falsification clause rather than worked around; everything else stays Rust-side commands with no entry. (1) core:event — the watchdog subscribes to wd:* Tauri events, and core:event is ACL-gated like any plugin (D49, 2026-08-09). (2) core:webview:allow-internal-toggle-devtools — Tauri's own built-in Ctrl+Shift+I handler invokes it, so without the grant the shortcut silently does nothing AND leaves an unhandled rejection in the console (D53, 2026-08-10, found by the manual script). Narrow permission, not core:webview:default: this is the one command that handler calls. Inert in a release build, which compiles no inspector to toggle.",
+  "windows": ["main"],
+  "permissions": ["core:event:default", "core:webview:allow-internal-toggle-devtools"]
+}

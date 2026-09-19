@@ -1,0 +1,7 @@
+{
+  "_note": "reconstructed from docs.x.ai/build/features/hooks's event list and Claude's own UserPromptSubmit shape (the plan's D7 table: Grok 'reuses Claude's PascalCase names verbatim') — not captured live, no Grok account on this machine.",
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "sess-grok-docs-01",
+  "cwd": "/tmp/example",
+  "prompt": "probe prompt"
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "agent": "claude",
+    "name": "Deploy checklist",
+    "description": "Run the full pre-deploy verification script.",
+    "invoke": "deploy-checklist",
+    "source": "project",
+    "path": "/home/dev/houston/.claude/skills/deploy-checklist.md"
+  },
+  {
+    "agent": "codex",
+    "name": "Refactor helper",
+    "description": "",
+    "invoke": "refactor-helper",
+    "source": "user",
+    "path": "/home/dev/.codex/skills/refactor-helper.md"
+  },
+  {
+    "agent": "gemini",
+    "name": "Test writer",
+    "description": "Generate unit tests for the selected file.",
+    "invoke": "test-writer",
+    "source": "project",
+    "path": "/home/dev/houston/.gemini/skills/test-writer.md"
+  }
+]

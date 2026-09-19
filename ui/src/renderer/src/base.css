@@ -1,0 +1,49 @@
+@layer base {
+  .btn {
+    border-radius: var(--tr-radius-button);
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    padding: 5px 12px;
+    font-size: var(--tr-text-sm);
+    font-weight: 500;
+  }
+  .btn:hover {
+    border-color: var(--border-hover);
+    background: var(--card-hover);
+  }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  button:focus-visible,
+  select:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  select,
+  option {
+    background-color: var(--card-bg);
+    color: var(--text-primary);
+  }
+
+  input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}

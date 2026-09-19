@@ -1,0 +1,145 @@
+name: Publish release
+
+# The one job that writes outward-facing state: it verifies the artifact set
+# both bundle workflows uploaded, generates the release notes once and reuses
+# them, and files the release with latest.json built from the signatures.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Git tag the release is filed under (vX.Y.Z, or nightly)'
+        type: string
+        required: true
+      version:
+        description: 'Version latest.json advertises; may carry -rc.N or +nightly metadata'
+        type: string
+        required: true
+      title:
+        description: 'Release title'
+        type: string
+        required: true
+      previous_tag:
+        description: 'Tag the generated notes start from; empty lets GitHub pick the previous release'
+        type: string
+        required: false
+        default: ''
+      draft:
+        description: 'File as a draft; a stable cut stops here until a person smoke-tests it'
+        type: boolean
+        required: true
+      prerelease:
+        description: 'Mark as a prerelease; releases/latest is documented to skip those'
+        type: boolean
+        required: true
+      replace_existing:
+        description: 'Delete the release already filed under `tag` immediately before filing the new one; the nightly reuses one tag name'
+        type: boolean
+        required: false
+        default: false
+      notes_header:
+        description: 'One sentence prepended to the generated notes; the release body and latest.json.notes carry the same text'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # One call, one notes body: the release body and latest.json.notes read
+      # the same file below, so the two surfaces can never disagree.
+      - name: Generate the release notes once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          HEADER: ${{ inputs.notes_header }}
+        run: |
+          set -euo pipefail
+          args=(-f tag_name="$TAG")
+          if [ -n "$PREVIOUS_TAG" ]; then
+            args+=(-f previous_tag_name="$PREVIOUS_TAG")
+          fi
+          body=$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq '.body // ""')
+          if [ -z "$body" ]; then
+            echo "::warning::GitHub generated an empty notes body for $TAG; using a fallback line"
+            body="No pull requests or commits were attributed to this release."
+          fi
+          if [ -n "$HEADER" ]; then
+            printf '%s\n\n%s\n' "$HEADER" "$body" > notes.md
+          else
+            printf '%s\n' "$body" > notes.md
+          fi
+          wc -l notes.md
+
+      # The generator below is the gate that decides what ships; its focused
+      # tests run first so a broken refusal cannot be discovered by an artifact
+      # set it wrongly accepts. Sub-second, and no network.
+      - name: Test the manifest generator
+        run: python3 scripts/test-update-manifest.py
+
+      # Strict on purpose: a missing bundle, a missing .sig, a filename from
+      # another version or any unrecognised file refuses here, before anything
+      # is filed. The script's errors name the offending file.
+      - name: Verify the artifacts and build latest.json
+        run: |
+          set -euo pipefail
+          python3 scripts/gen-update-manifest.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "${{ inputs.tag }}" \
+            --version "${{ inputs.version }}" \
+            --notes-file notes.md \
+            --artifacts-dir artifacts \
+            --output artifacts/latest.json
+
+      - name: File the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          TITLE: ${{ inputs.title }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          REPLACE_EXISTING: ${{ inputs.replace_existing }}
+        run: |
+          set -euo pipefail
+          ls -lh artifacts
+          # The rolling nightly reuses one tag name, so the previous release
+          # makes way here: after the notes and manifest are already good, so a
+          # failure before this point leaves it in place.
+          if [ "$REPLACE_EXISTING" = "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+          fi
+          # --verify-tag: the release is filed against a tag some other job
+          # already pushed; filing must never create one.
+          flags=(--title "$TITLE" --notes-file notes.md --verify-tag)
+          if [ "$DRAFT" = "true" ]; then
+            flags+=(--draft)
+          fi
+          if [ "$PRERELEASE" = "true" ]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$TAG" "${flags[@]}" artifacts/*
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| publish | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"

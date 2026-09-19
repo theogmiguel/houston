@@ -1,0 +1,7 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "invocationNum": 1,
+  "initialNumSteps": 0,
+  "_note": "field names captured live (live probe agy 1.1.26); this fixture's own values are synthetic"
+}

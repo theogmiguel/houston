@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Harness-only fixture art for the `agents/chats-thread` story's image card.
+     A FILE rather than a data: URI on purpose: `rehype-sanitize`'s default
+     schema allows `img[src]` over http/https and over protocol-less (relative)
+     URLs, and strips `data:` — so a data URI photographs as bare alt text and
+     proves nothing about the card. Served by the harness's own Vite root. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1430"/>
+      <stop offset="1" stop-color="#0a0a0b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="400" fill="url(#g)"/>
+  <g fill="#5c8fff" opacity="0.55">
+    <circle cx="880" cy="120" r="6"/><circle cx="1010" cy="86" r="5"/>
+    <circle cx="1094" cy="190" r="7"/><circle cx="946" cy="248" r="5"/>
+    <circle cx="1130" cy="300" r="4"/>
+  </g>
+  <g stroke="#5c8fff" stroke-width="1.5" opacity="0.35" fill="none">
+    <path d="M880 120 L1010 86 L1094 190 L946 248 Z"/>
+    <path d="M1094 190 L1130 300"/>
+  </g>
+  <text x="80" y="180" fill="#f4f4f6" font-family="sans-serif" font-size="62" font-weight="700">Agents that</text>
+  <text x="80" y="252" fill="#f4f4f6" font-family="sans-serif" font-size="62" font-weight="700">remember.</text>
+  <rect x="80" y="292" width="232" height="48" rx="24" fill="#2f7bee"/>
+  <text x="196" y="323" fill="#ffffff" font-family="sans-serif" font-size="19" font-weight="600" text-anchor="middle">Get Houston</text>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "_note": "reconstructed from docs.x.ai/build/features/hooks, not captured live: no Grok account exists on this machine (grok login required). Field names follow Claude's own spelling (hook_event_name, session_id, cwd) per this codebase's existing GROK_EVENTS comment ('exposes the full Claude four under Claude's own spellings') and the plan's D7 table. A separate fetch of the same docs page described the common fields as camelCase (hookEventName, sessionId, cwd, workspaceRoot) instead — flagged as an open ambiguity in the report, not resolved here without a live capture.",
+  "hook_event_name": "SessionStart",
+  "session_id": "sess-grok-docs-01",
+  "cwd": "/tmp/example"
+}

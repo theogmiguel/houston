@@ -1,0 +1,12 @@
+# The two `.pane-head` ancestor-coupled
+# rules. Queried against the OLD side (coverage.mjs always sets 'old'), so
+# these prove OldSessionPane actually renders the elements the deleted rules
+# selected on. `:focus-within` is deliberately NOT listed — coverage.mjs's
+# pseudo-strip regex only drops :hover/:focus-visible/:active/:disabled, so a
+# `:focus-within` selector would query literally (matching 0, since nothing is
+# focused in a static DOM snapshot) and misreport a real GAP as unrelated.
+# The :hover form below reaches the same target element, which is what this
+# probe actually needs to prove reachable.
+.pane-head:hover .pane-title-editable
+.pane-head:hover .rename-pencil
+.rename-pencil:focus-visible

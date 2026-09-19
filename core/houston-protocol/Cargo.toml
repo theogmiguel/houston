@@ -1,0 +1,18 @@
+[package]
+name = "houston-protocol"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[features]
+# TS type generation (scripts/gen-protocol-types.sh). Not enabled by the daemon
+# build -- ts-rs stays out of release binaries.
+ts-gen = ["dep:ts-rs"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs = { version = "10", features = ["serde-compat"], optional = true }

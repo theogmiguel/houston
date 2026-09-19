@@ -1,0 +1,6 @@
+{
+  "_note": "reconstructed from cursor.com/docs/hooks, this session's own fetch, which quoted the payload verbatim: '\"subagent_id\": \"abc-123\", \"parent_conversation_id\": \"conv-456\"'. Not captured live.",
+  "conversation_id": "conv-cursor-docs-01",
+  "subagent_id": "sub-cursor-docs-01",
+  "parent_conversation_id": "conv-cursor-docs-01"
+}

@@ -1,0 +1,11 @@
+{
+  "_note": "reconstructed from the plan's probe record, not captured: a permission prompt needs an interactive session, and this CLI's print mode denies instead of asking",
+  "hook_event_name": "Notification",
+  "session_id": "14fd01dd-fdca-4061-b6d0-3e19c785b897",
+  "transcript_path": "/home/user/.claude/projects/-home-user-probe/14fd01dd.jsonl",
+  "cwd": "/home/user/probe",
+  "permission_mode": "default",
+  "prompt_id": "0f9d1f0c-7f1a-4a0a-9d3d-2b7f6c2a1e55",
+  "notification_type": "permission_prompt",
+  "message": "Claude needs your permission to use Bash"
+}

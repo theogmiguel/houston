@@ -1,0 +1,8 @@
+.pane-slot
+.pane-slot.drag-src
+.layout.dragging .splitter
+.layout.dragging
+.splitter
+.splitter:hover
+.splitter:focus-visible
+.dropzone

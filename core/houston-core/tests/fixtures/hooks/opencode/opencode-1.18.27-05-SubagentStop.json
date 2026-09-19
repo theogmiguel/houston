@@ -1,0 +1,4 @@
+{
+  "_note": "the plugin's own constructed payload for a CHILD session's session.idle, forwarded under Houston's own SubagentStop name (not an OpenCode bus event) once the plugin's sessionID -> parentID map resolves the id to a non-null parent. The underlying session.idle bus event was verified live on 1.18.27; this correlation naming and payload are Houston's own, not captured.",
+  "session_id": "ses_child01"
+}

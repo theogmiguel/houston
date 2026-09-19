@@ -1,0 +1,8 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "fullyIdle": false,
+  "executionNum": 0,
+  "terminationReason": "SUBAGENT_INVOKED",
+  "_note": "the parent's own Stop carrying fullyIdle:false while parked on invoke_subagent is live-verified; terminationReason's exact string for this case is not shown in the probe and is synthetic here"
+}

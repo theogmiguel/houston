@@ -1,0 +1,22 @@
+# P5 #32 shard 17 (TerminalPane) coverage selectors — the 17 in-scope blocks
+# deduplicated to their selector text: `.term-host` is
+# declared twice (2472 padding/flex/min-height, 2511 overscroll-behavior) but
+# is one selector for coverage purposes — the brief's "both go" is a
+# convert-both-blocks requirement, not two distinct selectors to probe. The
+# reduced-motion block at 3286 gates `.term-skeleton-line`/`.term-skeleton-cursor`,
+# already listed below; it has no selector of its own to add.
+.term-wrap
+.term-host
+.find-bar
+.find-input
+.find-input:focus
+.term-skeleton
+.term-skeleton-cursor
+.term-skeleton-line
+.term-skeleton.sync-out .term-skeleton-cursor
+.term-skeleton.sync-out .term-skeleton-line
+.term-dropzone
+.term-toasts
+.term-toast
+.term-toast-t
+.term-toast-sub

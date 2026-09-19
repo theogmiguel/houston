@@ -1,0 +1,34 @@
+node_modules/
+dist/
+out/
+target/
+.env
+.env.*
+*.log
+.houston/
+# The pre-rename name. A daemon boot moves any leftover one to .houston/,
+# but a checkout that has not booted one yet still has this on disk.
+.tr/
+.DS_Store
+.playwright-mcp/
+.research/
+.claude/*
+!.claude/settings.json
+
+# visual-harness photographs (ui/harness/shot.mjs) — artifacts, never source
+ui/harness-shots/
+
+# staged Tauri sidecars (scripts/build-app.sh copies tr-helper here as
+# tr-helper-<target triple>) — build output, never source
+src-tauri/binaries/
+
+# Local browser-inspection leftovers (Playwright CLI sessions and their screenshots)
+.playwright-cli/
+output/
+
+# The orchestrator's working notes for an in-flight migration; never committed.
+docs/implementation-notes.md
+
+# Python bytecode is local build output.
+__pycache__/
+*.py[cod]

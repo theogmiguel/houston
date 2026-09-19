@@ -1,0 +1,222 @@
+name: CI
+
+# Public and fork-gated: a PR runs the renderer and core suites too, not just the
+# safety scripts. The integration suites and load-sensitive gates still stay local
+# only (docs/operations/development.md) — no real PTY, keyring or idle machine here.
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+    # Push only, not pull_request: once these four jobs are required checks, a
+    # docs-only PR that skipped them via paths-ignore could never satisfy a
+    # required check and would never merge.
+    paths-ignore: &docs_only
+      - '**/*.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
+
+# A superseded run is wasted Actions minutes: cancel the previous run for this ref
+# when a new commit lands on it. Keyed per PR (or per ref for pushes) so unrelated
+# work is never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Cheapest and most consequential job: hermetic, sub-second text-search invariants.
+  # Runs first so a violated safety rule fails fast, before any crate builds.
+  safety-checks:
+    runs-on: ubuntu-latest
+    env:
+      HOUSTON_CHANNEL: dev
+    steps:
+      # Job-level elapsed time via one timestamp diff — GitHub only exposes per-step
+      # durations through the Jobs API after each step completes, which needs a
+      # token call for a number this gets for free.
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          # check-ratchets-only-tighten.sh compares every baseline pin against
+          # origin/<base> (PR) or HEAD~1 (push); a depth-1 clone has neither, and
+          # the guard fails rather than skip — no comparison is not evidence nothing moved.
+          fetch-depth: 0
+      - name: check-watchdog.sh (tauri tracing-feature ban, monotonic clocks)
+        run: bash scripts/check-watchdog.sh
+      - name: check-dev-channel.sh (dev.sh channel resolution)
+        run: bash scripts/check-dev-channel.sh
+      - name: check-kill-guard.sh (kill(2) broadcast guard)
+        run: bash scripts/check-kill-guard.sh
+      - name: check-protocol-sync.sh (daemon/UI/doc wire version agree)
+        run: bash scripts/check-protocol-sync.sh
+      - name: check-loop-spawn-sync.sh (both daemon hosts call the loop-spawn helper)
+        run: bash scripts/check-loop-spawn-sync.sh
+      - name: check-title-tooltip-guard.sh (title= component-prop vs Tooltip conversion)
+        run: bash scripts/check-title-tooltip-guard.sh
+      - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
+        run: bash scripts/check-spawn-window.sh
+      - name: check-icon-imports.sh (raw lucide-react imports outside components/icons.tsx)
+        run: bash scripts/check-icon-imports.sh
+      - name: check-native-select.sh (no native <select> — its popup is a GTK window)
+        run: bash scripts/check-native-select.sh
+      - name: check-native-input.sh (no native checkbox/radio — its box is drawn by the OS theme)
+        run: bash scripts/check-native-input.sh
+      - name: check-menu-descriptions.sh (a menu item description wraps or truncates on purpose)
+        run: bash scripts/check-menu-descriptions.sh
+      - name: check-doc-hygiene.sh (Markdown tree shape, plan cap, no diary content)
+        run: bash scripts/check-doc-hygiene.sh
+      - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
+        run: bash scripts/check-comment-hygiene.sh
+      - name: check-type-scale.sh (no sub-11px, fractional or raw-utility text sizes)
+        run: bash scripts/check-type-scale.sh
+      - name: check-label-tracking.sh (label step's uppercase tracking never leaks onto other text)
+        run: bash scripts/check-label-tracking.sh
+      - name: check-control-metrics.sh (control heights come from --h-* tokens)
+        run: bash scripts/check-control-metrics.sh
+      - name: check-radius-tokens.sh (corner radii come from --tr-radius-* rungs)
+        run: bash scripts/check-radius-tokens.sh
+      - name: check-spacing-tokens.sh (a stack's rhythm is the container's gap)
+        run: bash scripts/check-spacing-tokens.sh
+      - name: check-icon-metrics.sh (icon size/stroke come from --tr-icon-* rungs)
+        run: bash scripts/check-icon-metrics.sh
+      - name: check-shadow-recipes.sh (shadow recipes come from tokens/shadowChrome.ts, never a literal)
+        run: bash scripts/check-shadow-recipes.sh
+      - name: check-ellipsis.sh (real ellipsis character, never ASCII "...", in user-facing text)
+        run: bash scripts/check-ellipsis.sh
+      - name: check-focus-visible.sh (a killed outline gets its own focus-visible paint back)
+        run: bash scripts/check-focus-visible.sh
+      - name: check-empty-state-action.sh (an empty state offers the action its copy names)
+        run: bash scripts/check-empty-state-action.sh
+      - name: check-ratchets-only-tighten.sh (a baseline pin may fall, never rise)
+        run: bash scripts/check-ratchets-only-tighten.sh
+      - uses: oven-sh/setup-bun@v2
+      # check-mutations.sh drives ui's complexity gate, which shells out to the
+      # pinned oxlint under ui/node_modules — without this install the gate throws
+      # before it can name the planted violation, reading as "the check did not fire".
+      - name: Install renderer dependencies (oxlint for check-complexity)
+        run: bun install --frozen-lockfile
+        working-directory: ui
+      # Last because it runs the other guards against a broken fixture: every
+      # covered check must fail on it by name.
+      - name: check-mutations.sh (every covered check proves it fires)
+        run: bash scripts/check-mutations.sh
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Fork PRs need more than a text search: typecheck and the jsdom suite catch
+  # what safety-checks' pattern scans cannot.
+  renderer-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - name: Install renderer dependencies
+        run: bun install --frozen-lockfile
+        working-directory: ui
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: ui
+      # Never bare `bun test` — that invokes Bun's own test runner, not vitest,
+      # and fails the jsdom-based suite.
+      - name: Test
+        run: bun run test
+        working-directory: ui
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Fork PRs need the core crate gates too. --lib only: the integration suites
+  # under core/houston-core/tests need a real PTY, a keyring and an unlocked
+  # session, none of which a runner has — they stay local (docs/operations/development.md).
+  core-checks:
+    runs-on: ubuntu-latest
+    env:
+      HOUSTON_CHANNEL: dev
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+      # The runner ships none of the -dev headers these -sys crates need, so the
+      # job would die in clippy rather than a test without them (alsa/dbus/udev/
+      # clang/cmake/nasm). gnome-keyring and dbus-x11 are for the test step below.
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libdbus-1-dev libudev-dev \
+            clang libclang-dev cmake nasm \
+            gnome-keyring dbus-x11
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      # Same pinned tarball + Zig build.rs step release.yml's linux-bundle job
+      # caches, scoped to core/ only — src-tauri isn't built here.
+      - name: Cache the pinned libghostty-vt source and Zig
+        uses: actions/cache@v4
+        with:
+          path: core/target/ghostty-vt
+          key: ghostty-vt-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock') }}
+      - name: cargo fmt
+        run: cargo fmt --all --check --manifest-path core/Cargo.toml
+      - name: cargo clippy
+        run: cargo clippy --all-targets --manifest-path core/Cargo.toml -- -D warnings
+      # voice::cloud's tests talk to a Secret Service the runner has none of; a
+      # private session bus with gnome-keyring unlocked is the same fix the local
+      # Linux gate uses. No oom-shield here — that's a local-machine concern.
+      - name: cargo test --lib
+        run: |
+          dbus-run-session -- bash -c '
+            eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
+            cargo test --lib --manifest-path core/Cargo.toml'
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The committed third-party inventory is generated from both dependency graphs
+  # at once, so this needs the Rust toolchain (cargo metadata, no build) and the
+  # renderer's node_modules together — a shape none of the three jobs above has.
+  licence-inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # No components and no build cache: `cargo metadata` resolves the graph and
+      # compiles nothing, so a restore-and-save cycle would cost more than it saves.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+      - name: Install renderer dependencies
+        run: bun install --frozen-lockfile
+        working-directory: ui
+      - name: check-third-party-licenses.sh (committed inventory matches the dependency graphs)
+        run: ./scripts/check-third-party-licenses.sh

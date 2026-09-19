@@ -1,0 +1,10 @@
+# Clippy, not a bash grep: the offender can live legitimately inside #[cfg(test)]
+# modules, and telling those apart from production code needs a real Rust parser.
+# Opt out there with #![allow(clippy::disallowed_methods)] on the test module.
+disallowed-methods = [
+  { path = "std::process::Command::new", reason = "use houston_core::spawn::command() so the child gets CREATE_NO_WINDOW on Windows (see core/houston-core/src/spawn.rs); tests may opt out with #![allow(clippy::disallowed_methods)]" },
+  { path = "tokio::process::Command::new", reason = "use houston_core::spawn::tokio_command() so the child gets CREATE_NO_WINDOW on Windows (see core/houston-core/src/spawn.rs); tests may opt out with #![allow(clippy::disallowed_methods)]" },
+]
+# portable_pty::CommandBuilder is NOT covered here on purpose: a terminal pane's
+# child is meant to spawn into a real console (a pseudoconsole), so suppressing
+# that window would be a bug, not a fix.

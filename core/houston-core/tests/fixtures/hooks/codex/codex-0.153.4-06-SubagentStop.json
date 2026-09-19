@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "SubagentStop",
+  "agent_id": "sub-1",
+  "last_assistant_message": "ALPHA"
+}

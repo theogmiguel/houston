@@ -1,0 +1,7 @@
+{
+  "_note": "reconstructed from learn.chatgpt.com/docs/hooks's hook-event list, not captured: the live probe session ran in bypassPermissions, which never asks. tool_use_id follows the shape PostToolUse carried in the same probe.",
+  "hook_event_name": "PermissionRequest",
+  "turn_id": "a1b2c3d4-0002",
+  "tool_name": "Bash",
+  "tool_use_id": "call_PermissionProbeBash01"
+}

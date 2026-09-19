@@ -1,0 +1,70 @@
+[package]
+name = "houston-core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+# "multipart" is NOT here: only voice/cloud.rs's tests use it, and it drags in
+# multer the running daemon never executes. It is re-declared under
+# [dev-dependencies] instead, which resolver "2" keeps out of the shipped build.
+axum = { version = "0.8", features = ["ws"] }
+base64 = "0.22"
+dirs = "5"
+rusqlite = { version = "0.32", features = ["bundled"] }
+futures-util = "0.3"
+futures-channel = "0.3"
+aho-corasick = "1"
+memchr = "2"
+portable-pty = "0.8"
+regex = "1"
+houston-protocol = { path = "../houston-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml = "0.9"
+toml = "0.8"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+uuid = { version = "1", features = ["v4"] }
+russh = "0.62.2"
+libc = "0.2"
+nix = { version = "0.31", default-features = false, features = ["process", "socket", "uio"] }
+rand = "0.10"
+sha2 = "0.10"
+notify = "8"
+tempfile = "3"
+# The "v1" feature is required by the crate itself; on Linux it resolves to the
+# zbus Secret Service store (pure Rust, no libsecret C dependency). Nothing in
+# the daemon may swap the keyring store.
+keyring = { version = "4.1.6", features = ["v1"] }
+zeroize = "1.9.0"
+cpal = "0.18"
+rtrb = "0.4"
+hound = "3.5"
+# "rustls" over the default native-tls avoids a system OpenSSL dependency;
+# keyring/russh already pull aws-lc-rs transitively, so no new crypto backend.
+# "blocking" is for the Groq cloud engine, which callers run via spawn_blocking.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart", "stream", "blocking"] }
+
+[target.'cfg(unix)'.dependencies]
+# Default features only: a CPU (ggml) build, no CUDA/OpenBLAS/CoreML -- GPU is
+# out of scope, and voice::whisper::load sets use_gpu(false) so this choice and
+# that runtime choice cannot drift apart silently.
+whisper-rs = "0.16"
+
+[build-dependencies]
+sha2 = "0.10"
+
+[dev-dependencies]
+keyring-core = "1"
+axum = { version = "0.8", features = ["ws", "multipart"] }
+tokio-tungstenite = "0.26"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Storage_FileSystem"] }

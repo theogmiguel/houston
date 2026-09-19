@@ -1,0 +1,12 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "stepIdx": 3,
+  "toolCall": {
+    "name": "ask_question",
+    "args": {
+      "questions": [{ "question": "Which branch should this land on?" }]
+    }
+  },
+  "_note": "toolCall.name and the ask_question moment are live-verified; the nested args.questions[].question shape is reconstructed, not a literal captured payload"
+}

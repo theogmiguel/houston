@@ -1,0 +1,94 @@
+name: Bug report
+description: Something in Houston is broken or behaving unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. If you have a feature idea instead of
+        something broken, please open it in [Discussions](https://github.com/theogmiguel/houston/discussions/categories/ideas) instead — issues here are for bugs.
+
+        Please search existing issues first, and keep this report to one problem. A report
+        that bundles two unrelated bugs is harder to reproduce and harder to fix.
+
+  - type: checkboxes
+    id: before-submitting
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and didn't find a duplicate
+          required: true
+        - label: I included enough detail below to reproduce the problem
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Houston does this affect?
+      options:
+        - daemon
+        - renderer
+        - app shell
+        - hooks and providers
+        - orchestration
+        - build or CI
+        - docs
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, in order?
+      placeholder: |
+        1. Open a workspace, spawn a Claude Code pane
+        2. Split the pane and start a second agent in the same directory
+        3. Detach and reattach the app
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      placeholder: The pane keeps its name and status after reattaching.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      placeholder: The pane shows as idle even though the agent CLI is still running inside it.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Houston version
+      description: Settings ▸ About shows the installed version.
+      placeholder: e.g. 0.4.2
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and desktop environment
+      description: On Linux, your window manager/compositor matters — Houston is a GTK/WebKit app.
+      placeholder: e.g. Fedora 40, GNOME 46 on Wayland
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Settings ▸ Diagnostics ▸ Copy diagnostics gives the useful block. Please check it
+        for anything private (paths, project names, pasted secrets) before pasting here.
+      render: shell

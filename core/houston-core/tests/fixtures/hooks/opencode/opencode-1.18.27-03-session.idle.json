@@ -1,0 +1,5 @@
+{
+  "_note": "the plugin's own constructed payload for a ROOT session.idle. The bus event itself was verified live on 1.18.27 and carries only sessionID (the plan's probe section) — last_assistant_message here is the plugin's own client.session.messages read, reconstructed, not itself captured live.",
+  "session_id": "ses_root01",
+  "last_assistant_message": "B-DONE"
+}

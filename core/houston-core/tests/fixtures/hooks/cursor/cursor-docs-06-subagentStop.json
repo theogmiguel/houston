@@ -1,0 +1,8 @@
+{
+  "_note": "reconstructed from cursor.com/docs/hooks, this session's own fetch, which quoted the payload verbatim: '\"status\": \"completed\" | \"error\" | \"aborted\", \"loop_count\": 0'. Not captured live.",
+  "conversation_id": "conv-cursor-docs-01",
+  "subagent_id": "sub-cursor-docs-01",
+  "parent_conversation_id": "conv-cursor-docs-01",
+  "status": "completed",
+  "loop_count": 0
+}

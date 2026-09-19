@@ -1,0 +1,38 @@
+Route and export Houston's snapshot module.
+
+The module itself is copied in by core/houston-core/build.rs, not carried
+here, so an upstream bump fails on these two hunks rather than on the
+whole file.
+
+--- a/src/lib_vt.zig
++++ b/src/lib_vt.zig
+@@ -289,6 +289,10 @@
+         @export(&c.tracked_grid_ref_point, .{ .name = "ghostty_tracked_grid_ref_point" });
+         @export(&c.tracked_grid_ref_set, .{ .name = "ghostty_tracked_grid_ref_set" });
+         @export(&c.tracked_grid_ref_snapshot, .{ .name = "ghostty_tracked_grid_ref_snapshot" });
++        @export(&c.houston_snapshot_format_version, .{ .name = "houston_vt_snapshot_format_version" });
++        @export(&c.houston_snapshot_parser_state, .{ .name = "houston_vt_snapshot_parser_state" });
++        @export(&c.houston_snapshot_encode, .{ .name = "houston_vt_snapshot_encode" });
++        @export(&c.houston_snapshot_import, .{ .name = "houston_vt_snapshot_import" });
+         @export(&c.build_info, .{ .name = "ghostty_build_info" });
+         @export(&c.type_json, .{ .name = "ghostty_type_json" });
+         @export(&c.alloc_alloc, .{ .name = "ghostty_alloc" });
+--- a/src/terminal/c/main.zig
++++ b/src/terminal/c/main.zig
+@@ -43,10 +43,16 @@
+ pub const style = @import("style.zig");
+ pub const sys = @import("sys.zig");
+ pub const terminal = @import("terminal.zig");
++pub const houston_snapshot = @import("houston_snapshot.zig");
+ 
+ // The full C API, unexported.
+ pub const build_info = buildpkg.get;
+ 
++pub const houston_snapshot_format_version = houston_snapshot.snapshot_format_version;
++pub const houston_snapshot_parser_state = houston_snapshot.snapshot_parser_state;
++pub const houston_snapshot_encode = houston_snapshot.snapshot_encode;
++pub const houston_snapshot_import = houston_snapshot.snapshot_import;
++
+ pub const osc_new = osc.new;
+ pub const osc_free = osc.free;
+ pub const osc_reset = osc.reset;

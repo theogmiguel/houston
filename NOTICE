@@ -1,0 +1,68 @@
+Houston
+Copyright 2026 Théo Miguel
+
+This product includes software developed by third parties, as noted below.
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+
+================================================================================
+libghostty-vt (Ghostty) — MIT
+================================================================================
+
+Houston vendors a build of Ghostty's terminal-emulation library. The daemon
+links the native library and the renderer loads a WebAssembly build of it:
+
+  ui/src/renderer/src/ghostty/vendor/ghostty-vt.wasm
+  ui/src/renderer/src/ghostty/vendor/ghostty-write-pty.wasm
+  core/houston-core/ghostty-patches/
+
+Both artifacts are built from https://github.com/ghostty-org/ghostty at the
+revision pinned in core/houston-core/ghostty-vt.lock. MIT asks that a copy of
+the software carry this notice, so here it is in full:
+
+  MIT License
+
+  Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+
+================================================================================
+Trademarks
+================================================================================
+
+Houston hosts agent CLIs published by other people, and names them so you can
+tell which one a pane is running. Those names — among them Claude and Claude
+Code, Codex, Gemini and Gemini CLI, Antigravity, Cursor, Grok, and OpenCode —
+are the trademarks of their respective owners. Houston uses them nominatively,
+to identify the tool being run, and is not affiliated with, endorsed by or
+sponsored by any of those owners.
+
+"Houston" is the project's own name. The Apache License grants you a copyright
+and patent licence; it does not grant permission to use the project's name
+(clause 6). A fork is welcome — give it your own name.
+
+
+================================================================================
+Dependencies
+================================================================================
+
+Houston's Rust and JavaScript dependencies carry their own licences, resolved
+from Cargo.lock and bun.lock. They are linked, not vendored, and none of them
+is copied into this tree.

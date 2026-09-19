@@ -1,0 +1,4 @@
+{
+  "_note": "the plugin's own constructed payload, not a raw OpenCode bus event — this is what Houston's plugin (agent_hooks::opencode_plugin_source) sends the hook helper for a ROOT session's session.created, verified live on 1.18.27 (the plan's probe section) for the bus event itself; the plugin's own JSON construction is not live-verified.",
+  "session_id": "ses_root01"
+}

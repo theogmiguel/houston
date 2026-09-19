@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "turn_id": "a1b2c3d4-0001",
+  "prompt": "brief"
+}

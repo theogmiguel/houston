@@ -1,0 +1,12 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "stepIdx": 3,
+  "toolCall": {
+    "name": "ask_question",
+    "args": {
+      "questions": [{ "question": "Which branch should this land on?" }]
+    }
+  },
+  "_note": "PostToolUse existing and firing in the matcher dialect is live-verified; its payload echoing toolCall/stepIdx the same as PreToolUse is assumed by parity with the Pre event, not independently captured"
+}

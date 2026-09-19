@@ -1,0 +1,86 @@
+.key-chip
+.anim-out .pop-backdrop
+.anim-out .pop
+.anim-out .bell-menu
+.anim-out .handoff-overlay
+.boot
+.boot.error
+.boot-actions
+.bell-h-actions .ghost
+.bell-item-b .ghost
+.sw
+.sw .sw-knob
+.sw.on
+.sw.on .sw-knob
+.sw:disabled
+.side-h-actions .ico
+.ctxmenu .ctx-item
+.ctxmenu .ctx-item:hover
+.ctxmenu .ctx-item kbd
+.ctxmenu .ctx-sep
+.ctxmenu .ctx-item.danger
+.ctxmenu .ctx-item.danger:hover
+button
+button:hover
+button:disabled
+button.primary
+button.primary:hover
+button.ghost
+button.danger:hover
+button.ico
+button.ico:hover
+button.ico svg
+.key
+input:focus-visible
+.banner-row .ghost
+.reconnect-pill .ghost
+.pane-slot > .pane
+.layout.resizing .term-host
+.pane-head
+.pane
+.pane:after
+.pane.focus .pane-head
+body:has(.pane.focus) .pane:not(.focus) .head-actions .ico
+.pane-head:active
+.agent-dot
+.pane-title
+body:has(.pane.focus) .pane:not(.focus) .pane-title
+.head-actions
+.head-meta + .head-actions
+.head-actions .ico
+.head-actions .ico:hover
+.head-actions .ico:active
+.head-actions .ico:focus-visible
+.head-actions .ico--menu:hover
+.head-actions .ico--close:hover
+.head-actions .ico--active:hover
+.deferred-reason .ghost
+.head-actions .ico--expand
+.ctx-menu
+.ctx-item
+.ctx-item:hover
+.ctx-item:disabled:hover
+.ctx-item.danger:hover
+.ctx-sep
+.url-input
+.url-input:focus
+.url-input::placeholder
+.webview-host
+.rview
+.edot
+.estatus
+.estatus.err
+.ehost-wrap
+.ehost
+.ehost .cm-editor
+.pop-backdrop
+.pop
+.pop-b
+.fld label
+.fld select
+.pop-f
+.handoff-overlay
+.fld button.ghost.danger
+button.ghost.danger.arm
+.fld input[type='number']
+.term-toast

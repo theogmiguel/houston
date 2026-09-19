@@ -1,0 +1,15 @@
+.pane.focus:after
+.pane.big
+.pane.state-exited
+.pane.state-killed
+.pane.state-interrupted
+.agent-dot.d-working
+.agent-dot.d-spawning
+.agent-dot.d-idle
+.agent-dot.d-needs-input
+.state
+.s-exited
+.s-killed
+.s-interrupted
+.ctx-item.has-sub
+.ctx-sub

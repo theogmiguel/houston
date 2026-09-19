@@ -1,0 +1,8 @@
+{
+  "conversationId": "conv-sub-1",
+  "transcriptPath": "REPLACE_ME_SUB.jsonl",
+  "fullyIdle": true,
+  "executionNum": 0,
+  "terminationReason": "NO_TOOL_CALL",
+  "_note": "a sub-agent's own fullyIdle:true Stop under its own conversationId is live-verified; this fixture's own values are synthetic"
+}

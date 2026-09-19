@@ -1,0 +1,8 @@
+{
+  "_note": "reconstructed from the plan's D7 table ('Notification (permission_prompt, elicitation_dialog)') and Claude's own Notification shape — not captured live, no Grok account on this machine.",
+  "hook_event_name": "Notification",
+  "session_id": "sess-grok-docs-01",
+  "cwd": "/tmp/example",
+  "notification_type": "permission_prompt",
+  "message": "Grok needs your permission to use Bash"
+}

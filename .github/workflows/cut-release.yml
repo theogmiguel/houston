@@ -1,0 +1,255 @@
+name: Cut release
+
+# Manual only, and deliberate: this workflow pushes a commit to main and a v*
+# tag, so nothing but a maintainer clicking Run should ever start it.
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'Version bump to cut'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+          - rc
+      ref:
+        description: 'Branch, tag or SHA to cut from'
+        type: string
+        default: 'main'
+        required: true
+
+permissions:
+  contents: write
+
+# Version-PINNED, not a caret range, so the bundle cannot change under us. A job
+# output (below) is the only way to hand it to a called workflow, since a
+# reusable workflow's `with:` cannot resolve `env`.
+env:
+  TAURI_CLI_VERSION: 2.11.4
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      previous_tag: ${{ steps.version.outputs.previous_tag }}
+      tauri_cli_version: ${{ steps.pin.outputs.tauri_cli_version }}
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - id: pin
+        run: echo "tauri_cli_version=$TAURI_CLI_VERSION" >> "$GITHUB_OUTPUT"
+
+      # First, before the version is computed, the commit is made or the tag is
+      # pushed: a cut that cannot be published signed must not move anything.
+      - name: Require the updater signing secrets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY)
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::this release is signed and the updater secrets are missing: ${missing[*]}. Set them under Settings -> Secrets and variables -> Actions; latest.json cannot carry a verifiable signature without them."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve the refs and decide whether main may move
+        env:
+          KIND: ${{ inputs.kind }}
+        run: |
+          set -euo pipefail
+          cut_sha=$(git rev-parse HEAD)
+          main_sha=$(git rev-parse origin/main)
+          if [ "$cut_sha" = "$main_sha" ]; then
+            MOVE_MAIN=1
+          else
+            MOVE_MAIN=0
+          fi
+          # The rule this workflow exists to keep: main is never rewritten from a
+          # ref that is not its own tip. Only a release candidate may come off a
+          # side ref; a stable release is cut from the tip of main and nothing else.
+          if [ "$MOVE_MAIN" -eq 0 ] && [ "$KIND" != "rc" ]; then
+            echo "::error::ref resolves to $cut_sha but origin/main is $main_sha -- a stable release is cut from the tip of main and nothing else; only a release candidate may come off a side ref"
+            exit 1
+          fi
+          echo "MOVE_MAIN=$MOVE_MAIN" >> "$GITHUB_ENV"
+          echo "CUT_SHA=$cut_sha" >> "$GITHUB_ENV"
+          echo "MAIN_SHA=$main_sha" >> "$GITHUB_ENV"
+
+      - name: Compute the next version
+        id: version
+        env:
+          KIND: ${{ inputs.kind }}
+        run: |
+          set -euo pipefail
+          # sort -V over the stripped numbers, not lexical: 0.10.0 must beat 0.9.0.
+          latest_stable=$(git tag -l 'v*' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sed -E 's/^v//' \
+            | sort -V \
+            | tail -n1 || true)
+          previous_tag=""
+          if [ -z "$latest_stable" ]; then
+            latest_stable="0.0.0"
+            echo "no stable tag found; treating the latest stable as 0.0.0"
+          else
+            previous_tag="v$latest_stable"
+          fi
+          echo "latest stable: $latest_stable (kind=$KIND)"
+          IFS=. read -r major minor patch <<< "$latest_stable"
+
+          case "$KIND" in
+            patch) version="$major.$minor.$((patch + 1))" ;;
+            minor) version="$major.$((minor + 1)).0" ;;
+            major) version="$((major + 1)).0.0" ;;
+            rc)
+              # Continue the highest rc series whose base already sits above
+              # latest_stable; with no such series, start a fresh one at the next
+              # minor above latest_stable, -rc.1.
+              rc_bases=$(git tag -l 'v*' \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' \
+                | sed -E 's/^v//; s/-rc\.[0-9]+$//' \
+                | sort -Vu || true)
+              rc_base=""
+              while IFS= read -r base; do
+                [ -n "$base" ] || continue
+                [ "$base" = "$latest_stable" ] && continue
+                higher=$(printf '%s\n%s\n' "$latest_stable" "$base" | sort -V | tail -n1)
+                if [ "$higher" = "$base" ]; then rc_base="$base"; fi
+              done <<< "$rc_bases"
+              if [ -n "$rc_base" ]; then
+                highest_n=$(git tag -l "v$rc_base-rc.*" \
+                  | sed -E 's/^v.*-rc\.//' \
+                  | sort -V \
+                  | tail -n1)
+                version="$rc_base-rc.$((highest_n + 1))"
+              else
+                version="$major.$((minor + 1)).0-rc.1"
+              fi
+              ;;
+            *)
+              echo "::error::unknown kind \"$KIND\" -- expected one of patch, minor, major, rc"
+              exit 1
+              ;;
+          esac
+
+          # Explicit comparison, not a side effect of the arithmetic: a stable
+          # kind that fails to move the number forward stops here.
+          if [ "$KIND" != "rc" ]; then
+            higher=$(printf '%s\n%s\n' "$latest_stable" "$version" | sort -V | tail -n1)
+            if [ "$higher" != "$version" ] || [ "$version" = "$latest_stable" ]; then
+              echo "::error::computed $version for kind=$KIND is not strictly greater than latest_stable $latest_stable"
+              exit 1
+            fi
+          fi
+
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag already exists"
+            exit 1
+          fi
+          echo "previous tag for the generated notes: ${previous_tag:-none}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          echo "next version: $version (tag $tag)"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Write the version into the manifests and both lockfiles
+        run: ./scripts/set-version.sh "${{ steps.version.outputs.version }}"
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Named, not `git add -A`: a release commit carries the version bump
+          # and nothing a runner happened to leave behind.
+          git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
+            src-tauri/Cargo.lock ui/package.json core/Cargo.toml core/Cargo.lock
+          git commit -m "release: v$VERSION"
+          git tag -m "release: v$VERSION" "v$VERSION"
+
+      - name: Push the commit and the tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          CUT_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$MOVE_MAIN" = "1" ]; then
+            # HEAD is a child of main's tip, so this only moves main forward and
+            # never rewrites it.
+            git push origin HEAD:main
+            git push origin "$TAG"
+          else
+            git push origin "$TAG"
+            {
+              echo "main was deliberately not moved: this release candidate was cut from $CUT_REF (${CUT_SHA}),"
+              echo "not from main (${MAIN_SHA}), and the tag $TAG now exists."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| prepare | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Both bundle jobs build the tag prepare just pushed, not the dispatch ref:
+  # the release commit holds the manifests at the new version, and building
+  # anything else ships a bundle whose filename and runtime version disagree.
+  linux-bundle:
+    needs: prepare
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
+      tauri_cli_version: ${{ needs.prepare.outputs.tauri_cli_version }}
+      require_signing: true
+    secrets: inherit
+
+  windows-bundle:
+    needs: prepare
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
+      tauri_cli_version: ${{ needs.prepare.outputs.tauri_cli_version }}
+      require_signing: true
+    secrets: inherit
+
+  publish:
+    # A tag pushed with this workflow's own GITHUB_TOKEN does not start another
+    # workflow, by GitHub's loop prevention -- so a run that only pushed a tag
+    # would silently build nothing. This job builds and publishes itself instead.
+    needs: [prepare, linux-bundle, windows-bundle]
+    uses: ./.github/workflows/release-publish.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
+      title: Houston ${{ needs.prepare.outputs.tag }}
+      previous_tag: ${{ needs.prepare.outputs.previous_tag }}
+      draft: true
+      # An rc is a prerelease: publishing its draft as a normal release would
+      # let releases/latest offer a candidate to every stable install.
+      prerelease: ${{ inputs.kind == 'rc' }}

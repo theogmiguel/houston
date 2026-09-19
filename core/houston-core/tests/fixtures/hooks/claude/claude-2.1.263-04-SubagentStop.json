@@ -1,0 +1,23 @@
+{
+  "session_id": "58200cf3-2b91-4f9d-9879-619004e0d0a7",
+  "transcript_path": "/home/user/.claude/projects/-home-user-projects-houston-core-target-hookprobe-headless/58200cf3-2b91-4f9d-9879-619004e0d0a7.jsonl",
+  "cwd": "/home/user/projects/houston/core/target/hookprobe/headless",
+  "prompt_id": "035980f6-a72e-4d40-b82e-df1e79c2b86a",
+  "permission_mode": "acceptEdits",
+  "agent_id": "a4c7bcb2117fa13c2",
+  "agent_type": "general-purpose",
+  "hook_event_name": "SubagentStop",
+  "stop_hook_active": false,
+  "agent_transcript_path": "/home/user/.claude/projects/-home-user-projects-houston-core-target-hookprobe-headless/58200cf3-2b91-4f9d-9879-619004e0d0a7/subagents/agent-a4c7bcb2117fa13c2.jsonl",
+  "last_assistant_message": "ALPHA",
+  "background_tasks": [
+    {
+      "id": "a4c7bcb2117fa13c2",
+      "type": "subagent",
+      "status": "running",
+      "description": "Reply with ALPHA",
+      "agent_type": "general-purpose"
+    }
+  ],
+  "session_crons": []
+}

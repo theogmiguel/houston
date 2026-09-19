@@ -1,0 +1,266 @@
+html[data-motion-paused] .loop-anim {
+  animation-play-state: paused;
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+
+@keyframes term-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@keyframes menu-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: var(--dot-pulse-opacity, 1);
+  }
+}
+
+@keyframes dot-pulse-scale {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: var(--dot-pulse-opacity, 1);
+    transform: scale(var(--dot-pulse-scale, 1));
+  }
+}
+
+.pulse-ring-badge::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 1.5px solid var(--pulse-color);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pulse-ring-badge::after {
+    animation: pulse-ring-scale 1.6s ease-out 4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-ring-badge::after {
+    opacity: 0.45;
+    transform: scale(1.35);
+  }
+}
+
+@keyframes pulse-ring-scale {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+  15% {
+    transform: scale(1.35);
+    opacity: 0.45;
+  }
+}
+
+@keyframes skeleton-cursor-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes rbrowser-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
+@keyframes skill-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes notice-ring-pulse {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  60% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes notice-ring-settle-pane {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 0.5;
+  }
+}
+
+.notice-ring {
+  position: absolute;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.notice-ring.completed {
+  --notice-ring-color: var(--success);
+}
+
+.notice-ring.error {
+  --notice-ring-color: var(--danger);
+}
+
+.notice-ring.needs-input {
+  --notice-ring-color: var(--warn);
+}
+
+.pane-notice-ring {
+  inset: 2px;
+  z-index: var(--z-sticky);
+  box-shadow: 0 0 16px var(--notice-ring-color);
+  animation:
+    notice-ring-pulse 1.6s ease-out 4,
+    notice-ring-settle-pane 0.2s ease-out 1 6.4s forwards;
+}
+
+.pane-notice-ring.needs-input {
+  animation: none;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-notice-ring {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+@keyframes chat-working {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes notice-in-corner {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+
+@keyframes notice-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* Directional rail transitions keep navigation changes spatially legible. */
+@keyframes rail-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+
+@keyframes rail-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+/* Marks the row of a tag made from the rail, then clears itself so nothing has
+   to remember to. */
+@keyframes tag-row-settle {
+  0%,
+  55% {
+    outline-color: var(--accent);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}

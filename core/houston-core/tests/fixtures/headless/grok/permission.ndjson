@@ -1,0 +1,6 @@
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}}
+{"jsonrpc":"2.0","id":2,"result":{"sessionId":"ses_grok_demo"}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_grok_demo","update":{"sessionUpdate":"tool_call","toolCallId":"call_1","title":"Run `npm publish`"}}}
+{"jsonrpc":"2.0","id":4,"method":"session/request_permission","params":{"sessionId":"ses_grok_demo","toolCall":{"toolCallId":"call_1","title":"Run `npm publish`"},"options":[{"optionId":"allow-once","name":"Allow once","kind":"allow_once"},{"optionId":"reject-once","name":"Reject","kind":"reject_once"}]}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_grok_demo","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_1","status":"failed"}}}
+{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}

@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Houston">
+  <!-- Houston's app icon: the detail cut, for renders at 64px and above.
+       Below that the strokes here fall under one device pixel and the blur
+       swamps what is left — `icon-small.svg` is the same composition rebuilt
+       in fat geometry with no filters, and every render under 64px comes from
+       that file instead.
+
+       The corner radius is baked because Linux and Windows do not mask an app
+       icon. macOS does, and would round this a second time, so an .icns needs
+       a square-canvas variant rather than this file. -->
+  <defs>
+    <radialGradient id="h-bg" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#050C1A" />
+      <stop offset="100%" stop-color="#010308" />
+    </radialGradient>
+
+    <!-- One gradient spans BOTH jets, so its white core sits behind the
+         horizon and each beam is brightest where it clears it. Splitting this
+         into two polygons would restart the ramp on each and put the bright
+         end at the tips instead. -->
+    <linearGradient id="h-jet" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0" />
+      <stop offset="24%" stop-color="#00F0FF" stop-opacity="0.8" />
+      <stop offset="35%" stop-color="#FFFFFF" />
+      <stop offset="65%" stop-color="#FFFFFF" />
+      <stop offset="76%" stop-color="#00F0FF" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="h-disk" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="50%" stop-color="#7000FF" />
+      <stop offset="100%" stop-color="#3A86FF" />
+    </linearGradient>
+
+    <!-- Two filter regions, because the two shapes have opposite aspect
+         ratios: the jets are tall and narrow, the disk is wide and flat. A
+         single region sized for one clips the other's bloom to a hard edge. A
+         12px blur needs roughly 3σ = 36 units of headroom past the bounding
+         box on the axis it has to fall off along. -->
+    <filter id="h-glow-jet" x="-70%" y="-70%" width="240%" height="240%">
+      <feGaussianBlur stdDeviation="10" result="b" />
+      <feComposite in="SourceGraphic" in2="b" operator="over" />
+    </filter>
+    <filter id="h-glow-disk" x="-60%" y="-190%" width="220%" height="480%">
+      <feGaussianBlur stdDeviation="11" result="b" />
+      <feComposite in="SourceGraphic" in2="b" operator="over" />
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="110" fill="url(#h-bg)" />
+
+  <g transform="translate(256, 256)">
+    <!-- Relativistic jets. Hourglass, not a wedge: a jet pair is symmetric
+         about the hole and narrowest at its source, so the waist is at the
+         horizon and both tips flare. They are drawn first so the horizon
+         occludes the middle, which is what makes them read as emerging from
+         behind it. -->
+    <polygon points="-48,-232 48,-232 10,-14 10,14 48,232 -48,232 -10,14 -10,-14"
+             fill="url(#h-jet)" opacity="0.26" filter="url(#h-glow-jet)" />
+    <polygon points="-20,-246 20,-246 5,-10 5,10 20,246 -20,246 -5,10 -5,-10"
+             fill="url(#h-jet)" filter="url(#h-glow-jet)" />
+
+    <!-- Accretion disk. The rotation lives on a group rather than on each
+         ellipse so the front wave below shares one frame with the back. -->
+    <g transform="rotate(-15)">
+      <ellipse rx="180" ry="45" fill="none" stroke="url(#h-disk)" stroke-width="8"
+               opacity="0.4" filter="url(#h-glow-disk)" />
+      <ellipse rx="150" ry="38" fill="none" stroke="url(#h-disk)" stroke-width="17"
+               filter="url(#h-glow-disk)" />
+    </g>
+
+    <circle r="78" fill="#00F0FF" opacity="0.25" filter="url(#h-glow-jet)" />
+    <circle r="72" fill="none" stroke="#FFFFFF" stroke-width="4" filter="url(#h-glow-jet)" />
+    <circle r="68" fill="#010308" />
+
+    <!-- The near side of the disk, passing in front of the horizon. Endpoints
+         are the ellipse evaluated at 165° and 15°, so this arc lies ON the
+         150x38 ellipse above rather than merely near it: pick endpoints that
+         miss and the renderer either rescales the radii (SVG's out-of-range
+         rule) or re-centres the arc to reach them, and the wave sits off the
+         disk it is meant to continue. -->
+    <g transform="rotate(-15)">
+      <path d="M -144.9 9.8 A 150 38 0 0 0 144.9 9.8" fill="none"
+            stroke="url(#h-disk)" stroke-width="19" stroke-linecap="round"
+            filter="url(#h-glow-disk)" />
+      <path d="M -144.9 9.8 A 150 38 0 0 0 144.9 9.8" fill="none"
+            stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" opacity="0.85" />
+    </g>
+  </g>
+</svg>

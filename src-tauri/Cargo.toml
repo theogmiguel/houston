@@ -1,0 +1,139 @@
+[package]
+name = "houston-tauri"
+edition = "2021"
+version = "0.10.0"
+license = "Apache-2.0"
+repository = "https://github.com/theogmiguel/houston"
+homepage = "https://github.com/theogmiguel/houston"
+authors = ["Théo Miguel"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# tracing must stay off this feature list: with it, eval_script_with_callback takes
+# wry's blocking getter path instead of send_user_message, letting the renderer
+# watchdog's supervisor thread block on the very event loop it watches (check-watchdog.sh).
+[dependencies]
+# unstable exposes Window::add_child, the only way to mount a native child webview.
+# webview-data-url lets a webview load data: URLs at all -- without it about:blank
+# children never reach LoadEvent::Committed under WebKitGTK and stay unpainted.
+tauri = { version = "2", features = ["unstable", "webview-data-url", "tray-icon", "image-png"] }
+houston-core = { path = "../core/houston-core" }
+houston-protocol = { path = "../core/houston-protocol" }
+anyhow = "1"
+tracing = "0.1"
+dirs = "5"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+tauri-runtime = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+# 2.10 is the floor, not taste: earlier versions look up a bare `{os}-{arch}` key
+# only, so a .deb install could be handed the AppImage. 2.10 searches the
+# bundle-specific `{os}-{arch}-{installer}` entry first.
+tauri-plugin-updater = "2.10"
+# Empty features on purpose: tauri-plugin-dialog already picks rfd's backend
+# (gtk3 here), and cargo feature-unification means naming another backend would
+# conflict with that choice by rfd's own design.
+rfd = { version = "0.16", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
+# wayland-data-control is not redundant under XWayland bridging: a wlroots compositor
+# with no XWayland (or a GNOME session with XWayland off) has no bridge, and without
+# this feature arboard is X11-only there.
+arboard = { version = "3", features = ["image-data", "wayland-data-control"] }
+# Exact pin, not `^`: this crate decides per call between the home trash and a
+# top-directory trash, which determines whether a delete is recoverable and where
+# (see fs_delete's failure-mode comment). Re-read freedesktop.rs before widening.
+trash = "=5.2.6"
+
+png = "0.17"
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows-core = "0.61"
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Memory",
+  "Win32_UI_WindowsAndMessaging",
+] }
+# Win32_UI_Shell is ShellExecuteW ("open this like a double-click would"), the
+# Windows twin of xdg-open. It takes the target as a wide string with no command
+# interpreter in the path, so renderer-supplied URLs can't become an injection surface.
+windows-sys = { version = "0.61", features = [
+  "Win32_System_SystemInformation",
+  "Win32_Foundation",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_System_Com",
+  "Win32_Graphics_Gdi",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+glib = "0.18"
+libc = "0.2"
+zbus = "5"
+# Used to dlopen libappindicator ahead of tray init: libappindicator-sys panics
+# (not errors) from inside TrayIcon::new on the main thread if the library is
+# missing, so this is the only place left to catch it. 0.7 matches its own pin.
+libloading = "0.7"
+# v2_34: web-process-terminated/is_web_process_responsive/terminate_web_process for
+# the renderer watchdog (WebKitGTK gives no render-process-gone signal otherwise).
+# v2_40: run_javascript is deprecated there and `-D warnings` fails on it.
+webkit2gtk = { version = "=2.0.2", features = ["v2_34", "v2_40"] }
+# Pinned to the version wry-0.55.1 depends on, so the JavascriptResult/Value types
+# used by webkit.rs's picker handling unify with wry's own copy.
+javascriptcore-rs = "=1.1.2"
+
+[features]
+bench = ["dep:axum"]
+
+[dependencies.axum]
+version = "0.8"
+features = ["ws"]
+optional = true
+
+[dependencies.tokio]
+version = "1"
+features = ["full"]
+
+[dependencies.tokio-tungstenite]
+version = "0.26"
+
+[dependencies.futures-util]
+version = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+# "test": gates tauri::test, which app_log.rs's IPC boundary test drives directly;
+# cargo excludes dev-dependency features from non-test builds, so this widens
+# nothing in the shipped binary.
+tauri = { version = "2", features = ["test"] }
+tokio-tungstenite = "0.26"
+futures-util = "0.3"
+
+[[bin]]
+name = "houston-tauri"
+path = "src/main.rs"
+
+# line-tables-only keeps backtraces exact without full DWARF; this tree carries
+# tauri + wry + the whole gtk/webkit2gtk stack twice (default build + --features bench).
+# Full DWARF for a real debugging session: `CARGO_PROFILE_DEV_DEBUG=2 cargo build`.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# strip removes symbol names (the shipped binary's reverse-engineering surface); lto=fat
+# + codegen-units=1 inline across crates so the remaining code isn't a function-per-symbol
+# map either. Cost: slower release builds and release backtraces lose names.
+[profile.release]
+strip = "symbols"
+lto = "fat"
+codegen-units = 1

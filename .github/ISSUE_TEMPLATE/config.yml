@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature ideas and discussion
+    url: https://github.com/theogmiguel/houston/discussions/categories/ideas
+    about: Have an idea or want to discuss a direction before it's a concrete proposal? Start here.
+  - name: Report a security vulnerability
+    url: https://github.com/theogmiguel/houston/blob/main/SECURITY.md
+    about: Security reports must never be filed as public issues — see SECURITY.md for how to report privately.

@@ -1,0 +1,34 @@
+# P5 #32 shard 18 (RightPanel's skill family) — every in-scope selector,
+# A 31-block census. Duplicated selector text across two
+# blocks (`.skill-card:hover` at 2561/2575; `.skill-badge, .skill-cat` at
+# 2649 vs the single-selector re-declarations at 2659/2664) is listed once —
+# coverage.mjs counts matching elements, not blocks.
+.rpanel.anim-out
+.skill-card
+.skill-card:hover
+.skill-card.acc-claude
+.skill-card.acc-codex
+.skill-card.acc-gemini
+.skill-card-main
+.skill-hairline
+.skill-glow
+.skill-card:hover .skill-glow
+.skill-card-body
+.skill-card-top
+.skill-tile
+.skill-card:hover .skill-tile
+.skill-chips
+.skill-badge
+.skill-cat
+.skill-title
+.skill-card:hover .skill-title
+.skill-desc
+.skill-card-foot
+.skill-foot-kind
+.skill-run
+.skill-card:hover .skill-run
+.skill-hover-actions
+.skill-card:hover .skill-hover-actions
+.skill-mini
+.skill-mini:hover
+.skill-mini.danger:hover

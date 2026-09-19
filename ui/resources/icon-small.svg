@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Houston">
+  <!-- Houston's app icon: the small cut, and the source for every render at
+       48px and below.
+
+       Same composition as `icon.svg`, rebuilt rather than scaled. At 16px one
+       device pixel is 32 units of this canvas, so the detail cut's 4-unit
+       photon ring is an eighth of a pixel and its 17-unit disk is half of one;
+       a Gaussian blur at that scale is a full pixel of haze over a third of a
+       pixel of source. Everything here is therefore fat enough to survive the
+       downsample, and there are no filters at all.
+
+       Three parts carry the silhouette — jet, band, horizon — which is the
+       whole reason this composition was chosen over a disk-only one: a purely
+       rotational mark has nothing to thicken but its ring. -->
+  <defs>
+    <radialGradient id="hs-bg" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#050C1A" />
+      <stop offset="100%" stop-color="#010308" />
+    </radialGradient>
+
+    <linearGradient id="hs-jet" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0" />
+      <stop offset="24%" stop-color="#00F0FF" stop-opacity="0.85" />
+      <stop offset="35%" stop-color="#FFFFFF" />
+      <stop offset="65%" stop-color="#FFFFFF" />
+      <stop offset="76%" stop-color="#00F0FF" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="hs-disk" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="50%" stop-color="#7000FF" />
+      <stop offset="100%" stop-color="#3A86FF" />
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="110" fill="url(#hs-bg)" />
+
+  <g transform="translate(256, 256)">
+    <!-- Jet waist is 60 units wide against the detail cut's 10: at 16px that
+         is 1.9 device pixels instead of 0.3, which is the difference between a
+         visible axis and a grey smear. -->
+    <polygon points="-46,-250 46,-250 30,-14 30,14 46,250 -46,250 -30,14 -30,-14"
+             fill="url(#hs-jet)" />
+
+    <g transform="rotate(-15)">
+      <ellipse rx="148" ry="40" fill="none" stroke="url(#hs-disk)" stroke-width="56" />
+    </g>
+
+    <!-- The photon ring becomes a filled disc behind the horizon rather than a
+         stroke around it. A 4-unit stroke vanishes here; an 14-unit annulus of
+         exposed cyan does not. -->
+    <circle r="96" fill="#00F0FF" opacity="0.45" />
+    <circle r="82" fill="#010308" />
+
+    <!-- Endpoints at 165° and 15° on the 148x40 ellipse above — same rule as
+         the detail cut. -->
+    <g transform="rotate(-15)">
+      <path d="M -142.9 10.4 A 148 40 0 0 0 142.9 10.4" fill="none"
+            stroke="#8FE9FF" stroke-width="48" stroke-linecap="round" />
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+{
+  "session_id": "58200cf3-2b91-4f9d-9879-619004e0d0a7",
+  "transcript_path": "/home/user/.claude/projects/-home-user-projects-houston-core-target-hookprobe-headless/58200cf3-2b91-4f9d-9879-619004e0d0a7.jsonl",
+  "cwd": "/home/user/projects/houston/core/target/hookprobe/headless",
+  "prompt_id": "3cccc9b7-6748-4e72-b7d9-f3c049eea547",
+  "permission_mode": "acceptEdits",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "A-DONE",
+  "background_tasks": [],
+  "session_crons": []
+}

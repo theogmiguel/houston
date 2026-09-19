@@ -1,0 +1,17 @@
+# Line endings for the file types the Windows port adds. cmd locates
+# `call :label` targets by byte offset, so LF-only .cmd files are unreliable;
+# PowerShell is conventionally CRLF on Windows. Existing repo files are
+# deliberately NOT renormalized — these rules bind only new additions.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# CSP sha256 hashes are computed over exact bytes; a CRLF working-tree copy
+# breaks the pre-paint theme guard on Windows checkouts.
+*.html text eol=lf
+
+# Captured PTY rings (`core/houston-core/fixtures/screen/`) are byte-exact
+# terminal output: a CRLF-normalising checkout would rewrite the carriage
+# returns a repainting CLI draws with, and every screen test would fail on
+# Windows only.
+*.bin binary

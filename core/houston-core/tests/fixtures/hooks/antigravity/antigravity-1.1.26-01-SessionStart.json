@@ -1,0 +1,8 @@
+{
+  "conversationId": "conv-root-1",
+  "modelName": "gemini-3-pro",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "workspacePaths": ["/home/dev/p"],
+  "artifactDirectoryPath": "/home/dev/.gemini/artifacts/conv-root-1",
+  "_note": "field names captured live (live probe agy 1.1.26); this fixture's own values are synthetic"
+}

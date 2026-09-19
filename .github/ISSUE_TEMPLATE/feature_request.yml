@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a new capability or change in behaviour for Houston
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For an open-ended idea you want to discuss before it's a concrete proposal, consider
+        [Discussions](https://github.com/theogmiguel/houston/discussions/categories/ideas)
+        instead — this form is for a specific, actionable request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation today and why it's a problem, not the solution yet.
+      placeholder: |
+        When I spawn a swarm of agents across several panes, I have no way to see which
+        ones are waiting on me versus still working, short of clicking into each one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should Houston do instead?
+      placeholder: |
+        A status indicator on each pane's tab that reflects the hooks-driven state
+        (working / waiting / idle), visible without focusing the pane.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: Anything else you thought about, and why it didn't fit.
+
+  - type: markdown
+    attributes:
+      value: |
+        If this feature touches how Houston talks to an agent CLI, it needs to work for
+        every provider Houston hosts (Claude Code, Codex, Antigravity, OpenCode, Cursor,
+        Grok) — or explicitly refuse by name for the ones it doesn't support. Please
+        note which providers you've thought through, if any.

@@ -1,0 +1,6 @@
+{
+  "_note": "reconstructed from docs.x.ai/build/features/hooks — not captured live. No last_assistant_message field: the plan's D7 table says Grok's Stop payload does not carry the last message ('not in payload: capped tail'), unlike Claude/Codex.",
+  "hook_event_name": "Stop",
+  "session_id": "sess-grok-docs-01",
+  "cwd": "/tmp/example"
+}

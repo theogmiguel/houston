@@ -1,0 +1,93 @@
+{
+  "$comment": [
+    "The cyclomatic-complexity ratchet for components, checked by",
+    "scripts/check-complexity.mjs and wired after Test in ci.yml's ui job.",
+    "Read that script's header first: it explains why the scan is .tsx-only",
+    "and why the pins are the only thing standing between this and a gate",
+    "nobody can satisfy.",
+    "",
+    "`max` is the ceiling oxlint applied when this block was measured, not a",
+    "setting: eslint/complexity's max has no CLI switch and 20 is the rule's",
+    "own default. It is pinned so a moved upstream default fails loudly",
+    "instead of silently redrawing every number below. The pinned oxlint",
+    "version in package.json is the other half of that guarantee.",
+    "",
+    "Each entry pins a file's WORST function and how many are OVER the ceiling;",
+    "both only ever go down. `total` is recorded, never enforced. Up is a",
+    "regression; down without lowering the pin is a stale pin and also fails;",
+    "a file absent here must have zero. Collapsing branches is the fix \u2014",
+    "four `else if` arms assigning the same two variables are one ternary",
+    "pair \u2014 and pulling a body out into a helper is the other.",
+    "",
+    "The debt standing the day the gate landed: 17 files, 20 functions over",
+    "the ceiling, 2674 total decision paths across the components scanned."
+  ],
+  "max": 20,
+  "files": {
+    "src/renderer/src/App.tsx": {
+      "total": 886,
+      "worst": 100,
+      "over": 3
+    },
+    "src/renderer/src/components/BrowserPane.tsx": {
+      "total": 83,
+      "worst": 42,
+      "over": 1
+    },
+    "src/renderer/src/components/ChangesPane.tsx": {
+      "total": 192,
+      "worst": 30,
+      "over": 1
+    },
+    "src/renderer/src/components/Chip.tsx": {
+      "total": 36,
+      "worst": 32,
+      "over": 1
+    },
+    "src/renderer/src/components/Disclosure.tsx": {
+      "total": 33,
+      "worst": 30,
+      "over": 1
+    },
+    "src/renderer/src/components/EditorSurface.tsx": {
+      "total": 31,
+      "worst": 21,
+      "over": 1
+    },
+    "src/renderer/src/components/FilesPane.tsx": {
+      "total": 133,
+      "worst": 25,
+      "over": 1
+    },
+    "src/renderer/src/components/IconTile.tsx": {
+      "total": 25,
+      "worst": 23,
+      "over": 1
+    },
+    "src/renderer/src/components/LayoutView.tsx": {
+      "total": 176,
+      "worst": 27,
+      "over": 1
+    },
+    "src/renderer/src/components/QuestionCard.tsx": {
+      "total": 56,
+      "worst": 29,
+      "over": 1
+    },
+    "src/renderer/src/components/SessionPane.tsx": {
+      "total": 95,
+      "worst": 30,
+      "over": 1
+    },
+    "src/renderer/src/components/SshConnectModal.tsx": {
+      "total": 102,
+      "worst": 39,
+      "over": 1
+    },
+    "src/renderer/src/pane/TerminalPane.tsx": {
+      "total": 331,
+      "worst": 28,
+      "over": 1
+    }
+  }
+}

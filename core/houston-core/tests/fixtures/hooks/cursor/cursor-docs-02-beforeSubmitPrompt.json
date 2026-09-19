@@ -1,0 +1,5 @@
+{
+  "_note": "reconstructed from cursor.com/docs/hooks — not captured live. The prompt field name is assumed by parity with the generic payload lift (claude_hooks::parse_hook_payload's own field(\"prompt\")), not independently confirmed for Cursor's beforeSubmitPrompt shape.",
+  "conversation_id": "conv-cursor-docs-01",
+  "prompt": "probe prompt"
+}

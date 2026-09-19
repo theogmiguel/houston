@@ -1,0 +1,19 @@
+{
+  "workspaces": [
+    { "path": "/home/dev/houston", "name": "Houston" },
+    { "path": "/home/dev/api-service", "name": "API Service" },
+    { "path": "/home/dev/status-fixture", "name": "Status Fixture" },
+    { "path": "/home/dev/empty-workspace", "name": "Empty Workspace" }
+  ],
+  "sessions": [
+    { "id": 1, "agent": "claude", "project_dir": "/home/dev/houston", "cwd": "/home/dev/houston", "state": "running", "title": "Amber Falcon", "hidden": false },
+    { "id": 2, "agent": "shell", "project_dir": "/home/dev/houston", "cwd": "/home/dev/houston", "state": "running", "title": "Quiet Otter", "hidden": false },
+    { "id": 3, "agent": "ssh", "project_dir": "/home/dev/houston", "cwd": "/home/dev/houston", "state": "killed", "title": "Copper Wren", "hidden": false, "ssh_host": "dev@edge-01:22", "restore_deferred": "ssh" },
+    { "id": 4, "agent": "claude", "project_dir": "/home/dev/houston", "cwd": "/home/dev/houston", "state": "killed", "title": "Slate Heron", "hidden": false, "restore_deferred": "budget" },
+    { "id": 5, "agent": "shell", "project_dir": "/home/dev/houston", "cwd": "/home/dev/houston", "state": "killed", "title": "Dusty Marlin", "hidden": false, "restore_deferred": "previous-crash" },
+    { "id": 6, "agent": "shell", "project_dir": "/home/dev/api-service", "cwd": "/home/dev/api-service", "state": "killed", "title": "Frosted Newt", "hidden": false },
+    { "id": 7, "agent": "claude", "project_dir": "/home/dev/api-service", "cwd": "/home/dev/api-service", "state": "killed", "title": "Velvet Ibis", "hidden": false },
+    { "id": 8, "agent": "claude", "project_dir": "/home/dev/status-fixture", "cwd": "/home/dev/status-fixture", "state": "running", "title": "Working Bison", "hidden": false, "status": "working" },
+    { "id": 9, "agent": "shell", "project_dir": "/home/dev/status-fixture", "cwd": "/home/dev/status-fixture", "state": "exited", "title": "Ended Sparrow", "hidden": false }
+  ]
+}

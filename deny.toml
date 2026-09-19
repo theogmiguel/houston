@@ -1,0 +1,17 @@
+# One binary, not a library — a copyleft dep (GPL/AGPL/LGPL) would relicense the whole
+# product, but MPL-2.0's copyleft is file-level so a linked crate doesn't spread it.
+# Kept narrow: our own licence, common permissive ones, and Unicode's two transitive ones.
+[licenses]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+

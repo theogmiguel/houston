@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="Houston">
+  <!-- Houston's tray icon: the app icon's composition on a 16-unit grid, for
+       the notification area, where GNOME draws 16 device pixels, Plasma 22
+       and Windows 16 to 32 with DPI. `ui/scripts/render-icons.mjs` renders
+       every cut from this file at its own size; nothing is downsampled.
+
+       Same palette as `icon-small.svg`, on purpose: the tray has to be the
+       same object as the dock icon. What changed is geometry, all of it set
+       by one device pixel being one sixteenth of the canvas: the disk stroke
+       is 1.75 units so it survives 1x, the jets keep their hourglass but end
+       inside the tile, the photon ring is an exposed annulus rather than a
+       stroke, and the tile carries a faint rim because a #010308 ground has
+       no edge against a #131313 panel and a mark with no edge is what a tray
+       icon must never be.
+
+       The three states are composed by the renderer around this drawing —
+       idle at 55 % opacity, attention with a badge in the corner — so this
+       file stays the one master. -->
+  <defs>
+    <radialGradient id="t-bg" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#050C1A" />
+      <stop offset="100%" stop-color="#010308" />
+    </radialGradient>
+
+    <!-- One gradient spans both jets, so the white core sits behind the
+         horizon and each beam is brightest where it clears it. -->
+    <linearGradient id="t-jet" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0" />
+      <stop offset="24%" stop-color="#00F0FF" stop-opacity="0.85" />
+      <stop offset="35%" stop-color="#FFFFFF" />
+      <stop offset="65%" stop-color="#FFFFFF" />
+      <stop offset="76%" stop-color="#00F0FF" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="t-disk" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="50%" stop-color="#7000FF" />
+      <stop offset="100%" stop-color="#3A86FF" />
+    </linearGradient>
+  </defs>
+
+  <!-- The tile sits on the pixel grid: a 1-unit rim centred on x=1.5 paints
+       exactly the second pixel column at 16px instead of smearing over two. -->
+  <rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="url(#t-bg)"
+        stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="1" />
+
+  <g transform="translate(8, 8)">
+    <polygon points="-1.45,-6.3 1.45,-6.3 0.95,-0.45 0.95,0.45 1.45,6.3 -1.45,6.3 -0.95,0.45 -0.95,-0.45"
+             fill="url(#t-jet)" />
+
+    <g transform="rotate(-15)">
+      <ellipse rx="4.6" ry="1.25" fill="none" stroke="url(#t-disk)" stroke-width="1.75" />
+    </g>
+
+    <circle r="3" fill="#00F0FF" opacity="0.45" />
+    <circle r="2.56" fill="#010308" />
+
+    <!-- Endpoints at 165° and 15° on the 4.6x1.25 ellipse above, so the near
+         side lies on the disk it continues. -->
+    <g transform="rotate(-15)">
+      <path d="M -4.443 0.324 A 4.6 1.25 0 0 0 4.443 0.324" fill="none"
+            stroke="#8FE9FF" stroke-width="1.5" stroke-linecap="round" />
+    </g>
+  </g>
+</svg>

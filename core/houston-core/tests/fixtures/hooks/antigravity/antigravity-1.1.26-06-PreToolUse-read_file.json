@@ -1,0 +1,10 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "stepIdx": 1,
+  "toolCall": {
+    "name": "read_file",
+    "args": { "path": "README.md" }
+  },
+  "_note": "an ordinary (non-ask_*) tool call; toolCall{name,args} is live-verified generically, this exact tool name and args shape is synthetic"
+}

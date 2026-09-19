@@ -1,0 +1,5 @@
+{
+  "_note": "the plugin's own constructed payload for permission.asked, verified live on 1.18.27 (permission: \"bash\", patterns — the plan's probe section, a shell command inside a child session). message here is the plugin's own permission+patterns join, reconstructed, not itself captured live.",
+  "session_id": "ses_child01",
+  "message": "bash rm -rf *"
+}

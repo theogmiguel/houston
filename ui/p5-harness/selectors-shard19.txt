@@ -1,0 +1,38 @@
+# 35 rule blocks, deduplicated to 34 unique selector texts
+# (`.key-chip` is two separate rule blocks — styles.css:1288 and :2872 — sharing
+# one selector; there is nothing for coverage.mjs to distinguish between them,
+# so it is listed once).
+.key-chip
+.bell-h-actions .ghost
+.bell-item-b .ghost
+.sw
+.sw .sw-knob
+.sw.on
+.sw.on .sw-knob
+.sw:disabled
+.side-h-actions .ico
+button.primary
+button.primary:hover
+button.ok
+button.warn
+button.ghost
+button.danger:hover
+button.ico
+button.ico:hover
+button.ico svg
+.key
+.banner-row .ghost
+.reconnect-pill .ghost
+.head-actions .ico
+.head-actions .ico:hover
+.head-actions .ico:active
+.head-actions .ico:focus-visible
+.head-actions .ico--menu:hover
+.head-actions .ico--close:hover
+.head-actions .ico--active:hover
+.deferred-reason .ghost
+button.ico.danger:hover
+button.ico.danger.arm
+.fld button.ghost.danger
+button.ghost.danger.arm
+body:has(.pane.focus) .pane:not(.focus) .head-actions .ico

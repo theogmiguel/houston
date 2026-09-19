@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Houston",
+  "mainBinaryName": "houston",
+  "version": "0.10.0",
+  "identifier": "dev.houston.desktop",
+  "build": {
+    "frontendDist": "../ui/out/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Houston",
+        "width": 1400,
+        "height": 900,
+        "resizable": true,
+        "dragDropEnabled": true,
+        "decorations": false,
+        "create": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["appimage", "deb", "nsis"],
+    "linux": {
+      "deb": {
+        "depends": ["libasound2t64 | libasound2"]
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/tr-helper", "binaries/houston-core"],
+    "resources": ["resources/third-party-licenses.json"],
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/hooks/uninstaller.nsi"
+      }
+    },
+    "category": "DeveloperTool",
+    "shortDescription": "Mission control for CLI coding agents",
+    "longDescription": "Houston is a local-first mission control for CLI coding agents: a grid of real terminals running your agent CLIs in your own project directories, where an agent can spawn and drive another agent in a new pane.",
+    "publisher": "Théo Miguel",
+    "copyright": "Copyright © 2026 Théo Miguel",
+    "homepage": "https://github.com/theogmiguel/houston"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhERTI1MUI2RjQ1N0IwREUKUldUZXNGZjB0bEhpalFkblFqa3pzRHdlQkdJOURWQ1JTNGJSNVkydlgrMGFIaStubXRzK2pMeFAK"
+    }
+  }
+}

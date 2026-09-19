@@ -1,0 +1,5 @@
+{
+  "_note": "reconstructed from cursor.com/docs/hooks — not captured live: no cursor-agent login exists on this machine. conversation_id is the one base field this session's own fetch confirmed verbatim ('Stable ID of the conversation across many turns'); cwd is assumed by parity with every other provider's generic payload lift, not independently confirmed for Cursor.",
+  "conversation_id": "conv-cursor-docs-01",
+  "cwd": "/tmp/example"
+}

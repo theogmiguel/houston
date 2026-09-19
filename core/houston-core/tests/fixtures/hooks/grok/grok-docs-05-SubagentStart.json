@@ -1,0 +1,6 @@
+{
+  "_note": "reconstructed from docs.x.ai/build/features/hooks's event list (SubagentStart is documented) — not captured live, no Grok account on this machine.",
+  "hook_event_name": "SubagentStart",
+  "session_id": "sess-grok-docs-01",
+  "agent_id": "sub-grok-docs-01"
+}

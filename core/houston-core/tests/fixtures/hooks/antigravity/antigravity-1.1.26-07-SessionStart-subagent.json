@@ -1,0 +1,7 @@
+{
+  "conversationId": "conv-sub-1",
+  "transcriptPath": "REPLACE_ME_SUB.jsonl",
+  "modelName": "gemini-3-pro",
+  "workspacePaths": ["/home/dev/p"],
+  "_note": "a sub-agent firing SessionStart under its own conversationId is live-verified (invoke_subagent); this fixture's own id/path values are synthetic"
+}

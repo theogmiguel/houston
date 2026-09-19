@@ -1,0 +1,8 @@
+{
+  "conversationId": "conv-root-1",
+  "transcriptPath": "REPLACE_ME.jsonl",
+  "fullyIdle": true,
+  "executionNum": 0,
+  "terminationReason": "NO_TOOL_CALL",
+  "_note": "field names captured live (live probe agy 1.1.26); this fixture's own values are synthetic"
+}

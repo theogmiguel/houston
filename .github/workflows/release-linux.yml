@@ -1,0 +1,358 @@
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Manifest version from the version-guard job: names the uploaded artifact and must match the checked-out tree'
+        type: string
+        required: true
+      ref:
+        description: 'Commit to build; a cut passes the tag it just pushed. Empty builds the triggering ref, which is right for a tag push and for nightly'
+        type: string
+        required: false
+        default: ''
+      tauri_cli_version:
+        description: 'Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth'
+        type: string
+        required: true
+      require_signing:
+        description: 'Fail when the updater signing secrets are absent; a real release passes true, a dry run false'
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      # Declared so a caller can see the contract; both are optional because a
+      # dry run passes no secrets. Callers use `secrets: inherit`.
+      TAURI_SIGNING_PRIVATE_KEY:
+        description: 'Updater signing key. Set, the AppImage and the deb each ship a .sig beside them'
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        description: 'Passphrase for TAURI_SIGNING_PRIVATE_KEY; leave unset for an unencrypted key'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  linux-bundle:
+    # One native runner per architecture, jammy rather than latest on purpose:
+    # the runner's glibc is the artifact's floor, and a build on 24.04 refuses
+    # to start on 22.04. The arm runner builds aarch64 natively.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    env:
+      HOUSTON_CHANNEL: dev
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          # A cut's default checkout is the pre-bump dispatch SHA, so it hands
+          # its new tag through here; empty means the triggering ref.
+          ref: ${{ inputs.ref }}
+
+      # The whole tree must be the release commit, not just the file a bundle
+      # filename reads: every manifest reports its own version at runtime, and a
+      # checkout from the wrong ref is refused here, before anything is built.
+      - name: Require the checked-out tree to carry the release version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          base="${VERSION%%+*}"
+          [ -n "$base" ] || { echo "::error::version input '$VERSION' has no base before its + build metadata"; exit 1; }
+          ./scripts/set-version.sh --check "$base"
+
+      # jammy names the FUSE 2 runtime libfuse2; the t64 rename is 24.04's.
+      # The AppImage runtime mounts itself through it before the app starts.
+      - name: Install WebKitGTK/GTK + ALSA + AppIndicator + AppImage build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libasound2-dev librsvg2-dev patchelf libfuse2 libayatana-appindicator3-dev
+
+      # A runner boots systemd as PID 1 but the `runner` user has no logind
+      # session, so there is no user bus and `systemd-run --user` fails.
+      # enable-linger starts user@$UID without a login, unblocking the shield.
+      - name: Give the runner a systemd user session (oom-shield needs one)
+        run: |
+          set -euo pipefail
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+
+      - name: Smoke-test the shield before paying for the build
+        run: ./scripts/oom-shield.sh true
+
+      - uses: dtolnay/rust-toolchain@stable
+      # BOTH workspaces: build-app.sh also builds core's tr-helper under
+      # core/target, so caching only src-tauri left that half cold per release.
+      # The key carries the architecture: cached objects are ELF, not portable.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+            src-tauri
+          key: release-linux-${{ matrix.arch }}
+          cache-on-failure: true
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Cache the pinned libghostty-vt source and Zig
+        uses: actions/cache@v4
+        with:
+          path: |
+            core/target/ghostty-vt
+            src-tauri/target/ghostty-vt
+          key: ghostty-vt-${{ matrix.arch }}-ubuntu-22.04-${{ hashFiles('core/houston-core/ghostty-vt.lock') }}
+
+      - name: Cache the pinned Tauri CLI
+        id: tauri-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: cargo-tauri-${{ inputs.tauri_cli_version }}-ubuntu-22.04-${{ matrix.arch }}
+      - name: Install the pinned Tauri CLI
+        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
+
+      - name: Install renderer dependencies
+        run: bun install --frozen-lockfile
+        working-directory: ui
+
+      # Secrets cannot be used in an `if:`, so they are read into env here and
+      # tested; the decision travels on as a step output. A real release
+      # requires them by input, a dry run reports the gap instead.
+      - name: Decide which signing path this run takes
+        id: signing
+        env:
+          REQUIRE_SIGNING: ${{ inputs.require_signing }}
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ "$REQUIRE_SIGNING" = "true" ]; then
+            missing=()
+            [ -n "$SIGNING_KEY" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY)
+            [ -n "$SIGNING_KEY_PASSWORD" ] || missing+=(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+            if [ "${#missing[@]}" -ne 0 ]; then
+              echo "::error::this release is signed and the updater secrets are missing: ${missing[*]}. Set them under Settings -> Secrets and variables -> Actions; latest.json cannot carry a verifiable signature without them."
+              exit 1
+            fi
+          elif [ -z "$SIGNING_KEY" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            # An updater-enabled bundle cannot be built without a key, and
+            # build-app.sh has no --no-sign passthrough: turn the config back to
+            # no updater artifacts so a keyless dry run can still prove the build.
+            jq '.bundle.createUpdaterArtifacts = false' src-tauri/tauri.conf.json \
+              > src-tauri/tauri.conf.json.unsigned
+            mv src-tauri/tauri.conf.json.unsigned src-tauri/tauri.conf.json
+            echo "TAURI_SIGNING_PRIVATE_KEY is not set and this run does not require signing: the bundles ship unsigned, without updater artifacts, and no updater can verify them." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "TAURI_SIGNING_PRIVATE_KEY<<HOUSTON_SIGNING_KEY_EOF"
+            printf '%s\n' "$SIGNING_KEY"
+            echo "HOUSTON_SIGNING_KEY_EOF"
+          } >> "$GITHUB_ENV"
+          if [ -n "$SIGNING_KEY_PASSWORD" ]; then
+            {
+              echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD<<HOUSTON_SIGNING_PASSWORD_EOF"
+              printf '%s\n' "$SIGNING_KEY_PASSWORD"
+              echo "HOUSTON_SIGNING_PASSWORD_EOF"
+            } >> "$GITHUB_ENV"
+          fi
+
+      # NO_STRIP: linuxdeploy strips every library it copies, a known failure
+      # on newer runners; the app binary is stripped by the release profile.
+      - name: Build the bundles (renderer + protocol gate + appimage,deb)
+        env:
+          NO_STRIP: "true"
+        run: ./scripts/build-app.sh --bundles appimage,deb --verbose
+
+      # With createUpdaterArtifacts on, the CLI signs every updater-enabled
+      # bundle it built -- the AppImage and the deb here -- so this step is the
+      # fallback for one it left unsigned. A .sig it already wrote is kept.
+      - name: Sign any updater artifact the bundler left unsigned
+        if: steps.signing.outputs.signed == 'true'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for artifact in src-tauri/target/release/bundle/appimage/*.AppImage \
+                          src-tauri/target/release/bundle/deb/*.deb; do
+            if [ -f "$artifact.sig" ]; then
+              echo "already signed by the bundler: $artifact"
+              continue
+            fi
+            cargo tauri signer sign "$artifact"
+          done
+
+      # The bundles are checked to CONTAIN the sidecars rather than assumed
+      # to: a missing externalBin fails the src-tauri build anyway, but this is
+      # the one packaging fact this workflow can prove, and it costs a second.
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # *.sig and a v1-compatible build's .AppImage.tar.gz ride along: the
+          # updater's signature is as much a release artifact as the bundle.
+          find src-tauri/target/release/bundle -maxdepth 2 -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.sig' -o -name '*.AppImage.tar.gz' \) \
+            -exec cp {} dist/ \;
+          appimage=$(find dist -name '*.AppImage' -print -quit)
+          [ -n "$appimage" ] || { echo "::error::no .AppImage in dist -- expected one from the appimage,deb bundle"; exit 1; }
+          deb=$(find dist -name '*.deb' -print -quit)
+          [ -n "$deb" ] || { echo "::error::no .deb in dist -- expected one from the appimage,deb bundle"; exit 1; }
+          # Listed into a variable first: `dpkg-deb -c | grep -q` closes the
+          # pipe early, and under `pipefail` that SIGPIPE reads as a failure of
+          # the check itself rather than of the thing being checked.
+          contents=$(dpkg-deb -c "$deb")
+          if ! printf '%s\n' "$contents" | grep -qE '\./usr/bin/tr-helper$'; then
+            echo "::error::$deb does not contain ./usr/bin/tr-helper -- bundle.externalBin did not ship the sidecar"
+            printf '%s\n' "$contents" | grep '/usr/bin/' || true
+            exit 1
+          fi
+          # houston-core and houston-supervisor (Detach, D2): the daemon is no
+          # longer hosted in-process, so both must ship beside the app the
+          # same way tr-helper does -- tauri.linux.conf.json's externalBin.
+          if ! printf '%s\n' "$contents" | grep -qE '\./usr/bin/houston-core$'; then
+            echo "::error::$deb does not contain ./usr/bin/houston-core -- bundle.externalBin did not ship the daemon sidecar"
+            printf '%s\n' "$contents" | grep '/usr/bin/' || true
+            exit 1
+          fi
+          if ! printf '%s\n' "$contents" | grep -qE '\./usr/bin/houston-supervisor$'; then
+            echo "::error::$deb does not contain ./usr/bin/houston-supervisor -- bundle.externalBin did not ship the supervisor sidecar"
+            printf '%s\n' "$contents" | grep '/usr/bin/' || true
+            exit 1
+          fi
+          ls -lh dist
+
+      # An unsigned run is a documented state; a signed run that lost a .sig is
+      # a broken updater contract, so only the signed one hard-fails here.
+      - name: Assert the updater signatures
+        if: steps.signing.outputs.signed == 'true'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=(dist/*.AppImage dist/*.deb)
+          [ "${#artifacts[@]}" -gt 0 ] || { echo "::error::no AppImage or deb in dist to carry a signature"; exit 1; }
+          missing=0
+          for artifact in "${artifacts[@]}"; do
+            if [ ! -f "$artifact.sig" ]; then
+              echo "::error::$artifact has no .sig beside it, but this run has TAURI_SIGNING_PRIVATE_KEY -- an updater cannot verify an unsigned artifact"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "updater signatures: ${artifacts[@]/%/.sig}"
+
+      # The deb is the shape a user installs, so that is what is read: every
+      # binary in it must be this architecture and ask glibc for nothing above
+      # jammy's 2.35, or "built on 22.04" is not the promise it says.
+      - name: Gate the deb against the 22.04 glibc floor and this architecture
+        run: |
+          set -euo pipefail
+          deb=$(find dist -name '*.deb' -print -quit)
+          ./scripts/check-linux-abi.sh "$deb" "${{ matrix.arch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: houston-${{ inputs.version }}-linux-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| linux-bundle (${{ matrix.arch }}) | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The automated half of the smoke-test promise: the built x86_64 AppImage must
+  # load and answer --version on every distribution the docs claim, with only
+  # the libraries a desktop has. The graphical run stays manual (no display).
+  appimage-smoke:
+    needs: linux-bundle
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0
+            installer: apt
+          - image: ubuntu:24.04
+            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0
+            installer: apt
+          - image: debian:12
+            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0
+            installer: apt
+          - image: fedora:latest
+            packages: gtk3 mesa-libGL mesa-libEGL mesa-libgbm fribidi
+            installer: dnf
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    steps:
+      - name: Record start time
+        shell: bash
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: houston-${{ inputs.version }}-linux-x86_64
+          path: dist
+
+      - name: Install the runtime libraries a desktop provides
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.installer }}" = "dnf" ]; then
+            dnf install -y -q ${{ matrix.packages }}
+          else
+            apt-get update -qq
+            apt-get install -y -qq ${{ matrix.packages }}
+          fi
+
+      # --version exits before any window, channel or daemon, so it proves the
+      # full dynamic dependency chain loads on this distribution headlessly.
+      - name: Boot the AppImage headless
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          appimage=$(find dist -name '*.AppImage' -print -quit)
+          [ -n "$appimage" ] || { echo "::error::no .AppImage in houston-$VERSION-linux-x86_64"; exit 1; }
+          chmod +x "$appimage"
+          "$appimage" --appimage-extract >/dev/null
+          out=$(./squashfs-root/AppRun --version)
+          printf '%s\n' "$out"
+          base="${VERSION%%+*}"
+          case "$out" in
+            "houston $base "*) ;;
+            *)
+              echo "::error::${{ matrix.image }} printed '$out', expected it to start with 'houston $base '"
+              exit 1
+              ;;
+          esac
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| appimage-smoke (${{ matrix.image }}) | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Stop",
+  "turn_id": "a1b2c3d4-0001",
+  "last_assistant_message": "B-DONE",
+  "stop_hook_active": false
+}

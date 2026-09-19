@@ -1,0 +1,9 @@
+{
+  "session_id": "58200cf3-2b91-4f9d-9879-619004e0d0a7",
+  "transcript_path": "/home/user/.claude/projects/-home-user-projects-houston-core-target-hookprobe-headless/58200cf3-2b91-4f9d-9879-619004e0d0a7.jsonl",
+  "cwd": "/home/user/projects/houston/core/target/hookprobe/headless",
+  "prompt_id": "3cccc9b7-6748-4e72-b7d9-f3c049eea547",
+  "permission_mode": "acceptEdits",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "<task-notification>\n<task-id>a4c7bcb2117fa13c2</task-id>\n<tool-use-id>toolu_01Roq5pXRW7r8vWHpGNoYF2F</tool-use-id>\n<output-file>/tmp/claude/-home-user-projects-houston-core-target-hookprobe-headless/58200cf3-2b91-4f9d-9879-619004e0d0a7/tasks/a4c7bcb2117fa13c2.output</output-file>\n<status>completed</status>\n<summary>Agent \"Reply with ALPHA\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>ALPHA</result>\n<usage><subagent_tokens>16195</subagent_tokens><tool_uses>0</tool_uses><duration_ms>1496</duration_ms></usage>\n</task-notification>"
+}

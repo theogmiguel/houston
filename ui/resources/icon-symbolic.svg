@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="Houston">
+  <!-- Houston's symbolic icon, for desktop panels and notification badges,
+       where the toolkit recolours a single-ink glyph to match the panel's own
+       foreground. `#bebebe` is the GNOME convention for the stand-in ink; it
+       is replaced at draw time and is not a design decision.
+
+       The colour icon cannot serve here — it is gradients and filters, so
+       there is no single ink to substitute. This is the same three-part
+       reading reduced to one value: two polar strokes, a hairline disk, and a
+       solid horizon. -->
+  <g fill="none" stroke="#bebebe" stroke-linecap="round">
+    <path d="M8 1.2V4.5" stroke-width="1.4" />
+    <path d="M8 11.5V14.8" stroke-width="1.4" />
+    <ellipse cx="8" cy="8" rx="6.7" ry="1.9" stroke-width="1.05" transform="rotate(-15 8 8)" />
+  </g>
+  <circle cx="8" cy="8" r="2.9" fill="#bebebe" />
+</svg>
