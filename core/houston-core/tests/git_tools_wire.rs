@@ -516,5 +516,3 @@ async fn pull_and_fetch_over_the_wire() {
     let err = expect_error(&mut ws).await;
     assert!(err.contains("upstream"), "{err}");
 }
-
-
