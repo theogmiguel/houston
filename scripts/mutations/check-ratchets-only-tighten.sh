@@ -34,6 +34,15 @@ git -c user.email=mutation@local -c user.name=mutation commit -q -m pins --no-ve
 cp -r "$tmp/work" "$tmp/pristine"
 
 fails=0
+if ! GITHUB_EVENT_NAME=push bash scripts/check-ratchets-only-tighten.sh >/dev/null 2>&1; then
+  echo "check-ratchets-only-tighten: a root commit must establish the first baseline" >&2
+  fails=1
+fi
+if bash scripts/check-ratchets-only-tighten.sh missing-ref >/dev/null 2>&1; then
+  echo "check-ratchets-only-tighten: an explicit missing ref must still fail" >&2
+  fails=1
+fi
+
 expect() {
   local want="$1" label="$2" got=pass
   bash scripts/check-ratchets-only-tighten.sh HEAD >/dev/null 2>&1 || got=fail
