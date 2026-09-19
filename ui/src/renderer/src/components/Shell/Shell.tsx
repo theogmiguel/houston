@@ -8,12 +8,14 @@ export function Shell({
   onBackgroundUnavailable,
   railWidth = RAIL_DEFAULT,
   railCollapsed = false,
+  downbar = false,
   children
 }: {
   chromeTheme: ChromeTheme
   onBackgroundUnavailable?: (reason: string) => void
   railWidth?: number
   railCollapsed?: boolean
+  downbar?: boolean
   children: ReactNode
 }): React.JSX.Element {
   return (
@@ -22,8 +24,8 @@ export function Shell({
       style={{
         ['--w-rail' as string]: railCollapsed ? '0px' : `${railWidth}px`,
         gridTemplateColumns: 'var(--w-rail) minmax(0, 1fr)',
-        gridTemplateRows: 'var(--h-top) 1fr',
-        gridTemplateAreas: '"rail topbar" "rail grid"'
+        gridTemplateRows: `var(--h-top) 1fr ${downbar ? 'var(--h-downbar)' : '0px'}`,
+        gridTemplateAreas: '"rail topbar" "rail grid" "rail downbar"'
       } as CSSProperties}
     >
       <BackdropMount
