@@ -477,6 +477,7 @@ pub struct Session {
     vt_refused: AtomicBool,
     last_output: AtomicU64,
     status: Mutex<Option<proto::AgentStatus>>,
+    context: Mutex<Option<proto::SessionContext>>,
     removed: AtomicBool,
     backend_exited: AtomicBool,
     hooks_seen: AtomicBool,
@@ -849,6 +850,7 @@ impl Session {
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
         info.detected_agent = *self.detected.lock().expect("detected lock");
         info.status = *self.status.lock().expect("status lock");
+        info.context = *self.context.lock().expect("context lock");
         info.tags = self.tags.lock().expect("tags lock").clone();
         info
     }
@@ -3260,6 +3262,7 @@ impl Daemon {
             ssh_host: None,
             restore_deferred: None,
             status: m.status,
+            context: None,
             swarm_agent: m.swarm_agent,
             spawned_by: None,
             acp: None,
@@ -3298,6 +3301,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(0),
             status: Mutex::new(m.status),
+            context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             hooks_seen: AtomicBool::new(true),
@@ -5734,6 +5738,100 @@ impl Daemon {
         }
     }
 
+    fn set_context(&self, id: u32, context: proto::SessionContext) {
+        let changed = {
+            let sessions = self.sessions.lock().expect("sessions lock");
+            match sessions.get(&id) {
+                Some(s) => {
+                    let mut cur = s.context.lock().expect("context lock");
+                    if *cur == Some(context) {
+                        false
+                    } else {
+                        *cur = Some(context);
+                        true
+                    }
+                }
+                None => false,
+            }
+        };
+        if changed {
+            self.broadcast_control(&proto::ServerMsg::SessionContext {
+                session: id,
+                context: Some(context),
+            });
+        }
+    }
+
+    fn set_context_working(&self, id: u32) {
+        let next = {
+            let sessions = self.sessions.lock().expect("sessions lock");
+            match sessions.get(&id) {
+                Some(s) => {
+                    let mut cur = s.context.lock().expect("context lock");
+                    let mut next = cur.unwrap_or_else(proto::SessionContext::unknown);
+                    next.state = proto::ContextState::Working;
+                    *cur = Some(next);
+                    Some(next)
+                }
+                None => None,
+            }
+        };
+        if let Some(context) = next {
+            self.broadcast_control(&proto::ServerMsg::SessionContext {
+                session: id,
+                context: Some(context),
+            });
+        }
+    }
+
+    /// Update a Claude session's context from a hook drop. Claude only in this
+    /// slice; every other provider stays `not tracked` by construction.
+    fn note_context_from_hook(
+        &self,
+        id: u32,
+        provider: proto::AgentKind,
+        d: &crate::hook_drop::HookDrop,
+    ) {
+        if provider != proto::AgentKind::Claude {
+            return;
+        }
+        match crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
+            Some(crate::agent_events::AgentEvent::PromptSubmitted) => self.set_context_working(id),
+            Some(crate::agent_events::AgentEvent::TurnEnded) => {
+                let reading = d.transcript_path.as_deref().and_then(|p| {
+                    crate::context_window::read_claude_context(std::path::Path::new(p))
+                });
+                let Some(reading) = reading else {
+                    self.set_context(id, proto::SessionContext::unknown());
+                    return;
+                };
+                let window = crate::context_window::model_window(&reading.model);
+                let used = reading.used_tokens;
+                let state = if reading.reset {
+                    proto::ContextState::Reset
+                } else if crate::context_window::near_limit(used, window) {
+                    proto::ContextState::NearLimit
+                } else {
+                    proto::ContextState::Idle
+                };
+                let context = proto::SessionContext {
+                    used_tokens: used,
+                    window_tokens: window,
+                    used_percent: window.map(|w| crate::context_window::percent_used(used, w)),
+                    state,
+                    source: if window.is_some() {
+                        proto::ContextSource::Derived
+                    } else {
+                        proto::ContextSource::Reported
+                    },
+                    as_of_ms: crate::hook_drop::now_ms() as i64,
+                };
+                self.set_context(id, context);
+            }
+            _ => {}
+        }
+    }
+
     fn self_arc(&self) -> Option<Arc<Daemon>> {
         let weak = self.self_weak.lock().expect("self_weak lock").clone();
         weak.upgrade()
@@ -6961,6 +7059,7 @@ impl Daemon {
             ssh_host: None,
             restore_deferred: None,
             status: initial_status,
+            context: None,
             swarm_agent,
             spawned_by,
             acp: acp.clone(),
@@ -7008,6 +7107,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
             status: Mutex::new(initial_status),
+            context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             hooks_seen: AtomicBool::new(false),
@@ -7296,6 +7396,7 @@ impl Daemon {
             ssh_host: Some(display),
             restore_deferred: None,
             status: None,
+            context: None,
             swarm_agent: None,
             spawned_by: None,
             acp: None,
@@ -7332,6 +7433,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
             status: Mutex::new(None),
+            context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             hooks_seen: AtomicBool::new(false),
@@ -9004,7 +9106,9 @@ impl Daemon {
             self.swarm_mirror_hook(d.session, &d.event);
             return crate::hook_drop::DropVerdict::Applied;
         }
-        self.handle_hook_from(d.session, provider, &d.event, d.cwd.as_deref())
+        let verdict = self.handle_hook_from(d.session, provider, &d.event, d.cwd.as_deref());
+        self.note_context_from_hook(d.session, provider, d);
+        verdict
     }
 
     fn correlate_hook_drop(

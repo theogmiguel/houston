@@ -3,6 +3,7 @@ import type { AgentKind } from "./AgentKind";
 import type { AgentStatus } from "./AgentStatus";
 import type { DelegationInfo } from "./DelegationInfo";
 import type { RestoreReason } from "./RestoreReason";
+import type { SessionContext } from "./SessionContext";
 import type { SessionState } from "./SessionState";
 
-export type SessionInfo = { id: number, agent: AgentKind, project_dir: string, cwd: string, state: SessionState, title: string, codename: string, detected_agent?: AgentKind | null, hidden: boolean, ssh_host?: string | null, restore_deferred?: RestoreReason | null, status?: AgentStatus | null, swarm_agent?: number | null, spawned_by?: number | null, acp?: string | null, live_children: number, profile_label?: string | null, children_waiting: number, delegation?: DelegationInfo | null, inbox_unread: number, tags: Array<number>, };
+export type SessionInfo = { id: number, agent: AgentKind, project_dir: string, cwd: string, state: SessionState, title: string, codename: string, detected_agent?: AgentKind | null, hidden: boolean, ssh_host?: string | null, restore_deferred?: RestoreReason | null, status?: AgentStatus | null, context?: SessionContext | null, swarm_agent?: number | null, spawned_by?: number | null, acp?: string | null, live_children: number, profile_label?: string | null, children_waiting: number, delegation?: DelegationInfo | null, inbox_unread: number, tags: Array<number>, };

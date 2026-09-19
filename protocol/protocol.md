@@ -1,4 +1,4 @@
-# Wire protocol v108
+# Wire protocol v109
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -336,6 +336,7 @@ failure not given a typed refusal comes back as `error`.
 | `swarm_agent` | `agent: SwarmAgentInfo` | bcast — an orchestrated agent's status or activity changed |
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Hooks-driven, plus the two named non-hook sources (process liveness, ACP stream) |
+| `session_context` | `session`, `context?: SessionContext` | v109: bcast, only on change. The pane's context-window occupancy, read from the Claude transcript the hook names; every other provider stays absent, which the client renders as "not tracked" |
 | `agent_notice` | `session`, `kind: AgentNoticeKind` | bcast — an attention-worthy event for the client's notification inbox |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
@@ -403,6 +404,10 @@ AgentKind          claude | codex | antigravity | shell | custom | opencode | cu
 SessionState       running | exited | killed | interrupted
 AgentStatus        kebab: spawning | working | idle | needs-input
 AgentNoticeKind    kebab: finished | needs-input | error
+ContextState       snake: unknown | idle | working | near_limit | reset
+ContextSource      snake: reported | derived
+SessionContext     used_tokens, window_tokens?, used_percent? (0-100, floored),
+                   state: ContextState, source: ContextSource, as_of_ms
 RestoreReason      kebab: circuit-breaker | invalid-cwd | ssh | budget | previous-crash | safe-mode | spawn-failed
 
 SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), state: SessionState, title,
@@ -410,6 +415,8 @@ SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), 
                    `title`; parent-facing labels read this. Empty from an older daemon —
                    read `title` instead),
                    detected_agent?, hidden, ssh_host?, restore_deferred?: RestoreReason, status?: AgentStatus,
+                   context?: SessionContext (v109: runtime-only occupancy; absent or `unknown` means
+                   not tracked; never persisted, so it resets on respawn),
                    swarm_agent?, spawned_by?, acp? (slug), live_children, children_waiting, profile_label?,
                    delegation?: DelegationInfo, inbox_unread (v96: undelivered, unresolved pane_inbox rows
                    addressed to this pane),
@@ -856,6 +863,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 109 | **The context downbar.** `SessionInfo` gains an optional `context: SessionContext` and a matching `session_context` broadcast, both runtime-only. `SessionContext` carries `used_tokens` (the input side of the most recent turn: `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`), a nullable `window_tokens` and `used_percent`, a `state` (`unknown`\|`idle`\|`working`\|`near_limit`\|`reset`), a `source` (`reported`\|`derived` — the window's provenance) and `as_of_ms`. The Claude daemon reads its own transcript path from the hook payload (`HookDrop` gains `transcript_path`) and broadcasts on turn boundaries; every other provider carries no `context` and the client renders "not tracked" |
 | 108 | **Bots are removed; routines stand alone.** Gone from the wire: `AgentList`/`AgentCreate`/`AgentUpdate`/`AgentDelete`/`AgentExport`/`AgentDuplicate` and their `agents`/`agent_created`/`agent_export_data`/`agent_limit_refused` replies; `AgentMemorySet`; `AgentSkillStarters`/`AgentSkillGet`/`AgentSkillSet`/`AgentSkillRemove`/`AgentSkillStarterInstall` and their `agent_skill_*` replies; `AgentMessagingGet`/`AgentMessagingSet` and `agent_messaging_state`; the whole chat surface (`ChatMessages`/`RunIndex`/`ChatSend`/`ChatStop`/`ChatAnswer`/`ChatMarkRead`/`ChatStartFresh`/`ChatEngineSupportGet` and `chat_history`/`run_rows`/`chat_event`/`chat_refused`/`chat_notice`/`chat_engine_support`); the record types behind them (`Agent`, `AgentInbox`, `AgentActivity`, `AgentMark`, `AgentMemoryFile`, `AgentLimitKind`, `AgentSkill`, `AgentSkillDoc`, `SkillStarter`, `AgentExportFile`, `AgentExportRoutine`, `AgentSkillExport`, `ReflectionMode`, `ChatThread`, `ChatRowKind`, `ChatToolStatus`, `ChatMessage`, `RunKicker`, `ChatEventKind`, `ChatRefusalKind`, `ChatEngineSupport`) and the `AGENT_*`/`CHAT_*`/`SKILL_*` caps. `Routine` loses `agent_id` and `continue_context`, `RoutineRun` loses `thread_id`: every routine is a standalone automation and every run is a pane session. `ROUTINES_PER_AGENT` is gone — `ROUTINES_TOTAL` is the only cap. At boot the `routines` table is rebuilt without the bot columns (data preserved), `routine_runs` without `thread_id`, and the `named_agents`/`agent_messages`/`agent_skill_sources`/`chat_threads`/`chat_messages` tables are dropped. `ChatEffort`/`ChatPermissionMode` stay (routine fields); `ChatQuestion`/`ChatUsage` stay as the preserved headless adapters' decode vocabulary. Pane agents, pane orchestration and Writer are untouched |
 | 107 | **Routines own their execution.** `Routine.agent_id` becomes optional — a routine with no bot is a standalone automation. `Routine` gains `engine`, `model?` and `effort?`, and `workspace_id` is re-anchored as the record's own working directory: a bot-owned routine inherits engine, model, effort and directory from its bot once, at create or at the boot migration (the `routines` table is rebuilt with `agent_id` nullable and backfilled from `named_agents`), and a fire never reads a bot's settings again. Every execution is an independent `RoutineRun` (`routine_runs` table): `trigger` (`schedule`\|`manual`), `status` (the new `RoutineRunStatus`, `running` plus `RoutineOutcome`'s arms), the pane's `session_id?` and the bot conversation's `thread_id?`, `error?` and timestamps. New `routine_run_now` starts one on exactly the scheduler's path, refused `already_running` (the new `RoutineErrorKind` arm) while the previous run is in flight; new `routine_runs` lists the records newest first (`ROUTINE_RUNS_PAGE`) and `routine_run_event` broadcasts every transition. A botless routine always runs as a terminal pane; bot-owned runs keep landing in the bot's conversation. A run still `running` when the daemon stops is closed as `failed` at the next boot |
 | 106 | **The update offer carries its notes, not a guessed installer URL.** `UpdateRelease` gains `notes` — GitHub's release body verbatim, empty when the release has none — and drops `asset_url`/`signature_url`. The app no longer picks a download from the release's asset list: its own signed updater manifest names the artifact for the running bundle, verifies it against the bundled public key and installs it, refused by name when the manifest or the signature disagrees. A nightly's exact identity comes from its controlled `Houston nightly <version>` release title, including build metadata; once installed, the commit suffix prevents that same rolling build from being offered again. The daemon still only asks GitHub and broadcasts what it found |

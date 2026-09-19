@@ -50,6 +50,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         ssh_host: None,
         restore_deferred: None,
         status: None,
+        context: None,
         swarm_agent: None,
         spawned_by: None,
         acp: None,

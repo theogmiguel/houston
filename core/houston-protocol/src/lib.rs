@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 108;
+pub const PROTOCOL_VERSION: u32 = 109;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -771,6 +771,59 @@ pub enum AgentStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ContextState {
+    Unknown,
+    Idle,
+    Working,
+    NearLimit,
+    Reset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum ContextSource {
+    Reported,
+    Derived,
+}
+
+// A session's context-window occupancy, reported per provider. `used_tokens` is
+// the input side of the most recent turn (input + cache read + cache write);
+// output is excluded, matching the share of the window a re-send occupies. A
+// provider with no readable signal carries `state: Unknown` and the UI says so
+// rather than showing a zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionContext {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub used_tokens: u64,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub window_tokens: Option<u64>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub used_percent: Option<u8>,
+    pub state: ContextState,
+    pub source: ContextSource,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub as_of_ms: i64,
+}
+
+impl SessionContext {
+    /// No readable signal for this session; the UI renders `not tracked`.
+    pub fn unknown() -> Self {
+        Self {
+            used_tokens: 0,
+            window_tokens: None,
+            used_percent: None,
+            state: ContextState::Unknown,
+            source: ContextSource::Reported,
+            as_of_ms: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentNoticeKind {
     Finished,
@@ -1122,6 +1175,9 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub status: Option<AgentStatus>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub context: Option<SessionContext>,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub swarm_agent: Option<u64>,
@@ -3045,6 +3101,11 @@ pub enum ServerMsg {
     AgentStatus {
         session: u32,
         status: AgentStatus,
+    },
+    SessionContext {
+        session: u32,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        context: Option<SessionContext>,
     },
     AgentNotice {
         session: u32,

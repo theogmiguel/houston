@@ -389,6 +389,7 @@ async fn interrupted_sessions_are_restored_and_respawnable() {
             ssh_host: None,
             restore_deferred: None,
             status: None,
+            context: None,
             swarm_agent: None,
             acp: None,
             spawned_by: None,
