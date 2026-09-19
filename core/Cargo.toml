@@ -4,7 +4,7 @@ members = ["houston-protocol", "houston-core"]
 
 [workspace.package]
 edition = "2021"
-version = "0.10.1"
+version = "0.10.2"
 license = "Apache-2.0"
 repository = "https://github.com/theogmiguel/houston"
 homepage = "https://github.com/theogmiguel/houston"
