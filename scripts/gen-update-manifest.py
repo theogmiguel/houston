@@ -109,7 +109,11 @@ def read_signature(path: Path) -> str:
 
 
 def collect(
-    artifacts: Path, version: str, signatures: dict[str, str]
+    artifacts: Path,
+    version: str,
+    signatures: dict[str, str],
+    *,
+    include_windows: bool,
 ) -> tuple[dict[str, dict[str, Bundle]], dict[str, Bundle]]:
     artifact_version = version.split("+", 1)[0]
     linux: dict[str, dict[str, Bundle]] = {}
@@ -175,8 +179,11 @@ def collect(
             problems.append(f"missing the Linux AppImage for {arch}")
         if "deb" not in by_kind:
             problems.append(f"missing the Linux .deb for {arch}")
-    for arch in sorted(EXPECTED_WINDOWS_ARCHES - windows.keys()):
-        problems.append(f"missing the Windows NSIS setup .exe for {arch}")
+    if include_windows:
+        for arch in sorted(EXPECTED_WINDOWS_ARCHES - windows.keys()):
+            problems.append(f"missing the Windows NSIS setup .exe for {arch}")
+    elif windows:
+        problems.append("Windows artifacts were provided for a Linux-only release")
     unexpected_linux = sorted(linux.keys() - EXPECTED_LINUX_ARCHES)
     unexpected_windows = sorted(windows.keys() - EXPECTED_WINDOWS_ARCHES)
     if unexpected_linux:
@@ -198,6 +205,7 @@ def assemble(
     tag: str,
     repository: str,
     pub_date: str | None = None,
+    include_windows: bool = True,
 ) -> dict:
     if not VERSION_RE.match(version):
         raise Refused(f"version {version!r} is not semver; expected MAJOR.MINOR.PATCH with optional -rc.N or +build metadata")
@@ -207,7 +215,9 @@ def assemble(
         raise Refused(f"tag {tag!r} is not a URL-safe git tag; expected e.g. v0.11.0 or nightly")
 
     signatures: dict[str, str] = {}
-    linux, windows = collect(artifacts_dir, version, signatures)
+    linux, windows = collect(
+        artifacts_dir, version, signatures, include_windows=include_windows
+    )
 
     notes = notes_file.read_text(encoding="utf-8").strip()
     if not notes:
@@ -251,6 +261,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--pub-date", default=None)
+    parser.add_argument(
+        "--linux-only",
+        action="store_true",
+        help="accept and publish the complete Linux artifact set without Windows",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -261,6 +276,7 @@ def main(argv: list[str]) -> int:
             tag=args.tag,
             repository=args.repository,
             pub_date=args.pub_date,
+            include_windows=not args.linux_only,
         )
     except Refused as refused:
         print(f"error: {refused}", file=sys.stderr)

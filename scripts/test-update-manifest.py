@@ -67,6 +67,17 @@ class ReleaseFixture:
             self.add_bundle(name)
         return self
 
+    def add_linux_bundles(self):
+        base = self.version.split("+", 1)[0]
+        for name in (
+            f"Houston_{base}_amd64.AppImage",
+            f"Houston_{base}_amd64.deb",
+            f"Houston_{base}_aarch64.AppImage",
+            f"Houston_{base}_arm64.deb",
+        ):
+            self.add_bundle(name)
+        return self
+
     def generate(self, **overrides):
         kwargs = {
             "artifacts_dir": self.artifacts,
@@ -289,6 +300,30 @@ class AssembleTests(unittest.TestCase):
         message = self.refuse()
         self.assertIn("Windows NSIS", message)
 
+    def test_linux_only_release_accepts_both_official_architectures(self):
+        self.release.add_linux_bundles()
+
+        built = self.release.generate(include_windows=False)
+
+        self.assertEqual(
+            list(built["platforms"]),
+            [
+                "linux-aarch64",
+                "linux-aarch64-appimage",
+                "linux-aarch64-deb",
+                "linux-x86_64",
+                "linux-x86_64-appimage",
+                "linux-x86_64-deb",
+            ],
+        )
+
+    def test_linux_only_release_refuses_a_windows_artifact(self):
+        self.release.add_all_bundles()
+
+        message = self.refuse(include_windows=False)
+
+        self.assertIn("Windows artifacts", message)
+
     def test_orphan_signature_is_refused(self):
         self.release.add_all_bundles()
         self.release.add_file("Houston_1.2.3_arm64.AppImage.sig", SIGNATURE)
@@ -427,6 +462,38 @@ class CommandLineTests(unittest.TestCase):
                 )
             self.assertEqual(status, 1)
             self.assertIn("Houston_1.2.3_amd64.deb", stderr.getvalue())
+
+    def test_cli_writes_a_linux_only_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            release = ReleaseFixture()
+            self.addCleanup(release.close)
+            release.add_linux_bundles()
+            output = Path(tmp) / "latest.json"
+
+            status = manifest.main(
+                [
+                    "--artifacts-dir",
+                    str(release.artifacts),
+                    "--notes-file",
+                    str(release.notes),
+                    "--output",
+                    str(output),
+                    "--version",
+                    release.version,
+                    "--tag",
+                    release.tag,
+                    "--repository",
+                    "theogmiguel/houston",
+                    "--linux-only",
+                ]
+            )
+
+            self.assertEqual(status, 0)
+            written = json.loads(output.read_text())
+            self.assertTrue(written["platforms"])
+            self.assertTrue(
+                all(key.startswith("linux-") for key in written["platforms"])
+            )
 
 
 if __name__ == "__main__":

@@ -20,6 +20,11 @@ on:
         type: string
         default: 'main'
         required: true
+      include_windows:
+        description: 'Build and publish the Windows installer'
+        type: boolean
+        default: true
+        required: true
 
 permissions:
   contents: write
@@ -236,6 +241,7 @@ jobs:
 
   windows-bundle:
     needs: prepare
+    if: inputs.include_windows
     uses: ./.github/workflows/release-windows.yml
     with:
       ref: ${{ needs.prepare.outputs.tag }}
@@ -249,6 +255,11 @@ jobs:
     # workflow, by GitHub's loop prevention -- so a run that only pushed a tag
     # would silently build nothing. This job builds and publishes itself instead.
     needs: [prepare, linux-bundle, windows-bundle]
+    if: >-
+      always() &&
+      needs.prepare.result == 'success' &&
+      needs.linux-bundle.result == 'success' &&
+      (inputs.include_windows != true || needs.windows-bundle.result == 'success')
     uses: ./.github/workflows/release-publish.yml
     with:
       tag: ${{ needs.prepare.outputs.tag }}
@@ -256,6 +267,7 @@ jobs:
       title: Houston ${{ needs.prepare.outputs.tag }}
       previous_tag: ${{ needs.prepare.outputs.previous_tag }}
       draft: true
+      include_windows: ${{ inputs.include_windows }}
       # An rc is a prerelease: publishing its draft as a normal release would
       # let releases/latest offer a candidate to every stable install.
       prerelease: ${{ inputs.kind == 'rc' }}

@@ -36,6 +36,11 @@ on:
         type: boolean
         required: false
         default: false
+      include_windows:
+        description: 'Require and publish the Windows installer alongside Linux'
+        type: boolean
+        required: false
+        default: true
       notes_header:
         description: 'One sentence prepended to the generated notes; the release body and latest.json.notes carry the same text'
         type: string
@@ -97,13 +102,18 @@ jobs:
       - name: Verify the artifacts and build latest.json
         run: |
           set -euo pipefail
-          python3 scripts/gen-update-manifest.py \
-            --repository "$GITHUB_REPOSITORY" \
-            --tag "${{ inputs.tag }}" \
-            --version "${{ inputs.version }}" \
-            --notes-file notes.md \
-            --artifacts-dir artifacts \
+          args=(
+            --repository "$GITHUB_REPOSITORY"
+            --tag "${{ inputs.tag }}"
+            --version "${{ inputs.version }}"
+            --notes-file notes.md
+            --artifacts-dir artifacts
             --output artifacts/latest.json
+          )
+          if [ "${{ inputs.include_windows }}" != "true" ]; then
+            args+=(--linux-only)
+          fi
+          python3 scripts/gen-update-manifest.py "${args[@]}"
 
       - name: File the release
         env:
