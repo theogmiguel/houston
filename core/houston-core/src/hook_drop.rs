@@ -29,6 +29,10 @@ pub struct HookDrop {
     pub session: u32,
     #[serde(default)]
     pub cwd: Option<String>,
+    // The CLI's own session log path, when the provider reports one. Carried so
+    // the daemon can read context occupancy without scraping the terminal.
+    #[serde(default)]
+    pub transcript_path: Option<String>,
     // `#[serde(default)]` -> `None` -> Claude, deliberately: every hook
     // command installed before multi-provider support omits this field, and
     // those workspaces are not rewritten — an older drop file must keep working.
@@ -84,6 +88,7 @@ impl Default for HookDrop {
             event: String::new(),
             session: 0,
             cwd: None,
+            transcript_path: None,
             agent: None,
             prompt: None,
             last_message: None,

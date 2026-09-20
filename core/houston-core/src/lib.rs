@@ -12,6 +12,7 @@ pub mod browser_relay;
 pub mod checkpoints;
 pub mod claude_hooks;
 pub mod cli_probe;
+pub mod context_window;
 pub mod daemon;
 pub mod db;
 pub mod env_hygiene;

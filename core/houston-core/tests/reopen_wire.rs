@@ -255,6 +255,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
             ssh_host: None,
             restore_deferred: None,
             status: None,
+            context: None,
             swarm_agent: None,
             spawned_by: None,
             acp: None,

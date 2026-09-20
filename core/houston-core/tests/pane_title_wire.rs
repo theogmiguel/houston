@@ -72,6 +72,7 @@ fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
         ssh_host: None,
         restore_deferred: None,
         status: None,
+        context: None,
         swarm_agent: None,
         spawned_by: None,
         acp: None,

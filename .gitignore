@@ -12,8 +12,14 @@ target/
 .DS_Store
 .playwright-mcp/
 .research/
+# Spec-driven working files (tlc-spec-lean); plan/checks/verification, never source.
+.specs/
+# Locally installed agent skills, never source.
 .claude/*
 !.claude/settings.json
+.cursor/
+.windsurf/
+.agents/
 
 # visual-harness photographs (ui/harness/shot.mjs) — artifacts, never source
 ui/harness-shots/

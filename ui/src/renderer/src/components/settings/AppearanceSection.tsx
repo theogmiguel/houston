@@ -22,6 +22,7 @@ import {
   useHiddenRailViews
 } from '../../railView'
 import { WindowBackgroundGroup } from './WindowBackgroundGroup'
+import { setContextBarVisible, useContextBarVisible } from '../../contextBarPref'
 
 const CHROME_THEME_TAGS: Record<ChromeTheme, string> = {
   graphite: 'Default',
@@ -53,6 +54,22 @@ export interface AppearanceSectionProps {
   onTheme: (t: TerminalPaletteChoice) => void
   uiZoom: number
   onUiZoom: (z: number) => void
+}
+
+function ContextBarToggle(): React.JSX.Element {
+  const visible = useContextBarVisible()
+  return (
+    <Row
+      title="Show context bar"
+      desc="A strip at the bottom reads the focused agent's context usage. Hidden providers read “not tracked”."
+    >
+      <Toggle
+        on={visible}
+        data-testid="context-bar-toggle"
+        onChange={setContextBarVisible}
+      />
+    </Row>
+  )
 }
 
 function SidebarRowToggles(): React.JSX.Element {
@@ -203,6 +220,7 @@ export function AppearanceSection({
             onChange={(pct) => onUiZoom(ZOOM_STOPS.find((s) => s.pct === pct)!.factor)}
           />
         </Row>
+        <ContextBarToggle />
       </Group>
     </>
   )

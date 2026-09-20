@@ -1,4 +1,4 @@
-# Wire protocol v110
+# Wire protocol v111
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -327,6 +327,7 @@ failure not given a typed refusal comes back as `error`.
 | `swarm_agent` | `agent: SwarmAgentInfo` | bcast — an orchestrated agent's status or activity changed |
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Hooks-driven, plus the two named non-hook sources (process liveness, ACP stream) |
+| `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude transcript the hook names; every other provider stays absent, which the client renders as "not tracked" |
 | `agent_notice` | `session`, `kind: AgentNoticeKind` | bcast — an attention-worthy event for the client's notification inbox |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
@@ -391,6 +392,10 @@ AgentKind          claude | codex | antigravity | shell | custom | opencode | cu
 SessionState       running | exited | killed | interrupted
 AgentStatus        kebab: spawning | working | idle | needs-input
 AgentNoticeKind    kebab: finished | needs-input | error
+ContextState       snake: unknown | idle | working | near_limit | reset
+ContextSource      snake: reported | derived
+SessionContext     used_tokens, window_tokens?, used_percent? (0-100, floored),
+                   state: ContextState, source: ContextSource, as_of_ms
 RestoreReason      kebab: circuit-breaker | invalid-cwd | ssh | budget | previous-crash | safe-mode | spawn-failed
 
 SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), state: SessionState, title,
@@ -398,6 +403,8 @@ SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), 
                    `title`; parent-facing labels read this. Empty from an older daemon —
                    read `title` instead),
                    detected_agent?, hidden, ssh_host?, restore_deferred?: RestoreReason, status?: AgentStatus,
+                   context?: SessionContext (v111: runtime-only occupancy; absent or `unknown` means
+                   not tracked; never persisted, so it resets on respawn),
                    swarm_agent?, spawned_by?, acp? (slug), live_children, children_waiting, profile_label?,
                    delegation?: DelegationInfo, inbox_unread (v96: undelivered, unresolved pane_inbox rows
                    addressed to this pane),
@@ -832,6 +839,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 111 | **The context downbar.** `SessionInfo` gains an optional `context: SessionContext` and a matching `session_context` broadcast, both runtime-only. `SessionContext` carries `used_tokens` (the input side of the most recent turn: `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`), a nullable `window_tokens` and `used_percent`, a `state` (`unknown`\|`idle`\|`working`\|`near_limit`\|`reset`), a `source` (`reported`\|`derived` — the window's provenance) and `as_of_ms`. The Claude daemon reads its own transcript path from the hook payload (`HookDrop` gains `transcript_path`) and broadcasts on turn boundaries; every other provider carries no `context` and the client renders "not tracked" |
 | 110 | **One update channel.** `UpdatePolicy` loses its `channel` field and `UpdateChannel` is deleted. The daemon always asks `releases/latest` and offers only a strictly newer release; a draft and a prerelease are refused unconditionally, so a release candidate can never reach a stable install. The stored `updates_channel` settings row is left in place, inert |
 | 109 | **"Write with AI" is removed.** Gone from the wire: `git_commit_message` and `git_pr_content` with their two server replies; `headless_roles_get`/`headless_role_set` with `ServerMsg::HeadlessRoles`; and with them `HeadlessRoleKind`, `HeadlessEngineOption` and `HeadlessRoleView`. The sparkles that wrote commit messages and pull-request text — and the Settings ▸ Houston's own agents section that chose their engine and model — are removed. The Writer was the last caller of the headless engine seam, so the engines and the decode vocabulary v108 preserved for them (`ChatQuestion`, `ChatQuestionOption`, `ChatQuestionKind`, `ChatUsage`) go too. There is no migration: the stored role keys simply have no reader. Pane agents, routines and the rest of source control are untouched |
 | 108 | **Bots are removed; routines stand alone.** Gone from the wire: `AgentList`/`AgentCreate`/`AgentUpdate`/`AgentDelete`/`AgentExport`/`AgentDuplicate` and their `agents`/`agent_created`/`agent_export_data`/`agent_limit_refused` replies; `AgentMemorySet`; `AgentSkillStarters`/`AgentSkillGet`/`AgentSkillSet`/`AgentSkillRemove`/`AgentSkillStarterInstall` and their `agent_skill_*` replies; `AgentMessagingGet`/`AgentMessagingSet` and `agent_messaging_state`; the whole chat surface (`ChatMessages`/`RunIndex`/`ChatSend`/`ChatStop`/`ChatAnswer`/`ChatMarkRead`/`ChatStartFresh`/`ChatEngineSupportGet` and `chat_history`/`run_rows`/`chat_event`/`chat_refused`/`chat_notice`/`chat_engine_support`); the record types behind them (`Agent`, `AgentInbox`, `AgentActivity`, `AgentMark`, `AgentMemoryFile`, `AgentLimitKind`, `AgentSkill`, `AgentSkillDoc`, `SkillStarter`, `AgentExportFile`, `AgentExportRoutine`, `AgentSkillExport`, `ReflectionMode`, `ChatThread`, `ChatRowKind`, `ChatToolStatus`, `ChatMessage`, `RunKicker`, `ChatEventKind`, `ChatRefusalKind`, `ChatEngineSupport`) and the `AGENT_*`/`CHAT_*`/`SKILL_*` caps. `Routine` loses `agent_id` and `continue_context`, `RoutineRun` loses `thread_id`: every routine is a standalone automation and every run is a pane session. `ROUTINES_PER_AGENT` is gone — `ROUTINES_TOTAL` is the only cap. At boot the `routines` table is rebuilt without the bot columns (data preserved), `routine_runs` without `thread_id`, and the `named_agents`/`agent_messages`/`agent_skill_sources`/`chat_threads`/`chat_messages` tables are dropped. `ChatEffort`/`ChatPermissionMode` stay (routine fields); `ChatQuestion`/`ChatUsage` stay as the preserved headless adapters' decode vocabulary. Pane agents, pane orchestration and Writer are untouched |

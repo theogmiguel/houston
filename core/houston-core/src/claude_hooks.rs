@@ -400,6 +400,7 @@ pub fn run_hook_client(args: &[String]) {
         event: event.clone(),
         session,
         cwd: payload.cwd,
+        transcript_path: payload.transcript_path,
         agent: agent.clone(),
         prompt,
         last_message: antigravity_last_message.or(payload.last_message),

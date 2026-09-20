@@ -348,6 +348,7 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
         event: "Stop".into(),
         session: 7,
         cwd: Some("/home/user/code/myproj".into()),
+        transcript_path: Some("/home/user/.claude/projects/p/sess.jsonl".into()),
         agent: Some("claude".into()),
         prompt: Some("do the thing".into()),
         last_message: Some("Waiting for the agent to complete...".into()),
