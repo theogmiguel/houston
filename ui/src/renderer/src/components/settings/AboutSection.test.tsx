@@ -44,7 +44,7 @@ const HOST: HostInfo = {
 const NOTES = '## What changed\n\n- a fix\n- a feature'
 
 const AVAILABLE = {
-  policy: { check: true, channel: 'stable' as const },
+  policy: { check: true },
   state: {
     kind: 'available' as const,
     release: {
@@ -158,13 +158,13 @@ describe('AboutSection update rows', () => {
     expect(screen.getByRole('button', { name: 'Release notes' })).not.toBeNull()
   })
 
-  it('installs only on the click, handing the backend the channel and the version on screen', async () => {
+  it('installs only on the click, handing the backend the version on screen', async () => {
     const { resolve } = deferInstall()
     renderAbout({ update: AVAILABLE })
     expect(appUpdateMocks.install).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Install update' }))
     await flush()
-    expect(appUpdateMocks.install).toHaveBeenCalledWith('stable', '1.2.3')
+    expect(appUpdateMocks.install).toHaveBeenCalledWith('1.2.3')
     resolve({ kind: 'installed', version: '1.2.3' })
   })
 
@@ -248,7 +248,7 @@ describe('AboutSection update rows', () => {
     const message = 'network unreachable: dns lookup failed for releases.example.com'
     renderAbout({
       update: {
-        policy: { check: true, channel: 'stable' as const },
+        policy: { check: true },
         state: { kind: 'failed', error: message, checked_at_ms: Date.now() }
       }
     })
@@ -259,7 +259,7 @@ describe('AboutSection update rows', () => {
     const onUpdateCheckNow = vi.fn()
     const onUpdatePolicySet = vi.fn()
     renderAbout({
-      update: { policy: { check: false, channel: 'stable' as const }, state: { kind: 'disabled' } },
+      update: { policy: { check: false }, state: { kind: 'disabled' } },
       onUpdateCheckNow,
       onUpdatePolicySet
     })
@@ -272,24 +272,11 @@ describe('AboutSection update rows', () => {
   it('turns the switch off through onUpdatePolicySet when it was on', () => {
     const onUpdatePolicySet = vi.fn()
     renderAbout({
-      update: { policy: { check: true, channel: 'stable' as const }, state: { kind: 'up_to_date', checked_at_ms: Date.now() } },
+      update: { policy: { check: true }, state: { kind: 'up_to_date', checked_at_ms: Date.now() } },
       onUpdatePolicySet
     })
     fireEvent.click(screen.getByTestId('update-policy-toggle'))
-    expect(onUpdatePolicySet).toHaveBeenCalledWith({ check: false, channel: 'stable' })
-  })
-
-  it('moves the channel without touching the check', () => {
-    const onUpdatePolicySet = vi.fn()
-    renderAbout({
-      update: {
-        policy: { check: true, channel: 'stable' as const },
-        state: { kind: 'unknown' as const }
-      },
-      onUpdatePolicySet
-    })
-    fireEvent.click(screen.getByRole('radio', { name: 'Nightly' }))
-    expect(onUpdatePolicySet).toHaveBeenCalledWith({ check: true, channel: 'nightly' })
+    expect(onUpdatePolicySet).toHaveBeenCalledWith({ check: false })
   })
 
   it('waves the offer off through Later, and offers the way back', () => {

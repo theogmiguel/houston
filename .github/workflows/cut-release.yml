@@ -20,14 +20,26 @@ on:
         type: string
         default: 'main'
         required: true
+      resume_tag:
+        description: 'Existing tag whose builds failed; skips version computation, commit and push'
+        type: string
+        required: false
+        default: ''
       include_windows:
-        description: 'Build and publish the Windows installer'
+        description: 'Build and publish the Windows installer (currently not at parity; expect it to fail)'
         type: boolean
-        default: true
+        default: false
         required: true
 
 permissions:
   contents: write
+
+# One cut at a time: two cuts minutes apart both read the tags and can compute
+# the same version before either pushes. Queue, never cancel -- a cut that has
+# pushed a tag must not be killed; an rc queuing behind a stable cut is intended.
+concurrency:
+  group: release-cut
+  cancel-in-progress: false
 
 # Version-PINNED, not a caret range, so the bundle cannot change under us. A job
 # output (below) is the only way to hand it to a called workflow, since a
@@ -39,9 +51,9 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      previous_tag: ${{ steps.version.outputs.previous_tag }}
+      version: ${{ steps.version.outputs.version || steps.resume_version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag || steps.resume_version.outputs.tag }}
+      previous_tag: ${{ steps.version.outputs.previous_tag || steps.resume_version.outputs.previous_tag }}
       tauri_cli_version: ${{ steps.pin.outputs.tauri_cli_version }}
     steps:
       - name: Record start time
@@ -67,13 +79,42 @@ jobs:
             exit 1
           fi
 
+      # A resume rebuilds an existing tag; the tag must exist on origin and must
+      # not name a release that is already public. A draft is replaceable.
+      - name: Refuse an unknown resume tag
+        if: inputs.resume_tag != ''
+        env:
+          RESUME_TAG: ${{ inputs.resume_tag }}
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$RESUME_TAG" >/dev/null 2>&1; then
+            echo "::error::resume_tag \"$RESUME_TAG\" does not exist on origin; push the tag or clear resume_tag"
+            exit 1
+          fi
+
+      - name: Refuse to resume a published release
+        if: inputs.resume_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUME_TAG: ${{ inputs.resume_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RESUME_TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$RESUME_TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::release $RESUME_TAG is already public; a resumed cut may only replace a draft"
+              exit 1
+            fi
+          fi
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: ${{ inputs.ref }}
+          # A resume checks out the tag it rebuilds; a normal cut the dispatch ref.
+          ref: ${{ inputs.resume_tag != '' && inputs.resume_tag || inputs.ref }}
           ssh-key: ${{ secrets.RELEASE_PUSH_SSH_KEY }}
 
       - name: Resolve the refs and decide whether main may move
+        if: inputs.resume_tag == ''
         env:
           KIND: ${{ inputs.kind }}
         run: |
@@ -100,6 +141,7 @@ jobs:
 
       - name: Compute the next version
         id: version
+        if: inputs.resume_tag == ''
         env:
           KIND: ${{ inputs.kind }}
         run: |
@@ -178,12 +220,41 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "next version: $version (tag $tag)"
 
+      # The checked-out tree must be the release commit the tag names; the
+      # script refuses a mismatch and prints the agreed version.
+      - name: Resume the existing tag
+        id: resume_version
+        if: inputs.resume_tag != ''
+        env:
+          RESUME_TAG: ${{ inputs.resume_tag }}
+        run: |
+          set -euo pipefail
+          version="${RESUME_TAG#v}"
+          ./scripts/check-manifest-versions.sh "$version" >/dev/null
+          previous=$(git tag -l 'v*' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -vFx "$RESUME_TAG" \
+            | sort -V \
+            | tail -n1 || true)
+          {
+            echo "version=$version"
+            echo "tag=$RESUME_TAG"
+            echo "previous_tag=$previous"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "resumed tag $RESUME_TAG: rebuilding only, no version computation,"
+            echo "commit or push. kind and ref are ignored on a resume."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "resuming $RESUME_TAG (version $version, previous tag ${previous:-none})"
+
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Write the version into the manifests and both lockfiles
+        if: inputs.resume_tag == ''
         run: ./scripts/set-version.sh "${{ steps.version.outputs.version }}"
 
       - name: Commit and tag
+        if: inputs.resume_tag == ''
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -195,9 +266,10 @@ jobs:
           git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
             src-tauri/Cargo.lock ui/package.json core/Cargo.toml core/Cargo.lock
           git commit -m "release: v$VERSION"
-          git tag -m "release: v$VERSION" -m "Managed-By: cut-release" "v$VERSION"
+          git tag -m "release: v$VERSION" "v$VERSION"
 
       - name: Push the commit and the tag
+        if: inputs.resume_tag == ''
         env:
           TAG: ${{ steps.version.outputs.tag }}
           CUT_REF: ${{ inputs.ref }}
@@ -226,8 +298,8 @@ jobs:
             echo "| prepare | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Both bundle jobs build the tag prepare just pushed, not the dispatch ref:
-  # the release commit holds the manifests at the new version, and building
+  # Both bundle jobs build the tag prepare resolved or resumed, not the dispatch
+  # ref: the release commit holds the manifests at the new version, and building
   # anything else ships a bundle whose filename and runtime version disagree.
   linux-bundle:
     needs: prepare
@@ -251,9 +323,8 @@ jobs:
     secrets: inherit
 
   publish:
-    # A tag pushed with this workflow's own GITHUB_TOKEN does not start another
-    # workflow, by GitHub's loop prevention -- so a run that only pushed a tag
-    # would silently build nothing. This job builds and publishes itself instead.
+    # The cut builds and publishes its own tag: no other workflow watches for
+    # the push, so a run that stopped after the push would ship nothing.
     needs: [prepare, linux-bundle, windows-bundle]
     if: >-
       always() &&
@@ -268,6 +339,7 @@ jobs:
       previous_tag: ${{ needs.prepare.outputs.previous_tag }}
       draft: true
       include_windows: ${{ inputs.include_windows }}
-      # An rc is a prerelease: publishing its draft as a normal release would
-      # let releases/latest offer a candidate to every stable install.
-      prerelease: ${{ inputs.kind == 'rc' }}
+      replace_existing: ${{ inputs.resume_tag != '' }}
+      # An rc is a prerelease; on a resume the tag itself says so, since kind is
+      # ignored then.
+      prerelease: ${{ contains(inputs.resume_tag, '-rc.') || (inputs.resume_tag == '' && inputs.kind == 'rc') }}

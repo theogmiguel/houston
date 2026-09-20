@@ -72,8 +72,6 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
     historyCount: null,
     onClearHistory: () => {},
     historyIgnoreGlobs: null,
-    headlessWriter: null,
-    onHeadlessRoleSet: () => {},
     onHistoryIgnoreGlobsSet: () => {},
     onOpenLogsFolder: () => {},
     onContact: () => {},
@@ -146,7 +144,7 @@ describe('SettingsView About Contact button', () => {
           onOpenLicense={onOpenLicense}
           onOpenExternal={onOpenExternal}
           update={{
-            policy: { check: true, channel: 'stable' },
+            policy: { check: true },
             state: {
               kind: 'available',
               release: {

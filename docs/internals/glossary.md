@@ -62,9 +62,7 @@ named.
 | **`AgentStatus`** | `Spawning`, `Working`, `Idle`, `NeedsInput`. Set only by `Daemon::set_status`, sourced from hooks or ACP. | `proto::AgentStatus` |
 | **`hooks_seen`** | Per-session flag: at least one hook event has arrived. Stands the spawn-grace watchdog down. | `daemon.rs::Session` |
 | **husk** | A restored session record with no live process. Reaped when idle and childless; never resumed. | `daemon.rs::dead` |
-| **ACP** | Agent Client Protocol: line-delimited JSON-RPC on the PTY, a second lawful status source. In a pane Houston never answers its permission requests; a headless ACP turn does, through `headless/acp.rs`. | `acp.rs` |
-| **headless engine** | An agent CLI driven with no PTY through the `HeadlessEngine` seam: argv, stdin, decoded stdout, reply. Claude, Codex, OpenCode, Grok; Antigravity and Cursor are pane-only, refused by name. | `headless/` |
-| **role** | One place Houston runs an agent for the user — a pane, a routine run, a one-shot call, the Writer. Every role's engine is chosen where the role is created; only the Writer has a Settings row, on the "Houston's own agents" section. | `proto::HeadlessRoleKind` |
+| **ACP** | Agent Client Protocol: line-delimited JSON-RPC on the PTY, a second lawful status source. In a pane Houston never answers its permission requests. | `acp.rs` |
 | **liveness** | A kernel fact from procfs: does the session's pid have children. Gates the reaper and the close confirmation, never a status. | `has_child_procs` |
 | **ring** | A session's capped byte buffer of everything its PTY ever wrote, minus what has been trimmed off the front. The replay and restore path; not text. | `scrollback.rs` |
 | **tail** | The ring split on newlines, ANSI-stripped, each line collapsed to what a bare carriage return left showing. Right for a CLI that prints lines; on one that repaints it is one line. | `Scrollback::tail_lines` |

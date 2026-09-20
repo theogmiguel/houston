@@ -2,7 +2,6 @@
 // `app_update_install` command and its progress events, so the updater plugin's
 // own JS stays unreachable and nothing downloads without an explicit click.
 import { isTauri } from './host'
-import type { UpdateChannel } from './generated/UpdateChannel'
 
 /** Mirrors `AppUpdateOutcome` in src-tauri/src/app_update.rs. */
 export type AppUpdateOutcome =
@@ -18,12 +17,9 @@ export interface AppUpdateProgress {
 
 export const APP_UPDATE_PROGRESS_EVENT = 'app-update://progress'
 
-export async function appUpdateInstall(
-  channel: UpdateChannel,
-  expectedVersion: string
-): Promise<AppUpdateOutcome> {
+export async function appUpdateInstall(expectedVersion: string): Promise<AppUpdateOutcome> {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<AppUpdateOutcome>('app_update_install', { channel, expectedVersion })
+  return invoke<AppUpdateOutcome>('app_update_install', { expectedVersion })
 }
 
 export async function onAppUpdateProgress(

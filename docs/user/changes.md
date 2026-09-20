@@ -76,14 +76,6 @@ Fetch brings remote-tracking branches up to date and reports what changed. Pull 
 fast-forward only: it refuses a branch with no upstream, and it refuses a divergence
 rather than creating a merge commit behind your back.
 
-## Writing with AI
-
-The sparkles control beside the commit message writes one from the staged diff, and
-"Create PR with AI" writes a title and body from the branch's commits. Both put the text
-in the same editable control you type in, and nothing is committed or opened until you
-accept it. They run on the Writer role — pick its engine and model under Settings →
-Houston's own agents → Write with AI — on your own account.
-
 ## Pull requests
 
 The Pull request tab shows the branch's GitHub PR, its checks, reviews and comments.

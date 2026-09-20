@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react'
 import { appUpdateInstall, onAppUpdateProgress } from './houston/appUpdate'
-import type { UpdateChannel } from './houston/generated/UpdateChannel'
 
 // The install flight, renderer-side. One download at a time, the same line the
 // backend holds, and the state lives above the panel so navigating away from
@@ -31,10 +30,7 @@ function errorText(err: unknown): string {
   return String(err)
 }
 
-export function startUpdateInstall(
-  channel: UpdateChannel,
-  expectedVersion: string
-): Promise<void> {
+export function startUpdateInstall(expectedVersion: string): Promise<void> {
   if (inFlight) return Promise.resolve()
   inFlight = true
   commit({ kind: 'downloading', downloaded: 0, total: null })
@@ -45,7 +41,7 @@ export function startUpdateInstall(
       else commit({ kind: 'downloading', downloaded: progress.downloaded, total: progress.total })
     })
     try {
-      const outcome = await appUpdateInstall(channel, expectedVersion)
+      const outcome = await appUpdateInstall(expectedVersion)
       commit(
         outcome.kind === 'installed'
           ? { kind: 'installed', version: outcome.version }

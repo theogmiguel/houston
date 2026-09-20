@@ -1,10 +1,8 @@
 import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
 import { Toggle } from '../settingsPrimitives'
-import { Segmented } from '../Segmented'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
 import { Group, Row } from './shared'
 import type { HostInfo } from '../SettingsView'
-import type { UpdateChannel } from '../../houston/generated/UpdateChannel'
 import type { UpdatePolicy } from '../../houston/generated/UpdatePolicy'
 import type { UpdateState } from '../../houston/generated/UpdateState'
 import { summarizeReleaseNotes } from '../../releaseNotes'
@@ -160,7 +158,6 @@ function updateControls(
   state: UpdateState,
   waved: boolean,
   install: UpdateInstallState,
-  channel: UpdateChannel,
   onCheckNow: () => void,
   onOpenExternal: (url: string) => void
 ): React.JSX.Element {
@@ -202,7 +199,7 @@ function updateControls(
         <button
           className={`btn ${BTN_PRIMARY}`}
           data-testid="update-retry"
-          onClick={() => void startUpdateInstall(channel, version)}
+          onClick={() => void startUpdateInstall(version)}
         >
           Try again
         </button>
@@ -226,7 +223,7 @@ function updateControls(
       <button
         className={`btn ${BTN_PRIMARY}`}
         data-testid="update-install"
-        onClick={() => void startUpdateInstall(channel, version)}
+        onClick={() => void startUpdateInstall(version)}
       >
         Install update
       </button>
@@ -238,14 +235,12 @@ function UpdateOfferRow({
   state,
   waved,
   install,
-  channel,
   onCheckNow,
   onOpenExternal
 }: {
   state: UpdateState
   waved: boolean
   install: UpdateInstallState
-  channel: UpdateChannel
   onCheckNow: () => void
   onOpenExternal: (url: string) => void
 }): React.JSX.Element {
@@ -257,7 +252,7 @@ function UpdateOfferRow({
   return (
     <>
       <Row title={copy.title} desc={copy.desc}>
-        {updateControls(state, waved, install, channel, onCheckNow, onOpenExternal)}
+        {updateControls(state, waved, install, onCheckNow, onOpenExternal)}
       </Row>
       {summary !== null && (
         <div
@@ -283,7 +278,7 @@ export function AboutSection({
   const dismissed = useDismissedUpdate()
   const install = useUpdateInstall()
   const state: UpdateState = update?.state ?? { kind: 'unknown' }
-  const policy: UpdatePolicy = update?.policy ?? { check: true, channel: 'stable' }
+  const policy: UpdatePolicy = update?.policy ?? { check: true }
   const waved = state.kind === 'available' && dismissed === state.release.version
   const houstonDesc = hostInfo
     ? `Local-first mission control for CLI coding agents · channel ${hostInfo.channel} · commit ${hostInfo.build_commit}`
@@ -324,7 +319,6 @@ export function AboutSection({
           state={state}
           waved={waved}
           install={install}
-          channel={policy.channel}
           onCheckNow={checkNow}
           onOpenExternal={onOpenExternal}
         />
@@ -336,20 +330,6 @@ export function AboutSection({
             on={policy.check}
             data-testid="update-policy-toggle"
             onChange={(check) => onUpdatePolicySet({ ...policy, check })}
-          />
-        </Row>
-        <Row
-          title="Channel"
-          desc="Nightly builds come off the main branch automatically and nobody runs them before you do. Stable is what you want unless you are helping test."
-        >
-          <Segmented<UpdateChannel>
-            aria-label="Update channel"
-            options={[
-              { value: 'stable', label: 'Stable' },
-              { value: 'nightly', label: 'Nightly' }
-            ]}
-            value={policy.channel}
-            onChange={(channel) => onUpdatePolicySet({ ...policy, channel })}
           />
         </Row>
       </Group>

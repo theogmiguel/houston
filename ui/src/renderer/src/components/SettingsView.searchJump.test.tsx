@@ -72,8 +72,6 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
     historyCount: null,
     onClearHistory: () => {},
     historyIgnoreGlobs: null,
-    headlessWriter: null,
-    onHeadlessRoleSet: () => {},
     onHistoryIgnoreGlobsSet: () => {},
     onOpenLogsFolder: () => {},
     onContact: () => {},
@@ -114,14 +112,6 @@ describe('SettingsView section id reconciliation (step 09, onto settingsSections
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
-  })
-
-  it('renders the merged headless-roles content under the `headless-roles` id (D3)', () => {
-    act(() => setSettingsNavForTests({ section: 'headless-roles' }))
-    act(() => root.render(<SettingsView {...baseProps()} />))
-    expect(container.textContent).toContain("Houston's own agents")
-    expect(container.textContent).toContain('Write with AI')
-    expect(container.textContent).not.toContain('CLAUDE_CONFIG_DIR')
   })
 
   it('renders Agent profiles content under the new `accounts` id', () => {

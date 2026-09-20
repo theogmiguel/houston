@@ -54,7 +54,7 @@ function ShortcutRow({
       {remappable ? (
         <button
           type="button"
-          className={`btn key-chip key-chip--capture flex-none min-w-[118px] font-semibold bg-[var(--content-bg)] border rounded-[var(--tr-radius-input)] py-px px-[7px] text-center [font-size:var(--tr-text-small-size)] font-mono ${
+          className={`btn key-chip key-chip--capture flex-none min-w-[118px] font-semibold bg-[var(--content-bg)] border rounded-[var(--tr-radius-input)] py-px px-[7px] justify-center text-center [font-size:var(--tr-text-small-size)] font-mono ${
             armedId === s.id
               ? 'armed border-[var(--accent,var(--text-primary))] text-[var(--text-primary)]'
               : 'border-transparent hover:border-[var(--border)] text-[var(--text-muted)]'

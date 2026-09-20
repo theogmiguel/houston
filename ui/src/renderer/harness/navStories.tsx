@@ -47,7 +47,7 @@ export function NavRoutines(): React.JSX.Element {
           routine({ id: 1, next_run_at_ms: NOW + 900_000, last_run_at_ms: NOW - 3600_000 }),
           routine({
             id: 2,
-            name: 'Nightly review',
+            name: 'Morning review',
             cadence: { type: 'clock', hour: 9, minute: 0, weekdays: null },
             permission_mode: 'accept_edits',
             isolate: false,

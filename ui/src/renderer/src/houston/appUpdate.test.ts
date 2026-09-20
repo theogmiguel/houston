@@ -25,11 +25,10 @@ beforeEach(() => {
 })
 
 describe('appUpdateInstall', () => {
-  it('invokes app_update_install with the channel and the version the panel showed', async () => {
+  it('invokes app_update_install with the version the panel showed', async () => {
     invokeMock.mockResolvedValue({ kind: 'installed', version: '1.2.3' })
-    const outcome = await appUpdateInstall('stable', '1.2.3')
+    const outcome = await appUpdateInstall('1.2.3')
     expect(invokeMock).toHaveBeenCalledWith('app_update_install', {
-      channel: 'stable',
       expectedVersion: '1.2.3'
     })
     expect(outcome).toEqual({ kind: 'installed', version: '1.2.3' })
@@ -40,7 +39,7 @@ describe('appUpdateInstall', () => {
       'app_update_install: refusing the downloaded update: its signature does not verify ' +
       'against the configured public key (bad signature). Nothing was installed'
     invokeMock.mockRejectedValue(refusal)
-    await expect(appUpdateInstall('nightly', 'nightly')).rejects.toBe(refusal)
+    await expect(appUpdateInstall('1.2.3')).rejects.toBe(refusal)
   })
 })
 

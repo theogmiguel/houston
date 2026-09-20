@@ -9,7 +9,6 @@ pub struct KnownAcpAgent {
     pub display_name: &'static str,
     pub argv: &'static [&'static str],
     pub model_select_flag: Option<&'static str>,
-    pub primary_models: &'static [&'static str],
 }
 
 const OPENCODE: KnownAcpAgent = KnownAcpAgent {
@@ -17,7 +16,6 @@ const OPENCODE: KnownAcpAgent = KnownAcpAgent {
     display_name: "opencode",
     argv: &["opencode", "acp"],
     model_select_flag: None,
-    primary_models: &[],
 };
 
 const OMP: KnownAcpAgent = KnownAcpAgent {
@@ -25,7 +23,6 @@ const OMP: KnownAcpAgent = KnownAcpAgent {
     display_name: "omp",
     argv: &["omp", "acp"],
     model_select_flag: None,
-    primary_models: &[],
 };
 
 // `--model` here is a different flag than Houston's hook-driven grok kind
@@ -36,7 +33,6 @@ const GROK: KnownAcpAgent = KnownAcpAgent {
     display_name: "Grok Build",
     argv: &["grok", "agent", "stdio"],
     model_select_flag: Some("--model"),
-    primary_models: &["grok-4.5", "grok-composer-2.5-fast"],
 };
 
 const HERMES: KnownAcpAgent = KnownAcpAgent {
@@ -44,7 +40,6 @@ const HERMES: KnownAcpAgent = KnownAcpAgent {
     display_name: "Hermes Agent",
     argv: &["hermes", "acp"],
     model_select_flag: None,
-    primary_models: &[],
 };
 
 pub const KNOWN_ACP_AGENTS: &[KnownAcpAgent] = &[OPENCODE, OMP, GROK, HERMES];

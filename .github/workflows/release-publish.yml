@@ -1,4 +1,4 @@
-name: Publish release
+name: File release (internal)
 
 # The one job that writes outward-facing state: it verifies the artifact set
 # both bundle workflows uploaded, generates the release notes once and reuses
@@ -7,11 +7,11 @@ on:
   workflow_call:
     inputs:
       tag:
-        description: 'Git tag the release is filed under (vX.Y.Z, or nightly)'
+        description: 'Git tag the release is filed under (vX.Y.Z or vX.Y.Z-rc.N)'
         type: string
         required: true
       version:
-        description: 'Version latest.json advertises; may carry -rc.N or +nightly metadata'
+        description: 'Version latest.json advertises; may carry the -rc.N suffix'
         type: string
         required: true
       title:
@@ -32,7 +32,7 @@ on:
         type: boolean
         required: true
       replace_existing:
-        description: 'Delete the release already filed under `tag` immediately before filing the new one; the nightly reuses one tag name'
+        description: 'Delete the release already filed under `tag` immediately before filing the new one; a resumed cut replaces its own partial draft'
         type: boolean
         required: false
         default: false
@@ -126,9 +126,9 @@ jobs:
         run: |
           set -euo pipefail
           ls -lh artifacts
-          # The rolling nightly reuses one tag name, so the previous release
-          # makes way here: after the notes and manifest are already good, so a
-          # failure before this point leaves it in place.
+          # A resumed cut replaces the draft its failed run left under the same
+          # tag: after the notes and manifest are already good, so a failure
+          # before this point leaves that draft in place.
           if [ "$REPLACE_EXISTING" = "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --yes
           fi

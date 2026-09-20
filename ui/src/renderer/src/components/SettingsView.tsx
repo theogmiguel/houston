@@ -29,7 +29,6 @@ import { DiagnosticsSection } from './settings/DiagnosticsSection'
 import { DaemonSection } from './settings/DaemonSection'
 import { AccountsSection } from './settings/AccountsSection'
 import { AgentStatusSection } from './settings/AgentStatusSection'
-import { HeadlessRolesSection } from './settings/HeadlessRolesSection'
 import { PrivacySection } from './settings/PrivacySection'
 import { VoiceSection } from './settings/VoiceSection'
 import { ShortcutsSection } from './settings/ShortcutsSection'
@@ -40,8 +39,6 @@ import type { AgentProfileActive } from '../houston/generated/AgentProfileActive
 import type { SessionPolicy } from '../houston/generated/SessionPolicy'
 import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
-import type { HeadlessRoleKind } from '../houston/generated/HeadlessRoleKind'
-import type { HeadlessRoleView } from '../houston/generated/HeadlessRoleView'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
 import { MATERIAL_CLS, materialAttrs } from './material'
 
@@ -126,8 +123,6 @@ interface Props {
   historyCount: number | null
   onClearHistory: () => void
   historyIgnoreGlobs: string[] | null
-  headlessWriter: HeadlessRoleView | null
-  onHeadlessRoleSet: (role: HeadlessRoleKind, engine: AgentKind | null, model: string | null) => void
   onHistoryIgnoreGlobsSet: (globs: string[]) => void
   onOpenLogsFolder: () => void
   keymapOverrides: KeymapOverrides
@@ -224,8 +219,6 @@ function SectionDispatch({
   historyCount,
   onClearHistory,
   historyIgnoreGlobs,
-  headlessWriter,
-  onHeadlessRoleSet,
   onHistoryIgnoreGlobsSet,
   onOpenLogsFolder,
   keymapOverrides,
@@ -338,13 +331,6 @@ function SectionDispatch({
             onAgentProfileUpsert={onAgentProfileUpsert}
             onAgentProfileDelete={onAgentProfileDelete}
             onAgentProfileSetActive={onAgentProfileSetActive}
-          />
-        )}
-
-        {section === 'headless-roles' && (
-          <HeadlessRolesSection
-            headlessWriter={headlessWriter}
-            onHeadlessRoleSet={onHeadlessRoleSet}
           />
         )}
 

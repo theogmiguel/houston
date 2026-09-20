@@ -56,7 +56,7 @@ describe('startUpdateInstall', () => {
 
     let flight: Promise<void> = Promise.resolve()
     act(() => {
-      flight = startUpdateInstall('stable', '1.2.3')
+      flight = startUpdateInstall('1.2.3')
     })
     expect(result.current).toEqual({ kind: 'downloading', downloaded: 0, total: null })
 
@@ -71,7 +71,7 @@ describe('startUpdateInstall', () => {
       await flight
     })
     expect(result.current).toEqual({ kind: 'installed', version: '1.2.3' })
-    expect(appUpdateMocks.install).toHaveBeenCalledWith('stable', '1.2.3')
+    expect(appUpdateMocks.install).toHaveBeenCalledWith('1.2.3')
     expect(unsubscribed).toBe(1)
   })
 
@@ -82,7 +82,7 @@ describe('startUpdateInstall', () => {
     appUpdateMocks.install.mockRejectedValue(refusal)
     const { result } = observed()
     await act(async () => {
-      await startUpdateInstall('stable', '1.2.3')
+      await startUpdateInstall('1.2.3')
     })
     expect(result.current).toEqual({ kind: 'failed', version: '1.2.3', error: refusal })
   })
@@ -91,7 +91,7 @@ describe('startUpdateInstall', () => {
     appUpdateMocks.install.mockResolvedValue({ kind: 'up_to_date', version: '0.10.0' })
     const { result } = observed()
     await act(async () => {
-      await startUpdateInstall('stable', '1.2.3')
+      await startUpdateInstall('1.2.3')
     })
     expect(result.current).toEqual({ kind: 'up_to_date' })
   })
@@ -100,11 +100,11 @@ describe('startUpdateInstall', () => {
     appUpdateMocks.install.mockReturnValue(new Promise(() => {}))
     const { result } = observed()
     await act(async () => {
-      void startUpdateInstall('stable', '1.2.3')
+      void startUpdateInstall('1.2.3')
       await Promise.resolve()
     })
     await act(async () => {
-      await startUpdateInstall('stable', '1.2.3')
+      await startUpdateInstall('1.2.3')
     })
     expect(appUpdateMocks.install).toHaveBeenCalledTimes(1)
     expect(result.current.kind).toBe('downloading')
@@ -117,11 +117,11 @@ describe('startUpdateInstall', () => {
     })
     const { result } = observed()
     await act(async () => {
-      await startUpdateInstall('stable', '1.2.3')
+      await startUpdateInstall('1.2.3')
     })
     expect(result.current.kind).toBe('failed')
     await act(async () => {
-      await startUpdateInstall('stable', '1.2.3')
+      await startUpdateInstall('1.2.3')
     })
     expect(result.current).toEqual({ kind: 'installed', version: '1.2.3' })
   })
@@ -130,7 +130,7 @@ describe('startUpdateInstall', () => {
     appUpdateMocks.install.mockReturnValue(new Promise(() => {}))
     const { result } = observed()
     await act(async () => {
-      void startUpdateInstall('stable', '1.2.3')
+      void startUpdateInstall('1.2.3')
       await Promise.resolve()
     })
     act(() => resetUpdateInstall())

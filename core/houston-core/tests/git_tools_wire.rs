@@ -4,11 +4,9 @@ mod common;
 
 use common::*;
 use futures_util::SinkExt;
-use houston_core::daemon::Daemon;
 use houston_protocol as proto;
 use std::path::Path;
 use std::process::Command;
-use std::sync::Arc;
 use tokio_tungstenite::tungstenite::Message;
 
 fn git(dir: &Path, args: &[&str]) {
@@ -517,125 +515,4 @@ async fn pull_and_fetch_over_the_wire() {
     send(&mut ws, &proto::ClientMsg::GitPull { dir: dir.clone() }).await;
     let err = expect_error(&mut ws).await;
     assert!(err.contains("upstream"), "{err}");
-}
-
-fn writer_fixture(daemon: &Arc<Daemon>, dir: &Path, stdout: &str) -> std::path::PathBuf {
-    let path = dir.join("fixture-writer");
-    std::fs::write(
-        &path,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' '{}'\n",
-            stdout.replace('\'', "'\\''")
-        ),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    daemon.set_writer_cli_for_test(path.clone());
-    path
-}
-
-fn envelope(inner: &str) -> String {
-    format!(
-        r#"{{"type":"result","subtype":"success","is_error":false,"result":{}}}"#,
-        serde_json::to_string(inner).unwrap()
-    )
-}
-
-#[tokio::test]
-async fn the_writer_role_fills_the_commit_message_and_the_pull_request_text() {
-    let (addr, _state, daemon) = start_daemon_with_handle().await;
-    let repo = tempfile::tempdir().unwrap();
-    let fixtures = tempfile::tempdir().unwrap();
-    init_repo(repo.path());
-    git(repo.path(), &["config", "user.email", "t@t.local"]);
-    git(repo.path(), &["config", "user.name", "t"]);
-    let dir = repo.path().display().to_string();
-
-    writer_fixture(
-        &daemon,
-        fixtures.path(),
-        &envelope(r#"{"subject":"wire the git tools","body":"Body line."}"#),
-    );
-
-    let mut ws = connect_and_hello(addr, TOKEN).await;
-    let _ = next_control(&mut ws).await;
-
-    std::fs::write(repo.path().join("staged.txt"), "staged\n").unwrap();
-    git(repo.path(), &["add", "-A"]);
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::GitCommitMessage { dir: dir.clone() },
-    )
-    .await;
-    let message = loop {
-        match no_error(next(&mut ws).await) {
-            proto::ServerMsg::GitCommitMessage { message, error, .. } => {
-                break message.unwrap_or_else(|| panic!("writer error: {error:?}"))
-            }
-            _ => continue,
-        }
-    };
-    assert!(message.starts_with("wire the git tools"), "{message}");
-
-    git(repo.path(), &["commit", "-m", "work"]);
-    writer_fixture(
-        &daemon,
-        fixtures.path(),
-        &envelope(r#"{"title":"Wire the git tools","body":"Why: because."}"#),
-    );
-    git(repo.path(), &["checkout", "-b", "feat/writer"]);
-    std::fs::write(repo.path().join("more.txt"), "more\n").unwrap();
-    git(repo.path(), &["add", "-A"]);
-    git(repo.path(), &["commit", "-m", "more work"]);
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::GitPrContent {
-            dir: dir.clone(),
-            base: Some("main".to_string()),
-        },
-    )
-    .await;
-    let (title, body) = loop {
-        match no_error(next(&mut ws).await) {
-            proto::ServerMsg::GitPrContent {
-                title, body, error, ..
-            } => {
-                break (
-                    title.unwrap_or_else(|| panic!("writer error: {error:?}")),
-                    body.unwrap_or_default(),
-                )
-            }
-            _ => continue,
-        }
-    };
-    assert_eq!(title, "Wire the git tools");
-    assert!(body.contains("because."), "{body}");
-
-    // Nothing staged: the reply names the state instead of calling the model.
-    writer_fixture(
-        &daemon,
-        fixtures.path(),
-        &envelope(r#"{"subject":"x","body":""}"#),
-    );
-    git(repo.path(), &["checkout", "main"]);
-    send(
-        &mut ws,
-        &proto::ClientMsg::GitCommitMessage { dir: dir.clone() },
-    )
-    .await;
-    let error = loop {
-        match no_error(next(&mut ws).await) {
-            proto::ServerMsg::GitCommitMessage { error, .. } => {
-                break error.expect("an unstaged tree has no diff to write from")
-            }
-            _ => continue,
-        }
-    };
-    assert!(error.contains("nothing staged"), "{error}");
 }

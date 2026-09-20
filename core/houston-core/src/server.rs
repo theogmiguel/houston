@@ -542,7 +542,6 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::OrchestrationSettingsGet
             | proto::ClientMsg::HostInfoGet
             | proto::ClientMsg::UsageSummaryGet { .. }
-            | proto::ClientMsg::HeadlessRolesGet
             | proto::ClientMsg::CommandHistoryIgnoreGlobsGet
             | proto::ClientMsg::McpState
             | proto::ClientMsg::AgentProfileList
@@ -806,17 +805,6 @@ async fn dispatch(
         } => daemon
             .set_orchestration_caps(max_live_children, max_spawn_depth)
             .map(|()| daemon.broadcast_control(&daemon.orchestration_state())),
-        proto::ClientMsg::HeadlessRolesGet => {
-            let _ = send_msg(sink, &daemon.headless_roles_msg()).await;
-            Ok(())
-        }
-        proto::ClientMsg::HeadlessRoleSet {
-            role,
-            engine,
-            model,
-        } => daemon.headless_role_set(role, engine, model).map(|()| {
-            daemon.broadcast_control(&daemon.headless_roles_msg());
-        }),
         proto::ClientMsg::CommandHistoryIgnoreGlobsGet => {
             let _ = send_msg(
                 sink,
@@ -2218,18 +2206,6 @@ async fn dispatch(
                 }
                 Err(e) => Err(e),
             }
-        }
-        proto::ClientMsg::GitCommitMessage { dir } => {
-            let d = PathBuf::from(&dir);
-            let msg = daemon.git_commit_message_with_ai(&d).await;
-            let _ = send_msg(sink, &msg).await;
-            Ok(())
-        }
-        proto::ClientMsg::GitPrContent { dir, base } => {
-            let d = PathBuf::from(&dir);
-            let msg = daemon.git_pr_content_with_ai(&d, base.as_deref()).await;
-            let _ = send_msg(sink, &msg).await;
-            Ok(())
         }
         proto::ClientMsg::SshConnect {
             request,

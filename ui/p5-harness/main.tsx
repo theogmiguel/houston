@@ -278,8 +278,6 @@ const settingsProps: Parameters<typeof SettingsView>[0] = {
   onVoiceModelDownload: () => {},
   onVoiceModelDelete: () => {},
   historyIgnoreGlobs: null,
-  headlessWriter: null,
-  onHeadlessRoleSet: () => {},
   onHistoryIgnoreGlobsSet: () => {},
   onOpenLicense: () => {},
   onRestoreBudgetSet: () => {},

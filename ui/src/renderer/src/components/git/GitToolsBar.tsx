@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react'
 import type { GitTools, GitToolKind } from './useGitToolsSubscription'
-import type { GitWriter } from './useGitWriter'
 import { GitToolsMenu } from './GitToolsMenu'
 import { GitToolsDialogs } from './GitToolsDialogs'
 import { pullDisabledReason } from './changes'
@@ -14,8 +13,6 @@ export interface GitToolsBarProps {
   behind: number
   upstream: string | null
   fallbackBase: string | null
-  offered: boolean
-  writer: GitWriter
   onAddWorkspace: (path: string) => void
 }
 
@@ -30,8 +27,6 @@ export function GitToolsBar({
   behind,
   upstream,
   fallbackBase,
-  offered,
-  writer,
   onAddWorkspace
 }: GitToolsBarProps): React.JSX.Element {
   const [open, setOpen] = useState<GitToolKind | null>(null)
@@ -74,10 +69,6 @@ export function GitToolsBar({
         fallbackBase={fallbackBase}
         onClose={close}
         onAddWorkspace={onAddWorkspace}
-        compose={{ ...writer.compose, offered }}
-        onGeneratePr={writer.generatePrContent}
-        onCreatePr={writer.createComposedPr}
-        onCancelCompose={writer.cancelCompose}
       />
     </>
   )

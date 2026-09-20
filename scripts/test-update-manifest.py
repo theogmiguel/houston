@@ -156,32 +156,6 @@ class AssembleTests(unittest.TestCase):
             built["platforms"]["windows-x86_64-nsis"],
         )
 
-    def test_nightly_filenames_carry_the_manifest_version(self):
-        self.release = ReleaseFixture(version="0.10.0+nightly.20260916.abcdef1")
-        self.addCleanup(self.release.close)
-        self.release.add_all_bundles()
-
-        built = self.release.generate()
-        self.assertEqual(built["version"], "0.10.0+nightly.20260916.abcdef1")
-        self.assertIn("Houston_0.10.0_amd64.AppImage", built["platforms"]["linux-x86_64"]["url"])
-
-    def test_the_nightly_url_is_filed_under_the_nightly_tag(self):
-        self.release = ReleaseFixture(
-            version="0.10.0+nightly.20260916.abcdef1", tag="nightly"
-        )
-        self.addCleanup(self.release.close)
-        self.release.add_all_bundles()
-
-        built = self.release.generate()
-        self.assertIn(
-            "/releases/download/nightly/Houston_0.10.0_amd64.AppImage",
-            built["platforms"]["linux-x86_64-appimage"]["url"],
-        )
-        self.assertIn(
-            "/releases/download/nightly/Houston_0.10.0_arm64.deb",
-            built["platforms"]["linux-aarch64-deb"]["url"],
-        )
-
     def test_the_raw_appimage_serves_both_appimage_keys_in_v2_mode(self):
         self.release.add_all_bundles()
 

@@ -1,10 +1,13 @@
-//! The Rust half of signed click-to-update: pick the channel's fixed manifest,
-//! refuse builds a manifest cannot name, hold the operator's version to what it
+//! The Rust half of signed click-to-update: fetch the fixed manifest, refuse
+//! builds a manifest cannot name, hold the operator's version to what it
 //! publishes, then let the plugin download, verify and install.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 
+// The ManageLiveSessions payload only reaches this module on Windows, where the
+// live-session refusal is built, and in its tests.
+#[cfg(any(windows, test))]
 use houston_protocol as proto;
 use tauri::utils::config::BundleType;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -15,20 +18,10 @@ use crate::daemon_host;
 /// Progress for the About panel, emitted to the main window only.
 pub const PROGRESS_EVENT: &str = "app-update://progress";
 
-// Fixed per channel: GitHub's `latest` alias for stable, the rolling nightly tag
-// for nightly. The plugin's config takes one endpoint list, not a channel, so
-// the choice is made here, where it is a typed argument.
-const STABLE_MANIFEST_URL: &str =
+// GitHub's `latest` alias, which by definition never serves a draft or a
+// prerelease: the one endpoint an installed copy can be offered from.
+const MANIFEST_URL: &str =
     "https://github.com/theogmiguel/houston/releases/latest/download/latest.json";
-const NIGHTLY_MANIFEST_URL: &str =
-    "https://github.com/theogmiguel/houston/releases/download/nightly/latest.json";
-
-fn manifest_url(channel: proto::UpdateChannel) -> &'static str {
-    match channel {
-        proto::UpdateChannel::Stable => STABLE_MANIFEST_URL,
-        proto::UpdateChannel::Nightly => NIGHTLY_MANIFEST_URL,
-    }
-}
 
 /// One download at a time: a second click bounces off while the first is live.
 #[derive(Default)]
@@ -245,10 +238,10 @@ async fn move_daemon_to_new_build(
     Ok(())
 }
 
-/// Stable installs only a strictly newer version; a rolling nightly tag carries
-/// whatever `main` was at, so an equal core version is still a fresher build.
-fn offers_update(running: &str, manifest: &str, channel: proto::UpdateChannel) -> bool {
-    houston_core::updates::is_newer(manifest, running, channel)
+/// Stable installs only a strictly newer version; an equal or older manifest is
+/// not an update.
+fn offers_update(running: &str, manifest: &str) -> bool {
+    houston_core::updates::is_newer(manifest, running)
 }
 
 /// The manifest must still publish the exact release the operator was shown.
@@ -266,9 +259,10 @@ fn updater_error(
 ) -> String {
     use tauri_plugin_updater::Error;
     match err {
-        Error::TargetsNotFound(offered) => format!(
-            "app_update_install: {endpoint} publishes no updater artifact for this build: it \
-             offers {offered:?} and this build needs {target:?}"
+        Error::TargetsNotFound(_searched) => format!(
+            "app_update_install: {endpoint} carries no entry for target {target:?}; this \
+             release does not ship an installer for this platform, so there is nothing to \
+             install"
         ),
         Error::TargetNotFound(missing) => format!(
             "app_update_install: {endpoint} does not publish {missing:?}, the updater artifact \
@@ -314,15 +308,14 @@ fn emit_progress(app: &AppHandle, phase: &'static str, downloaded: u64, total: O
     }
 }
 
-/// Downloads and installs the channel's current release, refusing anything the
-/// operator was not shown. The plugin verifies the signature before installing;
+/// Downloads and installs the current release, refusing anything the operator
+/// was not shown. The plugin verifies the signature before installing;
 /// a verification failure reaches the caller as an error and installs nothing.
 #[tauri::command]
 pub async fn app_update_install(
     app: AppHandle,
     flight: State<'_, UpdateFlight>,
     active: State<'_, ActiveStateDir>,
-    channel: proto::UpdateChannel,
     expected_version: String,
 ) -> Result<AppUpdateOutcome, String> {
     let bundle = tauri::utils::platform::bundle_type();
@@ -351,7 +344,7 @@ pub async fn app_update_install(
     let target = updater_target(bundle, tauri_plugin_updater::target())?;
     let _flight = flight.claim()?;
 
-    let endpoint = manifest_url(channel);
+    let endpoint = MANIFEST_URL;
     let endpoint_url = endpoint.parse().map_err(|e| {
         format!("app_update_install: the fixed endpoint {endpoint:?} is not a URL: {e}")
     })?;
@@ -361,8 +354,8 @@ pub async fn app_update_install(
         .target(target.clone())
         .endpoints(vec![endpoint_url])
         .map_err(|e| format!("app_update_install: endpoint {endpoint:?} was refused: {e}"))?
-        .version_comparator(move |running, manifest| {
-            offers_update(&running.to_string(), &manifest.version.to_string(), channel)
+        .version_comparator(|running, manifest| {
+            offers_update(&running.to_string(), &manifest.version.to_string())
         })
         .build()
         .map_err(|e| {
@@ -484,19 +477,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn endpoints_are_fixed_per_channel() {
-        assert_eq!(
-            manifest_url(proto::UpdateChannel::Stable),
-            STABLE_MANIFEST_URL
-        );
+    fn the_manifest_endpoint_is_fixed() {
         assert!(
-            STABLE_MANIFEST_URL.contains("/releases/latest/download/latest.json"),
-            "{STABLE_MANIFEST_URL}"
-        );
-        assert!(NIGHTLY_MANIFEST_URL.ends_with("/releases/download/nightly/latest.json"));
-        assert_ne!(
-            manifest_url(proto::UpdateChannel::Stable),
-            manifest_url(proto::UpdateChannel::Nightly)
+            MANIFEST_URL.contains("/releases/latest/download/latest.json"),
+            "{MANIFEST_URL}"
         );
     }
 
@@ -559,36 +543,10 @@ mod tests {
     }
 
     #[test]
-    fn stable_needs_a_strictly_newer_manifest() {
-        assert!(offers_update(
-            "1.2.3",
-            "1.2.4",
-            proto::UpdateChannel::Stable
-        ));
-        assert!(!offers_update(
-            "1.2.3",
-            "1.2.3",
-            proto::UpdateChannel::Stable
-        ));
-        assert!(!offers_update(
-            "1.2.3",
-            "1.2.2",
-            proto::UpdateChannel::Stable
-        ));
-    }
-
-    #[test]
-    fn nightly_accepts_an_equal_core_version_with_fresher_metadata() {
-        assert!(offers_update(
-            "1.2.3+nightly.20260101",
-            "1.2.3+nightly.20260102",
-            proto::UpdateChannel::Nightly
-        ));
-        assert!(!offers_update(
-            "1.2.4",
-            "1.2.3+nightly.20260102",
-            proto::UpdateChannel::Nightly
-        ));
+    fn offers_only_a_strictly_newer_manifest() {
+        assert!(offers_update("1.2.3", "1.2.4"));
+        assert!(!offers_update("1.2.3", "1.2.3"));
+        assert!(!offers_update("1.2.3", "1.2.2"));
     }
 
     #[test]
@@ -597,27 +555,24 @@ mod tests {
         assert!(expected_version_matches("v1.2.3", "1.2.3"));
         assert!(!expected_version_matches("1.2.4", "1.2.3"));
         assert!(
-            expected_version_matches(
-                "0.10.0+nightly.20260916.abcdef1",
-                "0.10.0+nightly.20260916.abcdef1"
-            ),
-            "a nightly's full version is the identity the panel showed"
-        );
-        assert!(
-            !expected_version_matches(
-                "0.10.0+nightly.20260917.abcdef2",
-                "0.10.0+nightly.20260916.abcdef1"
-            ),
-            "a nightly feed that moved under the panel must refuse, not compare Equal"
-        );
-        assert!(
-            !expected_version_matches("1.2.3+nightly.20260916.abcdef1", "nightly"),
-            "the rolling tag's literal name is not a release identity"
-        );
-        assert!(
             !expected_version_matches("1.2.3", "  "),
             "an empty expected version must never satisfy the check"
         );
+    }
+
+    #[test]
+    fn a_release_without_this_platform_names_the_platform_not_a_broken_manifest() {
+        let err = updater_error(
+            "downloading",
+            MANIFEST_URL,
+            "windows-x86_64-nsis",
+            tauri_plugin_updater::Error::TargetsNotFound(vec![
+                "windows-x86_64-nsis".to_string(),
+                "windows-x86_64".to_string(),
+            ]),
+        );
+        assert!(err.contains("windows-x86_64-nsis"), "{err}");
+        assert!(err.contains("does not ship an installer"), "{err}");
     }
 
     #[test]

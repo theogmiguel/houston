@@ -321,58 +321,6 @@ pub fn head_sha(dir: &Path) -> Result<String> {
     Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
-/// The staged patch through the cap/exclude/redact pipeline — what a
-/// commit-message suggestion is written from. Nothing unstaged leaks in.
-pub fn staged_patch(dir: &Path) -> Result<(String, bool, bool)> {
-    ensure_repo(dir)?;
-    Ok(sanitized_patch(run_git(dir, &["diff", "--cached"])?))
-}
-
-pub struct BranchContext {
-    pub branch: Option<String>,
-    pub base: String,
-    pub commits: Vec<String>,
-    pub patch: String,
-    pub truncated: bool,
-    pub redacted: bool,
-}
-
-/// What a PR title/body suggestion is written from: the commit list and the
-/// committed diff between the merge base and HEAD. Capped at 50 subjects — a
-/// body is a summary, and the patch itself carries the rest.
-pub fn branch_context(dir: &Path, base: Option<&str>) -> Result<BranchContext> {
-    ensure_repo(dir)?;
-    let base = match base.map(str::trim).filter(|b| !b.is_empty()) {
-        Some(b) => b.to_string(),
-        None => default_base(dir).with_context(|| {
-            format!(
-                "{} has no default branch to diff against; expected main, master, or origin/HEAD",
-                dir.display()
-            )
-        })?,
-    };
-    let mb = merge_base(dir, &base)?;
-    let range = format!("{mb}..HEAD");
-    let log = run_git(dir, &["log", "--oneline", "--no-decorate", &range])?;
-    let commits: Vec<String> = log
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .take(50)
-        .map(str::to_string)
-        .collect();
-    let raw = run_git(dir, &["diff", &range])?;
-    let (patch, truncated, redacted) = sanitized_patch(raw);
-    Ok(BranchContext {
-        branch: sync(dir).branch,
-        base,
-        commits,
-        patch,
-        truncated,
-        redacted,
-    })
-}
-
 pub fn branch(dir: &Path) -> Option<String> {
     if !dir.is_dir() {
         return None;
