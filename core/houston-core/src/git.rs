@@ -321,49 +321,95 @@ pub fn head_sha(dir: &Path) -> Result<String> {
     Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
-pub fn branch(dir: &Path) -> Option<String> {
+/// What one `rev-parse` answers for a directory: the branch a pane's chip shows,
+/// and the checkout identity the ownership warning groups by. Every field is
+/// absent when git cannot answer, which the renderer reads as "unknown".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CheckoutFacts {
+    pub branch: Option<String>,
+    pub toplevel: Option<String>,
+    pub common_dir: Option<String>,
+}
+
+/// One `rev-parse` carries all three facts: a second call would answer the same
+/// question and drift from the first.
+pub fn checkout_facts(dir: &Path) -> CheckoutFacts {
     if !dir.is_dir() {
-        return None;
+        return CheckoutFacts::default();
     }
     let head = head_file(dir).and_then(|h| std::fs::read(h).ok());
     match head {
-        Some(bytes) => branch_via_cache(dir, bytes, || branch_uncached(dir)),
-        None => branch_uncached(dir),
+        Some(bytes) => facts_via_cache(dir, bytes, || facts_uncached(dir)),
+        None => facts_uncached(dir),
+    }
+}
+
+pub fn branch(dir: &Path) -> Option<String> {
+    checkout_facts(dir).branch
+}
+
+fn facts_uncached(dir: &Path) -> CheckoutFacts {
+    let out = crate::spawn::command("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+            "--show-toplevel",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ])
+        .output()
+        .ok();
+    let Some(out) = out else {
+        return CheckoutFacts::default();
+    };
+    if !out.status.success() {
+        return CheckoutFacts::default();
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut lines = stdout.lines();
+    let branch = lines
+        .next()
+        .map(str::trim)
+        .filter(|b| !b.is_empty() && *b != "HEAD")
+        .map(str::to_string);
+    let toplevel = lines
+        .next()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    let common_dir = lines
+        .next()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(str::to_string);
+    CheckoutFacts {
+        branch,
+        toplevel,
+        common_dir,
     }
 }
 
 fn branch_uncached(dir: &Path) -> Option<String> {
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if name.is_empty() || name == "HEAD" {
-        None
-    } else {
-        Some(name)
-    }
+    facts_uncached(dir).branch
 }
 
-const BRANCH_CACHE_MAX: usize = 64;
+const FACTS_CACHE_MAX: usize = 64;
 
-type BranchEntry = (Vec<u8>, Option<String>);
+type FactsEntry = (Vec<u8>, CheckoutFacts);
 
-static BRANCH_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, BranchEntry>>,
+static FACTS_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, FactsEntry>>,
 > = std::sync::LazyLock::new(Default::default);
 
-fn branch_via_cache(
+fn facts_via_cache(
     dir: &Path,
     head: Vec<u8>,
-    compute: impl FnOnce() -> Option<String>,
-) -> Option<String> {
-    if let Ok(cache) = BRANCH_CACHE.lock() {
+    compute: impl FnOnce() -> CheckoutFacts,
+) -> CheckoutFacts {
+    if let Ok(cache) = FACTS_CACHE.lock() {
         if let Some((cached_head, answer)) = cache.get(dir) {
             if *cached_head == head {
                 return answer.clone();
@@ -371,8 +417,8 @@ fn branch_via_cache(
         }
     }
     let fresh = compute();
-    if let Ok(mut cache) = BRANCH_CACHE.lock() {
-        if cache.len() >= BRANCH_CACHE_MAX && !cache.contains_key(dir) {
+    if let Ok(mut cache) = FACTS_CACHE.lock() {
+        if cache.len() >= FACTS_CACHE_MAX && !cache.contains_key(dir) {
             cache.clear();
         }
         cache.insert(dir.to_path_buf(), (head, fresh.clone()));
@@ -1211,40 +1257,48 @@ mod tests {
     use std::process::Command;
 
     #[test]
-    fn branch_cache_recomputes_only_when_head_bytes_change() {
+    fn facts_cache_recomputes_only_when_head_bytes_change() {
         let dir = tempfile::tempdir().unwrap();
         let calls = std::cell::Cell::new(0);
         let compute = |name: &str| {
             calls.set(calls.get() + 1);
-            Some(name.to_string())
+            CheckoutFacts {
+                branch: Some(name.to_string()),
+                ..CheckoutFacts::default()
+            }
         };
 
         let head_a = b"ref: refs/heads/main\n".to_vec();
-        let first = branch_via_cache(dir.path(), head_a.clone(), || compute("main"));
-        assert_eq!(first.as_deref(), Some("main"));
+        let first = facts_via_cache(dir.path(), head_a.clone(), || compute("main"));
+        assert_eq!(first.branch.as_deref(), Some("main"));
         assert_eq!(calls.get(), 1, "the first call must compute");
 
-        let second = branch_via_cache(dir.path(), head_a.clone(), || {
+        let second = facts_via_cache(dir.path(), head_a.clone(), || {
             panic!("unchanged HEAD must not recompute")
         });
-        assert_eq!(second.as_deref(), Some("main"));
+        assert_eq!(second.branch.as_deref(), Some("main"));
         assert_eq!(calls.get(), 1, "an unchanged HEAD must not spawn git");
 
-        let third = branch_via_cache(dir.path(), b"ref: refs/heads/other\n".to_vec(), || {
+        let third = facts_via_cache(dir.path(), b"ref: refs/heads/other\n".to_vec(), || {
             compute("other")
         });
-        assert_eq!(third.as_deref(), Some("other"));
+        assert_eq!(third.branch.as_deref(), Some("other"));
         assert_eq!(calls.get(), 2, "a changed HEAD must recompute at once");
     }
 
     #[test]
-    fn branch_cache_caches_a_none_answer_too() {
+    fn facts_cache_caches_an_empty_answer_too() {
         let dir = tempfile::tempdir().unwrap();
         let head = b"9f3a1c2d4e5f60718293a4b5c6d7e8f901234567\n".to_vec();
-        assert_eq!(branch_via_cache(dir.path(), head.clone(), || None), None);
         assert_eq!(
-            branch_via_cache(dir.path(), head, || panic!("None must be cached too")),
-            None
+            facts_via_cache(dir.path(), head.clone(), CheckoutFacts::default),
+            CheckoutFacts::default()
+        );
+        assert_eq!(
+            facts_via_cache(dir.path(), head, || panic!(
+                "the empty answer must be cached too"
+            )),
+            CheckoutFacts::default()
         );
     }
 
@@ -1426,6 +1480,49 @@ mod tests {
         let sha = String::from_utf8_lossy(&head.stdout).trim().to_string();
         git(tmp.path(), &["checkout", &sha]);
         assert_eq!(branch(tmp.path()), None);
+    }
+
+    #[test]
+    fn checkout_facts_reports_branch_and_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        let facts = checkout_facts(tmp.path());
+        assert_eq!(facts.branch.as_deref(), Some("main"));
+        let root = fs::canonicalize(tmp.path()).unwrap();
+        assert_eq!(
+            facts.toplevel.as_deref(),
+            root.to_str(),
+            "the toplevel must be the work tree's root"
+        );
+        let common = fs::canonicalize(root.join(".git")).unwrap();
+        assert_eq!(
+            facts.common_dir.as_deref(),
+            common.to_str(),
+            "the common dir must be absolute"
+        );
+    }
+
+    #[test]
+    fn checkout_facts_is_none_for_non_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(checkout_facts(tmp.path()), CheckoutFacts::default());
+    }
+
+    #[test]
+    fn checkout_facts_keeps_identity_on_detached_head() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        git(tmp.path(), &["checkout", "--detach", "HEAD"]);
+        let facts = checkout_facts(tmp.path());
+        assert_eq!(facts.branch, None, "a detached HEAD has no branch name");
+        assert!(
+            facts.toplevel.is_some(),
+            "a detached HEAD is still inside a work tree: {facts:?}"
+        );
+        assert!(
+            facts.common_dir.is_some(),
+            "a detached HEAD still belongs to a repository: {facts:?}"
+        );
     }
 
     #[test]

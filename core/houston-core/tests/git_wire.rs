@@ -3,10 +3,11 @@
 mod common;
 
 use common::*;
-use futures_util::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use houston_protocol as proto;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
 fn git(dir: &Path, args: &[&str]) {
@@ -93,14 +94,54 @@ async fn expect_git_diff(ws: &mut WsStream) -> (Option<String>, String, bool) {
     }
 }
 
-async fn expect_git_branch(ws: &mut WsStream) -> (String, Option<String>) {
+#[derive(Debug)]
+struct BranchReply {
+    dir: String,
+    branch: Option<String>,
+    toplevel: Option<String>,
+    common_dir: Option<String>,
+}
+
+async fn expect_git_branch(ws: &mut WsStream) -> BranchReply {
     loop {
         match next_control(ws).await {
-            proto::ServerMsg::GitBranch { dir, branch } => return (dir, branch),
+            proto::ServerMsg::GitBranch {
+                dir,
+                branch,
+                toplevel,
+                common_dir,
+            } => {
+                return BranchReply {
+                    dir,
+                    branch,
+                    toplevel,
+                    common_dir,
+                }
+            }
             proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
             _ => continue,
         }
     }
+}
+
+// A read that cannot answer replies with nulls; an `error` envelope after it
+// would be a second, contradictory answer. Nothing else is in flight in these
+// tests, so a short quiet window is the evidence that no second answer came.
+async fn expect_no_further_message(ws: &mut WsStream) {
+    let quiet = tokio::time::timeout(Duration::from_millis(250), async {
+        loop {
+            match ws.next().await {
+                Some(Ok(Message::Text(t))) => break t,
+                Some(Ok(_)) => continue,
+                other => panic!("socket ended while checking for a stray error: {other:?}"),
+            }
+        }
+    })
+    .await;
+    assert!(
+        quiet.is_err(),
+        "expected no control message after the reply, got {quiet:?}"
+    );
 }
 
 #[tokio::test]
@@ -115,9 +156,21 @@ async fn git_branch_over_the_wire() {
     let dir = repo.path().display().to_string();
     let msg = serde_json::to_string(&proto::ClientMsg::GitBranch { dir: dir.clone() }).unwrap();
     ws.send(Message::text(msg)).await.unwrap();
-    let (rdir, branch) = expect_git_branch(&mut ws).await;
-    assert_eq!(rdir, dir);
-    assert_eq!(branch.as_deref(), Some("main"));
+    let reply = expect_git_branch(&mut ws).await;
+    assert_eq!(reply.dir, dir);
+    assert_eq!(reply.branch.as_deref(), Some("main"));
+    let root = std::fs::canonicalize(repo.path()).unwrap();
+    assert_eq!(
+        reply.toplevel.as_deref(),
+        root.to_str(),
+        "the reply must carry the work tree's root"
+    );
+    let common = std::fs::canonicalize(root.join(".git")).unwrap();
+    assert_eq!(
+        reply.common_dir.as_deref(),
+        common.to_str(),
+        "the reply must carry the repository's common dir"
+    );
 }
 
 #[tokio::test]
@@ -131,9 +184,38 @@ async fn git_branch_is_none_for_non_repo_and_does_not_error() {
     let dir = plain.path().display().to_string();
     let msg = serde_json::to_string(&proto::ClientMsg::GitBranch { dir: dir.clone() }).unwrap();
     ws.send(Message::text(msg)).await.unwrap();
-    let (rdir, branch) = expect_git_branch(&mut ws).await;
-    assert_eq!(rdir, dir);
-    assert_eq!(branch, None);
+    let reply = expect_git_branch(&mut ws).await;
+    assert_eq!(reply.dir, dir);
+    assert_eq!(reply.branch, None);
+    assert_eq!(reply.toplevel, None);
+    assert_eq!(reply.common_dir, None);
+    expect_no_further_message(&mut ws).await;
+}
+
+#[tokio::test]
+async fn git_branch_over_the_wire_detached_head_keeps_identity() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(repo.path(), &["checkout", "--detach", "HEAD"]);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+
+    let dir = repo.path().display().to_string();
+    let msg = serde_json::to_string(&proto::ClientMsg::GitBranch { dir: dir.clone() }).unwrap();
+    ws.send(Message::text(msg)).await.unwrap();
+    let reply = expect_git_branch(&mut ws).await;
+    assert_eq!(reply.dir, dir);
+    assert_eq!(reply.branch, None, "a detached HEAD has no branch name");
+    assert!(
+        reply.toplevel.is_some(),
+        "a detached HEAD is still inside a work tree: {reply:?}"
+    );
+    assert!(
+        reply.common_dir.is_some(),
+        "a detached HEAD still belongs to a repository: {reply:?}"
+    );
 }
 
 #[tokio::test]
