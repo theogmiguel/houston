@@ -148,6 +148,44 @@ describe('checkout ownership warning', () => {
     expect(chip(harness, 'same-repository-chip')).toBeNull()
   })
 
+  it('a changed identity recomputes the groups', async () => {
+    harness = await boot(
+      [
+        makeSession({ id: 1, title: 'oak', cwd: MAIN, project_dir: MAIN }),
+        makeSession({ id: 2, title: 'cedar', cwd: `${MAIN}/src`, project_dir: MAIN })
+      ],
+      [makeWorkspace({ path: MAIN, name: 'nexus' })]
+    )
+    reply(MAIN, 'feat/rebalancing', MAIN, COMMON)
+    reply(`${MAIN}/src`, 'feat/rebalancing', MAIN, COMMON)
+    await flush()
+    expect(chip(harness, 'shared-checkout-chip')).not.toBeNull()
+
+    // The same cwd answered as a different checkout: the old group no longer holds.
+    reply(`${MAIN}/src`, 'main', OTHER_REPO, `${OTHER_REPO}/.git`)
+    await flush()
+    expect(chip(harness, 'shared-checkout-chip')).toBeNull()
+    expect(chip(harness, 'same-repository-chip')).toBeNull()
+  })
+
+  it('a group outside the selected workspace shows no chip', async () => {
+    harness = await boot(
+      [
+        makeSession({ id: 1, title: 'oak', cwd: WORKTREE, project_dir: WORKTREE }),
+        makeSession({ id: 2, title: 'cedar', cwd: WORKTREE, project_dir: WORKTREE })
+      ],
+      [
+        makeWorkspace({ path: MAIN, name: 'nexus' }),
+        makeWorkspace({ path: WORKTREE, name: 'nexus-pdi-flags' })
+      ]
+    )
+    reply(WORKTREE, 'feat/pdi', WORKTREE, COMMON)
+    await flush()
+
+    expect(chip(harness, 'shared-checkout-chip')).toBeNull()
+    expect(chip(harness, 'same-repository-chip')).toBeNull()
+  })
+
   it('one workspace with two checkouts names the other checkout', async () => {
     const worktree = `${MAIN}/.worktrees/pdi-flags`
     harness = await boot(
@@ -242,5 +280,28 @@ describe('checkout ownership warning', () => {
     focusPane(harness, 1)
     await flush()
     expect(calls()).toBeGreaterThan(beforeFocus)
+  })
+
+  it('no request is armed on a timer', async () => {
+    // The fake clock is installed before the first mount, so anything the app
+    // arms on mount is captured; two minutes of it would fire a polling loop.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      harness = await boot(
+        [makeSession({ id: 1, title: 'oak', cwd: MAIN, project_dir: MAIN })],
+        [makeWorkspace({ path: MAIN, name: 'nexus' })]
+      )
+      const calls = (): number => (currentClient().gitBranch as unknown as Mock).mock.calls.length
+      const afterBoot = calls()
+      expect(afterBoot).toBeGreaterThan(0)
+
+      act(() => {
+        vi.advanceTimersByTime(120_000)
+      })
+      await flush()
+      expect(calls()).toBe(afterBoot)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
