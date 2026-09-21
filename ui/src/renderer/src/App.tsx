@@ -389,17 +389,25 @@ const AGENT_NOTICE_PRESENTATION: Record<
   "needs-input": { text: "needs your input", ringTone: "needs-input" },
 };
 
+function duplicatesAgentEnd(
+  msg: SessionStateMessage,
+  recentAgent: RecentAgentNotice | undefined,
+): boolean {
+  return (
+    msg.state === "exited" &&
+    recentAgent !== undefined &&
+    recentAgent.kind !== "needs-input" &&
+    (msg.exit_code === 0 || recentAgent.kind === "error") &&
+    Date.now() - recentAgent.at < NOTICE_CORRELATION_MS
+  );
+}
+
 function sessionStateNotification(
   msg: SessionStateMessage,
   info: SessionInfo,
   recentAgent: RecentAgentNotice | undefined,
 ) {
-  const duplicatesAgentEnd =
-    msg.state === "exited" &&
-    recentAgent !== undefined &&
-    recentAgent.kind !== "needs-input" &&
-    Date.now() - recentAgent.at < NOTICE_CORRELATION_MS;
-  if (duplicatesAgentEnd) return null;
+  if (duplicatesAgentEnd(msg, recentAgent)) return null;
   const text =
     msg.state === "exited"
       ? `finished${msg.exit_code !== null ? ` (exit ${msg.exit_code})` : ""}`
@@ -628,6 +636,7 @@ export function App(): React.JSX.Element {
   const railWidth = useRailWidth();
   const [notices, setNotices] = useState<Notice[]>([]);
   const recentAgentNoticeRef = useRef(new Map<number, RecentAgentNotice>());
+  const failedSessionExitsRef = useRef(new Set<number>());
   const [inboxRows, setInboxRows] = useState<Map<bigint, InboxRow>>(new Map());
   const [flashOwedId, setFlashOwedId] = useState<bigint | null>(null);
   const flashOwedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -1043,6 +1052,69 @@ export function App(): React.JSX.Element {
     let cancelled = false;
     let bootTimer: ReturnType<typeof setTimeout> | undefined;
 
+    function publishPaneNotice(
+      ninfo: SessionInfo,
+      kind: AgentNoticeMessage["kind"],
+      text = AGENT_NOTICE_PRESENTATION[kind].text,
+      recordKind = "agent-notice",
+    ): void {
+      const { ringTone } = AGENT_NOTICE_PRESENTATION[kind];
+      const noticeSeverity = severityForNotice("agent-notice", kind);
+      const bornRead = activeIdRef.current === ninfo.id && document.hasFocus();
+      const noticeRec = addNotification({
+        session: ninfo.id,
+        kind: recordKind,
+        title: ninfo.title,
+        dir: ninfo.project_dir,
+        text,
+        read: bornRead,
+      });
+      if (noticeRec) {
+        if (!bornRead) {
+          setNotices((prev) =>
+            replacePaneNotice(prev, {
+              ...toNotice(noticeRec, kind),
+              severity: noticeSeverity,
+              ringTone,
+            }),
+          );
+          setPaneNoticeRing(ninfo.id, ringTone);
+        }
+        if (
+          notifyAllowed(
+            notifyEnabledRef.current,
+            notifyKindsRef.current,
+            noticeSeverity,
+          )
+        ) {
+          const noticeSession = ninfo.id;
+          const noticeDir = ninfo.project_dir;
+          const noticeTitle = ninfo.title;
+          notifyThroughFocusGate(
+            isFocused,
+            (focused) =>
+              focused && activeIdRef.current === noticeSession,
+            () => ({
+              title: noticeTitle,
+              body: text,
+              soundUrl: notifySoundRef.current
+                ? NOTICE_SEVERITY_SOUND[noticeSeverity]
+                : undefined,
+              onClick: () => {
+                void windowControl("focus").catch((err: unknown) => {
+                  console.warn(
+                    "houston: windowControl(focus) failed",
+                    err,
+                  );
+                });
+                selectNoticeTarget(noticeDir, noticeSession);
+              },
+            }),
+          );
+        }
+      }
+    }
+
     function wire(client: HoustonClient, boot: boolean): void {
       let helloed = false;
       let helloError: string | null = null;
@@ -1172,6 +1244,15 @@ export function App(): React.JSX.Element {
             break;
           }
           case "session_state":
+            if (
+              msg.state === "exited" &&
+              msg.exit_code !== null &&
+              msg.exit_code !== 0
+            ) {
+              failedSessionExitsRef.current.add(msg.session);
+            } else {
+              failedSessionExitsRef.current.delete(msg.session);
+            }
             setSessions((prev) => {
               const next = new Map(prev);
               const s = next.get(msg.session);
@@ -1181,11 +1262,21 @@ export function App(): React.JSX.Element {
             if (!isLive(msg.state)) {
               setActiveId((cur) => (cur === msg.session ? null : cur));
               const info = sessionsRef.current.get(msg.session);
-              if (info) {
+              const recentAgent = recentAgentNoticeRef.current.get(msg.session);
+              if (info && failedSessionExitsRef.current.has(msg.session)) {
+                if (!duplicatesAgentEnd(msg, recentAgent)) {
+                  publishPaneNotice(
+                    info,
+                    "error",
+                    `exited (exit ${msg.exit_code})`,
+                    "session-state",
+                  );
+                }
+              } else if (info) {
                 const stateRec = sessionStateNotification(
                   msg,
                   info,
-                  recentAgentNoticeRef.current.get(msg.session),
+                  recentAgent,
                 );
                 if (stateRec) {
                   setNotices((prev) =>
@@ -1205,6 +1296,7 @@ export function App(): React.JSX.Element {
             setActiveId((cur) => (cur === msg.session ? null : cur));
             clearPaneNoticeRing(msg.session);
             recentAgentNoticeRef.current.delete(msg.session);
+            failedSessionExitsRef.current.delete(msg.session);
             forgetDictationSession(msg.session);
             setVoiceIndicator(msg.session, null);
             break;
@@ -1246,70 +1338,17 @@ export function App(): React.JSX.Element {
             });
             break;
           case "agent_notice": {
+            if (
+              msg.kind === "finished" &&
+              failedSessionExitsRef.current.has(msg.session)
+            ) break;
             const ninfo = sessionsRef.current.get(msg.session);
             if (ninfo) {
               recentAgentNoticeRef.current.set(msg.session, {
                 kind: msg.kind,
                 at: Date.now(),
               });
-              const { text, ringTone } = AGENT_NOTICE_PRESENTATION[msg.kind];
-              const bornRead =
-                activeIdRef.current === msg.session && document.hasFocus();
-              const noticeRec = addNotification({
-                session: msg.session,
-                kind: "agent-notice",
-                title: ninfo.title,
-                dir: ninfo.project_dir,
-                text,
-                read: bornRead,
-              });
-              if (noticeRec) {
-                if (!bornRead) {
-                  setNotices((prev) =>
-                    replacePaneNotice(prev, {
-                      ...toNotice(noticeRec, msg.kind),
-                      ringTone,
-                    }),
-                  );
-                  setPaneNoticeRing(msg.session, ringTone);
-                }
-                const noticeSeverity = severityForNotice(
-                  "agent-notice",
-                  msg.kind,
-                );
-                if (
-                  notifyAllowed(
-                    notifyEnabledRef.current,
-                    notifyKindsRef.current,
-                    noticeSeverity,
-                  )
-                ) {
-                  const noticeSession = msg.session;
-                  const noticeDir = ninfo.project_dir;
-                  const noticeTitle = ninfo.title;
-                  notifyThroughFocusGate(
-                    isFocused,
-                    (focused) =>
-                      focused && activeIdRef.current === noticeSession,
-                    () => ({
-                      title: noticeTitle,
-                      body: text,
-                      soundUrl: notifySoundRef.current
-                        ? NOTICE_SEVERITY_SOUND[noticeSeverity]
-                        : undefined,
-                      onClick: () => {
-                        void windowControl("focus").catch((err: unknown) => {
-                          console.warn(
-                            "houston: windowControl(focus) failed",
-                            err,
-                          );
-                        });
-                        selectNoticeTarget(noticeDir, noticeSession);
-                      },
-                    }),
-                  );
-                }
-              }
+              publishPaneNotice(ninfo, msg.kind);
             }
             break;
           }

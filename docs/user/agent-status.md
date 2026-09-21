@@ -36,6 +36,8 @@ completion count uses blue, needs-input uses amber, and an error uses red. The a
 inbox keeps at most the latest pending event for each pane instead of building an activity
 log. Opening a workspace does not clear these counts; focusing the affected pane does and
 removes its pending item.
+If the process exits with a nonzero code, its exit notification takes precedence over
+an agent completion, even when the completion arrives later.
 
 ## Settings ▸ Agent setup
 

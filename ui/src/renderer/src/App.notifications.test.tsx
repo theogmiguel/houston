@@ -417,6 +417,57 @@ describe('App agent-notice desktop notifications (P4 #18)', () => {
     expect(bellItemTexts(harness)[0]).toContain('finished — awaiting you')
   })
 
+  it.each([
+    [1, false], [137, false], [1, true], [137, true]
+  ])('preserves exit %i when completion arrives last: %s', async (exitCode, completionLast) => {
+    const { instances } = installFakeNotification('granted')
+    localStorage.setItem('tr-notify-desktop', '1')
+    harness = await renderReadyApp()
+    const isFocused = window.houston.isFocused as unknown as ReturnType<typeof vi.fn>
+    isFocused.mockResolvedValue(false)
+
+    const completion = { type: 'agent_notice', session: 1, kind: 'finished' } as const
+    const exit = { type: 'session_state', session: 1, state: 'exited', exit_code: exitCode } as const
+    deliverControl(completionLast ? exit : completion)
+    await flush()
+    deliverControl(completionLast ? completion : exit)
+    await flush()
+
+    openBell(harness)
+    const notices = bellItemTexts(harness).filter((text) => text.includes('session-1'))
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toContain(`exit ${exitCode}`)
+    expect(notices[0]).toContain('Error')
+    expect(notices[0]).not.toContain('awaiting you')
+    expect(harness.container.querySelector('[data-panekey="1"] .pane-notice-ring')?.className).toContain('error')
+    expect(instances).toHaveLength(completionLast ? 1 : 2)
+    expect(instances.filter((notice) => notice.body.includes(`exit ${exitCode}`))).toHaveLength(1)
+    expect(instances.at(-1)?.body).toContain(`exit ${exitCode}`)
+  })
+
+  it('correlates an agent error followed by a failed exit into one error notice', async () => {
+    const { instances } = installFakeNotification('granted')
+    localStorage.setItem('tr-notify-desktop', '1')
+    harness = await renderReadyApp()
+    const isFocused = window.houston.isFocused as unknown as ReturnType<typeof vi.fn>
+    isFocused.mockResolvedValue(false)
+
+    deliverControl({ type: 'agent_notice', session: 1, kind: 'error' })
+    await flush()
+    deliverControl({ type: 'session_state', session: 1, state: 'exited', exit_code: 1 })
+    deliverControl({ type: 'agent_notice', session: 1, kind: 'finished' })
+    await flush()
+
+    openBell(harness)
+    const notices = bellItemTexts(harness).filter((text) => text.includes('session-1'))
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toContain('hit an error')
+    expect(notices[0]).toContain('Error')
+    expect(harness.container.querySelector('[data-panekey="1"] .pane-notice-ring')?.className).toContain('error')
+    expect(instances).toHaveLength(1)
+    expect(instances[0].body).toBe('hit an error')
+  })
+
   it('replaces an early process-exit notice when richer agent completion arrives', async () => {
     harness = await renderReadyApp()
 
