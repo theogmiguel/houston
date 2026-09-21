@@ -62,7 +62,8 @@ function basename(path: string): string {
 }
 
 // The workspaces a same-repository group names beside the selected one: the
-// other workspaces when there are any, else the other checkouts' directories.
+// other workspaces when there are any, else the checkouts other than the first
+// one the selected workspace's own sessions sit in.
 function otherLabels(
   group: CheckoutEntry[],
   selectedWs: string,
@@ -72,11 +73,10 @@ function otherLabels(
     ...new Set(group.map((e) => e.session.project_dir).filter((p) => p !== selectedWs))
   ]
   if (others.length > 0) return others.map(workspaceName)
-  const selected = new Set(
-    group.filter((e) => e.session.project_dir === selectedWs).map((e) => e.toplevel)
-  )
+  const mine = group.find((e) => e.session.project_dir === selectedWs)
+  const seen = new Set(mine ? [mine.toplevel] : [])
   return [
-    ...new Set(group.map((e) => e.toplevel).filter((t) => !selected.has(t)))
+    ...new Set(group.map((e) => e.toplevel).filter((t) => !seen.has(t)))
   ].map(basename)
 }
 

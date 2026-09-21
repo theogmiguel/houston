@@ -148,6 +148,26 @@ describe('checkout ownership warning', () => {
     expect(chip(harness, 'same-repository-chip')).toBeNull()
   })
 
+  it('one workspace with two checkouts names the other checkout', async () => {
+    const worktree = `${MAIN}/.worktrees/pdi-flags`
+    harness = await boot(
+      [
+        makeSession({ id: 1, title: 'oak', cwd: MAIN, project_dir: MAIN }),
+        makeSession({ id: 2, title: 'cedar', cwd: worktree, project_dir: MAIN })
+      ],
+      [makeWorkspace({ path: MAIN, name: 'nexus' })]
+    )
+    reply(MAIN, 'feat/rebalancing', MAIN, COMMON)
+    reply(worktree, 'feat/pdi', worktree, COMMON)
+    await flush()
+
+    const repository = chip(harness, 'same-repository-chip')
+    expect(repository).not.toBeNull()
+    expect(repository!.textContent).toContain('pdi-flags')
+    expect(repository!.textContent).not.toContain('nexus')
+    expect(chip(harness, 'shared-checkout-chip')).toBeNull()
+  })
+
   it('session exit removes the chip', async () => {
     harness = await boot(
       [
