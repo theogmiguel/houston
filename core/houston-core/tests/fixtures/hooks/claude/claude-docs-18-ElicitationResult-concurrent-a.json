@@ -1,0 +1,11 @@
+{
+  "_note": "reconstructed from the Claude Code hook reference ElicitationResult schema",
+  "hook_event_name": "ElicitationResult",
+  "session_id": "claude-session-concurrent",
+  "elicitation_id": "elicitation-a",
+  "mcp_server_name": "example",
+  "action": "accept",
+  "content": {
+    "target": "staging"
+  }
+}

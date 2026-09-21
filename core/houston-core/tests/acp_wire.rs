@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::start_daemon_with_handle;
+use common::{next_broadcast_control, start_daemon_with_handle};
 use houston_core::daemon::{CreateParams, Daemon};
 use houston_core::db::Db;
 use houston_protocol as proto;
@@ -105,6 +105,7 @@ async fn an_acp_stream_drives_agent_status_without_hooks_or_scraping() {
     let _serial = SERIAL.lock().await;
     shim_dir();
     let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let mut rx = daemon.observe();
     let pane = acp_session(&daemon, state.path(), "acp-opencode");
 
     let mut needs_input = false;
@@ -120,6 +121,15 @@ async fn an_acp_stream_drives_agent_status_without_hooks_or_scraping() {
         "session/request_permission must surface as NeedsInput; status was {:?}",
         daemon.session_status(pane.id)
     );
+    loop {
+        match next_broadcast_control(&mut rx).await {
+            proto::ServerMsg::AgentNotice { session, kind } if session == pane.id => {
+                assert_eq!(kind, proto::AgentNoticeKind::NeedsInput);
+                break;
+            }
+            _ => {}
+        }
+    }
 
     daemon
         .write_stdin(
@@ -144,6 +154,15 @@ async fn an_acp_stream_drives_agent_status_without_hooks_or_scraping() {
         "a stopReason must settle the pane; status was {:?}",
         daemon.session_status(pane.id)
     );
+    loop {
+        match next_broadcast_control(&mut rx).await {
+            proto::ServerMsg::AgentNotice { session, kind } if session == pane.id => {
+                assert_eq!(kind, proto::AgentNoticeKind::Finished);
+                break;
+            }
+            _ => {}
+        }
+    }
 }
 
 #[tokio::test]

@@ -4,35 +4,58 @@ use houston_protocol as proto;
 pub enum AgentEvent {
     SessionStarted,
     PromptSubmitted,
+    // Provider activity that keeps a turn alive but is not a new user prompt.
+    // OpenCode emits this for session.status busy/retry pulses.
+    Activity,
+    InputResolved,
     // At most one row of this per provider: its own loop-termination event,
     // never a per-step event near a turn's end. Exception: two spellings of
     // the SAME end (Claude's Stop/StopFailure) — see EXCLUSIVE_TURN_ENDS.
     TurnEnded,
+    TurnInterrupted,
     NeedsInput,
 }
 
 impl AgentEvent {
     pub fn status(self) -> proto::AgentStatus {
         match self {
-            AgentEvent::SessionStarted | AgentEvent::TurnEnded => proto::AgentStatus::Idle,
-            AgentEvent::PromptSubmitted => proto::AgentStatus::Working,
+            AgentEvent::SessionStarted | AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
+                proto::AgentStatus::Idle
+            }
+            AgentEvent::PromptSubmitted | AgentEvent::Activity | AgentEvent::InputResolved => {
+                proto::AgentStatus::Working
+            }
             AgentEvent::NeedsInput => proto::AgentStatus::NeedsInput,
         }
     }
 
-    pub fn notice(self) -> Option<proto::AgentNoticeKind> {
+    pub fn notice(self, provider_event: &str) -> Option<proto::AgentNoticeKind> {
         match self {
+            AgentEvent::TurnEnded if matches!(provider_event, "StopFailure" | "session.error") => {
+                Some(proto::AgentNoticeKind::Error)
+            }
             AgentEvent::TurnEnded => Some(proto::AgentNoticeKind::Finished),
             AgentEvent::NeedsInput => Some(proto::AgentNoticeKind::NeedsInput),
-            AgentEvent::SessionStarted | AgentEvent::PromptSubmitted => None,
+            AgentEvent::SessionStarted
+            | AgentEvent::PromptSubmitted
+            | AgentEvent::Activity
+            | AgentEvent::InputResolved
+            | AgentEvent::TurnInterrupted => None,
         }
     }
 
-    // Claude's Notification (and borrowers) fires for both a mid-turn
-    // permission block and an idle nudge, no way to tell them apart; a
-    // NeedsInput while already Idle can't be the former, so it's suppressed.
-    pub fn applies(self, current: Option<proto::AgentStatus>) -> bool {
-        !matches!(self, AgentEvent::NeedsInput) || current != Some(proto::AgentStatus::Idle)
+    pub fn applies(
+        self,
+        current: Option<proto::AgentStatus>,
+        ambiguous_idle_notification: bool,
+    ) -> bool {
+        match self {
+            AgentEvent::NeedsInput => {
+                !ambiguous_idle_notification || current != Some(proto::AgentStatus::Idle)
+            }
+            AgentEvent::InputResolved => current == Some(proto::AgentStatus::NeedsInput),
+            _ => true,
+        }
     }
 
     pub fn from_provider(provider: proto::AgentKind, name: &str) -> Option<Self> {
@@ -46,32 +69,57 @@ impl AgentEvent {
 // SubagentStart/SubagentStop are deliberately absent: a sub-agent runs
 // INSIDE its parent's turn, so reading either as a status would move a
 // pane on something that is not its own lifecycle (see the correlation list).
-const CLAUDE_EVENTS: [(&str, AgentEvent); 6] = [
+const CLAUDE_EVENTS: [(&str, AgentEvent); 9] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
     ("Stop", AgentEvent::TurnEnded),
     ("StopFailure", AgentEvent::TurnEnded),
     ("Notification", AgentEvent::NeedsInput),
     ("PermissionRequest", AgentEvent::NeedsInput),
+    ("PermissionDenied", AgentEvent::InputResolved),
+    ("Elicitation", AgentEvent::NeedsInput),
+    ("ElicitationResult", AgentEvent::InputResolved),
 ];
 
-pub const CLAUDE_CORRELATION_EVENTS: [&str; 2] = ["SubagentStart", "SubagentStop"];
+pub const CLAUDE_CORRELATION_EVENTS: [&str; 5] = [
+    "SubagentStart",
+    "SubagentStop",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+];
 
-const CODEX_EVENTS: [(&str, AgentEvent); 4] = [
+const CODEX_EVENTS: [(&str, AgentEvent); 5] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
     ("Stop", AgentEvent::TurnEnded),
+    ("Interrupt", AgentEvent::TurnInterrupted),
     ("PermissionRequest", AgentEvent::NeedsInput),
 ];
 
-pub const CODEX_CORRELATION_EVENTS: [&str; 3] = ["SubagentStart", "SubagentStop", "SessionEnd"];
+pub const CODEX_CORRELATION_EVENTS: [&str; 5] = [
+    "SubagentStart",
+    "SubagentStop",
+    "SessionEnd",
+    "PreToolUse",
+    "PostToolUse",
+];
 
-const OPENCODE_EVENTS: [(&str, AgentEvent); 5] = [
+const OPENCODE_EVENTS: [(&str, AgentEvent); 14] = [
     ("session.created", AgentEvent::SessionStarted),
     ("message.updated", AgentEvent::PromptSubmitted),
+    ("session.status", AgentEvent::Activity),
     ("permission.asked", AgentEvent::NeedsInput),
     ("permission.updated", AgentEvent::NeedsInput),
+    ("permission.replied", AgentEvent::InputResolved),
+    ("question.asked", AgentEvent::NeedsInput),
+    ("question.replied", AgentEvent::InputResolved),
+    ("question.rejected", AgentEvent::InputResolved),
+    ("question.v2.asked", AgentEvent::NeedsInput),
+    ("question.v2.replied", AgentEvent::InputResolved),
+    ("question.v2.rejected", AgentEvent::InputResolved),
     ("session.idle", AgentEvent::TurnEnded),
+    ("session.error", AgentEvent::TurnEnded),
 ];
 
 pub const OPENCODE_CORRELATION_EVENTS: [&str; 1] = ["SubagentStop"];
@@ -157,6 +205,18 @@ mod tests {
     }
 
     #[test]
+    fn opencode_status_is_activity_not_a_new_prompt() {
+        assert_eq!(
+            AgentEvent::from_provider(proto::AgentKind::Opencode, "session.status"),
+            Some(AgentEvent::Activity)
+        );
+        assert_ne!(
+            AgentEvent::from_provider(proto::AgentKind::Opencode, "session.status"),
+            Some(AgentEvent::PromptSubmitted)
+        );
+    }
+
+    #[test]
     fn every_provider_maps_only_its_own_spellings() {
         let expected: [(proto::AgentKind, &[(&str, AgentEvent)]); 6] = [
             (
@@ -168,6 +228,9 @@ mod tests {
                     ("StopFailure", AgentEvent::TurnEnded),
                     ("Notification", AgentEvent::NeedsInput),
                     ("PermissionRequest", AgentEvent::NeedsInput),
+                    ("PermissionDenied", AgentEvent::InputResolved),
+                    ("Elicitation", AgentEvent::NeedsInput),
+                    ("ElicitationResult", AgentEvent::InputResolved),
                 ],
             ),
             (
@@ -176,6 +239,7 @@ mod tests {
                     ("SessionStart", AgentEvent::SessionStarted),
                     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
                     ("Stop", AgentEvent::TurnEnded),
+                    ("Interrupt", AgentEvent::TurnInterrupted),
                     ("PermissionRequest", AgentEvent::NeedsInput),
                 ],
             ),
@@ -184,9 +248,18 @@ mod tests {
                 &[
                     ("session.created", AgentEvent::SessionStarted),
                     ("message.updated", AgentEvent::PromptSubmitted),
+                    ("session.status", AgentEvent::Activity),
                     ("permission.asked", AgentEvent::NeedsInput),
                     ("permission.updated", AgentEvent::NeedsInput),
+                    ("permission.replied", AgentEvent::InputResolved),
+                    ("question.asked", AgentEvent::NeedsInput),
+                    ("question.replied", AgentEvent::InputResolved),
+                    ("question.rejected", AgentEvent::InputResolved),
+                    ("question.v2.asked", AgentEvent::NeedsInput),
+                    ("question.v2.replied", AgentEvent::InputResolved),
+                    ("question.v2.rejected", AgentEvent::InputResolved),
                     ("session.idle", AgentEvent::TurnEnded),
+                    ("session.error", AgentEvent::TurnEnded),
                 ],
             ),
             (
@@ -248,8 +321,13 @@ mod tests {
         proto::AgentKind::Ssh,
     ];
 
-    const EXCLUSIVE_TURN_ENDS: [(proto::AgentKind, [&str; 2]); 1] =
-        [(proto::AgentKind::Claude, ["Stop", "StopFailure"])];
+    const EXCLUSIVE_TURN_ENDS: [(proto::AgentKind, [&str; 2]); 2] = [
+        (proto::AgentKind::Claude, ["Stop", "StopFailure"]),
+        (
+            proto::AgentKind::Opencode,
+            ["session.idle", "session.error"],
+        ),
+    ];
 
     #[test]
     fn every_provider_ends_a_turn_at_most_once() {
@@ -419,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn every_event_drives_a_status_and_only_the_two_report_a_notice() {
+    fn every_event_drives_a_status_and_only_terminal_attention_reports_a_notice() {
         assert_eq!(
             AgentEvent::SessionStarted.status(),
             proto::AgentStatus::Idle
@@ -428,32 +506,53 @@ mod tests {
             AgentEvent::PromptSubmitted.status(),
             proto::AgentStatus::Working
         );
+        assert_eq!(AgentEvent::Activity.status(), proto::AgentStatus::Working);
         assert_eq!(AgentEvent::TurnEnded.status(), proto::AgentStatus::Idle);
+        assert_eq!(
+            AgentEvent::TurnInterrupted.status(),
+            proto::AgentStatus::Idle
+        );
+        assert_eq!(
+            AgentEvent::InputResolved.status(),
+            proto::AgentStatus::Working
+        );
         assert_eq!(
             AgentEvent::NeedsInput.status(),
             proto::AgentStatus::NeedsInput
         );
 
         assert_eq!(
-            AgentEvent::TurnEnded.notice(),
+            AgentEvent::TurnEnded.notice("Stop"),
             Some(proto::AgentNoticeKind::Finished)
         );
         assert_eq!(
-            AgentEvent::NeedsInput.notice(),
+            AgentEvent::TurnEnded.notice("StopFailure"),
+            Some(proto::AgentNoticeKind::Error)
+        );
+        assert_eq!(
+            AgentEvent::TurnEnded.notice("session.error"),
+            Some(proto::AgentNoticeKind::Error)
+        );
+        assert_eq!(
+            AgentEvent::NeedsInput.notice("PermissionRequest"),
             Some(proto::AgentNoticeKind::NeedsInput)
         );
-        assert_eq!(AgentEvent::PromptSubmitted.notice(), None);
-        assert_eq!(AgentEvent::SessionStarted.notice(), None);
+        assert_eq!(AgentEvent::PromptSubmitted.notice("prompt"), None);
+        assert_eq!(AgentEvent::Activity.notice("session.status"), None);
+        assert_eq!(AgentEvent::InputResolved.notice("resolved"), None);
+        assert_eq!(AgentEvent::TurnInterrupted.notice("Interrupt"), None);
+        assert_eq!(AgentEvent::SessionStarted.notice("start"), None);
     }
 
     #[test]
-    fn needs_input_is_suppressed_only_when_already_idle() {
-        assert!(!AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Idle)));
+    fn only_an_ambiguous_idle_notification_is_suppressed() {
+        assert!(!AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Idle), true));
+        assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Idle), false));
 
-        assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Working)));
-        assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Spawning)));
-        assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::NeedsInput)));
-        assert!(AgentEvent::NeedsInput.applies(None));
+        assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Working), true));
+        assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Spawning), true));
+        assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::NeedsInput), true));
+        assert!(AgentEvent::NeedsInput.applies(None, true));
 
         for status in [
             None,
@@ -461,10 +560,17 @@ mod tests {
             Some(proto::AgentStatus::Working),
             Some(proto::AgentStatus::Spawning),
             Some(proto::AgentStatus::NeedsInput),
+            Some(proto::AgentStatus::Unavailable),
         ] {
-            assert!(AgentEvent::SessionStarted.applies(status));
-            assert!(AgentEvent::PromptSubmitted.applies(status));
-            assert!(AgentEvent::TurnEnded.applies(status));
+            assert!(AgentEvent::SessionStarted.applies(status, false));
+            assert!(AgentEvent::PromptSubmitted.applies(status, false));
+            assert!(AgentEvent::Activity.applies(status, false));
+            assert_eq!(
+                AgentEvent::InputResolved.applies(status, false),
+                status == Some(proto::AgentStatus::NeedsInput)
+            );
+            assert!(AgentEvent::TurnEnded.applies(status, false));
+            assert!(AgentEvent::TurnInterrupted.applies(status, false));
         }
     }
 }

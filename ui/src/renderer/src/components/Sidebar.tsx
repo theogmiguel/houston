@@ -295,7 +295,10 @@ interface Props {
       id: string;
       name: string;
       count?: number;
-      state?: "online" | "warning" | "idle";
+      state?: GridItem["state"];
+      statusLabel?: string;
+      attention?: number;
+      attentionTone?: GridItem["attentionTone"];
       sessionIds?: number[];
       tagIds?: number[];
     }[]
@@ -839,7 +842,10 @@ type GridItem = {
   id: string;
   name: string;
   count?: number;
-  state?: "online" | "warning" | "idle";
+  state?: "starting" | "working" | "needs-input" | "idle" | "unavailable" | "stopped";
+  statusLabel?: string;
+  attention?: number;
+  attentionTone?: "error" | "needs-input" | "info";
   sessionIds?: number[];
   tagIds?: number[];
 };
@@ -1019,22 +1025,72 @@ function CollapsedGridsRow({
   );
 }
 
-function GridStateDot({ state }: { state?: string }): React.JSX.Element {
+function GridStateDot({
+  state = "stopped",
+  label = "No live panes",
+}: {
+  state?: GridItem["state"];
+  label?: string;
+}): React.JSX.Element {
+  const active = state === "starting" || state === "working";
   return (
-    <span
-      aria-hidden
-      data-testid="grid-state-dot"
-      data-state={state ?? "idle"}
-      className="w-[6px] h-[6px] rounded-full flex-none"
-      style={{
-        background:
-          state === "online"
-            ? "var(--online)"
-            : state === "warning"
-              ? "var(--warning)"
-              : "var(--text-faint)",
-      }}
-    />
+    <Tooltip label={label}>
+      <span
+        role="img"
+        aria-label={label}
+        data-testid="grid-state-dot"
+        data-state={state}
+        className={`w-[6px] h-[6px] rounded-full flex-none ${active ? "loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]" : ""}`}
+        style={{
+          background:
+            state === "working"
+              ? "var(--info)"
+              : state === "starting"
+                ? "var(--accent)"
+                : state === "needs-input"
+                  ? "var(--warning)"
+                  : state === "idle"
+                    ? "var(--text-muted)"
+                    : state === "unavailable"
+                      ? "transparent"
+                      : "var(--text-faint)",
+          boxShadow:
+            state === "unavailable"
+              ? "inset 0 0 0 1px var(--text-faint)"
+              : undefined,
+          opacity: state === "stopped" ? 0.5 : undefined,
+        }}
+      />
+    </Tooltip>
+  );
+}
+
+function GridAttentionCount({
+  count = 0,
+  tone = "info",
+}: {
+  count?: number;
+  tone?: GridItem["attentionTone"];
+}): React.JSX.Element | null {
+  if (count === 0) return null;
+  const background =
+    tone === "error"
+      ? "var(--danger)"
+      : tone === "needs-input"
+        ? "var(--warning)"
+        : "var(--accent)";
+  return (
+    <Tooltip
+      label={`${count} unread pane notification${count === 1 ? "" : "s"}`}
+    >
+      <span
+        data-testid="grid-attention-count"
+        className="flex-none min-w-4 h-4 leading-4 rounded-full px-1 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-center tabular-nums text-white"
+        style={{ background }}
+      >
+        {count > 99 ? "99+" : count}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -1274,7 +1330,12 @@ function ExpandedGridsRow({
         if (hiddenByTagFilter(g.tagIds, activeTagIds)) return null;
         const gridOn =
           selected === w.path && selectedGridId === g.id;
-        const stateDot = <GridStateDot state={g.state ?? undefined} />;
+        const stateDot = (
+          <GridStateDot
+            state={g.state ?? undefined}
+            label={g.statusLabel ?? undefined}
+          />
+        );
         if (
           gridRenaming?.path === w.path &&
           gridRenaming.gridId === g.id &&
@@ -1335,13 +1396,20 @@ function ExpandedGridsRow({
             <span aria-hidden className="flex-none opacity-70">
               <Icon glyph={IconGrid} role="ui" />
             </span>
-            <span className="flex-1 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">
+            <span
+              data-testid="grid-name"
+              className="flex-1 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis"
+            >
               {g.name}
             </span>
             <GridTagChips
               tagIds={g.tagIds}
               tags={tags}
               onToggle={(t) => onToggleTagFilter(t.id)}
+            />
+            <GridAttentionCount
+              count={g.attention}
+              tone={g.attentionTone}
             />
             {g.count !== undefined && g.count > 1 && (
               <span data-testid="nav-count" className={COUNT_CHIP_CLS}>

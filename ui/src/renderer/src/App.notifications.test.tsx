@@ -95,6 +95,14 @@ function witemOnLabel(harness: AppHarness, label: string): boolean {
   return btn.getAttribute('aria-current') === 'true'
 }
 
+function focusPane(harness: AppHarness, session: number): void {
+  const pane = harness.container.querySelector(`[data-panekey="${session}"]`)
+  if (!(pane instanceof HTMLElement)) throw new Error(`pane ${session} not rendered`)
+  act(() => {
+    pane.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+  })
+}
+
 beforeEach(() => {
   resetHarness()
   localStorage.clear()
@@ -170,20 +178,23 @@ describe('App agent-notice desktop notifications (P4 #18)', () => {
     expect(instances[0].body).toBe('finished — awaiting you')
   })
 
-  it('permission granted + window focused + same workspace already selected: suppressed', async () => {
+  it('window focused + exact pane active: neither OS nor attention inbox reports it', async () => {
     const { instances } = installFakeNotification('granted')
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
     localStorage.setItem('tr-notify-desktop', '1')
     harness = await renderReadyApp()
 
     const isFocused = window.houston.isFocused as unknown as ReturnType<typeof vi.fn>
     isFocused.mockResolvedValue(true)
+    focusPane(harness, 1)
 
     deliverControl({ type: 'agent_notice', session: 1, kind: 'needs-input' })
     await flush()
 
     expect(instances).toHaveLength(0)
     openBell(harness)
-    expect(bellItemTexts(harness).some((t) => t.includes('needs your input'))).toBe(true)
+    expect(bellItemTexts(harness).some((t) => t.includes('needs your input'))).toBe(false)
+    hasFocus.mockRestore()
   })
 
   it('permission default: requests once, fires only after requestPermission resolves granted — the notice survives the pending gap', async () => {
@@ -255,6 +266,8 @@ describe('App agent-notice desktop notifications (P4 #18)', () => {
       ]
     })
     deliverControl({ type: 'workspace_list', workspaces: [makeWorkspace({ path: '/tmp/project' })] })
+    await flush()
+    focusPane(harness, 1)
 
     const { resolveNext, pendingCount } = installIsFocusedQueue()
 
@@ -305,6 +318,44 @@ describe('App agent-notice desktop notifications (P4 #18)', () => {
     expect(witemOnLabel(harness, 'other')).toBe(false)
   })
 
+  it('selecting a workspace does not mark its pane notifications read', async () => {
+    harness = await renderReadyApp()
+    deliverControl({
+      type: 'session_list',
+      sessions: [
+        makeSession({ id: 1, project_dir: '/tmp/project', title: 'session-1' }),
+        makeSession({ id: 2, project_dir: '/tmp/other', title: 'session-2' })
+      ]
+    })
+    deliverControl({
+      type: 'workspace_list',
+      workspaces: [
+        makeWorkspace({ path: '/tmp/project', name: 'project' }),
+        makeWorkspace({ path: '/tmp/other', name: 'other' })
+      ]
+    })
+    await flush()
+
+    const workspaceButton = (label: string): HTMLButtonElement => {
+      const button = Array.from(
+        harness!.container.querySelectorAll<HTMLButtonElement>('.witem[role="button"]')
+      ).find((item) => (item.textContent ?? '').includes(label))
+      if (!button) throw new Error(`workspace row "${label}" not found`)
+      return button
+    }
+
+    act(() => workspaceButton('other').click())
+    await flush()
+    deliverControl({ type: 'agent_notice', session: 1, kind: 'finished' })
+    await flush()
+    act(() => workspaceButton('project').click())
+    await flush()
+
+    openBell(harness)
+    const item = harness.container.querySelector('.bell-item')
+    expect(item?.className).toContain('border-l-2')
+  })
+
   it('the OS notification global is genuinely absent: no throw, inbox entry still recorded', async () => {
     removeFakeNotification()
     localStorage.setItem('tr-notify-desktop', '1')
@@ -340,5 +391,41 @@ describe('App agent-notice desktop notifications (P4 #18)', () => {
     expect(bellItemTexts(harness).filter((t) => t.includes('session-1') && t.includes('finished'))).toHaveLength(
       1
     )
+  })
+
+  it('keeps only the latest pending event for each pane', async () => {
+    harness = await renderReadyApp()
+
+    deliverControl({ type: 'agent_notice', session: 1, kind: 'finished' })
+    deliverControl({ type: 'agent_notice', session: 1, kind: 'error' })
+    await flush()
+
+    openBell(harness)
+    expect(bellItemTexts(harness).filter((t) => t.includes('session-1'))).toHaveLength(1)
+    expect(bellItemTexts(harness)[0]).toContain('hit an error')
+  })
+
+  it('correlates an agent completion followed by process exit into one notice', async () => {
+    harness = await renderReadyApp()
+
+    deliverControl({ type: 'agent_notice', session: 1, kind: 'finished' })
+    deliverControl({ type: 'session_state', session: 1, state: 'exited', exit_code: 0 })
+    await flush()
+
+    openBell(harness)
+    expect(bellItemTexts(harness).filter((t) => t.includes('session-1'))).toHaveLength(1)
+    expect(bellItemTexts(harness)[0]).toContain('finished — awaiting you')
+  })
+
+  it('replaces an early process-exit notice when richer agent completion arrives', async () => {
+    harness = await renderReadyApp()
+
+    deliverControl({ type: 'session_state', session: 1, state: 'exited', exit_code: 0 })
+    deliverControl({ type: 'agent_notice', session: 1, kind: 'finished' })
+    await flush()
+
+    openBell(harness)
+    expect(bellItemTexts(harness).filter((t) => t.includes('session-1'))).toHaveLength(1)
+    expect(bellItemTexts(harness)[0]).toContain('finished — awaiting you')
   })
 })

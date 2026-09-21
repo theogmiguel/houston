@@ -34,7 +34,7 @@ function baseProps(
     tags: TAGS,
     gridsByWorkspace: {
       '/a': [
-        { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [1, 2], count: 1, state: 'online' }
+        { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [1, 2], count: 1, state: 'working' }
       ]
     },
     customColors: {},

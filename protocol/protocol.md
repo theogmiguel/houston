@@ -1,4 +1,4 @@
-# Wire protocol v111
+# Wire protocol v112
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -326,7 +326,7 @@ failure not given a typed refusal comes back as `error`.
 | `swarm_message` | `message: SwarmMessage` | bcast — the mailbox layer recorded a message, status, escalation or completion |
 | `swarm_agent` | `agent: SwarmAgentInfo` | bcast — an orchestrated agent's status or activity changed |
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
-| `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Hooks-driven, plus the two named non-hook sources (process liveness, ACP stream) |
+| `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude transcript the hook names; every other provider stays absent, which the client renders as "not tracked" |
 | `agent_notice` | `session`, `kind: AgentNoticeKind` | bcast — an attention-worthy event for the client's notification inbox |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
@@ -390,7 +390,7 @@ data are internally tagged; the tag field is named in each entry below.
 ```
 AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | droid | copilot | aider | ssh
 SessionState       running | exited | killed | interrupted
-AgentStatus        kebab: spawning | working | idle | needs-input
+AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
 AgentNoticeKind    kebab: finished | needs-input | error
 ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
@@ -839,6 +839,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 112 | **Pane lifecycle reports uncertainty.** `AgentStatus` gains `unavailable`: a hook-capable or ACP pane enters `spawning` at process creation and moves there if no lifecycle signal arrives within the bounded grace period, instead of being guessed idle. Later provider evidence replaces it normally |
 | 111 | **The context downbar.** `SessionInfo` gains an optional `context: SessionContext` and a matching `session_context` broadcast, both runtime-only. `SessionContext` carries `used_tokens` (the input side of the most recent turn: `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`), a nullable `window_tokens` and `used_percent`, a `state` (`unknown`\|`idle`\|`working`\|`near_limit`\|`reset`), a `source` (`reported`\|`derived` — the window's provenance) and `as_of_ms`. The Claude daemon reads its own transcript path from the hook payload (`HookDrop` gains `transcript_path`) and broadcasts on turn boundaries; every other provider carries no `context` and the client renders "not tracked" |
 | 110 | **One update channel.** `UpdatePolicy` loses its `channel` field and `UpdateChannel` is deleted. The daemon always asks `releases/latest` and offers only a strictly newer release; a draft and a prerelease are refused unconditionally, so a release candidate can never reach a stable install. The stored `updates_channel` settings row is left in place, inert |
 | 109 | **"Write with AI" is removed.** Gone from the wire: `git_commit_message` and `git_pr_content` with their two server replies; `headless_roles_get`/`headless_role_set` with `ServerMsg::HeadlessRoles`; and with them `HeadlessRoleKind`, `HeadlessEngineOption` and `HeadlessRoleView`. The sparkles that wrote commit messages and pull-request text — and the Settings ▸ Houston's own agents section that chose their engine and model — are removed. The Writer was the last caller of the headless engine seam, so the engines and the decode vocabulary v108 preserved for them (`ChatQuestion`, `ChatQuestionOption`, `ChatQuestionKind`, `ChatUsage`) go too. There is no migration: the stored role keys simply have no reader. Pane agents, routines and the rest of source control are untouched |

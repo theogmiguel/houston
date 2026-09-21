@@ -202,9 +202,11 @@ function statusLabel(s: AgentStatus): string {
     case 'working':
       return 'working'
     case 'idle':
-      return 'idle — awaiting you'
+      return 'ready'
     case 'needs-input':
       return 'needs your input'
+    case 'unavailable':
+      return 'status unavailable'
   }
 }
 
@@ -212,13 +214,15 @@ function statusDotClass(status: AgentStatus): string {
   const pulse = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]'
   switch (status) {
     case 'working':
-      return `bg-[var(--ok)] ${pulse}`
+      return `bg-[var(--info)] ${pulse}`
     case 'spawning':
       return `bg-[var(--accent)] ${pulse}`
     case 'idle':
-      return 'bg-[var(--info)]'
+      return 'bg-[var(--text-muted)]'
     case 'needs-input':
       return 'bg-[var(--warn)]'
+    case 'unavailable':
+      return 'bg-transparent ring-1 ring-inset ring-[var(--text-faint)]'
   }
 }
 
@@ -234,6 +238,7 @@ export function StatusDot({
     <Tooltip label={statusLabel(status)}>
       <span
         className={`agent-dot w-[7px] h-[7px] rounded-full flex-none ${statusDotClass(status)}`}
+        role="img"
         aria-label={statusLabel(status)}
       />
     </Tooltip>

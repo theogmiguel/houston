@@ -1,4 +1,5 @@
 {
   "_note": "the plugin's own constructed payload for a user-role message.updated bus event (verified live: OpenCode fires this type for both roles, the plugin filters to user before forwarding). Not the raw bus event shape.",
-  "session_id": "ses_root01"
+  "session_id": "ses_root01",
+  "prompt_id": "msg_user01"
 }

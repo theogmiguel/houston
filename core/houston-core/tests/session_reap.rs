@@ -12,7 +12,7 @@ fn daemon(state_dir: &Path) -> Arc<Daemon> {
 }
 
 fn spawn_quiet(daemon: &Arc<Daemon>, dir: &Path) -> proto::SessionInfo {
-    daemon
+    let info = daemon
         .create_session(CreateParams {
             agent: proto::AgentKind::Codex,
             project_dir: dir.to_path_buf(),
@@ -26,7 +26,17 @@ fn spawn_quiet(daemon: &Arc<Daemon>, dir: &Path) -> proto::SessionInfo {
             profile: None,
             prompt: None,
         })
-        .unwrap()
+        .unwrap();
+    assert_eq!(
+        daemon.handle_hook_from(
+            info.id,
+            proto::AgentKind::Codex,
+            "SessionStart",
+            dir.to_str(),
+        ),
+        houston_core::hook_drop::DropVerdict::Applied,
+    );
+    info
 }
 
 fn poll<F: FnMut() -> bool>(what: &str, mut cond: F) {

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 111;
+pub const PROTOCOL_VERSION: u32 = 112;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -751,6 +751,7 @@ pub enum AgentStatus {
     Working,
     Idle,
     NeedsInput,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

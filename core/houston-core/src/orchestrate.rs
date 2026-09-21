@@ -3997,6 +3997,7 @@ mod tests {
         assert!(settled(proto::AgentStatus::NeedsInput));
         assert!(!settled(proto::AgentStatus::Working));
         assert!(!settled(proto::AgentStatus::Spawning));
+        assert!(!settled(proto::AgentStatus::Unavailable));
     }
 
     #[test]
@@ -4802,7 +4803,10 @@ pub enum EpisodeEnd {
     NextPermissionRequest,
     TurnEnded,
     PromptSubmitted,
-    PostToolUse(String),
+    PostToolUse {
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4827,7 +4831,6 @@ impl PermissionEpisodes {
         reason: Option<String>,
         now: u64,
     ) -> (EpisodeKey, Vec<Episode>) {
-        let retired = self.resolve_on(&EpisodeEnd::NextPermissionRequest);
         let key = match tool_use_id {
             Some(id) => EpisodeKey::ToolUseId(id.to_string()),
             None => {
@@ -4841,6 +4844,13 @@ impl PermissionEpisodes {
                 *generation += 1;
                 key
             }
+        };
+        let retired = match &key {
+            EpisodeKey::ToolUseId(id) => self.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some(id.clone()),
+                tool_name: None,
+            }),
+            EpisodeKey::Generated { .. } => self.resolve_on(&EpisodeEnd::NextPermissionRequest),
         };
         self.open.push(Episode {
             key: key.clone(),
@@ -4866,8 +4876,20 @@ impl PermissionEpisodes {
         let (resolved, kept): (Vec<Episode>, Vec<Episode>) = std::mem::take(&mut self.open)
             .into_iter()
             .partition(|ep| match end {
-                EpisodeEnd::PostToolUse(id) => ep.key == EpisodeKey::ToolUseId(id.clone()),
-                _ => true,
+                EpisodeEnd::PostToolUse {
+                    tool_use_id,
+                    tool_name,
+                } => match &ep.key {
+                    EpisodeKey::ToolUseId(id) => tool_use_id.as_ref() == Some(id),
+                    EpisodeKey::Generated {
+                        tool_name: expected,
+                        ..
+                    } => tool_name.as_ref() == Some(expected),
+                },
+                EpisodeEnd::NextPermissionRequest => {
+                    matches!(ep.key, EpisodeKey::Generated { .. })
+                }
+                EpisodeEnd::TurnEnded | EpisodeEnd::PromptSubmitted => true,
             });
         self.open = kept;
         resolved
@@ -5161,13 +5183,46 @@ mod permission_episode_tests {
         let (key, _) = eps.open(Some("toolu_1"), Some("req-1"), "Bash", None, 0);
         assert_eq!(key, EpisodeKey::ToolUseId("toolu_1".into()));
         assert!(eps
-            .resolve_on(&EpisodeEnd::PostToolUse("toolu_other".into()))
+            .resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("toolu_other".into()),
+                tool_name: Some("Bash".into()),
+            })
             .is_empty());
         assert_eq!(
-            eps.resolve_on(&EpisodeEnd::PostToolUse("toolu_1".into()))
-                .len(),
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("toolu_1".into()),
+                tool_name: Some("Bash".into()),
+            })
+            .len(),
             1
         );
+    }
+
+    #[test]
+    fn independently_keyed_input_requests_remain_open_until_each_one_resolves() {
+        let mut eps = PermissionEpisodes::default();
+        eps.open(Some("request-1"), None, "question", None, 0);
+        eps.open(Some("request-2"), None, "permission", None, 1);
+        assert_eq!(eps.open_count(), 2);
+
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("request-1".into()),
+                tool_name: None,
+            })
+            .len(),
+            1
+        );
+        assert_eq!(eps.open_count(), 1);
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("request-2".into()),
+                tool_name: None,
+            })
+            .len(),
+            1
+        );
+        assert_eq!(eps.open_count(), 0);
     }
 
     #[test]

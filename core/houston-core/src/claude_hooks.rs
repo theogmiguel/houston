@@ -198,7 +198,7 @@ fn hook_command(exe: &str, event: &str, sentinel: &str) -> String {
 
 fn tr_hook_group(exe: &str, event: &str, sentinel: &str) -> serde_json::Value {
     let sync_stdout = matches!(event, "UserPromptSubmit" | "Stop" | "StopFailure");
-    serde_json::json!({
+    let mut group = serde_json::json!({
         "hooks": [
             {
                 "type": "command",
@@ -207,7 +207,19 @@ fn tr_hook_group(exe: &str, event: &str, sentinel: &str) -> serde_json::Value {
                 "timeout": 5
             }
         ]
-    })
+    });
+    let matcher = match event {
+        "PreToolUse" => Some("AskUserQuestion|ExitPlanMode"),
+        "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => Some("*"),
+        _ => None,
+    };
+    if let Some(matcher) = matcher {
+        group
+            .as_object_mut()
+            .expect("hook group is an object")
+            .insert("matcher".to_string(), serde_json::json!(matcher));
+    }
+    group
 }
 
 fn group_is_ours(group: &serde_json::Value, sentinel: &str) -> bool {
@@ -414,6 +426,7 @@ pub fn run_hook_client(args: &[String]) {
         task_id: payload.task_id,
         agent_id: payload.agent_id,
         tool_use_id: payload.tool_use_id,
+        request_id: payload.request_id,
         stop_continued,
         session_id: payload.session_id,
         fully_idle: payload.fully_idle,
@@ -561,6 +574,7 @@ pub(crate) struct HookPayload {
     pub prompt_id: Option<String>,
     pub agent_id: Option<String>,
     pub tool_use_id: Option<String>,
+    pub request_id: Option<String>,
     pub fully_idle: Option<bool>,
     pub tool_name: Option<String>,
     pub transcript_path: Option<String>,
@@ -637,9 +651,12 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
         .as_deref()
         .is_some_and(|p| p.trim_start().starts_with(TASK_NOTIFICATION_TAG));
     let tool_call = parsed.as_ref().and_then(|v| v.get("toolCall"));
-    let tool_name = tool_call
-        .and_then(|t| t.get("name"))
-        .and_then(|v| v.as_str());
+    let tool_name = grok_field("tool_name", "toolName").or_else(|| {
+        tool_call
+            .and_then(|t| t.get("name"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    });
     let questions = tool_call
         .and_then(|t| t.get("args"))
         .and_then(|a| a.get("questions"))
@@ -689,15 +706,11 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .unwrap_or_default(),
         task_id: prompt.as_deref().and_then(first_task_id),
         internal_prompt,
-        reason: clean(
-            grok_field("tool_name", "toolName")
-                .or_else(|| field("message"))
-                .or_else(|| {
-                    (provider == proto::AgentKind::Antigravity)
-                        .then(|| questions.clone())
-                        .flatten()
-                }),
-        ),
+        reason: clean(if provider == proto::AgentKind::Antigravity {
+            questions.clone()
+        } else {
+            tool_name.clone().or_else(|| field("message"))
+        }),
         notification_type: grok_field("notification_type", "notificationType"),
         stop_hook_active: grok_bool("stop_hook_active", "stopHookActive").unwrap_or(false),
         prompt_id: grok_field("prompt_id", "promptId").or_else(|| field("turn_id")),
@@ -707,8 +720,15 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
                 .then(|| step_idx.map(|n| n.to_string()))
                 .flatten()
         }),
+        // Prefer Claude's elicitation ID so overlapping MCP dialogs remain distinct;
+        // generic request IDs preserve compatibility with other payloads.
+        request_id: field("elicitation_id")
+            .filter(|id| !id.is_empty())
+            .or_else(|| field("request_id").filter(|id| !id.is_empty()))
+            .or_else(|| field("requestID").filter(|id| !id.is_empty()))
+            .filter(|id| !id.is_empty()),
         fully_idle: field_bool("fullyIdle"),
-        tool_name: tool_name.map(String::from),
+        tool_name,
         transcript_path: field("transcriptPath"),
         prompt: clean(prompt),
     }
@@ -883,10 +903,29 @@ mod tests {
                 "StopFailure",
                 "Notification",
                 "PermissionRequest",
+                "PermissionDenied",
+                "Elicitation",
+                "ElicitationResult",
                 "SubagentStart",
                 "SubagentStop",
+                "PreToolUse",
+                "PostToolUse",
+                "PostToolUseFailure",
             ]
         );
+    }
+
+    #[test]
+    fn interactive_and_resolution_hooks_use_precise_matchers() {
+        let pre = tr_hook_group(EXE, "PreToolUse", &rel());
+        assert_eq!(pre["matcher"], "AskUserQuestion|ExitPlanMode");
+        for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+            let group = tr_hook_group(EXE, event, &rel());
+            assert_eq!(group["matcher"], "*", "{event}");
+        }
+        assert!(tr_hook_group(EXE, "Elicitation", &rel())
+            .get("matcher")
+            .is_none());
     }
 
     #[test]
@@ -1399,6 +1438,14 @@ mod tests {
             .unwrap_or_else(|e| panic!("reading the fixture {}: {e}", path.display()))
     }
 
+    fn docs_fixture(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/hooks/claude")
+            .join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading the fixture {}: {e}", path.display()))
+    }
+
     #[test]
     fn the_park_stop_looks_exactly_like_a_finish() {
         let p = parse_hook_payload(&fixture("05-Stop"), proto::AgentKind::Claude);
@@ -1456,6 +1503,7 @@ mod tests {
     fn a_block_reports_its_tool_and_falls_back_to_the_message() {
         let req = parse_hook_payload(&fixture("08-PermissionRequest"), proto::AgentKind::Claude);
         assert_eq!(req.reason.as_deref(), Some("Bash"));
+        assert_eq!(req.tool_name.as_deref(), Some("Bash"));
         assert_eq!(
             req.tool_use_id.as_deref(),
             Some("toolu_01PermissionProbeBash01")
@@ -1474,6 +1522,81 @@ mod tests {
 
         let idle = parse_hook_payload(&fixture("10-Notification-idle"), proto::AgentKind::Claude);
         assert_eq!(idle.notification_type.as_deref(), Some("idle_prompt"));
+    }
+
+    #[test]
+    fn interactive_tool_payloads_lift_the_top_level_tool_identity() {
+        let pre = parse_hook_payload(
+            &docs_fixture("claude-docs-11-PreToolUse-AskUserQuestion.json"),
+            proto::AgentKind::Claude,
+        );
+        assert_eq!(pre.tool_name.as_deref(), Some("AskUserQuestion"));
+        assert_eq!(pre.tool_use_id.as_deref(), Some("toolu-question-1"));
+        assert_eq!(pre.prompt_id.as_deref(), Some("prompt-1"));
+
+        let post = parse_hook_payload(
+            &docs_fixture("claude-docs-12-PostToolUse-AskUserQuestion.json"),
+            proto::AgentKind::Claude,
+        );
+        assert_eq!(post.tool_name, pre.tool_name);
+        assert_eq!(post.tool_use_id, pre.tool_use_id);
+
+        let elicitation = parse_hook_payload(
+            &docs_fixture("claude-docs-13-Elicitation.json"),
+            proto::AgentKind::Claude,
+        );
+        assert_eq!(
+            elicitation.reason.as_deref(),
+            Some("Choose a deployment target")
+        );
+        assert_eq!(elicitation.request_id.as_deref(), Some("elicitation-1"));
+        let result = parse_hook_payload(
+            &docs_fixture("claude-docs-14-ElicitationResult.json"),
+            proto::AgentKind::Claude,
+        );
+        assert_eq!(result.session_id, elicitation.session_id);
+        assert_eq!(result.request_id.as_deref(), Some("elicitation-1"));
+    }
+
+    #[test]
+    fn concurrent_elicitations_keep_their_native_ids_even_when_results_arrive_out_of_order() {
+        let first = parse_hook_payload(
+            &docs_fixture("claude-docs-15-Elicitation-concurrent-a.json"),
+            proto::AgentKind::Claude,
+        );
+        let second = parse_hook_payload(
+            &docs_fixture("claude-docs-16-Elicitation-concurrent-b.json"),
+            proto::AgentKind::Claude,
+        );
+        let second_result = parse_hook_payload(
+            &docs_fixture("claude-docs-17-ElicitationResult-concurrent-b.json"),
+            proto::AgentKind::Claude,
+        );
+        let first_result = parse_hook_payload(
+            &docs_fixture("claude-docs-18-ElicitationResult-concurrent-a.json"),
+            proto::AgentKind::Claude,
+        );
+
+        assert_eq!(first.request_id.as_deref(), Some("elicitation-a"));
+        assert_eq!(second.request_id.as_deref(), Some("elicitation-b"));
+        assert_eq!(second_result.request_id, second.request_id);
+        assert_eq!(first_result.request_id, first.request_id);
+        assert_ne!(second_result.request_id, first_result.request_id);
+    }
+
+    #[test]
+    fn elicitation_id_takes_priority_but_legacy_request_ids_still_fallback() {
+        let native = parse_hook_payload(
+            r#"{"elicitation_id":"native","request_id":"legacy","requestID":"camel"}"#,
+            proto::AgentKind::Claude,
+        );
+        assert_eq!(native.request_id.as_deref(), Some("native"));
+
+        let legacy = parse_hook_payload(
+            r#"{"elicitation_id":"","requestID":"camel"}"#,
+            proto::AgentKind::Claude,
+        );
+        assert_eq!(legacy.request_id.as_deref(), Some("camel"));
     }
 
     #[test]

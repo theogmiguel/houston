@@ -65,6 +65,10 @@ pub struct HookDrop {
     pub agent_id: Option<String>,
     #[serde(default)]
     pub tool_use_id: Option<String>,
+    // Provider-native identifier for a permission or question request. Unlike
+    // `tool_use_id`, this survives OpenCode's separate asked/replied events.
+    #[serde(default)]
+    pub request_id: Option<String>,
     #[serde(default)]
     pub stop_continued: bool,
     #[serde(default)]
@@ -102,6 +106,7 @@ impl Default for HookDrop {
             task_id: None,
             agent_id: None,
             tool_use_id: None,
+            request_id: None,
             stop_continued: false,
             session_id: None,
             fully_idle: None,

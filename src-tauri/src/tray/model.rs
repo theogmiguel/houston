@@ -15,6 +15,7 @@ pub enum TrayStatus {
     Running,
     Idle,
     NeedsInput,
+    Unknown,
     Done,
     Error,
 }
@@ -25,6 +26,7 @@ impl TrayStatus {
             TrayStatus::Running => '●',
             TrayStatus::Idle => '○',
             TrayStatus::NeedsInput => '◐',
+            TrayStatus::Unknown => '?',
             TrayStatus::Done => '✓',
             TrayStatus::Error => '✕',
         }
@@ -122,6 +124,14 @@ fn attention_count(payload: &TrayPayload) -> usize {
     payload.sessions.iter().filter(|s| s.needs_input).count()
 }
 
+fn unknown_count(payload: &TrayPayload) -> usize {
+    payload
+        .sessions
+        .iter()
+        .filter(|s| s.status == TrayStatus::Unknown)
+        .count()
+}
+
 pub fn header_text(payload: &TrayPayload) -> String {
     match payload.connection {
         TrayConnection::Failed => "Houston · daemon not running".into(),
@@ -144,6 +154,10 @@ pub fn header_text(payload: &TrayPayload) -> String {
                 } else {
                     format!("{attention} need input")
                 });
+            }
+            let unknown = unknown_count(payload);
+            if unknown > 0 {
+                parts.push(format!("{unknown} status unknown"));
             }
             if parts.is_empty() {
                 parts.push(format!("{} idle", plural(payload.sessions.len(), "agent")));
@@ -177,8 +191,9 @@ fn status_rank(status: TrayStatus) -> u8 {
     match status {
         TrayStatus::NeedsInput => 0,
         TrayStatus::Running => 1,
-        TrayStatus::Idle => 2,
-        TrayStatus::Done | TrayStatus::Error => 3,
+        TrayStatus::Unknown => 2,
+        TrayStatus::Idle => 3,
+        TrayStatus::Done | TrayStatus::Error => 4,
     }
 }
 
@@ -339,6 +354,16 @@ mod tests {
     }
 
     #[test]
+    fn header_does_not_call_an_unreported_agent_idle() {
+        assert_eq!(
+            header_text(&ready(vec![
+                session(1, "claude", "a", TrayStatus::Unknown,)
+            ])),
+            "Houston · 1 status unknown"
+        );
+    }
+
+    #[test]
     fn header_names_the_connection_before_it_names_agents() {
         for (connection, expected) in [
             (TrayConnection::Failed, "Houston · daemon not running"),
@@ -359,11 +384,12 @@ mod tests {
             TrayStatus::Running,
             TrayStatus::Idle,
             TrayStatus::NeedsInput,
+            TrayStatus::Unknown,
             TrayStatus::Done,
             TrayStatus::Error,
         ];
         let glyphs: Vec<char> = all.iter().map(|s| s.glyph()).collect();
-        assert_eq!(glyphs, vec!['●', '○', '◐', '✓', '✕']);
+        assert_eq!(glyphs, vec!['●', '○', '◐', '?', '✓', '✕']);
         let mut unique = glyphs.clone();
         unique.sort_unstable();
         unique.dedup();

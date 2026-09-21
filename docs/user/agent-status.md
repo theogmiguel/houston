@@ -14,12 +14,28 @@ A pane can show:
 - **Spawning** — the session just started; Houston is waiting for the first report from
   the CLI.
 - **Working** — a turn is in progress.
-- **Idle** — waiting for you: a turn finished, or output went quiet.
+- **Idle** — ready for another prompt after the CLI reported that the turn ended.
 - **Needs input** — the agent asked a question or is waiting on a permission decision. It
-  stays in this state until you address it — it is not a status that clears on its own.
+  stays in this state until you address it; providers that report the answer move back to
+  Working immediately.
+- **Status unavailable** — the CLI did not report lifecycle within the startup window.
+  Check its hook setup; Houston does not guess from terminal output.
 
 A CLI with no hook support shows none of this: its pane runs, but never reports Working,
-Idle or Needs input.
+Idle or Needs input. Claude Code reports tool questions, permission prompts and MCP
+elicitations. Codex reports approvals, interruptions and `request_user_input` questions.
+OpenCode reports permissions, structured questions, busy/retry, completion and errors.
+
+The pane and grid indicators use the same language: blue pulse for starting or working,
+neutral gray for ready, amber for needs input, and a hollow gray dot when status is
+unavailable. Green is reserved for successful completion and red for failure. A grid's
+tooltip lists the contributing pane states, so the indicator does not rely on color alone.
+
+An unread pane notification appears as a count on the grid that contains the pane. A
+completion count uses blue, needs-input uses amber, and an error uses red. The attention
+inbox keeps at most the latest pending event for each pane instead of building an activity
+log. Opening a workspace does not clear these counts; focusing the affected pane does and
+removes its pending item.
 
 ## Settings ▸ Agent setup
 
@@ -36,7 +52,7 @@ This screen lists every CLI Houston knows how to wire, and what each row means:
 Turning the switch on writes into that CLI's own config, and turning it off removes
 exactly what Houston added:
 
-- **Claude Code** — adds eight hook entries to each workspace Houston opens.
+- **Claude Code** — adds managed lifecycle hook entries to each workspace Houston opens.
 - **Codex** — writes `~/.codex/hooks.json`, one entry per lifecycle event. An existing
   `notify` line in your `config.toml` is parked (commented out) rather than overwritten,
   and restored when you turn the hook off. Codex also requires you to accept the hook
@@ -60,7 +76,8 @@ reruns the install.
 
 Desktop notifications pop an OS notification when an agent finishes, needs input, or
 hits an error, for any detected agent. They are suppressed while you are looking at the
-session in question. Play sound gives each alert its own sound, previewable per row
+exact pane in question, not merely another pane in the same workspace. Play sound gives
+each alert its own sound, previewable per row
 before you turn it on. If the OS has denied Houston permission to notify at all, a
 **Blocked by the OS** row appears: nothing will show until you re-allow notifications for
 Houston at the OS level.
