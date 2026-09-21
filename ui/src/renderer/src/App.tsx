@@ -138,8 +138,6 @@ import {
 } from "./components/SessionPane";
 import { SurfaceBoundary } from "./components/SurfaceBoundary";
 import { Shell } from "./components/Shell/Shell";
-import { ContextBar } from "./components/ContextBar";
-import { useContextBarVisible } from "./contextBarPref";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
 import type { HandoffSource } from "./components/PaneHandoff";
@@ -627,7 +625,6 @@ export function App(): React.JSX.Element {
     handleExpand,
     expandedIn,
   } = useShellFocus();
-  const contextBarVisible = useContextBarVisible();
   const railWidth = useRailWidth();
   const [notices, setNotices] = useState<Notice[]>([]);
   const recentAgentNoticeRef = useRef(new Map<number, RecentAgentNotice>());
@@ -3178,7 +3175,6 @@ export function App(): React.JSX.Element {
           onBackgroundUnavailable={onBackgroundUnavailable}
           railWidth={railWidth}
           railCollapsed={sidebarRail}
-          downbar={contextBarVisible}
         >
           <RailResizeHandle
             width={railWidth}
@@ -4278,16 +4274,6 @@ export function App(): React.JSX.Element {
             />
           )}
 
-          {contextBarVisible && (
-            <div
-              data-testid="context-downbar"
-              className="[grid-area:downbar] min-w-0 border-t border-t-[var(--divider)] bg-[var(--material-shell-bg)]"
-            >
-              <ContextBar
-                context={activeId != null ? sessions.get(activeId)?.context ?? null : null}
-              />
-            </div>
-          )}
         </Shell>
       </KeymapOverridesContext.Provider>
     </TerminalTuningContext.Provider>

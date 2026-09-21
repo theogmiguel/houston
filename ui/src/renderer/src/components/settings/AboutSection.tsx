@@ -324,7 +324,7 @@ export function AboutSection({
         />
         <Row
           title="Check for updates"
-          desc="One request a day to the releases API, plus whenever you press the button above. Off means Houston never asks, and nothing about you or your machine is sent either way."
+          desc="Checks for new releases at startup and every 6 hours. You can also use Check now."
         >
           <Toggle
             on={policy.check}

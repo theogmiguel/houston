@@ -935,6 +935,7 @@ pub struct Daemon {
     last_inbox_retention: AtomicU64,
     mcp_checks: Mutex<HashMap<String, (String, proto::McpConnectionCheck)>>,
     cli_probes: Mutex<crate::cli_probe::ProbeCache>,
+    model_catalog: Arc<crate::model_catalog::ModelCatalog>,
     db: Db,
     next_id: AtomicU32,
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
@@ -1016,6 +1017,8 @@ pub struct Daemon {
     safe_mode_flags: SafeModeFlags,
     pub(crate) update_state: Mutex<proto::UpdateState>,
     pub(crate) update_wake: Arc<tokio::sync::Notify>,
+    pub(crate) update_check_lock: tokio::sync::Mutex<()>,
+    pub(crate) release_cache: tokio::sync::Mutex<crate::updates::ReleaseCache>,
     tx: broadcast::Sender<Outbound>,
 }
 
@@ -2143,6 +2146,7 @@ impl Daemon {
             mcp_tools: crate::mcp_server::ToolRegistry::with_builtins(),
             mcp_checks: Mutex::new(HashMap::new()),
             cli_probes: Mutex::new(crate::cli_probe::ProbeCache::default()),
+            model_catalog: Arc::new(crate::model_catalog::ModelCatalog::new(&state_dir)),
             voice: crate::voice::runtime::Runtime::new(),
             mcp_progress_tick_ms: AtomicU64::new(
                 crate::mcp_server::PROGRESS_TICK_DEFAULT.as_millis() as u64,
@@ -2227,6 +2231,8 @@ impl Daemon {
             _hook_drop_watcher: Mutex::new(None),
             update_state: Mutex::new(proto::UpdateState::Unknown),
             update_wake: Arc::new(tokio::sync::Notify::new()),
+            update_check_lock: tokio::sync::Mutex::new(()),
+            release_cache: tokio::sync::Mutex::new(crate::updates::ReleaseCache::default()),
             run_state_started_at: now_ms(),
             run_state_expected_restart: AtomicBool::new(false),
             startup_cause,
@@ -5647,29 +5653,46 @@ impl Daemon {
         }
     }
 
-    /// Update a Claude session's context from a hook drop. Claude only in this
-    /// slice; every other provider stays `not tracked` by construction.
+    pub async fn refresh_model_catalog(&self, force: bool) {
+        let catalog = Arc::clone(&self.model_catalog);
+        let enabled = self.update_policy().check;
+        let _ = tokio::task::spawn_blocking(move || catalog.load(enabled, force && enabled)).await;
+    }
+
+    /// The provider owns the transcript path and usage schema. Catalog limits
+    /// are only a fallback when the CLI does not report its effective window.
     fn note_context_from_hook(
         &self,
         id: u32,
         provider: proto::AgentKind,
         d: &crate::hook_drop::HookDrop,
     ) {
-        if provider != proto::AgentKind::Claude {
+        if !matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex) {
             return;
         }
         match crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
             Some(crate::agent_events::AgentEvent::PromptSubmitted) => self.set_context_working(id),
             Some(crate::agent_events::AgentEvent::TurnEnded) => {
                 let reading = d.transcript_path.as_deref().and_then(|p| {
-                    crate::context_window::read_claude_context(std::path::Path::new(p))
+                    let path = std::path::Path::new(p);
+                    match provider {
+                        proto::AgentKind::Claude => {
+                            crate::context_window::read_claude_context(path)
+                        }
+                        proto::AgentKind::Codex => crate::context_window::read_codex_context(path),
+                        _ => None,
+                    }
                 });
                 let Some(reading) = reading else {
                     self.set_context(id, proto::SessionContext::unknown());
                     return;
                 };
-                let window = crate::context_window::model_window(&reading.model);
-                let used = reading.used_tokens;
+                let window = reading.reported_window.or_else(|| {
+                    (provider == proto::AgentKind::Claude)
+                        .then(|| self.model_catalog.window(&reading.model))
+                        .flatten()
+                });
+                let used = window.map_or(reading.used_tokens, |w| reading.used_tokens.min(w));
                 let state = if reading.reset {
                     proto::ContextState::Reset
                 } else if crate::context_window::near_limit(used, window) {
@@ -5682,7 +5705,7 @@ impl Daemon {
                     window_tokens: window,
                     used_percent: window.map(|w| crate::context_window::percent_used(used, w)),
                     state,
-                    source: if window.is_some() {
+                    source: if window.is_some() && reading.reported_window.is_none() {
                         proto::ContextSource::Derived
                     } else {
                         proto::ContextSource::Reported
@@ -6899,6 +6922,8 @@ impl Daemon {
         #[cfg(not(windows))]
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // A launcher may disable its own log colours; each pane is a new colour-capable terminal.
+        cmd.env_remove("NO_COLOR");
         for (k, v) in &extra_env {
             cmd.env(k, v);
         }
@@ -10100,7 +10125,9 @@ impl Daemon {
         let outcome = crate::usage::scan(&crate::usage::ScanRequest {
             since_ms,
             until_ms,
-            refresh_pricing,
+            catalog: self
+                .model_catalog
+                .load(self.update_policy().check, refresh_pricing),
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
         });

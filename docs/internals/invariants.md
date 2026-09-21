@@ -121,7 +121,7 @@ Houston does not parse `~/.claude/projects/*.jsonl` and does not speak Claude Co
 `control_request` stdio protocol. Integration goes through hooks, `--permission-prompt-tool`,
 documented flags (`--print --output-format stream-json`), ACP, and official SDKs.
 
-Four recorded carve-outs stand. A fifth needs the same recorded treatment.
+Five recorded carve-outs stand. Further exceptions need the same recorded treatment.
 
 | # | File | Bound |
 |---|---|---|
@@ -129,6 +129,7 @@ Four recorded carve-outs stand. A fifth needs the same recorded treatment.
 | 2 | `~/.claude.json`, `~/.codex/config.toml` | Claude's key `mcpServers` and Codex's table `[mcp_servers]` only; read on MCP-surface open, explicit refresh, and once at boot; **writes go through `claude mcp add`/`remove` and `codex mcp add`, never the file**; an existing `houston` entry is never overwritten (unless stale release-port refresh for Codex) |
 | 3 | `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**/*.jsonl` | Settings → Usage streams them for token counts. Read-only and only while a client asked (no timer, watcher or boot scan); counts only — a line becomes a tally and is dropped; fail-soft; **no semantics** — drives no status or behaviour. Terms: `core/houston-core/src/usage/mod.rs` |
 | 4 | `<the CLI's own transcriptPath>, Antigravity only` | The path comes from the provider's own hook payload and is never constructed by Houston; the last assistant entry only; read once, at a turn end, in the helper process; fail-soft (any error is no last message, never an error to the CLI); capped at the submit cap. Terms: `core/houston-core/src/antigravity_transcript.rs` |
+| 5 | `<the CLI's own transcript_path>, Claude and Codex only` | Read only on turn completion, from the hook-reported path; at most the last 8 MiB. Claude's latest main-agent usage and Codex's latest `token_count` provide context occupancy. Retain only token counts, model id and compaction state; never drive agent status, retain content, scan directories or watch transcripts. Missing data hides the indicator. Terms: `core/houston-core/src/context_window.rs` |
 
 ### App-initiated config writes use reversible managed markers
 

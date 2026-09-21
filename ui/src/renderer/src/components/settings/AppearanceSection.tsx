@@ -22,7 +22,10 @@ import {
   useHiddenRailViews
 } from '../../railView'
 import { WindowBackgroundGroup } from './WindowBackgroundGroup'
-import { setContextBarVisible, useContextBarVisible } from '../../contextBarPref'
+import {
+  setContextIndicatorVisible,
+  useContextIndicatorVisible
+} from '../../contextIndicatorPref'
 
 const CHROME_THEME_TAGS: Record<ChromeTheme, string> = {
   graphite: 'Default',
@@ -56,17 +59,17 @@ export interface AppearanceSectionProps {
   onUiZoom: (z: number) => void
 }
 
-function ContextBarToggle(): React.JSX.Element {
-  const visible = useContextBarVisible()
+function ContextIndicatorToggle(): React.JSX.Element {
+  const visible = useContextIndicatorVisible()
   return (
     <Row
-      title="Show context bar"
-      desc="A strip at the bottom reads the focused agent's context usage. Hidden providers read “not tracked”."
+      title="Show context indicator"
+      desc="A ring in each supported agent pane shows its context usage. Hover or focus it for details."
     >
       <Toggle
         on={visible}
-        data-testid="context-bar-toggle"
-        onChange={setContextBarVisible}
+        data-testid="context-indicator-toggle"
+        onChange={setContextIndicatorVisible}
       />
     </Row>
   )
@@ -220,7 +223,7 @@ export function AppearanceSection({
             onChange={(pct) => onUiZoom(ZOOM_STOPS.find((s) => s.pct === pct)!.factor)}
           />
         </Row>
-        <ContextBarToggle />
+        <ContextIndicatorToggle />
       </Group>
     </>
   )

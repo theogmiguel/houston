@@ -56,6 +56,7 @@ import { HEAD_BADGE_CLS } from './headBadge'
 import { HeaderDelegationBadge, type PaneRoster } from './DelegationCard'
 import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
+import { ContextIndicator } from './ContextIndicator'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -418,7 +419,7 @@ function SessionPaneImpl({
       <header
         className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[10px] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b border-b-[var(--divider)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [.pane-slot.drag-src_&]:cursor-grabbing [transition:background_0.2s] @container ${PANE_HEAD_BG_CLS[focusTier]}`}
         onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest('button, input')) return
+          if ((e.target as HTMLElement).closest('button, input, [data-pane-head-control]')) return
           onHeaderPointerDown(info.id, e)
         }}
       >
@@ -464,6 +465,7 @@ function SessionPaneImpl({
           )}
         </span>
         <span className="head-actions ml-auto flex items-center gap-px flex-none">
+          <ContextIndicator context={info.context} />
           {ended && (
             <span
               data-testid="pane-state"

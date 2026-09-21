@@ -3,6 +3,11 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
+import type { SessionContext } from '../houston/generated/SessionContext'
+import {
+  setContextIndicatorForTests,
+  setContextIndicatorVisible
+} from '../contextIndicatorPref'
 
 vi.mock('../pane/TerminalPane', () => ({ TerminalPane: () => null }))
 vi.mock('../houston/bridge', () => ({
@@ -23,6 +28,7 @@ let container: HTMLDivElement | null = null
 let root: Root | null = null
 
 beforeEach(() => {
+  setContextIndicatorForTests(true)
   container = document.createElement('div')
   document.body.appendChild(container)
 })
@@ -45,7 +51,9 @@ function mountPane(opts: {
   acp?: string | null
   liveChildren?: number
   profileLabel?: string | null
+  context?: SessionContext | null
   onAddPane?: (id: number, rect: DOMRect) => void
+  onHeaderPointerDown?: (id: number, e: React.PointerEvent) => void
 }): HTMLElement {
   const info = {
     id: 1,
@@ -60,7 +68,8 @@ function mountPane(opts: {
     acp: opts.acp ?? null,
     live_children: opts.liveChildren ?? 0,
     children_waiting: 0,
-    profile_label: opts.profileLabel ?? null
+    profile_label: opts.profileLabel ?? null,
+    context: opts.context ?? null
   } as SessionInfo
   root = createRoot(container!)
   act(() => {
@@ -84,7 +93,7 @@ function mountPane(opts: {
         onShellZoom={noop}
         onSplit={noop}
         onAddPane={opts.onAddPane}
-        onHeaderPointerDown={noop}
+        onHeaderPointerDown={opts.onHeaderPointerDown ?? noop}
         onHandoff={noop}
         onOpenFile={noop}
         onOpenDir={noop}
@@ -101,6 +110,15 @@ function assertBareText(el: Element): void {
 }
 
 describe('pane header anatomy (step 13, reference shape)', () => {
+  const context: SessionContext = {
+    used_tokens: 150_000,
+    window_tokens: 200_000,
+    used_percent: 75,
+    state: 'idle',
+    source: 'derived',
+    as_of_ms: Date.now()
+  }
+
   it('puts the engine glyph in head-identity, beside the name — not the meta zone', () => {
     const el = mountPane({})
     const glyph = el.querySelector('[data-testid="engine-glyph"]')
@@ -147,6 +165,26 @@ describe('pane header anatomy (step 13, reference shape)', () => {
   it('renders no profile badge for the default account', () => {
     const el = mountPane({})
     expect(el.querySelector('[data-testid="profile-badge"]')).toBeNull()
+  })
+
+  it('keeps the context indicator in the pane action zone and obeys its preference', () => {
+    const el = mountPane({ context })
+    const indicator = el.querySelector('[data-testid="context-indicator"]')
+    expect(indicator).not.toBeNull()
+    expect(indicator!.closest('.head-actions')).not.toBeNull()
+
+    act(() => setContextIndicatorVisible(false))
+    expect(el.querySelector('[data-testid="context-indicator"]')).toBeNull()
+  })
+
+  it('does not start a pane drag from the context indicator', () => {
+    const onHeaderPointerDown = vi.fn()
+    const el = mountPane({ context, onHeaderPointerDown })
+    const indicator = el.querySelector('[data-testid="context-indicator"]')!
+
+    act(() => indicator.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })))
+
+    expect(onHeaderPointerDown).not.toHaveBeenCalled()
   })
 
   it('keeps the full sentence as the accessible name on both orchestration badges', () => {

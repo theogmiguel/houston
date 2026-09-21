@@ -729,7 +729,11 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .filter(|id| !id.is_empty()),
         fully_idle: field_bool("fullyIdle"),
         tool_name,
-        transcript_path: field("transcriptPath"),
+        transcript_path: if provider == proto::AgentKind::Antigravity {
+            field("transcriptPath")
+        } else {
+            field("transcript_path")
+        },
         prompt: clean(prompt),
     }
 }
@@ -1449,6 +1453,12 @@ mod tests {
     #[test]
     fn the_park_stop_looks_exactly_like_a_finish() {
         let p = parse_hook_payload(&fixture("05-Stop"), proto::AgentKind::Claude);
+        assert_eq!(
+            p.transcript_path.as_deref(),
+            Some(
+                "/home/user/.claude/projects/-home-user-projects-houston-core-target-hookprobe-headless/58200cf3-2b91-4f9d-9879-619004e0d0a7.jsonl"
+            )
+        );
         assert_eq!(p.background_tasks, Some(0));
         assert!(p.pending_task_ids.is_empty());
         assert_eq!(

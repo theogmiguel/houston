@@ -31,11 +31,18 @@ file contents and paths inside a transcript are never retained, logged, cached, 
 anywhere; only integer counts plus a model and session identifier are kept, in a local
 cache that exists to make re-opening a transcript file cheap on a later look.
 
-Dollar costs are computed from a public model-rate table (LiteLLM's, the same one the
-`ccusage` tool prices against) fetched from GitHub over the network — the only network
-call this feature makes — and cached locally afterward. If a model has no entry in that
-table, or the provider itself reported an authoritative cost already, the figure is
-marked accordingly rather than guessed.
+Dollar costs are computed from LiteLLM's public model catalog, fetched from GitHub and
+cached locally. The same cached catalog supplies model context limits to the context
+indicator. Houston checks it at startup and every six hours while the daemon is running.
+Installed-agent checks and Usage requests also refresh a cache older than six hours. Automatic
+requests follow Settings ▸ About ▸ **Check for updates**. **Refresh rates** explicitly requests a fresh copy even when that
+setting is off. Concurrent requests share one download, and a failed or invalid download
+keeps the last valid copy. When the server confirms the catalog is unchanged, Houston reuses
+the cached data without downloading the document again.
+
+If a model has no complete pricing entry, or the provider itself reported an authoritative
+cost already, the figure is marked accordingly rather than guessed. The small catalog
+bundled for first-run offline context limits contains no fallback prices.
 
 ## What it cannot tell you
 

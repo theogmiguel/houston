@@ -13,6 +13,7 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     std::env::set_var("CLAUDECODE", "1");
     std::env::set_var("CLAUDE_CODE_SESSION_ID", "the-launchers-session");
     std::env::set_var("CLAUDE_EFFORT", "xhigh");
+    std::env::set_var("NO_COLOR", "1");
     houston_core::env_hygiene::scrub();
 
     let state_dir = tempfile::tempdir().unwrap();
@@ -62,6 +63,11 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         has("CLAUDE_EFFORT=xhigh"),
         "a config var must survive the scrub: {child_env}"
     );
+    assert!(
+        !has("NO_COLOR="),
+        "launcher log colours must not disable pane colours"
+    );
+    assert!(has("COLORTERM=truecolor"));
 
     daemon.kill(info.id).ok();
 }

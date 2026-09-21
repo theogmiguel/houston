@@ -1,0 +1,42 @@
+{
+  "_sources": [
+    "https://platform.claude.com/docs/en/models/overview",
+    "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+    "https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions",
+    "https://platform.claude.com/docs/en/models/sonnet-4-5/overview",
+    "https://code.claude.com/docs/en/model-config"
+  ],
+  "claude-fable-5-1": {
+    "max_input_tokens": 1000000
+  },
+  "claude-opus-5": {
+    "max_input_tokens": 1000000
+  },
+  "claude-sonnet-5": {
+    "max_input_tokens": 1000000
+  },
+  "claude-opus-4-8": {
+    "max_input_tokens": 1000000
+  },
+  "claude-opus-4-7": {
+    "max_input_tokens": 1000000
+  },
+  "claude-opus-4-6": {
+    "max_input_tokens": 1000000
+  },
+  "claude-sonnet-4-6": {
+    "max_input_tokens": 1000000
+  },
+  "claude-haiku-4-5-20251001": {
+    "max_input_tokens": 200000
+  },
+  "claude-haiku-4-5": {
+    "max_input_tokens": 200000
+  },
+  "claude-sonnet-4-5-20250929": {
+    "max_input_tokens": 200000
+  },
+  "claude-sonnet-4-5": {
+    "max_input_tokens": 200000
+  }
+}

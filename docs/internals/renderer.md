@@ -216,13 +216,11 @@ pip (`owedByWs` beside `unreadByWs`); the tooltip breaks the number down
 
 ## The shell
 
-An L-shaped CSS grid:
-`grid-template-areas: "rail topbar" "rail grid" "rail downbar"`, columns
-`var(--w-rail) minmax(0, 1fr)`, rows `var(--h-top) 1fr var(--h-downbar)`. `--w-rail` is the rail's
-live width, set on the shell root. The rail spans all three rows; the topbar spans the content
-column; the downbar spans the content column beneath the grid. The downbar row collapses to `0px`
-when the context bar is off, and it holds only that strip — the shell still carries no general
-status bar.
+An L-shaped CSS grid: `grid-template-areas: "rail topbar" "rail grid"`, columns
+`var(--w-rail) minmax(0, 1fr)`, rows `var(--h-top) 1fr`. `--w-rail` is the rail's live width,
+set on the shell root. The rail spans both rows and the topbar spans the content column. The
+shell carries no general status bar; session-specific context occupancy is a static ring in
+each supported terminal pane's header.
 
 Source control shares the main content region with the grid; it is not a leaf in
 the persisted split tree. Legacy Changes leaves are removed during layout loading
@@ -233,8 +231,7 @@ width separate from the split tree lets it close without remounting terminals.
 |---|---|
 | Rail | resizable, 200–420px, remembered per user; a drag under 160px collapses it, and `sidebarRail` also hides it — there is no icon-only strip |
 | Topbar | 44px, two columns, drag region; the mode `Segmented` floats at the window's centre |
-| Downbar | 24px, content column only; hidden by `contextBarPref` |
-| Pane headers | 28px, every pane kind |
+| Pane headers | 28px, every pane kind; supported agent panes can show a context ring |
 | Stack tabs | 26px strip |
 
 ## The window background

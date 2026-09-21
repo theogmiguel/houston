@@ -989,6 +989,8 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::AgentHooks => {
+            let models = Arc::clone(daemon);
+            tokio::spawn(async move { models.refresh_model_catalog(false).await });
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || {
                 let providers = daemon.agent_hooks_state_rescanned();

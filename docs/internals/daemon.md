@@ -109,6 +109,7 @@ Environment set on the child, in order:
 |---|---|---|
 | `TERM` | `xterm-256color` | unix unconditional; Windows only if not inherited |
 | `COLORTERM` | `truecolor` | |
+| `NO_COLOR` | removed | Launcher log preferences do not disable pane colours; shell startup files can set it explicitly. |
 | user pairs | from the create request | applied before the helper `PATH` |
 | `PATH` | helper `bin` dir prepended | skipped for hidden panes and SSH |
 | `HOUSTON_SESSION` | session id | what marks a process as running in a pane |
@@ -497,8 +498,30 @@ semantics — it drives no status, lifecycle or behaviour.
 
 Scan roots are `~/.claude/projects` and `~/.codex/sessions`, plus a config-dir-relative
 variant; scans run under `spawn_blocking`. The scan cache is its own SQLite store
-(`SCAN_CACHE_VERSION` 2). Model rates come from a public pricing table with
-`RATE_TABLE_TTL_MS` of 24 h and a 10 s fetch timeout.
+(`SCAN_CACHE_VERSION` 2).
+
+Pane context occupancy is separate from cumulative usage. Turn-end hooks supply a transcript
+path; a bounded tail yields Claude's latest main-agent usage or Codex's latest native context
+snapshot. The latter includes its effective window, which takes precedence over catalog data.
+Otherwise model limits and Usage rates resolve from one `model_catalog.rs` service. It stores
+the full LiteLLM `model_prices_and_context_window.json` document at
+`usage/model-prices.json`, preserving caches written by earlier releases. The in-memory
+snapshot exposes prices and `max_input_tokens`; hooks only read that snapshot and never fetch.
+A small bundled document in the same schema supplies factual context limits from official
+provider specifications on a first offline run, but carries no pricing fallback.
+
+The existing release-check loop revalidates both sources at startup and every six hours; a
+release-check failure does not prevent the catalog check. Automatic checks obey the update-check
+preference. Provider checks and Usage requests reuse the same six-hour catalog cache, while an
+explicit Usage **Refresh rates** request bypasses its age and the automatic-check preference.
+The catalog persists ETag and document together; `304` advances freshness without discarding
+prices or limits. Release validators and their parsed payloads are cached for the daemon lifetime.
+Failed or invalid responses never replace a last-good validator or payload. Refreshes are
+serialized, catalog failures back off for five minutes, HTTP requests time out after 10 seconds,
+and catalog document reads and downloads are bounded to 20 MiB. Fetching, validation and cache writes run asynchronously or off-thread;
+transcript scanning remains under `spawn_blocking`. A failed or invalid download preserves the
+last valid snapshot. New entries therefore reach installed applications without a Houston
+release once LiteLLM publishes them.
 
 ## Redaction
 
