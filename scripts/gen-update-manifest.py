@@ -2,7 +2,7 @@
 """Write latest.json for one release, or refuse the artifact set it was given.
 
 The publish stage runs this after both bundle workflows have uploaded: every
-bundle must arrive with the Minisign .sig its own build produced, every
+bundle must arrive with a Minisign .sig that verifies against the app's public key, every
 filename must carry the release's version, and anything unrecognised is a
 refusal rather than a silent omission. The release notes come from the same
 file the same run filed on the GitHub Release, so body and manifest agree.
@@ -14,7 +14,9 @@ import argparse
 import base64
 import json
 import re
+import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -63,6 +65,7 @@ BUNDLES = (
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
 REPOSITORY_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 TAG_RE = re.compile(r"^[0-9A-Za-z._+-]+$")
+TAURI_CONFIG = Path(__file__).resolve().parent.parent / "src-tauri/tauri.conf.json"
 
 
 class Refused(Exception):
@@ -106,6 +109,38 @@ def read_signature(path: Path) -> str:
             f"{path.name} is not a Minisign signature (decoded to {decoded[:24]!r}); expected an `untrusted comment:` header"
         )
     return text
+
+
+def verify_signatures(artifacts: Path, signatures: dict[str, str], config: Path):
+    try:
+        encoded_key = json.loads(config.read_text(encoding="utf-8"))["plugins"]["updater"]["pubkey"]
+        public_key = base64.b64decode(encoded_key, validate=True)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise Refused(f"{config}: expected a Tauri updater public key: {error}") from error
+
+    with tempfile.TemporaryDirectory(prefix="houston-signatures-") as tmp:
+        key_path = Path(tmp) / "updater.pub"
+        signature_path = Path(tmp) / "artifact.minisig"
+        key_path.write_bytes(public_key)
+        for name, signature in signatures.items():
+            signature_path.write_bytes(base64.b64decode("".join(signature.split()), validate=True))
+            try:
+                result = subprocess.run(
+                    [
+                        "minisign", "-Vm", str(artifacts / name),
+                        "-p", str(key_path), "-x", str(signature_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise Refused(
+                    f"{name}: cannot verify signature; minisign must be installed and complete successfully: {error}"
+                ) from error
+            if result.returncode:
+                reason = result.stderr.strip() or result.stdout.strip()
+                raise Refused(f"{name}: signature does not verify against {config}: {reason}")
 
 
 def collect(
@@ -206,6 +241,7 @@ def assemble(
     repository: str,
     pub_date: str | None = None,
     include_windows: bool = True,
+    tauri_config: Path = TAURI_CONFIG,
 ) -> dict:
     if not VERSION_RE.match(version):
         raise Refused(f"version {version!r} is not semver; expected MAJOR.MINOR.PATCH with optional -rc.N or +build metadata")
@@ -218,6 +254,7 @@ def assemble(
     linux, windows = collect(
         artifacts_dir, version, signatures, include_windows=include_windows
     )
+    verify_signatures(artifacts_dir, signatures, tauri_config)
 
     notes = notes_file.read_text(encoding="utf-8").strip()
     if not notes:
@@ -262,6 +299,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--pub-date", default=None)
     parser.add_argument(
+        "--tauri-config", type=Path, default=TAURI_CONFIG,
+        help="Tauri configuration containing the trusted updater public key",
+    )
+    parser.add_argument(
         "--linux-only",
         action="store_true",
         help="accept and publish the complete Linux artifact set without Windows",
@@ -277,6 +318,7 @@ def main(argv: list[str]) -> int:
             repository=args.repository,
             pub_date=args.pub_date,
             include_windows=not args.linux_only,
+            tauri_config=args.tauri_config,
         )
     except Refused as refused:
         print(f"error: {refused}", file=sys.stderr)

@@ -2,7 +2,7 @@
 """Focused tests for scripts/gen-update-manifest.py.
 
 Run with `python3 scripts/test-update-manifest.py`; nothing here needs network
-or a checkout beyond the script beside it.
+or a checkout beyond the script beside it. The minisign CLI must be installed.
 """
 
 import base64
@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 # Importing the generator by path would otherwise drop a __pycache__ beside it.
@@ -24,8 +25,15 @@ _spec = importlib.util.spec_from_file_location(
 manifest = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(manifest)
 
+PUBLIC_KEY = base64.b64encode(
+    b"untrusted comment: minisign public key 163D6660A00CD6E9\n"
+    b"RWTp1gygYGY9FrCEomarAF0QZzyf+/UIFeM18tHB8QbJF1oMi71wesd/\n"
+).decode()
 SIGNATURE = base64.b64encode(
-    b"untrusted comment: signature from tauri secret key\nRUQdGVzdCBzaWduYXR1cmU=\n"
+    b"untrusted comment: signature from minisign secret key\n"
+    b"RUTp1gygYGY9FncRtliDAekKBeQn6Xyy1pvJk+pPQUOTrKditT41fsFUm1+nAP/VHNJjJVrFM0Szl7AXt3U5GJel+HVPFOvc+w0=\n"
+    b"trusted comment: release fixture\n"
+    b"RqJGYVLAdVtGHy65Z8GQh9dUhOHUv9/6a08RrSUAGH9VWFm/glXwtJODIgCpw9B6xQqEgpW1roPnRR2Tf9b3Dg==\n"
 ).decode()
 
 
@@ -37,6 +45,8 @@ class ReleaseFixture:
         self.root = Path(self._tmp.name)
         self.version = version
         self.tag = tag
+        self.config = self.root / "tauri.conf.json"
+        self.config.write_text(json.dumps({"plugins": {"updater": {"pubkey": PUBLIC_KEY}}}))
         self.artifacts = self.root / "artifacts"
         self.artifacts.mkdir()
         self.notes = self.root / "notes.md"
@@ -81,6 +91,7 @@ class ReleaseFixture:
     def generate(self, **overrides):
         kwargs = {
             "artifacts_dir": self.artifacts,
+            "tauri_config": self.config,
             "notes_file": self.notes,
             "version": self.version,
             "tag": self.tag,
@@ -100,6 +111,51 @@ class AssembleTests(unittest.TestCase):
         with self.assertRaises(manifest.Refused) as caught:
             self.release.generate(**overrides)
         return str(caught.exception)
+
+    def test_modified_bundle_is_refused(self):
+        self.release.add_all_bundles()
+        (self.release.artifacts / "Houston_1.2.3_amd64.deb").write_bytes(b"tampered bundle")
+
+        self.assertIn("Houston_1.2.3_amd64.deb: signature does not verify", self.refuse())
+
+    def test_wrong_public_key_with_matching_key_id_is_refused(self):
+        self.release.add_all_bundles()
+        lines = base64.b64decode(PUBLIC_KEY).splitlines()
+        key = bytearray(base64.b64decode(lines[1]))
+        key[-1] ^= 1
+        lines[1] = base64.b64encode(key)
+        wrong_key = base64.b64encode(b"\n".join(lines) + b"\n").decode()
+        self.release.config.write_text(json.dumps({"plugins": {"updater": {"pubkey": wrong_key}}}))
+
+        self.assertIn("signature does not verify", self.refuse())
+
+    def test_modified_trusted_comment_is_refused(self):
+        self.release.add_all_bundles()
+        signature = base64.b64decode(SIGNATURE).replace(b"release fixture", b"changed comment")
+        (self.release.artifacts / "Houston_1.2.3_x64-setup.exe.sig").write_text(
+            base64.b64encode(signature).decode()
+        )
+
+        self.assertIn("Houston_1.2.3_x64-setup.exe: signature does not verify", self.refuse())
+
+    def test_invalid_signature_body_is_refused(self):
+        self.release.add_all_bundles()
+        (self.release.artifacts / "Houston_1.2.3_arm64.deb.sig").write_text(
+            base64.b64encode(b"untrusted comment: signature\nnot a signature\n").decode()
+        )
+
+        self.assertIn("Houston_1.2.3_arm64.deb: signature does not verify", self.refuse())
+
+    def test_missing_minisign_is_refused(self):
+        self.release.add_all_bundles()
+        with patch.object(manifest.subprocess, "run", side_effect=FileNotFoundError("minisign")):
+            self.assertIn("minisign must be installed", self.refuse())
+
+    def test_missing_public_key_is_refused(self):
+        self.release.add_all_bundles()
+        self.release.config.write_text("{}")
+
+        self.assertIn("expected a Tauri updater public key", self.refuse())
 
     def test_happy_path_uses_bundle_specific_keys_and_sig_contents(self):
         self.release.add_all_bundles()
@@ -385,6 +441,27 @@ class AssembleTests(unittest.TestCase):
 
 
 class CommandLineTests(unittest.TestCase):
+    def test_cli_does_not_write_manifest_for_invalid_signature(self):
+        release = ReleaseFixture()
+        self.addCleanup(release.close)
+        release.add_all_bundles()
+        (release.artifacts / "Houston_1.2.3_amd64.AppImage").write_bytes(b"changed")
+        output = release.root / "latest.json"
+
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            status = manifest.main([
+                "--tauri-config", str(release.config),
+                "--artifacts-dir", str(release.artifacts),
+                "--notes-file", str(release.notes),
+                "--output", str(output),
+                "--version", release.version, "--tag", release.tag,
+                "--repository", "theogmiguel/houston",
+            ])
+
+        self.assertEqual(status, 1)
+        self.assertIn("signature does not verify", stderr.getvalue())
+        self.assertFalse(output.exists())
+
     def test_cli_writes_the_manifest_and_reports_refusals(self):
         with tempfile.TemporaryDirectory() as tmp:
             release = ReleaseFixture()
@@ -394,6 +471,8 @@ class CommandLineTests(unittest.TestCase):
 
             status = manifest.main(
                 [
+                    "--tauri-config",
+                    str(release.config),
                     "--artifacts-dir",
                     str(release.artifacts),
                     "--notes-file",
@@ -420,6 +499,8 @@ class CommandLineTests(unittest.TestCase):
             with contextlib.redirect_stderr(stderr):
                 status = manifest.main(
                     [
+                        "--tauri-config",
+                        str(release.config),
                         "--artifacts-dir",
                         str(release.artifacts),
                         "--notes-file",
@@ -446,6 +527,8 @@ class CommandLineTests(unittest.TestCase):
 
             status = manifest.main(
                 [
+                    "--tauri-config",
+                    str(release.config),
                     "--artifacts-dir",
                     str(release.artifacts),
                     "--notes-file",

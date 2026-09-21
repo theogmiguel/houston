@@ -41,6 +41,9 @@ jobs:
 
       - uses: actions/checkout@v5
 
+      - name: Install signature verifier
+        run: sudo apt-get update && sudo apt-get install -y minisign
+
       - name: Refuse a missing or already published release
         env:
           GH_TOKEN: ${{ github.token }}

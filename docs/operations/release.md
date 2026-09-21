@@ -323,8 +323,16 @@ run without it:
    workflow refuses a run without them; a cut stops before it pushes anything.
 3. Paste the **public** key into `src-tauri/tauri.conf.json` under
    `plugins → updater → pubkey` (a public key is not a secret and belongs in
-   the tree). If the committed key and the signing secret are a different pair,
-   the bundler only warns — the first end-to-end update is what proves them.
+   the tree). The publish and promotion gates verify every artifact and its
+   signed comment against this key with Minisign before publishing anything.
+   A mismatched signing secret stops the release, even if the bundler succeeds.
+
+Keep the private key backed up securely. Installed copies trust the public key
+embedded when they were built: replacing it in the repository does not change
+their trust. If signatures fail, first recover the matching private key and
+correct the signing secrets. Rotating keys requires an update signed by the old
+key that embeds the new public key; without the old key, users must reinstall
+manually to trust a new pair.
 
 ### Public update feed
 
@@ -344,7 +352,9 @@ What every release carries:
 2. `release-publish.yml` verifies the set — one AppImage family and one deb for
    Linux x86_64 and ARM64, plus one Windows x86_64 NSIS installer when the cut
    included Windows, a `.sig` beside each, every filename carrying the
-   release's version — and refuses anything else.
+   release's version — and refuses anything else. It also verifies every bundle
+   and signed comment against `plugins.updater.pubkey`. Promotion repeats this
+   verification over the downloaded draft assets before making them public.
 3. `latest.json` embeds each `.sig` file's contents under both the bare
    `linux-<arch>` / `windows-<arch>` key and the bundle-specific
    `-appimage`, `-deb` and `-nsis` keys, so a deb install and an AppImage
@@ -493,7 +503,8 @@ be in the environment when the build runs (`TAURI_SIGNING_PRIVATE_KEY`,
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) — on the VM too, since the Linux build is
 where the `.sig` files come from. Then generate the notes once, build the
 manifest from the files the bundles produced, and file the release with the
-same body `latest.json` carries:
+same body `latest.json` carries. Install the `minisign` CLI first; the manifest
+generator requires it for signature verification:
 
 ```bash
 release_tag=v0.10.0
@@ -518,9 +529,9 @@ Add `--prerelease` for an `rc` — the same rule the workflow applies — or
 publishing the draft would offer a candidate through `releases/latest`.
 
 Fully manual, and the same work `release-publish.yml` does — including its
-refusals: the manifest script rejects a set with a missing `.sig`, a missing
-architecture or a filename from another version, so the release never ships a
-manifest the updater cannot use. This path ends at a draft too, and
+refusals: the manifest script rejects a set with a missing or invalid `.sig`, a
+missing architecture or a filename from another version, so the release never
+ships a manifest the updater cannot use. This path ends at a draft too, and
 **Promote draft to public** is the same promotion a CI cut goes through.
 
 ## `install-desktop.sh`
