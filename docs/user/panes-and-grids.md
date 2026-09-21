@@ -28,6 +28,19 @@ stack, or open a new cell instead.
 A pane's session can be renamed; the name is what you and the sidebar chips use to
 identify it, independent of which agent CLI is running underneath.
 
+## The branch and shared checkouts
+
+A pane whose directory is inside a git work tree shows the branch that checkout is on,
+beside the pane title. The branch is read when you focus the pane, so a `git switch` made
+inside a pane appears the next time you focus it. A pane outside a repository, on a
+detached HEAD, or over SSH shows no branch.
+
+When two or more live panes work in the same checkout, the top bar names it before a
+branch move in one pane surprises another. A second chip appears when live panes sit in
+different checkouts of one repository — a main checkout and its worktree, which share the
+repository's services and ports. Hover or focus a chip to list the panes it names. Both
+chips are advisory: Houston never switches branches, stashes changes or moves worktrees.
+
 ## Click-to-type
 
 Only one pane at a time receives keystrokes — the one you have clicked into. Every key

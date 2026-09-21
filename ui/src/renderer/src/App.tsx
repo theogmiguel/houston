@@ -233,7 +233,8 @@ import { SourceControlPanel } from "./components/SourceControlPanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
-import type { CheckoutFacts } from "./checkoutFacts";
+import { checkoutWarnings, type CheckoutFacts } from "./checkoutFacts";
+import { CheckoutWarningChips } from "./components/CheckoutWarnings";
 import {
   addGrid,
   autoNameGrid,
@@ -478,6 +479,15 @@ function handleCheckoutFactsMessage(
   setFacts((prev) => new Map(prev).set(msg.dir, checkoutFactsFromReply(msg)));
   pendingRef.current = settlePendingDir(pendingRef.current, msg.dir);
   setPending(pendingRef.current);
+}
+
+// A session added to the roster is a directory whose checkout identity the
+// ownership chips may need; a session that already exited has no branch to move.
+function requestFactsForSessions(
+  sessions: SessionInfo[],
+  request: (dir: string, agent: AgentKind) => void,
+): void {
+  for (const s of sessions) if (isLive(s.state)) request(s.cwd, s.agent);
 }
 
 function railToggleLabels(attentionCount: number): { tooltip: string; ariaLabel: string } {
@@ -954,9 +964,8 @@ export function App(): React.JSX.Element {
   const [paneHandoff, setPaneHandoff] = useState<HandoffSource | null>(null);
 
   // The checkout facts a `git_branch` reply carried, keyed by the directory it
-  // answered for, plus the directories with a request in flight. A chip renders
-  // only from an answered fact, and a request for a directory already in flight
-  // is dropped, so refocusing cannot pile up git calls.
+  // answered for, plus the directories with a request in flight: a chip renders
+  // only from an answered fact, and an in-flight ask is never duplicated.
   const [checkoutFacts, setCheckoutFacts] = useState<Map<string, CheckoutFacts>>(
     new Map(),
   );
@@ -989,6 +998,21 @@ export function App(): React.JSX.Element {
     }
     return out;
   }, [sessions, checkoutFacts, checkoutPending]);
+
+  // Groups span every live session, not only the selected workspace's: the
+  // hazardous pair is a main checkout and its worktree. The last answer per
+  // directory is used, so a refresh in flight never makes a group flicker.
+  const checkoutWarningViews = useMemo(
+    () =>
+      checkoutWarnings(
+        sessions.values(),
+        checkoutFacts,
+        selectedWs,
+        (path) =>
+          workspaces.find((w) => w.path === path)?.name ?? basename(path),
+      ),
+    [sessions, checkoutFacts, selectedWs, workspaces],
+  );
 
   const [sshModal, setSshModal] = useState(false);
   const [sshPrefill, setSshPrefill] = useState<SshInitial | null>(null);
@@ -1050,6 +1074,11 @@ export function App(): React.JSX.Element {
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
             setWorkspaces(msg.workspaces);
             setTags(msg.tags);
+            // Every restored session is a session added; its cwd's identity is
+            // what the ownership chips group by.
+            requestFactsForSessions(msg.sessions, (dir, agent) =>
+              requestCheckoutFacts(client, dir, agent),
+            );
             if (boot && msg.recovery && !recoveryShown.current) {
               recoveryShown.current = true;
               const { respawned, deferred, crashed } = msg.recovery;
@@ -1094,6 +1123,7 @@ export function App(): React.JSX.Element {
           case "session_created": {
             setSessions((prev) => new Map(prev).set(msg.info.id, msg.info));
             setActiveId(msg.info.id);
+            requestCheckoutFacts(client, msg.info.cwd, msg.info.agent);
             {
               const rv = reviewIntents.current;
               while (
@@ -3289,6 +3319,7 @@ export function App(): React.JSX.Element {
               )}
             </div>
             <div className="ml-auto flex items-center gap-1 mr-1">
+              <CheckoutWarningChips warnings={checkoutWarningViews} />
               <VoiceMicChip
                 paneTitle={(session) =>
                   sessionsRef.current.get(session)?.title ?? null
