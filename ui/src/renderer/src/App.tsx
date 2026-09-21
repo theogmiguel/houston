@@ -1115,6 +1115,50 @@ export function App(): React.JSX.Element {
       }
     }
 
+    function handleSessionState(msg: SessionStateMessage): void {
+      if (
+        msg.state === "exited" &&
+        msg.exit_code !== null &&
+        msg.exit_code !== 0
+      ) {
+        failedSessionExitsRef.current.add(msg.session);
+      } else {
+        failedSessionExitsRef.current.delete(msg.session);
+      }
+      setSessions((prev) => {
+        const next = new Map(prev);
+        const s = next.get(msg.session);
+        if (s) next.set(msg.session, { ...s, state: msg.state });
+        return next;
+      });
+      if (!isLive(msg.state)) {
+        setActiveId((cur) => (cur === msg.session ? null : cur));
+        const info = sessionsRef.current.get(msg.session);
+        const recentAgent = recentAgentNoticeRef.current.get(msg.session);
+        if (info && failedSessionExitsRef.current.has(msg.session)) {
+          if (!duplicatesAgentEnd(msg, recentAgent)) {
+            publishPaneNotice(
+              info,
+              "error",
+              `exited (exit ${msg.exit_code})`,
+              "session-state",
+            );
+          }
+        } else if (info) {
+          const stateRec = sessionStateNotification(
+            msg,
+            info,
+            recentAgent,
+          );
+          if (stateRec) {
+            setNotices((prev) =>
+              replacePaneNotice(prev, toNotice(stateRec)),
+            );
+          }
+        }
+      }
+    }
+
     function wire(client: HoustonClient, boot: boolean): void {
       let helloed = false;
       let helloError: string | null = null;
@@ -1244,47 +1288,7 @@ export function App(): React.JSX.Element {
             break;
           }
           case "session_state":
-            if (
-              msg.state === "exited" &&
-              msg.exit_code !== null &&
-              msg.exit_code !== 0
-            ) {
-              failedSessionExitsRef.current.add(msg.session);
-            } else {
-              failedSessionExitsRef.current.delete(msg.session);
-            }
-            setSessions((prev) => {
-              const next = new Map(prev);
-              const s = next.get(msg.session);
-              if (s) next.set(msg.session, { ...s, state: msg.state });
-              return next;
-            });
-            if (!isLive(msg.state)) {
-              setActiveId((cur) => (cur === msg.session ? null : cur));
-              const info = sessionsRef.current.get(msg.session);
-              const recentAgent = recentAgentNoticeRef.current.get(msg.session);
-              if (info && failedSessionExitsRef.current.has(msg.session)) {
-                if (!duplicatesAgentEnd(msg, recentAgent)) {
-                  publishPaneNotice(
-                    info,
-                    "error",
-                    `exited (exit ${msg.exit_code})`,
-                    "session-state",
-                  );
-                }
-              } else if (info) {
-                const stateRec = sessionStateNotification(
-                  msg,
-                  info,
-                  recentAgent,
-                );
-                if (stateRec) {
-                  setNotices((prev) =>
-                    replacePaneNotice(prev, toNotice(stateRec)),
-                  );
-                }
-              }
-            }
+            handleSessionState(msg);
             break;
           case "session_removed":
             setSessions((prev) => {
