@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it, type Mock } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import {
   type AppHarness,
   currentClient,
@@ -10,6 +10,10 @@ import {
   renderReadyApp,
   resetHarness
 } from './test/appTestHarness'
+
+// Each check proof runs as a single `-t` test in a fresh vitest process, which
+// pays App's lazy-surface import cost before the test body starts.
+vi.setConfig({ testTimeout: 20000 })
 
 const WS = '/tmp/project'
 const REPO = '/tmp/repo'
@@ -93,9 +97,7 @@ describe('branch chip in the focused pane', () => {
     reply(DETACHED, null, DETACHED, `${DETACHED}/.git`)
     await flush()
     expect(paneChip(harness, 3)).toBeNull()
-    // The first boot in a file pays the lazy-surface import cost; under a
-    // parallel suite that can outlast vitest's default 5s.
-  }, 20000)
+  })
 
   it('an SSH pane sends no branch request', async () => {
     harness = await renderReadyApp({

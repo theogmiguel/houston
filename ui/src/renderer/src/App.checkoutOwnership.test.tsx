@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it, type Mock } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import {
   type AppHarness,
   currentClient,
@@ -11,6 +11,10 @@ import {
   resetHarness
 } from './test/appTestHarness'
 import type { SessionInfo, Workspace } from './houston/client'
+
+// Each check proof runs as a single `-t` test in a fresh vitest process, which
+// pays App's lazy-surface import cost before the test body starts.
+vi.setConfig({ testTimeout: 20000 })
 
 const MAIN = '/repo/nexus'
 const WORKTREE = '/repo/nexus-pdi-flags'
@@ -83,9 +87,7 @@ describe('checkout ownership warning', () => {
     expect(shared).not.toBeNull()
     expect(shared!.textContent).toContain('2 panes')
     expect(chip(harness, 'same-repository-chip')).toBeNull()
-    // The first boot in a file pays the lazy-surface import cost; under a
-    // parallel suite that can outlast vitest's default 5s.
-  }, 20000)
+  })
 
   it('same repository chip names the other workspace', async () => {
     harness = await boot(
