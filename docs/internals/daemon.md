@@ -154,10 +154,10 @@ supervisor's pid in `daemon.json`; a small reader thread relays each `{pid, stat
 `Daemon::supervisor_child_exited`, which attributes it to the live session whose child pid
 matches — buffering whichever of PTY EOF or the supervisor's report arrives first so the
 session finishes only once both are known, the same rule "The read loop" states below for the
-ordinary case. Without the daemon actually knowing its own child died first (the normal case:
-while a generation is still that child's real parent, its own `child.wait()` thread wins the
-reap race every time), this path is a harmless no-op — it only starts mattering once a
-session's real parent has gone away.
+ordinary case. On Linux, local waiters observe exit with `waitid(WNOWAIT)` before taking the
+handoff reaping lock. A failed handoff releases that lock and lets the original generation
+reap normally. After commit, local waiters leave the exit status unconsumed so the supervisor
+can relay it to the new owner when the retiring parent exits.
 
 ## Handoff
 
@@ -192,8 +192,10 @@ O then sends **commit**; C writes the commit record into `daemon.json` (`{pid, p
 build, generation}`, atomic rename) *before* acking, so a lost acknowledgement still leaves O
 able to read the record back and compare its `generation` against what it expects, rather than
 trusting a bare timeout (a timeout alone never lets O resume once the record shows committed).
-O retires — marks clean shutdown (every session is still alive, just under a new owner),
-never removes `daemon.json`/`supervisor.json`, never kills a child — and exits; the supervisor
+O retires without marking clean shutdown, removing `daemon.json`/`supervisor.json` or killing
+a child. After allowing the management response to flush, it exits explicitly rather than
+waiting for blocking background tasks during runtime teardown. This promptly reparents the
+transferred children; the supervisor
 reaps its orphaned PTY children exactly as "Supervisor" describes, relaying their exit to C, who
 inherits the same supervisor connection normal boot always sets up
 (`main.rs::spawn_supervisor_reader`). `/ws` clients reconnect on the dropped socket as they

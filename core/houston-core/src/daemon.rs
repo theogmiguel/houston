@@ -967,6 +967,8 @@ pub struct Daemon {
     shutting_down: AtomicBool,
     handing_off: AtomicBool,
     handed_off: AtomicBool,
+    #[cfg(target_os = "linux")]
+    handoff_reap: Mutex<()>,
     #[cfg(unix)]
     supervisor_writer: Mutex<Option<std::os::unix::net::UnixStream>>,
     #[cfg(unix)]
@@ -2179,6 +2181,8 @@ impl Daemon {
             shutting_down: AtomicBool::new(false),
             handing_off: AtomicBool::new(false),
             handed_off: AtomicBool::new(false),
+            #[cfg(target_os = "linux")]
+            handoff_reap: Mutex::new(()),
             #[cfg(unix)]
             supervisor_writer: Mutex::new(None),
             #[cfg(unix)]
@@ -2942,6 +2946,8 @@ impl Daemon {
             );
         }
         let claim = HandoffClaim::claim(&self.handing_off)?;
+        #[cfg(target_os = "linux")]
+        let _reap = self.handoff_reap.lock().expect("handoff reap lock");
 
         let candidate = handoff_binary(candidate_bin)?;
 
@@ -7042,6 +7048,23 @@ impl Daemon {
         std::thread::Builder::new()
             .name(format!("pty-wait-{id}"))
             .spawn(move || {
+                #[cfg(target_os = "linux")]
+                let _reap = {
+                    if let Some(pid) = pid {
+                        use nix::sys::wait::{waitid, Id, WaitPidFlag};
+                        // Observe exit without consuming it: a committed handoff leaves
+                        // the zombie for the supervisor to reap and report to its new owner.
+                        while let Err(nix::errno::Errno::EINTR) = waitid(
+                            Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
+                            WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
+                        ) {}
+                    }
+                    let guard = daemon.handoff_reap.lock().expect("handoff reap lock");
+                    if daemon.has_handed_off() {
+                        return;
+                    }
+                    guard
+                };
                 let status = child.wait();
                 if let Some(s) = daemon.sessions.lock().expect("sessions lock").get(&id) {
                     s.backend.release_pty();
