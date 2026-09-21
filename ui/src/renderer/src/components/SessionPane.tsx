@@ -26,6 +26,7 @@ import {
   IconEllipsis,
   IconEraser,
   IconFolder,
+  IconGitBranch,
   IconMaximize,
   IconMinimize,
   IconPlus,
@@ -295,6 +296,22 @@ export function OrchestratorBadge({
   )
 }
 
+// The branch a pane's cwd is on, once git has answered for it. A pane with no
+// answer renders nothing rather than a placeholder, so the chip can never
+// name another checkout's branch.
+export function BranchChip({ branch }: { branch?: string | null }): React.JSX.Element | null {
+  if (branch == null || branch === '') return null
+  return (
+    <span
+      data-testid="branch-chip"
+      className="[@container_(max-width:400px)]:hidden inline-flex items-center gap-[var(--space-1-5)] min-w-0 flex-none max-w-[180px] px-[var(--space-1-5)] h-[17px] rounded-[var(--tr-radius-sm)] bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] text-[var(--text-secondary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]"
+    >
+      <Icon glyph={IconGitBranch} role="small" />
+      <span className="truncate">{branch}</span>
+    </span>
+  )
+}
+
 export function ProfileBadge({ label }: { label: string }): React.JSX.Element {
   return (
     <Tooltip label={`Running as account profile "${label}"`}>
@@ -323,6 +340,8 @@ interface Props {
   copyOnSelect: boolean
   stripBoxGlyphs: boolean
   showProject: boolean
+  /** The branch this pane's cwd is on, once git has answered; absent hides the chip. */
+  branch?: string | null
   registerOutput: RegisterOutput
   shellIntegration: boolean
   onReconnectSsh: (id: number) => void
@@ -356,6 +375,7 @@ function SessionPaneImpl({
   copyOnSelect,
   stripBoxGlyphs,
   showProject,
+  branch,
   registerOutput,
   shellIntegration,
   onReconnectSsh,
@@ -436,6 +456,7 @@ function SessionPaneImpl({
             title={info.title}
             onRename={(t) => client.renameSession(info.id, t)}
           />
+          <BranchChip branch={branch} />
           {info.spawned_by != null && (
             <OriginBadge
               info={info}

@@ -63,6 +63,7 @@ function makeFakeClient(): HoustonClientType {
         set!.delete(handler)
       }
     }) as (kind: string, handler: (msg: never) => void) => () => void,
+    gitBranch: vi.fn(),
     sessionCwd: (() => Promise.resolve('/tmp/project')) as (session: number) => Promise<string>,
     waitForIdle: (() => Promise.resolve(true)) as (
       session: number,

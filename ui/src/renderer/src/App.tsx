@@ -233,6 +233,7 @@ import { SourceControlPanel } from "./components/SourceControlPanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
+import type { CheckoutFacts } from "./checkoutFacts";
 import {
   addGrid,
   autoNameGrid,
@@ -443,6 +444,40 @@ function handleTagWireMessage(
   } else if (msg.type === "tag_deleted") {
     setTags((prev) => prev.filter((t) => t.id !== msg.tag));
   }
+}
+
+function checkoutFactsFromReply(
+  msg: Extract<ServerMsg, { type: "git_branch" }>,
+): CheckoutFacts {
+  return {
+    branch: msg.branch,
+    toplevel: msg.toplevel ?? null,
+    common_dir: msg.common_dir ?? null,
+  };
+}
+
+// A reply settles the ask for its own directory; an unrelated reply returns the
+// set unchanged, so the state update bails instead of re-rendering every pane.
+function settlePendingDir(
+  pending: ReadonlySet<string>,
+  dir: string,
+): ReadonlySet<string> {
+  if (!pending.has(dir)) return pending;
+  const next = new Set(pending);
+  next.delete(dir);
+  return next;
+}
+
+function handleCheckoutFactsMessage(
+  msg: ServerMsg,
+  setFacts: Dispatch<SetStateAction<Map<string, CheckoutFacts>>>,
+  pendingRef: { current: ReadonlySet<string> },
+  setPending: Dispatch<SetStateAction<ReadonlySet<string>>>,
+): void {
+  if (msg.type !== "git_branch") return;
+  setFacts((prev) => new Map(prev).set(msg.dir, checkoutFactsFromReply(msg)));
+  pendingRef.current = settlePendingDir(pendingRef.current, msg.dir);
+  setPending(pendingRef.current);
 }
 
 function railToggleLabels(attentionCount: number): { tooltip: string; ariaLabel: string } {
@@ -918,6 +953,43 @@ export function App(): React.JSX.Element {
 
   const [paneHandoff, setPaneHandoff] = useState<HandoffSource | null>(null);
 
+  // The checkout facts a `git_branch` reply carried, keyed by the directory it
+  // answered for, plus the directories with a request in flight. A chip renders
+  // only from an answered fact, and a request for a directory already in flight
+  // is dropped, so refocusing cannot pile up git calls.
+  const [checkoutFacts, setCheckoutFacts] = useState<Map<string, CheckoutFacts>>(
+    new Map(),
+  );
+  const [checkoutPending, setCheckoutPending] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const checkoutPendingRef = useRef<ReadonlySet<string>>(checkoutPending);
+  checkoutPendingRef.current = checkoutPending;
+
+  const requestCheckoutFacts = useCallback(
+    (target: HoustonClient, dir: string, agent: AgentKind): void => {
+      if (!dir || agent === "ssh") return;
+      if (checkoutPendingRef.current.has(dir)) return;
+      const next = new Set(checkoutPendingRef.current);
+      next.add(dir);
+      checkoutPendingRef.current = next;
+      setCheckoutPending(next);
+      target.gitBranch(dir);
+    },
+    [],
+  );
+
+  const checkoutBranchChips = useMemo(() => {
+    const out = new Map<number, string>();
+    for (const s of sessions.values()) {
+      if (s.agent === "ssh") continue;
+      if (checkoutPending.has(s.cwd)) continue;
+      const branch = checkoutFacts.get(s.cwd)?.branch;
+      if (branch) out.set(s.id, branch);
+    }
+    return out;
+  }, [sessions, checkoutFacts, checkoutPending]);
+
   const [sshModal, setSshModal] = useState(false);
   const [sshPrefill, setSshPrefill] = useState<SshInitial | null>(null);
   const [sshProfiles, setSshProfiles] = useState<SshProfile[]>([]);
@@ -965,6 +1037,12 @@ export function App(): React.JSX.Element {
         }
         handleInboxRowMessage(msg, setInboxRows);
         handleTagWireMessage(msg, setTags);
+        handleCheckoutFactsMessage(
+          msg,
+          setCheckoutFacts,
+          checkoutPendingRef,
+          setCheckoutPending,
+        );
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1150,6 +1228,7 @@ export function App(): React.JSX.Element {
               return next;
             });
             break;
+
           case "agent_notice": {
             const ninfo = sessionsRef.current.get(msg.session);
             if (ninfo) {
@@ -1805,6 +1884,16 @@ export function App(): React.JSX.Element {
       remembered !== null && live.includes(remembered) ? remembered : live[0],
     );
   }, [selectedWs, sessions, currentTree, setActiveId]);
+
+  // A pane's branch is a live git fact, not stored state: focus asks for that
+  // pane's cwd and refocus asks again, so a `git switch` typed into the pane
+  // shows up without a timer. While the ask is unanswered the chip stays off.
+  useEffect(() => {
+    if (conn.kind !== "ready" || activeId === null) return;
+    const info = sessionsRef.current.get(activeId);
+    if (!info) return;
+    requestCheckoutFacts(conn.client, info.cwd, info.agent);
+  }, [activeId, conn, requestCheckoutFacts]);
 
   const resetLayout = (n: number): void => {
     const key = keyForRef(selectedWs);
@@ -3457,6 +3546,7 @@ export function App(): React.JSX.Element {
                   <LayoutView
                     tree={currentTree}
                     sessions={sessions}
+                    branches={checkoutBranchChips}
                     roster={paneRoster}
                     onFocusPane={focusPane}
                     viewAll
@@ -3545,6 +3635,7 @@ export function App(): React.JSX.Element {
                               tree={tree}
                               warm={!gridSelected}
                               sessions={sessions}
+                              branches={checkoutBranchChips}
                               roster={paneRoster}
                               onFocusPane={focusPane}
                               viewAll={false}
