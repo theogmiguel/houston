@@ -883,6 +883,25 @@ struct SwarmMailScope {
     warned_unparseable: HashMap<PathBuf, HashSet<std::ffi::OsString>>,
 }
 
+/// The operator's last raw stdin frame to a pane, so a paste-hold decision can tell an
+/// unsubmitted keystroke from a submitting Enter without reading terminal text.
+#[derive(Debug, Clone, Copy)]
+struct ComposerKeystroke {
+    at: u64,
+    submitting_enter: bool,
+}
+
+/// A frame ending in a bare `\r` submits the composer; one ending in the escape-prefixed
+/// `\x1b\r` is a newline within the text, not a submit.
+fn is_submitting_enter(payload: &[u8]) -> bool {
+    payload.ends_with(b"\r") && !payload.ends_with(b"\x1b\r")
+}
+
+#[doc(hidden)]
+pub fn is_submitting_enter_for_test(payload: &[u8]) -> bool {
+    is_submitting_enter(payload)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DelegationSettleSample {
     fingerprint: u64,
@@ -993,7 +1012,7 @@ pub struct Daemon {
     swarm_terminal_since: Mutex<HashMap<u64, u64>>,
     swarm_finished_sessions: Mutex<HashSet<u32>>,
     inbox_flush_scheduled: Mutex<HashSet<u32>>,
-    composer_occupied: Mutex<HashMap<u32, u64>>,
+    composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
@@ -14290,17 +14309,21 @@ impl Daemon {
             .expect("composer lock")
             .get(&parent)
             .copied();
-        let quiet = now_ms().saturating_sub(typed?);
+        let typed = typed?;
+        let quiet = now_ms().saturating_sub(typed.at);
         if quiet < orchestrate::OPERATOR_TYPING_GUARD_MS {
             return Some(format!(
                 "the operator typed into this pane {quiet} ms ago, inside the {} ms guard",
                 orchestrate::OPERATOR_TYPING_GUARD_MS
             ));
         }
-        Some("this pane's prompt has text the operator has not submitted".to_string())
+        if !typed.submitting_enter {
+            return Some("this pane's prompt has text the operator has not submitted".to_string());
+        }
+        None
     }
 
-    pub fn note_operator_keystroke(&self, session: u32) {
+    pub fn note_operator_keystroke(&self, session: u32, payload: &[u8]) {
         let _cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
@@ -14309,7 +14332,13 @@ impl Daemon {
         self.composer_occupied
             .lock()
             .expect("composer lock")
-            .insert(session, now_ms());
+            .insert(
+                session,
+                ComposerKeystroke {
+                    at: now_ms(),
+                    submitting_enter: is_submitting_enter(payload),
+                },
+            );
     }
 
     pub fn clear_composer_occupied(&self, session: u32) -> bool {

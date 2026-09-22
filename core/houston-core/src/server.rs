@@ -427,7 +427,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 }
                 Some(Ok(Message::Binary(buf))) => {
                     if let Some((id, payload)) = proto::decode_stdin_frame(&buf) {
-                        daemon.note_operator_keystroke(id);
+                        daemon.note_operator_keystroke(id, payload);
                         if let Err(e) = daemon.write_stdin(id, payload) {
                             send_error(&mut sink, e.to_string(), Some("stdin".into())).await;
                         }

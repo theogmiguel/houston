@@ -1517,7 +1517,7 @@ async fn no_paste_over_a_prompt_the_operator_is_still_typing() {
         "idle, and still not written into"
     );
 
-    r.daemon.note_operator_keystroke(pane.id);
+    r.daemon.note_operator_keystroke(pane.id, b"T");
 
     r.daemon
         .orchestrate_submit(kid, "TYPED-GUARD the task is done".to_string().into())
@@ -7727,5 +7727,63 @@ async fn stop_hook_latency_under_load() {
     assert!(
         p99 < budget,
         "p99 {p99:?} must stay under the helper's own budget doubled ({budget:?}); p50 was {p50:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_submitting_enter_clears_the_unsubmitted_text_hold() {
+    let _guard = serial().await;
+    let r = rig("composer-submit-clears-hold").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+
+    let (_, body) = r
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "h0"}))
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), pane.id, "Stop").await;
+    assert_eq!(
+        r.daemon.session_status(pane.id).unwrap(),
+        Some(proto::AgentStatus::Idle)
+    );
+
+    // A local slash command (e.g. Claude's `/model`) produces no prompt hook, so the
+    // only trace of it is the raw keystrokes the operator sent, ending with a
+    // submitting Enter rather than an escape-prefixed newline.
+    r.daemon.note_operator_keystroke(pane.id, b"/model");
+    r.daemon.note_operator_keystroke(pane.id, b"\r");
+
+    tokio::time::sleep(Duration::from_millis(
+        houston_core::orchestrate::OPERATOR_TYPING_GUARD_MS + 500,
+    ))
+    .await;
+
+    let mut rx = r.daemon.observe();
+    r.daemon
+        .orchestrate_submit(kid, "RESULT-1 after slash command".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), kid, "Stop").await;
+
+    let acc = collect_broadcast_until(&mut rx, pane.id, "RESULT-1").await;
+    assert!(
+        acc.contains("RESULT-1"),
+        "a submitted local command must not hold the inbox open forever, without a forced \
+         inbox_deliver_now: {acc:?}"
+    );
+}
+#[test]
+fn frame_classification_distinguishes_submit_from_newline() {
+    assert!(
+        houston_core::daemon::is_submitting_enter_for_test(b"/model\r"),
+        "a bare trailing \\r submits the composer"
+    );
+    assert!(
+        !houston_core::daemon::is_submitting_enter_for_test(b"line one\x1b\r"),
+        "an escape-prefixed \\r is a newline within the text, not a submit"
+    );
+    assert!(
+        !houston_core::daemon::is_submitting_enter_for_test(b"/model"),
+        "no trailing \\r at all is still-typing, not a submit"
     );
 }
