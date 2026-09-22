@@ -54,11 +54,11 @@ child a permission it does not itself have.
 ## Getting a result back
 
 A child reports back to its parent by calling `pane_submit` — its handback point, and
-the only way it ends its side of the delegation. The parent either polls for it with
-`pane_wait`, which blocks until a result (or a question, or an exit) is ready, or
-notices it because the child's completion reaches the parent's own next wait. There is
-no separate "check on it" step: the result lands in the parent's inbox and is picked up
-the next time the parent asks.
+the only way it ends its side of the delegation. The parent continues independent work,
+then waits with `pane_wait`, which blocks until a result, a question, or an exit is ready.
+Completion also reaches the parent's inbox through its next supported delivery point.
+Routine status checks and terminal reads are unnecessary; reserve them for a reported
+blocker, a timeout, or an explicit request to inspect the child.
 
 ## Workspaces and child lifetime
 

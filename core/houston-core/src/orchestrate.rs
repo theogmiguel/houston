@@ -2023,15 +2023,15 @@ handback; use `--reusable` when you need follow-up prompts or a live pane.
    must have the reply inside this turn (see above). If a wait comes back
    `prompt_stalled`, the text landed but nothing moved within the stall
    window: `read` the pane and look before sending more.
-3. `hs-pane read <id>` — the tail of the child's terminal, ANSI stripped.
-   `hs-pane get <id>` answers the rest in one call: what state it is in, what
-   you asked it, whether it has gone quiet, and whether it is already holding
-   a result for you. Ask that before deciding to wait, prompt or kill.
-4. `hs-pane kill <id>` when the work is done. This dismisses the pane: it
-   leaves the grid and its terminal goes with it, so `read` anything you still
-   need first. If the child spawned children of its own, the kill is refused
-   until you repeat it with `--yes` — that refusal is telling you a subtree
-   exists, so read it before confirming.
+3. Wait for the inbox after finishing independent work. Use `hs-pane get <id>`
+   to diagnose a reported blocker or a timeout; use `hs-pane read <id>` for
+   the current terminal screen when the blocker needs terminal interaction.
+   Neither call is a prerequisite to waiting or a routine progress check.
+4. Temporary children close automatically after their final durable handback
+   and authoritative completion. Use `hs-pane kill <id>` to dismiss a reusable
+   child once its work is done. Its terminal goes with it, so preserve any
+   needed output first. If it has live children, inspect their purpose before
+   confirming the subtree kill with `--yes`.
 
 For a long result, do not try to scrape it out of the terminal. The child
 writes a file and names it in `--artifacts`; the path reaches you in the
