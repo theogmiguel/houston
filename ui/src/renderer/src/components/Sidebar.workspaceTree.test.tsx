@@ -86,7 +86,7 @@ describe('Sidebar workspace tree — every open workspace shows its tabs', () =>
 
   const rowNames = (): string[] =>
     [...container.querySelectorAll('[data-testid="grid-row"]')].map(
-      (r) => r.querySelector('span:not([aria-hidden])')?.textContent ?? ''
+      (r) => r.querySelector('[data-testid="grid-name"]')?.textContent ?? ''
     )
 
   const wsRow = (path: string): HTMLButtonElement =>

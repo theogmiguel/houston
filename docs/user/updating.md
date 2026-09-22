@@ -6,7 +6,9 @@ Houston tells you when a newer release exists, and installs it when you click.
 
 Settings ▸ About shows which Houston you are running — version, channel and the commit it
 was built from — and whether a newer release has been published. Houston asks once when the
-daemon starts, once a day after that, and whenever you press **Check now**.
+daemon starts, every six hours after that, and whenever you press **Check now**.
+The same schedule checks the model catalog used by Usage and the context indicator.
+Checks reuse cached responses when the server confirms nothing changed.
 
 The request goes to GitHub's releases API and asks one question: what is the latest
 release. It carries nothing about you — not your version, not your operating system, not
@@ -17,6 +19,11 @@ installed by hand, never offered as an update.
 **Switching it off.** Settings ▸ About ▸ *Check for updates*. Off means the request is
 never made, and the panel says so rather than going quiet. The current value is always on
 screen; nothing about this lives only in a file.
+
+This switch also controls automatic requests for the shared public model catalog used by
+[Usage](usage.md) and the [context indicator](context.md). Its bundled context fallback and
+cached data remain available offline. Usage's explicit **Refresh rates** action still requests
+the catalog while automatic checks are off.
 
 When a release is newer than what you are running, the panel names it, shows the start of
 its notes, and offers **Install update** beside **Release notes** and **Later**. The bottom

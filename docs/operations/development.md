@@ -27,7 +27,7 @@ distribution's package names will differ):
      build-essential pkg-config clang libclang-dev cmake nasm \
      libdbus-1-dev libudev-dev libwebkit2gtk-4.1-dev libasound2-dev \
      librsvg2-dev patchelf libfuse2 libayatana-appindicator3-dev \
-     gnome-keyring dbus-x11
+     gnome-keyring dbus-x11 minisign
    ```
 
    (`patchelf` and `libfuse2` are only needed to bundle an AppImage, not
@@ -35,6 +35,8 @@ distribution's package names will differ):
    FUSE 2 runtime `libfuse2`; the `libfuse2t64` rename is 24.04's.
    `gnome-keyring` and `dbus-x11` provide the unlocked Secret Service session
    required by the full core test suite.
+   `minisign` is required by `python3 scripts/test-update-manifest.py` and the
+   release manifest generator to verify updater signatures.
 7. Renderer dependencies, once per clone and whenever `ui/bun.lock` changes:
    `(cd ui && bun install --frozen-lockfile)`.
 
@@ -46,14 +48,18 @@ Then:
 ```
 
 The development script builds the renderer (`cd ui && bun run build`),
-the debug daemon and supervisor (`cargo build --bin houston-core --bin
-houston-supervisor` in `core`), the debug app (`cargo build` in
+the debug daemon, supervisor and hook helper (`cargo build --bin houston-core --bin
+houston-supervisor --bin tr-helper` in `core`), the debug app (`cargo build` in
 `src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel
 <target>`. The app connects to a running daemon for the target channel or
 spawns one detached, through `houston-supervisor` on Linux — it no longer
 hosts the daemon in-process. `HOUSTON_DAEMON_BIN_DIR` is exported to
 `core/target/debug` first, so the app's connect-or-spawn finds the debug
-sidecars there instead of assuming a packaged layout beside its own binary.
+sidecars there instead of assuming a packaged layout beside its own binary. With
+`--fresh`, all builds finish before the daemon is replaced, so the replacement
+uses the newly compiled code and a failed build leaves the running daemon intact.
+Close the existing window for that channel before relaunching: a second launch
+focuses the running instance instead of loading the rebuilt renderer.
 
 Development state lives in `~/.houston-dev`; see the next section for why
 that matters before you run anything else.
@@ -478,6 +484,41 @@ long until you can type into it:
   `BOOT_PHASE_DEADLINE_MS`. `waitForDom` now also polls on a `setInterval`,
   which fires regardless of focus. It is still wall-clock: an idle machine
   still matters.
+
+## Maintaining model data
+
+Houston reads LiteLLM's
+[`model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
+through the shared model catalog. Installed applications automatically consume new model
+entries and metadata updates after LiteLLM publishes them; routine additions require no
+Houston change or release. A typical entry contains per-token USD rates and the native input
+context limit:
+
+```json
+{
+  "provider/model-id": {
+    "max_input_tokens": 200000,
+    "input_cost_per_token": 0.000003,
+    "output_cost_per_token": 0.000015,
+    "cache_read_input_token_cost": 0.0000003,
+    "cache_creation_input_token_cost": 0.00000375
+  }
+}
+```
+
+The cache fields are optional. Use `max_input_tokens` for the context window. Do not add
+`max_input_tokens` and `max_output_tokens`, and do not substitute `max_tokens`: upstream
+entries often use those fields for output limits.
+
+Houston revalidates at startup and every six hours through the release-check loop. Installed-agent
+checks and Usage requests reuse the shared six-hour cache; **Refresh rates** revalidates immediately.
+The catalog cache retains its ETag across daemon restarts. A `304` updates its freshness without
+downloading the document; a changed, valid response replaces both metadata and ETag atomically.
+If metadata is missing or incorrect,
+contribute the correction upstream to LiteLLM. The initial shared loader does require a
+Houston release, as do new catalog schemas, provider-specific interpretation or support for
+spawning another provider. Catalog data does not install a model, make a provider spawnable or
+change a CLI's selected model.
 
 ## Desktop artifacts per OS
 

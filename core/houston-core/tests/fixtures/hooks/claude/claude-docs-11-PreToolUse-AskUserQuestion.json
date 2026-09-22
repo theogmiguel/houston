@@ -1,0 +1,17 @@
+{
+  "_note": "reconstructed from the Claude Code hook reference PreToolUse schema",
+  "hook_event_name": "PreToolUse",
+  "session_id": "claude-session-1",
+  "prompt_id": "prompt-1",
+  "tool_name": "AskUserQuestion",
+  "tool_use_id": "toolu-question-1",
+  "tool_input": {
+    "questions": [
+      {
+        "header": "Choice",
+        "question": "Which option should be used?",
+        "options": []
+      }
+    ]
+  }
+}

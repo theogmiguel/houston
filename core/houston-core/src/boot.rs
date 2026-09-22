@@ -1,9 +1,8 @@
 use crate::daemon::Daemon;
 use std::sync::Arc;
 
-/// Both hosts (the standalone binary and the in-process app host) call this
-/// instead of each spawning loops themselves, so the set can never drift
-/// between them.
+/// The standalone daemon owns these loops. The desktop app connects as a client
+/// and must not start another copy in its own process.
 pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     let swarm_mail = daemon.clone();
     tokio::spawn(async move { swarm_mail.swarm_mail_loop().await });

@@ -3,7 +3,7 @@ import { isTauri } from './host'
 
 export type TrayConnection = 'connecting' | 'ready' | 'reconnecting' | 'failed'
 
-export type TrayStatus = 'running' | 'idle' | 'needsInput' | 'done' | 'error'
+export type TrayStatus = 'running' | 'idle' | 'needsInput' | 'unknown' | 'done' | 'error'
 
 export interface TraySessionPayload {
   id: number
@@ -34,6 +34,8 @@ export function trayStatusFor(session: SessionInfo): TrayStatus {
           return 'needsInput'
         case 'idle':
           return 'idle'
+        case 'unavailable':
+          return 'unknown'
         default:
           return 'running'
       }

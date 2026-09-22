@@ -12,7 +12,9 @@ vi.mock('./markdownPipeline', async (importOriginal) => {
 })
 vi.mock('../houston/bridge', () => ({ openExternal: vi.fn(() => Promise.resolve()) }))
 
-const { MarkdownPreview, resetMarkdownPipelineForTest } = await import('./MarkdownPreview')
+const { MarkdownPreview, loadMarkdownPipeline, resetMarkdownPipelineForTest } =
+  await import('./MarkdownPreview')
+await vi.importActual('./markdownPipeline')
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -37,20 +39,14 @@ describe('MarkdownPreview lazy pipeline (fix round)', () => {
     return container.querySelector(`[data-testid="${testId}"]`)
   }
 
-  async function settle(until: string): Promise<void> {
-    for (let i = 0; i < 50 && !el(until); i++) {
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 1))
-      })
-    }
-  }
-
   it('surfaces a chunk failure and retries it on the next attempt', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       importFails.value = true
-      act(() => root.render(<MarkdownPreview source={'# Later\n'} />))
-      await settle('editor-markdown-load-error')
+      await act(async () => {
+        root.render(<MarkdownPreview source={'# Later\n'} />)
+        await expect(loadMarkdownPipeline()).rejects.toThrow()
+      })
 
       expect(
         el('editor-markdown-load-error'),
@@ -59,12 +55,12 @@ describe('MarkdownPreview lazy pipeline (fix round)', () => {
       expect(el('editor-markdown-load-error-detail')?.textContent?.length ?? 0).toBeGreaterThan(0)
 
       importFails.value = false
-      act(() => {
+      await act(async () => {
         ;(el('editor-markdown-retry') as HTMLButtonElement).dispatchEvent(
           new MouseEvent('click', { bubbles: true, cancelable: true })
         )
+        await loadMarkdownPipeline()
       })
-      await settle('editor-markdown-body')
       expect(el('editor-markdown-load-error')).toBeNull()
       expect(el('editor-markdown-body')?.querySelector('h1')?.textContent).toBe('Later')
     } finally {
@@ -75,7 +71,9 @@ describe('MarkdownPreview lazy pipeline (fix round)', () => {
   it('shows a loading state while the chunk is in flight, then the document', async () => {
     act(() => root.render(<MarkdownPreview source={'# Late\n'} />))
     expect(el('editor-markdown-loading')).not.toBeNull()
-    await settle('editor-markdown-body')
+    await act(async () => {
+      await loadMarkdownPipeline()
+    })
     expect(el('editor-markdown-loading')).toBeNull()
     expect(el('editor-markdown-body')?.querySelector('h1')?.textContent).toBe('Late')
   })

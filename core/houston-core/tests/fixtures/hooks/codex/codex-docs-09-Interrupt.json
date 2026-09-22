@@ -1,0 +1,7 @@
+{
+  "_note": "reconstructed from the Codex hook reference Interrupt schema",
+  "hook_event_name": "Interrupt",
+  "session_id": "codex-session-1",
+  "turn_id": "turn-question-1",
+  "permission_mode": "default"
+}

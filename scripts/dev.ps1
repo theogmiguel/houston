@@ -131,6 +131,9 @@ $App = Join-Path $Root 'src-tauri\target\debug\houston-tauri.exe'
 Write-Host '[dev] building the renderer...'
 Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'ui') -FilePath 'bun' -ArgumentList @('run', 'build')
 
+Write-Host '[dev] building the daemon and hook helper (debug)...'
+Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'core') -FilePath 'cargo' -ArgumentList @('build', '--bin', 'houston-core', '--bin', 'tr-helper')
+
 Write-Host '[dev] building the app (debug)...'
 Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'src-tauri') -FilePath 'cargo' -ArgumentList @('build')
 
@@ -138,6 +141,8 @@ if (-not (Test-Path -LiteralPath $App)) {
     Write-DevErr @("[dev] app binary missing at $App after a successful build - did the bin name change in src-tauri/Cargo.toml?")
     exit 1
 }
+
+$env:HOUSTON_DAEMON_BIN_DIR = Join-Path $Root 'core\target\debug'
 
 $AppArgs = @('--channel', $env:HOUSTON_CHANNEL)
 if ($Fresh) {

@@ -49,7 +49,7 @@ pub struct SourceSpec {
 pub struct ScanRequest {
     pub since_ms: i64,
     pub until_ms: i64,
-    pub refresh_pricing: bool,
+    pub catalog: crate::model_catalog::CatalogSnapshot,
     pub state_dir: PathBuf,
     pub sources: Vec<SourceSpec>,
 }
@@ -90,13 +90,14 @@ fn dedupe_sources(sources: Vec<SourceSpec>) -> Vec<SourceSpec> {
     out
 }
 
-/// Blocking: walks directories, reads files, and may make one HTTP request for
-/// the rate table. Callers on the daemon's event loop must run it under
-/// `spawn_blocking`.
+/// Blocking transcript IO; callers on the daemon event loop use `spawn_blocking`.
 pub fn scan(request: &ScanRequest) -> ScanOutcome {
     let started = std::time::Instant::now();
 
-    let (rates, pricing) = pricing::load_rate_table(&request.state_dir, request.refresh_pricing);
+    let crate::model_catalog::CatalogSnapshot {
+        table: rates,
+        pricing,
+    } = request.catalog.clone();
     let mut cache = cache::ScanCacheDb::open(&request.state_dir);
     let mut cache_dirty = false;
 
@@ -224,7 +225,7 @@ mod tests {
         ScanRequest {
             since_ms: 0,
             until_ms: i64::MAX / 2,
-            refresh_pricing: false,
+            catalog: crate::model_catalog::ModelCatalog::new(dir).load(false, false),
             state_dir: dir.to_path_buf(),
             sources,
         }

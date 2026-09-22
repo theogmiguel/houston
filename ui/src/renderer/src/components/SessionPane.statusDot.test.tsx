@@ -31,17 +31,18 @@ function renderDot(status: AgentStatus): HTMLElement {
 
 const PULSE = 'motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]'
 
-describe('per-pane status dot colour (charter §05b STATUS DOT list)', () => {
-  it('working (running) paints --ok, not --accent', () => {
+describe('per-pane status dot colour', () => {
+  it('working paints informational blue, not completion green', () => {
     const dot = renderDot('working')
-    expect(dot.className).toContain('bg-[var(--ok)]')
-    expect(dot.className).not.toContain('--accent')
+    expect(dot.className).toContain('bg-[var(--info)]')
+    expect(dot.className).not.toContain('--ok')
   })
 
-  it('idle (idle-attached) paints --info, not --online/--ok', () => {
+  it('idle paints neutral, not active blue or completion green', () => {
     const dot = renderDot('idle')
-    expect(dot.className).toContain('bg-[var(--info)]')
-    expect(dot.className).not.toContain('--online')
+    expect(dot.className).toContain('bg-[var(--text-muted)]')
+    expect(dot.className).not.toContain('--info')
+    expect(dot.className).not.toContain('--ok')
   })
 
   it('needs-input paints --warn', () => {
@@ -52,6 +53,14 @@ describe('per-pane status dot colour (charter §05b STATUS DOT list)', () => {
   it("spawning paints --accent, the mock's own d-spawn rule", () => {
     const dot = renderDot('spawning')
     expect(dot.className).toContain('bg-[var(--accent)]')
+  })
+
+  it('unavailable is a neutral outline and is named accessibly', () => {
+    const dot = renderDot('unavailable')
+    expect(dot.className).toContain('bg-transparent')
+    expect(dot.className).toContain('ring-[var(--text-faint)]')
+    expect(dot.getAttribute('aria-label')).toBe('status unavailable')
+    expect(dot.getAttribute('role')).toBe('img')
   })
 })
 
@@ -67,5 +76,9 @@ describe('per-pane status dot motion (§11 rule 4, motion-r4/motion-k11)', () =>
 
   it('idle never looped either way', () => {
     expect(renderDot('idle').className).not.toContain(PULSE)
+  })
+
+  it('unavailable stays static', () => {
+    expect(renderDot('unavailable').className).not.toContain(PULSE)
   })
 })

@@ -121,6 +121,11 @@ vi.mock('../houston/client', async (importOriginal) => {
   }
 })
 
+const { App } = await import('../App')
+await import('../components/SettingsView')
+await import('../components/BrowserPane')
+const { setSettingsNavForTests } = await import('../settingsNav')
+
 function installHoustonBridge(): void {
   ;(window as unknown as { houston: Window['houston'] }).houston = {
     getConfig: vi.fn().mockResolvedValue({ port: 0, token: 'test-token', pid: 0, protocol: 29 }),
@@ -283,10 +288,6 @@ async function flushBootConnect(): Promise<void> {
 export async function renderReadyApp(
   hello: Partial<Extract<ServerMsg, { type: 'hello_ok' }>> = {}
 ): Promise<AppHarness> {
-  const { App } = await import('../App')
-  await import('../components/SettingsView')
-  await import('../components/BrowserPane')
-  const { setSettingsNavForTests } = await import('../settingsNav')
   act(() => setSettingsNavForTests({ open: false, section: 'appearance' }))
   const container = document.createElement('div')
   document.body.appendChild(container)

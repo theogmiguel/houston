@@ -31,6 +31,10 @@ setting back off.
 **Terminal palette** — pick a color palette for terminal panes, or leave it on Auto to
 follow the chrome theme.
 
+New panes support full colour even when Houston is launched from a command runner with
+`NO_COLOR` set. To disable CLI colours intentionally, set `NO_COLOR` inside the pane or
+in your shell startup files.
+
 **Sidebar** — toggle whether Skills, Routines, and Connections show as rows at the top of
 the sidebar.
 

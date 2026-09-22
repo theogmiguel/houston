@@ -30,6 +30,7 @@ describe('trayStatusFor', () => {
     expect(trayStatusFor(session({ id: 1, status: 'spawning' }))).toBe('running')
     expect(trayStatusFor(session({ id: 1, status: 'idle' }))).toBe('idle')
     expect(trayStatusFor(session({ id: 1, status: 'needs-input' }))).toBe('needsInput')
+    expect(trayStatusFor(session({ id: 1, status: 'unavailable' }))).toBe('unknown')
   })
 
   it('treats a running pane with no hook signal as running, never idle', () => {

@@ -1,0 +1,16 @@
+{
+  "_note": "reconstructed from the Claude Code hook reference PostToolUse schema",
+  "hook_event_name": "PostToolUse",
+  "session_id": "claude-session-1",
+  "prompt_id": "prompt-1",
+  "tool_name": "AskUserQuestion",
+  "tool_use_id": "toolu-question-1",
+  "tool_input": {
+    "questions": []
+  },
+  "tool_response": {
+    "answers": {
+      "Which option should be used?": "First"
+    }
+  }
+}

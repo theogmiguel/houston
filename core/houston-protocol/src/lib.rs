@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 111;
+pub const PROTOCOL_VERSION: u32 = 112;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -751,6 +751,7 @@ pub enum AgentStatus {
     Working,
     Idle,
     NeedsInput,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -772,8 +773,8 @@ pub enum ContextSource {
     Derived,
 }
 
-// A session's context-window occupancy. `used_tokens` is the input side of the
-// most recent turn; a provider with no readable signal carries `state: Unknown`.
+// A session's latest context occupancy, including output. A provider with no
+// readable signal carries `state: Unknown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionContext {
@@ -790,7 +791,7 @@ pub struct SessionContext {
 }
 
 impl SessionContext {
-    /// No readable signal for this session; the UI renders `not tracked`.
+    /// No readable signal for this session; the UI hides the indicator.
     pub fn unknown() -> Self {
         Self {
             used_tokens: 0,

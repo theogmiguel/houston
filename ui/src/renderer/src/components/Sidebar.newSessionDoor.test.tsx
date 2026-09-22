@@ -31,7 +31,7 @@ function props(
     onSshConnect: noop,
     chromeTheme: 'graphite',
     onToggleChromeTheme: noop,
-    gridsByWorkspace: { '/a': [{ id: 'g1', name: 'main', count: 1, state: 'online' }] },
+    gridsByWorkspace: { '/a': [{ id: 'g1', name: 'main', count: 1, state: 'working' }] },
     selectedGridId: 'g1',
     onSelectGrid: noop,
     ...overrides

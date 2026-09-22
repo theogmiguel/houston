@@ -126,6 +126,9 @@ expect_rejected "--channel uppercase name" "RELEASE" \
 expect_rejected "--channel empty value" "empty" \
   env -u HOUSTON_CHANNEL "$DEV_SH" --channel '' --print-target
 
+expect_rejected "--fresh from its own channel" "refusing --fresh" \
+  env HOUSTON_CHANNEL=dev HOUSTON_SESSION=7 "$DEV_SH" --fresh
+
 sandbox_contents="$(find "$SANDBOX_HOME" -mindepth 1 2>/dev/null || true)"
 if [ -n "$sandbox_contents" ]; then
   echo "FAIL: --print-target had side effects — sandbox home is not empty:" >&2
@@ -133,6 +136,71 @@ if [ -n "$sandbox_contents" ]; then
   fail=1
 else
   echo "ok: --print-target left the sandbox home untouched (no mkdir/daemon.json/build/spawn)"
+fi
+
+if ! python3 - "$DEV_SH" "$SANDBOX_HOME" <<'PY'
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+source, sandbox = map(Path, sys.argv[1:])
+repo = sandbox / "checkout"
+for directory in ("scripts", "ui", "core", "src-tauri/target/debug", "mock-bin"):
+    (repo / directory).mkdir(parents=True, exist_ok=True)
+shutil.copyfile(source, repo / "scripts/dev.sh")
+state = sandbox / ".houston-dev"
+state.mkdir()
+discovery = state / "daemon.json"
+log = sandbox / "build-log"
+
+mock = '''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+name = Path(sys.argv[0]).name
+state = Path(os.environ["HOME"]) / ".houston-dev/daemon.json"
+if name == "houston-tauri":
+    assert not state.exists(), "fresh cleanup must finish before app launch"
+else:
+    assert state.exists(), "fresh replaced daemon state before builds completed"
+with Path(os.environ["DEV_TEST_LOG"]).open("a") as f:
+    f.write(name + " " + " ".join(sys.argv[1:]) + "\\n")
+if name == "bun" and os.environ.get("DEV_TEST_FAIL_BUILD"):
+    sys.exit(23)
+'''
+for name in ("mock-bin/bun", "mock-bin/cargo", "src-tauri/target/debug/houston-tauri"):
+    path = repo / name
+    path.write_text(mock)
+    path.chmod(0o755)
+
+env = dict(os.environ, HOME=str(sandbox), HOUSTON_CHANNEL="release",
+           PATH=str(repo / "mock-bin") + os.pathsep + os.environ["PATH"],
+           DEV_TEST_LOG=str(log))
+for fails in (False, True):
+    # A stale discovery file needs no process, port or real daemon.
+    discovery.write_text(json.dumps({"protocol": 112}))
+    log.write_text("")
+    env["DEV_TEST_FAIL_BUILD"] = "1" if fails else ""
+    result = subprocess.run(["bash", str(repo / "scripts/dev.sh"), "--fresh"],
+                            env=env, capture_output=True, text=True, timeout=20)
+    assert result.returncode == (23 if fails else 0), result.stdout + result.stderr
+    calls = log.read_text().splitlines()
+    if fails:
+        assert discovery.exists() and calls == ["bun run build"], calls
+    else:
+        assert calls == [
+            "bun run build",
+            "cargo build --bin houston-core --bin houston-supervisor --bin tr-helper",
+            "cargo build",
+            "houston-tauri --channel dev",
+        ], calls
+print("ok: fresh builds all sidecars before replacement; failed builds preserve daemon state")
+PY
+then
+  fail=1
 fi
 
 exit "$fail"

@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppearanceSection } from './AppearanceSection'
-import { setContextBarForTests } from '../../contextBarPref'
+import { setContextIndicatorForTests } from '../../contextIndicatorPref'
 import { AUTO_TERMINAL_PALETTE } from '../../theme'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
@@ -10,7 +10,7 @@ vi.mock('../../houston/host', () => ({ isTauri: () => false }))
 
 beforeEach(() => {
   localStorage.clear()
-  setContextBarForTests(true)
+  setContextIndicatorForTests(true)
 })
 afterEach(cleanup)
 
@@ -27,9 +27,9 @@ function renderSection(): void {
   )
 }
 
-describe('context bar setting', () => {
-  it('show context bar defaults on', () => {
+describe('context indicator setting', () => {
+  it('show context indicator defaults on', () => {
     renderSection()
-    expect(screen.getByTestId('context-bar-toggle').getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByTestId('context-indicator-toggle').getAttribute('aria-checked')).toBe('true')
   })
 })

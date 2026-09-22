@@ -1,4 +1,4 @@
-//! Claude context occupancy, read from the CLI's own transcript. The daemon
+//! Context occupancy, read from the CLI's own transcript. The daemon
 //! learns the path from the hook payload it already receives; only integers,
 //! the model id and the reset flag cross this boundary.
 
@@ -11,14 +11,15 @@ const TAIL_BYTES: u64 = 8 * 1024 * 1024;
 
 /// One reading of a session's context, newest event wins.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaudeReading {
+pub struct ContextReading {
     pub used_tokens: u64,
     pub model: String,
+    pub reported_window: Option<u64>,
     /// The newest event was a compaction boundary; `used_tokens` is post-compaction.
     pub reset: bool,
 }
 
-pub fn read_claude_context(path: &Path) -> Option<ClaudeReading> {
+pub fn read_claude_context(path: &Path) -> Option<ContextReading> {
     let contents = read_tail(path, TAIL_BYTES)?;
     latest_claude_reading(&contents)
 }
@@ -26,7 +27,7 @@ pub fn read_claude_context(path: &Path) -> Option<ClaudeReading> {
 /// Scan transcript JSONL for the newest usage or compaction event. Claude
 /// repeats one message's `usage` across its content blocks, so the last record
 /// is the occupancy and there is no summing here.
-pub fn latest_claude_reading(contents: &str) -> Option<ClaudeReading> {
+pub fn latest_claude_reading(contents: &str) -> Option<ContextReading> {
     // Newest event wins, and it is near the end: scan backwards and stop at the
     // first matching record, so a large tail costs a substring scan, not a full
     // parse of every line. The cheap filter keeps serde off unrelated records.
@@ -48,14 +49,16 @@ pub fn latest_claude_reading(contents: &str) -> Option<ClaudeReading> {
             else {
                 continue;
             };
-            return Some(ClaudeReading {
+            return Some(ContextReading {
                 used_tokens: post,
                 model: String::new(),
+                reported_window: None,
                 reset: true,
             });
         }
         if kind != Some("assistant")
             || root.get("isSidechain").and_then(|v| v.as_bool()) == Some(true)
+            || root.get("parent_tool_use_id").is_some_and(|v| !v.is_null())
         {
             continue;
         }
@@ -65,48 +68,67 @@ pub fn latest_claude_reading(contents: &str) -> Option<ClaudeReading> {
         let Some(usage) = message.get("usage").and_then(|v| v.as_object()) else {
             continue;
         };
+        let usage = usage
+            .get("iterations")
+            .and_then(|v| v.as_array())
+            .and_then(|iterations| iterations.iter().rev().find_map(|v| v.as_object()))
+            .unwrap_or(usage);
         let get = |key: &str| usage.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
-        let used_tokens = get("input_tokens")
-            .saturating_add(get("cache_read_input_tokens"))
-            .saturating_add(get("cache_creation_input_tokens"));
+        let used_tokens = match get("total_tokens") {
+            0 => get("input_tokens")
+                .saturating_add(get("cache_read_input_tokens"))
+                .saturating_add(get("cache_creation_input_tokens"))
+                .saturating_add(get("output_tokens")),
+            total => total,
+        };
+        if used_tokens == 0 {
+            continue;
+        }
         let model = message
             .get("model")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        return Some(ClaudeReading {
+        return Some(ContextReading {
             used_tokens,
             model,
+            reported_window: None,
             reset: false,
         });
     }
     None
 }
 
-/// The documented context window for a Claude model id, or `None` when the id is
-/// not recognised. A `None` denominator means the UI shows absolute tokens only.
-pub fn model_window(model: &str) -> Option<u64> {
-    if model.is_empty() {
-        return None;
-    }
-    let m = model.to_ascii_lowercase();
-    // Families Anthropic documents as 1M-context. Substring keys use the
-    // transcript's hyphenated spelling (e.g. `claude-opus-4-8`).
-    const ONE_M: [&str; 8] = [
-        "fable-5",
-        "mythos-5",
-        "opus-5",
-        "opus-4-8",
-        "opus-4-7",
-        "opus-4-6",
-        "sonnet-5",
-        "sonnet-4-6",
-    ];
-    if ONE_M.iter().any(|k| m.contains(k)) {
-        return Some(1_000_000);
-    }
-    if m.starts_with("claude-") {
-        return Some(200_000);
+pub fn read_codex_context(path: &Path) -> Option<ContextReading> {
+    latest_codex_reading(&read_tail(path, TAIL_BYTES)?)
+}
+
+pub fn latest_codex_reading(contents: &str) -> Option<ContextReading> {
+    for line in contents.lines().rev() {
+        if !line.contains("\"token_count\"") {
+            continue;
+        }
+        let Ok(root) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let payload = &root["payload"];
+        if root["type"] != "event_msg" || payload["type"] != "token_count" {
+            continue;
+        }
+        let info = &payload["info"];
+        let Some(used_tokens) = info["last_token_usage"]["total_tokens"]
+            .as_u64()
+            .filter(|tokens| *tokens > 0)
+        else {
+            // Rate-limit-only notifications carry no new context reading.
+            continue;
+        };
+        return Some(ContextReading {
+            used_tokens,
+            model: String::new(),
+            reported_window: info["model_context_window"].as_u64().filter(|n| *n > 0),
+            reset: false,
+        });
     }
     None
 }
@@ -178,6 +200,29 @@ mod tests {
     }
 
     #[test]
+    fn claude_counts_output_and_prefers_the_latest_iteration_total() {
+        let body = assistant(
+            r#"{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":4}"#,
+        );
+        assert_eq!(latest_claude_reading(&body).unwrap().used_tokens, 64);
+        let body = assistant(
+            r#"{"input_tokens":9999,"iterations":[{"total_tokens":900},{"input_tokens":10,"output_tokens":5,"total_tokens":50}]}"#,
+        );
+        assert_eq!(latest_claude_reading(&body).unwrap().used_tokens, 50);
+    }
+
+    #[test]
+    fn claude_ignores_subagent_and_synthetic_zero_usage() {
+        let body = format!(
+            "{}\n{}\n{}",
+            assistant(r#"{"input_tokens":100}"#),
+            r#"{"type":"assistant","parent_tool_use_id":"tool-1","message":{"usage":{"input_tokens":9000}}}"#,
+            assistant(r#"{"input_tokens":0,"output_tokens":0}"#),
+        );
+        assert_eq!(latest_claude_reading(&body).unwrap().used_tokens, 100);
+    }
+
+    #[test]
     fn skips_sidechain_assistant_records() {
         let body = format!(
             "{}\n{}\n",
@@ -206,36 +251,30 @@ mod tests {
     }
 
     #[test]
-    fn known_models_get_a_window() {
-        assert_eq!(model_window("claude-opus-4-8"), Some(1_000_000));
-        assert_eq!(model_window("claude-sonnet-4-5"), Some(200_000));
+    fn codex_uses_latest_context_total_not_cumulative_usage() {
+        let body = concat!(
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"total_tokens\":800},\"model_context_window\":1000}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"total_tokens\":120},\"total_token_usage\":{\"total_tokens\":9000},\"model_context_window\":2000}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"total_tokens\":0},\"model_context_window\":2000}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":null}}\n",
+        );
+        let reading = latest_codex_reading(body).unwrap();
+        assert_eq!(reading.used_tokens, 120);
+        assert_eq!(reading.reported_window, Some(2000));
     }
 
     #[test]
-    fn window_table_is_table_driven() {
-        let one_million = [
-            "claude-fable-5-1",
-            "claude-mythos-5-1",
-            "claude-fable-5",
-            "claude-mythos-5",
-            "claude-opus-5",
-            "claude-opus-4-8",
-            "claude-opus-4-7",
-            "claude-opus-4-6",
-            "claude-sonnet-5",
-            "claude-sonnet-4-6",
-        ];
-        for model in one_million {
-            assert_eq!(model_window(model), Some(1_000_000), "{model}");
+    fn codex_does_not_guess_a_missing_or_zero_limit() {
+        for window in [serde_json::Value::Null, serde_json::json!(0)] {
+            let line = serde_json::json!({"type": "event_msg", "payload": {
+                "type": "token_count", "info": {
+                    "last_token_usage": {"total_tokens": 100}, "model_context_window": window
+                }
+            }})
+            .to_string();
+            assert_eq!(latest_codex_reading(&line).unwrap().reported_window, None);
         }
-        assert_eq!(model_window("claude-sonnet-4-5"), Some(200_000));
-        assert_eq!(model_window("gpt-5.6-sol"), None);
-    }
-
-    #[test]
-    fn unknown_model_has_no_percentage() {
-        assert_eq!(model_window("gpt-5.6-sol"), None);
-        assert_eq!(model_window(""), None);
+        assert!(latest_codex_reading(&assistant(r#"{"input_tokens":10}"#)).is_none());
     }
 
     #[test]

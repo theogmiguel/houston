@@ -1,0 +1,15 @@
+{
+  "_note": "reconstructed from the Codex hook reference local-function PostToolUse schema",
+  "hook_event_name": "PostToolUse",
+  "session_id": "codex-session-1",
+  "turn_id": "turn-question-1",
+  "tool_name": "request_user_input",
+  "tool_input": {
+    "questions": []
+  },
+  "tool_output": {
+    "answers": {
+      "Which option should be used?": "First"
+    }
+  }
+}
