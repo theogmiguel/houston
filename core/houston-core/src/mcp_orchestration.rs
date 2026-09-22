@@ -393,6 +393,7 @@ impl ToolProvider for OrchestrationTools {
                         .await
                         .map_err(refused)?;
                     let message = outcome.message();
+                    let next_action = outcome.next_action();
                     match outcome {
                         orchestrate::InboxWaitOutcome::Delivered {
                             rows,
@@ -425,16 +426,23 @@ impl ToolProvider for OrchestrationTools {
                             waited_ms,
                             status,
                             status_source,
-                        } => Ok(ToolOutput {
-                            text: message,
-                            structured: Some(json!({
-                                "rows": [],
-                                "timed_out": true,
-                                "waited_ms": waited_ms,
-                                "status": status,
-                                "status_source": status_source,
-                            })),
-                        }),
+                        } => {
+                            let text = match &next_action {
+                                Some(next) => format!("{message}\n{next}"),
+                                None => message,
+                            };
+                            Ok(ToolOutput {
+                                text,
+                                structured: Some(json!({
+                                    "rows": [],
+                                    "timed_out": true,
+                                    "waited_ms": waited_ms,
+                                    "status": status,
+                                    "status_source": status_source,
+                                    "next_action": next_action,
+                                })),
+                            })
+                        }
                         orchestrate::InboxWaitOutcome::Stalled { .. } => Err(ToolError(message)),
                     }
                 }

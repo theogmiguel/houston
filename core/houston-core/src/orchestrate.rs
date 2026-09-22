@@ -703,6 +703,18 @@ pub enum InboxWaitOutcome {
     },
 }
 
+/// A human word for a wire status, instead of `{status:?}`'s `Some(Working)` / `None`.
+fn status_word(status: Option<proto::AgentStatus>) -> String {
+    match status {
+        Some(proto::AgentStatus::Spawning) => "spawning".to_string(),
+        Some(proto::AgentStatus::Working) => "working".to_string(),
+        Some(proto::AgentStatus::Idle) => "idle".to_string(),
+        Some(proto::AgentStatus::NeedsInput) => "needs input".to_string(),
+        Some(proto::AgentStatus::Unavailable) => "unavailable".to_string(),
+        None => "unknown".to_string(),
+    }
+}
+
 impl InboxWaitOutcome {
     pub fn message(&self) -> String {
         match self {
@@ -730,8 +742,9 @@ impl InboxWaitOutcome {
                      only a submit or its exit will produce a row"
                 ),
                 Some(source) => format!(
-                    "wait timed out after {waited_ms} ms (last status {status:?}; status source \
-                     {source})"
+                    "wait timed out after {waited_ms} ms (last status {}; status source \
+                     {source})",
+                    status_word(*status)
                 ),
                 None => format!("wait timed out after {waited_ms} ms"),
             },
@@ -741,6 +754,37 @@ impl InboxWaitOutcome {
                  hung, or already awaiting input; inspect before retrying"
             ),
         }
+    }
+
+    /// What to do next after a timeout — a timeout is a normal "nothing yet" outcome,
+    /// not a stall, so callers should re-wait rather than read/get/prompt the child.
+    pub fn next_action(&self) -> Option<String> {
+        let Self::TimedOut {
+            status,
+            status_source,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        Some(
+            if *status_source == Some(StatusSource::ProcessOnly.label()) {
+                "No row yet — that is not a stall: this child reports no turn end, so only a \
+             submit or its own exit will ever produce a row for it. Call wait again with \
+             the default timeout; do not read, get or prompt it."
+                    .to_string()
+            } else if status.is_none() {
+                "No row yet — none of your children has handed anything over; that is not a \
+             stall. Call wait again with the default timeout; do not read, get or prompt it."
+                    .to_string()
+            } else {
+                format!(
+                    "No row yet — that is not a stall: the child is still {}. Call wait again \
+                 with the default timeout; do not read, get or prompt it.",
+                    status_word(*status)
+                )
+            },
+        )
     }
 }
 
@@ -2370,6 +2414,12 @@ fn cli_call(
     let (status, text) = http_json(base, method, path, token, body.as_ref(), timeout)?;
     let v: serde_json::Value =
         serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text.clone()));
+    // A wait timeout is a normal "nothing yet" outcome, not a failure: /orchestrate/wait
+    // answers it as 408 with `timed_out: true` so the CLI exits 0 and prints next_action
+    // instead of following a raw HTTP error into a retry storm.
+    if status == 408 && v.get("timed_out").and_then(serde_json::Value::as_bool) == Some(true) {
+        return Ok(v);
+    }
     if !(200..300).contains(&status) {
         let msg = v.get("error").and_then(|e| e.as_str()).unwrap_or(&text);
         if msg.contains("live_children_confirmation_required") {
@@ -4356,6 +4406,71 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_timeouts_next_action_tells_the_caller_to_wait_again_not_chase() {
+        let hooked = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: Some(proto::AgentStatus::Working),
+            status_source: Some("hooks-full"),
+        };
+        let next = hooked
+            .next_action()
+            .expect("a timeout always has a next action");
+        assert!(next.contains("Call wait again"), "{next}");
+        assert!(next.contains("do not read, get or prompt it"), "{next}");
+
+        let process_only = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: None,
+            status_source: Some(StatusSource::ProcessOnly.label()),
+        };
+        let next = process_only
+            .next_action()
+            .expect("a timeout always has a next action");
+        assert!(
+            next.contains("only a submit or its own exit will ever produce a row"),
+            "{next}"
+        );
+
+        assert!(InboxWaitOutcome::Delivered {
+            rows: Vec::new(),
+            delivery_id: "d".into(),
+            has_more: false,
+            waited_ms: 1,
+        }
+        .next_action()
+        .is_none());
+    }
+
+    #[test]
+    fn a_timeouts_status_reads_as_a_word_not_a_debug_dump() {
+        let with_status = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: Some(proto::AgentStatus::Working),
+            status_source: Some("hooks-full"),
+        };
+        let next = with_status.next_action().unwrap();
+        assert!(next.contains("the child is still working"), "{next}");
+        assert!(!next.contains("Some("), "{next}");
+        let msg = with_status.message();
+        assert!(msg.contains("last status working"), "{msg}");
+        assert!(!msg.contains("Some("), "{msg}");
+
+        // `status: None` with a status source is a whole-inbox wait (no `session`):
+        // no single child's status to report, not an unknown one.
+        let whole_inbox = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: None,
+            status_source: Some("hooks-full"),
+        };
+        let next = whole_inbox.next_action().unwrap();
+        assert!(
+            next.contains("none of your children has handed anything over"),
+            "{next}"
+        );
+        assert!(!next.contains("None"), "{next}");
+    }
+
     static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
@@ -4417,6 +4532,42 @@ mod tests {
         assert!(
             result.is_ok(),
             "a delayed wait response should succeed: {result:#?}"
+        );
+        server.join().expect("the server thread");
+    }
+
+    #[test]
+    fn hs_pane_wait_treats_a_408_timeout_body_as_success_not_a_bail() {
+        use std::io::{Read, Write};
+
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("one CLI request");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).expect("the CLI request");
+            let body = r#"{"rows":[],"timed_out":true,"waited_ms":200,"status":"working",
+                "status_source":"hooks-full","next_action":"Call wait again with the default timeout"}"#;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 408 Request Timeout\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        });
+        std::env::set_var("HOUSTON_SESSION", "1");
+        std::env::set_var("HOUSTON_MCP_URL", format!("http://127.0.0.1:{port}"));
+        std::env::set_var("HOUSTON_MCP_TOKEN", "unused");
+
+        let result = pane_cli_inner(&[
+            "wait".to_string(),
+            "--timeout-ms".to_string(),
+            "200".to_string(),
+        ]);
+
+        assert!(
+            result.is_ok(),
+            "a wait timeout is a normal outcome, not a CLI failure: {result:#?}"
         );
         server.join().expect("the server thread");
     }

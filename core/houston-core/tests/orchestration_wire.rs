@@ -2827,6 +2827,63 @@ async fn hs_pane_wait_matches_the_tool() {
 }
 
 #[tokio::test]
+async fn a_wait_timeout_on_a_working_child_is_not_an_error_and_names_the_next_action() {
+    let _guard = serial().await;
+    let r = rig("wait-timeout-next-action").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "grok", "prompt": "slow"}),
+        )
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+
+    let (status, http_result) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/wait",
+        &token,
+        Some(serde_json::json!({"session": kid, "timeout_ms": 200})),
+    )
+    .await;
+    assert_eq!(status, 408, "{http_result}");
+    assert_eq!(http_result["timed_out"], true, "{http_result}");
+    let next_action = http_result["next_action"]
+        .as_str()
+        .unwrap_or_else(|| panic!("HTTP wait timeout carries no next_action: {http_result}"));
+    assert!(next_action.contains("Call wait again"), "{next_action}");
+    assert!(
+        next_action.contains("do not read, get or prompt it"),
+        "{next_action}"
+    );
+
+    let mcp_result = mcp_call(
+        r.addr,
+        &token,
+        "pane_wait",
+        serde_json::json!({"session": kid, "timeout_ms": 200}),
+    )
+    .await;
+    assert_eq!(
+        mcp_result["isError"], false,
+        "a wait timeout must not be reported as a tool error: {mcp_result}"
+    );
+    assert_eq!(
+        mcp_result["structuredContent"]["timed_out"], true,
+        "{mcp_result}"
+    );
+    assert!(
+        mcp_result["structuredContent"]["next_action"]
+            .as_str()
+            .is_some_and(|s| s.contains("Call wait again")),
+        "{mcp_result}"
+    );
+}
+
+#[tokio::test]
 async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_and_restart_still_work(
 ) {
     let _guard = serial().await;

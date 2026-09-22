@@ -3674,6 +3674,7 @@ async fn orch_wait(
     };
     use crate::orchestrate::InboxWaitOutcome;
     let message = outcome.message();
+    let next_action = outcome.next_action();
     match outcome {
         InboxWaitOutcome::Delivered {
             rows,
@@ -3705,6 +3706,7 @@ async fn orch_wait(
                 "waited_ms": waited_ms,
                 "status": status,
                 "status_source": status_source,
+                "next_action": next_action,
             })),
         )
             .into_response(),
