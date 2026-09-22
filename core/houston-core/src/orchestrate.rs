@@ -6,6 +6,23 @@ use serde_json::json;
 // caller control back instead of hanging on a child that never reports a status
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
 
+// Ordinary control-plane calls stay responsive; long-poll responses use the daemon's wait budget.
+const CLI_HTTP_TIMEOUT_MS: u64 = 15_000;
+// Leave time for the daemon to serialize and flush the response at its deadline.
+const CLI_WAIT_RESPONSE_MARGIN_MS: u64 = 1_000;
+const CLI_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(CLI_HTTP_TIMEOUT_MS);
+
+fn cli_wait_timeout_ms(raw: Option<&str>) -> u64 {
+    // Match the daemon's positive-timeout normalization for both CLI wait forms.
+    raw.and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_WAIT_TIMEOUT_MS)
+}
+
+fn cli_wait_transport_timeout(timeout_ms: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(timeout_ms.saturating_add(CLI_WAIT_RESPONSE_MARGIN_MS))
+}
+
 pub const SPAWN_NEXT_ACTION: &str =
     "Continue independent work; otherwise call `pane_wait` for this child or your inbox. Do not poll status.";
 
@@ -1741,7 +1758,7 @@ pub(crate) fn http_json(
     stream.set_write_timeout(Some(timeout))?;
     stream.write_all(req.as_bytes())?;
     stream.flush()?;
-    read_loopback_response(&mut stream)
+    read_loopback_response(&mut stream, timeout)
 }
 
 pub(crate) fn http_json_deadline(
@@ -1768,7 +1785,7 @@ pub(crate) fn http_json_deadline(
         .write_all(req.as_bytes())
         .context("writing the request")?;
     stream.flush().context("flushing the request")?;
-    read_loopback_response(&mut stream)
+    read_loopback_response(&mut stream, remaining)
 }
 
 fn remaining_until(deadline: std::time::Instant) -> anyhow::Result<std::time::Duration> {
@@ -1822,10 +1839,21 @@ fn loopback_addr(authority: &str) -> anyhow::Result<std::net::SocketAddr> {
     })
 }
 
-fn read_loopback_response(stream: &mut std::net::TcpStream) -> anyhow::Result<(u16, String)> {
-    use std::io::Read;
+fn read_loopback_response(
+    stream: &mut std::net::TcpStream,
+    timeout: std::time::Duration,
+) -> anyhow::Result<(u16, String)> {
+    use std::io::{ErrorKind, Read};
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw)?;
+    if let Err(error) = stream.read_to_end(&mut raw) {
+        let context = match error.kind() {
+            ErrorKind::WouldBlock | ErrorKind::TimedOut => {
+                format!("reading daemon response timed out after {timeout:?}")
+            }
+            _ => "reading daemon response".to_string(),
+        };
+        return Err(anyhow::Error::new(error).context(context));
+    }
     let text = String::from_utf8_lossy(&raw);
     let (head, resp_body) = text
         .split_once("\r\n\r\n")
@@ -2333,6 +2361,27 @@ pub(crate) fn parse_flags(
     (positional, flags)
 }
 
+fn cli_call(
+    base: &str,
+    token: &str,
+    method: &str,
+    path: &str,
+    body: Option<serde_json::Value>,
+    timeout: std::time::Duration,
+) -> anyhow::Result<serde_json::Value> {
+    let (status, text) = http_json(base, method, path, token, body.as_ref(), timeout)?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text.clone()));
+    if !(200..300).contains(&status) {
+        let msg = v.get("error").and_then(|e| e.as_str()).unwrap_or(&text);
+        if msg.contains("live_children_confirmation_required") {
+            anyhow::bail!("{msg}\nhint: repeat with --yes to confirm killing the children too");
+        }
+        anyhow::bail!("{msg}");
+    }
+    Ok(v)
+}
+
 fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
     let Some(cmd) = args.first() else {
         println!("{USAGE}");
@@ -2357,18 +2406,7 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                 path: &str,
                 body: Option<serde_json::Value>|
      -> anyhow::Result<serde_json::Value> {
-        let timeout = std::time::Duration::from_secs(15);
-        let (status, text) = http_json(&base, method, path, &token, body.as_ref(), timeout)?;
-        let v: serde_json::Value =
-            serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text.clone()));
-        if !(200..300).contains(&status) {
-            let msg = v.get("error").and_then(|e| e.as_str()).unwrap_or(&text);
-            if msg.contains("live_children_confirmation_required") {
-                anyhow::bail!("{msg}\nhint: repeat with --yes to confirm killing the children too");
-            }
-            anyhow::bail!("{msg}");
-        }
-        Ok(v)
+        cli_call(&base, &token, method, path, body, CLI_HTTP_TIMEOUT)
     };
 
     match cmd.as_str() {
@@ -2483,16 +2521,19 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                 return Ok(());
             }
             if flags.contains_key("wait") {
-                let timeout = flags.get("timeout").and_then(|t| t.parse::<u64>().ok());
+                let timeout_ms = cli_wait_timeout_ms(flags.get("timeout").map(String::as_str));
                 let body = json!({
                     "session": id,
                     "stall_guard": true,
-                    "timeout_ms": timeout.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS),
+                    "timeout_ms": timeout_ms,
                 });
-                let w = call(
+                let w = cli_call(
+                    &base,
+                    &token,
                     "POST",
                     &format!("/orchestrate/wait?_={}", now_suffix()),
                     Some(body),
+                    cli_wait_transport_timeout(timeout_ms),
                 )?;
                 println!("{}", serde_json::to_string_pretty(&w)?);
             } else {
@@ -2503,9 +2544,9 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             if flags.contains_key("until") {
                 anyhow::bail!(UNTIL_REMOVED_MSG);
             }
-            let timeout = flags.get("timeout-ms").and_then(|t| t.parse::<u64>().ok());
+            let timeout_ms = cli_wait_timeout_ms(flags.get("timeout-ms").map(String::as_str));
             let mut body = json!({
-                "timeout_ms": timeout.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS),
+                "timeout_ms": timeout_ms,
             });
             if let Some(session) = flags.get("session") {
                 let id: u32 = session
@@ -2519,10 +2560,13 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             if flags.contains_key("stall-guard") {
                 body["stall_guard"] = json!(true);
             }
-            let w = call(
+            let w = cli_call(
+                &base,
+                &token,
                 "POST",
                 &format!("/orchestrate/wait?_={}", now_suffix()),
                 Some(body),
+                cli_wait_transport_timeout(timeout_ms),
             )?;
             println!("{}", serde_json::to_string_pretty(&w)?);
         }
@@ -3825,6 +3869,63 @@ mod tests {
     }
 
     #[test]
+    fn cli_wait_timeout_selection_matches_daemon_defaulting() {
+        assert_eq!(cli_wait_timeout_ms(None), DEFAULT_WAIT_TIMEOUT_MS);
+        assert_eq!(cli_wait_timeout_ms(Some("")), DEFAULT_WAIT_TIMEOUT_MS);
+        assert_eq!(cli_wait_timeout_ms(Some("0")), DEFAULT_WAIT_TIMEOUT_MS);
+        assert_eq!(
+            cli_wait_timeout_ms(Some("not-a-number")),
+            DEFAULT_WAIT_TIMEOUT_MS
+        );
+        assert_eq!(cli_wait_timeout_ms(Some("1234")), 1_234);
+    }
+
+    #[test]
+    fn cli_wait_transport_timeout_preserves_the_normal_budget_and_saturates_margin() {
+        assert_eq!(CLI_HTTP_TIMEOUT, std::time::Duration::from_secs(15));
+        assert_eq!(
+            cli_wait_transport_timeout(1_234),
+            std::time::Duration::from_millis(2_234)
+        );
+        assert_eq!(
+            cli_wait_transport_timeout(u64::MAX),
+            std::time::Duration::from_millis(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn response_read_timeout_names_the_transport_budget() {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("one request");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).expect("the request");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+        });
+
+        let err = http_json(
+            &format!("http://127.0.0.1:{port}"),
+            "POST",
+            "/orchestrate/wait",
+            "token",
+            None,
+            std::time::Duration::from_millis(10),
+        )
+        .expect_err("the delayed response must exceed the read budget");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("reading daemon response timed out"),
+            "the read timeout is contextual: {message}"
+        );
+        assert!(message.contains("10ms"), "the budget is visible: {message}");
+        server.join().expect("the server thread");
+    }
+
+    #[test]
     fn the_wire_enums_spell_the_daemons_states_exactly() {
         for st in [
             DelegationState::Spawning,
@@ -4284,6 +4385,95 @@ mod tests {
         ])
         .unwrap_err();
         assert!(format!("{err:#}").contains("until is gone"), "{err:#}");
+    }
+
+    #[test]
+    fn hs_pane_wait_allows_a_delayed_response_past_the_normal_cli_timeout() {
+        use std::io::{Read, Write};
+
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("one CLI request");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).expect("the CLI request");
+            std::thread::sleep(std::time::Duration::from_millis(15_250));
+            let body = r#"{"rows":[],"delayed":true}"#;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        });
+        std::env::set_var("HOUSTON_SESSION", "1");
+        std::env::set_var("HOUSTON_MCP_URL", format!("http://127.0.0.1:{port}"));
+        std::env::set_var("HOUSTON_MCP_TOKEN", "unused");
+
+        let result = pane_cli_inner(&[
+            "wait".to_string(),
+            "--timeout-ms".to_string(),
+            "16000".to_string(),
+        ]);
+
+        assert!(
+            result.is_ok(),
+            "a delayed wait response should succeed: {result:#?}"
+        );
+        server.join().expect("the server thread");
+    }
+
+    #[test]
+    fn hs_pane_prompt_wait_uses_the_wait_timeout_path() {
+        use std::io::{Read, Write};
+
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut prompt, _) = listener.accept().expect("the prompt request");
+            let mut request = [0_u8; 4096];
+            let _ = prompt.read(&mut request).expect("the prompt body");
+            let body = r#"{"status_source":"acp"}"#;
+            write!(
+                prompt,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .expect("the prompt response");
+            drop(prompt);
+
+            let (mut wait, _) = listener.accept().expect("the wait request");
+            let mut request = [0_u8; 4096];
+            let size = wait.read(&mut request).expect("the wait body");
+            let body = r#"{"rows":[]}"#;
+            write!(
+                wait,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .expect("the wait response");
+            String::from_utf8_lossy(&request[..size]).into_owned()
+        });
+        std::env::set_var("HOUSTON_SESSION", "1");
+        std::env::set_var("HOUSTON_MCP_URL", format!("http://127.0.0.1:{port}"));
+        std::env::set_var("HOUSTON_MCP_TOKEN", "unused");
+
+        let result = pane_cli_inner(&[
+            "prompt".to_string(),
+            "7".to_string(),
+            "go".to_string(),
+            "--wait".to_string(),
+            "--timeout".to_string(),
+            "1234".to_string(),
+        ]);
+
+        let wait_request = server.join().expect("the server thread");
+        assert!(result.is_ok(), "prompt --wait should complete: {result:#?}");
+        assert!(
+            wait_request.contains("\"timeout_ms\":1234"),
+            "the explicit prompt wait timeout reaches the daemon: {wait_request}"
+        );
     }
 
     #[test]
