@@ -27,6 +27,12 @@ and `pane_spawn` for as long as it has spawn budget left; a spawned child sees o
 `pane_submit` (its handback) and its own identity check — nothing else from this set is
 useful to it, so it is not offered.
 
+When a Codex shell pane uses the Houston MCP entry, Houston keeps its `pane_wait` tool
+timeout long enough for orchestration turns to complete. Houston refreshes its own local
+endpoint and manages only its marked timeout setting in `~/.codex/config.toml`; an explicit
+`tool_timeout_sec` value and other Codex settings remain unchanged, including when the
+local daemon port changes.
+
 ## The caps, and what happens when one trips
 
 Two caps bound how far a tree of agents can grow, both editable in Settings ▸

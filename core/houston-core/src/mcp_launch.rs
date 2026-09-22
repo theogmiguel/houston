@@ -30,7 +30,8 @@ pub const URL_ENV: &str = "HOUSTON_MCP_URL";
 pub const CONFIG_ENV: &str = "HOUSTON_MCP_CONFIG";
 
 const CODEX_TOOL_TIMEOUT_MARGIN_SEC: u64 = 30;
-const CODEX_TOOL_TIMEOUT_SEC: u64 =
+/// Leaves a transport margin after Houston's 600s `pane_wait` default.
+pub(crate) const CODEX_TOOL_TIMEOUT_SEC: u64 =
     crate::orchestrate::DEFAULT_WAIT_TIMEOUT_MS / 1_000 + CODEX_TOOL_TIMEOUT_MARGIN_SEC;
 
 fn config_json(endpoint: &str, token: &str) -> String {
