@@ -5352,6 +5352,14 @@ impl PermissionEpisodes {
     pub fn newest_reason(&self) -> Option<&str> {
         self.open.last().and_then(|ep| ep.reason.as_deref())
     }
+
+    pub fn newest_key(&self) -> Option<EpisodeKey> {
+        self.open.last().map(|ep| ep.key.clone())
+    }
+
+    pub fn contains(&self, key: &EpisodeKey) -> bool {
+        self.open.iter().any(|ep| &ep.key == key)
+    }
 }
 
 #[cfg(test)]

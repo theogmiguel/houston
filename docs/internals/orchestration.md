@@ -458,6 +458,14 @@ requests for the same command and tool in the same turn cannot be distinguished 
 duplicate delivery; they share one episode. Raw commands are not persisted for this
 correlation.
 
+**Codex Auto's block grace window.** A Codex hook carries no field distinguishing an
+Auto-mode reviewer's self-resolving approval from one waiting on a human, and most
+resolve within seconds (observed: 4-6 s). For a session recorded with `ApprovalMode::Auto`,
+the urgent `needs_input` row to the parent is delayed by `CODEX_AUTO_BLOCK_GRACE_MS`
+(`daemon.rs`) and dropped instead of written if the episode has already resolved by then;
+the child's own delegation state still moves to `needs_input` immediately. Every other
+approval mode, and every other agent kind, writes the row synchronously as before.
+
 ### Which request a body answers
 
 `delegations.round` opens once per accepted external request, whichever way it arrives: the

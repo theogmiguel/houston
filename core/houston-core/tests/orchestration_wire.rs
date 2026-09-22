@@ -5702,10 +5702,12 @@ async fn codex_permission_completion_reopens_get_and_prompt_without_a_new_round(
     let pane = r.pane();
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
+    // auto_approve: false pins ApprovalMode::Default so this round-bookkeeping test
+    // is not subject to the Auto-mode block-row grace window (see task 3).
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "codex", "prompt": "run the tests"}),
+            serde_json::json!({"kind": "codex", "prompt": "run the tests", "auto_approve": false}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -5883,6 +5885,115 @@ async fn codex_permission_completion_reopens_get_and_prompt_without_a_new_round(
         prompted["isError"], false,
         "the resumed pane accepts prompting: {prompted}"
     );
+}
+
+#[tokio::test]
+async fn a_codex_auto_reviews_resolution_inside_the_grace_window_reaches_the_parent_never() {
+    let _guard = serial().await;
+    let r = rig("codex-auto-resolves-in-window").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    // auto_approve omitted: orchestrate_spawn defaults an unset auto_approve to
+    // ApprovalMode::Auto, matching a real Codex Auto child.
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "run the tests"}),
+        )
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), pane.id, "UserPromptSubmit").await;
+    apply_hook_event(r._state.path(), kid, "UserPromptSubmit").await;
+
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "PermissionRequest".into(),
+            session: kid,
+            agent: Some("codex".into()),
+            prompt_id: Some("grace-window-resolved".into()),
+            reason: Some("Bash".into()),
+            tool_name: Some("Bash".into()),
+            tool_use_id: Some("call-grace-resolved".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    // Resolve well inside the grace window, like a Codex Auto reviewer that
+    // approves on its own within seconds.
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "PostToolUse".into(),
+            session: kid,
+            agent: Some("codex".into()),
+            prompt_id: Some("grace-window-resolved".into()),
+            tool_use_id: Some("call-grace-resolved".into()),
+            tool_name: Some("Bash".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(
+        houston_core::daemon::CODEX_AUTO_BLOCK_GRACE_MS + 1_500,
+    ))
+    .await;
+
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    assert_eq!(
+        rows.len(),
+        0,
+        "a review that resolves inside the grace window must never reach the parent: {rows:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_codex_auto_reviews_unresolved_past_the_grace_window_reaches_the_parent_once() {
+    let _guard = serial().await;
+    let r = rig("codex-auto-unresolved-past-window").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "run the tests"}),
+        )
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), pane.id, "UserPromptSubmit").await;
+    apply_hook_event(r._state.path(), kid, "UserPromptSubmit").await;
+
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "PermissionRequest".into(),
+            session: kid,
+            agent: Some("codex".into()),
+            prompt_id: Some("grace-window-unresolved".into()),
+            reason: Some("Bash".into()),
+            tool_name: Some("Bash".into()),
+            tool_use_id: Some("call-grace-unresolved".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(
+        houston_core::daemon::CODEX_AUTO_BLOCK_GRACE_MS + 1_500,
+    ))
+    .await;
+
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    assert_eq!(
+        rows.len(),
+        1,
+        "a review left unresolved past the grace window reaches the parent exactly once: {rows:?}"
+    );
+    assert!(rows[0].urgent, "{rows:?}");
+    assert!(rows[0].body.contains("Bash"), "{rows:?}");
 }
 
 #[tokio::test]

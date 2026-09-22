@@ -27,6 +27,10 @@ const MAX_TITLE_LEN: usize = 40;
 const IDLE_POLL_MS: u64 = 50;
 const SPAWN_GRACE: Duration = Duration::from_secs(20);
 
+// observed Codex Auto-mode approval reviews took 4-6s; covers the worst observed
+// with margin so a review that resolves on its own never reaches the parent as a block
+pub const CODEX_AUTO_BLOCK_GRACE_MS: u64 = 8_000;
+
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 const SWARM_WAKE_LANE_MAX: usize = 16;
 
@@ -13435,15 +13439,66 @@ impl Daemon {
         match event {
             orchestrate::DelegationEvent::Blocked => {
                 let label = self.child_label_of(child);
-                let body = orchestrate::needs_input_body(
-                    self.permission_episodes
-                        .lock()
-                        .expect("episodes lock")
-                        .get(&child)
-                        .and_then(|eps| eps.newest_reason()),
-                );
+                let (reason, newest_key) = {
+                    let episodes = self.permission_episodes.lock().expect("episodes lock");
+                    let eps = episodes.get(&child);
+                    (
+                        eps.and_then(|e| e.newest_reason()).map(str::to_string),
+                        eps.and_then(|e| e.newest_key()),
+                    )
+                };
+                let body = orchestrate::needs_input_body(reason.as_deref());
                 let summary = format!("{label} is blocked");
-                self.refresh_or_write_block(parent, child, &workspace, row.round, &summary, &body);
+                let is_codex_auto = self.agent_kind_of(child) == Some(proto::AgentKind::Codex)
+                    && self.approval_mode_of(child) == crate::launch::ApprovalMode::Auto;
+                match (is_codex_auto, newest_key) {
+                    (true, Some(key)) => {
+                        // Most Codex Auto reviews resolve within seconds; wait and only
+                        // tell the parent if still open past that. A plain OS thread
+                        // stands in for tokio::spawn: this is also reached off-runtime.
+                        let daemon = Arc::clone(self);
+                        let round = row.round;
+                        let (thread_workspace, thread_summary, thread_body) =
+                            (workspace.clone(), summary.clone(), body.clone());
+                        let spawned = std::thread::Builder::new()
+                            .name(format!("block-grace-{child}"))
+                            .spawn(move || {
+                                std::thread::sleep(Duration::from_millis(
+                                    CODEX_AUTO_BLOCK_GRACE_MS,
+                                ));
+                                let still_open = daemon
+                                    .permission_episodes
+                                    .lock()
+                                    .expect("episodes lock")
+                                    .get(&child)
+                                    .is_some_and(|eps| eps.contains(&key));
+                                if still_open {
+                                    daemon.refresh_or_write_block(
+                                        parent,
+                                        child,
+                                        &thread_workspace,
+                                        round,
+                                        &thread_summary,
+                                        &thread_body,
+                                    );
+                                }
+                            });
+                        if let Err(e) = spawned {
+                            tracing::warn!(
+                                "spawning child {child}'s block-grace thread: {e}; writing \
+                                 the block row immediately instead"
+                            );
+                            self.refresh_or_write_block(
+                                parent, child, &workspace, round, &summary, &body,
+                            );
+                        }
+                    }
+                    _ => {
+                        self.refresh_or_write_block(
+                            parent, child, &workspace, row.round, &summary, &body,
+                        );
+                    }
+                }
             }
             orchestrate::DelegationEvent::TurnStarted | orchestrate::DelegationEvent::TurnEnded
                 if from == orchestrate::DelegationState::NeedsInput =>
