@@ -49,7 +49,9 @@ Then:
 
 The development script builds the renderer (`cd ui && bun run build`),
 the debug daemon, supervisor and hook helper (`cargo build --bin houston-core --bin
-houston-supervisor --bin tr-helper` in `core`), the debug app (`cargo build` in
+houston-supervisor --bin tr-helper` in `core`), stages `tr-helper`,
+`houston-core` and the Linux supervisor in `src-tauri/binaries` with the host
+target suffix required by Tauri, builds the debug app (`cargo build` in
 `src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel
 <target>`. The app connects to a running daemon for the target channel or
 spawns one detached, through `houston-supervisor` on Linux — it no longer
