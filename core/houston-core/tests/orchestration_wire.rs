@@ -5488,6 +5488,30 @@ async fn codex_permission_completion_reopens_get_and_prompt_without_a_new_round(
     );
     assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
 
+    for event in ["PermissionRequest", "PostToolUse"] {
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                event: event.into(),
+                session: kid,
+                agent: Some("codex".into()),
+                prompt_id: Some("a1b2c3d4-1551".into()),
+                tool_name: Some("OtherTool".into()),
+                reason: Some("OtherTool".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    assert_eq!(
+        r.daemon.delegation_of(kid).unwrap().state,
+        "needs_input",
+        "a completed permission without a command cannot dismiss pending Bash A"
+    );
+    assert!(r.daemon.inbox_rows_for_test(pane.id)[0]
+        .resolved_at
+        .is_none());
+
     apply_drop(
         r._state.path(),
         houston_core::hook_drop::HookDrop {
