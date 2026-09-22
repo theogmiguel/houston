@@ -5434,11 +5434,30 @@ async fn codex_permission_completion_reopens_get_and_prompt_without_a_new_round(
     apply_drop(
         r._state.path(),
         houston_core::hook_drop::HookDrop {
+            event: "PermissionRequest".into(),
+            session: kid,
+            agent: Some("codex".into()),
+            prompt_id: Some("a1b2c3d4-1551".into()),
+            reason: Some("Bash".into()),
+            tool_name: Some("Bash".into()),
+            tool_input_fingerprint: Some(
+                "fd0e236dfbf6047cf89befd59504773735a74fd934c023658d048b58ed1a3605".into(),
+            ),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(r.daemon.delegation_of(kid).unwrap().state, "needs_input");
+    assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
+
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
             event: "PostToolUse".into(),
             session: kid,
             agent: Some("codex".into()),
             prompt_id: Some("a1b2c3d4-1551".into()),
-            tool_use_id: Some("call-unrelated-bash".into()),
+            tool_use_id: Some("call_PostToolBash1551-b".into()),
             tool_name: Some("Bash".into()),
             tool_input_fingerprint: Some(
                 "fd0e236dfbf6047cf89befd59504773735a74fd934c023658d048b58ed1a3605".into(),
@@ -5456,8 +5475,8 @@ async fn codex_permission_completion_reopens_get_and_prompt_without_a_new_round(
     .await;
     assert_eq!(still_blocked["isError"], false, "{still_blocked}");
     assert_eq!(
-        still_blocked["structuredContent"]["delegation"]["state"],
-        "needs_input"
+        still_blocked["structuredContent"]["delegation"]["state"], "needs_input",
+        "completing B cannot dismiss A"
     );
     assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
 

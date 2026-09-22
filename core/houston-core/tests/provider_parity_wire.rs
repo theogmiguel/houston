@@ -416,6 +416,75 @@ mod codex {
     }
 
     #[tokio::test]
+    async fn codex_permission_commands_in_one_turn_resolve_independently() {
+        let _guard = serial().await;
+        shim_dir();
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Codex);
+        drive(
+            state.path(),
+            "UserPromptSubmit",
+            SLUG,
+            info.id,
+            f("codex-0.153.4-02-UserPromptSubmit.json"),
+        )
+        .await;
+
+        let mut rx = daemon.observe();
+        drive(
+            state.path(),
+            "PermissionRequest",
+            SLUG,
+            info.id,
+            f("codex-0.155.1-04-PermissionRequest-Bash.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::NeedsInput
+        );
+
+        let permission_b = f("codex-0.155.1-04-PermissionRequest-Bash.json")
+            .replace("cargo test --workspace", "bun run test");
+        drive(
+            state.path(),
+            "PermissionRequest",
+            SLUG,
+            info.id,
+            permission_b,
+        )
+        .await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput),
+            "a second Codex permission in the same turn keeps the pane blocked"
+        );
+
+        let completion_b = f("codex-0.155.1-08-PostToolUse-Bash.json")
+            .replace("cargo test --workspace", "bun run test");
+        drive(state.path(), "PostToolUse", SLUG, info.id, completion_b).await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput),
+            "completing B cannot dismiss A"
+        );
+
+        drive(
+            state.path(),
+            "PostToolUse",
+            SLUG,
+            info.id,
+            f("codex-0.155.1-08-PostToolUse-Bash.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working,
+            "completing A resumes the turn after B already completed"
+        );
+    }
+
+    #[tokio::test]
     async fn codex_interrupt_returns_to_idle_without_completion() {
         let _guard = serial().await;
         shim_dir();

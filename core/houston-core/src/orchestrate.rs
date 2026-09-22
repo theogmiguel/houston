@@ -4869,6 +4869,25 @@ impl PermissionEpisodes {
         tool_input_fingerprint: Option<String>,
         now: u64,
     ) -> (EpisodeKey, Vec<Episode>) {
+        if tool_use_id.is_none() {
+            if let Some(fingerprint) = tool_input_fingerprint.as_deref() {
+                if let Some(existing) = self.open.iter().find(|ep| {
+                    let EpisodeKey::Generated {
+                        prompt_id: existing_prompt,
+                        tool_name: existing_tool,
+                        ..
+                    } = &ep.key
+                    else {
+                        return false;
+                    };
+                    existing_prompt.as_deref() == prompt_id
+                        && existing_tool == tool_name
+                        && ep.tool_input_fingerprint.as_deref() == Some(fingerprint)
+                }) {
+                    return (existing.key.clone(), Vec::new());
+                }
+            }
+        }
         let key = match tool_use_id {
             Some(id) => EpisodeKey::ToolUseId(id.to_string()),
             None => {
@@ -4890,6 +4909,9 @@ impl PermissionEpisodes {
                 tool_name: None,
                 tool_input_fingerprint: None,
             }),
+            EpisodeKey::Generated { .. } if tool_input_fingerprint.is_some() => {
+                self.retire_legacy_generated()
+            }
             EpisodeKey::Generated { .. } => self.resolve_on(&EpisodeEnd::NextPermissionRequest),
         };
         self.open.push(Episode {
@@ -4899,6 +4921,16 @@ impl PermissionEpisodes {
             opened_ms: now,
         });
         (key, retired)
+    }
+
+    fn retire_legacy_generated(&mut self) -> Vec<Episode> {
+        let (retired, kept): (Vec<Episode>, Vec<Episode>) =
+            std::mem::take(&mut self.open).into_iter().partition(|ep| {
+                matches!(ep.key, EpisodeKey::Generated { .. })
+                    && ep.tool_input_fingerprint.is_none()
+            });
+        self.open = kept;
+        retired
     }
 
     pub fn attach_notification(&mut self, reason: Option<String>) -> bool {
@@ -4929,10 +4961,15 @@ impl PermissionEpisodes {
                         tool_name: expected,
                         ..
                     } => {
-                        let prompt_matches = expected_prompt
-                            .as_ref()
-                            .zip(prompt_id.as_ref())
-                            .is_none_or(|(expected, actual)| expected == actual);
+                        let prompt_matches =
+                            if ep.tool_input_fingerprint.is_some() && expected_prompt.is_some() {
+                                expected_prompt == prompt_id
+                            } else {
+                                expected_prompt
+                                    .as_ref()
+                                    .zip(prompt_id.as_ref())
+                                    .is_none_or(|(expected, actual)| expected == actual)
+                            };
                         if !prompt_matches || tool_name.as_ref() != Some(expected) {
                             false
                         } else {
@@ -5277,6 +5314,16 @@ mod permission_episode_tests {
                 tool_use_id: Some("unrelated-tool-id".into()),
                 prompt_id: None,
                 tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("cargo-hash".into()),
+            })
+            .is_empty());
+        assert_eq!(eps.open_count(), 1);
+
+        assert!(eps
+            .resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("wrong-command-tool-id".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
                 tool_input_fingerprint: Some("bun-hash".into()),
             })
             .is_empty());
@@ -5302,6 +5349,79 @@ mod permission_episode_tests {
             .len(),
             1
         );
+    }
+
+    #[test]
+    fn distinct_fingerprinted_permissions_in_one_turn_resolve_independently() {
+        let mut eps = PermissionEpisodes::default();
+        let (a, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash A".into()),
+            Some("hash-a".into()),
+            0,
+        );
+        assert!(retired.is_empty());
+        let (b, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash B".into()),
+            Some("hash-b".into()),
+            1,
+        );
+        assert!(retired.is_empty());
+        assert_ne!(a, b);
+        assert_eq!(eps.open_count(), 2);
+
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("post-b".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("hash-b".into()),
+            })
+            .len(),
+            1
+        );
+        assert_eq!(eps.open_count(), 1);
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("post-a".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("hash-a".into()),
+            })
+            .len(),
+            1
+        );
+        assert_eq!(eps.open_count(), 0);
+    }
+
+    #[test]
+    fn a_duplicate_fingerprinted_permission_reuses_the_existing_episode() {
+        let mut eps = PermissionEpisodes::default();
+        let (first, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash".into()),
+            Some("hash-a".into()),
+            0,
+        );
+        assert!(retired.is_empty());
+        let (duplicate, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash".into()),
+            Some("hash-a".into()),
+            1,
+        );
+        assert_eq!(duplicate, first);
+        assert!(retired.is_empty());
+        assert_eq!(eps.open_count(), 1);
     }
 
     #[test]
