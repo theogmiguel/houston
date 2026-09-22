@@ -170,7 +170,13 @@ impl Rig {
     }
 
     async fn post_spawn(&self, token: &str, body: serde_json::Value) -> (u16, serde_json::Value) {
-        http_json(self.addr, "POST", "/orchestrate/spawn", token, Some(body)).await
+        let (status, response) =
+            http_json(self.addr, "POST", "/orchestrate/spawn", token, Some(body)).await;
+        if status == 200 && std::env::var_os("FIXTURE_SILENT").is_none() {
+            let child = response["session_id"].as_u64().unwrap() as u32;
+            await_child_echo(&self.daemon, child, "FIXTURE-READY").await;
+        }
+        (status, response)
     }
 }
 
