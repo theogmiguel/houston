@@ -4909,9 +4909,6 @@ impl PermissionEpisodes {
                 tool_name: None,
                 tool_input_fingerprint: None,
             }),
-            EpisodeKey::Generated { .. } if tool_input_fingerprint.is_some() => {
-                self.retire_legacy_generated()
-            }
             EpisodeKey::Generated { .. } => self.resolve_on(&EpisodeEnd::NextPermissionRequest),
         };
         self.open.push(Episode {
@@ -4921,16 +4918,6 @@ impl PermissionEpisodes {
             opened_ms: now,
         });
         (key, retired)
-    }
-
-    fn retire_legacy_generated(&mut self) -> Vec<Episode> {
-        let (retired, kept): (Vec<Episode>, Vec<Episode>) =
-            std::mem::take(&mut self.open).into_iter().partition(|ep| {
-                matches!(ep.key, EpisodeKey::Generated { .. })
-                    && ep.tool_input_fingerprint.is_none()
-            });
-        self.open = kept;
-        retired
     }
 
     pub fn attach_notification(&mut self, reason: Option<String>) -> bool {
@@ -4983,6 +4970,7 @@ impl PermissionEpisodes {
                 },
                 EpisodeEnd::NextPermissionRequest => {
                     matches!(ep.key, EpisodeKey::Generated { .. })
+                        && ep.tool_input_fingerprint.is_none()
                 }
                 EpisodeEnd::TurnEnded | EpisodeEnd::PromptSubmitted => true,
             });
@@ -5421,6 +5409,33 @@ mod permission_episode_tests {
         );
         assert_eq!(duplicate, first);
         assert!(retired.is_empty());
+        assert_eq!(eps.open_count(), 1);
+    }
+
+    #[test]
+    fn a_legacy_request_cannot_replace_a_fingerprinted_permission() {
+        let mut eps = PermissionEpisodes::default();
+        eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            None,
+            Some("command-a".into()),
+            0,
+        );
+        let (_, retired) = eps.open(None, Some("turn-1"), "OtherTool", None, 1);
+        assert!(retired.is_empty());
+        assert_eq!(eps.open_count(), 2);
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: None,
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("OtherTool".into()),
+                tool_input_fingerprint: None,
+            })
+            .len(),
+            1
+        );
         assert_eq!(eps.open_count(), 1);
     }
 
