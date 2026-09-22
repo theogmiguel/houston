@@ -3797,6 +3797,8 @@ async fn a_hook_bearing_child_that_hands_nothing_back_is_reported_exactly_once()
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, pane.id, "PANE-UP").await;
+    await_child_echo(&r.daemon, kid, "FIXTURE-READY").await;
     apply_hook_event(r._state.path(), pane.id, "Stop").await;
 
     let (status, body) = http_json(
@@ -3846,6 +3848,8 @@ async fn a_child_that_keeps_ending_turns_tells_its_parent_once_per_round() {
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, pane.id, "PANE-UP").await;
+    await_child_echo(&r.daemon, kid, "FIXTURE-READY").await;
     apply_hook_event(r._state.path(), pane.id, "Stop").await;
 
     let mut rx = r.daemon.observe();
