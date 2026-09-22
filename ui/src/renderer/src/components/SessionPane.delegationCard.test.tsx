@@ -40,6 +40,7 @@ function delegation(over: Partial<DelegationInfo> = {}): DelegationInfo {
     turn_end_source: 'stop-hook',
     inbox_owed: 0,
     inbox_provisional: 0,
+    reusable: false,
     ...over
   }
 }
@@ -75,6 +76,14 @@ function openCard(testid: string): HTMLElement {
 }
 
 describe('the delegation card, opened from a child badge', () => {
+  it.each(['origin', 'orchestrator'] as const)('hides the %s tooltip while its card is open', (kind) => {
+    mount(<HeaderDelegationBadge kind={kind} info={pane({ live_children: 1 })} />)
+    const badge = document.querySelector(`[data-testid="${kind}-badge"]`) as HTMLButtonElement
+    act(() => badge.focus())
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  })
+
   it('renders only the rows that have a value', () => {
     mount(<HeaderDelegationBadge kind="origin" info={pane({ delegation: delegation() })} />)
     const card = openCard('origin-badge')

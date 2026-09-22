@@ -699,7 +699,7 @@ export function HeaderDelegationBadge({
   )
   return (
     <>
-      <Tooltip label={label}>{badge}</Tooltip>
+      <Tooltip label={open ? null : label}>{badge}</Tooltip>
       {open &&
         createPortal(
           <CardPanel
