@@ -436,16 +436,25 @@ file the CLI has already written still be.
 
 A block is one **episode**, opened by the event that names the tool (`PermissionRequest`,
 or Antigravity's `PreToolUse` on an ask tool) and keyed by the CLI's own invocation id where
-the payload has one (`tool_use_id`), else by `(prompt_id, tool_name, generation)` where
-`generation` counts how many times that pair has already asked — so the same tool asked
-twice in one request is two questions. A `Notification(permission_prompt)` never opens an
+the payload has one (`tool_use_id`), else by `(prompt_id, tool_name, generation)`.
+Codex command episodes also carry a SHA-256 fingerprint: distinct commands remain open
+independently, while a repeated request with the same turn, tool and fingerprint reuses
+its episode. A `Notification(permission_prompt)` never opens an
 episode: it fires beside the `PermissionRequest` that names the tool, so it attaches to the
 newest open episode (filling in a reason it did not have) or is dropped with a debug log if
-none is open. An episode resolves on evidence that THAT execution moved on — its
-`PostToolUse`, the next `PermissionRequest` for the session, or the session's next `Stop` /
-`UserPromptSubmit` — never on "any later hook". A resolved row still undelivered gets
+none is open. An episode resolves on its matching `PostToolUse` or the session's next
+`Stop` / `UserPromptSubmit`, never on an arbitrary later hook. A new `PermissionRequest`
+replaces only generated episodes without a fingerprint; identified commands remain
+pending. A resolved row still undelivered gets
 `resolved_at` and is never handed to the parent as a live question; it stays for the
 operator as history.
+
+For a fingerprint-backed episode, completion must carry the same command fingerprint
+and, when the request supplied one, the exact turn id. Missing correlation evidence
+keeps the episode open until a turn boundary. Without an invocation id, two concurrent
+requests for the same command and tool in the same turn cannot be distinguished from
+duplicate delivery; they share one episode. Raw commands are not persisted for this
+correlation.
 
 ### Which request a body answers
 
