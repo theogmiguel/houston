@@ -2076,12 +2076,14 @@ same call. Your next action is either independent work or this wait:
 
 1. `spawn` the child with a self-contained brief.
 2. `pane_wait` for its result, question or exit — blocking here is free.
-3. Carry on from what the row says. Read or diagnose only after a timeout,
-   when you need help, or when the operator asks.
+3. Carry on from what the row says.
 
-If the child is genuinely slow, `wait` returns a bounded timeout — its
-default is ten minutes. A temporary child closes after its final durable
-handback; use `--reusable` when you need follow-up prompts or a live pane.
+`wait`'s default timeout is ten minutes; a timeout is a normal "nothing yet",
+not a stall. Call `wait` again with the default timeout — do not `read`,
+`get` or `prompt` a working child to chase it; diagnose only when the
+operator asks or the child itself reports being blocked. A temporary child
+closes after its final durable handback; use `--reusable` for follow-up
+prompts or a live pane.
 
 ## How a delegation actually goes
 
