@@ -47,6 +47,7 @@ const noop = (): void => {}
 function mountPane(opts: {
   agent?: SessionInfo['agent']
   detectedAgent?: SessionInfo['detected_agent']
+  codename?: string
   spawnedBy?: number | null
   acp?: string | null
   liveChildren?: number
@@ -57,6 +58,7 @@ function mountPane(opts: {
 }): HTMLElement {
   const info = {
     id: 1,
+    codename: opts.codename ?? '',
     agent: opts.agent ?? 'claude',
     detected_agent: opts.detectedAgent ?? null,
     project_dir: '/tmp/project',
@@ -110,6 +112,14 @@ function assertBareText(el: Element): void {
 }
 
 describe('pane header anatomy (step 13, reference shape)', () => {
+  it('shows a nested orchestrator identity once while keeping both navigation badges', () => {
+    const el = mountPane({ codename: 'Elle', spawnedBy: 7, liveChildren: 2 })
+    expect(el.querySelector('[data-testid="origin-badge"]')?.textContent).toBe('Elle')
+    expect(el.querySelector('[data-testid="orchestrator-badge"]')?.textContent).toBe('2')
+    expect(el.querySelector('[data-testid="orchestrator-badge"]')?.getAttribute('aria-label'))
+      .toContain('Elle · orchestrating 2')
+  })
+
   const context: SessionContext = {
     used_tokens: 150_000,
     window_tokens: 200_000,

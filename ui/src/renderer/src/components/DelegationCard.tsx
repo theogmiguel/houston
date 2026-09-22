@@ -412,7 +412,7 @@ function BadgeContent({
       {info.live_children}
     </span>
   )
-  if (!showIdentity) return count
+  if (!showIdentity || info.spawned_by != null) return count
   return (
     <span className="inline-flex items-baseline">
       {selfName}
