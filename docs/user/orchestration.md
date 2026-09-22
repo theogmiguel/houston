@@ -86,6 +86,10 @@ Spawn may also request `effort` (`low`, `medium`, `high`, `xhigh` or `max`) thro
 HTTP or `hs-pane spawn --effort`; omitting it keeps the CLI default, and providers without a
 per-run effort setting refuse that request.
 
+`model` must be an identifier accepted by the selected agent CLI. Houston forwards it
+unchanged; it does not expand display names or shorthand. For example, Codex uses
+`gpt-5.6-luna`, not `luna`. Omitting `model` keeps the CLI default.
+
 After cleanup, the parent can still call `pane_wait` for that child id and receive its
 durable result, including the child's codename and role. Whole-inbox waits remain
 unchanged. Follow-up input or live descendants cancel or defer cleanup, and legacy

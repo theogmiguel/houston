@@ -1969,6 +1969,10 @@ user asked for an agent.
 omitted `--model` inherits the child CLI's own default, which is usually the
 largest one configured, and a grep does not need it.
 
+Use the provider's exact CLI model identifier: Houston forwards it unchanged.
+For example, use `gpt-5.6-luna` for Codex, not the shorthand `luna`.
+The model names in the following table apply to Claude.
+
 | the work | model |
 |---|---|
 | search, grep, read-and-report, a mechanical edit | `sonnet` |

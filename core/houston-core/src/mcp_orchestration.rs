@@ -521,8 +521,9 @@ impl OrchestrationTools {
                         "model": {
                             "type": "string",
                             "description":
-                                "Model for that CLI. Omitted inherits its own default; see \
-                                 the description above for sizing one.",
+                                "Exact model identifier accepted by that CLI, forwarded unchanged \
+                                 (for Codex, e.g. gpt-5.6-luna, not luna). Omitted inherits \
+                                 the CLI default.",
                         },
                         "cwd": {
                             "type": "string",
