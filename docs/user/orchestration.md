@@ -60,6 +60,35 @@ notices it because the child's completion reaches the parent's own next wait. Th
 no separate "check on it" step: the result lands in the parent's inbox and is picked up
 the next time the parent asks.
 
+## Workspaces and child lifetime
+
+By default, a child starts in the parent's registered workspace. `target_workspace` may
+select another workspace already registered in Settings; Houston does not treat an
+arbitrary filesystem path as authority. If `cwd` is supplied, it must be inside that
+target workspace. The parent may still address the child because delegation ancestry,
+not workspace equality, controls access. A child token remains scoped to its own
+workspace, and unrelated panes remain inaccessible.
+
+Children are temporary by default. Houston keeps the result and artifact paths durable,
+then removes the completed pane after its authoritative round is accounted for. A
+submitted draft, an idle or blocked child, a missing handback, a stall, or a provisional
+result does not by itself close the pane. Set `reusable: true` in MCP/HTTP, or pass
+`--reusable` to `hs-pane spawn`, when the child must remain available for follow-up
+prompts. A reusable child is never closed by this cleanup.
+
+Spawn may also request `effort` (`low`, `medium`, `high`, `xhigh` or `max`) through MCP,
+HTTP or `hs-pane spawn --effort`; omitting it keeps the CLI default, and providers without a
+per-run effort setting refuse that request.
+
+After cleanup, the parent can still call `pane_wait` for that child id and receive its
+durable result. Whole-inbox waits remain unchanged. Follow-up input or live descendants
+cancel or defer cleanup, and legacy explicit pane close keeps its existing operator
+semantics.
+
+For a clean-context review, provide the exact target and base/head (or a snapshot), the
+requirements, and focused evidence such as `file:line` and test results. Do not paste a
+parent transcript; temporary review panes clean up after their final handback.
+
 ## Mailbox retention
 
 **Mailbox retention** (Settings ▸ Orchestration) controls how long a delivered mailbox

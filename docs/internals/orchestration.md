@@ -45,7 +45,7 @@ spelling, or a verb that is CLI-only).
 
 | Tool | Registered in | `hs-pane` twin | What it does |
 |---|---|---|---|
-| `workspace_info` | `mcp_server.rs` | `hs-pane whoami` | the caller's own fixed workspace and session id, shared with `whoami` (`Daemon::orchestrate_whoami`) |
+| `workspace_info` | `mcp_server.rs` | `hs-pane whoami` | the caller's workspace and session id plus registered target workspaces, shared with `whoami` (`Daemon::orchestrate_whoami_json`) |
 | `pane_spawn` | `mcp_orchestration.rs` | `hs-pane spawn` | open a child agent pane; `kind: custom` is refused by name (no hooks, so its parent could never be told when it finished) |
 | `pane_list` | `mcp_orchestration.rs` | `hs-pane list` | list the caller's live children, each with its full delegation record (state, stall, `pending_handback`, `inbox_owed`, the capability note) |
 | `pane_get` | `mcp_orchestration.rs` | `hs-pane get` | one pane in the caller's own subtree, in one call: its state, its children and depth, what would end its turn, and its role/brief/stall/staged-result if it is a child of the caller |
@@ -70,7 +70,11 @@ during setup. This is the one place `core/` gains a capability it cannot see its
 `browser_click` and `browser_type` pass a human confirmation gate before acting.
 
 `pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok`), `prompt`,
-and optional `model`, `cwd`, `auto_approve`, `profile`, `role`, `output_format`, `boundaries`.
+and optional `model`, `cwd`, `target_workspace`, `reusable`, `effort`, `auto_approve`,
+`profile`, `role`, `output_format`, `boundaries`. `target_workspace` must match a registered
+workspace after canonicalization, and `cwd` must remain under that root. `reusable` defaults
+to false for new API spawns; legacy delegation rows migrate as reusable to preserve their
+prior behavior. `effort` is provider-validated at the launch boundary.
 `pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`.
 
 `orchestrate.rs` is the pure layer under all of it — no DB, no PTY: scope and cap
@@ -122,14 +126,18 @@ restart, and turning it on seeds the `hs-pane` skill stub.
 
 A per-pane bearer token is minted at spawn and bound to an
 `McpScope { workspace_id, session_id }` (`mcp_creds.rs`).
+A child may be spawned in a different registered workspace, but its credential remains
+scoped to that target. The parent's control authority is the persisted `delegations`
+ancestry, not workspace equality; an arbitrary filesystem path never grants authority.
 
 - Only the **SHA-256 hash** is stored. The raw token exists exactly twice: in argv (or an
   env var) and in the CLI's own memory.
 - Lookup is by hash and deliberately not constant-time, with the reasoning recorded at the
   call site.
 - Re-issuing a scope's token **revokes** the previous one.
-- There is no "resolve by session id" API. A token names its own scope, which makes
-  cross-workspace addressing structurally impossible rather than merely checked.
+- There is no "resolve by session id" API. A token names its own session and workspace;
+  a parent controls a registered cross-workspace descendant only through its own token
+  and the persisted delegation ancestry.
 
 This is a different secret from `daemon.token`, which authenticates the renderer over `/ws`
 and is one secret for the whole app.
@@ -477,7 +485,7 @@ identity), so the collapse is by request, not by authentication.
 ### Composition is one function for every door
 
 `orchestrate::compose_inbox` writes a header naming the count and the delivery id, then per
-row `[kind] #id from <role (codename)>: <summary>`, the body, and the artifact paths. Door 3
+row `[kind] #id from <codename (role)>: <summary>`, the body, and the artifact paths. Door 3
 also appends a fresh tail of the sender's own screen where one corroborates something; door
 1 and door 2 pass `None` — inside a tool result or a hook's stdout, a screen tail is content
 the agent did not ask for, and a parent that wants it can `pane_read`. A row past its first
@@ -538,6 +546,20 @@ hands back is NOT here — it is a `pane_inbox` row addressed to the parent. The
 `spawning -> working <-> needs_input`, closing at `done | failed | cancelled | unknown`.
 Stalling is a flag beside the state, never a state: the stall signal cannot tell a wedged
 child from a long silent turn, and a terminal `stalled` would kill live delegations.
+
+The row also persists `reusable` and an optional `cleanup_after`. New API spawns default to
+temporary; migrations give older rows `reusable = true` because their original intent is
+not inferable. Cleanup is armed only after a durable result is released by an authoritative
+completed round (or a process exit), never by `pane_submit` alone. It is deferred while a
+live descendant exists, a wake or composer input is queued, or internal sub-agent evidence
+is still outstanding. A provisional round has the bounded `OWED_NOTIFICATION_MAX_MS`
+resolution window; late evidence can correct it before that deadline, after which the
+round's in-memory hold is released so completed ordinary panes do not remain forever.
+Removal emits `SessionRemoved` but leaves the delegation and inbox rows durable. The
+historical parent chain continues to authorize the parent's `pane_wait` for that child;
+it does not authorize unrelated panes or resurrect terminal controls. Descendant removal
+rechecks deferred cleanup up the recorded ancestor chain. Explicit operator close remains
+separate and retains its cancellation semantics.
 
 **Closed is not the same as terminal**, and the two predicates on
 `DelegationState` are not interchangeable. All four closing states are CLOSED:
@@ -689,8 +711,8 @@ operator gains a new power over a running agent.
 codename and the first prompt replaces it — so the codename is stored separately
 (`sessions.codename`, written at spawn, backfilled on read) and rides
 `SessionInfo.codename`. Every parent-facing label reads it: `Daemon::child_label`
-and `inbox_sender_label` spell `role (codename)`, which is what makes
-`compose_inbox`'s `from <role (codename)>` hold by construction, and the
+and `inbox_sender_label` spell `codename (role)`, which is what makes
+`compose_inbox`'s `from <codename (role)>` hold by construction, and the
 `pane_spawn`/`pane_list` shapes carry the field. A child's card names its parent
 the same way ("child of oak", id in the tooltip).
 

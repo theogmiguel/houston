@@ -997,6 +997,7 @@ pub struct Daemon {
     inbox_wake: Mutex<HashMap<u32, Arc<tokio::sync::Notify>>>,
     inbox_waiting: Mutex<HashSet<u32>>,
     swarm_wake_lanes: Mutex<HashMap<u32, VecDeque<WakeItem>>>,
+    swarm_wake_active: Mutex<HashSet<u32>>,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     subagent_rounds: Mutex<HashMap<u32, orchestrate::SubagentRound>>,
     stop_blocks: Mutex<HashMap<u32, u32>>,
@@ -2215,6 +2216,7 @@ impl Daemon {
             turn_start_round: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new(HashMap::new()),
             prompt_awaiting_hook: Mutex::new(HashSet::new()),
+            swarm_wake_active: Mutex::new(HashSet::new()),
             subagent_rounds: Mutex::new(HashMap::new()),
             stop_blocks: Mutex::new(HashMap::new()),
             permission_episodes: Mutex::new(HashMap::new()),
@@ -11294,6 +11296,10 @@ impl Daemon {
     }
 
     fn swarm_wake_drain(self: &Arc<Self>, session_id: u32) {
+        self.swarm_wake_active
+            .lock()
+            .expect("wake active lock")
+            .insert(session_id);
         loop {
             let next = {
                 let mut lanes = self.swarm_wake_lanes.lock().expect("wake lanes lock");
@@ -11308,7 +11314,14 @@ impl Daemon {
             match next {
                 Some(WakeItem::Text(text)) => self.paste_text(session_id, &text),
                 Some(WakeItem::Inbox) => self.paste_inbox(session_id),
-                None => return,
+                None => {
+                    self.swarm_wake_active
+                        .lock()
+                        .expect("wake active lock")
+                        .remove(&session_id);
+                    self.delegation_wake.notify_one();
+                    return;
+                }
             }
         }
     }
@@ -11484,22 +11497,34 @@ impl Daemon {
         if caller == target {
             bail!("refused: session {target} is not your child (it is you)");
         }
-        let scoped = self.descendants_of(caller).contains(&target);
+        // The delegation table is the authority record. Live roster membership is
+        // intentionally not used here: a temporary child can leave the roster after
+        // its result is durable while its parent is still allowed to wait for it.
+        let scoped = self.recorded_descendant_of(caller, target)?;
         if !scoped {
             if let Some(latest) = self.respawn_chain_tip(target) {
                 bail!("refused: session {target} was respawned as {latest}; use the new id");
             }
             bail!("refused: session {target} is not a session you spawned (transitively)");
         }
-        let caller_ws = self.current_workspace(caller)?;
-        let target_ws = self.current_workspace(target)?;
-        if caller_ws != target_ws {
-            bail!(
-                "refused: session {target} now runs in workspace {target_ws:?}, not yours \
-                 ({caller_ws:?}) — cross-workspace targeting is not supported"
-            );
-        }
         Ok(())
+    }
+
+    fn recorded_descendant_of(&self, caller: u32, target: u32) -> Result<bool> {
+        let mut cursor = target;
+        for _ in 0..=proto::ORCHESTRATION_CAP_MAX {
+            let Some(parent) = self.db.delegation_parent_of(cursor)? else {
+                return Ok(false);
+            };
+            if parent == caller {
+                return Ok(true);
+            }
+            if parent == cursor {
+                return Ok(false);
+            }
+            cursor = parent;
+        }
+        Ok(false)
     }
 
     fn current_workspace(&self, id: u32) -> Result<String> {
@@ -11521,6 +11546,16 @@ impl Daemon {
 
     pub fn orchestrate_whoami_json(&self, caller: u32) -> Result<serde_json::Value> {
         let info = self.orchestrate_whoami(caller)?;
+        let registered_workspaces = self
+            .workspace_list()?
+            .into_iter()
+            .map(|workspace| {
+                serde_json::json!({
+                    "path": workspace.path,
+                    "name": workspace.name,
+                })
+            })
+            .collect::<Vec<_>>();
         Ok(serde_json::json!({
             "session_id": info.id,
             "title": info.title,
@@ -11529,6 +11564,7 @@ impl Daemon {
             "workspace": info.project_dir,
             "cwd": info.cwd,
             "channel": self.channel(),
+            "registered_workspaces": registered_workspaces,
         }))
     }
 
@@ -11630,6 +11666,40 @@ impl Daemon {
         (vec![(var, dir)], label)
     }
 
+    fn resolve_spawn_workspace(&self, caller: u32, requested: Option<&str>) -> Result<PathBuf> {
+        let current = PathBuf::from(self.current_workspace(caller)?).canonicalize()?;
+        let Some(requested) = requested.map(str::trim).filter(|path| !path.is_empty()) else {
+            return Ok(current);
+        };
+        let requested_path = PathBuf::from(requested);
+        let requested_canonical = requested_path
+            .canonicalize()
+            .with_context(|| format!("resolving registered target workspace {requested:?}"))?;
+        if !requested_canonical.is_dir() {
+            bail!("target_workspace is not a directory: {requested}");
+        }
+        let registered = self.workspace_list()?;
+        if registered.iter().any(|workspace| {
+            PathBuf::from(&workspace.path)
+                .canonicalize()
+                .is_ok_and(|path| path == requested_canonical)
+        }) {
+            return Ok(requested_canonical);
+        }
+        let known = registered
+            .iter()
+            .map(|workspace| workspace.path.as_str())
+            .collect::<Vec<_>>();
+        bail!(
+            "refused: target_workspace {requested:?} is not registered; registered targets: {}",
+            if known.is_empty() {
+                "none".to_string()
+            } else {
+                known.join(", ")
+            }
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn orchestrate_spawn(
         self: &Arc<Self>,
@@ -11641,6 +11711,36 @@ impl Daemon {
         auto_approve: Option<bool>,
         profile: Option<String>,
         role: Option<String>,
+    ) -> Result<proto::SessionInfo> {
+        self.orchestrate_spawn_with_options(
+            caller,
+            kind,
+            model,
+            cwd,
+            brief,
+            auto_approve,
+            profile,
+            role,
+            None,
+            false,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn orchestrate_spawn_with_options(
+        self: &Arc<Self>,
+        caller: u32,
+        kind: proto::AgentKind,
+        model: Option<String>,
+        cwd: Option<String>,
+        brief: orchestrate::Brief,
+        auto_approve: Option<bool>,
+        profile: Option<String>,
+        role: Option<String>,
+        target_workspace: Option<String>,
+        reusable: bool,
+        effort: Option<proto::ChatEffort>,
     ) -> Result<proto::SessionInfo> {
         if kind == proto::AgentKind::Custom {
             bail!(
@@ -11658,7 +11758,7 @@ impl Daemon {
         let prompt = brief
             .compose(1)
             .map_err(|e| anyhow!("spawn refused: {e}"))?;
-        let project_dir = PathBuf::from(self.current_workspace(caller)?);
+        let project_dir = self.resolve_spawn_workspace(caller, target_workspace.as_deref())?;
         let ws = project_dir.display().to_string();
         if !self.orchestration_enabled() {
             bail!(
@@ -11687,8 +11787,7 @@ impl Daemon {
                     .with_context(|| format!("resolving {}", project_dir.display()))?;
                 if !d.starts_with(&root) {
                     bail!(
-                        "refused: cwd {} is outside this workspace ({}) — cross-workspace \
-                         spawning is not supported",
+                        "refused: cwd {} is outside the target workspace ({})",
                         d.display(),
                         root.display()
                     );
@@ -11745,6 +11844,9 @@ impl Daemon {
             "spawned",
         )?;
         extra_args.extend(mode_args);
+        if let Some(effort) = effort {
+            extra_args.extend(crate::launch::effort_args(kind, effort)?);
+        }
         if let Some((path, contents)) = prompt_file {
             std::fs::write(&path, contents)
                 .with_context(|| format!("writing prompt file {}", path.display()))?;
@@ -11800,10 +11902,14 @@ impl Daemon {
         });
         if spawned.is_ok() {
             self.record_approval_mode(sid, requested_mode);
-            if let Err(e) =
-                self.db
-                    .delegation_create(caller, sid, role.as_deref(), &prompt, now_ms())
-            {
+            if let Err(e) = self.db.delegation_create_with_lifecycle(
+                caller,
+                sid,
+                role.as_deref(),
+                &prompt,
+                reusable,
+                now_ms(),
+            ) {
                 tracing::warn!("opening the delegation record for child {sid} of {caller}: {e}");
             } else {
                 self.delegation_wake.notify_one();
@@ -11876,6 +11982,7 @@ impl Daemon {
             }
         }
         self.assert_orchestration_target(caller, target)?;
+        self.cancel_temporary_cleanup(target);
         let source = {
             let s = self.get(target)?;
             let cur = *s.status.lock().expect("status lock");
@@ -12112,6 +12219,7 @@ impl Daemon {
 
     pub fn orchestrate_send_keys(&self, caller: u32, target: u32, keys: &[String]) -> Result<()> {
         self.assert_orchestration_target(caller, target)?;
+        self.cancel_temporary_cleanup(target);
         let bytes = orchestrate::keys_to_bytes(keys).map_err(|e| anyhow!("{e}"))?;
         self.write_stdin(target, &bytes)?;
         if let Err(e) = self
@@ -12195,6 +12303,18 @@ impl Daemon {
             );
         }
         Ok(())
+    }
+
+    fn cancel_temporary_cleanup(&self, child: u32) {
+        let Ok(Some(row)) = self.db.delegation_for_child(child) else {
+            return;
+        };
+        if row.cleanup_after.is_none() {
+            return;
+        }
+        if let Err(e) = self.db.delegation_set_cleanup_after(child, None, now_ms()) {
+            tracing::warn!("cancelling temporary cleanup for child {child}: {e}");
+        }
     }
 
     fn operator_ended_notice_facts(&self, id: u32) -> Option<(u32, String)> {
@@ -12746,6 +12866,171 @@ impl Daemon {
         }
         self.forget_round_state(child);
         self.broadcast_delegation(child);
+        if pending.is_some() {
+            self.arm_temporary_cleanup(child, false);
+        }
+    }
+
+    fn arm_temporary_cleanup(self: &Arc<Self>, child: u32, provisional: bool) {
+        let Ok(Some(row)) = self.db.delegation_for_child(child) else {
+            return;
+        };
+        if row.reusable
+            || orchestrate::DelegationState::parse(&row.state)
+                != Some(orchestrate::DelegationState::Done)
+        {
+            return;
+        }
+        let Ok(true) = self
+            .db
+            .inbox_round_has_result(row.parent_session, child, row.round)
+        else {
+            return;
+        };
+        let now = now_ms();
+        let cleanup_after = if provisional {
+            now.saturating_add(orchestrate::OWED_NOTIFICATION_MAX_MS)
+        } else {
+            now
+        };
+        if let Err(e) = self
+            .db
+            .delegation_set_cleanup_after(child, Some(cleanup_after), now)
+        {
+            tracing::warn!("scheduling temporary cleanup for child {child}: {e}");
+            return;
+        }
+        self.delegation_wake.notify_one();
+        if let Ok(Some(updated)) = self.db.delegation_for_child(child) {
+            self.cleanup_temporary_if_due(&updated, now);
+        }
+    }
+
+    fn cleanup_temporary_if_due(self: &Arc<Self>, row: &crate::db::DelegationRow, now: u64) {
+        if row.reusable
+            || orchestrate::DelegationState::parse(&row.state)
+                != Some(orchestrate::DelegationState::Done)
+            || row.cleanup_after.is_none_or(|at| at > now)
+        {
+            return;
+        }
+        if !self.temporary_cleanup_safe(row.child_session, now) {
+            return;
+        }
+        let removed = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .remove(&row.child_session);
+        if let Some(session) = removed {
+            session.remove_shell_token_file();
+            session.removed.store(true, Ordering::Release);
+            if session.state.lock().expect("state lock").is_live() {
+                let _ = session.backend.kill(row.child_session, session.pid);
+            }
+            self.mcp_creds.revoke_session(row.child_session);
+            self.mcp_notify.close_session(row.child_session);
+            self.remove_persisted_scrollback(row.child_session);
+            self.frame_taps.forget_session(row.child_session);
+            self.write_run_state();
+            self.broadcast_control(&proto::ServerMsg::SessionRemoved {
+                session: row.child_session,
+            });
+            self.broadcast_live_children(row.parent_session);
+        } else if self
+            .dead
+            .lock()
+            .expect("dead lock")
+            .remove(&row.child_session)
+            .is_some()
+        {
+            if let Err(e) = self.db.mark_closed(row.child_session) {
+                tracing::warn!(
+                    "marking restored temporary child {} closed: {e}",
+                    row.child_session
+                );
+            }
+            self.remove_persisted_scrollback(row.child_session);
+            self.broadcast_control(&proto::ServerMsg::SessionRemoved {
+                session: row.child_session,
+            });
+        } else {
+            return;
+        }
+        if let Err(e) = self
+            .db
+            .delegation_set_cleanup_after(row.child_session, None, now)
+        {
+            tracing::warn!(
+                "clearing temporary cleanup marker for child {}: {e}",
+                row.child_session
+            );
+        }
+        self.reap_reevaluate();
+        self.reevaluate_completed_ancestors(row.parent_session, now);
+    }
+
+    fn temporary_cleanup_safe(&self, child: u32, now: u64) -> bool {
+        if !self.live_children_of(child).is_empty() {
+            return false;
+        }
+        if self
+            .swarm_wake_lanes
+            .lock()
+            .expect("wake lanes lock")
+            .get(&child)
+            .is_some_and(|queue| !queue.is_empty())
+        {
+            return false;
+        }
+        if self
+            .swarm_wake_active
+            .lock()
+            .expect("wake active lock")
+            .contains(&child)
+        {
+            return false;
+        }
+        if self
+            .composer_occupied
+            .lock()
+            .expect("composer lock")
+            .contains_key(&child)
+        {
+            return false;
+        }
+        if self
+            .prompt_awaiting_hook
+            .lock()
+            .expect("prompt awaiting hook lock")
+            .contains(&child)
+        {
+            return false;
+        }
+        let mut rounds = self.subagent_rounds.lock().expect("subagent rounds lock");
+        let Some(round) = rounds.get_mut(&child) else {
+            return true;
+        };
+        if round.reopen_window_open(now) {
+            return false;
+        }
+        // A provisional row has a bounded correction window. Once it expires,
+        // release the in-memory hold so ordinary completed panes can be reaped.
+        round.take_released_row();
+        round.is_quiescent()
+    }
+
+    fn reevaluate_completed_ancestors(self: &Arc<Self>, mut child: u32, now: u64) {
+        for _ in 0..=proto::ORCHESTRATION_CAP_MAX {
+            let Ok(Some(parent)) = self.db.delegation_parent_of(child) else {
+                return;
+            };
+            let Ok(Some(row)) = self.db.delegation_for_child(parent) else {
+                return;
+            };
+            self.cleanup_temporary_if_due(&row, now);
+            child = parent;
+        }
     }
 
     fn advance_delegation(self: &Arc<Self>, child: u32, ev: crate::agent_events::AgentEvent) {
@@ -12868,6 +13153,17 @@ impl Daemon {
                 self.broadcast_inbox_row(id);
             }
             self.inbox_notify(parent, false);
+            if self
+                .db
+                .delegation_for_child(child)
+                .ok()
+                .flatten()
+                .is_some_and(|closed| {
+                    !closed.reusable && closed.state == orchestrate::DelegationState::Done.as_str()
+                })
+            {
+                self.arm_temporary_cleanup(child, self.round_closed_without_evidence(child));
+            }
         }
 
         match event {
@@ -13220,13 +13516,16 @@ impl Daemon {
             }
             return Some(s.title.lock().expect("title lock").clone());
         }
-        self.dead.lock().expect("dead lock").get(&id).map(|i| {
+        if let Some(name) = self.dead.lock().expect("dead lock").get(&id).map(|i| {
             if !i.codename.is_empty() {
                 i.codename.clone()
             } else {
                 i.title.clone()
             }
-        })
+        }) {
+            return Some(name);
+        }
+        self.db.session_codename(id).ok().flatten()
     }
 
     fn deliver_unsubmitted_turn_end(
@@ -13295,7 +13594,7 @@ impl Daemon {
 
     fn child_label(&self, child: u32, codename: &str) -> String {
         match self.delegation_of(child).and_then(|row| row.role) {
-            Some(role) => format!("{role} ({codename})"),
+            Some(role) => format!("{codename} ({role})"),
             None => codename.to_string(),
         }
     }
@@ -13355,6 +13654,7 @@ impl Daemon {
             .delegations_open()
             .map(|rows| !rows.is_empty())
             .unwrap_or(true)
+            || self.db.delegations_cleanup_pending().unwrap_or(true)
     }
 
     pub fn delegation_watch_tick(self: &Arc<Self>) {
@@ -13382,6 +13682,17 @@ impl Daemon {
             };
             self.delegation_stall_pass(row, &s, busy, now);
             self.delegation_settle_pass(row, &s, busy, now);
+        }
+        let cleanup_now = now_ms();
+        let due = match self.db.delegations_cleanup_due(cleanup_now) {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!("listing temporary delegations ready for cleanup: {e}");
+                Vec::new()
+            }
+        };
+        for row in &due {
+            self.cleanup_temporary_if_due(row, cleanup_now);
         }
         let mut samples = self
             .delegation_settle
@@ -13497,6 +13808,7 @@ impl Daemon {
                 self.broadcast_inbox_row(id);
                 self.inbox_notify(row.parent_session, false);
                 self.broadcast_delegation(child);
+                self.arm_temporary_cleanup(child, false);
             }
             orchestrate::SettleAction::ReportNoHandback => {
                 let Some(from) = orchestrate::DelegationState::parse(&row.state) else {
@@ -13656,6 +13968,7 @@ impl Daemon {
     }
 
     pub fn note_operator_keystroke(&self, session: u32) {
+        self.cancel_temporary_cleanup(session);
         self.composer_occupied
             .lock()
             .expect("composer lock")

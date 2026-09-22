@@ -483,10 +483,151 @@ async fn spawning_outside_the_workspace_is_refused() {
         .await;
     assert_eq!(status, 409, "body: {body}");
     assert!(
-        body["error"].as_str().unwrap().contains("cross-workspace"),
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("outside the target workspace"),
         "{}",
         body["error"].as_str().unwrap()
     );
+}
+
+#[tokio::test]
+async fn a_parent_can_spawn_and_control_a_child_in_a_registered_workspace() {
+    let _guard = serial().await;
+    let r = rig("cross-ws-target").await;
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let nested = target.path().join("review");
+    std::fs::create_dir(&nested).unwrap();
+    r.daemon
+        .workspace_add(&target.path().display().to_string())
+        .unwrap();
+    let (status, identity) = http_json(r.addr, "GET", "/orchestrate/whoami", &token, None).await;
+    assert_eq!(status, 200, "identity: {identity}");
+    assert!(identity["registered_workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|workspace| workspace["path"] == target.path().display().to_string()));
+
+    let (status, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "cross workspace",
+                "target_workspace": target.path().display().to_string(),
+                "cwd": nested.display().to_string(),
+                "reusable": true,
+                "role": "remote-review",
+            }),
+        )
+        .await;
+    assert_eq!(status, 200, "body: {body}");
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    let info = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == child)
+        .expect("child is on the roster");
+    assert_eq!(
+        PathBuf::from(info.project_dir).canonicalize().unwrap(),
+        target.path().canonicalize().unwrap()
+    );
+    assert_eq!(
+        PathBuf::from(info.cwd).canonicalize().unwrap(),
+        nested.canonicalize().unwrap()
+    );
+
+    let (status, body) = http_json(
+        r.addr,
+        "GET",
+        &format!("/orchestrate/get?session={child}"),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(status, 200, "body: {body}");
+    let (status, body) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/prompt",
+        &token,
+        Some(serde_json::json!({"session": child, "text": "remote follow-up"})),
+    )
+    .await;
+    assert_eq!(status, 200, "body: {body}");
+
+    let artifact = nested.join("review.md");
+    std::fs::write(&artifact, "cross-workspace evidence").unwrap();
+    r.daemon
+        .orchestrate_submit(
+            child,
+            houston_core::orchestrate::Submission {
+                body: "remote result".into(),
+                summary: Some("remote summary".into()),
+                artifacts: vec!["review.md".into()],
+                request_id: None,
+            },
+        )
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    let (status, body) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/wait",
+        &token,
+        Some(serde_json::json!({"session": child, "timeout_ms": 5_000})),
+    )
+    .await;
+    assert_eq!(status, 200, "body: {body}");
+    assert_eq!(body["rows"][0]["summary"], "remote summary");
+    assert_eq!(
+        body["rows"][0]["artifacts"][0],
+        artifact.canonicalize().unwrap().display().to_string()
+    );
+
+    let unrelated = r.pane();
+    let unrelated_token = r.token_for(unrelated.id);
+    let (status, body) = http_json(
+        r.addr,
+        "GET",
+        &format!("/orchestrate/get?session={child}"),
+        &unrelated_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, 404, "body: {body}");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("not a session you spawned"));
+}
+
+#[tokio::test]
+async fn an_unregistered_target_workspace_is_refused_even_when_the_path_exists() {
+    let _guard = serial().await;
+    let r = rig("unregistered-target").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let (status, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "do not run",
+                "target_workspace": target.path().display().to_string(),
+            }),
+        )
+        .await;
+    assert_eq!(status, 409, "body: {body}");
+    assert!(body["error"].as_str().unwrap().contains("not registered"));
 }
 
 #[tokio::test]
@@ -557,11 +698,19 @@ async fn a_lowered_children_cap_is_enforced_immediately() {
     r.daemon
         .set_orchestration_caps(1, houston_core::orchestrate::MAX_SPAWN_DEPTH)
         .expect("1 is within bounds");
+    let target = tempfile::tempdir().unwrap();
+    r.daemon
+        .workspace_add(&target.path().display().to_string())
+        .unwrap();
 
     let (status, _) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "codex", "prompt": "first"}),
+            serde_json::json!({
+                "kind": "codex",
+                "prompt": "first",
+                "target_workspace": target.path().display().to_string(),
+            }),
         )
         .await;
     assert_eq!(status, 200, "the one slot the lowered cap allows must fit");
@@ -2474,6 +2623,213 @@ async fn hs_pane_wait_matches_the_tool() {
 }
 
 #[tokio::test]
+async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_still_works() {
+    let _guard = serial().await;
+    let r = rig("temporary-cleanup").await;
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "finish once",
+                "role": "temporary-review",
+            }),
+        )
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(child, "ARCHIVED-RESULT the review is complete".into())
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while r.daemon.list().iter().any(|info| info.id == child) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "temporary child {child} was not removed after its completed round"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let delegation = r
+        .daemon
+        .delegation_of(child)
+        .expect("durable delegation row");
+    assert_eq!(delegation.state, "done");
+    assert!(!delegation.reusable);
+
+    let (status, waited) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/wait",
+        &token,
+        Some(serde_json::json!({"session": child, "timeout_ms": 5_000})),
+    )
+    .await;
+    assert_eq!(status, 200, "historical child wait: {waited}");
+    assert_eq!(waited["rows"][0]["from_session"], child);
+    assert!(waited["rows"][0]["body"]
+        .as_str()
+        .unwrap()
+        .contains("ARCHIVED-RESULT"));
+
+    let unrelated = r.pane();
+    let unrelated_token = r.token_for(unrelated.id);
+    let (status, body) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/wait",
+        &unrelated_token,
+        Some(serde_json::json!({"session": child, "timeout_ms": 1})),
+    )
+    .await;
+    assert_eq!(
+        status, 409,
+        "unrelated historical wait must be refused: {body}"
+    );
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("not a session you spawned"));
+}
+
+#[tokio::test]
+async fn reusable_children_survive_completed_handback_for_follow_up() {
+    let _guard = serial().await;
+    let r = rig("reusable-cleanup").await;
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "stay open",
+                "reusable": true,
+                "role": "follow-up",
+            }),
+        )
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(child, "FIRST-RESULT".into())
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    assert!(r.daemon.list().iter().any(|info| info.id == child));
+    assert!(r.daemon.delegation_of(child).unwrap().reusable);
+
+    let (status, body) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/prompt",
+        &token,
+        Some(serde_json::json!({"session": child, "text": "FOLLOW-UP"})),
+    )
+    .await;
+    assert_eq!(status, 200, "reusable follow-up: {body}");
+}
+
+#[tokio::test]
+async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_finish() {
+    let _guard = serial().await;
+    let r = rig("nested-cleanup").await;
+    let parent = r.pane();
+    let parent_token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &parent_token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "parent child",
+                "role": "parent-child",
+            }),
+        )
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    let child_token = r.token_for(child);
+    let (_, body) = r
+        .post_spawn(
+            &child_token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "nested child",
+                "role": "nested-child",
+            }),
+        )
+        .await;
+    let grandchild = body["session_id"].as_u64().unwrap() as u32;
+
+    r.daemon
+        .orchestrate_submit(child, "PARENT-RESULT while nested child is live".into())
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    assert!(
+        r.daemon.list().iter().any(|info| info.id == child),
+        "a temporary child stays controllable while its pane descendant is live"
+    );
+
+    r.daemon
+        .orchestrate_submit(grandchild, "NESTED-RESULT".into())
+        .unwrap();
+    apply_hook_event(r._state.path(), grandchild, "Stop").await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while r.daemon.list().iter().any(|info| info.id == child) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the completed parent child was not re-evaluated after its descendant finished"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        !r.daemon.list().iter().any(|info| info.id == grandchild),
+        "the completed temporary descendant is also removed"
+    );
+}
+
+#[tokio::test]
+async fn archived_inbox_rows_keep_codename_first_sender_labels() {
+    let _guard = serial().await;
+    let r = rig("archived-label").await;
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "label me",
+                "role": "archived-review",
+            }),
+        )
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    let codename = body["codename"].as_str().unwrap().to_string();
+    r.daemon
+        .orchestrate_submit(child, "LABEL-RESULT".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    assert!(!r.daemon.list().iter().any(|info| info.id == child));
+
+    let reserved = r
+        .daemon
+        .inbox_reserve_for_stop_hook(parent.id, houston_core::daemon::now_ms())
+        .unwrap();
+    let text = match reserved {
+        houston_core::orchestrate::StopHookReserveOutcome::Reserved { text, .. } => text,
+        other => panic!("expected the archived result to be reserveable: {other:?}"),
+    };
+    assert!(
+        text.contains(&format!("from {codename} (archived-review)")),
+        "archived row label: {text:?}"
+    );
+}
+
+#[tokio::test]
 async fn partial_submits_collapse_into_one_wake_and_the_last_one_wins() {
     let _guard = serial().await;
     let r = rig("staging-collapse").await;
@@ -2494,6 +2850,10 @@ async fn partial_submits_collapse_into_one_wake_and_the_last_one_wins() {
             .orchestrate_submit(kid, partial.to_string().into())
             .unwrap();
     }
+    assert!(
+        r.daemon.list().iter().any(|info| info.id == kid),
+        "a staged submit alone must not close a temporary pane"
+    );
     tokio::time::sleep(Duration::from_millis(
         houston_core::orchestrate::HANDOFF_BATCH_MS + 300,
     ))
@@ -2580,7 +2940,7 @@ async fn a_turn_that_ends_without_a_submit_hands_the_parent_the_child_tail() {
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
 
     assert!(
-        acc.contains("from answerer"),
+        acc.contains("(answerer)"),
         "the subject line says whose screen this is: {acc:?}"
     );
     assert!(
@@ -2682,7 +3042,7 @@ async fn a_turn_end_during_a_childs_startup_wakes_nobody() {
     apply_hook_event(r._state.path(), kid, "Stop").await;
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert!(
-        acc.contains("from answerer"),
+        acc.contains("(answerer)"),
         "the next turn end is the child's own: {acc:?}"
     );
 }
@@ -2774,7 +3134,7 @@ async fn a_childs_screen_cannot_forge_the_framing_of_a_no_handback_notice() {
 
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert!(
-        acc.contains("from answerer"),
+        acc.contains("(answerer)"),
         "the subject line says whose screen this is: {acc:?}"
     );
     assert!(
@@ -3234,7 +3594,7 @@ async fn a_hookless_child_that_hands_nothing_back_still_reaches_its_parent() {
     r.daemon.delegation_watch_tick_at(settled);
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert!(
-        acc.contains("from answerer"),
+        acc.contains("(answerer)"),
         "the subject line says whose screen this is: {acc:?}"
     );
     assert!(
@@ -3283,7 +3643,7 @@ async fn a_hookless_child_that_hands_nothing_back_still_reaches_its_parent() {
     );
     let acc = collect_broadcast_until(&mut rx, pane.id, "HOOKLESS-SECOND-ANSWER").await;
     assert!(
-        acc.contains("from answerer"),
+        acc.contains("(answerer)"),
         "a second turn on a still screen is a second notice: {acc:?}"
     );
 }
@@ -3318,7 +3678,7 @@ async fn a_hook_bearing_child_that_hands_nothing_back_is_reported_exactly_once()
     let mut rx = r.daemon.observe();
     apply_hook_event(r._state.path(), kid, "Stop").await;
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
-    assert!(acc.contains("from answerer"), "{acc:?}");
+    assert!(acc.contains("(answerer)"), "{acc:?}");
 
     let t0 = 20_000_u64;
     r.daemon.delegation_watch_tick_at(t0);
@@ -3357,7 +3717,7 @@ async fn a_child_that_keeps_ending_turns_tells_its_parent_once_per_round() {
     apply_hook_event(r._state.path(), kid, "Stop").await;
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert_eq!(
-        acc.matches("from answerer").count(),
+        acc.matches("(answerer)").count(),
         1,
         "the first unstaged turn end of the round: {acc:?}"
     );
@@ -3397,7 +3757,7 @@ async fn a_child_that_keeps_ending_turns_tells_its_parent_once_per_round() {
     apply_hook_event(r._state.path(), kid, "Stop").await;
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert_eq!(
-        acc.matches("from answerer").count(),
+        acc.matches("(answerer)").count(),
         1,
         "the new round's first unstaged turn end reaches the parent too: {acc:?}"
     );
@@ -4012,23 +4372,34 @@ async fn the_composed_prompt_and_workspace_info_name_the_same_request() {
 }
 
 #[tokio::test]
-async fn a_handback_carries_its_summary_and_artifact_paths_and_refuses_one_outside_the_workspace() {
+async fn a_cross_workspace_handback_carries_artifacts_and_refuses_one_outside_the_workspace() {
     let _guard = serial().await;
     let r = rig("handback-artifacts").await;
     let pane = r.pane();
     let token = r.token_for(pane.id);
     r.daemon.orchestration_set(true).unwrap();
+    let target = tempfile::tempdir().unwrap();
+    r.daemon
+        .workspace_add(&target.path().display().to_string())
+        .unwrap();
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "write the report"}),
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "write the report",
+                "target_workspace": target.path().display().to_string(),
+            }),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
-    let kid_token = r.token_for(kid);
+    let kid_token = r.daemon.mcp_creds.issue(McpScope {
+        session_id: kid,
+        workspace_id: target.path().display().to_string(),
+    });
     apply_hook_event(r._state.path(), pane.id, "Stop").await;
 
-    std::fs::write(r.ws_dir.join("report.md"), "the long answer").unwrap();
+    std::fs::write(target.path().join("report.md"), "the long answer").unwrap();
 
     let outside = r._state.path().join("elsewhere.md");
     std::fs::write(&outside, "not yours").unwrap();
@@ -4088,7 +4459,7 @@ async fn a_handback_carries_its_summary_and_artifact_paths_and_refuses_one_outsi
         "and the body is still there: {acc:?}"
     );
     assert!(
-        acc.contains(&r.ws_dir.join("report.md").display().to_string()),
+        acc.contains(&target.path().join("report.md").display().to_string()),
         "the artifact reaches the parent RESOLVED, so it can open it: {acc:?}"
     );
 }
@@ -4248,7 +4619,7 @@ async fn a_re_prompted_done_child_reads_working_again_and_hands_back_twice() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "grok", "prompt": "first task", "role": "reused"}),
+            serde_json::json!({"kind": "grok", "prompt": "first task", "role": "reused", "reusable": true}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -4893,7 +5264,7 @@ async fn an_unstamped_late_submit_never_replaces_another_rounds_answer() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "claude", "prompt": "task A", "role": "worker"}),
+            serde_json::json!({"kind": "claude", "prompt": "task A", "role": "worker", "reusable": true}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -5225,7 +5596,7 @@ async fn a_prompt_delivered_twice_is_one_request() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "claude", "prompt": "find the capital"}),
+            serde_json::json!({"kind": "claude", "prompt": "find the capital", "reusable": true}),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -5574,7 +5945,7 @@ async fn a_result_released_against_no_subagent_evidence_is_marked_provisional() 
     let (_, driver) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "claude", "prompt": "drive one", "role": "driver"}),
+                serde_json::json!({"kind": "claude", "prompt": "drive one", "role": "driver", "reusable": true}),
         )
         .await;
     let driver = driver["session_id"].as_u64().unwrap() as u32;
@@ -5668,7 +6039,7 @@ async fn child_with_a_provisional_result(
     let (_, spawned) = r
         .post_spawn(
             token,
-            serde_json::json!({"kind": "claude", "prompt": "drive one", "role": "driver"}),
+            serde_json::json!({"kind": "claude", "prompt": "drive one", "role": "driver", "reusable": true}),
         )
         .await;
     let kid = spawned["session_id"].as_u64().unwrap() as u32;

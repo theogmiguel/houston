@@ -3525,6 +3525,12 @@ struct SpawnBody {
     #[serde(default)]
     role: Option<String>,
     #[serde(default)]
+    target_workspace: Option<String>,
+    #[serde(default)]
+    reusable: bool,
+    #[serde(default)]
+    effort: Option<proto::ChatEffort>,
+    #[serde(default)]
     output_format: Option<String>,
     #[serde(default)]
     boundaries: Option<String>,
@@ -3539,8 +3545,9 @@ async fn orch_spawn(
         Ok(s) => s,
         Err(r) => return *r,
     };
+    let reusable = body.reusable;
     let result = tokio::task::spawn_blocking(move || {
-        daemon.orchestrate_spawn(
+        daemon.orchestrate_spawn_with_options(
             scope.session_id,
             body.kind,
             body.model,
@@ -3553,6 +3560,9 @@ async fn orch_spawn(
             body.auto_approve,
             body.profile,
             body.role,
+            body.target_workspace,
+            body.reusable,
+            body.effort,
         )
     })
     .await
@@ -3560,9 +3570,13 @@ async fn orch_spawn(
     match result {
         Ok(info) => (
             StatusCode::OK,
-            axum::Json(
-                json!({ "session_id": info.id, "title": info.title, "codename": info.codename }),
-            ),
+            axum::Json(json!({
+                "session_id": info.id,
+                "title": info.title,
+                "codename": info.codename,
+                "workspace": info.project_dir,
+                "reusable": reusable,
+            })),
         )
             .into_response(),
         Err(e) => orch_err_response(e),

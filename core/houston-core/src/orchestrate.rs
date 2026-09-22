@@ -402,6 +402,7 @@ pub struct DelegationView {
     pub ended_at: Option<u64>,
     pub stop_reason: Option<String>,
     pub suppressed_turn_ends: u32,
+    pub reusable: bool,
 }
 
 impl From<DelegationState> for proto::DelegationState {
@@ -478,6 +479,7 @@ pub fn delegation_info(
         last_result_corrected_by: owed.last_result_corrected_by,
         capability_note,
         hold_reason,
+        reusable: row.reusable,
     }
 }
 
@@ -587,6 +589,7 @@ impl DelegationView {
             ended_at: row.ended_at,
             stop_reason: row.stop_reason,
             suppressed_turn_ends: row.no_handback_suppressed,
+            reusable: row.reusable,
         }
     }
 }
@@ -790,6 +793,9 @@ pub const PANE_VERBS: &[VerbSpec] = &[
             "auto_approve",
             "profile",
             "role",
+            "target_workspace",
+            "reusable",
+            "effort",
             "output_format",
             "boundaries",
         ],
@@ -1972,22 +1978,21 @@ The narrower the brief, the smaller the model that can honour it. A vague
 prompt to a large model is the expensive way to get an answer you then have to
 correct.
 
-## Do not sit and wait
+## Wait first
 
 `spawn` returns as soon as the child is up. Then call `pane_wait` (or
 `hs-pane wait`): it blocks at zero token cost until your inbox has the
 child's result, a question, or its exit, and hands the row back inside the
-same call. So the thing to prefer is:
+same call. Your next action is either independent work or this wait:
 
 1. `spawn` the child with a self-contained brief.
 2. `pane_wait` for its result, question or exit — blocking here is free.
-3. Carry on from what the row says.
+3. Carry on from what the row says. Read or diagnose only after a timeout,
+   when you need help, or when the operator asks.
 
-**End your turn instead only when you have other work to do while the child
-runs.** Either way you get the result: a child's `pane_submit` is delivered
-to your inbox, read when you next wait or end a turn. The one thing `wait`
-costs is wall-clock time when the child is genuinely slow — its default
-timeout is ten minutes.
+If the child is genuinely slow, `wait` returns a bounded timeout — its
+default is ten minutes. A temporary child closes after its final durable
+handback; use `--reusable` when you need follow-up prompts or a live pane.
 
 ## How a delegation actually goes
 
@@ -2005,6 +2010,10 @@ timeout is ten minutes.
    - You do **not** need to tell the child to report back: a spawned pane is
      told by the daemon that `submit` is its end-of-turn. Spend the brief on
      the task instead.
+   - For a clean-context review, name the exact target and base/head (or a
+     snapshot), list the requirements, and request focused evidence such as
+     `file:line` and tests. Do not paste the parent's full transcript; the
+     temporary review pane is cleaned up after its durable handback.
    - The child starts in its CLI's **auto mode** — it will not stop for
      routine approvals, because nobody is at its keyboard. It can still stop
      for something genuinely dangerous; that shows up as `NeedsInput` and
@@ -2245,6 +2254,8 @@ hs-pane — a Houston pane controlling sibling agent panes
   hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok> --prompt \"…\"
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
                 [--role NAME]          (unique among your live children)
+                [--target-workspace DIR] [--reusable]
+                [--effort low|medium|high|xhigh|max]
                 [--output-format \"…\"] [--boundaries \"…\"]
                                        (the brief: shape of the answer, and
                                         what the child must not do)
@@ -2412,6 +2423,15 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             }
             if let Some(r) = flags.get("role") {
                 body["role"] = json!(r);
+            }
+            if let Some(target) = flags.get("target-workspace") {
+                body["target_workspace"] = json!(target);
+            }
+            if flags.contains_key("reusable") {
+                body["reusable"] = json!(true);
+            }
+            if let Some(effort) = flags.get("effort") {
+                body["effort"] = json!(effort);
             }
             if let Some(f) = flags.get("output-format") {
                 body["output_format"] = json!(f);
@@ -2746,9 +2766,8 @@ mod tests {
             "the async pattern — blocking in `wait` is what made panes cost more than sub-agents"
         );
         assert!(
-            SKILL_MD.contains("End your turn instead only when you have other work"),
-            "end the turn only when there is other work — a child's submit reaches you at the \
-             next wait or turn end"
+            SKILL_MD.contains("Your next action is either independent work or this wait"),
+            "wait first, then continue from the durable inbox row"
         );
     }
 
@@ -3864,6 +3883,8 @@ mod tests {
             no_handback_reported: false,
             no_handback_suppressed: 0,
             round: 1,
+            reusable: true,
+            cleanup_after: None,
         };
         let info = delegation_info(
             row,
@@ -3923,6 +3944,8 @@ mod tests {
             no_handback_reported: false,
             no_handback_suppressed: 0,
             round: 1,
+            reusable: true,
+            cleanup_after: None,
         };
         let info = delegation_info(
             row,
@@ -4377,7 +4400,7 @@ mod tests {
                 confirmed_at: None,
                 attempts: 1,
             },
-            from_label: format!("worker-{from} (codename-{from})"),
+            from_label: format!("codename-{from} (worker-{from})"),
             excerpt: None,
         }
     }
@@ -4396,7 +4419,7 @@ mod tests {
         );
         assert!(out.contains("1 message, delivery d-abc"), "{out}");
         assert!(
-            out.contains("[result] #12 from worker-7 (codename-7): 3 of 7 call sites are unsafe"),
+            out.contains("[result] #12 from codename-7 (worker-7): 3 of 7 call sites are unsafe"),
             "{out}"
         );
         assert!(out.contains("the long form"), "{out}");
