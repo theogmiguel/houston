@@ -19,8 +19,8 @@ export function inboxFromLabel(
 ): string {
   if (row.from_session == null) return 'Houston'
   const pane = sessions.get(row.from_session)
-  const name = pane?.codename || `#${row.from_session}`
-  const role = pane?.delegation?.role
+  const name = row.from_codename || pane?.codename || `#${row.from_session}`
+  const role = row.from_role ?? pane?.delegation?.role
   return role ? `${name} · ${role}` : name
 }
 

@@ -89,6 +89,29 @@ function parentAndChild(): ReturnType<typeof makeSession>[] {
 }
 
 describe('the operator inbox bell surface', () => {
+  it('keeps the sender identity after the temporary pane is removed', async () => {
+    harness = await renderReadyApp({ sessions: [], workspaces: [makeWorkspace()] })
+    const row = owedRow({ from_codename: 'fern', from_role: 'reviewer' })
+    deliverControl({ type: 'inbox_rows', workspace: '/tmp/project', rows: [row] })
+    openBell(harness)
+
+    expect(owedRows(harness)[0].textContent).toContain('[result] fern · reviewer → #41')
+    expect(owedRows(harness)[0].textContent).not.toContain('Jump to pane')
+  })
+
+  it('uses the identity recorded with the result when the live role has changed', async () => {
+    harness = await renderReadyApp({
+      sessions: parentAndChild(),
+      workspaces: [makeWorkspace()]
+    })
+    const row = owedRow({ from_codename: 'fern', from_role: 'migration' })
+    deliverControl({ type: 'inbox_rows', workspace: '/tmp/project', rows: [row] })
+    openBell(harness)
+
+    expect(owedRows(harness)[0].textContent).toContain('fern · migration')
+    expect(owedRows(harness)[0].textContent).not.toContain('fern · reviewer')
+  })
+
   it('rows_outlive_every_pane_involved: rows render with both panes gone from the roster', async () => {
     harness = await renderReadyApp({ sessions: [], workspaces: [makeWorkspace()] })
     const row = owedRow()
