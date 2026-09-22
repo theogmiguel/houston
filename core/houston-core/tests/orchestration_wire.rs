@@ -2641,7 +2641,10 @@ async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_s
         .await;
     let child = body["session_id"].as_u64().unwrap() as u32;
     r.daemon
-        .orchestrate_submit(child, "ARCHIVED-RESULT the review is complete".into())
+        .orchestrate_submit(
+            child,
+            "ARCHIVED-RESULT the review is complete".to_string().into(),
+        )
         .unwrap();
     apply_hook_event(r._state.path(), child, "Stop").await;
 
@@ -2715,7 +2718,7 @@ async fn reusable_children_survive_completed_handback_for_follow_up() {
         .await;
     let child = body["session_id"].as_u64().unwrap() as u32;
     r.daemon
-        .orchestrate_submit(child, "FIRST-RESULT".into())
+        .orchestrate_submit(child, "FIRST-RESULT".to_string().into())
         .unwrap();
     apply_hook_event(r._state.path(), child, "Stop").await;
     assert!(r.daemon.list().iter().any(|info| info.id == child));
@@ -2764,7 +2767,12 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
     let grandchild = body["session_id"].as_u64().unwrap() as u32;
 
     r.daemon
-        .orchestrate_submit(child, "PARENT-RESULT while nested child is live".into())
+        .orchestrate_submit(
+            child,
+            "PARENT-RESULT while nested child is live"
+                .to_string()
+                .into(),
+        )
         .unwrap();
     apply_hook_event(r._state.path(), child, "Stop").await;
     assert!(
@@ -2773,7 +2781,7 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
     );
 
     r.daemon
-        .orchestrate_submit(grandchild, "NESTED-RESULT".into())
+        .orchestrate_submit(grandchild, "NESTED-RESULT".to_string().into())
         .unwrap();
     apply_hook_event(r._state.path(), grandchild, "Stop").await;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
