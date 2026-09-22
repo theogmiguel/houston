@@ -47,10 +47,10 @@ ExecStart=$cargo_bin sweep --recursive --hidden --installed $ROOT
 EOF
   cat >"$units/houston-sweep-targets.timer" <<EOF
 [Unit]
-Description=Weekly sweep of stale Cargo artifacts in $ROOT
+Description=Daily sweep of stale Cargo artifacts in $ROOT
 
 [Timer]
-OnCalendar=weekly
+OnCalendar=daily
 Persistent=true
 
 [Install]
