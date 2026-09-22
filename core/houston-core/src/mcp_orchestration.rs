@@ -823,7 +823,7 @@ impl OrchestrationTools {
                     "required": ["body"],
                     "additionalProperties": false,
                 }),
-                annotations: local(Annotations::destructive()),
+                annotations: Annotations::local_write(),
             },
         ];
         if !spawnable {
@@ -884,15 +884,51 @@ mod tests {
                 spec.name.as_str(),
                 "pane_list" | "pane_get" | "pane_read" | "pane_wait"
             );
+            // pane_submit is neither: a local additive write, not a read and not
+            // destructive (it only appends a row to the parent's own inbox).
+            let local_write = spec.name == "pane_submit";
             assert_eq!(
                 spec.annotations.read_only, readonly,
                 "{} read_only annotation",
                 spec.name
             );
             assert_eq!(
-                spec.annotations.destructive, !readonly,
+                spec.annotations.destructive,
+                !readonly && !local_write,
                 "{} destructive annotation",
                 spec.name
+            );
+        }
+    }
+
+    #[test]
+    fn the_codex_gateway_would_serve_pane_submit_and_pane_wait_directly_but_gate_spawn_and_kill() {
+        let provider = OrchestrationTools {
+            daemon: Weak::new(),
+        };
+        let by_name: std::collections::HashMap<String, ToolSpec> = provider
+            .all_tools()
+            .into_iter()
+            .map(|s| (s.name.clone(), s))
+            .collect();
+        for name in [
+            "pane_submit",
+            "pane_wait",
+            "pane_list",
+            "pane_get",
+            "pane_read",
+        ] {
+            let spec = &by_name[name];
+            assert!(
+                !crate::mcp_server::codex_requires_approval(spec.annotations),
+                "{name} should be servable directly by the Codex gateway"
+            );
+        }
+        for name in ["pane_spawn", "pane_kill", "pane_send_keys", "pane_prompt"] {
+            let spec = &by_name[name];
+            assert!(
+                crate::mcp_server::codex_requires_approval(spec.annotations),
+                "{name} must stay behind call_tool"
             );
         }
     }

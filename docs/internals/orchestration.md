@@ -764,6 +764,12 @@ call the two tools it keeps. The Codex gateway's `call_tool` enforces the same
 predicate, so a leaf Codex pane cannot bypass the gate through the meta-tool;
 its `list_tools` still serves the full catalogue, listable-but-not-callable.
 
+A tool Codex's own Auto-mode approval rule would never gate (read-only, or
+local and not open-world — `mcp_server::codex_requires_approval`) is listed
+directly in `tools/list` by its own name and schema instead of behind
+`call_tool`, so a Codex caller spends no approval round-trip on it; a gated
+tool named directly is refused, naming `call_tool` as the way to reach it.
+
 **Depth-aware advertisement.** `pane_spawn` is in a pane's tool list exactly
 when that pane could use it: orchestration is on, it has a free child slot, and
 the child would fit under the depth cap. The default depth is **1** —

@@ -60,6 +60,30 @@ impl Annotations {
             "openWorldHint": self.open_world,
         })
     }
+
+    /// A local, additive write: not a read, but not something a reviewer needs to gate
+    /// either (nothing destroyed, nothing reaching outside this daemon).
+    pub fn local_write() -> Self {
+        Self {
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: false,
+        }
+    }
+}
+
+/// Mirrors Codex's own Auto-mode approval rule (`requires_mcp_tool_approval` in
+/// `codex-rs/core/src/mcp_tool_call.rs`): destructive always gates, read-only never
+/// does, otherwise it gates only if the tool can reach outside the sandbox.
+pub(crate) fn codex_requires_approval(annotations: Annotations) -> bool {
+    if annotations.destructive {
+        true
+    } else if annotations.read_only {
+        false
+    } else {
+        annotations.open_world
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -591,9 +615,21 @@ fn gateway_delivery(kind: proto::AgentKind) -> bool {
 }
 
 const GATEWAY_INSTRUCTIONS: &str =
-    "This server's tools are served through a schema gateway to save you the cost of \
-     resending every schema: call list_tools first to see what is available, then call_tool \
-     to run one.";
+    "Most of this server's tools are served through a schema gateway to save you the cost \
+     of resending every schema: call list_tools to see what call_tool can run. A few tools \
+     that need no approval are listed directly, by their own name and schema, in tools/list \
+     alongside list_tools and call_tool — call those directly, not through call_tool.";
+
+/// The tools/list entries a Codex-scoped session gets directly, without going through
+/// `call_tool` — the subset of `scope`'s own tools that [`codex_requires_approval`]
+/// says Codex's Auto mode would not gate anyway.
+fn gateway_direct_tools(host: &dyn McpHost, scope: &McpScope) -> Vec<ToolSpec> {
+    host.tools()
+        .list(scope)
+        .into_iter()
+        .filter(|spec| !codex_requires_approval(spec.annotations))
+        .collect()
+}
 
 pub fn gateway_tool_specs() -> Vec<ToolSpec> {
     vec![
@@ -623,7 +659,9 @@ pub fn gateway_tool_specs() -> Vec<ToolSpec> {
             name: "call_tool".into(),
             title: "Call a tool".into(),
             description: "Run one tool from the list_tools catalogue by name, with its own \
-                          arguments."
+                          arguments. Tools that need no approval are listed directly in \
+                          tools/list instead and must be called by their own name, not \
+                          through here."
                 .into(),
             input_schema: json!({
                 "type": "object",
@@ -771,7 +809,9 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
                 .agent_kind(scope.session_id)
                 .is_some_and(gateway_delivery);
             let specs = if gateway {
-                gateway_tool_specs()
+                let mut specs = gateway_tool_specs();
+                specs.extend(gateway_direct_tools(host, scope));
+                specs
             } else {
                 host.tools().list(scope)
             };
@@ -797,6 +837,26 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
             let gateway = host
                 .agent_kind(scope.session_id)
                 .is_some_and(gateway_delivery);
+            if gateway && !matches!(name, "list_tools" | "call_tool") {
+                let direct = gateway_direct_tools(host, scope);
+                let gated_but_known = !direct.iter().any(|s| s.name == name)
+                    && host.tools().list(scope).iter().any(|s| s.name == name);
+                if gated_but_known {
+                    return json_rpc_result(
+                        id,
+                        json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!(
+                                    "{name:?} needs approval under the Codex gateway; call \
+                                     it through call_tool instead of by name directly"
+                                ),
+                            }],
+                            "isError": true,
+                        }),
+                    );
+                }
+            }
             if gateway && matches!(name, "list_tools" | "call_tool") {
                 return match gateway_tools_call(host, scope, name, &args).await {
                     Ok(output) => json_rpc_result(id, output.to_json()),

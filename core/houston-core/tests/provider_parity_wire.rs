@@ -571,8 +571,8 @@ mod codex {
         names.sort_unstable();
         assert_eq!(
             names,
-            vec!["call_tool", "list_tools"],
-            "codex is gateway-served: {res}"
+            vec!["call_tool", "list_tools", "pane_submit", "workspace_info"],
+            "codex is gateway-served, plus the tools its approval rule would not gate: {res}"
         );
 
         let call = |name: &'static str| {
