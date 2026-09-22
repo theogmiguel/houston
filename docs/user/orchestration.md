@@ -81,9 +81,9 @@ HTTP or `hs-pane spawn --effort`; omitting it keeps the CLI default, and provide
 per-run effort setting refuse that request.
 
 After cleanup, the parent can still call `pane_wait` for that child id and receive its
-durable result. Whole-inbox waits remain unchanged. Follow-up input or live descendants
-cancel or defer cleanup, and legacy explicit pane close keeps its existing operator
-semantics.
+durable result, including the child's codename and role. Whole-inbox waits remain
+unchanged. Follow-up input or live descendants cancel or defer cleanup, and legacy
+explicit pane close keeps its existing operator semantics.
 
 For a clean-context review, provide the exact target and base/head (or a snapshot), the
 requirements, and focused evidence such as `file:line` and test results. Do not paste a

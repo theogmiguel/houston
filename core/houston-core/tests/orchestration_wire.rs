@@ -3,7 +3,7 @@
 mod common;
 
 use common::{collect_broadcast_until, start_daemon_with_handle, TOKEN};
-use houston_core::daemon::{CreateParams, Daemon};
+use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_core::mcp_creds::McpScope;
 use houston_protocol as proto;
 use std::io::{Read, Write};
@@ -174,6 +174,20 @@ impl Rig {
     }
 }
 
+fn with_delegations_hidden<T>(db_path: &std::path::Path, f: impl FnOnce() -> T) -> T {
+    let conn = rusqlite::Connection::open(db_path).expect("open the test database");
+    conn.execute_batch("ALTER TABLE delegations RENAME TO delegations_hidden_by_test")
+        .expect("hide the delegations table");
+    drop(conn);
+
+    let result = f();
+
+    let conn = rusqlite::Connection::open(db_path).expect("reopen the test database");
+    conn.execute_batch("ALTER TABLE delegations_hidden_by_test RENAME TO delegations")
+        .expect("restore the delegations table");
+    result
+}
+
 #[tokio::test]
 async fn agent_kind_of_reads_the_spawned_kind_and_is_none_for_an_unknown_id() {
     let _guard = serial().await;
@@ -214,6 +228,11 @@ async fn spawn_is_refused_by_name_until_orchestration_is_on() {
         .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "hi"}))
         .await;
     assert_eq!(status, 200, "body: {body}");
+    assert_eq!(
+        body["next_action"],
+        houston_core::orchestrate::SPAWN_NEXT_ACTION,
+        "spawn tells the caller to work independently or wait"
+    );
     let child: u32 = body["session_id"].as_u64().unwrap() as u32;
     let listed = r.daemon.list();
     let info = listed.iter().find(|s| s.id == child).unwrap();
@@ -221,6 +240,50 @@ async fn spawn_is_refused_by_name_until_orchestration_is_on() {
         info.spawned_by,
         Some(pane.id),
         "the ledger records the parent"
+    );
+}
+
+#[tokio::test]
+async fn spawn_rolls_back_when_delegation_persistence_fails() {
+    let _guard = serial().await;
+    let r = rig("spawn-rollback").await;
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+
+    let error = with_delegations_hidden(&r._state.path().join("test.db"), || {
+        r.daemon
+            .orchestrate_spawn_with_options(
+                parent.id,
+                proto::AgentKind::Grok,
+                None,
+                None,
+                houston_core::orchestrate::Brief {
+                    prompt: "rollback".into(),
+                    output_format: None,
+                    boundaries: None,
+                },
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+            )
+            .expect_err("a missing delegation table must refuse the spawn")
+    });
+    let error = format!("{error:#}");
+    assert!(error.contains("delegations"), "{error}");
+    assert!(error.contains("rolled back"), "{error}");
+    assert!(
+        !r.daemon
+            .list()
+            .iter()
+            .any(|session| session.spawned_by == Some(parent.id)),
+        "a child must not remain live without its durable delegation row"
+    );
+    assert!(
+        r.daemon.open_delegations().is_empty(),
+        "the failed spawn must not leave an open delegation"
     );
 }
 
@@ -1438,6 +1501,11 @@ async fn the_mcp_door_shares_the_cli_gates_and_reports_refusals_as_tool_errors()
     )
     .await;
     assert_eq!(result["isError"], false, "{result}");
+    assert_eq!(
+        result["structuredContent"]["next_action"],
+        houston_core::orchestrate::SPAWN_NEXT_ACTION,
+        "spawn tells MCP callers to work independently or wait"
+    );
     let child = result["structuredContent"]["session"].as_u64().unwrap() as u32;
 
     let listed = mcp_call(r.addr, &token, "pane_list", serde_json::json!({})).await;
@@ -2625,7 +2693,8 @@ async fn hs_pane_wait_matches_the_tool() {
 }
 
 #[tokio::test]
-async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_still_works() {
+async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_and_restart_still_work(
+) {
     let _guard = serial().await;
     let r = rig("temporary-cleanup").await;
     let parent = r.pane();
@@ -2642,6 +2711,7 @@ async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_s
         )
         .await;
     let child = body["session_id"].as_u64().unwrap() as u32;
+    let codename = body["codename"].as_str().unwrap().to_string();
     r.daemon
         .orchestrate_submit(
             child,
@@ -2654,7 +2724,10 @@ async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_s
     while r.daemon.list().iter().any(|info| info.id == child) {
         assert!(
             tokio::time::Instant::now() < deadline,
-            "temporary child {child} was not removed after its completed round"
+            "temporary child {child} was not removed after its completed round: {:?}",
+            r.daemon
+                .delegation_of(child)
+                .map(|row| (row.state, row.cleanup_after, row.round))
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -2675,10 +2748,50 @@ async fn a_temporary_child_is_removed_after_a_durable_completed_round_but_wait_s
     .await;
     assert_eq!(status, 200, "historical child wait: {waited}");
     assert_eq!(waited["rows"][0]["from_session"], child);
+    assert_eq!(waited["rows"][0]["from_codename"], codename);
+    assert_eq!(waited["rows"][0]["from_role"], "temporary-review");
     assert!(waited["rows"][0]["body"]
         .as_str()
         .unwrap()
         .contains("ARCHIVED-RESULT"));
+
+    let db_path = r._state.path().join("test.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let state: String = conn
+        .query_row(
+            "SELECT state FROM sessions WHERE id = ?1",
+            rusqlite::params![child],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        state, "closed",
+        "temporary cleanup must close the durable session before removing its live entry"
+    );
+    drop(conn);
+
+    let reopened = Daemon::new(DaemonConfig {
+        token: TOKEN.to_string(),
+        db_path,
+    })
+    .unwrap();
+    assert!(
+        !reopened.list().iter().any(|info| info.id == child),
+        "a closed temporary child must not be restored as interrupted on the next boot"
+    );
+    let restored_delegation = reopened
+        .delegation_of(child)
+        .expect("completed delegation survives a daemon reopen");
+    assert_eq!(restored_delegation.state, "done");
+    assert_eq!(restored_delegation.stop_reason, None);
+    assert_eq!(restored_delegation.cleanup_after, None);
+    let restored_rows = reopened.inbox_rows_for_test(parent.id);
+    assert!(
+        restored_rows
+            .iter()
+            .any(|row| { row.from_session == Some(child) && row.body.contains("ARCHIVED-RESULT") }),
+        "durable handback survives restart: {restored_rows:?}"
+    );
 
     let unrelated = r.pane();
     let unrelated_token = r.token_for(unrelated.id);
@@ -2744,6 +2857,9 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
     let parent = r.pane();
     let parent_token = r.token_for(parent.id);
     r.daemon.orchestration_set(true).unwrap();
+    r.daemon
+        .set_orchestration_caps(houston_core::orchestrate::MAX_LIVE_CHILDREN, 2)
+        .unwrap();
     let (_, body) = r
         .post_spawn(
             &parent_token,
@@ -2790,7 +2906,10 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
     while r.daemon.list().iter().any(|info| info.id == child) {
         assert!(
             tokio::time::Instant::now() < deadline,
-            "the completed parent child was not re-evaluated after its descendant finished"
+            "the completed parent child was not re-evaluated after its descendant finished: {:?}",
+            r.daemon
+                .delegation_of(child)
+                .map(|row| (row.state, row.cleanup_after, row.round))
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -2823,7 +2942,13 @@ async fn archived_inbox_rows_keep_codename_first_sender_labels() {
         .orchestrate_submit(child, "LABEL-RESULT".to_string().into())
         .unwrap();
     apply_hook_event(r._state.path(), child, "Stop").await;
-    assert!(!r.daemon.list().iter().any(|info| info.id == child));
+    assert!(
+        !r.daemon.list().iter().any(|info| info.id == child),
+        "temporary child remained: {:?}",
+        r.daemon
+            .delegation_of(child)
+            .map(|row| (row.state, row.cleanup_after, row.round))
+    );
 
     let reserved = r
         .daemon
@@ -5753,7 +5878,11 @@ async fn a_second_request_to_the_same_child_keeps_both_results() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "claude", "prompt": "task A"}),
+            serde_json::json!({
+                "kind": "claude",
+                "prompt": "task A",
+                "reusable": true,
+            }),
         )
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
@@ -7209,7 +7338,11 @@ async fn stop_hook_latency_under_load() {
         let (_, body) = r
             .post_spawn(
                 &token,
-                serde_json::json!({"kind": "claude", "prompt": format!("load {i}")}),
+                serde_json::json!({
+                    "kind": "claude",
+                    "prompt": format!("load {i}"),
+                    "reusable": true,
+                }),
             )
             .await;
         let kid = body["session_id"]
@@ -7235,7 +7368,11 @@ async fn stop_hook_latency_under_load() {
     let (_, body) = r
         .post_spawn(
             &token,
-            serde_json::json!({"kind": "claude", "prompt": "writer"}),
+            serde_json::json!({
+                "kind": "claude",
+                "prompt": "writer",
+                "reusable": true,
+            }),
         )
         .await;
     let writer_kid = body["session_id"].as_u64().unwrap() as u32;

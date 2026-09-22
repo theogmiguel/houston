@@ -221,6 +221,8 @@ eligible.
 `to_session` is the pane owed the row (`0` is the operator); `from_session` is the pane
 (or the daemon, for a notice) that produced it; `workspace` is the workspace identity every
 other table already keys on; `request_id` is the `delegations.round` the row answers.
+`from_codename` and `from_role` are bounded snapshots of the sender identity, so a renderer
+can keep naming a result after temporary cleanup removes the live session.
 `kind` is one of `InboxKind`: `result` (a `pane_submit` body), `no_handback` (a turn ended
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
 gone), `stalled`, `operator_note` (the operator ended or interrupted the child), and `mail`
@@ -564,6 +566,9 @@ live descendant exists, a wake or composer input is queued, or internal sub-agen
 is still outstanding. A provisional round has the bounded `OWED_NOTIFICATION_MAX_MS`
 resolution window; late evidence can correct it before that deadline, after which the
 round's in-memory hold is released so completed ordinary panes do not remain forever.
+The wake-lane map owns both queued and in-flight delivery, and the cleanup marker is
+rechecked under a shared lock with prompts, key input and submits so a follow-up cannot
+remove a reopened round.
 Removal emits `SessionRemoved` but leaves the delegation and inbox rows durable. The
 historical parent chain continues to authorize the parent's `pane_wait` for that child;
 it does not authorize unrelated panes or resurrect terminal controls. Descendant removal

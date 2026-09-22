@@ -1132,6 +1132,12 @@ pub struct InboxRow {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub confirmed_at: Option<u64>,
     pub attempts: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub from_codename: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub from_role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

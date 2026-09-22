@@ -424,8 +424,8 @@ TurnEndSource      kebab: stop-hook | acp-turn | quiet-settle
 InboxRow           v96: id, to_session, original_to?, workspace, from_session?, request_id?,
                    kind: InboxKind, urgent, summary, body, artifacts, superseded, provisional, corrects?,
                    reason?, created_at, ready_at?, resolved_at?, delivered_at?, delivered_via?:
-                   InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door). The renderer's
-                   copy of a `pane_inbox` row —
+                   InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door),
+                   from_codename?, from_role? (bounded sender identity snapshots). The renderer's copy of a `pane_inbox` row —
                    drops `reserved_at`/`delivery_id` (door internals)
 InboxKind          snake: result | no_handback | needs_input | exited | stalled | operator_note | mail
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
@@ -840,7 +840,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 113 | **Orchestration spans registered workspaces and records child lifetime.** `pane_spawn`/`hs-pane spawn` gain registered `target_workspace`, `reusable` lifecycle selection and provider-validated `effort`; `DelegationInfo` carries the persisted reusable choice. Temporary children are removed only after a durable completed handback, while the delegation ancestry and inbox rows remain available for scoped historical waits |
+| 113 | **Orchestration spans registered workspaces and records child lifetime.** `pane_spawn`/`hs-pane spawn` gain registered `target_workspace`, `reusable` lifecycle selection and provider-validated `effort`; `DelegationInfo` carries the persisted reusable choice. Temporary children are removed only after a durable completed handback, while the delegation ancestry, inbox rows and bounded sender identity snapshots remain available for scoped historical waits |
 | 112 | **Pane lifecycle reports uncertainty.** `AgentStatus` gains `unavailable`: a hook-capable or ACP pane enters `spawning` at process creation and moves there if no lifecycle signal arrives within the bounded grace period, instead of being guessed idle. Later provider evidence replaces it normally |
 | 111 | **The per-pane context indicator.** `SessionInfo` gains an optional `context: SessionContext` and a matching `session_context` broadcast, both runtime-only. `SessionContext` carries `used_tokens` (the latest context occupancy, including output tokens), a nullable `window_tokens` and `used_percent`, a `state` (`unknown`\|`idle`\|`working`\|`near_limit`\|`reset`), a `source` (`reported`\|`derived` — the window's provenance) and `as_of_ms`. The daemon reads the transcript path reported by Claude or Codex hooks (`HookDrop` carries `transcript_path`) and broadcasts on turn boundaries. Codex reports its effective window; Claude uses the model catalog. Unsupported providers carry no `context` and the client renders no indicator |
 | 110 | **One update channel.** `UpdatePolicy` loses its `channel` field and `UpdateChannel` is deleted. The daemon always asks `releases/latest` and offers only a strictly newer release; a draft and a prerelease are refused unconditionally, so a release candidate can never reach a stable install. The stored `updates_channel` settings row is left in place, inert |

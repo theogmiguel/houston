@@ -3576,6 +3576,7 @@ async fn orch_spawn(
                 "codename": info.codename,
                 "workspace": info.project_dir,
                 "reusable": reusable,
+                "next_action": crate::orchestrate::SPAWN_NEXT_ACTION,
             })),
         )
             .into_response(),

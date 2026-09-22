@@ -798,6 +798,8 @@ pub struct InboxRow {
     pub delivered_via: Option<String>,
     pub confirmed_at: Option<u64>,
     pub attempts: u32,
+    pub from_codename: Option<String>,
+    pub from_role: Option<String>,
 }
 
 #[derive(Debug)]
@@ -828,7 +830,7 @@ pub struct InboxRecovery {
 const INBOX_SELECT: &str = "SELECT id, to_session, original_to, workspace, from_session, \
     request_id, kind, urgent, summary, body, artifacts, superseded, provisional, corrects, \
     reason, created_at, ready_at, resolved_at, reserved_at, delivery_id, delivered_at, \
-    delivered_via, confirmed_at, attempts FROM pane_inbox";
+    delivered_via, confirmed_at, attempts, from_codename, from_role FROM pane_inbox";
 
 // A row a door is not holding: never reserved, or reserved longer ago than
 // INBOX_RESERVATION_MS so that door is presumed dead. Shared by the reserve claim
@@ -865,6 +867,8 @@ fn map_inbox_row(r: &rusqlite::Row) -> rusqlite::Result<InboxRow> {
         delivered_via: r.get(21)?,
         confirmed_at: r.get::<_, Option<i64>>(22)?.map(|t| t as u64),
         attempts: r.get(23)?,
+        from_codename: r.get(24)?,
+        from_role: r.get(25)?,
     })
 }
 
@@ -1620,7 +1624,9 @@ impl Db {
                 delivered_at  INTEGER,
                 delivered_via TEXT,
                 confirmed_at  INTEGER,
-                attempts      INTEGER NOT NULL DEFAULT 0
+                attempts      INTEGER NOT NULL DEFAULT 0,
+                from_codename TEXT,
+                from_role     TEXT
             );
             CREATE INDEX IF NOT EXISTS pane_inbox_eligible
                 ON pane_inbox(to_session, created_at)
@@ -1628,8 +1634,26 @@ impl Db {
             CREATE INDEX IF NOT EXISTS pane_inbox_workspace
                 ON pane_inbox(workspace, created_at) WHERE to_session = 0;",
         )?;
+        add_column_if_missing(&conn, "pane_inbox", "from_codename", "from_codename TEXT")?;
+        add_column_if_missing(&conn, "pane_inbox", "from_role", "from_role TEXT")?;
         migrate_staged_results_into_the_inbox(&conn)?;
         migrate_pending_swarm_mail_into_the_inbox(&conn)?;
+        conn.execute(
+            "UPDATE pane_inbox
+             SET from_codename = COALESCE(
+                     from_codename,
+                     (SELECT substr(COALESCE(NULLIF(s.codename, ''), NULLIF(s.title, '')), 1, 40)
+                        FROM sessions s WHERE s.id = pane_inbox.from_session)
+                 ),
+                 from_role = COALESCE(
+                     from_role,
+                     (SELECT substr(d.role, 1, 32)
+                        FROM delegations d WHERE d.child_session = pane_inbox.from_session)
+                 )
+             WHERE from_session IS NOT NULL
+               AND (from_codename IS NULL OR from_role IS NULL)",
+            [],
+        )?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -1767,6 +1791,18 @@ impl Db {
             rusqlite::params![id],
         )?;
         Ok(())
+    }
+
+    pub fn session_is_closed(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT state FROM sessions WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .is_some_and(|state| state == "closed"))
     }
 
     pub fn next_session_id(&self) -> Result<u32> {
@@ -3739,9 +3775,19 @@ fn insert_inbox_row(conn: &Connection, row: &NewInboxRow, now: u64) -> Result<i6
             if let Some(id) = existing {
                 conn.execute(
                     "UPDATE pane_inbox SET
-                            body = ?2, summary = ?3, artifacts = ?4, superseded = superseded + 1
+                            body = ?2, summary = ?3, artifacts = ?4, superseded = superseded + 1,
+                            from_codename = COALESCE(
+                                from_codename,
+                                (SELECT substr(COALESCE(NULLIF(s.codename, ''), NULLIF(s.title, '')), 1, 40)
+                                   FROM sessions s WHERE s.id = ?5)
+                            ),
+                            from_role = COALESCE(
+                                from_role,
+                                (SELECT substr(d.role, 1, 32)
+                                   FROM delegations d WHERE d.child_session = ?5)
+                            )
                          WHERE id = ?1",
-                    rusqlite::params![id, row.body, row.summary, artifacts_json],
+                    rusqlite::params![id, row.body, row.summary, artifacts_json, row.from_session],
                 )?;
                 return Ok(id);
             }
@@ -3750,8 +3796,13 @@ fn insert_inbox_row(conn: &Connection, row: &NewInboxRow, now: u64) -> Result<i6
     conn.execute(
         "INSERT INTO pane_inbox
                 (to_session, workspace, from_session, request_id, kind, urgent, summary, body,
-                 artifacts, provisional, corrects, reason, created_at, ready_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 artifacts, provisional, corrects, reason, created_at, ready_at,
+                 from_codename, from_role)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                     (SELECT substr(COALESCE(NULLIF(s.codename, ''), NULLIF(s.title, '')), 1, 40)
+                        FROM sessions s WHERE s.id = ?3),
+                     (SELECT substr(d.role, 1, 32)
+                        FROM delegations d WHERE d.child_session = ?3))",
         rusqlite::params![
             row.to_session,
             row.workspace,

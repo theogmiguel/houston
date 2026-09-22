@@ -284,6 +284,7 @@ impl ToolProvider for OrchestrationTools {
                         "cwd": info.cwd,
                         "workspace": info.project_dir,
                         "reusable": reusable,
+                        "next_action": orchestrate::SPAWN_NEXT_ACTION,
                     })))
                 }
                 "pane_list" => {

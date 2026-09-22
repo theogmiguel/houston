@@ -996,8 +996,9 @@ pub struct Daemon {
     inbox_pending_max: AtomicU32,
     inbox_wake: Mutex<HashMap<u32, Arc<tokio::sync::Notify>>>,
     inbox_waiting: Mutex<HashSet<u32>>,
-    swarm_wake_lanes: Mutex<HashMap<u32, VecDeque<WakeItem>>>,
-    swarm_wake_active: Mutex<HashSet<u32>>,
+    temporary_cleanup_lock: Mutex<()>,
+    swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
+    swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     subagent_rounds: Mutex<HashMap<u32, orchestrate::SubagentRound>>,
     stop_blocks: Mutex<HashMap<u32, u32>>,
@@ -2210,13 +2211,14 @@ impl Daemon {
             inbox_pending_max: AtomicU32::new(orchestrate::INBOX_PENDING_PER_PANE_MAX),
             inbox_wake: Mutex::new(HashMap::new()),
             inbox_waiting: Mutex::new(HashSet::new()),
+            temporary_cleanup_lock: Mutex::new(()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             paste_confirmations: Mutex::new(HashMap::new()),
             turn_start_round: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new(HashMap::new()),
             prompt_awaiting_hook: Mutex::new(HashSet::new()),
-            swarm_wake_active: Mutex::new(HashSet::new()),
+            swarm_wake_generation: AtomicU64::new(1),
             subagent_rounds: Mutex::new(HashMap::new()),
             stop_blocks: Mutex::new(HashMap::new()),
             permission_episodes: Mutex::new(HashMap::new()),
@@ -7134,10 +7136,19 @@ impl Daemon {
     }
 
     fn finish_session(self: &Arc<Self>, id: u32, exit_code: Option<i32>) -> proto::SessionState {
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         if let Some(session) = self.sessions.lock().expect("sessions lock").get(&id) {
             session.remove_shell_token_file();
+            if session.removed.load(Ordering::Acquire) {
+                // Temporary cleanup marks the session before closing its durable row. Do not let
+                // a concurrent PTY/supervisor completion overwrite that closed state with exited.
+                return proto::SessionState::Exited;
+            }
         }
-        let final_state = {
+        let (final_state, session_missing) = {
             let sessions = self.sessions.lock().expect("sessions lock");
             match sessions.get(&id) {
                 Some(s) => {
@@ -7146,13 +7157,26 @@ impl Daemon {
                         *st = proto::SessionState::Exited;
                     }
                     s.backend_exited.store(true, Ordering::Release);
-                    *st
+                    (*st, false)
                 }
-                None => proto::SessionState::Exited,
+                None => (proto::SessionState::Exited, true),
             }
         };
-        if let Err(e) = self.db.update_session_state(id, final_state, exit_code) {
-            tracing::error!("persisting final state of session {id}: {e}");
+        let persist_state = if session_missing {
+            match self.db.session_is_closed(id) {
+                Ok(closed) => !closed,
+                Err(e) => {
+                    tracing::warn!("checking whether removed session {id} was durably closed: {e}");
+                    true
+                }
+            }
+        } else {
+            true
+        };
+        if persist_state {
+            if let Err(e) = self.db.update_session_state(id, final_state, exit_code) {
+                tracing::error!("persisting final state of session {id}: {e}");
+            }
         }
         self.mcp_creds.revoke_session(id);
         self.mcp_notify.close_session(id);
@@ -11278,30 +11302,37 @@ impl Daemon {
             );
         }
         self.get(session_id)?;
-        let start_drainer = {
+        let (start_drainer, generation) = {
             let mut lanes = self.swarm_wake_lanes.lock().expect("wake lanes lock");
             match lanes.get_mut(&session_id) {
-                Some(queue) => {
-                    if item == WakeItem::Inbox && queue.contains(&WakeItem::Inbox) {
+                Some(lane) => {
+                    if item == WakeItem::Inbox && lane.queue.contains(&WakeItem::Inbox) {
                         return Ok(());
                     }
-                    if queue.len() >= SWARM_WAKE_LANE_MAX {
+                    if lane.queue.len() >= SWARM_WAKE_LANE_MAX {
                         let full = format!(
                             "session {session_id} already has {} nudges queued, the limit is \
                              {SWARM_WAKE_LANE_MAX} — it has not read the ones it has yet, so \
                              this one was refused rather than added to a backlog",
-                            queue.len()
+                            lane.queue.len()
                         );
                         drop(lanes);
                         self.note_to_operator(session_id, "lane_full", &full);
                         bail!("{full}");
                     }
-                    queue.push_back(item);
-                    false
+                    lane.queue.push_back(item);
+                    (false, lane.generation)
                 }
                 None => {
-                    lanes.insert(session_id, VecDeque::from([item]));
-                    true
+                    let generation = self.swarm_wake_generation.fetch_add(1, Ordering::Relaxed);
+                    lanes.insert(
+                        session_id,
+                        WakeLane {
+                            generation,
+                            queue: VecDeque::from([item]),
+                        },
+                    );
+                    (true, generation)
                 }
             }
         };
@@ -11311,35 +11342,21 @@ impl Daemon {
         let this = Arc::clone(self);
         std::thread::Builder::new()
             .name(format!("swarm-wake-{session_id}"))
-            .spawn(move || this.swarm_wake_drain(session_id))
+            .spawn(move || this.swarm_wake_drain(session_id, generation))
             .with_context(|| format!("spawning the wake lane for session {session_id}"))?;
         Ok(())
     }
 
-    fn swarm_wake_drain(self: &Arc<Self>, session_id: u32) {
-        self.swarm_wake_active
-            .lock()
-            .expect("wake active lock")
-            .insert(session_id);
+    fn swarm_wake_drain(self: &Arc<Self>, session_id: u32, generation: u64) {
         loop {
             let next = {
                 let mut lanes = self.swarm_wake_lanes.lock().expect("wake lanes lock");
-                match lanes.get_mut(&session_id).and_then(VecDeque::pop_front) {
-                    Some(item) => Some(item),
-                    None => {
-                        lanes.remove(&session_id);
-                        None
-                    }
-                }
+                take_wake_item(&mut lanes, session_id, generation)
             };
             match next {
                 Some(WakeItem::Text(text)) => self.paste_text(session_id, &text),
                 Some(WakeItem::Inbox) => self.paste_inbox(session_id),
                 None => {
-                    self.swarm_wake_active
-                        .lock()
-                        .expect("wake active lock")
-                        .remove(&session_id);
                     self.delegation_wake.notify_one();
                     return;
                 }
@@ -11360,10 +11377,67 @@ impl Daemon {
     }
 }
 
+struct WakeLane {
+    generation: u64,
+    queue: VecDeque<WakeItem>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum WakeItem {
     Text(String),
     Inbox,
+}
+
+fn take_wake_item(
+    lanes: &mut HashMap<u32, WakeLane>,
+    session_id: u32,
+    generation: u64,
+) -> Option<WakeItem> {
+    let item = match lanes.get_mut(&session_id) {
+        Some(lane) if lane.generation == generation => lane.queue.pop_front(),
+        _ => return None,
+    };
+    if item.is_none()
+        && lanes
+            .get(&session_id)
+            .is_some_and(|lane| lane.generation == generation)
+    {
+        lanes.remove(&session_id);
+    }
+    item
+}
+
+#[cfg(test)]
+mod wake_lane_tests {
+    use super::*;
+
+    #[test]
+    fn stale_drainer_cannot_remove_a_replacement_lane() {
+        let mut lanes = HashMap::from([(
+            7,
+            WakeLane {
+                generation: 11,
+                queue: VecDeque::from([WakeItem::Text("first".into())]),
+            },
+        )]);
+
+        assert_eq!(
+            take_wake_item(&mut lanes, 7, 11),
+            Some(WakeItem::Text("first".into()))
+        );
+        assert!(lanes.remove(&7).is_some());
+        lanes.insert(
+            7,
+            WakeLane {
+                generation: 12,
+                queue: VecDeque::from([WakeItem::Inbox]),
+            },
+        );
+
+        assert_eq!(take_wake_item(&mut lanes, 7, 11), None);
+        assert_eq!(lanes.get(&7).map(|lane| lane.generation), Some(12));
+        assert_eq!(take_wake_item(&mut lanes, 7, 12), Some(WakeItem::Inbox));
+    }
 }
 
 fn bracketed_paste(text: &str) -> Vec<u8> {
@@ -11921,24 +11995,30 @@ impl Daemon {
             profile_label,
             tags: Vec::new(),
         });
-        if spawned.is_ok() {
-            self.record_approval_mode(sid, requested_mode);
-            if let Err(e) = self.db.delegation_create_with_lifecycle(
-                caller,
-                sid,
-                role.as_deref(),
-                &prompt,
-                reusable,
-                now_ms(),
-            ) {
-                tracing::warn!("opening the delegation record for child {sid} of {caller}: {e}");
-            } else {
-                self.delegation_wake.notify_one();
-            }
-            self.broadcast_delegation(sid);
-            self.broadcast_live_children(caller);
+        let info = spawned?;
+        self.record_approval_mode(sid, requested_mode);
+        if let Err(persist_error) = self.db.delegation_create_with_lifecycle(
+            caller,
+            sid,
+            role.as_deref(),
+            &prompt,
+            reusable,
+            now_ms(),
+        ) {
+            let rollback = self.close(sid);
+            return match rollback {
+                Ok(()) => Err(persist_error).context(format!(
+                    "opening the delegation record for child {sid} of {caller} failed; the child was rolled back"
+                )),
+                Err(rollback_error) => Err(anyhow!(
+                    "opening the delegation record for child {sid} of {caller} failed: {persist_error}; rolling back the spawned child also failed: {rollback_error}"
+                )),
+            };
         }
-        spawned
+        self.delegation_wake.notify_one();
+        self.broadcast_delegation(sid);
+        self.broadcast_live_children(caller);
+        Ok(info)
     }
 
     pub fn orchestrate_list(&self, caller: u32) -> Result<Vec<serde_json::Value>> {
@@ -11993,6 +12073,10 @@ impl Daemon {
     ) -> Result<(&'static str, Option<proto::AgentStatus>)> {
         let text = text.trim();
         anyhow::ensure!(!text.is_empty(), "prompt text must not be empty");
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         if let Some(row) = self.delegation_of(target) {
             if row.parent_session == caller && self.respawn_chain_tip(target).is_none() {
                 if let Some(state) = orchestrate::DelegationState::parse(&row.state) {
@@ -12003,7 +12087,7 @@ impl Daemon {
             }
         }
         self.assert_orchestration_target(caller, target)?;
-        self.cancel_temporary_cleanup(target);
+        self.cancel_temporary_cleanup_locked(target);
         let source = {
             let s = self.get(target)?;
             let cur = *s.status.lock().expect("status lock");
@@ -12239,8 +12323,12 @@ impl Daemon {
     }
 
     pub fn orchestrate_send_keys(&self, caller: u32, target: u32, keys: &[String]) -> Result<()> {
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         self.assert_orchestration_target(caller, target)?;
-        self.cancel_temporary_cleanup(target);
+        self.cancel_temporary_cleanup_locked(target);
         let bytes = orchestrate::keys_to_bytes(keys).map_err(|e| anyhow!("{e}"))?;
         self.write_stdin(target, &bytes)?;
         if let Err(e) = self
@@ -12283,6 +12371,10 @@ impl Daemon {
         target: u32,
         confirm_children: bool,
     ) -> Result<()> {
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         self.assert_orchestration_target(caller, target)?;
         self.child_guard(target, confirm_children)?;
         self.close(target)
@@ -12326,7 +12418,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn cancel_temporary_cleanup(&self, child: u32) {
+    fn cancel_temporary_cleanup_locked(&self, child: u32) {
         let Ok(Some(row)) = self.db.delegation_for_child(child) else {
             return;
         };
@@ -12417,6 +12509,10 @@ impl Daemon {
         child: u32,
         submission: orchestrate::Submission,
     ) -> Result<orchestrate::SubmitOutcome> {
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         let parent = {
             let s = self.get(child)?;
             s.info.spawned_by.ok_or_else(|| {
@@ -12893,33 +12989,39 @@ impl Daemon {
     }
 
     fn arm_temporary_cleanup(self: &Arc<Self>, child: u32, provisional: bool) {
-        let Ok(Some(row)) = self.db.delegation_for_child(child) else {
-            return;
-        };
-        if row.reusable
-            || orchestrate::DelegationState::parse(&row.state)
-                != Some(orchestrate::DelegationState::Done)
-        {
-            return;
-        }
-        let Ok(true) = self
-            .db
-            .inbox_round_has_result(row.parent_session, child, row.round)
-        else {
-            return;
-        };
         let now = now_ms();
-        let cleanup_after = if provisional {
-            now.saturating_add(orchestrate::OWED_NOTIFICATION_MAX_MS)
-        } else {
-            now
-        };
-        if let Err(e) = self
-            .db
-            .delegation_set_cleanup_after(child, Some(cleanup_after), now)
         {
-            tracing::warn!("scheduling temporary cleanup for child {child}: {e}");
-            return;
+            let _cleanup_guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            let Ok(Some(row)) = self.db.delegation_for_child(child) else {
+                return;
+            };
+            if row.reusable
+                || orchestrate::DelegationState::parse(&row.state)
+                    != Some(orchestrate::DelegationState::Done)
+            {
+                return;
+            }
+            let Ok(true) = self
+                .db
+                .inbox_round_has_result(row.parent_session, child, row.round)
+            else {
+                return;
+            };
+            let cleanup_after = if provisional {
+                now.saturating_add(orchestrate::OWED_NOTIFICATION_MAX_MS)
+            } else {
+                now
+            };
+            if let Err(e) = self
+                .db
+                .delegation_set_cleanup_after(child, Some(cleanup_after), now)
+            {
+                tracing::warn!("scheduling temporary cleanup for child {child}: {e}");
+                return;
+            }
         }
         self.delegation_wake.notify_one();
         if let Ok(Some(updated)) = self.db.delegation_for_child(child) {
@@ -12928,15 +13030,57 @@ impl Daemon {
     }
 
     fn cleanup_temporary_if_due(self: &Arc<Self>, row: &crate::db::DelegationRow, now: u64) {
+        let parent = {
+            let _cleanup_guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            let Ok(Some(fresh)) = self.db.delegation_for_child(row.child_session) else {
+                return;
+            };
+            self.cleanup_temporary_if_due_locked(&fresh, now)
+        };
+        if let Some(parent) = parent {
+            self.reevaluate_completed_ancestors(parent, now);
+            self.reap_reevaluate();
+        }
+    }
+
+    fn cleanup_temporary_if_due_locked(
+        &self,
+        row: &crate::db::DelegationRow,
+        now: u64,
+    ) -> Option<u32> {
         if row.reusable
             || orchestrate::DelegationState::parse(&row.state)
                 != Some(orchestrate::DelegationState::Done)
             || row.cleanup_after.is_none_or(|at| at > now)
         {
-            return;
+            return None;
         }
         if !self.temporary_cleanup_safe(row.child_session, now) {
-            return;
+            return None;
+        }
+        let live_session = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .get(&row.child_session)
+            .cloned();
+        if let Some(session) = &live_session {
+            // Prevent a completion callback from overwriting the durable closed state while the
+            // cleanup lock bridges the database update and live-map removal.
+            session.removed.store(true, Ordering::Release);
+        }
+        if let Err(e) = self.db.mark_closed(row.child_session) {
+            tracing::warn!(
+                "marking live temporary child {} closed before removal: {e}",
+                row.child_session
+            );
+            if let Some(session) = live_session {
+                session.removed.store(false, Ordering::Release);
+            }
+            return None;
         }
         let removed = self
             .sessions
@@ -12976,7 +13120,7 @@ impl Daemon {
                 session: row.child_session,
             });
         } else {
-            return;
+            return None;
         }
         if let Err(e) = self
             .db
@@ -12987,8 +13131,7 @@ impl Daemon {
                 row.child_session
             );
         }
-        self.reap_reevaluate();
-        self.reevaluate_completed_ancestors(row.parent_session, now);
+        Some(row.parent_session)
     }
 
     fn temporary_cleanup_safe(&self, child: u32, now: u64) -> bool {
@@ -12999,16 +13142,7 @@ impl Daemon {
             .swarm_wake_lanes
             .lock()
             .expect("wake lanes lock")
-            .get(&child)
-            .is_some_and(|queue| !queue.is_empty())
-        {
-            return false;
-        }
-        if self
-            .swarm_wake_active
-            .lock()
-            .expect("wake active lock")
-            .contains(&child)
+            .contains_key(&child)
         {
             return false;
         }
@@ -13032,7 +13166,7 @@ impl Daemon {
         let Some(round) = rounds.get_mut(&child) else {
             return true;
         };
-        if round.reopen_window_open(now) {
+        if round.has_subagent_history() && round.reopen_window_open(now) {
             return false;
         }
         // A provisional row has a bounded correction window. Once it expires,
@@ -13042,20 +13176,27 @@ impl Daemon {
     }
 
     fn reevaluate_completed_ancestors(self: &Arc<Self>, mut child: u32, now: u64) {
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         for _ in 0..=proto::ORCHESTRATION_CAP_MAX {
-            let Ok(Some(parent)) = self.db.delegation_parent_of(child) else {
+            let Ok(Some(row)) = self.db.delegation_for_child(child) else {
                 return;
             };
-            let Ok(Some(row)) = self.db.delegation_for_child(parent) else {
+            let Some(parent) = self.cleanup_temporary_if_due_locked(&row, now) else {
                 return;
             };
-            self.cleanup_temporary_if_due(&row, now);
             child = parent;
         }
     }
 
     fn advance_delegation(self: &Arc<Self>, child: u32, ev: crate::agent_events::AgentEvent) {
         use crate::agent_events::AgentEvent;
+        let cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         let opens_round = ev == AgentEvent::PromptSubmitted;
         let event = match ev {
             AgentEvent::PromptSubmitted | AgentEvent::InputResolved => {
@@ -13169,6 +13310,7 @@ impl Daemon {
             moved_by_close = true;
         }
 
+        let mut cleanup_provisional = None;
         if moved_by_close {
             if let Some(id) = pending {
                 self.broadcast_inbox_row(id);
@@ -13183,7 +13325,7 @@ impl Daemon {
                     !closed.reusable && closed.state == orchestrate::DelegationState::Done.as_str()
                 })
             {
-                self.arm_temporary_cleanup(child, self.round_closed_without_evidence(child));
+                cleanup_provisional = Some(self.round_closed_without_evidence(child));
             }
         }
 
@@ -13271,6 +13413,10 @@ impl Daemon {
             }
         }
         self.broadcast_delegation(child);
+        drop(cleanup_guard);
+        if let Some(provisional) = cleanup_provisional {
+            self.arm_temporary_cleanup(child, provisional);
+        }
     }
 
     fn open_round_on_external_prompt(&self, child: u32, from: orchestrate::DelegationState) {
@@ -13829,7 +13975,6 @@ impl Daemon {
                 self.broadcast_inbox_row(id);
                 self.inbox_notify(row.parent_session, false);
                 self.broadcast_delegation(child);
-                self.arm_temporary_cleanup(child, false);
             }
             orchestrate::SettleAction::ReportNoHandback => {
                 let Some(from) = orchestrate::DelegationState::parse(&row.state) else {
@@ -13989,7 +14134,11 @@ impl Daemon {
     }
 
     pub fn note_operator_keystroke(&self, session: u32) {
-        self.cancel_temporary_cleanup(session);
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        self.cancel_temporary_cleanup_locked(session);
         self.composer_occupied
             .lock()
             .expect("composer lock")
@@ -14206,10 +14355,21 @@ impl Daemon {
         let Some(from) = row.from_session else {
             return "Houston".to_string();
         };
-        let codename = self
-            .codename_of(from)
+        let codename = row
+            .from_codename
+            .clone()
+            .or_else(|| self.codename_of(from))
             .unwrap_or_else(|| format!("pane {from}"));
-        self.child_label(from, &codename)
+        if let Some(role) = row.from_role.as_deref() {
+            return format!("{codename} ({role})");
+        }
+        if let Some(role) = self
+            .delegation_of(from)
+            .and_then(|delegation| delegation.role)
+        {
+            return format!("{codename} ({role})");
+        }
+        codename
     }
 
     #[allow(clippy::too_many_arguments)]

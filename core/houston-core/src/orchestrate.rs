@@ -6,6 +6,9 @@ use serde_json::json;
 // caller control back instead of hanging on a child that never reports a status
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
 
+pub const SPAWN_NEXT_ACTION: &str =
+    "Continue independent work; otherwise call `pane_wait` for this child or your inbox. Do not poll status.";
+
 pub const MAX_LIVE_CHILDREN: u32 = 4;
 
 pub const MAX_SPAWN_DEPTH: u32 = 1;
@@ -625,6 +628,8 @@ impl From<crate::db::InboxRow> for proto::InboxRow {
                 .map(Into::into),
             confirmed_at: row.confirmed_at,
             attempts: row.attempts,
+            from_codename: row.from_codename,
+            from_role: row.from_role,
         }
     }
 }
@@ -4399,6 +4404,8 @@ mod tests {
                 delivered_via: None,
                 confirmed_at: None,
                 attempts: 1,
+                from_codename: None,
+                from_role: None,
             },
             from_label: format!("codename-{from} (worker-{from})"),
             excerpt: None,
