@@ -906,6 +906,8 @@ struct RoutineRun {
     denied: bool,
 }
 
+type RoutinePaneRegistrationHook = Box<dyn Fn(u32) + Send + Sync>;
+
 /// The wire's routine update patch; absent fields stay as they are, and
 /// `model`/`effort`/`workspace_id` are three-state (absent unchanged, `null`
 /// clears, value sets).
@@ -1007,6 +1009,7 @@ pub struct Daemon {
     routine_runs: Mutex<HashMap<u32, RoutineRun>>,
     routine_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     routine_pane_cmd_override: Mutex<Option<Vec<String>>>,
+    routine_pane_registration_hook_for_test: Mutex<Option<RoutinePaneRegistrationHook>>,
     self_weak: Mutex<std::sync::Weak<Daemon>>,
     hook_state_lock: Mutex<()>,
     hook_drop_states: Mutex<HashMap<PathBuf, crate::hook_drop::DropDirState>>,
@@ -2227,6 +2230,7 @@ impl Daemon {
             routine_runs: Mutex::new(HashMap::new()),
             routine_settle: Mutex::new(HashMap::new()),
             routine_pane_cmd_override: Mutex::new(None),
+            routine_pane_registration_hook_for_test: Mutex::new(None),
             self_weak: Mutex::new(std::sync::Weak::new()),
             hook_state_lock: Mutex::new(()),
             port: Mutex::new(bound_port),
@@ -4704,6 +4708,17 @@ impl Daemon {
             .expect("routine pane cmd lock") = Some(cmd);
     }
 
+    #[doc(hidden)]
+    pub fn set_routine_pane_registration_hook_for_test(
+        &self,
+        hook: Option<RoutinePaneRegistrationHook>,
+    ) {
+        *self
+            .routine_pane_registration_hook_for_test
+            .lock()
+            .expect("routine pane registration hook lock") = hook;
+    }
+
     /// The scheduler's entry point. `id` absent from the queue is loud (Err);
     /// everything a run can refuse is a recorded run, not an error.
     pub fn routine_fire(self: &Arc<Self>, id: u32) -> Result<()> {
@@ -4948,6 +4963,14 @@ impl Daemon {
         self.db
             .record_routine_run_start(row.id, Some(session.id), now, next)?;
         self.broadcast_routine_run(run_id);
+        if let Some(hook) = self
+            .routine_pane_registration_hook_for_test
+            .lock()
+            .expect("routine pane registration hook lock")
+            .as_ref()
+        {
+            hook(session.id);
+        }
         self.routine_runs.lock().expect("routine run lock").insert(
             row.id,
             RoutineRun {
@@ -4957,8 +4980,26 @@ impl Daemon {
                 denied: false,
             },
         );
+        if self.routine_pane_is_done(session.id) {
+            self.report_routine_pane_run(session.id, orchestrate::TurnEndSource::QuietSettle);
+        }
         self.broadcast_control(&self.routine_list());
         Ok(())
+    }
+
+    fn routine_pane_is_done(&self, session: u32) -> bool {
+        let Some(session) = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .get(&session)
+            .cloned()
+        else {
+            return true;
+        };
+        session.removed.load(Ordering::Acquire)
+            || session.backend_exited.load(Ordering::Acquire)
+            || !session.state.lock().expect("state lock").is_live()
     }
 
     fn advance_routine_pane_run(
@@ -4980,18 +5021,19 @@ impl Daemon {
         _source: orchestrate::TurnEndSource,
     ) {
         let found = {
-            let runs = self.routine_runs.lock().expect("routine run lock");
-            runs.iter()
+            let mut runs = self.routine_runs.lock().expect("routine run lock");
+            let Some(routine_id) = runs
+                .iter()
                 .find(|(_, run)| run.session_id == Some(session))
-                .map(|(id, run)| (*id, *run))
+                .map(|(id, _)| *id)
+            else {
+                return;
+            };
+            runs.remove(&routine_id).map(|run| (routine_id, run))
         };
         let Some((routine_id, run)) = found else {
             return;
         };
-        self.routine_runs
-            .lock()
-            .expect("routine run lock")
-            .remove(&routine_id);
         let outcome = if run.denied {
             proto::RoutineOutcome::Denied
         } else {
@@ -5002,6 +5044,11 @@ impl Daemon {
 
     fn routine_pane_exited(self: &Arc<Self>, session: u32) {
         self.report_routine_pane_run(session, orchestrate::TurnEndSource::QuietSettle);
+    }
+
+    #[doc(hidden)]
+    pub fn routine_pane_exited_for_test(self: &Arc<Self>, session: u32) {
+        self.routine_pane_exited(session);
     }
 
     #[doc(hidden)]
@@ -5146,15 +5193,24 @@ impl Daemon {
             .collect();
         for (routine_id, run) in over {
             let ran_for = now_ms.saturating_sub(run.started_at_ms);
+            let Some(run) = ({
+                let mut running = self.routine_runs.lock().expect("routine run lock");
+                if running
+                    .get(&routine_id)
+                    .is_some_and(|current| current.run_id == run.run_id)
+                {
+                    running.remove(&routine_id)
+                } else {
+                    None
+                }
+            }) else {
+                continue;
+            };
             if let Some(session) = run.session_id {
                 if let Err(e) = self.kill(session) {
                     tracing::warn!("stopping routine {routine_id}'s pane {session}: {e:#}");
                 }
             }
-            self.routine_runs
-                .lock()
-                .expect("routine run lock")
-                .remove(&routine_id);
             self.settle_run(
                 run.run_id,
                 routine_id,

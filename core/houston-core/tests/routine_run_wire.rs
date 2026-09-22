@@ -90,19 +90,37 @@ async fn wait_for_ok_runs(daemon: &Arc<Daemon>, routine: u32, want: usize) {
     .await;
 }
 
-/// Fire, wait for the pane to exist, close it, and wait for its record to
-/// settle: a pane run is observed through its own session.
+fn session_has_exited(db_path: &Path, session: u32) -> bool {
+    let conn = rusqlite::Connection::open(db_path).expect("the test database opens");
+    conn.query_row(
+        "SELECT state FROM sessions WHERE id = ?1",
+        rusqlite::params![session],
+        |row| row.get::<_, String>(0),
+    )
+    .map(|state| state != "running")
+    .unwrap_or(false)
+}
+
+/// Fire a run, close its pane if it is still live, and wait for its record to
+/// settle.
 async fn fire_close_settle(daemon: &Arc<Daemon>, routine: u32, settled: usize) {
     daemon.routine_fire(routine).expect("fire");
     let d = daemon.clone();
-    wait_until("the run's pane to open", || {
+    wait_until("the run to open or settle", || {
         !d.routine_runs_in_flight().is_empty()
+            || runs_of(&d, routine)
+                .first()
+                .is_some_and(|run| run.status != proto::RoutineRunStatus::Running)
     })
     .await;
-    let session = routine_of(daemon, routine)
-        .last_run_session_id
-        .expect("a pane run records its session");
-    daemon.close(session).expect("the pane closes");
+    if let Some(run) = runs_of(daemon, routine)
+        .into_iter()
+        .find(|run| run.status == proto::RoutineRunStatus::Running)
+    {
+        daemon
+            .close(run.session_id.expect("a running pane run has a session"))
+            .expect("the pane closes");
+    }
     wait_for_ok_runs(daemon, routine, settled).await;
 }
 
@@ -218,6 +236,63 @@ async fn run_history_is_newest_first() {
     sorted.sort_unstable_by(|a, b| b.cmp(a));
     assert_eq!(ids, sorted, "the history is newest first");
     assert!(runs.iter().all(|r| r.status == proto::RoutineRunStatus::Ok));
+}
+
+#[tokio::test]
+async fn a_short_run_settles_when_exit_precedes_registration() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let dir = state.path().join("project");
+    std::fs::create_dir_all(&dir).unwrap();
+    let routine = make_routine(&daemon, "Nightly sweep", Some(&dir));
+    daemon.set_routine_pane_cmd_for_test(vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        "true".to_string(),
+    ]);
+
+    let entered = Arc::new(std::sync::Barrier::new(2));
+    let release = Arc::new(std::sync::Barrier::new(2));
+    let hook_entered = entered.clone();
+    let hook_release = release.clone();
+    daemon.set_routine_pane_registration_hook_for_test(Some(Box::new(move |_| {
+        hook_entered.wait();
+        hook_release.wait();
+    })));
+
+    let fire_daemon = daemon.clone();
+    let fired = tokio::task::spawn_blocking(move || fire_daemon.routine_fire(routine));
+    tokio::task::spawn_blocking(move || entered.wait())
+        .await
+        .expect("the registration hook joins");
+
+    let session = routine_of(&daemon, routine)
+        .last_run_session_id
+        .expect("the run records its session before registration");
+    let db_path = state.path().join("test.db");
+    wait_until("the pane to exit before registration", || {
+        session_has_exited(&db_path, session)
+    })
+    .await;
+    daemon.routine_pane_exited_for_test(session);
+    assert_eq!(
+        runs_of(&daemon, routine)[0].status,
+        proto::RoutineRunStatus::Running
+    );
+
+    tokio::task::spawn_blocking(move || release.wait())
+        .await
+        .expect("the registration hook releases");
+    fired
+        .await
+        .expect("the routine fire joins")
+        .expect("the routine fires");
+    daemon.set_routine_pane_registration_hook_for_test(None);
+
+    wait_for_ok_runs(&daemon, routine, 1).await;
+    let runs = runs_of(&daemon, routine);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].status, proto::RoutineRunStatus::Ok);
+    assert!(daemon.routine_runs_in_flight().is_empty());
 }
 
 #[tokio::test]
