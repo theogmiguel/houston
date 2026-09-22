@@ -4050,7 +4050,10 @@ mod tests {
             "d-abc",
         );
         assert!(out.starts_with("--- Houston Inbox: 2 messages, delivery d-abc ---\n"));
-        assert!(out.contains("[result] #1 from codename-9 (worker-9)"), "{out}");
+        assert!(
+            out.contains("[result] #1 from codename-9 (worker-9)"),
+            "{out}"
+        );
         assert!(
             out.contains("[needs_input] #2 from codename-11 (worker-11)"),
             "{out}"

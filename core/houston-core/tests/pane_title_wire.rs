@@ -140,13 +140,20 @@ async fn a_clis_own_window_title_becomes_the_panes_name_and_is_broadcast() {
         &daemon,
         &ws,
         proto::AgentKind::Custom,
-        Some(vec![exe.display().to_string()]),
+        Some(vec![
+            "sh".into(),
+            "-c".into(),
+            "read -r release; exec \"$1\"".into(),
+            "title-fixture".into(),
+            exe.display().to_string(),
+        ]),
     );
     assert_eq!(
         title_of(&daemon, info.id),
         info.title,
         "a codename until the CLI says otherwise"
     );
+    daemon.write_stdin(info.id, b"continue\n").unwrap();
 
     let d = daemon.clone();
     let id = info.id;
