@@ -1348,6 +1348,16 @@ fn trim_excerpt(s: &str) -> String {
     lines[first..=last].join("\n")
 }
 
+pub fn cap_handoff_excerpt(s: &str) -> Option<String> {
+    let mut excerpt = trim_excerpt(s);
+    if excerpt.chars().count() > HANDOFF_EXCERPT_MAX_CHARS {
+        excerpt = excerpt.chars().take(HANDOFF_EXCERPT_MAX_CHARS).collect();
+        excerpt.push(' ');
+        excerpt.push_str(HANDOFF_TRUNCATION_MARKER);
+    }
+    (!excerpt.is_empty()).then_some(excerpt)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InboxKind {
     Result,

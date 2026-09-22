@@ -1626,7 +1626,8 @@ impl Db {
                 confirmed_at  INTEGER,
                 attempts      INTEGER NOT NULL DEFAULT 0,
                 from_codename TEXT,
-                from_role     TEXT
+                from_role     TEXT,
+                excerpt       TEXT
             );
             CREATE INDEX IF NOT EXISTS pane_inbox_eligible
                 ON pane_inbox(to_session, created_at)
@@ -1636,6 +1637,7 @@ impl Db {
         )?;
         add_column_if_missing(&conn, "pane_inbox", "from_codename", "from_codename TEXT")?;
         add_column_if_missing(&conn, "pane_inbox", "from_role", "from_role TEXT")?;
+        add_column_if_missing(&conn, "pane_inbox", "excerpt", "excerpt TEXT")?;
         migrate_staged_results_into_the_inbox(&conn)?;
         migrate_pending_swarm_mail_into_the_inbox(&conn)?;
         conn.execute(
@@ -3317,6 +3319,24 @@ impl Db {
                 map_inbox_row,
             )
             .optional()?)
+    }
+
+    pub fn inbox_set_excerpt(&self, id: i64, excerpt: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE pane_inbox SET excerpt = ?2 WHERE id = ?1",
+            rusqlite::params![id, excerpt],
+        )?;
+        Ok(())
+    }
+
+    pub fn inbox_excerpt(&self, id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT excerpt FROM pane_inbox WHERE id = ?1",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )?)
     }
 
     pub fn inbox_readdress_to_operator(&self, id: i64, reason: &str) -> Result<()> {

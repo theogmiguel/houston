@@ -11837,6 +11837,13 @@ impl Daemon {
         reusable: bool,
         effort: Option<proto::ChatEffort>,
     ) -> Result<proto::SessionInfo> {
+        // Cleanup and registration share the parent/child live roster. Keep the parent alive
+        // through the whole spawn so a completed temporary parent cannot disappear between the
+        // cap check and its durable delegation row.
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         if kind == proto::AgentKind::Custom {
             bail!(
                 "spawn refused: kind `custom` cannot be spawned as a child — a custom command \
@@ -11997,6 +12004,20 @@ impl Daemon {
         });
         let info = spawned?;
         self.record_approval_mode(sid, requested_mode);
+        if let Err(parent_error) = self.get(caller) {
+            let rollback = self.rollback_spawned_child(sid);
+            return match rollback {
+                Ok(()) => Err(parent_error).context(format!(
+                    "parent pane {caller} disappeared before the delegation for child {sid} \
+                     could be recorded; the child was rolled back"
+                )),
+                Err(rollback_error) => Err(anyhow!(
+                    "parent pane {caller} disappeared before the delegation for child {sid} \
+                     could be recorded: {parent_error}; rolling back the spawned child also \
+                     failed: {rollback_error}"
+                )),
+            };
+        }
         if let Err(persist_error) = self.db.delegation_create_with_lifecycle(
             caller,
             sid,
@@ -12005,7 +12026,7 @@ impl Daemon {
             reusable,
             now_ms(),
         ) {
-            let rollback = self.close(sid);
+            let rollback = self.rollback_spawned_child(sid);
             return match rollback {
                 Ok(()) => Err(persist_error).context(format!(
                     "opening the delegation record for child {sid} of {caller} failed; the child was rolled back"
@@ -12019,6 +12040,27 @@ impl Daemon {
         self.broadcast_delegation(sid);
         self.broadcast_live_children(caller);
         Ok(info)
+    }
+
+    fn rollback_spawned_child(&self, child: u32) -> Result<()> {
+        let first_close = self.db.mark_closed(child);
+        let close_result = self.close(child);
+        let final_close = self.db.mark_closed(child);
+        if let Err(e) = close_result {
+            return Err(e).context(format!("closing rolled-back child {child}"));
+        }
+        if let Err(e) = final_close {
+            return Err(e).context(format!(
+                "persisting the closed state for rolled-back child {child}"
+            ));
+        }
+        if let Err(e) = first_close {
+            tracing::warn!(
+                "the first durable close for rolled-back child {child} failed, but the retry \
+                 succeeded: {e}"
+            );
+        }
+        Ok(())
     }
 
     pub fn orchestrate_list(&self, caller: u32) -> Result<Vec<serde_json::Value>> {
@@ -12555,6 +12597,11 @@ impl Daemon {
                 orchestrate::SUBMIT_SUMMARY_MAX_CHARS
             )
         })?;
+        if let Some(excerpt) = self.session_handoff_excerpt(child) {
+            if let Err(e) = self.db.inbox_set_excerpt(id, &excerpt) {
+                tracing::warn!("persisting the screen excerpt for child result {id} failed: {e}");
+            }
+        }
         let pending = self.db.inbox_pending_count(parent).unwrap_or(0);
         if pending > self.inbox_pending_max() {
             let why = format!(
@@ -13868,6 +13915,15 @@ impl Daemon {
         samples.retain(|child, _| open.iter().any(|r| r.child_session == *child));
     }
 
+    #[doc(hidden)]
+    pub fn with_temporary_cleanup_lock_for_test<T>(&self, f: impl FnOnce() -> T) -> T {
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
+        f()
+    }
+
     fn delegation_stall_pass(
         self: &Arc<Self>,
         row: &crate::db::DelegationRow,
@@ -14341,14 +14397,22 @@ impl Daemon {
         if orchestrate::InboxKind::parse(&row.kind) != Some(orchestrate::InboxKind::Result) {
             return None;
         }
-        let from = row.from_session?;
+        match self.db.inbox_excerpt(row.id) {
+            Ok(Some(excerpt)) if !excerpt.trim().is_empty() => return Some(excerpt),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("reading the stored excerpt for inbox row {}: {e}", row.id),
+        }
+        self.session_handoff_excerpt(row.from_session?)
+    }
+
+    fn session_handoff_excerpt(&self, from: u32) -> Option<String> {
         let s = self.get(from).ok()?;
         let excerpt = orchestrate::sanitize_handoff_text(
             &self
                 .session_screen(&s, orchestrate::HANDOFF_CORROBORATING_ROWS)
                 .join("\n"),
         );
-        (!excerpt.trim().is_empty()).then_some(excerpt)
+        orchestrate::cap_handoff_excerpt(&excerpt)
     }
 
     pub(crate) fn inbox_sender_label(&self, row: &crate::db::InboxRow) -> String {

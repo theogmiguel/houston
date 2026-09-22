@@ -285,6 +285,134 @@ async fn spawn_rolls_back_when_delegation_persistence_fails() {
         r.daemon.open_delegations().is_empty(),
         "the failed spawn must not leave an open delegation"
     );
+    let db_path = r._state.path().join("test.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let (child, state): (u32, String) = conn
+        .query_row(
+            "SELECT id, state FROM sessions WHERE spawned_by = ?1 ORDER BY id DESC LIMIT 1",
+            rusqlite::params![parent.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the failed child remains durably represented");
+    assert_eq!(
+        state, "closed",
+        "rollback must close the durable session row"
+    );
+    drop(conn);
+
+    let reopened = Daemon::new(DaemonConfig {
+        token: TOKEN.to_string(),
+        db_path,
+    })
+    .unwrap();
+    assert!(
+        !reopened.list().iter().any(|info| info.id == child),
+        "a rolled-back child must not be restored after a restart"
+    );
+}
+
+#[tokio::test]
+async fn spawn_registration_waits_for_temporary_cleanup_serialization() {
+    let _guard = serial().await;
+    let r = rig("spawn-cleanup-race").await;
+    let root = r.pane();
+    let root_token = r.token_for(root.id);
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon
+        .set_orchestration_caps(houston_core::orchestrate::MAX_LIVE_CHILDREN, 2)
+        .unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &root_token,
+            serde_json::json!({
+                "kind": "grok",
+                "prompt": "complete before nested spawn",
+                "reusable": true,
+                "role": "completed-parent",
+            }),
+        )
+        .await;
+    let completed_parent = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(completed_parent, "PARENT-DONE".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), completed_parent, "Stop").await;
+    assert_eq!(
+        r.daemon.delegation_of(completed_parent).unwrap().state,
+        "done"
+    );
+
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut spawn_thread = None;
+    r.daemon.with_temporary_cleanup_lock_for_test(|| {
+        let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+        conn.execute(
+            "UPDATE delegations SET reusable = 0, cleanup_after = 0 WHERE child_session = ?1",
+            rusqlite::params![completed_parent],
+        )
+        .unwrap();
+        let daemon = Arc::clone(&r.daemon);
+        let finished_by_spawn = Arc::clone(&finished);
+        spawn_thread = Some(std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let result = daemon.orchestrate_spawn_with_options(
+                completed_parent,
+                proto::AgentKind::Grok,
+                None,
+                None,
+                houston_core::orchestrate::Brief {
+                    prompt: "nested while parent is completed".into(),
+                    output_format: None,
+                    boundaries: None,
+                },
+                None,
+                None,
+                Some("nested-child".into()),
+                None,
+                false,
+                None,
+            );
+            finished_by_spawn.store(true, std::sync::atomic::Ordering::Release);
+            result
+        }));
+        started_rx.recv().unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            !finished.load(std::sync::atomic::Ordering::Acquire),
+            "spawn must wait while temporary cleanup owns the lifecycle lock"
+        );
+        assert!(
+            r.daemon
+                .list()
+                .iter()
+                .any(|info| info.id == completed_parent),
+            "the completed parent stays controllable while child registration is pending"
+        );
+    });
+
+    let nested = spawn_thread
+        .expect("spawn thread was started while the lifecycle lock was held")
+        .join()
+        .expect("spawn thread did not panic")
+        .expect("nested spawn after the lifecycle lock was released");
+    assert_eq!(nested.spawned_by, Some(completed_parent));
+    assert!(
+        r.daemon
+            .list()
+            .iter()
+            .any(|info| info.id == completed_parent),
+        "a parent with a newly registered live child must not be cleaned up"
+    );
+    r.daemon.close(nested.id).unwrap();
+    r.daemon.delegation_watch_tick_at(0);
+    assert!(
+        !r.daemon
+            .list()
+            .iter()
+            .any(|info| info.id == completed_parent),
+        "cleanup is re-evaluated after the registered descendant finishes"
+    );
 }
 
 #[tokio::test]

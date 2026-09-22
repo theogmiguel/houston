@@ -539,10 +539,11 @@ mod codex {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -554,7 +555,7 @@ mod codex {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -616,10 +617,11 @@ mod codex {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1027,10 +1029,11 @@ mod opencode {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1042,7 +1045,7 @@ mod opencode {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -1070,10 +1073,11 @@ mod opencode {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1344,10 +1348,11 @@ mod grok {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1359,7 +1364,7 @@ mod grok {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -1387,10 +1392,11 @@ mod grok {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1617,10 +1623,11 @@ mod cursor {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1632,7 +1639,7 @@ mod cursor {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -1660,10 +1667,11 @@ mod cursor {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1983,10 +1991,11 @@ mod antigravity {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1998,7 +2007,7 @@ mod antigravity {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -2028,10 +2037,11 @@ mod antigravity {
         let transcript_dir = tempfile::tempdir().unwrap();
         let transcript = write_transcript(&transcript_dir, "unused");
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace,
         });
         let (status, body) = orchestrate_spawn(
             addr,
