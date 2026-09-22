@@ -12005,6 +12005,7 @@ impl Daemon {
         let deadline = started + std::time::Duration::from_millis(timeout_ms);
         let stall_window = std::time::Duration::from_millis(orchestrate::PROMPT_STALL_MS);
         let baseline_status = child.and_then(|c| self.session_status(c).ok().flatten());
+        let mut startup_stall_deadline = stall_guard.then_some(started + stall_window);
 
         let try_reserve = |this: &Arc<Self>| -> Result<Option<orchestrate::InboxWaitOutcome>> {
             let now = now_ms();
@@ -12048,9 +12049,11 @@ impl Daemon {
             if std::time::Instant::now() >= deadline {
                 return Ok(timed_out(self));
             }
-            if stall_guard {
+            if let Some(stall_deadline) = startup_stall_deadline {
                 let cur = child.and_then(|c| self.session_status(c).ok().flatten());
-                if cur == baseline_status && std::time::Instant::now() >= started + stall_window {
+                if cur != baseline_status {
+                    startup_stall_deadline = None;
+                } else if std::time::Instant::now() >= stall_deadline {
                     return Ok(orchestrate::InboxWaitOutcome::Stalled {
                         session: child.expect("stall_guard requires child, checked above"),
                         waited_ms: started.elapsed().as_millis() as u64,
@@ -12067,11 +12070,8 @@ impl Daemon {
             if now >= deadline {
                 return Ok(timed_out(self));
             }
-            let wait_until = if stall_guard {
-                deadline.min(started + stall_window)
-            } else {
-                deadline
-            };
+            let wait_until = startup_stall_deadline
+                .map_or(deadline, |stall_deadline| deadline.min(stall_deadline));
             let _ = tokio::time::timeout(wait_until.saturating_duration_since(now), notified).await;
         }
     }

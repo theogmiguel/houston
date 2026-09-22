@@ -158,7 +158,10 @@ pub(crate) fn flags_only(
     Ok(args)
 }
 
-fn effort_args(agent: proto::AgentKind, effort: proto::ChatEffort) -> Result<Vec<String>> {
+pub(crate) fn effort_args(
+    agent: proto::AgentKind,
+    effort: proto::ChatEffort,
+) -> Result<Vec<String>> {
     let value = effort.cli_value().to_string();
     match agent {
         proto::AgentKind::Claude | proto::AgentKind::Antigravity | proto::AgentKind::Grok => {

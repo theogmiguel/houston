@@ -9,7 +9,10 @@ use houston_protocol as proto;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, OnceLock,
+};
 use std::time::Duration;
 
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -883,6 +886,103 @@ async fn a_hookless_turn_reports_prompt_stalled_instead_of_hanging() {
         elapsed < Duration::from_secs(10),
         "stall guard took too long ({elapsed:?}) — that is a hang, not a guard"
     );
+}
+
+#[tokio::test]
+async fn stall_guard_disarms_after_startup_progress() {
+    let _guard = serial().await;
+    let r = rig("stall-progress").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "s"}))
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+
+    assert_eq!(
+        r.daemon
+            .handle_hook_from(child, proto::AgentKind::Codex, "SessionStart", None),
+        houston_core::hook_drop::DropVerdict::Applied
+    );
+    assert_eq!(
+        r.daemon.session_status(child).unwrap(),
+        Some(proto::AgentStatus::Idle)
+    );
+
+    let wait_daemon = Arc::clone(&r.daemon);
+    let wait_timeout_ms = houston_core::orchestrate::PROMPT_STALL_MS + 1_500;
+    let waiter = tokio::spawn(tokio::task::unconstrained(async move {
+        wait_daemon
+            .orchestrate_wait(pane.id, Some(child), None, wait_timeout_ms, true)
+            .await
+    }));
+    tokio::task::yield_now().await;
+
+    let heartbeat = Arc::new(AtomicUsize::new(0));
+    let producer_heartbeat = Arc::clone(&heartbeat);
+    let producer_daemon = Arc::clone(&r.daemon);
+    let producer = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            producer_daemon.handle_hook_from(
+                child,
+                proto::AgentKind::Codex,
+                "UserPromptSubmit",
+                None
+            ),
+            houston_core::hook_drop::DropVerdict::Applied
+        );
+        assert_eq!(
+            producer_daemon.session_status(child).unwrap(),
+            Some(proto::AgentStatus::Working)
+        );
+        producer_heartbeat.fetch_add(1, Ordering::Release);
+        tokio::time::sleep(Duration::from_millis(
+            houston_core::orchestrate::PROMPT_STALL_MS + 150,
+        ))
+        .await;
+        producer_heartbeat.fetch_add(1, Ordering::Release);
+        assert_eq!(
+            producer_daemon.handle_hook_from(child, proto::AgentKind::Codex, "Interrupt", None),
+            houston_core::hook_drop::DropVerdict::Applied
+        );
+        assert_eq!(
+            producer_daemon.session_status(child).unwrap(),
+            Some(proto::AgentStatus::Idle)
+        );
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        producer_heartbeat.fetch_add(1, Ordering::Release);
+        producer_daemon
+            .orchestrate_submit(child, "PROGRESS-RESULT the task is done".to_string().into())
+            .unwrap();
+        assert_eq!(
+            producer_daemon.handle_hook_from(child, proto::AgentKind::Codex, "Stop", None),
+            houston_core::hook_drop::DropVerdict::Applied
+        );
+    });
+
+    let result = tokio::time::timeout(Duration::from_secs(8), waiter)
+        .await
+        .expect("the wait must stay bounded")
+        .expect("the wait task must not panic")
+        .expect("the wait must succeed");
+    tokio::time::timeout(Duration::from_secs(1), producer)
+        .await
+        .expect("the producer must finish after handing back the result")
+        .expect("the producer task must not panic");
+    assert_eq!(
+        heartbeat.load(Ordering::Acquire),
+        3,
+        "the concurrent heartbeat/result producer must make progress through the wait"
+    );
+    match result {
+        houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } => {
+            assert_eq!(rows.len(), 1, "{rows:?}");
+            assert!(rows[0].body.contains("PROGRESS-RESULT"), "{rows:?}");
+        }
+        other => panic!("startup progress must disarm the stall guard: {other:?}"),
+    }
 }
 
 #[tokio::test]

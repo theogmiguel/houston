@@ -29,6 +29,10 @@ pub const URL_ENV: &str = "HOUSTON_MCP_URL";
 
 pub const CONFIG_ENV: &str = "HOUSTON_MCP_CONFIG";
 
+const CODEX_TOOL_TIMEOUT_MARGIN_SEC: u64 = 30;
+const CODEX_TOOL_TIMEOUT_SEC: u64 =
+    crate::orchestrate::DEFAULT_WAIT_TIMEOUT_MS / 1_000 + CODEX_TOOL_TIMEOUT_MARGIN_SEC;
+
 fn config_json(endpoint: &str, token: &str) -> String {
     serde_json::json!({
         "mcpServers": {
@@ -94,6 +98,8 @@ pub fn launch_for(agent: proto::AgentKind, endpoint: &str, token: &str) -> Launc
                     format!("mcp_servers.{name}.url={endpoint}"),
                     "-c".into(),
                     format!("mcp_servers.{name}.bearer_token_env_var=\"{CODEX_TOKEN_ENV}\""),
+                    "-c".into(),
+                    format!("mcp_servers.{name}.tool_timeout_sec={CODEX_TOOL_TIMEOUT_SEC}"),
                 ],
                 env,
                 credential,
@@ -205,6 +211,33 @@ mod tests {
             .find(|k| *k == CODEX_TOKEN_ENV)
             .expect("Codex must export the variable its own override names");
         assert!(override_arg.contains(exported));
+    }
+
+    #[test]
+    fn codex_tool_timeout_covers_the_default_wait_with_a_transport_margin() {
+        let launch = launch_for(proto::AgentKind::Codex, ENDPOINT, TOKEN);
+        let expected = format!("mcp_servers.houston.tool_timeout_sec={CODEX_TOOL_TIMEOUT_SEC}");
+        assert!(launch.args.iter().any(|arg| arg == &expected), "{launch:?}");
+        let timeout_sec = launch
+            .args
+            .iter()
+            .find_map(|arg| {
+                arg.strip_prefix("mcp_servers.houston.tool_timeout_sec=")
+                    .and_then(|value| value.parse::<u64>().ok())
+            })
+            .expect("Codex launch must carry a numeric Houston tool timeout");
+        assert!(
+            timeout_sec * 1_000 > crate::orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
+            "Codex's tool timeout must exceed pane_wait's default"
+        );
+        assert_eq!(
+            timeout_sec * 1_000 - crate::orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
+            CODEX_TOOL_TIMEOUT_MARGIN_SEC * 1_000
+        );
+        assert!(
+            !launch.args.iter().any(|arg| arg.contains(TOKEN)),
+            "the Codex launch must keep the bearer token out of argv: {launch:?}"
+        );
     }
 
     #[test]
