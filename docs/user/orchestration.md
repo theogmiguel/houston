@@ -80,7 +80,7 @@ then removes the completed pane after its authoritative round is accounted for. 
 submitted draft, an idle or blocked child, a missing handback, a stall, or a provisional
 result does not by itself close the pane. Set `reusable: true` in MCP/HTTP, or pass
 `--reusable` to `hs-pane spawn`, when the child must remain available for follow-up
-prompts. A reusable child is never closed by this cleanup.
+prompts or terminal inspection. A reusable child is never closed by this cleanup.
 
 Spawn may also request `effort` (`low`, `medium`, `high`, `xhigh` or `max`) through MCP,
 HTTP or `hs-pane spawn --effort`; omitting it keeps the CLI default, and providers without a

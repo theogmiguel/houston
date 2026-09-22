@@ -497,9 +497,11 @@ identity), so the collapse is by request, not by authentication.
 
 `orchestrate::compose_inbox` writes a header naming the count and the delivery id, then per
 row `[kind] #id from <codename (role)>: <summary>`, the body, and the artifact paths. Door 3
-also appends a fresh tail of the sender's own screen where one corroborates something; door
-1 and door 2 pass `None` — inside a tool result or a hook's stdout, a screen tail is content
-the agent did not ask for, and a parent that wants it can `pane_read`. A row past its first
+also appends a sanitized screen excerpt captured at submission and stored with the result,
+capped at 400 characters plus a truncation marker. The snapshot survives temporary cleanup;
+legacy rows without a snapshot fall back to the live screen when available. Door 1 and door
+2 omit the excerpt. Request a reusable child when later terminal inspection is needed.
+A row past its first
 attempt says "possibly delivered before". A `Result` and an `Exited` from the same child in
 one batch compose as one story ("it answered, then its pane ended"), and so do an
 `OperatorNote` and an `Exited`; a `NeedsInput` whose block ended before any door carried it

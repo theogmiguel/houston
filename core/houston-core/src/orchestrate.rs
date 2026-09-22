@@ -40,7 +40,7 @@ pub const HANDOFF_EXCERPT_MAX_CHARS: usize = 400;
 
 pub const HANDOFF_CORROBORATING_ROWS: usize = 12;
 
-pub const HANDOFF_TRUNCATION_MARKER: &str = "…[truncated — run hs-pane read <id> for more]";
+pub const HANDOFF_TRUNCATION_MARKER: &str = "…[truncated]";
 
 pub const SUBMIT_BODY_MAX_CHARS: usize = 8_000;
 
