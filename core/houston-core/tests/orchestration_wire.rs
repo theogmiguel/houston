@@ -7787,3 +7787,71 @@ fn frame_classification_distinguishes_submit_from_newline() {
         "no trailing \\r at all is still-typing, not a submit"
     );
 }
+#[tokio::test]
+async fn a_child_that_names_its_still_unhooked_prompt_is_accepted() {
+    let _guard = serial().await;
+    let r = rig("named-request-before-hook").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "task A", "role": "worker", "reusable": true}),
+        )
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+
+    apply_hook_event(r._state.path(), kid, "UserPromptSubmit").await;
+    assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
+    r.daemon
+        .orchestrate_submit(kid, "ANSWER-A for the first task".to_string().into())
+        .unwrap();
+
+    r.daemon.orchestrate_prompt(pane.id, kid, "task B").unwrap();
+    assert_eq!(
+        r.daemon.delegation_of(kid).unwrap().round,
+        1,
+        "framing the re-prompt does not itself bump the round — only a hook (or the \
+         child naming it) does"
+    );
+
+    // Codex steers the queued text into its still-running turn: no fresh prompt hook
+    // arrives, but the child quotes the request number Houston framed for it.
+    let outcome = r
+        .daemon
+        .orchestrate_submit(
+            kid,
+            houston_core::orchestrate::Submission {
+                body: "ANSWER-B for the second task".to_string(),
+                summary: None,
+                artifacts: Vec::new(),
+                request_id: Some(2),
+            },
+        )
+        .unwrap();
+    assert_eq!(outcome.request_id, Some(2), "{outcome:?}");
+    assert_eq!(outcome.reason, None, "not late, not unstamped: {outcome:?}");
+    assert_eq!(
+        r.daemon.delegation_of(kid).unwrap().round,
+        2,
+        "naming request 2 opened round 2"
+    );
+
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    let second = rows
+        .iter()
+        .find(|row| row.body.contains("ANSWER-B"))
+        .unwrap_or_else(|| panic!("{rows:?}"));
+    assert_eq!(second.request_id, Some(2));
+    assert_eq!(second.reason, None);
+
+    // The real prompt hook the CLI would still fire later must not open a third round
+    // on top of the one the submit already opened.
+    apply_hook_event(r._state.path(), kid, "UserPromptSubmit").await;
+    assert_eq!(
+        r.daemon.delegation_of(kid).unwrap().round,
+        2,
+        "the prompt_awaiting_hook entry was consumed by the submit; the late hook bumps nothing"
+    );
+}

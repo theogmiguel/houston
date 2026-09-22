@@ -12718,9 +12718,36 @@ impl Daemon {
                     .to_string(),
             ));
         };
-        let current = row.round;
+        let mut current = row.round;
         let closed = orchestrate::DelegationState::parse(&row.state).is_some_and(|s| s.is_closed());
         if let Some(named) = named {
+            // A framed prompt is still awaiting its own hook (Codex steers queued text into
+            // the running turn without one). Naming that request proves the child saw it.
+            if named == current + 1
+                && !closed
+                && self
+                    .prompt_awaiting_hook
+                    .lock()
+                    .expect("prompt awaiting hook lock")
+                    .remove(&child)
+            {
+                match self.db.delegation_bump_round(child, now_ms()) {
+                    Ok(Some(round)) => {
+                        self.turn_start_round
+                            .lock()
+                            .expect("turn start round lock")
+                            .insert(child, round);
+                        current = round;
+                    }
+                    Ok(None) => tracing::warn!(
+                        "child {child}: opening round {named} on submit found no delegation \
+                         row left to bump"
+                    ),
+                    Err(e) => {
+                        tracing::warn!("opening round {named} for child {child} on submit: {e}")
+                    }
+                }
+            }
             if named > current {
                 bail!(
                     "submit refused: request_id {named} has not been asked of you — you are on \
