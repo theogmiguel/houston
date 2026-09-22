@@ -38,7 +38,11 @@ afterEach(() => {
 
 const noop = (): void => {}
 
-function mountPane(spawnedBy: number | null, acp: string | null = null): HTMLElement {
+function mountPane(
+  spawnedBy: number | null,
+  acp: string | null = null,
+  overrides: Partial<SessionInfo> = {}
+): HTMLElement {
   const info = {
     id: 1,
     agent: 'claude',
@@ -50,7 +54,8 @@ function mountPane(spawnedBy: number | null, acp: string | null = null): HTMLEle
     spawned_by: spawnedBy,
     acp,
     live_children: 0,
-    children_waiting: 0
+    children_waiting: 0,
+    ...overrides
   } as SessionInfo
   root = createRoot(container!)
   act(() => {
@@ -89,7 +94,7 @@ describe('SessionPane origin badge (v62 D3)', () => {
     const badge = el.querySelector('[data-testid="origin-badge"]')
     expect(badge).not.toBeNull()
     expect(badge!.closest('[data-testid="head-identity"]')).not.toBeNull()
-    expect(badge!.textContent).toBe('#42')
+    expect(badge!.textContent).toBe('#1')
     expect(badge!.querySelector('svg')).not.toBeNull()
   })
 
@@ -104,6 +109,14 @@ describe('SessionPane origin badge (v62 D3)', () => {
     expect(el.querySelector('[data-testid="origin-badge"]')).toBeNull()
   })
 
+  it('keeps the child codename beside its task title in the pane header', () => {
+    const el = mountPane(42, null, { title: 'Adjust frontend', codename: 'Elle' })
+    expect(el.querySelector('[data-testid="pane-title-mock"]')?.textContent).toBe(
+      'Adjust frontend'
+    )
+    expect(el.querySelector('[data-testid="origin-badge"]')?.textContent).toBe('Elle')
+  })
+
   it('keeps the full sentence as its accessible name, so nothing regresses for a screen reader', () => {
     root = createRoot(container!)
     act(() => {
@@ -111,10 +124,10 @@ describe('SessionPane origin badge (v62 D3)', () => {
     })
     const badge = container!.querySelector('[data-testid="origin-badge"]')
     expect(badge).not.toBeNull()
-    expect(badge!.getAttribute('aria-label')).toBe('child of #42 · pane 42')
+    expect(badge!.getAttribute('aria-label')).toBe('#7 · child of #42')
   })
 
-  it('names the parent by codename with the roster, and carries the id in the tooltip', () => {
+  it('names the child by codename and keeps the parent link in the tooltip', () => {
     root = createRoot(container!)
     const roster = {
       sessions: new Map([
@@ -124,15 +137,55 @@ describe('SessionPane origin badge (v62 D3)', () => {
     }
     act(() => {
       root!.render(
-        <OriginBadge info={{ id: 7, spawned_by: 42 } as SessionInfo} roster={roster} />
+        <OriginBadge
+          info={{
+            id: 7,
+            title: 'Adjust frontend',
+            codename: 'fern',
+            spawned_by: 42
+          } as SessionInfo}
+          roster={roster}
+        />
       )
     })
     const badge = container!.querySelector('[data-testid="origin-badge"]')
-    expect(badge!.textContent).toBe('oak')
+    expect(badge!.textContent).toBe('fern')
     expect(badge!.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toBe(
-      'child of oak · pane 42'
+      'fern · child of oak'
     )
-    expect(badge!.getAttribute('aria-label')).toBe('child of oak · pane 42')
+    expect(badge!.getAttribute('aria-label')).toBe('fern · child of oak')
+    expect(badge!.getAttribute('aria-label')).not.toContain('42')
+  })
+
+  it('does not repeat a codename that is already the editable task title', () => {
+    root = createRoot(container!)
+    act(() => {
+      root!.render(
+        <OriginBadge
+          info={{ id: 7, title: 'fern', codename: 'fern', spawned_by: 42 } as SessionInfo}
+        />
+      )
+    })
+    const identity = container!.querySelector('[data-testid="origin-badge"]')!
+    expect(identity.textContent).toBe('')
+    expect(identity.getAttribute('aria-label')).toContain('fern')
+  })
+
+  it('keeps the stable codename when the task title is renamed', () => {
+    root = createRoot(container!)
+    const render = (title: string): void => {
+      act(() => {
+        root!.render(
+          <OriginBadge
+            info={{ id: 7, title, codename: 'fern', spawned_by: 42 } as SessionInfo}
+          />
+        )
+      })
+    }
+    render('Adjust frontend')
+    expect(container!.querySelector('[data-testid="origin-badge"]')?.textContent).toBe('fern')
+    render('Renamed frontend task')
+    expect(container!.querySelector('[data-testid="origin-badge"]')?.textContent).toBe('fern')
   })
 })
 

@@ -191,10 +191,10 @@ describe('pane header anatomy (step 13, reference shape)', () => {
     const el = mountPane({ spawnedBy: 42, liveChildren: 2 })
     expect(
       el.querySelector('[data-testid="origin-badge"]')!.getAttribute('aria-label')
-    ).toBe('child of #42 · pane 42')
+    ).toBe('#1 · child of #42')
     expect(
       el.querySelector('[data-testid="orchestrator-badge"]')!.getAttribute('aria-label')
-    ).toBe('Orchestrating 2 live child panes')
+    ).toBe('#1 · orchestrating 2 live child panes')
   })
 
   it('renders head-identity in its hide order, with the two container-query cuts on the ends', () => {
@@ -215,6 +215,7 @@ describe('pane header anatomy (step 13, reference shape)', () => {
     expect(identity.querySelector('[data-testid="engine-glyph"]')!.className).toContain(
       '[@container_(max-width:360px)]:hidden'
     )
+    expect(identity.querySelector('[data-testid="pane-title-mock"]')).not.toBeNull()
     for (const testid of ['origin-badge', 'orchestrator-badge', 'acp-badge', 'profile-badge']) {
       expect(
         identity.querySelector(`[data-testid="${testid}"]`)!.className,

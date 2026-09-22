@@ -154,4 +154,32 @@ describe('where the composer lands its launch', () => {
 
     expect(gridsOf()).toHaveLength(1)
   })
+
+  it('a cross-workspace session_created joins its destination without switching the current workspace', async () => {
+    const destination = '/tmp/other'
+    harness = await renderReadyApp({
+      sessions: [makeSession({ id: 1, project_dir: WS, cwd: WS })],
+      workspaces: [
+        makeWorkspace({ path: WS, name: 'project' }),
+        makeWorkspace({ path: destination, name: 'other' })
+      ]
+    })
+
+    deliverControl({
+      type: 'session_created',
+      info: makeSession({ id: 2, project_dir: destination, cwd: destination, agent: 'claude' })
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const selected = Array.from(
+      harness.container.querySelectorAll<HTMLElement>('.witem[aria-current="true"]')
+    )
+    expect(selected.some((item) => item.textContent?.includes('project'))).toBe(true)
+    expect(selected.some((item) => item.textContent?.includes('other'))).toBe(false)
+    expect(
+      harness.container.querySelector(`[data-workspace="${destination}"] [data-panekey="2"]`)
+    ).not.toBeNull()
+  })
 })
