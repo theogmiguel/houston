@@ -13,9 +13,7 @@ const CLI_WAIT_RESPONSE_MARGIN_MS: u64 = 1_000;
 const CLI_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(CLI_HTTP_TIMEOUT_MS);
 
 fn cli_wait_timeout_ms(raw: Option<&str>) -> u64 {
-    // Match the daemon's positive-timeout normalization for both CLI wait forms.
     raw.and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
         .unwrap_or(DEFAULT_WAIT_TIMEOUT_MS)
 }
 
@@ -3872,7 +3870,7 @@ mod tests {
     fn cli_wait_timeout_selection_matches_daemon_defaulting() {
         assert_eq!(cli_wait_timeout_ms(None), DEFAULT_WAIT_TIMEOUT_MS);
         assert_eq!(cli_wait_timeout_ms(Some("")), DEFAULT_WAIT_TIMEOUT_MS);
-        assert_eq!(cli_wait_timeout_ms(Some("0")), DEFAULT_WAIT_TIMEOUT_MS);
+        assert_eq!(cli_wait_timeout_ms(Some("0")), 0);
         assert_eq!(
             cli_wait_timeout_ms(Some("not-a-number")),
             DEFAULT_WAIT_TIMEOUT_MS
@@ -4398,7 +4396,7 @@ mod tests {
             let (mut stream, _) = listener.accept().expect("one CLI request");
             let mut request = [0_u8; 4096];
             let _ = stream.read(&mut request).expect("the CLI request");
-            std::thread::sleep(std::time::Duration::from_millis(15_250));
+            std::thread::sleep(std::time::Duration::from_secs(16));
             let body = r#"{"rows":[],"delayed":true}"#;
             let _ = write!(
                 stream,
@@ -4413,7 +4411,7 @@ mod tests {
         let result = pane_cli_inner(&[
             "wait".to_string(),
             "--timeout-ms".to_string(),
-            "16000".to_string(),
+            "20000".to_string(),
         ]);
 
         assert!(
@@ -4446,6 +4444,7 @@ mod tests {
             let (mut wait, _) = listener.accept().expect("the wait request");
             let mut request = [0_u8; 4096];
             let size = wait.read(&mut request).expect("the wait body");
+            std::thread::sleep(std::time::Duration::from_secs(16));
             let body = r#"{"rows":[]}"#;
             write!(
                 wait,
@@ -4465,13 +4464,13 @@ mod tests {
             "go".to_string(),
             "--wait".to_string(),
             "--timeout".to_string(),
-            "1234".to_string(),
+            "20000".to_string(),
         ]);
 
         let wait_request = server.join().expect("the server thread");
         assert!(result.is_ok(), "prompt --wait should complete: {result:#?}");
         assert!(
-            wait_request.contains("\"timeout_ms\":1234"),
+            wait_request.contains("\"timeout_ms\":20000"),
             "the explicit prompt wait timeout reaches the daemon: {wait_request}"
         );
     }
