@@ -7731,6 +7731,67 @@ async fn stop_hook_latency_under_load() {
 }
 
 #[tokio::test]
+async fn a_paste_reaches_a_parent_whose_turn_end_is_withheld_for_a_subagent() {
+    use houston_core::hook_drop::{HookDrop, DROP_V};
+    let _guard = serial().await;
+    let r = rig("withheld-turn-end-paste").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+
+    let (_, body) = r
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "h0"}))
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+
+    apply_hook_event(r._state.path(), pane.id, "UserPromptSubmit").await;
+    assert_eq!(
+        r.daemon.session_status(pane.id).unwrap(),
+        Some(proto::AgentStatus::Working)
+    );
+    apply_drop(
+        r._state.path(),
+        HookDrop {
+            v: DROP_V,
+            event: "SubagentStart".into(),
+            session: pane.id,
+            agent_id: Some("bg-1".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    apply_hook_event(r._state.path(), pane.id, "Stop").await;
+    assert_eq!(
+        r.daemon.session_status(pane.id).unwrap(),
+        Some(proto::AgentStatus::Working),
+        "the pane's own Stop is withheld while its background sub-agent is still running"
+    );
+
+    r.daemon
+        .orchestrate_submit(kid, "RESULT-0 the task is done".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), kid, "Stop").await;
+
+    let mut rx = r.daemon.observe();
+    let acc = collect_broadcast_until(&mut rx, pane.id, "RESULT-0").await;
+    assert!(
+        acc.contains("RESULT-0"),
+        "the child's result must reach the parent as a paste, not wait for the parent's \
+         next turn end: {acc:?}"
+    );
+    wait_row_delivered(&r.daemon, pane.id).await;
+
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].delivered_via.as_deref(), Some("paste"), "{rows:?}");
+    assert_eq!(
+        r.daemon.session_status(pane.id).unwrap(),
+        Some(proto::AgentStatus::Working),
+        "the paste must not fabricate a turn end for the still-withheld round"
+    );
+}
+
+#[tokio::test]
 async fn a_submitting_enter_clears_the_unsubmitted_text_hold() {
     let _guard = serial().await;
     let r = rig("composer-submit-clears-hold").await;
@@ -7772,6 +7833,7 @@ async fn a_submitting_enter_clears_the_unsubmitted_text_hold() {
          inbox_deliver_now: {acc:?}"
     );
 }
+
 #[test]
 fn frame_classification_distinguishes_submit_from_newline() {
     assert!(
@@ -7787,6 +7849,7 @@ fn frame_classification_distinguishes_submit_from_newline() {
         "no trailing \\r at all is still-typing, not a submit"
     );
 }
+
 #[tokio::test]
 async fn a_child_that_names_its_still_unhooked_prompt_is_accepted() {
     let _guard = serial().await;

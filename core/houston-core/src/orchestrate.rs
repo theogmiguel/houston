@@ -5061,6 +5061,12 @@ impl SubagentRound {
         RoundVerdict::Closes(close)
     }
 
+    /// True once `on_turn_ended` withheld the turn end for an in-flight/owed sub-agent —
+    /// not the separate `stop_continued` case, which never calls `on_turn_ended`.
+    pub fn turn_end_withheld_for_subagents(&self) -> bool {
+        self.withheld_turn_end
+    }
+
     pub fn on_external_prompt(&mut self) {
         let ever = self.ever_seen_subagent;
         let started = std::mem::take(&mut self.started_in);

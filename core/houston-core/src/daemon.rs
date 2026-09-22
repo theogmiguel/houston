@@ -14322,6 +14322,18 @@ impl Daemon {
                         .to_string(),
                 )
             }
+            // A pane whose turn end is withheld only because its own turn ended while a
+            // sub-agent was still owed is sitting at its prompt, not mid-turn: deliver.
+            Ok(Some(proto::AgentStatus::Working))
+                if self.stop_blocks(parent) == 0
+                    && self
+                        .subagent_rounds
+                        .lock()
+                        .expect("subagent rounds lock")
+                        .get(&parent)
+                        .is_some_and(
+                            orchestrate::SubagentRound::turn_end_withheld_for_subagents,
+                        ) => {}
             Ok(other) => {
                 return Some(format!(
                     "this pane is {}, not idle",
