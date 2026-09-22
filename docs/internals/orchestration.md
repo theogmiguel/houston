@@ -776,11 +776,11 @@ name.
 |---|---|---|---|---|---|---|
 | **Turn end** | `Stop` | `Stop` (hooks.json; `notify` retired) | `Stop` | `session.idle` for the root session only | `stop` (`status`, `loop_count`) | `Stop` (`fullyIdle`, `terminationReason`) |
 | **Last message** | `Stop.last_assistant_message` | `Stop.last_assistant_message` | not in payload: capped tail | plugin reads `client.session.messages` at idle | `afterAgentResponse.text` | not in payload; every payload carries `transcriptPath` (the CLI's own JSONL), read the last assistant entry there, never the screen |
-| **Needs input, with reason** | `PermissionRequest.tool_name` + typed `Notification` | `PermissionRequest.tool_name` | `Notification` (`permission_prompt`, `elicitation_dialog`) | `permission.asked` (`permission`, `patterns`); also subscribed `permission.updated` for older builds | **none exists**: stall row, named in `pane_list` | `PreToolUse` (matcher dialect) for `ask_question` / `ask_permission` / `ask_custom_permission` with no `PostToolUse` yet; `toolCall.args.questions[].question` is the reason |
+| **Needs input, with reason** | `PermissionRequest.tool_name` + typed `Notification` | `PermissionRequest.tool_name`; `PostToolUse` resolves the matching permission episode | `Notification` (`permission_prompt`, `elicitation_dialog`) | `permission.asked` (`permission`, `patterns`); also subscribed `permission.updated` for older builds | **none exists**: stall row, named in `pane_list` | `PreToolUse` (matcher dialect) for `ask_question` / `ask_permission` / `ask_custom_permission` with no `PostToolUse` yet; `toolCall.args.questions[].question` is the reason |
 | **Sub-agent vs child** | the round rule above | `SubagentStop` is separate; main `Stop` fires once, parent stays busy | `SubagentStart`/`Stop` separate; `spawn_subagent` blocks the parent by default | child is a session with `parentID`; plugin maps ids from `session.created`, parent stays busy | `subagentStart`/`Stop` carry `subagent_id`, `parent_conversation_id` | sub-agent is a second `conversationId` firing the same hooks; the parent's own `Stop` while it waits has `fullyIdle=false`. Pin the root id at the first `SessionStart`, drop the rest |
 | **Door 2** | `Stop` → `{"decision":"block","reason"}` | same shape, `exit 0`, live-verified | none enabled: docs contradict; door 3 carries the rows | none enabled: plugin injection still to probe; door 3 carries the rows | none enabled: `stop` → `{"followup_message"}` documented, not live-verified; door 3 carries the rows | `Stop` → `{"decision":"continue","reason"}`, exit 0; the re-fired `Stop` carries `executionNum: 1` |
 | **Houston tools in the child** | `--mcp-config`, added to the user's own servers (no `--strict-mcp-config`) | `-c mcp_servers.*` + token env | user-scope `grok mcp add` with a `${HOUSTON_MCP_TOKEN}` header | `OPENCODE_CONFIG_CONTENT` env with a `remote` server and bearer header | user-scope `~/.cursor/mcp.json` entry with `${env:HOUSTON_MCP_TOKEN}`, `_houston` marker | `~/.gemini/config/mcp_config.json` headers; bearer silently ignored upstream, smoke-test |
-| **Verified how** | live, 2.1.263 | live, 0.153.4 | docs + repo; login needed to probe | live, 1.18.27 (child sessions, idle, permission event) | docs; login needed to probe | live, 1.1.26 (all six rows) |
+| **Verified how** | live, 2.1.263 | local schema + docs, 0.155.1 | docs + repo; login needed to probe | live, 1.18.27 (child sessions, idle, permission event) | docs; login needed to probe | live, 1.1.26 (all six rows) |
 
 Capabilities are typed per session, not per provider name: `orchestrate::ProviderCapabilities`
 carries `turn_end`, `last_message`, `block` and `door2`, derived from the event map and the
@@ -792,10 +792,13 @@ What changes per provider, beyond the shared inbox:
 
 - **Codex.** `agent_hooks.rs` installs `~/.codex/hooks.json` in the Claude schema for
   `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest`, plus
-  `SubagentStart`/`SubagentStop`/`SessionEnd` correlation-only, with the
+  `SubagentStart`/`SubagentStop`/`SessionEnd`/`PreToolUse`/`PostToolUse` correlation-only, with the
   same managed-marker discipline as Cursor's file; `notify` is removed from `config.toml`
   (parked, or deleted outright if it is Houston's own stale entry). Codex maps to
-  `HooksFull`. **Trust** is Codex's own, not Houston's to grant: an untrusted hook is
+  `HooksFull`. In the 0.155.1 event shape, `PermissionRequest` has no `tool_use_id`;
+  the helper carries its `turn_id` and a SHA-256 digest of `tool_input.command`, and
+  `PostToolUse` clears only the matching episode without storing the raw command.
+  **Trust** is Codex's own, not Houston's to grant: an untrusted hook is
   silently skipped, so a Codex pane's `SessionStart` drop never arrives and its status
   reads `ProcessOnly` until the operator trusts Houston's hooks in Codex's own review
   screen. Houston never passes `--dangerously-bypass-hook-trust` — a spawn into a repo

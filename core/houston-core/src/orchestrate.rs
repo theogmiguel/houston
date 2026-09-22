@@ -4828,7 +4828,9 @@ pub enum EpisodeEnd {
     PromptSubmitted,
     PostToolUse {
         tool_use_id: Option<String>,
+        prompt_id: Option<String>,
         tool_name: Option<String>,
+        tool_input_fingerprint: Option<String>,
     },
 }
 
@@ -4836,6 +4838,7 @@ pub enum EpisodeEnd {
 pub struct Episode {
     pub key: EpisodeKey,
     pub reason: Option<String>,
+    pub tool_input_fingerprint: Option<String>,
     pub opened_ms: u64,
 }
 
@@ -4852,6 +4855,18 @@ impl PermissionEpisodes {
         prompt_id: Option<&str>,
         tool_name: &str,
         reason: Option<String>,
+        now: u64,
+    ) -> (EpisodeKey, Vec<Episode>) {
+        self.open_with_fingerprint(tool_use_id, prompt_id, tool_name, reason, None, now)
+    }
+
+    pub fn open_with_fingerprint(
+        &mut self,
+        tool_use_id: Option<&str>,
+        prompt_id: Option<&str>,
+        tool_name: &str,
+        reason: Option<String>,
+        tool_input_fingerprint: Option<String>,
         now: u64,
     ) -> (EpisodeKey, Vec<Episode>) {
         let key = match tool_use_id {
@@ -4871,13 +4886,16 @@ impl PermissionEpisodes {
         let retired = match &key {
             EpisodeKey::ToolUseId(id) => self.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some(id.clone()),
+                prompt_id: None,
                 tool_name: None,
+                tool_input_fingerprint: None,
             }),
             EpisodeKey::Generated { .. } => self.resolve_on(&EpisodeEnd::NextPermissionRequest),
         };
         self.open.push(Episode {
             key: key.clone(),
             reason,
+            tool_input_fingerprint,
             opened_ms: now,
         });
         (key, retired)
@@ -4901,13 +4919,30 @@ impl PermissionEpisodes {
             .partition(|ep| match end {
                 EpisodeEnd::PostToolUse {
                     tool_use_id,
+                    prompt_id,
                     tool_name,
+                    tool_input_fingerprint,
                 } => match &ep.key {
                     EpisodeKey::ToolUseId(id) => tool_use_id.as_ref() == Some(id),
                     EpisodeKey::Generated {
+                        prompt_id: expected_prompt,
                         tool_name: expected,
                         ..
-                    } => tool_name.as_ref() == Some(expected),
+                    } => {
+                        let prompt_matches = expected_prompt
+                            .as_ref()
+                            .zip(prompt_id.as_ref())
+                            .is_none_or(|(expected, actual)| expected == actual);
+                        if !prompt_matches || tool_name.as_ref() != Some(expected) {
+                            false
+                        } else {
+                            match (&ep.tool_input_fingerprint, tool_input_fingerprint) {
+                                (Some(expected), Some(actual)) => expected == actual,
+                                (Some(_), None) => false,
+                                (None, _) => true,
+                            }
+                        }
+                    }
                 },
                 EpisodeEnd::NextPermissionRequest => {
                     matches!(ep.key, EpisodeKey::Generated { .. })
@@ -5208,13 +5243,61 @@ mod permission_episode_tests {
         assert!(eps
             .resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("toolu_other".into()),
+                prompt_id: None,
                 tool_name: Some("Bash".into()),
+                tool_input_fingerprint: None,
             })
             .is_empty());
         assert_eq!(
             eps.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("toolu_1".into()),
+                prompt_id: None,
                 tool_name: Some("Bash".into()),
+                tool_input_fingerprint: None,
+            })
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_generated_codex_permission_requires_the_same_tool_input() {
+        let mut eps = PermissionEpisodes::default();
+        eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash".into()),
+            Some("cargo-hash".into()),
+            0,
+        );
+
+        assert!(eps
+            .resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("unrelated-tool-id".into()),
+                prompt_id: None,
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("bun-hash".into()),
+            })
+            .is_empty());
+        assert_eq!(eps.open_count(), 1);
+
+        assert!(eps
+            .resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("other-turn-tool-id".into()),
+                prompt_id: Some("turn-2".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("cargo-hash".into()),
+            })
+            .is_empty());
+        assert_eq!(eps.open_count(), 1);
+
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("matching-tool-id".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("cargo-hash".into()),
             })
             .len(),
             1
@@ -5231,7 +5314,9 @@ mod permission_episode_tests {
         assert_eq!(
             eps.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("request-1".into()),
+                prompt_id: None,
                 tool_name: None,
+                tool_input_fingerprint: None,
             })
             .len(),
             1
@@ -5240,7 +5325,9 @@ mod permission_episode_tests {
         assert_eq!(
             eps.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("request-2".into()),
+                prompt_id: None,
                 tool_name: None,
+                tool_input_fingerprint: None,
             })
             .len(),
             1

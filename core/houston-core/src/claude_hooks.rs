@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use houston_protocol as proto;
+use sha2::{Digest, Sha256};
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
@@ -426,6 +427,7 @@ pub fn run_hook_client(args: &[String]) {
         task_id: payload.task_id,
         agent_id: payload.agent_id,
         tool_use_id: payload.tool_use_id,
+        tool_input_fingerprint: payload.tool_input_fingerprint,
         request_id: payload.request_id,
         stop_continued,
         session_id: payload.session_id,
@@ -577,6 +579,7 @@ pub(crate) struct HookPayload {
     pub request_id: Option<String>,
     pub fully_idle: Option<bool>,
     pub tool_name: Option<String>,
+    pub tool_input_fingerprint: Option<String>,
     pub transcript_path: Option<String>,
 }
 
@@ -603,6 +606,17 @@ fn read_stdin_payload<R: Read>(reader: &mut R, is_tty: bool) -> String {
     let mut input = String::new();
     let _ = reader.read_to_string(&mut input);
     input
+}
+
+fn codex_tool_input_fingerprint(
+    parsed: Option<&serde_json::Value>,
+    provider: proto::AgentKind,
+) -> Option<String> {
+    if provider != proto::AgentKind::Codex {
+        return None;
+    }
+    let command = parsed?.get("tool_input")?.get("command")?.as_str()?;
+    Some(format!("{:x}", Sha256::digest(command.as_bytes())))
 }
 
 pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> HookPayload {
@@ -657,6 +671,7 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .and_then(|v| v.as_str())
             .map(String::from)
     });
+    let tool_input_fingerprint = codex_tool_input_fingerprint(parsed.as_ref(), provider);
     let questions = tool_call
         .and_then(|t| t.get("args"))
         .and_then(|a| a.get("questions"))
@@ -729,6 +744,7 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .filter(|id| !id.is_empty()),
         fully_idle: field_bool("fullyIdle"),
         tool_name,
+        tool_input_fingerprint,
         transcript_path: if provider == proto::AgentKind::Antigravity {
             field("transcriptPath")
         } else {
@@ -1566,6 +1582,25 @@ mod tests {
         );
         assert_eq!(result.session_id, elicitation.session_id);
         assert_eq!(result.request_id.as_deref(), Some("elicitation-1"));
+    }
+
+    #[test]
+    fn codex_permission_and_completion_share_a_non_secret_command_fingerprint() {
+        let p = parse_hook_payload(
+            r#"{"hook_event_name":"PermissionRequest","turn_id":"turn-1",
+                 "tool_name":"Bash","tool_input":{"command":"cargo test"}}"#,
+            proto::AgentKind::Codex,
+        );
+        assert_eq!(p.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(
+            p.tool_input_fingerprint.as_deref(),
+            Some("0031fd18feb55b6b493544de1976b438eeac0b2d1278821b9e4e8eb07e8cf503")
+        );
+        assert!(!p
+            .tool_input_fingerprint
+            .as_deref()
+            .unwrap_or_default()
+            .contains("cargo"));
     }
 
     #[test]

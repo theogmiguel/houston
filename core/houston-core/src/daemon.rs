@@ -9136,7 +9136,9 @@ impl Daemon {
                         d.session,
                         &orchestrate::EpisodeEnd::PostToolUse {
                             tool_use_id: d.request_id.clone(),
+                            prompt_id: d.prompt_id.clone(),
                             tool_name: Some(kind.to_string()),
+                            tool_input_fingerprint: None,
                         },
                     );
                     if resumed {
@@ -9222,13 +9224,17 @@ impl Daemon {
                 return Some(crate::hook_drop::DropVerdict::Applied);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
-            episodes.entry(d.session).or_default().open(
-                d.tool_use_id.as_deref().or(d.request_id.as_deref()),
-                d.prompt_id.as_deref(),
-                d.tool_name.as_deref().unwrap_or("unnamed tool"),
-                d.reason.clone(),
-                now,
-            );
+            episodes
+                .entry(d.session)
+                .or_default()
+                .open_with_fingerprint(
+                    d.tool_use_id.as_deref().or(d.request_id.as_deref()),
+                    d.prompt_id.as_deref(),
+                    d.tool_name.as_deref().unwrap_or("unnamed tool"),
+                    d.reason.clone(),
+                    d.tool_input_fingerprint.clone(),
+                    now,
+                );
             drop(episodes);
             self.apply_agent_event(
                 d.session,
@@ -9248,7 +9254,9 @@ impl Daemon {
                 d.session,
                 &orchestrate::EpisodeEnd::PostToolUse {
                     tool_use_id: d.tool_use_id.clone(),
+                    prompt_id: d.prompt_id.clone(),
                     tool_name: d.tool_name.clone(),
+                    tool_input_fingerprint: d.tool_input_fingerprint.clone(),
                 },
             );
             if resumed {
@@ -9351,13 +9359,20 @@ impl Daemon {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
-            episodes.entry(d.session).or_default().open(
-                d.tool_use_id.as_deref().or(d.request_id.as_deref()),
-                d.prompt_id.as_deref(),
-                d.reason.as_deref().unwrap_or("unnamed tool"),
-                d.reason.clone(),
-                now,
-            );
+            episodes
+                .entry(d.session)
+                .or_default()
+                .open_with_fingerprint(
+                    d.tool_use_id.as_deref().or(d.request_id.as_deref()),
+                    d.prompt_id.as_deref(),
+                    d.tool_name
+                        .as_deref()
+                        .or(d.reason.as_deref())
+                        .unwrap_or("unnamed tool"),
+                    d.reason.clone(),
+                    d.tool_input_fingerprint.clone(),
+                    now,
+                );
             drop(episodes);
             self.apply_agent_event(
                 d.session,
@@ -9377,7 +9392,9 @@ impl Daemon {
                 d.session,
                 &orchestrate::EpisodeEnd::PostToolUse {
                     tool_use_id: d.tool_use_id.clone().or_else(|| d.request_id.clone()),
+                    prompt_id: d.prompt_id.clone(),
                     tool_name: d.tool_name.clone(),
+                    tool_input_fingerprint: d.tool_input_fingerprint.clone(),
                 },
             );
             if resumed {
@@ -9423,7 +9440,9 @@ impl Daemon {
                 d.session,
                 &orchestrate::EpisodeEnd::PostToolUse {
                     tool_use_id: d.request_id.clone(),
+                    prompt_id: d.prompt_id.clone(),
                     tool_name: Some("Claude elicitation".to_string()),
+                    tool_input_fingerprint: None,
                 },
             );
             if resumed {
@@ -9573,7 +9592,9 @@ impl Daemon {
                 d.session,
                 &orchestrate::EpisodeEnd::PostToolUse {
                     tool_use_id: d.tool_use_id.clone(),
+                    prompt_id: d.prompt_id.clone(),
                     tool_name: d.tool_name.clone(),
+                    tool_input_fingerprint: d.tool_input_fingerprint.clone(),
                 },
             );
             if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {

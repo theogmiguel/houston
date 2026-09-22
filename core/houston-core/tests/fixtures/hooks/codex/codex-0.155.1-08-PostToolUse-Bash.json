@@ -1,0 +1,14 @@
+{
+  "hook_event_name": "PostToolUse",
+  "turn_id": "a1b2c3d4-1551",
+  "tool_name": "Bash",
+  "tool_use_id": "call_PostToolBash1551",
+  "tool_input": {
+    "command": "cargo test --workspace"
+  },
+  "tool_response": {
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+}

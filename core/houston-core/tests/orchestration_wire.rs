@@ -5366,6 +5366,153 @@ async fn a_blocked_child_reaches_its_parent_with_the_reason() {
 }
 
 #[tokio::test]
+async fn codex_permission_completion_reopens_get_and_prompt_without_a_new_round() {
+    let _guard = serial().await;
+    let r = rig("codex-permission-completion").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "run the tests"}),
+        )
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+
+    apply_hook_event(r._state.path(), pane.id, "UserPromptSubmit").await;
+    apply_hook_event(r._state.path(), kid, "UserPromptSubmit").await;
+    assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
+
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "PermissionRequest".into(),
+            session: kid,
+            agent: Some("codex".into()),
+            prompt_id: Some("a1b2c3d4-1551".into()),
+            reason: Some("Bash".into()),
+            tool_name: Some("Bash".into()),
+            tool_input_fingerprint: Some(
+                "0031fd18feb55b6b493544de1976b438eeac0b2d1278821b9e4e8eb07e8cf503".into(),
+            ),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let blocked = mcp_call(
+        r.addr,
+        &token,
+        "pane_get",
+        serde_json::json!({"session": kid}),
+    )
+    .await;
+    assert_eq!(blocked["isError"], false, "{blocked}");
+    assert_eq!(
+        blocked["structuredContent"]["delegation"]["state"],
+        "needs_input"
+    );
+    assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(rows[0].urgent, "{rows:?}");
+    assert!(rows[0].resolved_at.is_none(), "{rows:?}");
+
+    let refused = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session": kid, "text": "ordinary followup"}),
+    )
+    .await;
+    assert_eq!(
+        refused["isError"], true,
+        "a blocked pane rejects prompting: {refused}"
+    );
+
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "PostToolUse".into(),
+            session: kid,
+            agent: Some("codex".into()),
+            prompt_id: Some("a1b2c3d4-1551".into()),
+            tool_use_id: Some("call-unrelated-bash".into()),
+            tool_name: Some("Bash".into()),
+            tool_input_fingerprint: Some(
+                "fd0e236dfbf6047cf89befd59504773735a74fd934c023658d048b58ed1a3605".into(),
+            ),
+            ..Default::default()
+        },
+    )
+    .await;
+    let still_blocked = mcp_call(
+        r.addr,
+        &token,
+        "pane_get",
+        serde_json::json!({"session": kid}),
+    )
+    .await;
+    assert_eq!(still_blocked["isError"], false, "{still_blocked}");
+    assert_eq!(
+        still_blocked["structuredContent"]["delegation"]["state"],
+        "needs_input"
+    );
+    assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
+
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "PostToolUse".into(),
+            session: kid,
+            agent: Some("codex".into()),
+            prompt_id: Some("a1b2c3d4-1551".into()),
+            tool_use_id: Some("call-matching-bash".into()),
+            tool_name: Some("Bash".into()),
+            tool_input_fingerprint: Some(
+                "0031fd18feb55b6b493544de1976b438eeac0b2d1278821b9e4e8eb07e8cf503".into(),
+            ),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let resumed = mcp_call(
+        r.addr,
+        &token,
+        "pane_get",
+        serde_json::json!({"session": kid}),
+    )
+    .await;
+    assert_eq!(resumed["isError"], false, "{resumed}");
+    assert_eq!(
+        resumed["structuredContent"]["delegation"]["state"],
+        "working"
+    );
+    assert_eq!(r.daemon.delegation_of(kid).unwrap().round, 1);
+    let rows = r.daemon.inbox_rows_for_test(pane.id);
+    assert_eq!(
+        rows.len(),
+        1,
+        "the original urgent row remains auditable: {rows:?}"
+    );
+    assert!(rows[0].resolved_at.is_some(), "{rows:?}");
+
+    let prompted = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session": kid, "text": "ordinary followup"}),
+    )
+    .await;
+    assert_eq!(
+        prompted["isError"], false,
+        "the resumed pane accepts prompting: {prompted}"
+    );
+}
+
+#[tokio::test]
 async fn a_child_that_crashes_empty_handed_still_reaches_its_parent() {
     let _guard = serial().await;
     let r = rig("empty-handed-exit").await;
