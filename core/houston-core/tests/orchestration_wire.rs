@@ -44,7 +44,7 @@ fn shim_dir() -> PathBuf {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
-                    "#!/bin/sh\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nexec cat\n",
+                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
                 )
                 .unwrap();
                 use std::os::unix::fs::PermissionsExt;
@@ -2184,6 +2184,8 @@ async fn two_prompts_in_a_row_reach_the_pane_as_two_prompts_not_one_merged_paste
         .await;
     let child: u32 = body["session_id"].as_u64().unwrap() as u32;
 
+    await_child_echo(&r.daemon, child, "FIXTURE-READY").await;
+
     for text in ["ALPHA-ONE", "BRAVO-TWO"] {
         let (status, body) = http_json(
             r.addr,
@@ -3725,7 +3727,7 @@ async fn a_child_that_keeps_ending_turns_tells_its_parent_once_per_round() {
     apply_hook_event(r._state.path(), kid, "Stop").await;
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert_eq!(
-        acc.matches("(answerer)").count(),
+        acc.matches("(answerer):").count(),
         1,
         "the first unstaged turn end of the round: {acc:?}"
     );
@@ -3765,7 +3767,7 @@ async fn a_child_that_keeps_ending_turns_tells_its_parent_once_per_round() {
     apply_hook_event(r._state.path(), kid, "Stop").await;
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert_eq!(
-        acc.matches("(answerer)").count(),
+        acc.matches("(answerer):").count(),
         1,
         "the new round's first unstaged turn end reaches the parent too: {acc:?}"
     );
