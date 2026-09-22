@@ -4,7 +4,6 @@ use std::time::Duration;
 /// 15s covers a cold start on a loaded box without letting a hung child hold a
 /// boot-time task open forever.
 const ADD_TIMEOUT: Duration = Duration::from_secs(15);
-const HOUSTON_TABLE_HEADER: &str = "[mcp_servers.houston]";
 const CODEX_TIMEOUT_OPEN: &str = "# >>> houston managed (codex timeout) >>>";
 const CODEX_TIMEOUT_CLOSE: &str = "# <<< houston managed (codex timeout) <<<";
 
@@ -123,76 +122,146 @@ enum TimeoutAction {
     UserOverride,
 }
 
-fn table_header(line: &str) -> Option<&str> {
-    let without_comment = line.split_once('#').map(|(head, _)| head).unwrap_or(line);
-    let trimmed = without_comment.trim();
-    let body = if trimmed.starts_with("[[") {
-        trimmed.strip_prefix("[[")?.strip_suffix("]]")?
-    } else {
-        trimmed.strip_prefix('[')?.strip_suffix(']')?
-    };
-    let body = body.trim();
-    if body.is_empty()
-        || !body
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || "_-.".contains(character))
-    {
-        return None;
-    }
-    Some(trimmed)
-}
-
-fn houston_section(lines: &[String]) -> Result<(usize, usize), String> {
-    let Some(start) = lines
-        .iter()
-        .position(|line| table_header(line) == Some(HOUSTON_TABLE_HEADER))
-    else {
-        return Err(format!(
-            "Codex config has a Houston entry but no canonical {HOUSTON_TABLE_HEADER} table — leaving it alone"
-        ));
-    };
-    let end = lines
-        .iter()
-        .enumerate()
-        .skip(start + 1)
-        .find_map(|(index, line)| table_header(line).map(|_| index))
-        .unwrap_or(lines.len());
-    Ok((start, end))
-}
-
-fn is_assignment(line: &str, key: &str) -> bool {
-    let trimmed = line.trim_start();
-    if trimmed.starts_with('#') {
-        return false;
-    }
-    trimmed
-        .split_once('=')
-        .map(|(left, _)| {
-            let left = left.trim();
-            left == key
-                || left
-                    .strip_prefix('"')
-                    .and_then(|value| value.strip_suffix('"'))
-                    == Some(key)
-                || left
-                    .strip_prefix('\'')
-                    .and_then(|value| value.strip_suffix('\''))
-                    == Some(key)
+fn canonical_houston_table(root: &toml_edit::Table) -> Result<&toml_edit::Table, String> {
+    root.get("mcp_servers")
+        .and_then(toml_edit::Item::as_table)
+        .and_then(|servers| servers.get(crate::mcp_server::SERVER_NAME))
+        .and_then(toml_edit::Item::as_table)
+        .ok_or_else(|| {
+            "Codex config has no canonical mcp_servers.houston table — leaving it alone".to_string()
         })
-        .unwrap_or(false)
 }
 
-fn marker_bounds(
-    lines: &[String],
-    start: usize,
-    end: usize,
-) -> Result<Option<(usize, usize)>, String> {
-    let opens: Vec<usize> = (start + 1..end)
-        .filter(|&index| lines[index].trim() == CODEX_TIMEOUT_OPEN)
-        .collect();
-    let closes: Vec<usize> = (start + 1..end)
-        .filter(|&index| lines[index].trim() == CODEX_TIMEOUT_CLOSE)
-        .collect();
+fn canonical_houston_table_mut(
+    document: &mut toml_edit::DocumentMut,
+) -> Result<&mut toml_edit::Table, String> {
+    document
+        .as_table_mut()
+        .get_mut("mcp_servers")
+        .and_then(toml_edit::Item::as_table_mut)
+        .and_then(|servers| servers.get_mut(crate::mcp_server::SERVER_NAME))
+        .and_then(toml_edit::Item::as_table_mut)
+        .ok_or_else(|| {
+            "Codex config has no canonical mcp_servers.houston table — leaving it alone".to_string()
+        })
+}
+
+fn parse_edit_document(contents: &str) -> Result<toml_edit::ImDocument<String>, String> {
+    toml_edit::ImDocument::parse(contents.to_owned())
+        .map_err(|e| format!("Codex config.toml is not valid TOML ({e}) — leaving it alone"))
+}
+
+fn collect_value_spans(table: &toml_edit::Table, spans: &mut Vec<std::ops::Range<usize>>) {
+    for (_, item) in table.iter() {
+        match item {
+            toml_edit::Item::Value(value) => {
+                if let Some(span) = value.span() {
+                    spans.push(span);
+                }
+            }
+            toml_edit::Item::Table(table) => collect_value_spans(table, spans),
+            toml_edit::Item::ArrayOfTables(array) => {
+                for table in array.iter() {
+                    collect_value_spans(table, spans);
+                }
+            }
+            toml_edit::Item::None => {}
+        }
+    }
+}
+
+fn collect_table_starts(table: &toml_edit::Table, starts: &mut Vec<usize>) {
+    if let Some(span) = table.span() {
+        starts.push(span.start);
+    }
+    for (_, item) in table.iter() {
+        match item {
+            toml_edit::Item::Table(table) => collect_table_starts(table, starts),
+            toml_edit::Item::ArrayOfTables(array) => {
+                for table in array.iter() {
+                    collect_table_starts(table, starts);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn marker_line_start(contents: &str, position: usize) -> usize {
+    contents[..position]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0)
+}
+
+fn marker_line_end(contents: &str, position: usize) -> usize {
+    contents[position..]
+        .find('\n')
+        .map(|index| position + index + 1)
+        .unwrap_or(contents.len())
+}
+
+fn marker_positions(
+    contents: &str,
+    marker: &str,
+    value_spans: &[std::ops::Range<usize>],
+    section_start: usize,
+    section_end: usize,
+) -> Vec<usize> {
+    let mut positions = Vec::new();
+    let Some(section) = contents.get(section_start..section_end) else {
+        return positions;
+    };
+    for (offset, _) in section.match_indices(marker) {
+        let position = section_start + offset;
+        if value_spans.iter().any(|span| span.contains(&position)) {
+            continue;
+        }
+        let line_start = marker_line_start(contents, position);
+        let line_end = marker_line_end(contents, position);
+        let line = contents[line_start..line_end].trim();
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line == marker {
+            positions.push(position);
+        }
+    }
+    positions.sort_unstable();
+    positions.dedup();
+    positions
+}
+
+fn managed_marker_lines(
+    contents: &str,
+    document: &toml_edit::ImDocument<String>,
+    table: &toml_edit::Table,
+    timeout: Option<&toml_edit::Item>,
+) -> Result<Option<Vec<std::ops::Range<usize>>>, String> {
+    let table_span = table
+        .span()
+        .ok_or_else(|| "Codex Houston table has no source span — leaving it alone".to_string())?;
+    let mut starts = Vec::new();
+    collect_table_starts(document.as_table(), &mut starts);
+    let section_end = starts
+        .into_iter()
+        .filter(|start| *start > table_span.start)
+        .min()
+        .unwrap_or(contents.len());
+    let mut value_spans = Vec::new();
+    collect_value_spans(document.as_table(), &mut value_spans);
+    let opens = marker_positions(
+        contents,
+        CODEX_TIMEOUT_OPEN,
+        &value_spans,
+        table_span.start,
+        section_end,
+    );
+    let closes = marker_positions(
+        contents,
+        CODEX_TIMEOUT_CLOSE,
+        &value_spans,
+        table_span.start,
+        section_end,
+    );
     if opens.len() > 1 || closes.len() > 1 {
         return Err(
             "Codex config has multiple Houston timeout marker blocks — leaving it alone"
@@ -208,127 +277,160 @@ fn marker_bounds(
             "Codex config has a Houston timeout closing marker without an opener — leaving it alone"
                 .to_string(),
         ),
-        (Some(open), Some(close)) if open < close => Ok(Some((open, close))),
-        (Some(_), Some(_)) => Err(
-            "Codex config has reversed Houston timeout markers — leaving it alone".to_string(),
-        ),
+        (Some(open), Some(close)) => {
+            let timeout_span = timeout
+                .and_then(toml_edit::Item::span)
+                .ok_or_else(|| {
+                    "Codex config Houston timeout markers do not surround a timeout setting — leaving it alone"
+                        .to_string()
+                })?;
+            if open >= timeout_span.start || close <= timeout_span.end {
+                return Err(
+                    "Codex config Houston timeout markers do not surround the timeout setting — leaving it alone"
+                        .to_string(),
+                );
+            }
+            Ok(Some(vec![
+                marker_line_start(contents, open)..marker_line_end(contents, open),
+                marker_line_start(contents, close)..marker_line_end(contents, close),
+            ]))
+        }
     }
 }
 
-fn split_config(text: &str) -> (Vec<String>, &'static str, bool) {
-    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
-    (
-        text.lines().map(str::to_string).collect(),
-        newline,
-        text.ends_with('\n'),
-    )
-}
-
-fn join_config(lines: &[String], newline: &str, trailing_newline: bool) -> String {
-    let mut out = lines.join(newline);
-    if trailing_newline {
-        out.push_str(newline);
+fn remove_marker_lines(contents: &str, ranges: &[std::ops::Range<usize>]) -> String {
+    let mut updated = contents.to_string();
+    for range in ranges.iter().rev() {
+        updated.replace_range(range.clone(), "");
     }
-    out
+    updated
 }
 
-fn houston_entry(parsed: &toml::Value) -> Option<&toml::Value> {
-    parsed
-        .as_table()?
-        .get("mcp_servers")?
-        .as_table()?
-        .get(crate::mcp_server::SERVER_NAME)
-}
-
-fn houston_timeout_value(parsed: &toml::Value) -> Option<&toml::Value> {
-    houston_entry(parsed)?.as_table()?.get("tool_timeout_sec")
-}
-
-fn insert_managed_timeout(lines: &mut Vec<String>, start: usize, end: usize) {
-    let mut insertion = end;
-    while insertion > start + 1 && lines[insertion - 1].trim().is_empty() {
-        insertion -= 1;
+fn render_document(original: &str, document: toml_edit::DocumentMut) -> String {
+    let newline = if original.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let mut rendered = document.to_string();
+    if newline == "\r\n" {
+        rendered = rendered.replace('\n', "\r\n");
     }
-    lines.splice(
-        insertion..insertion,
-        [
-            CODEX_TIMEOUT_OPEN.to_string(),
-            format!(
-                "tool_timeout_sec = {}",
-                crate::mcp_launch::CODEX_TOOL_TIMEOUT_SEC
-            ),
-            CODEX_TIMEOUT_CLOSE.to_string(),
-        ],
-    );
+    if !original.ends_with(newline) && rendered.ends_with(newline) {
+        rendered.truncate(rendered.len() - newline.len());
+    }
+    rendered
 }
 
 fn ensure_timeout_text(contents: &str) -> Result<(String, TimeoutAction), String> {
-    let parsed: toml::Value = contents.parse().map_err(|e| {
-        format!("Codex config.toml is not valid TOML after registration ({e}) — leaving it alone")
-    })?;
-    if houston_entry(&parsed)
-        .and_then(|entry| entry.as_table())
-        .is_none()
-    {
-        return Err(
-            "Codex config has no Houston `mcp_servers.houston` table after registration — leaving it alone"
-                .to_string(),
-        );
-    }
-
-    let (mut lines, newline, trailing_newline) = split_config(contents);
-    let (start, end) = houston_section(&lines)?;
-    let timeout_lines: Vec<usize> = (start + 1..end)
-        .filter(|&index| is_assignment(&lines[index], "tool_timeout_sec"))
-        .collect();
-    let markers = marker_bounds(&lines, start, end)?;
+    let parsed = parse_edit_document(contents)?;
+    let table = canonical_houston_table(parsed.as_table())?;
+    let timeout = table.get("tool_timeout_sec");
+    let markers = managed_marker_lines(contents, &parsed, table, timeout)?;
     let expected = crate::mcp_launch::CODEX_TOOL_TIMEOUT_SEC as i64;
-    let managed_value = matches!(
-        houston_timeout_value(&parsed),
-        Some(toml::Value::Integer(value)) if *value == expected
-    );
+    let managed_value = timeout
+        .and_then(toml_edit::Item::as_value)
+        .and_then(toml_edit::Value::as_integer)
+        == Some(expected);
 
-    if let Some((open, close)) = markers {
-        if timeout_lines.len() > 1
-            || timeout_lines
-                .first()
-                .map(|index| *index <= open || *index >= close)
-                .unwrap_or(true)
-        {
-            return Err(
-                "Codex config Houston timeout marker does not contain exactly one timeout setting — leaving it alone"
-                    .to_string(),
-            );
-        }
+    if let Some(ranges) = markers {
         if managed_value {
             return Ok((contents.to_string(), TimeoutAction::AlreadyManaged));
         }
-        lines.remove(close);
-        lines.remove(open);
         return Ok((
-            join_config(&lines, newline, trailing_newline),
+            remove_marker_lines(contents, &ranges),
             TimeoutAction::UserOverride,
         ));
     }
 
-    if !timeout_lines.is_empty() {
+    if timeout.is_some() {
         return Ok((contents.to_string(), TimeoutAction::PreservedUser));
     }
 
-    insert_managed_timeout(&mut lines, start, end);
-    Ok((
-        join_config(&lines, newline, trailing_newline),
-        TimeoutAction::Added,
-    ))
+    let mut document = parsed.into_mut();
+    let table = canonical_houston_table_mut(&mut document)?;
+    let mut timeout = toml_edit::value(expected);
+    timeout
+        .as_value_mut()
+        .expect("toml_edit::value creates a value item")
+        .decor_mut()
+        .set_suffix(format!("\n{CODEX_TIMEOUT_CLOSE}"));
+    table.insert("tool_timeout_sec", timeout);
+    table
+        .key_mut("tool_timeout_sec")
+        .expect("inserted timeout key exists")
+        .leaf_decor_mut()
+        .set_prefix(format!("{CODEX_TIMEOUT_OPEN}\n"));
+    Ok((render_document(contents, document), TimeoutAction::Added))
 }
 
-fn persist_timeout(path: &Path, contents: &str) -> Result<TimeoutAction, String> {
-    let (updated, action) = ensure_timeout_text(contents)?;
-    if updated != contents {
-        std::fs::write(path, updated)
+fn validate_transform(
+    before: &str,
+    after: &str,
+    refreshed_endpoint: Option<&str>,
+) -> Result<(), String> {
+    let mut before_value: toml::Value = before
+        .parse()
+        .map_err(|e| format!("Codex config.toml is not valid TOML before transformation ({e})"))?;
+    let mut after_value: toml::Value = after
+        .parse()
+        .map_err(|e| format!("Codex config.toml is not valid TOML after transformation ({e})"))?;
+    let before_timeout = take_houston_field(&mut before_value, "tool_timeout_sec");
+    let after_timeout = take_houston_field(&mut after_value, "tool_timeout_sec");
+    match (&before_timeout, &after_timeout) {
+        (None, Some(toml::Value::Integer(value)))
+            if *value == crate::mcp_launch::CODEX_TOOL_TIMEOUT_SEC as i64 => {}
+        (Some(before), Some(after)) if before == after => {}
+        (None, None) => {}
+        _ => {
+            return Err(
+                "Codex timeout transformation changed an explicit or unexpected timeout value — leaving it alone"
+                    .to_string(),
+            )
+        }
+    }
+
+    let before_url = take_houston_field(&mut before_value, "url");
+    let after_url = take_houston_field(&mut after_value, "url");
+    if let Some(endpoint) = refreshed_endpoint {
+        if after_url != Some(toml::Value::String(endpoint.to_string())) {
+            return Err(
+                "Codex endpoint transformation did not produce the requested Houston URL — leaving it alone"
+                    .to_string(),
+            );
+        }
+    } else if before_url != after_url {
+        return Err(
+            "Codex timeout transformation changed the Houston endpoint — leaving it alone"
+                .to_string(),
+        );
+    }
+
+    if before_value != after_value {
+        return Err(
+            "Codex MCP transformation changed unrelated configuration — leaving it alone"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn take_houston_field(parsed: &mut toml::Value, key: &str) -> Option<toml::Value> {
+    parsed
+        .as_table_mut()?
+        .get_mut("mcp_servers")?
+        .as_table_mut()?
+        .get_mut(crate::mcp_server::SERVER_NAME)?
+        .as_table_mut()?
+        .remove(key)
+}
+
+fn write_config_if_changed(path: &Path, before: &str, after: &str) -> Result<(), String> {
+    if before != after {
+        std::fs::write(path, after)
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
     }
-    Ok(action)
+    Ok(())
 }
 
 fn owned_houston_port(contents: &str) -> Option<u16> {
@@ -348,47 +450,60 @@ fn owned_houston_port(contents: &str) -> Option<u16> {
     }
 }
 
-fn replace_assignment_value(line: &str, key: &str, value: &str) -> Option<String> {
-    if !is_assignment(line, key) {
-        return None;
-    }
-    let equals = line.find('=')?;
-    let rhs = &line[equals + 1..];
-    let leading_len = rhs.len() - rhs.trim_start().len();
-    let leading = &rhs[..leading_len];
-    let rest = &rhs[leading_len..];
-    let comment_index = rest.find('#').unwrap_or(rest.len());
-    let before_comment = &rest[..comment_index];
-    let trailing_len = before_comment.len() - before_comment.trim_end().len();
-    let trailing = &before_comment[before_comment.len() - trailing_len..];
-    let comment = &rest[comment_index..];
-    Some(format!(
-        "{}={}{}{}{}",
-        &line[..equals],
-        leading,
-        crate::agent_hooks::toml_string(value),
-        trailing,
-        comment
-    ))
-}
-
 fn refresh_endpoint_text(contents: &str, port: u16) -> Result<String, String> {
-    let (mut lines, newline, trailing_newline) = split_config(contents);
-    let (start, end) = houston_section(&lines)?;
-    let url_lines: Vec<usize> = (start + 1..end)
-        .filter(|&index| is_assignment(&lines[index], "url"))
-        .collect();
-    if url_lines.len() != 1 {
+    let parsed = parse_edit_document(contents)?;
+    let table = canonical_houston_table(parsed.as_table())?;
+    let url_item = table.get("url").ok_or_else(|| {
+        "Codex Houston entry has no single-line url setting to refresh safely — leaving it alone"
+            .to_string()
+    })?;
+    let url_span = url_item.span().ok_or_else(|| {
+        "Codex Houston entry has no single-line url setting to refresh safely — leaving it alone"
+            .to_string()
+    })?;
+    let raw_url = contents
+        .get(url_span)
+        .ok_or_else(|| "Codex Houston endpoint span is invalid — leaving it alone".to_string())?;
+    if raw_url.contains('\r')
+        || raw_url.contains('\n')
+        || raw_url.starts_with("\"\"\"")
+        || raw_url.starts_with("'''")
+    {
         return Err(
-            "Codex Houston entry has no single-line `url` setting to refresh safely — leaving it alone"
+            "Codex Houston entry has no single-line url setting to refresh safely — leaving it alone"
                 .to_string(),
         );
     }
-    let url_index = url_lines[0];
-    lines[url_index] =
-        replace_assignment_value(&lines[url_index], "url", &crate::mcp_launch::endpoint(port))
-            .expect("url_lines contains an url assignment");
-    let updated = join_config(&lines, newline, trailing_newline);
+    let quote = match raw_url.as_bytes() {
+        [b'"', .., b'"'] => '"',
+        [b'\'', .., b'\''] => '\'',
+        _ => {
+            return Err(
+                "Codex Houston entry has no single-line quoted url setting to refresh safely — leaving it alone"
+                    .to_string(),
+            )
+        }
+    };
+    let endpoint = crate::mcp_launch::endpoint(port);
+    let mut document = parsed.into_mut();
+    let table = canonical_houston_table_mut(&mut document)?;
+    let item = table
+        .get_mut("url")
+        .expect("url was present in the parsed Houston table");
+    let decor = item
+        .as_value()
+        .expect("url must be a scalar value")
+        .decor()
+        .clone();
+    let mut replacement: toml_edit::Item = format!("{quote}{endpoint}{quote}")
+        .parse()
+        .map_err(|e| format!("could not format refreshed Codex endpoint ({e})"))?;
+    *replacement
+        .as_value_mut()
+        .expect("a quoted endpoint parses as a value")
+        .decor_mut() = decor;
+    *item = replacement;
+    let updated = render_document(contents, document);
     let parsed: toml::Value = updated.parse().map_err(|e| {
         format!("refreshing Codex Houston endpoint produced invalid TOML ({e}) — leaving it alone")
     })?;
@@ -400,7 +515,7 @@ fn refresh_endpoint_text(contents: &str, port: u16) -> Result<String, String> {
         .and_then(toml::Value::as_table)
         .and_then(|entry| entry.get("url"))
         .and_then(toml::Value::as_str);
-    if actual != Some(crate::mcp_launch::endpoint(port).as_str()) {
+    if actual != Some(endpoint.as_str()) {
         return Err(
             "Codex Houston endpoint did not refresh to the requested port — leaving it alone"
                 .to_string(),
@@ -423,7 +538,12 @@ pub async fn run(codex_home: &Path, codex_bin: &Path, port: u16) -> Result<Strin
     };
     match decide(contents.as_deref(), port) {
         Decision::Current => {
-            let action = persist_timeout(&config_path, contents.as_deref().unwrap_or_default())?;
+            let original = contents
+                .as_deref()
+                .expect("current entry requires config contents");
+            let (updated, action) = ensure_timeout_text(original)?;
+            validate_transform(original, &updated, None)?;
+            write_config_if_changed(&config_path, original, &updated)?;
             Ok(format!(
                 "codex user-scope MCP entry `{}` already current; {}",
                 crate::mcp_server::SERVER_NAME,
@@ -435,18 +555,14 @@ pub async fn run(codex_home: &Path, codex_bin: &Path, port: u16) -> Result<Strin
             if let Some(existing_port) = contents.as_deref().and_then(owned_houston_port) {
                 // `codex mcp add` rewrites Houston's table and drops extra fields, so
                 // refresh only its endpoint and leave the user's table formatting intact.
-                let refreshed = refresh_endpoint_text(
-                    contents
-                        .as_deref()
-                        .expect("owned entry requires config contents"),
-                    port,
-                )?;
-                if refreshed != contents.as_deref().unwrap_or_default() {
-                    std::fs::write(&config_path, &refreshed).map_err(|e| {
-                        format!("could not write refreshed {}: {e}", config_path.display())
-                    })?;
-                }
-                let action = persist_timeout(&config_path, &refreshed)?;
+                let original = contents
+                    .as_deref()
+                    .expect("owned entry requires config contents");
+                let refreshed = refresh_endpoint_text(original, port)?;
+                let (updated, action) = ensure_timeout_text(&refreshed)?;
+                let endpoint = crate::mcp_launch::endpoint(port);
+                validate_transform(original, &updated, Some(&endpoint))?;
+                write_config_if_changed(&config_path, original, &updated)?;
                 return Ok(format!(
                     "refreshed codex user-scope MCP entry `{}` from port {existing_port} to {port}; {}",
                     crate::mcp_server::SERVER_NAME,
@@ -478,7 +594,9 @@ pub async fn run(codex_home: &Path, codex_bin: &Path, port: u16) -> Result<Strin
                         config_path.display()
                     )
                 })?;
-                let action = persist_timeout(&config_path, &registered)?;
+                let (updated, action) = ensure_timeout_text(&registered)?;
+                validate_transform(&registered, &updated, None)?;
+                write_config_if_changed(&config_path, &registered, &updated)?;
                 Ok(format!(
                     "registered `{}` in codex user scope; {} (flagless `codex` in Houston \
                      panes now connects)",
@@ -740,6 +858,116 @@ args = ["--stdio"]
         assert!(after.contains(CODEX_TIMEOUT_OPEN), "{after}");
         assert!(after.contains("tool_timeout_sec = 630"), "{after}");
         assert!(after.contains(CODEX_TIMEOUT_CLOSE), "{after}");
+    }
+
+    #[tokio::test]
+    async fn adding_timeout_preserves_crlf_and_existing_value_formatting() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let original = "# keep\r\n[mcp_servers.houston]\r\nurl = 'http://127.0.0.1:4242/mcp'\r\nbearer_token_env_var='HOUSTON_MCP_TOKEN'\r\ncustom = [1, 2] # keep\r\n";
+        std::fs::write(home.join("config.toml"), original).unwrap();
+
+        run(home, Path::new("/nonexistent/codex"), 4242)
+            .await
+            .unwrap();
+        let after = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(after.starts_with(original), "{after:?}");
+        assert!(
+            after.contains("url = 'http://127.0.0.1:4242/mcp'"),
+            "{after:?}"
+        );
+        assert!(after.contains(CODEX_TIMEOUT_OPEN), "{after:?}");
+        assert!(after.contains(CODEX_TIMEOUT_CLOSE), "{after:?}");
+        assert!(
+            after
+                .as_bytes()
+                .windows(2)
+                .filter(|pair| pair[1] == b'\n')
+                .all(|pair| pair[0] == b'\r'),
+            "{after:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_quoted_following_table_does_not_receive_houston_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let original = "[mcp_servers.houston]\nurl = \"http://127.0.0.1:4242/mcp\"\nbearer_token_env_var = \"HOUSTON_MCP_TOKEN\"\n\n[mcp_servers.\"other#name\"]\nurl = \"http://127.0.0.1:9000/mcp\"\n";
+        std::fs::write(home.join("config.toml"), original).unwrap();
+
+        run(home, Path::new("/nonexistent/codex"), 4242)
+            .await
+            .unwrap();
+        let after = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        let parsed: toml::Value = after.parse().unwrap();
+        assert_eq!(
+            parsed["mcp_servers"]["houston"]["tool_timeout_sec"],
+            toml::Value::Integer(630)
+        );
+        assert!(!parsed["mcp_servers"]["other#name"]
+            .as_table()
+            .unwrap()
+            .contains_key("tool_timeout_sec"));
+        assert!(after.contains("[mcp_servers.\"other#name\"]"), "{after}");
+    }
+
+    #[tokio::test]
+    async fn table_like_and_assignment_like_multiline_string_content_is_not_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let original = "[mcp_servers.houston]\nurl = \"http://127.0.0.1:4242/mcp\"\nbearer_token_env_var = \"HOUSTON_MCP_TOKEN\"\nnotes = \"\"\"\n[mcp_servers.looks_like_a_table]\ntool_timeout_sec = 90\n\"\"\"\n";
+        std::fs::write(home.join("config.toml"), original).unwrap();
+
+        run(home, Path::new("/nonexistent/codex"), 4242)
+            .await
+            .unwrap();
+        let after = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        let parsed: toml::Value = after.parse().unwrap();
+        assert_eq!(
+            parsed["mcp_servers"]["houston"]["tool_timeout_sec"],
+            toml::Value::Integer(630)
+        );
+        assert_eq!(
+            parsed["mcp_servers"]["houston"]["notes"],
+            toml::Value::String(
+                "[mcp_servers.looks_like_a_table]\ntool_timeout_sec = 90\n".to_string()
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn an_explicit_timeout_with_a_noncanonical_escaped_key_is_preserved() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let original = "[mcp_servers.houston]\nurl = \"http://127.0.0.1:4242/mcp\"\nbearer_token_env_var = \"HOUSTON_MCP_TOKEN\"\n\"tool_timeout_\\u0073ec\" = 90 # user choice\n";
+        std::fs::write(home.join("config.toml"), original).unwrap();
+
+        run(home, Path::new("/nonexistent/codex"), 4242)
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(home.join("config.toml")).unwrap(),
+            original
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_timeout_validation_does_not_persist_a_refreshed_endpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let original = format!(
+            "[mcp_servers.houston]\nurl = \"http://127.0.0.1:1111/mcp\"\nbearer_token_env_var = \"HOUSTON_MCP_TOKEN\"\n{CODEX_TIMEOUT_OPEN}\n"
+        );
+        std::fs::write(home.join("config.toml"), &original).unwrap();
+
+        let err = run(home, Path::new("/nonexistent/codex"), 4242)
+            .await
+            .unwrap_err();
+        assert!(err.contains("unclosed"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(home.join("config.toml")).unwrap(),
+            original
+        );
     }
 
     #[tokio::test]
