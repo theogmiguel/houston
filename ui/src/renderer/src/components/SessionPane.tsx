@@ -320,7 +320,7 @@ export function BranchChip({
         type="button"
         data-testid="branch-chip"
         aria-label={`Branch ${branch}`}
-        className="[@container_(max-width:400px)]:hidden inline-flex items-center gap-[var(--space-1-5)] min-w-0 flex-none max-w-[180px] px-[var(--space-1-5)] h-[17px] rounded-[var(--tr-radius-sm)] border-0 bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] text-[var(--text-secondary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-default"
+        className="[@container_(max-width:400px)]:hidden inline-flex items-center gap-[var(--space-1-5)] min-w-0 flex-none max-w-[180px] px-[var(--space-1-5)] h-[var(--h-tag-chip)] rounded-[var(--tr-radius-sm)] border-0 bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] text-[var(--text-secondary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-default"
       >
         <Icon glyph={IconGitBranch} role="small" />
         <span className="truncate">{branch}</span>
