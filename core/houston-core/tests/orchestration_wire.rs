@@ -928,25 +928,20 @@ async fn n_children_finishing_together_cost_one_wake() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
-    let submits_started = std::time::Instant::now();
     for (i, kid) in kids.iter().enumerate() {
         r.daemon
             .orchestrate_submit(*kid, format!("RESULT-{i} the task is done").into())
             .unwrap();
     }
-    for kid in &kids {
-        apply_hook_event(r._state.path(), *kid, "Stop").await;
-    }
-    let submits_took = submits_started.elapsed();
-    assert!(
-        submits_took.as_millis() < u128::from(houston_core::orchestrate::HANDOFF_BATCH_MS),
-        "the three submits themselves took {submits_took:?}, which is past the {} ms batch \
-         window — this machine is too loaded to observe the batching property, not a \
-         regression in it",
-        houston_core::orchestrate::HANDOFF_BATCH_MS
-    );
-
     let mut rx = r.daemon.observe();
+    for kid in &kids {
+        assert_eq!(
+            r.daemon
+                .handle_hook_from(*kid, proto::AgentKind::Codex, "Stop", None),
+            houston_core::hook_drop::DropVerdict::Applied,
+        );
+    }
+
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;
     assert_eq!(
         acc.matches("--- Houston Inbox:").count(),
@@ -3319,6 +3314,7 @@ async fn a_silent_child_is_flagged_stalled_once_and_the_flag_clears_itself() {
         .post_spawn(&token, serde_json::json!({"kind": "grok", "prompt": "go"}))
         .await;
     let kid = body["session_id"].as_u64().unwrap() as u32;
+    await_child_echo(&r.daemon, kid, "FIXTURE-READY").await;
     apply_hook_event(r._state.path(), pane.id, "Stop").await;
     assert!(!r.daemon.delegation_of(kid).unwrap().stalled);
 

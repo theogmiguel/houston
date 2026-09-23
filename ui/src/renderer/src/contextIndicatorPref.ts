@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
-// Visibility of the context downbar. On by default; a user who does not want a
-// persistent strip turns it off here, which reclaims the row.
+// Keep the existing key so an explicit visibility choice survives the move
+// from the global downbar to the per-pane indicator.
 const KEY = 'tr-context-bar'
 
 function load(): boolean {
@@ -23,11 +23,11 @@ function subscribe(onChange: () => void): () => void {
   }
 }
 
-export function getContextBarVisible(): boolean {
+export function getContextIndicatorVisible(): boolean {
   return visible
 }
 
-export function setContextBarVisible(next: boolean): void {
+export function setContextIndicatorVisible(next: boolean): void {
   if (visible === next) return
   visible = next
   try {
@@ -37,15 +37,15 @@ export function setContextBarVisible(next: boolean): void {
   emit()
 }
 
-export function setContextBarForTests(next: boolean): void {
+export function setContextIndicatorForTests(next: boolean): void {
   visible = next
   emit()
 }
 
-export function useContextBarVisible(): boolean {
+export function useContextIndicatorVisible(): boolean {
   return useSyncExternalStore(
     subscribe,
-    getContextBarVisible,
+    getContextIndicatorVisible,
     () => true
   )
 }

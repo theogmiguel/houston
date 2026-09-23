@@ -138,8 +138,6 @@ import {
 } from "./components/SessionPane";
 import { SurfaceBoundary } from "./components/SurfaceBoundary";
 import { Shell } from "./components/Shell/Shell";
-import { ContextBar } from "./components/ContextBar";
-import { useContextBarVisible } from "./contextBarPref";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
 import type { HandoffSource } from "./components/PaneHandoff";
@@ -377,6 +375,100 @@ const PANE_GROW_TTL_MS = 1_000;
 const REVIEW_INTENT_TTL_MS = 10_000;
 
 const OWED_FLASH_MS = 1_200;
+const NOTICE_CORRELATION_MS = 5_000;
+
+type AgentNoticeMessage = Extract<ServerMsg, { type: "agent_notice" }>;
+type SessionStateMessage = Extract<ServerMsg, { type: "session_state" }>;
+type RecentAgentNotice = { kind: AgentNoticeMessage["kind"]; at: number };
+
+const AGENT_NOTICE_PRESENTATION: Record<
+  AgentNoticeMessage["kind"],
+  { text: string; ringTone: NoticeRingTone }
+> = {
+  finished: { text: "finished — awaiting you", ringTone: "completed" },
+  error: { text: "hit an error", ringTone: "error" },
+  "needs-input": { text: "needs your input", ringTone: "needs-input" },
+};
+
+function duplicatesAgentEnd(
+  msg: SessionStateMessage,
+  recentAgent: RecentAgentNotice | undefined,
+): boolean {
+  return (
+    msg.state === "exited" &&
+    recentAgent !== undefined &&
+    recentAgent.kind !== "needs-input" &&
+    (msg.exit_code === 0 || recentAgent.kind === "error") &&
+    Date.now() - recentAgent.at < NOTICE_CORRELATION_MS
+  );
+}
+
+function sessionStateNotification(
+  msg: SessionStateMessage,
+  info: SessionInfo,
+  recentAgent: RecentAgentNotice | undefined,
+) {
+  if (duplicatesAgentEnd(msg, recentAgent)) return null;
+  const text =
+    msg.state === "exited"
+      ? `finished${msg.exit_code !== null ? ` (exit ${msg.exit_code})` : ""}`
+      : msg.state;
+  return addNotification({
+    session: msg.session,
+    kind: "session-state",
+    title: info.title,
+    dir: info.project_dir,
+    text,
+  });
+}
+
+function replacePaneNotice(prev: Notice[], next: Notice): Notice[] {
+  return [
+    next,
+    ...prev.filter((notice) => notice.session !== next.session),
+  ].slice(0, 200);
+}
+
+type GridLifecycle =
+  | "starting"
+  | "working"
+  | "needs-input"
+  | "idle"
+  | "unavailable"
+  | "stopped";
+
+function gridLifecycle(sessions: SessionInfo[]): {
+  state: GridLifecycle;
+  label: string;
+} {
+  const live = sessions.filter((session) => isLive(session.state));
+  if (live.length === 0) return { state: "stopped", label: "No live panes" };
+
+  const count = (status: SessionInfo["status"]): number =>
+    live.filter((session) => session.status === status).length;
+  const needsInput = count("needs-input");
+  const working = count("working");
+  const starting = count("spawning");
+  const idle = count("idle");
+  const unavailable = count("unavailable") + count(null) + count(undefined);
+  const state: GridLifecycle = needsInput
+    ? "needs-input"
+    : working
+      ? "working"
+      : starting
+        ? "starting"
+        : unavailable
+          ? "unavailable"
+          : "idle";
+  const parts = [
+    needsInput ? `${needsInput} need input` : "",
+    working ? `${working} working` : "",
+    starting ? `${starting} starting` : "",
+    idle ? `${idle} ready` : "",
+    unavailable ? `${unavailable} status unavailable` : "",
+  ].filter(Boolean);
+  return { state, label: parts.join(" · ") };
+}
 
 type RosterPatchMsg = Extract<
   ServerMsg,
@@ -574,9 +666,10 @@ export function App(): React.JSX.Element {
     handleExpand,
     expandedIn,
   } = useShellFocus();
-  const contextBarVisible = useContextBarVisible();
   const railWidth = useRailWidth();
   const [notices, setNotices] = useState<Notice[]>([]);
+  const recentAgentNoticeRef = useRef(new Map<number, RecentAgentNotice>());
+  const failedSessionExitsRef = useRef(new Set<number>());
   const [inboxRows, setInboxRows] = useState<Map<bigint, InboxRow>>(new Map());
   const [flashOwedId, setFlashOwedId] = useState<bigint | null>(null);
   const flashOwedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -901,6 +994,8 @@ export function App(): React.JSX.Element {
   }, [workspaces]);
   const selectedWsRef = useRef(selectedWs);
   selectedWsRef.current = selectedWs;
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const layoutsRef = useRef(layouts);
@@ -911,9 +1006,21 @@ export function App(): React.JSX.Element {
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
 
+  const markPaneNoticesRead = useCallback((session: number): void => {
+    setNotices((prev) =>
+      prev.some((notice) => notice.session === session)
+        ? prev.filter((notice) => notice.session !== session)
+        : prev,
+    );
+    clearPaneNoticeRing(session);
+  }, []);
+
   const selectNoticeTarget = (dir: string, session: number): void => {
     setSelectedWs(dir);
-    if (sessionsRef.current.has(session)) setActiveId(session);
+    if (sessionsRef.current.has(session)) {
+      setActiveId(session);
+      markPaneNoticesRead(session);
+    }
   };
 
   const paneRoster = useRef<PaneRoster>({
@@ -937,12 +1044,13 @@ export function App(): React.JSX.Element {
   });
 
   useEffect(() => {
-    setNotices((prev) =>
-      prev.some((n) => !n.read && n.dir === selectedWs)
-        ? prev.map((n) => (n.dir === selectedWs ? { ...n, read: true } : n))
-        : prev,
-    );
-  }, [selectedWs]);
+    const markVisiblePaneRead = (): void => {
+      if (activeIdRef.current !== null)
+        markPaneNoticesRead(activeIdRef.current);
+    };
+    window.addEventListener("focus", markVisiblePaneRead);
+    return () => window.removeEventListener("focus", markVisiblePaneRead);
+  }, [markPaneNoticesRead]);
 
   const [focusBrowserUrl, setFocusBrowserUrl] = useState(0);
   const [reviewSessions, setReviewSessions] = useState<
@@ -986,6 +1094,113 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     let cancelled = false;
     let bootTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function publishPaneNotice(
+      ninfo: SessionInfo,
+      kind: AgentNoticeMessage["kind"],
+      text = AGENT_NOTICE_PRESENTATION[kind].text,
+      recordKind = "agent-notice",
+    ): void {
+      const { ringTone } = AGENT_NOTICE_PRESENTATION[kind];
+      const noticeSeverity = severityForNotice("agent-notice", kind);
+      const bornRead = activeIdRef.current === ninfo.id && document.hasFocus();
+      const noticeRec = addNotification({
+        session: ninfo.id,
+        kind: recordKind,
+        title: ninfo.title,
+        dir: ninfo.project_dir,
+        text,
+        read: bornRead,
+      });
+      if (noticeRec) {
+        if (!bornRead) {
+          setNotices((prev) =>
+            replacePaneNotice(prev, {
+              ...toNotice(noticeRec, kind),
+              severity: noticeSeverity,
+              ringTone,
+            }),
+          );
+          setPaneNoticeRing(ninfo.id, ringTone);
+        }
+        if (
+          notifyAllowed(
+            notifyEnabledRef.current,
+            notifyKindsRef.current,
+            noticeSeverity,
+          )
+        ) {
+          const noticeSession = ninfo.id;
+          const noticeDir = ninfo.project_dir;
+          const noticeTitle = ninfo.title;
+          notifyThroughFocusGate(
+            isFocused,
+            (focused) =>
+              focused && activeIdRef.current === noticeSession,
+            () => ({
+              title: noticeTitle,
+              body: text,
+              soundUrl: notifySoundRef.current
+                ? NOTICE_SEVERITY_SOUND[noticeSeverity]
+                : undefined,
+              onClick: () => {
+                void windowControl("focus").catch((err: unknown) => {
+                  console.warn(
+                    "houston: windowControl(focus) failed",
+                    err,
+                  );
+                });
+                selectNoticeTarget(noticeDir, noticeSession);
+              },
+            }),
+          );
+        }
+      }
+    }
+
+    function handleSessionState(msg: SessionStateMessage): void {
+      if (
+        msg.state === "exited" &&
+        msg.exit_code !== null &&
+        msg.exit_code !== 0
+      ) {
+        failedSessionExitsRef.current.add(msg.session);
+      } else {
+        failedSessionExitsRef.current.delete(msg.session);
+      }
+      setSessions((prev) => {
+        const next = new Map(prev);
+        const s = next.get(msg.session);
+        if (s) next.set(msg.session, { ...s, state: msg.state });
+        return next;
+      });
+      if (!isLive(msg.state)) {
+        setActiveId((cur) => (cur === msg.session ? null : cur));
+        const info = sessionsRef.current.get(msg.session);
+        const recentAgent = recentAgentNoticeRef.current.get(msg.session);
+        if (info && failedSessionExitsRef.current.has(msg.session)) {
+          if (!duplicatesAgentEnd(msg, recentAgent)) {
+            publishPaneNotice(
+              info,
+              "error",
+              `exited (exit ${msg.exit_code})`,
+              "session-state",
+            );
+          }
+        } else if (info) {
+          const stateRec = sessionStateNotification(
+            msg,
+            info,
+            recentAgent,
+          );
+          if (stateRec) {
+            setNotices((prev) =>
+              replacePaneNotice(prev, toNotice(stateRec)),
+            );
+          }
+        }
+      }
+    }
 
     function wire(client: HoustonClient, boot: boolean): void {
       let helloed = false;
@@ -1107,33 +1322,7 @@ export function App(): React.JSX.Element {
             break;
           }
           case "session_state":
-            setSessions((prev) => {
-              const next = new Map(prev);
-              const s = next.get(msg.session);
-              if (s) next.set(msg.session, { ...s, state: msg.state });
-              return next;
-            });
-            if (!isLive(msg.state)) {
-              setActiveId((cur) => (cur === msg.session ? null : cur));
-              const info = sessionsRef.current.get(msg.session);
-              if (info) {
-                const text =
-                  msg.state === "exited"
-                    ? `finished${msg.exit_code !== null ? ` (exit ${msg.exit_code})` : ""}`
-                    : msg.state;
-                const stateRec = addNotification({
-                  session: msg.session,
-                  kind: "session-state",
-                  title: info.title,
-                  dir: info.project_dir,
-                  text,
-                });
-                if (stateRec)
-                  setNotices((prev) =>
-                    [toNotice(stateRec), ...prev].slice(0, 200),
-                  );
-              }
-            }
+            handleSessionState(msg);
             break;
           case "session_removed":
             setSessions((prev) => {
@@ -1144,6 +1333,8 @@ export function App(): React.JSX.Element {
             setExpandedId((cur) => (cur === msg.session ? null : cur));
             setActiveId((cur) => (cur === msg.session ? null : cur));
             clearPaneNoticeRing(msg.session);
+            recentAgentNoticeRef.current.delete(msg.session);
+            failedSessionExitsRef.current.delete(msg.session);
             forgetDictationSession(msg.session);
             setVoiceIndicator(msg.session, null);
             break;
@@ -1186,72 +1377,17 @@ export function App(): React.JSX.Element {
             break;
 
           case "agent_notice": {
+            if (
+              msg.kind === "finished" &&
+              failedSessionExitsRef.current.has(msg.session)
+            ) break;
             const ninfo = sessionsRef.current.get(msg.session);
             if (ninfo) {
-              const text =
-                msg.kind === "finished"
-                  ? "finished — awaiting you"
-                  : msg.kind === "needs-input"
-                    ? "needs your input"
-                    : "hit an error";
-              const bornRead = ninfo.project_dir === selectedWsRef.current;
-              const noticeRec = addNotification({
-                session: msg.session,
-                kind: "agent-notice",
-                title: ninfo.title,
-                dir: ninfo.project_dir,
-                text,
-                read: bornRead,
+              recentAgentNoticeRef.current.set(msg.session, {
+                kind: msg.kind,
+                at: Date.now(),
               });
-              if (noticeRec) {
-                const ringTone: NoticeRingTone | undefined =
-                  msg.kind === "finished"
-                    ? "completed"
-                    : msg.kind === "error"
-                      ? "error"
-                      : msg.kind === "needs-input"
-                        ? "needs-input"
-                        : undefined;
-                setNotices((prev) =>
-                  [
-                    { ...toNotice(noticeRec, msg.kind), ringTone },
-                    ...prev,
-                  ].slice(0, 200),
-                );
-                if (ringTone) setPaneNoticeRing(msg.session, ringTone);
-                const noticeSeverity = severityForNotice(msg.kind, ninfo.agent);
-                if (
-                  notifyAllowed(
-                    notifyEnabledRef.current,
-                    notifyKindsRef.current,
-                    noticeSeverity,
-                  )
-                ) {
-                  const noticeSession = msg.session;
-                  const noticeDir = ninfo.project_dir;
-                  const noticeTitle = ninfo.title;
-                  notifyThroughFocusGate(
-                    isFocused,
-                    (focused) => focused && noticeDir === selectedWsRef.current,
-                    () => ({
-                      title: noticeTitle,
-                      body: text,
-                      soundUrl: notifySoundRef.current
-                        ? NOTICE_SEVERITY_SOUND[noticeSeverity]
-                        : undefined,
-                      onClick: () => {
-                        void windowControl("focus").catch((err: unknown) => {
-                          console.warn(
-                            "houston: windowControl(focus) failed",
-                            err,
-                          );
-                        });
-                        selectNoticeTarget(noticeDir, noticeSession);
-                      },
-                    }),
-                  );
-                }
-              }
+              publishPaneNotice(ninfo, msg.kind);
             }
             break;
           }
@@ -1570,7 +1706,6 @@ export function App(): React.JSX.Element {
 
   const warmLayouts = useMemo(() => {
     const map = new Map<string, LayoutState>();
-    if (selectedWs === "all") return map;
     for (const w of orderedWorkspaces) {
       const grids = gridsFor(w.path);
       const active = activeGridId(w.path);
@@ -1585,18 +1720,11 @@ export function App(): React.JSX.Element {
         wsSessionIds,
         layouts,
       );
-      if (w.path === selectedWs) {
-        for (const [key, st] of synced) map.set(key, st);
-      } else {
-        const key = gridStorageKey(w.path, active);
-        const st = synced.get(key);
-        if (st) map.set(key, st);
-      }
+      for (const [key, st] of synced) map.set(key, st);
     }
     return map;
   }, [
     orderedWorkspaces,
-    selectedWs,
     layouts,
     sessions,
     gridsFor,
@@ -1610,26 +1738,40 @@ export function App(): React.JSX.Element {
         id: string;
         name: string;
         count?: number;
-        state?: "online" | "warning" | "idle";
+        state?: GridLifecycle;
+        statusLabel?: string;
+        attention?: number;
+        attentionTone?: "error" | "needs-input" | "info";
         sessionIds?: number[];
         tagIds?: number[];
       }[]
     > = {};
+    const unreadBySession = new Map<number, Notice[]>();
+    for (const notice of notices) {
+      if (notice.read || notice.session === 0) continue;
+      const rows = unreadBySession.get(notice.session) ?? [];
+      rows.push(notice);
+      unreadBySession.set(notice.session, rows);
+    }
     for (const w of orderedWorkspaces) {
       out[w.path] = gridsFor(w.path).map((g) => {
         const st = warmLayouts.get(gridStorageKey(w.path, g.id));
         if (!st) return { id: g.id, name: g.name };
         const ids = preorderSessions(st.tree);
-        const live = ids
+        const gridSessions = ids
           .map((id) => sessions.get(id))
-          .filter((s): s is SessionInfo => s?.state === "running");
-        const state: "online" | "warning" | "idle" = live.some(
-          (s) => s.status === "needs-input",
+          .filter((session): session is SessionInfo => session !== undefined);
+        const lifecycle = gridLifecycle(gridSessions);
+        const gridNotices = ids.flatMap(
+          (id) => unreadBySession.get(id) ?? [],
+        );
+        const attentionTone = gridNotices.some(
+          (notice) => notice.severity === "error",
         )
-          ? "warning"
-          : live.length > 0
-            ? "online"
-            : "idle";
+          ? "error"
+          : gridNotices.some((notice) => notice.severity === "needs-input")
+            ? "needs-input"
+            : "info";
         const tagIds = [
           ...new Set(
             ids.flatMap((id) => sessions.get(id)?.tags ?? []),
@@ -1639,14 +1781,17 @@ export function App(): React.JSX.Element {
           id: g.id,
           name: g.name,
           count: ids.length,
-          state,
+          state: lifecycle.state,
+          statusLabel: lifecycle.label,
+          attention: gridNotices.length,
+          attentionTone,
           sessionIds: ids,
           tagIds,
         };
       });
     }
     return out;
-  }, [orderedWorkspaces, gridsFor, warmLayouts, sessions]);
+  }, [orderedWorkspaces, gridsFor, warmLayouts, sessions, notices]);
 
   const paletteGrids: GridTarget[] = useMemo(
     () =>
@@ -2025,12 +2170,13 @@ export function App(): React.JSX.Element {
       if (typeof key === "number") {
         setActiveLeaf(null);
         setActiveId(key);
+        markPaneNoticesRead(key);
       } else {
         setActiveId(null);
         setActiveLeaf(key);
       }
     },
-    [mutateTree, setActiveId, setActiveLeaf],
+    [markPaneNoticesRead, mutateTree, setActiveId, setActiveLeaf],
   );
   const keyboardTargetPane = useCallback(
     (): PaneKey | null =>
@@ -2071,8 +2217,6 @@ export function App(): React.JSX.Element {
     [movePaneFrom],
   );
 
-  const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
   const orderedIdsForSkillRef = useRef(orderedIds);
   orderedIdsForSkillRef.current = orderedIds;
   const connForSkillRef = useRef(conn);
@@ -2093,11 +2237,12 @@ export function App(): React.JSX.Element {
         return;
       }
       setActiveId(target);
+      markPaneNoticesRead(target);
       if (!cur.client.sendStdin(target, invoke)) {
         pushError("connection lost — skill invocation was not delivered");
       }
     },
-    [pushError],
+    [markPaneNoticesRead, pushError],
   );
   const canRunSkill = conn.kind === "ready" && orderedIds.some(
     (id) => isLive(sessions.get(id)?.state ?? "exited"),
@@ -2833,6 +2978,7 @@ export function App(): React.JSX.Element {
               mutateTree((t) => setActiveStackTab(t, container.id, id));
           }
           setActiveId(id);
+          markPaneNoticesRead(id);
         }
       } else if (resolveGlobalMatch(newTerminalShortcut, keymapOverrides)(e)) {
         newTerminal();
@@ -2919,6 +3065,7 @@ export function App(): React.JSX.Element {
     tidyPanes,
     equalizePanesNow,
     focusAdjacentPane,
+    markPaneNoticesRead,
     movePaneBy,
   ]);
 
@@ -2985,9 +3132,7 @@ export function App(): React.JSX.Element {
 
   const jumpTo = (n: Notice): void => {
     selectNoticeTarget(n.dir, n.session);
-    setNotices((prev) =>
-      prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)),
-    );
+    setNotices((prev) => prev.filter((x) => x.id !== n.id));
     closePopover("bell");
   };
 
@@ -3068,7 +3213,7 @@ export function App(): React.JSX.Element {
     equalizePanes: paneCount > 1 ? equalizePanesNow : undefined,
     openNotifications: () => setActivePopover("bell"),
     markAllNotificationsRead: () => {
-      setNotices((prev) => prev.map((n) => ({ ...n, read: true })));
+      setNotices([]);
       clearAllPaneNoticeRings();
     },
     openShortcutSheet: () => setShortcutSheet(true),
@@ -3108,7 +3253,6 @@ export function App(): React.JSX.Element {
           onBackgroundUnavailable={onBackgroundUnavailable}
           railWidth={railWidth}
           railCollapsed={sidebarRail}
-          downbar={contextBarVisible}
         >
           <RailResizeHandle
             width={railWidth}
@@ -3306,9 +3450,7 @@ export function App(): React.JSX.Element {
                         <button
                           className={`btn ${BTN_GHOST} ${BELL_GHOST} [-webkit-app-region:no-drag]`}
                           onClick={() => {
-                            setNotices((prev) =>
-                              prev.map((n) => ({ ...n, read: true })),
-                            );
+                            setNotices([]);
                             clearAllPaneNoticeRings();
                             for (const r of owed)
                               if (r.delivered_at == null) client.inboxAck(r.id);
@@ -3515,7 +3657,10 @@ export function App(): React.JSX.Element {
                     shellIntegration={shellIntegration}
                     workspaceDir={selectedWs}
                     onReconnectSsh={openSshReconnect}
-                    onActivate={setActiveId}
+                    onActivate={(id) => {
+                      setActiveId(id);
+                      markPaneNoticesRead(id);
+                    }}
                     onExpand={handleExpand}
                     onZoom={changeFont}
                     onShellZoom={changeZoom}
@@ -3609,7 +3754,10 @@ export function App(): React.JSX.Element {
                               shellIntegration={shellIntegration}
                               workspaceDir={w.path}
                               onReconnectSsh={openSshReconnect}
-                    onActivate={setActiveId}
+                              onActivate={(id) => {
+                                setActiveId(id);
+                                markPaneNoticesRead(id);
+                              }}
                               onExpand={handleExpand}
                               onZoom={changeFont}
                               onShellZoom={changeZoom}
@@ -4208,16 +4356,6 @@ export function App(): React.JSX.Element {
             />
           )}
 
-          {contextBarVisible && (
-            <div
-              data-testid="context-downbar"
-              className="[grid-area:downbar] min-w-0 border-t border-t-[var(--divider)] bg-[var(--material-shell-bg)]"
-            >
-              <ContextBar
-                context={activeId != null ? sessions.get(activeId)?.context ?? null : null}
-              />
-            </div>
-          )}
         </Shell>
       </KeymapOverridesContext.Provider>
     </TerminalTuningContext.Provider>

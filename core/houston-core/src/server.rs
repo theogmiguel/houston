@@ -348,6 +348,9 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
         return;
     }
 
+    // Subscribe before taking the snapshot so a transition cannot fall into
+    // the gap between HelloOk construction and the live stream.
+    let mut rx = daemon.subscribe();
     let flags = daemon.safe_mode_flags();
     let hello_ok = proto::ServerMsg::HelloOk {
         protocol: proto::PROTOCOL_VERSION,
@@ -370,7 +373,6 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
     let mut frames_wanted = AttachSet::new(Arc::clone(&daemon), Arc::clone(&wake));
     let conn_id = daemon.conn_register();
 
-    let mut rx = daemon.subscribe();
     let (reply_tx, mut reply_rx) = futures_channel::mpsc::channel::<Message>(CONTROL_REPLY_QUEUE);
     loop {
         tokio::select! {
@@ -987,6 +989,8 @@ async fn dispatch(
             Ok(())
         }
         proto::ClientMsg::AgentHooks => {
+            let models = Arc::clone(daemon);
+            tokio::spawn(async move { models.refresh_model_catalog(false).await });
             let daemon = Arc::clone(daemon);
             tokio::task::spawn_blocking(move || {
                 let providers = daemon.agent_hooks_state_rescanned();

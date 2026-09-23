@@ -5,6 +5,34 @@ use futures_util::SinkExt;
 use houston_protocol as proto;
 use tokio_tungstenite::tungstenite::Message;
 
+#[tokio::test]
+async fn scheduled_cycle_honors_a_persisted_disabled_policy() {
+    let (_addr, dir, daemon) = start_daemon_without_mail_loop().await;
+    let connection = rusqlite::Connection::open(dir.path().join("test.db")).unwrap();
+    connection
+        .execute(
+            "INSERT INTO settings (key, value) VALUES ('updates_check', '0')",
+            [],
+        )
+        .unwrap();
+    assert_eq!(daemon.update_state(), proto::UpdateState::Unknown);
+
+    let loop_task = tokio::spawn({
+        let daemon = daemon.clone();
+        async move { daemon.update_check_loop().await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while daemon.update_state() != proto::UpdateState::Disabled {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("scheduled cycle did not apply the disabled policy");
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(daemon.update_state(), proto::UpdateState::Disabled);
+    loop_task.abort();
+}
+
 // The check is off, so `check_for_update` must return before it builds a client at all.
 // `Disabled` is the discriminator: any request, reachable or not, moves the state through
 // `Checking` to `UpToDate` or `Failed`, and none of those can be reached from here.

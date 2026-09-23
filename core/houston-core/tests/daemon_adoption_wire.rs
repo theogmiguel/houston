@@ -236,19 +236,10 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
         "the session must keep echoing after the handoff: {seen_after:?}"
     );
 
-    let client = reqwest::Client::new();
-    let _ = client
-        .post(format!("http://127.0.0.1:{}/manage", after.port))
-        .header("Authorization", format!("Bearer {}", after.token))
-        .json(&proto::ManageRequest {
-            manage_version: proto::MANAGE_VERSION,
-            verb: proto::ManageVerb::DaemonShutdown,
-            candidate_bin: None,
-        })
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await;
-    let _ = guard.0.wait();
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 #[tokio::test]
@@ -280,7 +271,7 @@ async fn handoff_is_refused_without_a_supervisor() {
 
     houston_core::pid::signal_process(child.id(), houston_core::pid::Signal::Term)
         .expect("signalling the spawned daemon");
-    let _ = child.wait();
+    poll_until(POLL_TIMEOUT, || child.try_wait().expect("poll daemon exit"));
 }
 
 use houston_core::adoption::{self, FromNew, FromOld};
@@ -444,12 +435,12 @@ async fn a_lost_commit_ack_still_leaves_the_commit_record_on_disk() {
     );
     assert_eq!(cfg.token, "commit-record-token");
 
-    let _ = manage_shutdown(cfg.port, &cfg.token).await;
-    let _ = child.wait();
+    manage_shutdown(cfg.port, &cfg.token).await;
+    poll_until(POLL_TIMEOUT, || child.try_wait().expect("poll daemon exit"));
 }
 
-async fn manage_shutdown(port: u16, token: &str) -> Result<(), reqwest::Error> {
-    reqwest::Client::new()
+async fn manage_shutdown(port: u16, token: &str) {
+    let response: serde_json::Value = reqwest::Client::new()
         .post(format!("http://127.0.0.1:{port}/manage"))
         .header("Authorization", format!("Bearer {token}"))
         .json(&proto::ManageRequest {
@@ -460,7 +451,13 @@ async fn manage_shutdown(port: u16, token: &str) -> Result<(), reqwest::Error> {
         .timeout(Duration::from_secs(10))
         .send()
         .await
-        .map(|_| ())
+        .expect("POST /manage daemon_shutdown")
+        .error_for_status()
+        .expect("shutdown HTTP status")
+        .json()
+        .await
+        .expect("shutdown response");
+    assert_eq!(response["ok"], true, "shutdown refused: {response}");
 }
 
 async fn supervised_daemon_with_session(
@@ -539,8 +536,10 @@ async fn a_candidate_dying_before_prepare_leaves_the_old_daemon_serving() {
         .await
         .contains("after-fault"));
 
-    let _ = manage_shutdown(before.port, &before.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(before.port, &before.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 #[tokio::test]
@@ -608,8 +607,10 @@ async fn a_second_consecutive_handoff_carries_the_session_again() {
         previous = next;
     }
 
-    let _ = manage_shutdown(previous.port, &previous.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(previous.port, &previous.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 #[tokio::test]
@@ -663,8 +664,10 @@ async fn a_real_exit_code_reaches_the_new_generation_through_the_supervisor() {
         "the real exit code must survive the generation that spawned the child"
     );
 
-    let _ = manage_shutdown(after.port, &after.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 #[tokio::test]
@@ -713,8 +716,10 @@ async fn a_signalled_session_finishes_through_the_supervisor_with_no_exit_code()
 
     assert_eq!(wait_for_exit(&mut ws, session_id).await, None);
 
-    let _ = manage_shutdown(after.port, &after.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 async fn wait_for_exit(ws: &mut common::WsStream, session: u32) -> Option<i32> {
@@ -794,8 +799,10 @@ async fn queued_hooks_cross_the_boundary_exactly_once_and_in_order() {
         "a turn start followed by its turn end must land on Idle: {session:?}"
     );
 
-    let _ = manage_shutdown(after.port, &after.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 async fn snapshot_state(ws: &mut common::WsStream, session_id: u32) -> Vec<u8> {
@@ -926,8 +933,10 @@ async fn an_escape_sequence_split_across_the_handoff_continues_on_the_new_genera
          {screen:?}"
     );
 
-    let _ = manage_shutdown(after.port, &after.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 #[tokio::test]
@@ -998,8 +1007,10 @@ async fn handoff_spawns_the_candidate_binary_the_caller_named() {
         .await
         .contains("candidate-alive"));
 
-    let _ = manage_shutdown(after.port, &after.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }
 
 #[tokio::test]
@@ -1051,6 +1062,8 @@ async fn handoff_refuses_an_unusable_candidate_without_parks_or_kills() {
         .await
         .contains("after-refusal"));
 
-    let _ = manage_shutdown(before.port, &before.token).await;
-    let _ = guard.0.wait();
+    manage_shutdown(before.port, &before.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
 }

@@ -124,7 +124,7 @@ pub fn install(
         proto::AgentKind::Codex => codex_install(&path, &commands, sentinel)?,
         proto::AgentKind::Cursor => cursor_install(&path, &commands, sentinel)?,
         proto::AgentKind::Opencode => opencode_install(&path, &commands, sentinel)?,
-        proto::AgentKind::Grok => grok_install(&path, &commands, sentinel)?,
+        proto::AgentKind::Grok => grok_install(&path, &commands, sentinel, proto::AgentKind::Grok)?,
         proto::AgentKind::Antigravity => antigravity_install(&path, &commands, sentinel)?,
         other => bail!("{other:?} has no hook installer here"),
     }
@@ -274,7 +274,7 @@ fn opens_unclosed_array(line: &str) -> bool {
 
 fn codex_install(path: &Path, commands: &[(&str, String)], sentinel: &str) -> Result<()> {
     codex_park_notify(&codex_config_toml_path(path), sentinel)?;
-    grok_install(path, commands, sentinel)
+    grok_install(path, commands, sentinel, proto::AgentKind::Codex)
 }
 
 fn codex_config_toml_path(hooks_json: &Path) -> PathBuf {
@@ -597,13 +597,37 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20         if ((p?.info?.role ?? \"\") !== \"user\") return\n\
          \x20         const msgId = p?.info?.sessionID ?? \"\"\n\
          \x20         if (await parentOf(msgId)) return\n\
-         \x20         await run(t, {{ session_id: msgId }})\n\
+         \x20         await run(t, {{ session_id: msgId, prompt_id: p?.info?.id ?? \"\" }})\n\
          \x20         return\n\
          \x20       }}\n\
-         \x20       if (t === \"permission.asked\" || t === \"permission.updated\") {{\n\
+         \x20       if (t === \"session.status\") {{\n\
+         \x20         const id = p?.sessionID ?? \"\"\n\
+         \x20         if (await parentOf(id)) return\n\
+         \x20         const status = p?.status?.type ?? \"\"\n\
+         \x20         if (status === \"busy\" || status === \"retry\") {{\n\
+         \x20           await run(t, {{ session_id: id }})\n\
+         \x20         }} else if (status === \"idle\") {{\n\
+         \x20           const last = await lastAssistantText(id)\n\
+         \x20           await run(\"session.idle\", {{ session_id: id, last_assistant_message: last }})\n\
+         \x20         }}\n\
+         \x20         return\n\
+         \x20       }}\n\
+         \x20       if (t === \"permission.asked\" || t === \"permission.updated\" || t === \"permission.replied\") {{\n\
          \x20         const bits = [p?.permission].concat(Array.isArray(p?.patterns) ? p.patterns : [])\n\
          \x20         const message = bits.filter(Boolean).join(\" \")\n\
-         \x20         await run(t, {{ session_id: p?.sessionID ?? \"\", message }})\n\
+         \x20         await run(t, {{ session_id: p?.sessionID ?? \"\", request_id: p?.id ?? p?.requestID ?? \"\", message }})\n\
+         \x20         return\n\
+         \x20       }}\n\
+         \x20       if (t === \"question.asked\" || t === \"question.replied\" || t === \"question.rejected\" || t === \"question.v2.asked\" || t === \"question.v2.replied\" || t === \"question.v2.rejected\") {{\n\
+         \x20         const message = (p?.questions ?? []).map((q) => q?.question ?? \"\").filter(Boolean).join(\"; \")\n\
+         \x20         await run(t, {{ session_id: p?.sessionID ?? \"\", request_id: p?.id ?? p?.requestID ?? \"\", message }})\n\
+         \x20         return\n\
+         \x20       }}\n\
+         \x20       if (t === \"session.error\") {{\n\
+         \x20         const id = p?.sessionID ?? \"\"\n\
+         \x20         if (!id || await parentOf(id)) return\n\
+         \x20         const message = p?.error?.data?.message ?? \"Session error\"\n\
+         \x20         await run(t, {{ session_id: id, message }})\n\
          \x20         return\n\
          \x20       }}\n\
          \x20       if (t === \"session.idle\") {{\n\
@@ -671,7 +695,12 @@ fn grok_entry_is_ours(value: &serde_json::Value, sentinel: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn grok_install(path: &Path, commands: &[(&str, String)], sentinel: &str) -> Result<()> {
+fn grok_install(
+    path: &Path,
+    commands: &[(&str, String)],
+    sentinel: &str,
+    provider: proto::AgentKind,
+) -> Result<()> {
     let text = read_to_string_or_empty(path)?;
     let mut root: serde_json::Value = if text.trim().is_empty() {
         serde_json::json!({})
@@ -712,9 +741,21 @@ fn grok_install(path: &Path, commands: &[(&str, String)], sentinel: &str) -> Res
             .as_array_mut()
             .ok_or_else(|| anyhow!("{}: hooks.{event} is not an array", path.display()))?;
         arr.retain(|e| !grok_entry_is_ours(e, sentinel));
-        arr.push(serde_json::json!({
+        let mut group = serde_json::json!({
             "hooks": [{ "type": "command", "command": command }]
-        }));
+        });
+        let matcher = match (provider, *event) {
+            (proto::AgentKind::Codex, "PreToolUse") => Some("^request_user_input$"),
+            (proto::AgentKind::Codex, "PostToolUse") => Some("*"),
+            _ => None,
+        };
+        if let Some(matcher) = matcher {
+            group
+                .as_object_mut()
+                .expect("hook group is an object")
+                .insert("matcher".to_string(), serde_json::json!(matcher));
+        }
+        arr.push(group);
     }
 
     ensure_parent(path)?;
@@ -1016,9 +1057,16 @@ mod tests {
         assert!(cmds.iter().any(|c| has_sentinel(c, DEV)), "{cmds:?}");
         assert!(is_installed(proto::AgentKind::Codex, &h, DEV));
         let events = crate::agent_events::events_for(proto::AgentKind::Codex);
-        assert_eq!(events.len(), 4, "Codex maps the full Claude four");
+        assert_eq!(events.len(), 5, "Codex maps lifecycle plus interruption");
         let extra = crate::agent_events::CODEX_CORRELATION_EVENTS.len();
         assert_eq!(cmds.len(), events.len() + extra + 1, "{cmds:?}");
+        let root: serde_json::Value =
+            serde_json::from_str(&read(&path)).expect("valid Codex hooks JSON");
+        assert_eq!(
+            root["hooks"]["PreToolUse"][0]["matcher"],
+            "^request_user_input$"
+        );
+        assert_eq!(root["hooks"]["PostToolUse"][0]["matcher"], "*");
 
         install(proto::AgentKind::Codex, &h, &launcher(), DEV).expect("reinstall");
         assert_eq!(
@@ -1301,6 +1349,8 @@ mod tests {
             "client.session.messages",
             "last_assistant_message",
             "parentID",
+            "request_id",
+            "requestID",
         ] {
             assert!(src.contains(needle), "missing {needle}:\n{src}");
         }

@@ -362,6 +362,7 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
         task_id: Some("task-1".into()),
         agent_id: Some("agent-9".into()),
         tool_use_id: Some("toolu_1".into()),
+        request_id: Some("request-1".into()),
         stop_continued: true,
         session_id: Some("conv-root-1".into()),
         fully_idle: Some(true),
@@ -378,6 +379,7 @@ fn a_drop_file_from_before_these_fields_still_parses() {
     let back: HookDrop = serde_json::from_str(old).expect("parse");
     assert_eq!(back.v, hook_drop::DROP_V);
     assert_eq!(back.event, "UserPromptSubmit");
+    assert_eq!(back.request_id, None);
     assert_eq!(back.session, 42);
     assert_eq!(back.last_message, None);
     assert_eq!(back.background_tasks, None);

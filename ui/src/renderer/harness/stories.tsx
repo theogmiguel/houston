@@ -64,14 +64,14 @@ function RailWorkspacesMulti(): React.JSX.Element {
         selectedGridId="grok-build"
         gridsByWorkspace={{
           '/home/dev/code/acme-core': [
-            { id: 'work-in', name: 'Work in', count: 5, state: 'online' },
-            { id: 'disc', name: 'Disc utilization space check', count: 3, state: 'online' },
-            { id: 'bomb', name: 'Bomb calorimeter design', count: 4, state: 'online' }
+            { id: 'work-in', name: 'Work in', count: 5, state: 'working' },
+            { id: 'disc', name: 'Disc utilization space check', count: 3, state: 'working' },
+            { id: 'bomb', name: 'Bomb calorimeter design', count: 4, state: 'working' }
           ],
           '/home/dev/code/acme-one-swift': [
-            { id: 'grok-build', name: 'Grok Build', count: 3, state: 'online' },
+            { id: 'grok-build', name: 'Grok Build', count: 3, state: 'working' },
             { id: 'swift-ui', name: 'SwiftUI pass', count: 1, state: 'idle' },
-            { id: 'notarize', name: 'Notarize', state: 'warning' }
+            { id: 'notarize', name: 'Notarize', state: 'needs-input' }
           ]
         }}
         customColors={{}}

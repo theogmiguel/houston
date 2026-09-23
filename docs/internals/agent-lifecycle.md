@@ -9,7 +9,7 @@ hooks-driven, and PTY content is not a status machine.
 
 ## `AgentStatus`
 
-Four variants (`houston-protocol`):
+Five variants (`houston-protocol`):
 
 | Variant | Meaning |
 |---|---|
@@ -17,21 +17,32 @@ Four variants (`houston-protocol`):
 | `Working` | a turn is in progress |
 | `Idle` | the turn finished |
 | `NeedsInput` | a notification or permission prompt is waiting on a human |
+| `Unavailable` | a hook-capable or ACP pane produced no lifecycle signal during spawn grace |
 
 `Session::status` is `Option<AgentStatus>` — `None` means no status has been surfaced at
 all (a non-agent pane, or before the first signal). It is orthogonal to `Session::state`,
 which tracks the process.
 
-## `set_status` is the only mutation point
+## Status mutation and lifecycle effects
 
-`Daemon::set_status(id, status)` (`daemon.rs`) diffs against the current value and, on a
-change, does two things:
+`Daemon::apply_agent_event` atomically verifies that the process is live and diffs the
+reported status against the current value. On a change, it:
 
 1. broadcasts `ServerMsg::AgentStatus`;
 2. drains pending handoffs when the new status is **settled** — `orchestrate::settled` is
    `Idle | NeedsInput`.
 
-Nothing else writes the field. Every source below funnels into this one call.
+The spawn watchdog has one separate compare-and-set path from `Spawning` to `Unavailable`.
+It makes the same live-process check and cannot overwrite a lifecycle event that won the
+race. A late drop file cannot rewrite a finished pane. A WebSocket connection subscribes
+before taking its `hello_ok` snapshot; transitions during handshake remain queued for that
+client.
+
+An event that leaves the status unchanged emits no second status, notice or routine
+completion. Its delegation effect still runs: a repeated block can refresh the reason, and
+a turn-end can settle the current orchestration round even when the visible status was
+already `Idle`. `InputResolved` is accepted only from `NeedsInput`, so a late reply cannot
+move an already idle pane back to `Working`.
 
 ## The event taxonomy
 
@@ -42,19 +53,21 @@ driven:
 |---|---|
 | `SessionStarted` | `Idle` |
 | `PromptSubmitted` | `Working` |
+| `InputResolved` | `Working` |
 | `TurnEnded` | `Idle` |
+| `TurnInterrupted` | `Idle` |
 | `NeedsInput` | `NeedsInput` |
 
 Per-provider event names:
 
 | Provider | Native names → events |
 |---|---|
-| Claude | `SessionStart`, `UserPromptSubmit`, `Stop`, `Notification` — all four — plus `StopFailure` (a second spelling of `TurnEnded`, for a turn that died on an API error) and `PermissionRequest` (a second `NeedsInput`, the one that names the tool) |
-| Codex | `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest` — all four, in `~/.codex/hooks.json` (Claude's own spellings) — plus `SubagentStart`/`SubagentStop`/`SessionEnd`, installed but never read as a status |
-| OpenCode | `session.created`, `message.updated`, `permission.asked`/`permission.updated`, `session.idle` → all four (the plugin builds these itself; see below) |
+| Claude | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `PermissionRequest`, `PermissionDenied`, `Elicitation`, `ElicitationResult`, and typed blocking `Notification`; `AskUserQuestion`/`ExitPlanMode` are detected through matched `PreToolUse`, then cleared by the matching tool result |
+| Codex | `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest`, `Interrupt`; matched `PreToolUse(request_user_input)` reports a question and its `PostToolUse` resumes the turn; `Interrupt` settles to `Idle` without completion attention |
+| OpenCode | `session.created`, root `message.updated`, `session.status` (`busy`/`retry`), `permission.asked`/legacy `permission.updated`, `permission.replied`, `question.*` and `question.v2.*`, `session.idle`, `session.error`; replies resume `Working`, while errors settle with error attention |
 | Cursor | `sessionStart`, `beforeSubmitPrompt`, `stop` — **no `NeedsInput`** — plus `subagentStart`/`subagentStop` and `afterAgentResponse` (last message only, documented not live-verified) |
 | Grok | reuses Claude's PascalCase names verbatim, plus `SubagentStart`/`SubagentStop` (documented, not live-verified) |
-| Antigravity | `SessionStart`, `PreInvocation`, `Stop`, `PreToolUse` → all four (`PreToolUse` gated by tool name, see below) — plus `PostToolUse`, installed but never read as a status (`PostInvocation` maps to nothing: it fires per step, not per turn) |
+| Antigravity | `SessionStart`, `PreInvocation`, `Stop`, `PreToolUse` → all four (`PreToolUse` gated by tool name, see below); the matching `PostToolUse` resumes `Working` once no permission episode remains (`PostInvocation` maps to nothing: it fires per step, not per turn) |
 | Droid, Copilot, Aider | **no mapping at all** — identity only, via banner sniffing |
 
 `has_event_mapping` is false for that last row and `events_for` returns an empty slice, so
@@ -64,16 +77,18 @@ nothing can read.
 
 ### The correlation events
 
-The correlation events — installed so the daemon has *evidence*, never
-transitions — are Claude's `SubagentStart`/`SubagentStop`; Codex's
-`SubagentStart`/`SubagentStop`/`SessionEnd`; Grok's and Cursor's
+The correlation events — installed so the daemon has *evidence*, never unconditional
+transitions — are Claude's `SubagentStart`/`SubagentStop` and matched
+`PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Codex's
+`SubagentStart`/`SubagentStop`/`SessionEnd` and matched `PreToolUse`/`PostToolUse`; Grok's and Cursor's
 `subagentStart`/`subagentStop`; Cursor's `afterAgentResponse` (last-message
-only); Antigravity's `PostToolUse`; and the OpenCode plugin's synthesized
+only); Antigravity's `PostToolUse` (correlation evidence that conditionally clears a
+block); and the OpenCode plugin's synthesized
 `SubagentStop`, a name Houston invented so a task-tool child session's own idle
 is told apart from the pane's. `events_for` returns nothing for them, so they
 cannot drive a status by accident; the one near-miss is Claude's `StopFailure`,
-which maps to `TurnEnded` — a turn that died on an API error is a real turn
-end. Antigravity's `PostInvocation` maps to nothing at all: it fires per step,
+which maps to `TurnEnded` but emits error attention rather than successful completion.
+Antigravity's `PostInvocation` maps to nothing at all: it fires per step,
 not per turn.
 
 ## What a hook's payload decides, beyond the event name
@@ -94,12 +109,13 @@ and a payload missing a field still delivers its transition:
 | `reason` | `PermissionRequest.tool_name`, a `Notification`'s `message`, OpenCode's `permission`/`patterns`, Antigravity's question text | the `NeedsInput` row's body |
 | `notification_type` | Claude `Notification.notification_type` | only `permission_prompt`, `elicitation_*`, `agent_needs_input` are a block; `idle_prompt` and the rest produce nothing |
 | `stop_hook_active` | `Stop.stop_hook_active` | logged, not relied on (the block cap counts on its own) |
-| `prompt_id` / `tool_use_id` | the request and invocation a hook belongs to | half of an episode's identity; the invocation id is preferred where the payload has one |
+| `prompt_id` / `tool_use_id` | the prompt and tool invocation a hook belongs to | correlation for interactive tools; the invocation id is preferred where the payload has one |
+| `request_id` | OpenCode's permission or question request | pairs an asked event with its reply or rejection, including concurrent requests from child sessions |
 | `agent_id` | the sub-agent a `SubagentStart`/`SubagentStop` is about | correlation evidence, never a status |
 | `stop_continued` | the helper blocked this `Stop` with inbox rows | the daemon treats the pane as Working, never as TurnEnded |
 | `session_id` | Antigravity's `conversationId` | the root pin that tells a sub-agent's events apart from the pane's |
 | `fully_idle` | Antigravity `Stop.fullyIdle` | `false` means parked on `invoke_subagent` and decides nothing; `true` closes the round |
-| `tool_name` | Antigravity `PreToolUse`/`PostToolUse`'s `toolCall.name` | only `ask_question`/`ask_permission`/`ask_custom_permission` open a block |
+| `tool_name` | Claude/Codex's top-level field or Antigravity's `toolCall.name` | identifies interactive tools and matches their completion to the open episode |
 
 The field spelling is per provider: Grok gets a snake_case-then-camelCase fallback for
 every field that has one; Cursor gets a `text` fallback for `last_message`; Antigravity's
@@ -127,11 +143,15 @@ turn end instead.
 permission mid-turn and for the CLI reminding an idle operator it is waiting.
 Only `permission_prompt`, `agent_needs_input` and the `elicitation_*` types are
 a block; `idle_prompt` and the rest move nothing. A drop from a helper that
-lifted no type keeps the old behaviour. `AgentEvent::applies` stays as defence
-in depth. A block is one **episode**, keyed by the CLI's `tool_use_id` where it
-has one and by `(prompt_id, tool_name, generation)` otherwise, so the same tool
-asked twice is two questions; a `Notification` attaches to the newest open
-episode rather than opening one of its own.
+lifted no type keeps the old ambiguous-idle suppression. Explicit permission events and
+typed blocking notifications are authoritative even if the prompt-start event was lost.
+A block is one **episode**, keyed by the CLI's `tool_use_id` where it
+has one, by OpenCode's `request_id`, and by `(prompt_id, tool_name, generation)`
+otherwise, so independently keyed requests remain blocked until all of them resolve and
+the same unkeyed tool asked twice is still two questions; a `Notification` attaches to the newest open
+episode rather than opening one of its own or sending a duplicate notice. A matching
+successful or failed tool result clears the episode and resumes `Working` only after the
+last open episode closes.
 
 ## Hook installation
 
@@ -185,7 +205,7 @@ the sentinel and no channel would recognise its own group.
 
 `tr_hook_group()` wraps the command as `{"type":"command","command":…,"async":…,"timeout":5}`
 — `async` is false for `UserPromptSubmit`, `Stop` and `StopFailure`, true for everything
-else, so the CLI never blocks on a drop-file write for the events nobody reads synchronously.
+else, so the CLI does not block on a drop-file write for events that return no control output.
 `Stop`/`StopFailure` run synchronously because the orchestration inbox's door 2 needs the
 CLI to wait for the helper's stdout and splice it into the same turn — an async hook prints
 into a pipe nobody reads. Codex's `hooks.json` and Antigravity's hooks file write no `async`
@@ -208,7 +228,7 @@ reads as "Codex hooks installed, not confirmed for this pane" rather than a bare
 `Spawning`, since a missing `SessionStart` drop looks the same whether trust is pending,
 the helper is slow, or the file is broken.
 
-OpenCode has no native hook contract at all — its plugin bus fires JS callbacks, not a
+OpenCode has no shell-hook contract — its plugin bus fires JS callbacks, not a
 shell command with its own stdin — so `houston-notify.js` is the hook contract: it builds
 the JSON `claude_hooks::parse_hook_payload` expects itself and pipes it into the same
 `if [ -x … ]; then exec …; fi` command every other provider gets, through
@@ -220,9 +240,15 @@ apart from the root: a child's own creation only updates the map, and a child's
 status table, never read as one — the same split Codex's `SubagentStart`/`SubagentStop`
 get) instead of `session.idle`'s own command. The root's idle reads
 `client.session.messages` and carries the text as `last_assistant_message`, so the
-generic lift needs no OpenCode-specific code. A permission event (`permission.asked`,
-live; `permission.updated`, older builds) forwards `permission`/`patterns` as the reason,
-in whichever session it fired — a permission asked inside a child still blocks the pane.
+generic lift needs no OpenCode-specific code. `session.status` is authoritative for
+`busy`/`retry`; an idle status is normalized to the same terminal event as legacy
+`session.idle`, and duplicate delivery is harmless. `session.error` is root-only and
+produces error attention. Permission and structured-question events are forwarded in
+whichever session they fire: a question inside a child still blocks the pane because the
+human must answer it before the pane can proceed. Provider request ids keep simultaneous
+child requests independent; reply/reject events resume the same turn only after the last
+pending request closes, without manufacturing a new prompt. A later `busy` pulse cannot
+hide an open request.
 
 Grok's `~/.grok/hooks/houston.json` installs the four lifecycle hooks plus
 `SubagentStart`/`SubagentStop`, correlation-only like Codex's pair. These follow the
@@ -264,8 +290,9 @@ nothing; `fullyIdle: true` closes the turn. `PreToolUse` maps generically to `Ne
 `Notification` is gated on `notification_type`: only `toolCall.name` of `ask_question`,
 `ask_permission` or `ask_custom_permission` opens a block, keyed by `stepIdx` (the closest
 thing this payload has to a `tool_use_id`) and reasoned by
-`toolCall.args.questions[].question`; `PostToolUse` resolves it
-(`orchestrate::EpisodeEnd::PostToolUse`) and is otherwise never a status. No hook payload carries a
+`toolCall.args.questions[].question`; the matching `PostToolUse` resolves it
+(`orchestrate::EpisodeEnd::PostToolUse`) and resumes `Working` after the final open
+permission episode. No hook payload carries a
 last-assistant-text field at all: `claude_hooks::run_hook` reads it, at `Stop` only, out of
 the CLI's own transcript JSONL at `transcriptPath`. Its line schema remains unverified;
 the reader tolerates either `role`/`type` and either
@@ -284,7 +311,7 @@ exits — no port, no token, no daemon required at write time (`hook_drop.rs`).
   returns silently when it is unset — no session, no drop.
 - **Reader**: `hook_drop_tick()` runs a pass over every drop dir (the base state dir plus
   every live scope) and calls `apply_hook_drop()` per file, landing on
-  `set_status(id, ev.status())`.
+  `apply_agent_event()`.
 
 The tick is the first thing `swarm_mail_tick` does each round, so hook delivery rides the
 same adaptive ladder as mail. A hook drop is also a second source for pane *identity*:
@@ -299,20 +326,19 @@ daemon route a drop file written after the pane that wrote it is gone.
 
 ## The other lawful sources
 
-**Spawn grace.** A visible Claude pane is set `Spawning` at spawn. `SPAWN_GRACE` is 20 s:
-if no hook has fired by then the pane drops to `Idle`, so a CLI whose hooks are broken
-does not sit on a spinner forever. `hooks_seen` standing down the watchdog is the signal
-that hooks are authoritative for that pane.
+**Spawn grace.** Every visible pane with a mapped hook provider or ACP stream is set
+`Spawning` at spawn. `SPAWN_GRACE` is 20 s: if no lifecycle event has changed the status
+by then the pane becomes `Unavailable`, never falsely `Idle`. A later valid event restores
+the reported state normally.
 
-**Accepted gap.** No provider's event taxonomy maps a `Stop`-equivalent to Ctrl-C, an
-interrupted turn, or an API error outside Claude's own `StopFailure` — an operator-cancelled
-turn simply never fires the event that would close it, so a working dot can linger after a
-keyboard interrupt. Nothing here papers over that with a timer for an ordinary pane.
+**Interrupt coverage.** Codex's `Interrupt` settles a cancelled turn without emitting a
+completion notice. Providers that publish no interruption event can still leave `Working`
+after Ctrl-C; Houston does not paper over missing lifecycle evidence with a timer.
 
 **ACP.** `acp.rs` decodes line-delimited JSON-RPC over stdio — a documented spec, the same
-category as a hook event, not a reading of terminal content — and derives `NeedsInput` and
-`Idle` from it. It deliberately does **not** answer `session/request_permission`: that
-surfaces as `NeedsInput` for the human.
+category as a hook event, not a reading of terminal content — and sends its events through
+the same status, delegation, routine and notice path as hooks. It deliberately does **not**
+answer `session/request_permission`: that surfaces as `NeedsInput` for the human.
 
 **OS liveness.** `has_child_procs` scans `/proc/{pid}/task/*/children` across all threads —
 pure procfs, no `pgrep`, no `ps`. A sibling `has_running_procs` walks the whole descendant
@@ -323,8 +349,9 @@ confirmation, and `session_reap_candidates`, the husk reaper. It does not set
 `AgentStatus`; it gates the reaper's kill-or-keep decision and the close prompt.
 
 The reaper fires only when all of: the session is live, quiet for at least the configured
-`idle_ms`, has no child processes, is not `Working`/`NeedsInput`/`Spawning`, and is hidden
-nowhere.
+`idle_ms`, has no child processes, is not
+`Working`/`NeedsInput`/`Spawning`/`Unavailable`, and is hidden
+in every connected renderer.
 
 ## Roster status and the one-shot promotion
 

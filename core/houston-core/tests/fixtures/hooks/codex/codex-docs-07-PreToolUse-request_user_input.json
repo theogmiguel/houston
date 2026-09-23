@@ -1,0 +1,16 @@
+{
+  "_note": "reconstructed from the Codex hook reference local-function PreToolUse schema",
+  "hook_event_name": "PreToolUse",
+  "session_id": "codex-session-1",
+  "turn_id": "turn-question-1",
+  "tool_name": "request_user_input",
+  "tool_input": {
+    "questions": [
+      {
+        "header": "Choice",
+        "question": "Which option should be used?",
+        "options": []
+      }
+    ]
+  }
+}

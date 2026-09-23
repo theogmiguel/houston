@@ -7,9 +7,8 @@ use crate::daemon::Daemon;
 
 // The settings row that carries the on/off choice; absent means on.
 const UPDATES_CHECK_KEY: &str = "updates_check";
-// One request a day sits far below any rate limit, and a release is never
-// more urgent than that.
-const CHECK_INTERVAL_HOURS: u64 = 24;
+// Check frequently enough to surface new releases and models within the working day.
+pub(crate) const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 // The repository the four manifests name. One constant, so a rename moves one line.
 const RELEASES_LATEST_URL: &str =
     "https://api.github.com/repos/theogmiguel/houston/releases/latest";
@@ -18,6 +17,12 @@ const RELEASES_LATEST_URL: &str =
 const USER_AGENT: &str = "houston";
 // A check that outlives this is a hung request, not a slow release.
 const REQUEST_TIMEOUT_SECS: u64 = 10;
+
+#[derive(Default)]
+pub(crate) struct ReleaseCache {
+    etag: Option<String>,
+    release: Option<Option<proto::UpdateRelease>>,
+}
 
 /// Compares two `MAJOR.MINOR.PATCH` strings, tolerating a leading `v` and ignoring
 /// any prerelease or build suffix. Anything unparseable compares `Equal`, so an
@@ -155,6 +160,7 @@ impl Daemon {
     }
 
     pub async fn check_for_update(&self) {
+        let _check = self.update_check_lock.lock().await;
         let policy = self.update_policy();
         if !policy.check {
             *self.update_state.lock().expect("update_state lock") = proto::UpdateState::Disabled;
@@ -164,7 +170,7 @@ impl Daemon {
         *self.update_state.lock().expect("update_state lock") = proto::UpdateState::Checking;
         self.broadcast_control(&self.update_snapshot());
 
-        let state = match self.fetch_latest().await {
+        let state = match self.fetch_latest(RELEASES_LATEST_URL).await {
             Ok(Some(release)) => {
                 let checked_at_ms = crate::daemon::now_ms();
                 if is_newer(&release.version, env!("CARGO_PKG_VERSION")) {
@@ -184,33 +190,70 @@ impl Daemon {
                 checked_at_ms: crate::daemon::now_ms(),
             },
         };
-        *self.update_state.lock().expect("update_state lock") = state;
+        {
+            let mut current = self.update_state.lock().expect("update_state lock");
+            if !self.update_policy().check {
+                *current = proto::UpdateState::Disabled;
+            } else {
+                *current = state;
+            }
+        }
         self.broadcast_control(&self.update_snapshot());
     }
 
-    async fn fetch_latest(&self) -> anyhow::Result<Option<proto::UpdateRelease>> {
+    async fn fetch_latest(&self, url: &str) -> anyhow::Result<Option<proto::UpdateRelease>> {
+        // Hold the cache lock across the request so a manual check cannot race
+        // the scheduled check and replace a newer validator with an older one.
+        let mut cache = self.release_cache.lock().await;
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .user_agent(USER_AGENT)
             .build()?;
-        let response = client
-            .get(RELEASES_LATEST_URL)
-            .send()
-            .await?
-            .error_for_status()?;
+        let mut request = client.get(url);
+        if let Some(etag) = &cache.etag {
+            request = request.header(reqwest::header::IF_NONE_MATCH, etag.as_str());
+        }
+        let response = request.send().await?;
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            if cache.etag.is_none() {
+                return Err(anyhow!(
+                    "releases/latest returned 304 without a cached validator"
+                ));
+            }
+            let release = cache
+                .release
+                .clone()
+                .ok_or_else(|| anyhow!("releases/latest returned 304 without a cached release"))?;
+            if let Some(etag) = response
+                .headers()
+                .get(reqwest::header::ETAG)
+                .and_then(|value| value.to_str().ok())
+            {
+                cache.etag = Some(etag.to_owned());
+            }
+            return Ok(release);
+        }
+        let response = response.error_for_status()?;
+        let etag = response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let body = response.text().await?;
-        parse_latest_release(&body)
+        let release = parse_latest_release(&body)?;
+        cache.etag = etag;
+        cache.release = Some(release.clone());
+        Ok(release)
     }
 
     pub async fn update_check_loop(&self) {
-        self.check_for_update().await;
-        let interval = Duration::from_secs(CHECK_INTERVAL_HOURS * 60 * 60);
         loop {
+            self.check_for_update().await;
+            self.refresh_model_catalog(true).await;
             tokio::select! {
                 _ = self.update_wake.notified() => {}
-                _ = tokio::time::sleep(interval) => {}
+                _ = tokio::time::sleep(UPDATE_CHECK_INTERVAL) => {}
             }
-            self.check_for_update().await;
         }
     }
 }
@@ -218,6 +261,79 @@ impl Daemon {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex as StdMutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn scripted_release_server(
+        responses: Vec<String>,
+    ) -> (String, Arc<StdMutex<Vec<String>>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/latest", listener.local_addr().unwrap());
+        let requests = Arc::new(StdMutex::new(Vec::new()));
+        let captured = Arc::clone(&requests);
+        tokio::spawn(async move {
+            for response in responses {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = vec![0; 4096];
+                let read = stream.read(&mut request).await.unwrap();
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&request[..read]).into_owned());
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        (url, requests)
+    }
+
+    #[tokio::test]
+    async fn release_etag_reuses_the_last_good_payload_across_304_and_failure() {
+        let payload = r#"{"tag_name":"v99.0.0","html_url":"https://example.com/r"}"#;
+        let ok = format!(
+            "HTTP/1.1 200 OK\r\nETag: \"release-1\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            payload.len(),
+            payload
+        );
+        let responses = vec![
+            ok,
+            "HTTP/1.1 304 Not Modified\r\nETag: \"release-2\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
+            "HTTP/1.1 304 Not Modified\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
+        ];
+        let (url, requests) = scripted_release_server(responses).await;
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = crate::daemon::Daemon::new(crate::daemon::DaemonConfig {
+            token: "test-token-0000-0000-000000000000".to_string(),
+            db_path: dir.path().join("test.db"),
+        })
+        .unwrap();
+
+        let first = daemon.fetch_latest(&url).await.unwrap().unwrap();
+        assert_eq!(first.version, "99.0.0");
+        assert_eq!(
+            daemon.fetch_latest(&url).await.unwrap(),
+            Some(first.clone())
+        );
+        assert!(daemon.fetch_latest(&url).await.is_err());
+        assert_eq!(daemon.fetch_latest(&url).await.unwrap(), Some(first));
+
+        let requests = requests.lock().unwrap();
+        assert!(!requests[0].contains("if-none-match"));
+        assert!(requests[1]
+            .to_ascii_lowercase()
+            .contains("if-none-match: \"release-1\""));
+        for request in &requests[2..] {
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("if-none-match: \"release-2\""),
+                "rotated conditional validator missing from request: {request}"
+            );
+        }
+    }
 
     #[test]
     fn equal_versions_compare_equal() {

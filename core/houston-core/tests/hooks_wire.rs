@@ -87,6 +87,60 @@ fn a_pane(daemon: &std::sync::Arc<Daemon>) -> (proto::SessionInfo, tempfile::Tem
 }
 
 #[tokio::test]
+async fn a_correlation_hook_cannot_leave_a_pane_spawning_forever() {
+    let (_addr, _state, daemon) = common::start_daemon_without_mail_loop().await;
+    let dir = tempfile::tempdir().unwrap();
+    let info = daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Codex,
+            project_dir: dir.path().to_path_buf(),
+            cmd: Some(vec!["sleep".into(), "30".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+        })
+        .unwrap();
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::Spawning),
+    );
+
+    assert_eq!(
+        daemon.handle_hook_from(
+            info.id,
+            proto::AgentKind::Codex,
+            "SessionEnd",
+            dir.path().to_str(),
+        ),
+        hook_drop::DropVerdict::Applied,
+    );
+    daemon.expire_spawn_grace_for_test(info.id);
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::Unavailable),
+        "a correlation-only hook is not lifecycle evidence",
+    );
+
+    daemon.handle_hook_from(
+        info.id,
+        proto::AgentKind::Codex,
+        "UserPromptSubmit",
+        dir.path().to_str(),
+    );
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::Working),
+        "late lifecycle evidence recovers an unavailable status",
+    );
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
 async fn hook_events_drive_status_and_notices() {
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     let (info, _dir) = a_pane(&daemon);
@@ -187,6 +241,188 @@ async fn a_post_stop_notification_does_not_stick_the_pane_at_needs_input() {
     );
 
     daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn an_explicit_permission_request_is_not_suppressed_while_idle() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let (info, _dir) = a_pane(&daemon);
+    let mut rx = daemon.observe();
+
+    drop_and_await_apply(state.path(), &drop_for("Stop", info.id)).await;
+    while expect_status(&mut rx, info.id).await != proto::AgentStatus::Idle {}
+
+    drop_and_await_apply(state.path(), &drop_for("PermissionRequest", info.id)).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::NeedsInput,
+        "an explicit permission request is authoritative even if the prompt-start hook was missed"
+    );
+
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn claude_question_tool_blocks_until_the_matching_tool_finishes() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let (info, _dir) = a_pane(&daemon);
+    let mut rx = daemon.observe();
+
+    drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", info.id)).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Working
+    );
+
+    let question = HookDrop {
+        event: "PreToolUse".into(),
+        tool_name: Some("AskUserQuestion".into()),
+        tool_use_id: Some("toolu-question-1".into()),
+        ..drop_for("PreToolUse", info.id)
+    };
+    drop_and_await_apply(state.path(), &question).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::NeedsInput
+    );
+
+    let unrelated = HookDrop {
+        event: "PostToolUse".into(),
+        tool_name: Some("Read".into()),
+        tool_use_id: Some("toolu-read-1".into()),
+        ..drop_for("PostToolUse", info.id)
+    };
+    drop_and_await_apply(state.path(), &unrelated).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput)
+    );
+
+    let answer = HookDrop {
+        event: "PostToolUse".into(),
+        tool_name: Some("AskUserQuestion".into()),
+        tool_use_id: Some("toolu-question-1".into()),
+        ..drop_for("PostToolUse", info.id)
+    };
+    drop_and_await_apply(state.path(), &answer).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Working
+    );
+
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn claude_mcp_elicitation_blocks_until_its_result() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let (info, _dir) = a_pane(&daemon);
+    let mut rx = daemon.observe();
+
+    drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", info.id)).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Working
+    );
+    let first_elicitation = HookDrop {
+        request_id: Some("elicitation-a".into()),
+        ..drop_for("Elicitation", info.id)
+    };
+    drop_and_await_apply(state.path(), &first_elicitation).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::NeedsInput
+    );
+    let second_elicitation = HookDrop {
+        request_id: Some("elicitation-b".into()),
+        ..drop_for("Elicitation", info.id)
+    };
+    drop_and_await_apply(state.path(), &second_elicitation).await;
+    let unrelated_denial = HookDrop {
+        tool_use_id: Some("toolu-unrelated".into()),
+        tool_name: Some("Bash".into()),
+        ..drop_for("PermissionDenied", info.id)
+    };
+    drop_and_await_apply(state.path(), &unrelated_denial).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "an unrelated permission result must not clear the elicitation"
+    );
+    let second_result = HookDrop {
+        request_id: Some("elicitation-b".into()),
+        ..drop_for("ElicitationResult", info.id)
+    };
+    drop_and_await_apply(state.path(), &second_result).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput),
+        "an out-of-order result must leave the other elicitation open"
+    );
+    let first_result = HookDrop {
+        request_id: Some("elicitation-a".into()),
+        ..drop_for("ElicitationResult", info.id)
+    };
+    drop_and_await_apply(state.path(), &first_result).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Working
+    );
+
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn a_stop_failure_reports_error_attention_instead_of_completion() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let (info, _dir) = a_pane(&daemon);
+    let mut rx = daemon.observe();
+
+    drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", info.id)).await;
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Working
+    );
+    drop_and_await_apply(state.path(), &drop_for("StopFailure", info.id)).await;
+
+    let mut saw_idle = false;
+    let mut saw_error = false;
+    while !(saw_idle && saw_error) {
+        match next_broadcast_control(&mut rx).await {
+            proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
+                assert_eq!(status, proto::AgentStatus::Idle);
+                saw_idle = true;
+            }
+            proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
+                assert_eq!(kind, proto::AgentNoticeKind::Error);
+                saw_error = true;
+            }
+            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+            _ => continue,
+        }
+    }
+
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn a_late_hook_cannot_mutate_an_ended_pane() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let (info, _dir) = a_pane(&daemon);
+
+    drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", info.id)).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::Working)
+    );
+    daemon.kill(info.id).expect("kill pane");
+
+    drop_and_await_apply(state.path(), &drop_for("Stop", info.id)).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::Working),
+        "a delayed hook after process exit must not rewrite lifecycle state"
+    );
 }
 
 #[tokio::test]

@@ -480,7 +480,6 @@ pub struct Session {
     context: Mutex<Option<proto::SessionContext>>,
     removed: AtomicBool,
     backend_exited: AtomicBool,
-    hooks_seen: AtomicBool,
     hook_cwd: Mutex<Option<String>>,
     hook_last_message: Mutex<Option<String>>,
     geometry: AtomicU32,
@@ -936,6 +935,7 @@ pub struct Daemon {
     last_inbox_retention: AtomicU64,
     mcp_checks: Mutex<HashMap<String, (String, proto::McpConnectionCheck)>>,
     cli_probes: Mutex<crate::cli_probe::ProbeCache>,
+    model_catalog: Arc<crate::model_catalog::ModelCatalog>,
     db: Db,
     next_id: AtomicU32,
     sessions: Mutex<HashMap<u32, Arc<Session>>>,
@@ -968,6 +968,8 @@ pub struct Daemon {
     shutting_down: AtomicBool,
     handing_off: AtomicBool,
     handed_off: AtomicBool,
+    #[cfg(target_os = "linux")]
+    handoff_reap: Mutex<()>,
     #[cfg(unix)]
     supervisor_writer: Mutex<Option<std::os::unix::net::UnixStream>>,
     #[cfg(unix)]
@@ -1015,6 +1017,8 @@ pub struct Daemon {
     safe_mode_flags: SafeModeFlags,
     pub(crate) update_state: Mutex<proto::UpdateState>,
     pub(crate) update_wake: Arc<tokio::sync::Notify>,
+    pub(crate) update_check_lock: tokio::sync::Mutex<()>,
+    pub(crate) release_cache: tokio::sync::Mutex<crate::updates::ReleaseCache>,
     tx: broadcast::Sender<Outbound>,
 }
 
@@ -2142,6 +2146,7 @@ impl Daemon {
             mcp_tools: crate::mcp_server::ToolRegistry::with_builtins(),
             mcp_checks: Mutex::new(HashMap::new()),
             cli_probes: Mutex::new(crate::cli_probe::ProbeCache::default()),
+            model_catalog: Arc::new(crate::model_catalog::ModelCatalog::new(&state_dir)),
             voice: crate::voice::runtime::Runtime::new(),
             mcp_progress_tick_ms: AtomicU64::new(
                 crate::mcp_server::PROGRESS_TICK_DEFAULT.as_millis() as u64,
@@ -2180,6 +2185,8 @@ impl Daemon {
             shutting_down: AtomicBool::new(false),
             handing_off: AtomicBool::new(false),
             handed_off: AtomicBool::new(false),
+            #[cfg(target_os = "linux")]
+            handoff_reap: Mutex::new(()),
             #[cfg(unix)]
             supervisor_writer: Mutex::new(None),
             #[cfg(unix)]
@@ -2224,6 +2231,8 @@ impl Daemon {
             _hook_drop_watcher: Mutex::new(None),
             update_state: Mutex::new(proto::UpdateState::Unknown),
             update_wake: Arc::new(tokio::sync::Notify::new()),
+            update_check_lock: tokio::sync::Mutex::new(()),
+            release_cache: tokio::sync::Mutex::new(crate::updates::ReleaseCache::default()),
             run_state_started_at: now_ms(),
             run_state_expected_restart: AtomicBool::new(false),
             startup_cause,
@@ -2943,6 +2952,8 @@ impl Daemon {
             );
         }
         let claim = HandoffClaim::claim(&self.handing_off)?;
+        #[cfg(target_os = "linux")]
+        let _reap = self.handoff_reap.lock().expect("handoff reap lock");
 
         let candidate = handoff_binary(candidate_bin)?;
 
@@ -3302,7 +3313,6 @@ impl Daemon {
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            hooks_seen: AtomicBool::new(true),
             hook_cwd: Mutex::new(m.hook_cwd.clone()),
             hook_last_message: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(m.cols) << 16) | u32::from(m.rows)),
@@ -5548,16 +5558,22 @@ impl Daemon {
         }
     }
 
-    fn set_status(&self, id: u32, status: proto::AgentStatus) {
+    fn replace_live_status(
+        &self,
+        id: u32,
+        expected: Option<proto::AgentStatus>,
+        status: proto::AgentStatus,
+    ) -> bool {
         let changed = {
             let sessions = self.sessions.lock().expect("sessions lock");
             match sessions.get(&id) {
-                Some(s) => {
-                    let mut cur = s.status.lock().expect("status lock");
-                    if *cur == Some(status) {
+                Some(session) => {
+                    let state = session.state.lock().expect("state lock");
+                    let mut current = session.status.lock().expect("status lock");
+                    if !state.is_live() || *current != expected {
                         false
                     } else {
-                        *cur = Some(status);
+                        *current = Some(status);
                         true
                     }
                 }
@@ -5575,6 +5591,20 @@ impl Daemon {
                 }
             }
         }
+        changed
+    }
+
+    fn expire_spawn_grace(&self, id: u32) {
+        self.replace_live_status(
+            id,
+            Some(proto::AgentStatus::Spawning),
+            proto::AgentStatus::Unavailable,
+        );
+    }
+
+    #[doc(hidden)]
+    pub fn expire_spawn_grace_for_test(&self, id: u32) {
+        self.expire_spawn_grace(id);
     }
 
     fn set_context(&self, id: u32, context: proto::SessionContext) {
@@ -5623,29 +5653,46 @@ impl Daemon {
         }
     }
 
-    /// Update a Claude session's context from a hook drop. Claude only in this
-    /// slice; every other provider stays `not tracked` by construction.
+    pub async fn refresh_model_catalog(&self, force: bool) {
+        let catalog = Arc::clone(&self.model_catalog);
+        let enabled = self.update_policy().check;
+        let _ = tokio::task::spawn_blocking(move || catalog.load(enabled, force && enabled)).await;
+    }
+
+    /// The provider owns the transcript path and usage schema. Catalog limits
+    /// are only a fallback when the CLI does not report its effective window.
     fn note_context_from_hook(
         &self,
         id: u32,
         provider: proto::AgentKind,
         d: &crate::hook_drop::HookDrop,
     ) {
-        if provider != proto::AgentKind::Claude {
+        if !matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex) {
             return;
         }
         match crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
             Some(crate::agent_events::AgentEvent::PromptSubmitted) => self.set_context_working(id),
             Some(crate::agent_events::AgentEvent::TurnEnded) => {
                 let reading = d.transcript_path.as_deref().and_then(|p| {
-                    crate::context_window::read_claude_context(std::path::Path::new(p))
+                    let path = std::path::Path::new(p);
+                    match provider {
+                        proto::AgentKind::Claude => {
+                            crate::context_window::read_claude_context(path)
+                        }
+                        proto::AgentKind::Codex => crate::context_window::read_codex_context(path),
+                        _ => None,
+                    }
                 });
                 let Some(reading) = reading else {
                     self.set_context(id, proto::SessionContext::unknown());
                     return;
                 };
-                let window = crate::context_window::model_window(&reading.model);
-                let used = reading.used_tokens;
+                let window = reading.reported_window.or_else(|| {
+                    (provider == proto::AgentKind::Claude)
+                        .then(|| self.model_catalog.window(&reading.model))
+                        .flatten()
+                });
+                let used = window.map_or(reading.used_tokens, |w| reading.used_tokens.min(w));
                 let state = if reading.reset {
                     proto::ContextState::Reset
                 } else if crate::context_window::near_limit(used, window) {
@@ -5658,7 +5705,7 @@ impl Daemon {
                     window_tokens: window,
                     used_percent: window.map(|w| crate::context_window::percent_used(used, w)),
                     state,
-                    source: if window.is_some() {
+                    source: if window.is_some() && reading.reported_window.is_none() {
                         proto::ContextSource::Derived
                     } else {
                         proto::ContextSource::Reported
@@ -5696,11 +5743,22 @@ impl Daemon {
         event: &str,
         cwd: Option<&str>,
     ) -> crate::hook_drop::DropVerdict {
+        self.handle_hook_from_with(id, provider, event, cwd, event == "Notification")
+    }
+
+    fn handle_hook_from_with(
+        self: &Arc<Self>,
+        id: u32,
+        provider: proto::AgentKind,
+        event: &str,
+        cwd: Option<&str>,
+        ambiguous_idle_notification: bool,
+    ) -> crate::hook_drop::DropVerdict {
         if !self.note_hook_seen(id, event, cwd) {
             return crate::hook_drop::DropVerdict::NoSession;
         }
         match crate::agent_events::AgentEvent::from_provider(provider, event) {
-            Some(ev) => self.apply_agent_event(id, event, ev, true),
+            Some(ev) => self.apply_agent_event(id, event, ev, ambiguous_idle_notification, true),
             None => tracing::debug!("ignoring unknown hook event {event:?} for session {id}"),
         }
         self.swarm_mirror_hook(id, event);
@@ -5712,7 +5770,6 @@ impl Daemon {
         let Some(s) = sessions.get(&id) else {
             return false;
         };
-        s.hooks_seen.store(true, Ordering::Relaxed);
         let mut hook_cwd = s.hook_cwd.lock().expect("hook_cwd lock");
         if let Some(cwd) = cwd {
             if Path::new(cwd).is_absolute() {
@@ -5731,21 +5788,57 @@ impl Daemon {
         id: u32,
         event: &str,
         ev: crate::agent_events::AgentEvent,
+        ambiguous_idle_notification: bool,
         deliver_delegation: bool,
     ) {
-        if !ev.applies(self.session_status(id).ok().flatten()) {
+        let changed = {
+            let sessions = self.sessions.lock().expect("sessions lock");
+            let Some(session) = sessions.get(&id) else {
+                return;
+            };
+            let state = session.state.lock().expect("state lock");
+            if !state.is_live() {
+                tracing::debug!(
+                    "ignoring {event:?} for session {id}: the pane is no longer running"
+                );
+                return;
+            }
+            let mut current = session.status.lock().expect("status lock");
+            if !ev.applies(*current, ambiguous_idle_notification) {
+                tracing::debug!(
+                    "ignoring ambiguous {event:?} for session {id}: already Idle, not a mid-turn block"
+                );
+                return;
+            }
+            if *current == Some(ev.status()) {
+                false
+            } else {
+                *current = Some(ev.status());
+                true
+            }
+        };
+        if changed {
+            self.broadcast_control(&proto::ServerMsg::AgentStatus {
+                session: id,
+                status: ev.status(),
+            });
+            if orchestrate::settled(ev.status()) {
+                self.drain_pending_inbox(id);
+            }
+        } else {
             tracing::debug!(
-                "ignoring {event:?} for session {id}: already Idle, not a mid-turn block"
+                "session {id}: {event:?} keeps status {:?}; applying its lifecycle effects",
+                ev.status()
             );
-            return;
         }
-        self.set_status(id, ev.status());
         if deliver_delegation {
             self.advance_delegation(id, ev);
         }
-        self.advance_routine_pane_run(id, ev);
-        if let Some(kind) = ev.notice() {
-            self.broadcast_control(&proto::ServerMsg::AgentNotice { session: id, kind });
+        if changed {
+            self.advance_routine_pane_run(id, ev);
+            if let Some(kind) = ev.notice(event) {
+                self.broadcast_control(&proto::ServerMsg::AgentNotice { session: id, kind });
+            }
         }
     }
 
@@ -6829,6 +6922,8 @@ impl Daemon {
         #[cfg(not(windows))]
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // A launcher may disable its own log colours; each pane is a new colour-capable terminal.
+        cmd.env_remove("NO_COLOR");
         for (k, v) in &extra_env {
             cmd.env(k, v);
         }
@@ -6883,8 +6978,8 @@ impl Daemon {
             .take_writer()
             .map_err(|e| anyhow!("taking PTY writer: {e}"))?;
 
-        let initial_status =
-            (!hidden && agent == proto::AgentKind::Claude).then_some(proto::AgentStatus::Spawning);
+        let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
+        let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
         let info = proto::SessionInfo {
             id,
             agent,
@@ -6949,7 +7044,6 @@ impl Daemon {
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            hooks_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(cols) << 16) | u32::from(rows)),
@@ -6979,6 +7073,23 @@ impl Daemon {
         std::thread::Builder::new()
             .name(format!("pty-wait-{id}"))
             .spawn(move || {
+                #[cfg(target_os = "linux")]
+                let _reap = {
+                    if let Some(pid) = pid {
+                        use nix::sys::wait::{waitid, Id, WaitPidFlag};
+                        // Observe exit without consuming it: a committed handoff leaves
+                        // the zombie for the supervisor to reap and report to its new owner.
+                        while let Err(nix::errno::Errno::EINTR) = waitid(
+                            Id::Pid(nix::unistd::Pid::from_raw(pid as i32)),
+                            WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
+                        ) {}
+                    }
+                    let guard = daemon.handoff_reap.lock().expect("handoff reap lock");
+                    if daemon.has_handed_off() {
+                        return;
+                    }
+                    guard
+                };
                 let status = child.wait();
                 if let Some(s) = daemon.sessions.lock().expect("sessions lock").get(&id) {
                     s.backend.release_pty();
@@ -7008,21 +7119,7 @@ impl Daemon {
                 let daemon = Arc::clone(self);
                 handle.spawn(async move {
                     tokio::time::sleep(SPAWN_GRACE).await;
-                    let still_spawning = {
-                        let sessions = daemon.sessions.lock().expect("sessions lock");
-                        match sessions.get(&id) {
-                            Some(s) => {
-                                !s.hooks_seen.load(Ordering::Relaxed)
-                                    && s.state.lock().expect("state lock").is_live()
-                                    && *s.status.lock().expect("status lock")
-                                        == Some(proto::AgentStatus::Spawning)
-                            }
-                            None => false,
-                        }
-                    };
-                    if still_spawning {
-                        daemon.set_status(id, proto::AgentStatus::Idle);
-                    }
+                    daemon.expire_spawn_grace(id);
                 });
             }
         }
@@ -7275,7 +7372,6 @@ impl Daemon {
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
-            hooks_seen: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
             hook_last_message: Mutex::new(None),
             geometry: AtomicU32::new((u32::from(params.cols) << 16) | u32::from(params.rows)),
@@ -8940,12 +9036,15 @@ impl Daemon {
                 return crate::hook_drop::DropVerdict::NoSession;
             }
             if let Some(ev) = crate::agent_events::AgentEvent::from_provider(provider, &d.event) {
-                self.apply_agent_event(d.session, &d.event, ev, false);
+                let ambiguous = d.event == "Notification" && d.notification_type.is_none();
+                self.apply_agent_event(d.session, &d.event, ev, ambiguous, false);
             }
             self.swarm_mirror_hook(d.session, &d.event);
             return crate::hook_drop::DropVerdict::Applied;
         }
-        let verdict = self.handle_hook_from(d.session, provider, &d.event, d.cwd.as_deref());
+        let ambiguous = d.event == "Notification" && d.notification_type.is_none();
+        let verdict =
+            self.handle_hook_from_with(d.session, provider, &d.event, d.cwd.as_deref(), ambiguous);
         self.note_context_from_hook(d.session, provider, d);
         verdict
     }
@@ -8989,6 +9088,94 @@ impl Daemon {
             }
         }
 
+        let opencode_input_kind = match d.event.as_str() {
+            "permission.asked" | "permission.updated" | "permission.replied" => {
+                Some("OpenCode permission")
+            }
+            "question.asked"
+            | "question.replied"
+            | "question.rejected"
+            | "question.v2.asked"
+            | "question.v2.replied"
+            | "question.v2.rejected" => Some("OpenCode question"),
+            _ => None,
+        };
+        if provider == proto::AgentKind::Opencode {
+            if let Some(kind) = opencode_input_kind {
+                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                    return Some(crate::hook_drop::DropVerdict::NoSession);
+                }
+                let opens = matches!(
+                    d.event.as_str(),
+                    "permission.asked"
+                        | "permission.updated"
+                        | "question.asked"
+                        | "question.v2.asked"
+                );
+                if opens {
+                    let mut episodes = self.permission_episodes.lock().expect("episodes lock");
+                    episodes.entry(d.session).or_default().open(
+                        d.request_id.as_deref(),
+                        None,
+                        kind,
+                        d.reason.clone(),
+                        now,
+                    );
+                    drop(episodes);
+                    self.apply_agent_event(
+                        d.session,
+                        &d.event,
+                        crate::agent_events::AgentEvent::NeedsInput,
+                        false,
+                        true,
+                    );
+                } else {
+                    let resumed = self.resolve_permission_episodes(
+                        d.session,
+                        &orchestrate::EpisodeEnd::PostToolUse {
+                            tool_use_id: d.request_id.clone(),
+                            tool_name: Some(kind.to_string()),
+                        },
+                    );
+                    if resumed {
+                        self.apply_agent_event(
+                            d.session,
+                            &d.event,
+                            crate::agent_events::AgentEvent::InputResolved,
+                            false,
+                            true,
+                        );
+                    }
+                }
+                return Some(crate::hook_drop::DropVerdict::Applied);
+            }
+
+            if matches!(d.event.as_str(), "session.idle" | "session.error") {
+                self.resolve_permission_episodes(d.session, &orchestrate::EpisodeEnd::TurnEnded);
+            } else if d.event == "message.updated" {
+                self.resolve_permission_episodes(
+                    d.session,
+                    &orchestrate::EpisodeEnd::PromptSubmitted,
+                );
+            } else if d.event == "session.status"
+                && self
+                    .permission_episodes
+                    .lock()
+                    .expect("episodes lock")
+                    .get(&d.session)
+                    .is_some_and(|episodes| episodes.open_count() > 0)
+            {
+                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                    return Some(crate::hook_drop::DropVerdict::NoSession);
+                }
+                tracing::debug!(
+                    "session {}: OpenCode remains blocked despite a busy status",
+                    d.session
+                );
+                return Some(crate::hook_drop::DropVerdict::Applied);
+            }
+        }
+
         if ev == Some(crate::agent_events::AgentEvent::TurnEnded) && d.stop_continued {
             let blocks = self.note_continued_stop(d.session);
             tracing::debug!(
@@ -9004,12 +9191,73 @@ impl Daemon {
             self.clear_stop_blocks(d.session);
         }
 
-        if correlates && crate::agent_events::CLAUDE_CORRELATION_EVENTS.contains(&d.event.as_str())
-        {
+        if correlates && matches!(d.event.as_str(), "SubagentStart" | "SubagentStop") {
             if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             self.feed_subagent_evidence(d, now);
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
+
+        if correlates && d.event == "PreToolUse" {
+            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            let blocks = match provider {
+                proto::AgentKind::Claude => d
+                    .tool_name
+                    .as_deref()
+                    .is_some_and(|name| Self::CLAUDE_INTERACTIVE_TOOLS.contains(&name)),
+                proto::AgentKind::Codex => d.tool_name.as_deref() == Some("request_user_input"),
+                _ => false,
+            };
+            if !blocks {
+                tracing::debug!(
+                    "session {}: {provider:?} PreToolUse for {:?} is not interactive",
+                    d.session,
+                    d.tool_name
+                );
+                return Some(crate::hook_drop::DropVerdict::Applied);
+            }
+            let mut episodes = self.permission_episodes.lock().expect("episodes lock");
+            episodes.entry(d.session).or_default().open(
+                d.tool_use_id.as_deref().or(d.request_id.as_deref()),
+                d.prompt_id.as_deref(),
+                d.tool_name.as_deref().unwrap_or("unnamed tool"),
+                d.reason.clone(),
+                now,
+            );
+            drop(episodes);
+            self.apply_agent_event(
+                d.session,
+                &d.event,
+                crate::agent_events::AgentEvent::NeedsInput,
+                false,
+                true,
+            );
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
+
+        if correlates && matches!(d.event.as_str(), "PostToolUse" | "PostToolUseFailure") {
+            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            let resumed = self.resolve_permission_episodes(
+                d.session,
+                &orchestrate::EpisodeEnd::PostToolUse {
+                    tool_use_id: d.tool_use_id.clone(),
+                    tool_name: d.tool_name.clone(),
+                },
+            );
+            if resumed {
+                self.apply_agent_event(
+                    d.session,
+                    &d.event,
+                    crate::agent_events::AgentEvent::InputResolved,
+                    false,
+                    true,
+                );
+            }
             return Some(crate::hook_drop::DropVerdict::Applied);
         }
 
@@ -9091,16 +9339,101 @@ impl Daemon {
             return None;
         }
 
+        if correlates && ev == Some(crate::agent_events::AgentEvent::TurnInterrupted) {
+            self.resolve_permission_episodes(d.session, &orchestrate::EpisodeEnd::TurnEnded);
+            return None;
+        }
+
         if correlates && d.event == "PermissionRequest" {
+            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
             episodes.entry(d.session).or_default().open(
-                d.tool_use_id.as_deref(),
+                d.tool_use_id.as_deref().or(d.request_id.as_deref()),
                 d.prompt_id.as_deref(),
                 d.reason.as_deref().unwrap_or("unnamed tool"),
                 d.reason.clone(),
                 now,
             );
-            return None;
+            drop(episodes);
+            self.apply_agent_event(
+                d.session,
+                &d.event,
+                crate::agent_events::AgentEvent::NeedsInput,
+                false,
+                true,
+            );
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
+
+        if correlates && d.event == "PermissionDenied" {
+            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            let resumed = self.resolve_permission_episodes(
+                d.session,
+                &orchestrate::EpisodeEnd::PostToolUse {
+                    tool_use_id: d.tool_use_id.clone().or_else(|| d.request_id.clone()),
+                    tool_name: d.tool_name.clone(),
+                },
+            );
+            if resumed {
+                self.apply_agent_event(
+                    d.session,
+                    &d.event,
+                    crate::agent_events::AgentEvent::InputResolved,
+                    false,
+                    true,
+                );
+            }
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
+
+        if correlates && d.event == "Elicitation" {
+            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            let mut episodes = self.permission_episodes.lock().expect("episodes lock");
+            episodes.entry(d.session).or_default().open(
+                d.request_id.as_deref(),
+                d.prompt_id.as_deref(),
+                "Claude elicitation",
+                d.reason.clone(),
+                now,
+            );
+            drop(episodes);
+            self.apply_agent_event(
+                d.session,
+                &d.event,
+                crate::agent_events::AgentEvent::NeedsInput,
+                false,
+                true,
+            );
+            return Some(crate::hook_drop::DropVerdict::Applied);
+        }
+
+        if correlates && d.event == "ElicitationResult" {
+            if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            let resumed = self.resolve_permission_episodes(
+                d.session,
+                &orchestrate::EpisodeEnd::PostToolUse {
+                    tool_use_id: d.request_id.clone(),
+                    tool_name: Some("Claude elicitation".to_string()),
+                },
+            );
+            if resumed {
+                self.apply_agent_event(
+                    d.session,
+                    &d.event,
+                    crate::agent_events::AgentEvent::InputResolved,
+                    false,
+                    true,
+                );
+            }
+            return Some(crate::hook_drop::DropVerdict::Applied);
         }
 
         if ev == Some(crate::agent_events::AgentEvent::NeedsInput) && d.event == "Notification" {
@@ -9121,7 +9454,13 @@ impl Daemon {
                 Some(eps) => eps.attach_notification(d.reason.clone()),
                 None => false,
             };
-            if !attached {
+            if attached {
+                drop(episodes);
+                if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
+                    return Some(crate::hook_drop::DropVerdict::NoSession);
+                }
+                return Some(crate::hook_drop::DropVerdict::Applied);
+            } else {
                 tracing::debug!(
                     "session {}: a blocking notification with no permission episode open",
                     d.session
@@ -9132,6 +9471,8 @@ impl Daemon {
 
         None
     }
+
+    const CLAUDE_INTERACTIVE_TOOLS: [&str; 2] = ["AskUserQuestion", "ExitPlanMode"];
 
     const ANTIGRAVITY_BLOCKING_TOOLS: [&str; 3] =
         ["ask_question", "ask_permission", "ask_custom_permission"];
@@ -9226,14 +9567,24 @@ impl Daemon {
         }
 
         if d.event == "PostToolUse" {
-            if let Some(id) = d.tool_use_id.clone() {
-                self.resolve_permission_episodes(
-                    d.session,
-                    &orchestrate::EpisodeEnd::PostToolUse(id),
-                );
-            }
+            let resumed = self.resolve_permission_episodes(
+                d.session,
+                &orchestrate::EpisodeEnd::PostToolUse {
+                    tool_use_id: d.tool_use_id.clone(),
+                    tool_name: d.tool_name.clone(),
+                },
+            );
             if !self.note_hook_seen(d.session, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            if resumed {
+                self.apply_agent_event(
+                    d.session,
+                    &d.event,
+                    crate::agent_events::AgentEvent::InputResolved,
+                    false,
+                    true,
+                );
             }
             return Some(crate::hook_drop::DropVerdict::Applied);
         }
@@ -9324,14 +9675,17 @@ impl Daemon {
         }
     }
 
-    fn resolve_permission_episodes(&self, session: u32, end: &orchestrate::EpisodeEnd) {
+    fn resolve_permission_episodes(&self, session: u32, end: &orchestrate::EpisodeEnd) -> bool {
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
         if let Some(eps) = episodes.get_mut(&session) {
-            eps.resolve_on(end);
-            if eps.open_count() == 0 {
+            let resolved = eps.resolve_on(end);
+            let cleared = !resolved.is_empty() && eps.open_count() == 0;
+            if cleared {
                 episodes.remove(&session);
             }
+            return cleared;
         }
+        false
     }
 
     fn subagent_expiry_pass(self: &Arc<Self>, now: u64) {
@@ -9374,7 +9728,13 @@ impl Daemon {
                 "session {id}: releasing the turn end its sub-agent round withheld — the \
                  evidence it was waiting for never arrived"
             );
-            self.apply_agent_event(id, "Stop", crate::agent_events::AgentEvent::TurnEnded, true);
+            self.apply_agent_event(
+                id,
+                "Stop",
+                crate::agent_events::AgentEvent::TurnEnded,
+                false,
+                true,
+            );
         }
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
         episodes.retain(|id, _| live.contains(id));
@@ -9765,7 +10125,9 @@ impl Daemon {
         let outcome = crate::usage::scan(&crate::usage::ScanRequest {
             since_ms,
             until_ms,
-            refresh_pricing,
+            catalog: self
+                .model_catalog
+                .load(self.update_policy().check, refresh_pricing),
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
         });
@@ -9966,6 +10328,7 @@ impl Daemon {
                 Some(proto::AgentStatus::Working)
                     | Some(proto::AgentStatus::NeedsInput)
                     | Some(proto::AgentStatus::Spawning)
+                    | Some(proto::AgentStatus::Unavailable)
             ) {
                 continue;
             }
@@ -10528,9 +10891,7 @@ impl Daemon {
             match outcome {
                 crate::acp::AcpDecodeOutcome::Message(msg) => {
                     if let Some(event) = crate::acp::event_for_message(&msg) {
-                        self.set_status(id, event.status());
-                        self.advance_delegation(id, event);
-                        self.advance_routine_pane_run(id, event);
+                        self.apply_agent_event(id, "ACP", event, false, true);
                     }
                 }
                 crate::acp::AcpDecodeOutcome::Error(e) => {
@@ -12389,11 +12750,16 @@ impl Daemon {
 
     fn advance_delegation(self: &Arc<Self>, child: u32, ev: crate::agent_events::AgentEvent) {
         use crate::agent_events::AgentEvent;
+        let opens_round = ev == AgentEvent::PromptSubmitted;
         let event = match ev {
-            AgentEvent::PromptSubmitted => orchestrate::DelegationEvent::TurnStarted,
+            AgentEvent::PromptSubmitted | AgentEvent::InputResolved => {
+                orchestrate::DelegationEvent::TurnStarted
+            }
             AgentEvent::TurnEnded => orchestrate::DelegationEvent::TurnEnded,
             AgentEvent::NeedsInput => orchestrate::DelegationEvent::Blocked,
-            AgentEvent::SessionStarted => return,
+            AgentEvent::SessionStarted | AgentEvent::Activity | AgentEvent::TurnInterrupted => {
+                return
+            }
         };
         let row = match self.db.delegation_for_child(child) {
             Ok(Some(row)) => row,
@@ -12465,7 +12831,7 @@ impl Daemon {
             }
         }
 
-        if event == orchestrate::DelegationEvent::TurnStarted {
+        if opens_round {
             self.open_round_on_external_prompt(child, from);
         }
 
@@ -14997,6 +15363,30 @@ mod idle_profile_tests {
             !daemon.delegation_watch_armed(),
             "the last open delegation closing must park the watcher"
         );
+    }
+
+    #[test]
+    fn provider_activity_does_not_advance_a_delegation_round() {
+        let (daemon, _state) = test_daemon();
+        daemon
+            .db
+            .delegation_create(1, 2, None, "brief", now_ms())
+            .expect("open a delegation");
+        let before = daemon
+            .db
+            .delegation_for_child(2)
+            .expect("read delegation")
+            .expect("delegation exists");
+
+        daemon.advance_delegation(2, crate::agent_events::AgentEvent::Activity);
+
+        let after = daemon
+            .db
+            .delegation_for_child(2)
+            .expect("read delegation")
+            .expect("delegation exists");
+        assert_eq!(after.state, before.state);
+        assert_eq!(after.round, before.round);
     }
 }
 

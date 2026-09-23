@@ -88,7 +88,24 @@ if [ "$FRESH" = "1" ]; then
     echo "      Run it from a pane on another channel (e.g. the installed app), or a terminal outside both." >&2
     exit 1
   fi
+fi
 
+APP="$ROOT/src-tauri/target/debug/houston-tauri"
+
+echo "[dev] building the renderer…"
+(cd "$ROOT/ui" && bun run build)
+
+echo "[dev] building the daemon, supervisor and hook helper (debug)…"
+(cd "$ROOT/core" && cargo build --bin houston-core --bin houston-supervisor --bin tr-helper)
+
+echo "[dev] building the app (debug)…"
+(cd "$ROOT/src-tauri" && cargo build)
+
+[ -x "$APP" ] || { echo "[dev] app binary missing at $APP after a successful build — did the bin name change in src-tauri/Cargo.toml?" >&2; exit 1; }
+
+export HOUSTON_DAEMON_BIN_DIR="$ROOT/core/target/debug"
+
+if [ "$FRESH" = "1" ]; then
   proc_creation_token() {
     local stat rest
     stat="$(cat "/proc/$1/stat" 2>/dev/null)" || return 0
@@ -193,21 +210,6 @@ if [ "$FRESH" = "1" ]; then
     fi
   fi
 fi
-
-APP="$ROOT/src-tauri/target/debug/houston-tauri"
-
-echo "[dev] building the renderer…"
-(cd "$ROOT/ui" && bun run build)
-
-echo "[dev] building the daemon and supervisor (debug)…"
-(cd "$ROOT/core" && cargo build --bin houston-core --bin houston-supervisor)
-
-echo "[dev] building the app (debug)…"
-(cd "$ROOT/src-tauri" && cargo build)
-
-[ -x "$APP" ] || { echo "[dev] app binary missing at $APP after a successful build — did the bin name change in src-tauri/Cargo.toml?" >&2; exit 1; }
-
-export HOUSTON_DAEMON_BIN_DIR="$ROOT/core/target/debug"
 
 ARGS=(--channel "$HOUSTON_CHANNEL")
 

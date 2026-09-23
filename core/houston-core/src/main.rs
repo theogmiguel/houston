@@ -161,6 +161,14 @@ async fn wait_for_sigterm() {
     std::future::pending::<()>().await;
 }
 
+async fn exit_retired_daemon(daemon: &std::sync::Arc<Daemon>) {
+    tracing::info!("retired: a new generation owns this channel");
+    // Let /manage flush its handoff receipt, then exit without waiting for
+    // blocking background work: the supervisor must inherit the transferred children.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    daemon.call_exit_hook();
+}
+
 #[cfg(unix)]
 async fn run_adopt(socket_path: String) -> Result<()> {
     use houston_core::adoption::{self, FromNew, FromOld};
@@ -316,7 +324,7 @@ async fn run_adopt(socket_path: String) -> Result<()> {
         _ = wait_for_sigterm() => { tracing::info!("shutting down (SIGTERM)"); }
     }
     if daemon.has_handed_off() {
-        tracing::info!("retired: a new generation owns this channel");
+        exit_retired_daemon(&daemon).await;
         return Ok(());
     }
     if let Err(e) = daemon.checkpoint_scrollback() {
@@ -426,7 +434,7 @@ async fn main() -> Result<()> {
         }
     }
     if daemon.has_handed_off() {
-        tracing::info!("retired: a new generation owns this channel");
+        exit_retired_daemon(&daemon).await;
         return Ok(());
     }
     if let Err(e) = daemon.checkpoint_scrollback() {

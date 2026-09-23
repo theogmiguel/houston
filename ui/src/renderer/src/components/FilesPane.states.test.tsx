@@ -12,6 +12,8 @@ const invokeMock = vi.fn()
 
 const { FilesPane } = await import('./FilesPane')
 await import('./EditorSurface')
+const { loadMarkdownPipeline } = await import('./MarkdownPreview')
+await vi.importActual('./markdownPipeline')
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -26,6 +28,12 @@ async function flush(): Promise<void> {
     for (let i = 0; i < 8; i++) await Promise.resolve()
     await new Promise((r) => setTimeout(r, 0))
     for (let i = 0; i < 8; i++) await Promise.resolve()
+  })
+}
+
+async function flushMarkdownPipeline(): Promise<void> {
+  await act(async () => {
+    await loadMarkdownPipeline()
   })
 }
 
@@ -202,6 +210,7 @@ describe('Files pane — state matrix (§14)', () => {
     await act(async () => {
       qa('[data-testid="files-tree-row"]')[0].click()
     })
+    await flushMarkdownPipeline()
     await flush()
     const tab = q('[data-testid="files-tab"]')!
     const label = tab.querySelector('span.truncate')
@@ -216,7 +225,8 @@ describe('Files pane — state matrix (§14)', () => {
     await act(async () => {
       qa('[data-testid="files-tree-row"]')[0].click()
     })
-    for (let i = 0; i < 50 && !q('[data-testid="editor-markdown-toggle"]'); i++) await flush()
+    await flushMarkdownPipeline()
+    await flush()
     const toggle = q('[data-testid="editor-markdown-toggle"]') as HTMLButtonElement | null
     expect(toggle, 'the Preview/Edit toggle must be in the Files header').not.toBeNull()
     expect(toggle!.getAttribute('aria-label')).toBe('Edit source')

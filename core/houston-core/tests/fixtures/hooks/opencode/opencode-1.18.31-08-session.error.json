@@ -1,0 +1,5 @@
+{
+  "_note": "normalized from OpenCode 1.18.31's session.error event",
+  "session_id": "ses_root01",
+  "message": "Provider request failed"
+}

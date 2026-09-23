@@ -9,6 +9,8 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
 const { EditorLeaf } = await import('./EditorLeaf')
 await import('./EditorSurface')
+const { loadMarkdownPipeline } = await import('./MarkdownPreview')
+await vi.importActual('./markdownPipeline')
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 async function flush(): Promise<void> {
@@ -63,6 +65,11 @@ describe('EditorLeaf markdown preview (Phase 6 item 4 batch 4)', () => {
       )
     })
     await flush()
+    if (path.endsWith('.md')) {
+      await act(async () => {
+        await loadMarkdownPipeline()
+      })
+    }
   }
 
   function el(testId: string): HTMLElement | null {
@@ -71,14 +78,6 @@ describe('EditorLeaf markdown preview (Phase 6 item 4 batch 4)', () => {
 
   function toggle(): HTMLButtonElement | null {
     return el('editor-markdown-toggle') as HTMLButtonElement | null
-  }
-
-  async function settleRendered(): Promise<void> {
-    for (let i = 0; i < 50 && !el('editor-markdown-body'); i++) {
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 1))
-      })
-    }
   }
 
   async function click(button: HTMLButtonElement): Promise<void> {
@@ -92,7 +91,6 @@ describe('EditorLeaf markdown preview (Phase 6 item 4 batch 4)', () => {
     await mount('/ws/leaf-a.md')
     expect(readFile).toHaveBeenCalledWith('/ws/leaf-a.md')
     expect(invokeMock).not.toHaveBeenCalled()
-    await settleRendered()
     expect(el('editor-preview-markdown')?.querySelector('h1')?.textContent).toBe('Heading')
     expect((el('cm-host') as HTMLElement).style.display).toBe('none')
     expect(toggle()?.getAttribute('aria-label')).toBe('Edit source')

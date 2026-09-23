@@ -9,8 +9,8 @@ Two halves. The first is for using Houston; the second is for working on it.
 - [Panes and grids](user/panes-and-grids.md) — workspaces, sessions, splits, scrollback
 - [Agent status](user/agent-status.md) — how Houston knows what an agent is doing, and
   Settings ▸ Agent setup
-- [Context](user/context.md) — the bottom strip that reads the focused agent's context use,
-  which providers it covers, and how to hide it
+- [Context](user/context.md) — the pane-header indicator that shows context use, which
+  providers it covers, and how to hide it
 - [Orchestration](user/orchestration.md) — letting an agent open and drive other panes
 - [Routines](user/routines.md) — scheduling repeatable work in an agent pane
 - [Changes](user/changes.md) — the git surface

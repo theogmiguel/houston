@@ -57,6 +57,7 @@ import { HEAD_BADGE_CLS } from './headBadge'
 import { HeaderDelegationBadge, type PaneRoster } from './DelegationCard'
 import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
+import { ContextIndicator } from './ContextIndicator'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -203,9 +204,11 @@ function statusLabel(s: AgentStatus): string {
     case 'working':
       return 'working'
     case 'idle':
-      return 'idle — awaiting you'
+      return 'ready'
     case 'needs-input':
       return 'needs your input'
+    case 'unavailable':
+      return 'status unavailable'
   }
 }
 
@@ -213,13 +216,15 @@ function statusDotClass(status: AgentStatus): string {
   const pulse = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]'
   switch (status) {
     case 'working':
-      return `bg-[var(--ok)] ${pulse}`
+      return `bg-[var(--info)] ${pulse}`
     case 'spawning':
       return `bg-[var(--accent)] ${pulse}`
     case 'idle':
-      return 'bg-[var(--info)]'
+      return 'bg-[var(--text-muted)]'
     case 'needs-input':
       return 'bg-[var(--warn)]'
+    case 'unavailable':
+      return 'bg-transparent ring-1 ring-inset ring-[var(--text-faint)]'
   }
 }
 
@@ -235,6 +240,7 @@ export function StatusDot({
     <Tooltip label={statusLabel(status)}>
       <span
         className={`agent-dot w-[7px] h-[7px] rounded-full flex-none ${statusDotClass(status)}`}
+        role="img"
         aria-label={statusLabel(status)}
       />
     </Tooltip>
@@ -447,7 +453,7 @@ function SessionPaneImpl({
       <header
         className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[10px] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b border-b-[var(--divider)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [.pane-slot.drag-src_&]:cursor-grabbing [transition:background_0.2s] @container ${PANE_HEAD_BG_CLS[focusTier]}`}
         onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest('button, input')) return
+          if ((e.target as HTMLElement).closest('button, input, [data-pane-head-control]')) return
           onHeaderPointerDown(info.id, e)
         }}
       >
@@ -494,6 +500,7 @@ function SessionPaneImpl({
           )}
         </span>
         <span className="head-actions ml-auto flex items-center gap-px flex-none">
+          <ContextIndicator context={info.context} />
           {ended && (
             <span
               data-testid="pane-state"

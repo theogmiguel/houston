@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use houston_protocol as proto;
 
-use super::pricing::{cache_savings_usd, price_usage, RateTable};
+use super::pricing::{cache_savings_usd, price_usage};
 use super::time::floor_hour_ms;
 use super::transcripts::UsageRecord;
+use crate::model_catalog::ModelTable;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 struct BucketKey {
@@ -32,7 +33,7 @@ pub struct Aggregator {
     seen: HashSet<u64>,
     since_ms: i64,
     until_ms: i64,
-    rates: RateTable,
+    rates: ModelTable,
     duplicates_dropped: u64,
     out_of_window: u64,
 }
@@ -45,7 +46,7 @@ pub struct AggregateResult {
 }
 
 impl Aggregator {
-    pub fn new(since_ms: i64, until_ms: i64, rates: RateTable) -> Self {
+    pub fn new(since_ms: i64, until_ms: i64, rates: ModelTable) -> Self {
         Self {
             buckets: HashMap::new(),
             seen: HashSet::new(),
@@ -158,8 +159,8 @@ mod tests {
 
     const HOUR: i64 = 3_600_000;
 
-    fn rates() -> RateTable {
-        RateTable::from_document(&json!({
+    fn rates() -> ModelTable {
+        ModelTable::from_document(&json!({
             "claude-opus-5": {
                 "input_cost_per_token": 0.00001,
                 "output_cost_per_token": 0.0001,

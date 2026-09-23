@@ -77,7 +77,7 @@ const TREE = {
         sessionIds: [11],
         tagIds: [1],
         count: 1,
-        state: 'online'
+        state: 'working'
       },
       {
         id: 'a2',
@@ -195,7 +195,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
             sessionIds: [11],
             tagIds: [1, 2, 3],
             count: 1,
-            state: 'online'
+            state: 'working'
           }
         ],
         '/b': [{ id: 'b1', name: 'bravo main' }]

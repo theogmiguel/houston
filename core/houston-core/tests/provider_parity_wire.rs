@@ -139,7 +139,7 @@ fn pane(daemon: &Arc<Daemon>, agent: proto::AgentKind) -> (proto::SessionInfo, t
         .create_session(CreateParams {
             agent,
             project_dir: dir.path().to_path_buf(),
-            cmd: Some(vec!["sleep".into(), "30".into()]),
+            cmd: (agent != proto::AgentKind::Codex).then(|| vec!["sleep".into(), "30".into()]),
             cols: 80,
             rows: 24,
             cwd_from: None,
@@ -178,6 +178,7 @@ mod codex {
     #[tokio::test]
     async fn codex_turn_end_is_one_row() {
         let _guard = serial().await;
+        shim_dir();
         let (_addr, state, daemon) = start_daemon_with_handle().await;
         let (info, _dir) = pane(&daemon, proto::AgentKind::Codex);
 
@@ -276,6 +277,7 @@ mod codex {
     #[tokio::test]
     async fn codex_block_is_reported_or_named_as_missing() {
         let _guard = serial().await;
+        shim_dir();
         let (_addr, state, daemon) = start_daemon_with_handle().await;
         let (info, _dir) = pane(&daemon, proto::AgentKind::Codex);
         drive(
@@ -304,6 +306,103 @@ mod codex {
             houston_core::orchestrate::capability_note(proto::AgentKind::Codex),
             None,
             "codex reports a block; nothing is missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn codex_request_user_input_blocks_until_its_tool_returns() {
+        let _guard = serial().await;
+        shim_dir();
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Codex);
+        drive(
+            state.path(),
+            "UserPromptSubmit",
+            SLUG,
+            info.id,
+            f("codex-0.153.4-02-UserPromptSubmit.json"),
+        )
+        .await;
+
+        let mut rx = daemon.observe();
+        drive(
+            state.path(),
+            "PreToolUse",
+            SLUG,
+            info.id,
+            f("codex-docs-07-PreToolUse-request_user_input.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::NeedsInput
+        );
+
+        let unrelated = f("codex-docs-08-PostToolUse-request_user_input.json")
+            .replace("request_user_input", "update_plan");
+        drive(state.path(), "PostToolUse", SLUG, info.id, unrelated).await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput),
+            "an unrelated tool completion cannot dismiss the question"
+        );
+
+        drive(
+            state.path(),
+            "PostToolUse",
+            SLUG,
+            info.id,
+            f("codex-docs-08-PostToolUse-request_user_input.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working,
+            "answering request_user_input resumes the same turn"
+        );
+    }
+
+    #[tokio::test]
+    async fn codex_interrupt_returns_to_idle_without_completion() {
+        let _guard = serial().await;
+        shim_dir();
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Codex);
+
+        drive(
+            state.path(),
+            "UserPromptSubmit",
+            SLUG,
+            info.id,
+            f("codex-0.153.4-02-UserPromptSubmit.json"),
+        )
+        .await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::Working)
+        );
+
+        let mut rx = daemon.observe();
+        drive(
+            state.path(),
+            "Interrupt",
+            SLUG,
+            info.id,
+            f("codex-docs-09-Interrupt.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Idle
+        );
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(150),
+                common::next_broadcast_control(&mut rx),
+            )
+            .await
+            .is_err(),
+            "interrupting a turn must not announce a completed result"
         );
     }
 
@@ -587,10 +686,211 @@ mod opencode {
             next_status(&mut rx, info.id).await,
             proto::AgentStatus::NeedsInput
         );
+        drive(
+            state.path(),
+            "permission.replied",
+            SLUG,
+            info.id,
+            r#"{"session_id":"ses_root01"}"#.to_string(),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working,
+            "answering a permission resumes the same turn"
+        );
         let note = houston_core::orchestrate::capability_note(proto::AgentKind::Opencode);
         assert!(
             !note.as_deref().unwrap_or_default().contains("a block"),
             "opencode reports a block; the note must not claim it cannot: {note:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn opencode_question_blocks_until_answered() {
+        let _guard = serial().await;
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Opencode);
+        drive(
+            state.path(),
+            "message.updated",
+            SLUG,
+            info.id,
+            f("opencode-1.18.27-02-message.updated.json"),
+        )
+        .await;
+
+        let mut rx = daemon.observe();
+        drive(
+            state.path(),
+            "question.asked",
+            SLUG,
+            info.id,
+            f("opencode-1.18.31-06-question.asked.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::NeedsInput
+        );
+        drive(
+            state.path(),
+            "question.replied",
+            SLUG,
+            info.id,
+            f("opencode-1.18.31-07-question.replied.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working
+        );
+    }
+
+    #[tokio::test]
+    async fn opencode_stays_blocked_until_every_keyed_request_is_answered() {
+        let _guard = serial().await;
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Opencode);
+        drive(
+            state.path(),
+            "message.updated",
+            SLUG,
+            info.id,
+            f("opencode-1.18.27-02-message.updated.json"),
+        )
+        .await;
+
+        let mut rx = daemon.observe();
+        drive(
+            state.path(),
+            "permission.asked",
+            SLUG,
+            info.id,
+            r#"{"session_id":"ses_child01","request_id":"permission-1","message":"bash"}"#
+                .to_string(),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::NeedsInput
+        );
+        drive(
+            state.path(),
+            "question.asked",
+            SLUG,
+            info.id,
+            r#"{"session_id":"ses_child02","request_id":"question-1","message":"Choose"}"#
+                .to_string(),
+        )
+        .await;
+        drive(
+            state.path(),
+            "session.status",
+            SLUG,
+            info.id,
+            r#"{"session_id":"ses_root01"}"#.to_string(),
+        )
+        .await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput),
+            "a provider busy pulse must not obscure a pending human request"
+        );
+        drive(
+            state.path(),
+            "permission.replied",
+            SLUG,
+            info.id,
+            r#"{"session_id":"ses_child01","request_id":"permission-1"}"#.to_string(),
+        )
+        .await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(150), next_status(&mut rx, info.id))
+                .await
+                .is_err(),
+            "resolving one request must not hide another open question"
+        );
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput)
+        );
+
+        drive(
+            state.path(),
+            "question.replied",
+            SLUG,
+            info.id,
+            r#"{"session_id":"ses_child02","request_id":"question-1"}"#.to_string(),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working
+        );
+    }
+
+    #[tokio::test]
+    async fn opencode_status_and_error_are_authoritative_without_duplicate_completion() {
+        let _guard = serial().await;
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Opencode);
+        let mut rx = daemon.observe();
+
+        drive(
+            state.path(),
+            "session.status",
+            SLUG,
+            info.id,
+            r#"{"session_id":"ses_root01"}"#.to_string(),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working
+        );
+
+        drive(
+            state.path(),
+            "session.error",
+            SLUG,
+            info.id,
+            f("opencode-1.18.31-08-session.error.json"),
+        )
+        .await;
+        let mut saw_idle = false;
+        let mut saw_error = false;
+        while !(saw_idle && saw_error) {
+            match common::next_broadcast_control(&mut rx).await {
+                proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
+                    assert_eq!(status, proto::AgentStatus::Idle);
+                    saw_idle = true;
+                }
+                proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
+                    assert_eq!(kind, proto::AgentNoticeKind::Error);
+                    saw_error = true;
+                }
+                proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
+                _ => continue,
+            }
+        }
+
+        drive(
+            state.path(),
+            "session.idle",
+            SLUG,
+            info.id,
+            f("opencode-1.18.27-03-session.idle.json"),
+        )
+        .await;
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(150),
+                common::next_broadcast_control(&mut rx),
+            )
+            .await
+            .is_err(),
+            "the legacy idle emitted after session.error must not create a second notice"
         );
     }
 
@@ -1530,6 +1830,11 @@ mod antigravity {
             ),
         )
         .await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::Working),
+            "answering the question resumes the active turn"
+        );
         drive(
             state.path(),
             "Stop",
