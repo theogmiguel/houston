@@ -5,6 +5,7 @@ import {
   type AppHarness,
   currentClient,
   deliverControl,
+  deliverHelloOk,
   makeSession,
   makeWorkspace,
   renderReadyApp,
@@ -84,16 +85,19 @@ describe('branch chip in the focused pane', () => {
     })
 
     focusPane(harness, 1)
+    await flush()
     reply(REPO, 'feat/repo', REPO, `${REPO}/.git`)
     await flush()
     expect(paneChip(harness, 1)?.textContent).toContain('feat/repo')
 
     focusPane(harness, 2)
+    await flush()
     reply(NON_REPO, null, null, null)
     await flush()
     expect(paneChip(harness, 2)).toBeNull()
 
     focusPane(harness, 3)
+    await flush()
     reply(DETACHED, null, DETACHED, `${DETACHED}/.git`)
     await flush()
     expect(paneChip(harness, 3)).toBeNull()
@@ -174,11 +178,13 @@ describe('branch chip in the focused pane', () => {
     })
 
     focusPane(harness, 1)
+    await flush()
     reply(REPO, 'feat/first', REPO, `${REPO}/.git`)
     await flush()
     expect(paneChip(harness, 1)?.textContent).toContain('feat/first')
 
     focusPane(harness, 2)
+    await flush()
     reply(OTHER, 'feat/other', OTHER, `${OTHER}/.git`)
     await flush()
 
@@ -198,11 +204,72 @@ describe('branch chip in the focused pane', () => {
     })
 
     focusPane(harness, 1)
+    await flush()
     reply(REPO, 'feat/repo', REPO, `${REPO}/.git`)
     await flush()
 
     const chip = paneChip(harness, 1)
     expect(chip).not.toBeNull()
     expect(chip!.className).toContain('[@container_(max-width:400px)]:hidden')
+  })
+
+  it('keyboard focus shows the full branch name', async () => {
+    harness = await renderReadyApp({
+      sessions: [makeSession({ id: 1, cwd: REPO, project_dir: WS })],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+    focusPane(harness, 1)
+    await flush()
+    reply(REPO, 'feat/a-very-long-branch-name', REPO, `${REPO}/.git`)
+    await flush()
+
+    const chip = paneChip(harness, 1)!
+    act(() => {
+      chip.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    })
+    const tip = document.body.querySelector('[role="tooltip"]')
+    expect(tip).not.toBeNull()
+    expect(tip!.textContent).toContain('feat/a-very-long-branch-name')
+  })
+
+  it('a new connection re-asks a pending directory', async () => {
+    harness = await renderReadyApp({
+      sessions: [makeSession({ id: 1, cwd: REPO, project_dir: WS })],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+    focusPane(harness, 1)
+    await flush()
+    expect(callsFor(REPO)).toBe(1)
+
+    // The connection is replaced before the reply arrives; the new one must ask
+    // again instead of trusting a pending ask that died with the old one.
+    deliverHelloOk({
+      sessions: [makeSession({ id: 1, cwd: REPO, project_dir: WS })],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+    await flush()
+    expect(callsFor(REPO)).toBe(2)
+  })
+
+  it('focus asks for the live cwd', async () => {
+    harness = await renderReadyApp({
+      sessions: [makeSession({ id: 1, cwd: REPO, project_dir: WS })],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+    const moved = '/tmp/moved-repo'
+    ;(currentClient().sessionCwd as unknown as Mock).mockResolvedValue(moved)
+    ;(currentClient().gitBranch as unknown as Mock).mockClear()
+
+    focusPane(harness, 1)
+    await flush()
+    expect(gitBranchCalls()).toContain(moved)
+    expect(
+      gitBranchCalls(),
+      'focus must not ask for the cwd the session started in'
+    ).not.toContain(REPO)
+
+    reply(moved, 'feat/moved', moved, `${moved}/.git`)
+    await flush()
+    expect(paneChip(harness, 1)?.textContent).toContain('feat/moved')
   })
 })

@@ -41,6 +41,8 @@ interface Props {
   sessions: Map<number, SessionInfo>
   /** Branch per session id, once git has answered for that pane's cwd. */
   branches?: Map<number, string>
+  /** Consultative checkout note per session id, for the chip's tooltip. */
+  branchNotes?: Map<number, string>
   roster?: PaneRoster
   onFocusPane?: (id: number) => void
   viewAll: boolean
@@ -356,6 +358,7 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
         stripBoxGlyphs={props.stripBoxGlyphs}
         showProject={expanded ? false : props.viewAll}
         branch={props.branches?.get(node.session) ?? null}
+        branchNote={props.branchNotes?.get(node.session) ?? null}
         registerOutput={props.registerOutput}
         shellIntegration={props.shellIntegration}
         onReconnectSsh={props.onReconnectSsh}

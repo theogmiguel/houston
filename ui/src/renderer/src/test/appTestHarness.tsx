@@ -40,6 +40,11 @@ let wiredHandler: ((msg: ServerMsg) => void) | null = null
 // feed one pane's own subscription (git status, pr status) without touching App.
 let kindHandlers: Map<string, Set<(msg: never) => void>> = new Map()
 
+// The roster's cwds, so the fake client answers `sessionCwd` the way the daemon
+// would for a session that has not moved; a test that needs a moved cwd
+// overrides the mock.
+let rosterCwds: Map<number, string> = new Map()
+
 function makeFakeClient(): HoustonClientType {
   kindHandlers = new Map()
   const base = {
@@ -64,7 +69,10 @@ function makeFakeClient(): HoustonClientType {
       }
     }) as (kind: string, handler: (msg: never) => void) => () => void,
     gitBranch: vi.fn(),
-    sessionCwd: (() => Promise.resolve('/tmp/project')) as (session: number) => Promise<string>,
+    sessionCwd: vi.fn((session: number) =>
+      Promise.resolve(rosterCwds.get(session) ?? '/tmp/project')) as (
+      session: number
+    ) => Promise<string>,
     waitForIdle: (() => Promise.resolve(true)) as (
       session: number,
       timeoutMs?: number,
@@ -162,6 +170,7 @@ export function resetHarness(): void {
   mockHeight = 300
   lastClient = null
   wiredHandler = null
+  rosterCwds = new Map()
   connectMock.mockClear()
   installHoustonBridge()
   resetNotificationStoreForTests()
@@ -203,6 +212,7 @@ export function deliverHelloOk(
   }
   act(() => {
     getLastClient()
+    rosterCwds = new Map(msg.sessions.map((s) => [s.id, s.cwd]))
     wiredHandler?.(msg)
   })
 }
@@ -210,6 +220,7 @@ export function deliverHelloOk(
 export function deliverControl(msg: ServerMsg): void {
   act(() => {
     getLastClient()
+    if (msg.type === 'session_created') rosterCwds.set(msg.info.id, msg.info.cwd)
     wiredHandler?.(msg)
   })
 }

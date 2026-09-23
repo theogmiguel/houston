@@ -10,50 +10,28 @@ export interface CheckoutFacts {
   common_dir: string | null
 }
 
-export interface CheckoutEntry {
+interface CheckoutEntry {
   session: SessionInfo
   toplevel: string
   commonDir: string
 }
 
-export type CheckoutWarningKind = 'shared-checkout' | 'same-repository'
-
-export interface CheckoutWarningView {
-  kind: CheckoutWarningKind
-  /** The chip's own words, already naming the count or the other workspace. */
-  label: string
-  entries: CheckoutEntry[]
-}
-
 // Live panes only: an exited session has no branch to move, and a remote pane
 // has no local checkout. A missing toplevel or common dir is "unknown" and is
-// excluded from both groups rather than guessed at.
+// excluded rather than guessed at.
 function liveCheckoutEntries(
   sessions: Iterable<SessionInfo>,
-  facts: ReadonlyMap<string, CheckoutFacts>
+  facts: ReadonlyMap<string, CheckoutFacts>,
+  dirOf: (session: SessionInfo) => string
 ): CheckoutEntry[] {
   const out: CheckoutEntry[] = []
   for (const session of sessions) {
     if (!isLive(session.state) || session.agent === 'ssh') continue
-    const fact = facts.get(session.cwd)
+    const fact = facts.get(dirOf(session))
     if (!fact?.toplevel || !fact.common_dir) continue
     out.push({ session, toplevel: fact.toplevel, commonDir: fact.common_dir })
   }
   return out
-}
-
-function groupBy(
-  entries: CheckoutEntry[],
-  key: (entry: CheckoutEntry) => string
-): Map<string, CheckoutEntry[]> {
-  const groups = new Map<string, CheckoutEntry[]>()
-  for (const entry of entries) {
-    const k = key(entry)
-    const group = groups.get(k)
-    if (group) group.push(entry)
-    else groups.set(k, [entry])
-  }
-  return groups
 }
 
 function basename(path: string): string {
@@ -61,58 +39,38 @@ function basename(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-// The workspaces a same-repository group names beside the selected one: the
-// other workspaces when there are any, else the checkouts other than the first
-// one the selected workspace's own sessions sit in.
-function otherLabels(
-  group: CheckoutEntry[],
-  selectedWs: string,
-  workspaceName: (path: string) => string
-): string[] {
-  const others = [
-    ...new Set(group.map((e) => e.session.project_dir).filter((p) => p !== selectedWs))
-  ]
-  if (others.length > 0) return others.map(workspaceName)
-  const mine = group.find((e) => e.session.project_dir === selectedWs)
-  const seen = new Set(mine ? [mine.toplevel] : [])
-  return [
-    ...new Set(group.map((e) => e.toplevel).filter((t) => !seen.has(t)))
-  ].map(basename)
-}
-
-/** The top bar's checkout warnings for one selected workspace (`all` qualifies
- * every group). Groups span every live session: the hazardous pair is a main
- * checkout and its worktree, which are separate workspaces. */
-export function checkoutWarnings(
+/** The chip tooltip's note per session: which other live panes share this
+ * pane's checkout, and which sit in another checkout of the same repository.
+ * Information to consult, never an alert. */
+export function checkoutNotes(
   sessions: Iterable<SessionInfo>,
   facts: ReadonlyMap<string, CheckoutFacts>,
-  selectedWs: string,
+  dirOf: (session: SessionInfo) => string,
   workspaceName: (path: string) => string
-): CheckoutWarningView[] {
-  const entries = liveCheckoutEntries(sessions, facts)
-  const involvesSelected = (group: CheckoutEntry[]): boolean =>
-    selectedWs === 'all' || group.some((e) => e.session.project_dir === selectedWs)
-
-  const warnings: CheckoutWarningView[] = []
-
-  for (const group of groupBy(entries, (e) => e.toplevel).values()) {
-    if (group.length < 2 || !involvesSelected(group)) continue
-    warnings.push({
-      kind: 'shared-checkout',
-      label: `Shared checkout · ${group.length} panes`,
-      entries: group
-    })
+): Map<number, string> {
+  const entries = liveCheckoutEntries(sessions, facts, dirOf)
+  const notes = new Map<number, string>()
+  for (const entry of entries) {
+    const others = entries.filter((other) => other.session.id !== entry.session.id)
+    const sameCheckout = others.filter((other) => other.toplevel === entry.toplevel)
+    const sameRepository = others.filter(
+      (other) => other.commonDir === entry.commonDir && other.toplevel !== entry.toplevel
+    )
+    const lines: string[] = []
+    if (sameCheckout.length > 0) {
+      lines.push(`Also in this checkout: ${sameCheckout.map((o) => o.session.title).join(', ')}`)
+    }
+    if (sameRepository.length > 0) {
+      const labels = [
+        ...new Set(
+          sameRepository.map(
+            (o) => workspaceName(o.session.project_dir) || basename(o.toplevel)
+          )
+        )
+      ]
+      lines.push(`Same repository: ${labels.join(', ')}`)
+    }
+    if (lines.length > 0) notes.set(entry.session.id, lines.join('\n'))
   }
-
-  for (const group of groupBy(entries, (e) => e.commonDir).values()) {
-    const checkouts = new Set(group.map((e) => e.toplevel))
-    if (checkouts.size < 2 || !involvesSelected(group)) continue
-    warnings.push({
-      kind: 'same-repository',
-      label: `Same repository · ${otherLabels(group, selectedWs, workspaceName).join(', ')}`,
-      entries: group
-    })
-  }
-
-  return warnings
+  return notes
 }

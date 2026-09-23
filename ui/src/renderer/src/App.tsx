@@ -233,8 +233,7 @@ import { SourceControlPanel } from "./components/SourceControlPanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
-import { checkoutWarnings, type CheckoutFacts } from "./checkoutFacts";
-import { CheckoutWarningChips } from "./components/CheckoutWarnings";
+import { useCheckoutFacts } from "./useCheckoutFacts";
 import {
   addGrid,
   autoNameGrid,
@@ -447,47 +446,36 @@ function handleTagWireMessage(
   }
 }
 
-function checkoutFactsFromReply(
-  msg: Extract<ServerMsg, { type: "git_branch" }>,
-): CheckoutFacts {
-  return {
-    branch: msg.branch,
-    toplevel: msg.toplevel ?? null,
-    common_dir: msg.common_dir ?? null,
-  };
-}
-
-// A reply settles the ask for its own directory; an unrelated reply returns the
-// set unchanged, so the state update bails instead of re-rendering every pane.
-function settlePendingDir(
-  pending: ReadonlySet<string>,
-  dir: string,
-): ReadonlySet<string> {
-  if (!pending.has(dir)) return pending;
-  const next = new Set(pending);
-  next.delete(dir);
-  return next;
-}
-
-function handleCheckoutFactsMessage(
+// A roster patch is applied here and settles the message; the dispatch below
+// continues only for the messages that are not one.
+function patchRosterIfNeeded(
   msg: ServerMsg,
-  setFacts: Dispatch<SetStateAction<Map<string, CheckoutFacts>>>,
-  pendingRef: { current: ReadonlySet<string> },
-  setPending: Dispatch<SetStateAction<ReadonlySet<string>>>,
-): void {
-  if (msg.type !== "git_branch") return;
-  setFacts((prev) => new Map(prev).set(msg.dir, checkoutFactsFromReply(msg)));
-  pendingRef.current = settlePendingDir(pendingRef.current, msg.dir);
-  setPending(pendingRef.current);
+  setSessions: Dispatch<SetStateAction<Map<number, SessionInfo>>>,
+): boolean {
+  if (!isRosterPatch(msg)) return false;
+  setSessions((prev) => patchRosterFields(prev, msg));
+  return true;
 }
 
-// A session added to the roster is a directory whose checkout identity the
-// ownership chips may need; a session that already exited has no branch to move.
-function requestFactsForSessions(
-  sessions: SessionInfo[],
-  request: (dir: string, agent: AgentKind) => void,
+// After a hello, restore the selected workspace: the remembered one when it
+// still exists, else the first; an empty roster opens the launcher instead.
+function applyWorkspaceSelection(
+  workspaces: Workspace[],
+  setShowLauncher: Dispatch<SetStateAction<boolean>>,
+  setSelectedWs: Dispatch<SetStateAction<string>>,
 ): void {
-  for (const s of sessions) if (isLive(s.state)) request(s.cwd, s.agent);
+  if (workspaces.length === 0) {
+    setShowLauncher(true);
+    return;
+  }
+  setSelectedWs((cur) => {
+    if (workspaces.some((w) => w.path === cur)) return cur;
+    const remembered = localStorage.getItem(SELECTED_WS_KEY);
+    if (remembered && workspaces.some((w) => w.path === remembered)) {
+      return remembered;
+    }
+    return workspaces[0].path;
+  });
 }
 
 function railToggleLabels(attentionCount: number): { tooltip: string; ariaLabel: string } {
@@ -963,56 +951,15 @@ export function App(): React.JSX.Element {
 
   const [paneHandoff, setPaneHandoff] = useState<HandoffSource | null>(null);
 
-  // The checkout facts a `git_branch` reply carried, keyed by the directory it
-  // answered for, plus the directories with a request in flight: a chip renders
-  // only from an answered fact, and an in-flight ask is never duplicated.
-  const [checkoutFacts, setCheckoutFacts] = useState<Map<string, CheckoutFacts>>(
-    new Map(),
-  );
-  const [checkoutPending, setCheckoutPending] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
-  const checkoutPendingRef = useRef<ReadonlySet<string>>(checkoutPending);
-  checkoutPendingRef.current = checkoutPending;
-
-  const requestCheckoutFacts = useCallback(
-    (target: HoustonClient, dir: string, agent: AgentKind): void => {
-      if (!dir || agent === "ssh") return;
-      if (checkoutPendingRef.current.has(dir)) return;
-      const next = new Set(checkoutPendingRef.current);
-      next.add(dir);
-      checkoutPendingRef.current = next;
-      setCheckoutPending(next);
-      target.gitBranch(dir);
-    },
-    [],
-  );
-
-  const checkoutBranchChips = useMemo(() => {
-    const out = new Map<number, string>();
-    for (const s of sessions.values()) {
-      if (s.agent === "ssh") continue;
-      if (checkoutPending.has(s.cwd)) continue;
-      const branch = checkoutFacts.get(s.cwd)?.branch;
-      if (branch) out.set(s.id, branch);
-    }
-    return out;
-  }, [sessions, checkoutFacts, checkoutPending]);
-
-  // Groups span every live session, not only the selected workspace's: the
-  // hazardous pair is a main checkout and its worktree. The last answer per
-  // directory is used, so a refresh in flight never makes a group flicker.
-  const checkoutWarningViews = useMemo(
-    () =>
-      checkoutWarnings(
-        sessions.values(),
-        checkoutFacts,
-        selectedWs,
-        (path) =>
-          workspaces.find((w) => w.path === path)?.name ?? basename(path),
-      ),
-    [sessions, checkoutFacts, selectedWs, workspaces],
-  );
+  // The checkout facts lifecycle (state, requests, propagation, notes) lives in
+  // its own module; App only wires it into the message dispatch and the panes.
+  const checkout = useCheckoutFacts({
+    conn,
+    activeId,
+    sessions,
+    sessionsRef,
+    workspaces,
+  });
 
   const [sshModal, setSshModal] = useState(false);
   const [sshPrefill, setSshPrefill] = useState<SshInitial | null>(null);
@@ -1055,18 +1002,10 @@ export function App(): React.JSX.Element {
             return;
           }
         }
-        if (isRosterPatch(msg)) {
-          setSessions((prev) => patchRosterFields(prev, msg));
-          return;
-        }
+        if (patchRosterIfNeeded(msg, setSessions)) return;
         handleInboxRowMessage(msg, setInboxRows);
         handleTagWireMessage(msg, setTags);
-        handleCheckoutFactsMessage(
-          msg,
-          setCheckoutFacts,
-          checkoutPendingRef,
-          setCheckoutPending,
-        );
+        checkout.handleMessage(msg);
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1074,11 +1013,10 @@ export function App(): React.JSX.Element {
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
             setWorkspaces(msg.workspaces);
             setTags(msg.tags);
-            // Every restored session is a session added; its cwd's identity is
-            // what the ownership chips group by.
-            requestFactsForSessions(msg.sessions, (dir, agent) =>
-              requestCheckoutFacts(client, dir, agent),
-            );
+            // Facts and pending asks belong to the connection that made them:
+            // a replaced connection re-asks rather than trusting a lost reply.
+            checkout.reset(msg.sessions);
+            checkout.requestForRoster(client, msg.sessions);
             if (boot && msg.recovery && !recoveryShown.current) {
               recoveryShown.current = true;
               const { respawned, deferred, crashed } = msg.recovery;
@@ -1093,19 +1031,7 @@ export function App(): React.JSX.Element {
                   [toNotice(bootRec), ...prev].slice(0, 200),
                 );
             }
-            if (msg.workspaces.length === 0) setShowLauncher(true);
-            else
-              setSelectedWs((cur) => {
-                if (msg.workspaces.some((w) => w.path === cur)) return cur;
-                const remembered = localStorage.getItem(SELECTED_WS_KEY);
-                if (
-                  remembered &&
-                  msg.workspaces.some((w) => w.path === remembered)
-                ) {
-                  return remembered;
-                }
-                return msg.workspaces[0].path;
-              });
+            applyWorkspaceSelection(msg.workspaces, setShowLauncher, setSelectedWs);
             client.sessionPolicyGet();
             client.agentHooks();
             client.routineList();
@@ -1123,7 +1049,7 @@ export function App(): React.JSX.Element {
           case "session_created": {
             setSessions((prev) => new Map(prev).set(msg.info.id, msg.info));
             setActiveId(msg.info.id);
-            requestCheckoutFacts(client, msg.info.cwd, msg.info.agent);
+            checkout.requestForSession(client, msg.info);
             {
               const rv = reviewIntents.current;
               while (
@@ -1914,16 +1840,6 @@ export function App(): React.JSX.Element {
       remembered !== null && live.includes(remembered) ? remembered : live[0],
     );
   }, [selectedWs, sessions, currentTree, setActiveId]);
-
-  // A pane's branch is a live git fact, not stored state: focus asks for that
-  // pane's cwd and refocus asks again, so a `git switch` typed into the pane
-  // shows up without a timer. While the ask is unanswered the chip stays off.
-  useEffect(() => {
-    if (conn.kind !== "ready" || activeId === null) return;
-    const info = sessionsRef.current.get(activeId);
-    if (!info) return;
-    requestCheckoutFacts(conn.client, info.cwd, info.agent);
-  }, [activeId, conn, requestCheckoutFacts]);
 
   const resetLayout = (n: number): void => {
     const key = keyForRef(selectedWs);
@@ -3319,7 +3235,6 @@ export function App(): React.JSX.Element {
               )}
             </div>
             <div className="ml-auto flex items-center gap-1 mr-1">
-              <CheckoutWarningChips warnings={checkoutWarningViews} />
               <VoiceMicChip
                 paneTitle={(session) =>
                   sessionsRef.current.get(session)?.title ?? null
@@ -3577,7 +3492,8 @@ export function App(): React.JSX.Element {
                   <LayoutView
                     tree={currentTree}
                     sessions={sessions}
-                    branches={checkoutBranchChips}
+                    branches={checkout.chips}
+                    branchNotes={checkout.notes}
                     roster={paneRoster}
                     onFocusPane={focusPane}
                     viewAll
@@ -3666,7 +3582,8 @@ export function App(): React.JSX.Element {
                               tree={tree}
                               warm={!gridSelected}
                               sessions={sessions}
-                              branches={checkoutBranchChips}
+                              branches={checkout.chips}
+                    branchNotes={checkout.notes}
                               roster={paneRoster}
                               onFocusPane={focusPane}
                               viewAll={false}
