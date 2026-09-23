@@ -331,15 +331,16 @@ pub struct CheckoutFacts {
     pub common_dir: Option<String>,
 }
 
-/// One `rev-parse` carries all three facts: a second call would answer the same
-/// question and drift from the first.
+/// One `rev-parse` answers the identity, and the branch comes from the HEAD file
+/// the cache already keys on: that is the only source that answers in a
+/// repository with no commit yet, where `rev-parse HEAD` fails outright.
 pub fn checkout_facts(dir: &Path) -> CheckoutFacts {
     if !dir.is_dir() {
         return CheckoutFacts::default();
     }
-    let head = head_file(dir).and_then(|h| std::fs::read(h).ok());
+    let head = head_file(dir).and_then(|h| std::fs::read(&h).ok().map(|b| (h, b)));
     match head {
-        Some(bytes) => facts_via_cache(dir, bytes, || facts_uncached(dir)),
+        Some((head_path, bytes)) => facts_via_cache(dir, head_path, bytes, || facts_uncached(dir)),
         None => facts_uncached(dir),
     }
 }
@@ -349,13 +350,23 @@ pub fn branch(dir: &Path) -> Option<String> {
 }
 
 fn facts_uncached(dir: &Path) -> CheckoutFacts {
+    // The branch comes from the same HEAD file the cache keys on: it is the one
+    // source that answers before the first commit, where every `rev-parse HEAD`
+    // spelling fails outright. A symref names the branch; a raw sha is detached.
+    let branch = head_file(dir)
+        .and_then(|h| std::fs::read_to_string(h).ok())
+        .and_then(|contents| {
+            contents
+                .trim()
+                .strip_prefix("ref: refs/heads/")
+                .map(str::to_string)
+                .filter(|b| !b.is_empty())
+        });
     let out = crate::spawn::command("git")
         .arg("-C")
         .arg(dir)
         .args([
             "rev-parse",
-            "--abbrev-ref",
-            "HEAD",
             "--show-toplevel",
             "--path-format=absolute",
             "--git-common-dir",
@@ -370,11 +381,6 @@ fn facts_uncached(dir: &Path) -> CheckoutFacts {
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     let mut lines = stdout.lines();
-    let branch = lines
-        .next()
-        .map(str::trim)
-        .filter(|b| !b.is_empty() && *b != "HEAD")
-        .map(str::to_string);
     let toplevel = lines
         .next()
         .map(str::trim)
@@ -398,7 +404,10 @@ fn branch_uncached(dir: &Path) -> Option<String> {
 
 const FACTS_CACHE_MAX: usize = 64;
 
-type FactsEntry = (Vec<u8>, CheckoutFacts);
+// The HEAD file the answer was read from is part of the key beside its bytes:
+// two repositories can carry the same `ref: refs/heads/...` content, and a
+// nested repository must not reuse the outer one's identity.
+type FactsEntry = (std::path::PathBuf, Vec<u8>, CheckoutFacts);
 
 static FACTS_CACHE: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, FactsEntry>>,
@@ -406,12 +415,13 @@ static FACTS_CACHE: std::sync::LazyLock<
 
 fn facts_via_cache(
     dir: &Path,
+    head_path: std::path::PathBuf,
     head: Vec<u8>,
     compute: impl FnOnce() -> CheckoutFacts,
 ) -> CheckoutFacts {
     if let Ok(cache) = FACTS_CACHE.lock() {
-        if let Some((cached_head, answer)) = cache.get(dir) {
-            if *cached_head == head {
+        if let Some((cached_path, cached_head, answer)) = cache.get(dir) {
+            if *cached_path == head_path && *cached_head == head {
                 return answer.clone();
             }
         }
@@ -421,7 +431,7 @@ fn facts_via_cache(
         if cache.len() >= FACTS_CACHE_MAX && !cache.contains_key(dir) {
             cache.clear();
         }
-        cache.insert(dir.to_path_buf(), (head, fresh.clone()));
+        cache.insert(dir.to_path_buf(), (head_path, head, fresh.clone()));
     }
     fresh
 }
@@ -1256,6 +1266,10 @@ mod tests {
     use std::fs;
     use std::process::Command;
 
+    fn head_path(name: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(format!("/houston-test/{name}/.git/HEAD"))
+    }
+
     #[test]
     fn facts_cache_recomputes_only_when_head_bytes_change() {
         let dir = tempfile::tempdir().unwrap();
@@ -1268,22 +1282,53 @@ mod tests {
             }
         };
 
+        let head = head_path("repo");
         let head_a = b"ref: refs/heads/main\n".to_vec();
-        let first = facts_via_cache(dir.path(), head_a.clone(), || compute("main"));
+        let first = facts_via_cache(dir.path(), head.clone(), head_a.clone(), || compute("main"));
         assert_eq!(first.branch.as_deref(), Some("main"));
         assert_eq!(calls.get(), 1, "the first call must compute");
 
-        let second = facts_via_cache(dir.path(), head_a.clone(), || {
+        let second = facts_via_cache(dir.path(), head.clone(), head_a.clone(), || {
             panic!("unchanged HEAD must not recompute")
         });
         assert_eq!(second.branch.as_deref(), Some("main"));
         assert_eq!(calls.get(), 1, "an unchanged HEAD must not spawn git");
 
-        let third = facts_via_cache(dir.path(), b"ref: refs/heads/other\n".to_vec(), || {
-            compute("other")
-        });
+        let third = facts_via_cache(
+            dir.path(),
+            head,
+            b"ref: refs/heads/other\n".to_vec(),
+            || compute("other"),
+        );
         assert_eq!(third.branch.as_deref(), Some("other"));
         assert_eq!(calls.get(), 2, "a changed HEAD must recompute at once");
+    }
+
+    #[test]
+    fn facts_cache_recomputes_when_the_head_file_moves() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = std::cell::Cell::new(0);
+        let compute = |name: &str| {
+            calls.set(calls.get() + 1);
+            CheckoutFacts {
+                branch: Some("main".to_string()),
+                toplevel: Some(format!("/houston-test/{name}")),
+                ..CheckoutFacts::default()
+            }
+        };
+
+        let head = b"ref: refs/heads/main\n".to_vec();
+        let outer = facts_via_cache(dir.path(), head_path("outer"), head.clone(), || {
+            compute("outer")
+        });
+        assert_eq!(outer.toplevel.as_deref(), Some("/houston-test/outer"));
+
+        // The same bytes read from a different HEAD file are a different
+        // repository: a nested repo with the same branch name must not reuse
+        // the outer one's identity.
+        let inner = facts_via_cache(dir.path(), head_path("inner"), head, || compute("inner"));
+        assert_eq!(inner.toplevel.as_deref(), Some("/houston-test/inner"));
+        assert_eq!(calls.get(), 2, "a moved HEAD file must recompute");
     }
 
     #[test]
@@ -1291,11 +1336,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let head = b"9f3a1c2d4e5f60718293a4b5c6d7e8f901234567\n".to_vec();
         assert_eq!(
-            facts_via_cache(dir.path(), head.clone(), CheckoutFacts::default),
+            facts_via_cache(
+                dir.path(),
+                head_path("detached"),
+                head.clone(),
+                CheckoutFacts::default
+            ),
             CheckoutFacts::default()
         );
         assert_eq!(
-            facts_via_cache(dir.path(), head, || panic!(
+            facts_via_cache(dir.path(), head_path("detached"), head, || panic!(
                 "the empty answer must be cached too"
             )),
             CheckoutFacts::default()
@@ -1522,6 +1572,26 @@ mod tests {
         assert!(
             facts.common_dir.is_some(),
             "a detached HEAD still belongs to a repository: {facts:?}"
+        );
+    }
+
+    #[test]
+    fn checkout_facts_names_an_unborn_branch() {
+        let tmp = tempfile::tempdir().unwrap();
+        git(tmp.path(), &["init", "-b", "main"]);
+        let facts = checkout_facts(tmp.path());
+        assert_eq!(
+            facts.branch.as_deref(),
+            Some("main"),
+            "a repository with no commit names the branch HEAD points at"
+        );
+        assert!(
+            facts.toplevel.is_some(),
+            "an unborn repository is still inside a work tree: {facts:?}"
+        );
+        assert!(
+            facts.common_dir.is_some(),
+            "an unborn repository still has a common dir: {facts:?}"
         );
     }
 

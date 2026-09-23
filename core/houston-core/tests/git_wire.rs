@@ -219,6 +219,80 @@ async fn git_branch_over_the_wire_detached_head_keeps_identity() {
 }
 
 #[tokio::test]
+async fn git_branch_names_an_unborn_branch() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    git(repo.path(), &["init", "-b", "main"]);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+
+    let dir = repo.path().display().to_string();
+    let msg = serde_json::to_string(&proto::ClientMsg::GitBranch { dir: dir.clone() }).unwrap();
+    ws.send(Message::text(msg)).await.unwrap();
+    let reply = expect_git_branch(&mut ws).await;
+    assert_eq!(reply.dir, dir);
+    assert_eq!(
+        reply.branch.as_deref(),
+        Some("main"),
+        "an unborn HEAD names the branch it points at"
+    );
+    assert!(
+        reply.toplevel.is_some(),
+        "an unborn repository is inside a work tree: {reply:?}"
+    );
+    assert!(
+        reply.common_dir.is_some(),
+        "an unborn repository has a common dir: {reply:?}"
+    );
+}
+
+#[tokio::test]
+async fn git_branch_separates_a_worktree_from_its_main_checkout() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let worktree = repo.path().join("wt");
+    git(
+        repo.path(),
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "feature/wt",
+            worktree.to_str().unwrap(),
+        ],
+    );
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+
+    let main_dir = repo.path().display().to_string();
+    let wt_dir = worktree.display().to_string();
+    for dir in [&main_dir, &wt_dir] {
+        let msg = serde_json::to_string(&proto::ClientMsg::GitBranch { dir: dir.clone() }).unwrap();
+        ws.send(Message::text(msg)).await.unwrap();
+    }
+    let mut replies = Vec::new();
+    for _ in 0..2 {
+        replies.push(expect_git_branch(&mut ws).await);
+    }
+
+    let main = replies.iter().find(|r| r.dir == main_dir).unwrap();
+    let wt = replies.iter().find(|r| r.dir == wt_dir).unwrap();
+    assert_eq!(main.branch.as_deref(), Some("main"));
+    assert_eq!(wt.branch.as_deref(), Some("feature/wt"));
+    assert_eq!(
+        main.common_dir, wt.common_dir,
+        "a worktree shares the repository's common dir"
+    );
+    assert_ne!(
+        main.toplevel, wt.toplevel,
+        "a worktree is a separate checkout of the same repository"
+    );
+}
+
+#[tokio::test]
 async fn git_status_and_diff_over_the_wire() {
     let (addr, _state) = start_daemon().await;
     let repo = tempfile::tempdir().unwrap();
