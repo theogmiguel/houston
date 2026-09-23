@@ -31,15 +31,13 @@ identify it, independent of which agent CLI is running underneath.
 ## The branch and shared checkouts
 
 A pane whose directory is inside a git work tree shows the branch that checkout is on,
-beside the pane title. The branch is read when you focus the pane, so a `git switch` made
-inside a pane appears the next time you focus it. A pane outside a repository, on a
-detached HEAD, or over SSH shows no branch.
+beside the pane title; hover or focus the chip for the full branch name. The branch is read
+when you focus the pane, so a `git switch` made inside a pane appears the next time you
+focus it. A pane outside a repository, on a detached HEAD, or over SSH shows no branch.
 
-When two or more live panes work in the same checkout, the top bar names it before a
-branch move in one pane surprises another. A second chip appears when live panes sit in
-different checkouts of one repository — a main checkout and its worktree, which share the
-repository's services and ports. Hover or focus a chip to list the panes it names. Both
-chips are advisory: Houston never switches branches, stashes changes or moves worktrees.
+When other live panes share the same checkout or sit in another checkout of the same
+repository, the chip's tooltip names them. This is information to consult, not a warning:
+Houston never switches branches, stashes changes or moves worktrees.
 
 ## Click-to-type
 
