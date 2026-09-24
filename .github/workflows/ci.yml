@@ -170,7 +170,7 @@ jobs:
           sudo apt-get install -y \
             libasound2-dev libdbus-1-dev libudev-dev \
             clang libclang-dev cmake nasm \
-            gnome-keyring dbus-x11
+            gnome-keyring dbus-x11 zsh
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
