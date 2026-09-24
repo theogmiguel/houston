@@ -74,7 +74,7 @@ function mountPane(opts: {
     profile_label: opts.profileLabel ?? null,
     context: opts.context ?? null
   } as SessionInfo
-  root = createRoot(container!)
+  root ??= createRoot(container!)
   act(() => {
     root!.render(
       <SessionPane
