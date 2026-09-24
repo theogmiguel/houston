@@ -27,7 +27,7 @@ distribution's package names will differ):
      build-essential pkg-config clang libclang-dev cmake nasm \
      libdbus-1-dev libudev-dev libwebkit2gtk-4.1-dev libasound2-dev \
      librsvg2-dev patchelf libfuse2 libayatana-appindicator3-dev \
-     gnome-keyring dbus-x11 minisign
+     gnome-keyring dbus-x11 minisign zsh
    ```
 
    (`patchelf` and `libfuse2` are only needed to bundle an AppImage, not
@@ -35,6 +35,7 @@ distribution's package names will differ):
    FUSE 2 runtime `libfuse2`; the `libfuse2t64` rename is 24.04's.
    `gnome-keyring` and `dbus-x11` provide the unlocked Secret Service session
    required by the full core test suite.
+   `zsh` is required by the shell integration tests, which exercise both Bash and Zsh.
    `minisign` is required by `python3 scripts/test-update-manifest.py` and the
    release manifest generator to verify updater signatures.
 7. Renderer dependencies, once per clone and whenever `ui/bun.lock` changes:
