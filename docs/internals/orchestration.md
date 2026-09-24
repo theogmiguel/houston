@@ -138,19 +138,21 @@ Handing the credential to each CLI (`mcp_launch.rs`):
 
 | CLI | Mechanism |
 |---|---|
-| Claude Code | `--mcp-config` with inline JSON, ADDED to the user's own servers. No `--strict-mcp-config`: it would make the argv config the only source and suppress the user's `mcpServers`, their project's `.mcp.json`, their plugins and their connectors. The argv entry wins the `houston` name against `mcp_register`'s user-scope placeholder |
+| Claude Code | `--mcp-config` with inline JSON, added to the user's own servers. No `--strict-mcp-config`: it would make the argv config the only source and suppress the user's `mcpServers`, their project's `.mcp.json`, their plugins and their connectors |
 | Codex | repeated `-c key=value`, with the token read from `HOUSTON_MCP_TOKEN` so it stays out of argv |
 | OpenCode | `OPENCODE_CONFIG_CONTENT` (its own config-content env var) with a `remote` `mcp` entry; not live-verified, built from `https://opencode.ai/config.json` |
 
 Env constants: `HOUSTON_MCP_TOKEN`, `HOUSTON_MCP_URL`, `HOUSTON_MCP_CONFIG`.
 
-Separately, `mcp_register.rs` keeps a persistent user-scope `houston` entry in
-`~/.claude.json` whose `url` and `Authorization` are the literal placeholders
-`${HOUSTON_MCP_URL}` and `${HOUSTON_MCP_TOKEN}`, expanded by the CLI from the
-pane's own environment — so a hand-typed, flagless `claude` inside a pane still connects.
-That entry is written by spawning `claude mcp add`, never by touching the file; the read
-side is the `mcpServers` key only, once per boot, fail-soft, and it never overwrites an
-existing entry even a stale one. Codex gets the same user-scope entry through
+With shell integration enabled, a hand-typed `claude` in a bash or zsh shell pane uses a shell
+function that passes the pane's `HOUSTON_MCP_CONFIG` through `--mcp-config`. Without
+that variable, it runs `claude` unchanged. On Unix, boot removes the old user-scope
+`houston` entry only when its URL and sole Authorization header have the exact
+placeholders Houston previously wrote. It invokes `claude mcp remove --scope user houston`
+and leaves every other entry alone. Windows PowerShell and cmd panes have no shell
+integration, so Windows retains the placeholder registration for hand-typed `claude`.
+An agent pane's inline configuration takes precedence over that Windows entry.
+Codex gets the same user-scope entry through
 `codex mcp add`, holding the literal endpoint (Codex expands no placeholders) and the
 token's env-var name, refreshed each release-channel boot because the port is ephemeral.
 Grok has no per-spawn `mcp_launch.rs` mechanism at all, only this persistent one:
@@ -158,8 +160,8 @@ Grok has no per-spawn `mcp_launch.rs` mechanism at all, only this persistent one
 --header "Authorization: Bearer ${HOUSTON_MCP_TOKEN}"`, verified against
 `docs.x.ai/build/features/mcp-servers`; live authentication remains unverified.
 Grok's own `config.toml` expands `${VAR}` in both `url` and `headers` (unlike
-Codex's, which never expands `url`), so this entry holds Claude-style placeholders and,
-like Claude's, is never refreshed once written — there is no literal port to go stale.
+Codex's, which never expands `url`), so this entry holds `${VAR}` placeholders
+and is never refreshed once written — there is no literal port to go stale.
 Cursor has no `mcp add` subcommand at all (verified against `cursor.com/docs/cli/mcp`:
 only `list`/`list-tools`/`login`/`enable`/`disable` exist), so `mcp_register_cursor.rs`
 edits `~/.cursor/mcp.json`'s `mcpServers` object directly — the same file and key
@@ -177,7 +179,7 @@ names this home-level file in the same `~/.gemini/config/` directory
 `agent_hooks::config_path` already uses for this provider's `hooks.json`. The same doc
 states a remote entry's field is `serverUrl`, not `url`/`httpUrl` ("legacy fields ... are
 not supported"), so this entry holds `serverUrl` with the bare `${VAR}` placeholders
-`mcp_register.rs`'s and Grok's own entries use. Placeholder expansion remains unverified.
+Grok's entry uses. Placeholder expansion remains unverified.
 `google-antigravity/antigravity-cli` issue #25 reports the
 `headers.Authorization` bearer is accepted by the schema but silently ignored by the
 CLI's own HTTP MCP transport at runtime. Live authentication remains unverified.

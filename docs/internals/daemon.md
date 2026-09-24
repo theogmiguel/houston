@@ -45,7 +45,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | and MCP | `mcp_server.rs`, `mcp_orchestration.rs` | The `/mcp` endpoint, and its door onto orchestration |
 | | `mcp_creds.rs` | Per-session MCP credentials: mint, resolve, revoke |
 | | `mcp_launch.rs` | Handing a pane's credential to the CLI it was minted for |
-| | `mcp_register.rs` | One-time user-scope registration of Houston's MCP server |
+| | `mcp_register.rs` | Removal of the legacy Claude entry on Unix; user-scope registration for Windows shell panes |
 | | `mcp.rs` | Reading four CLIs' MCP server lists into one comparable shape |
 | | `scope.rs` | The swarm scope directory: on-disk layout, atomic writes, mail message file format |
 | | `handoff.rs` | Handoff context curation and prompt assembly |
@@ -381,7 +381,7 @@ sleep short — never lengthens one. Mailbox GC retention is 24 h, wire-settable
 
 `boot::spawn_startup_refresh` is the sibling for one-shot work that must not block the
 window appearing: a legacy-hook sweep, then workspace and consented-agent hook installs, all
-on `spawn_blocking`, plus `spawn_at_boot` for MCP registration with Claude Code, Codex, Grok,
+on `spawn_blocking`, plus Claude MCP entry maintenance and registration with Codex, Grok,
 Cursor and Antigravity.
 
 ## Routine runs

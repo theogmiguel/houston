@@ -1,17 +1,95 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// The entry holds no port and no secret: `url` and `Authorization` are the
-/// literal `${HOUSTON_MCP_URL}` / `Bearer ${HOUSTON_MCP_TOKEN}`, which Claude
-/// expands from the pane environment. On disk that names a variable, not a value.
+// These identify the legacy entry Houston wrote, still used by Windows shell panes.
 pub const URL_PLACEHOLDER: &str = "${HOUSTON_MCP_URL}";
 
 pub const TOKEN_PLACEHOLDER: &str = "${HOUSTON_MCP_TOKEN}";
 
-/// Covers a cold node start on a loaded box without letting a hung child hold a
-/// boot-time task open forever.
+// Bound boot-time CLI maintenance on a loaded machine.
 const ADD_TIMEOUT: Duration = Duration::from_secs(15);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanupDecision {
+    Remove,
+    Keep,
+}
+
+pub fn cleanup_decision(contents: Option<&str>) -> CleanupDecision {
+    let Some(text) = contents else {
+        return CleanupDecision::Keep;
+    };
+    let Ok(config) = serde_json::from_str::<serde_json::Value>(text) else {
+        return CleanupDecision::Keep;
+    };
+    let Some(server) = config["mcpServers"][crate::mcp_server::SERVER_NAME].as_object() else {
+        return CleanupDecision::Keep;
+    };
+    let Some(headers) = server.get("headers").and_then(serde_json::Value::as_object) else {
+        return CleanupDecision::Keep;
+    };
+    if server.len() == 3
+        && server.get("type").and_then(serde_json::Value::as_str) == Some("http")
+        && server.get("url").and_then(serde_json::Value::as_str) == Some(URL_PLACEHOLDER)
+        && headers.len() == 1
+        && headers
+            .get("Authorization")
+            .and_then(serde_json::Value::as_str)
+            == Some(format!("Bearer {TOKEN_PLACEHOLDER}").as_str())
+    {
+        CleanupDecision::Remove
+    } else {
+        CleanupDecision::Keep
+    }
+}
+
+#[cfg(not(windows))]
+pub async fn cleanup(config_dir: &Path, claude_bin: &Path) -> Result<String, String> {
+    let config_path = config_dir.join(".claude.json");
+    let contents = match std::fs::read_to_string(&config_path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok("no Claude MCP entry to remove".into());
+        }
+        Err(e) => return Err(format!("could not read {}: {e}", config_path.display())),
+    };
+    if cleanup_decision(Some(&contents)) == CleanupDecision::Keep {
+        return Ok("Claude MCP entry left unchanged".into());
+    }
+    let output = tokio::time::timeout(
+        ADD_TIMEOUT,
+        crate::spawn::tokio_command(claude_bin)
+            .args([
+                "mcp",
+                "remove",
+                "--scope",
+                "user",
+                crate::mcp_server::SERVER_NAME,
+            ])
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|_| {
+        format!(
+            "`claude mcp remove` timed out after {}s",
+            ADD_TIMEOUT.as_secs()
+        )
+    })?
+    .map_err(|e| format!("could not run `{}`: {e}", claude_bin.display()))?;
+    if output.status.success() {
+        Ok("removed legacy Claude user-scope MCP entry".into())
+    } else {
+        Err(format!(
+            "`claude mcp remove` exited {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+#[cfg(windows)]
 pub fn registration_args() -> Vec<String> {
     [
         "mcp",
@@ -30,6 +108,7 @@ pub fn registration_args() -> Vec<String> {
     .collect()
 }
 
+#[cfg(windows)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     AlreadyRegistered,
@@ -37,6 +116,7 @@ pub enum Decision {
     Skip(String),
 }
 
+#[cfg(windows)]
 pub fn decide(contents: Option<&str>) -> Decision {
     let Some(text) = contents else {
         return Decision::Register;
@@ -66,6 +146,7 @@ pub fn decide(contents: Option<&str>) -> Decision {
     }
 }
 
+#[cfg(windows)]
 fn kind_of(v: &serde_json::Value) -> &'static str {
     match v {
         serde_json::Value::Null => "null",
@@ -77,6 +158,7 @@ fn kind_of(v: &serde_json::Value) -> &'static str {
     }
 }
 
+#[cfg(windows)]
 pub async fn run(config_dir: &Path, claude_bin: &Path) -> Result<String, String> {
     let config_path = config_dir.join(".claude.json");
     let contents = match std::fs::read_to_string(&config_path) {
@@ -130,9 +212,7 @@ pub async fn run(config_dir: &Path, claude_bin: &Path) -> Result<String, String>
     }
 }
 
-/// Called explicitly by both production hosts, NOT `boot::spawn_background_loops`:
-/// the integration harness spawns that shared list too, and a test must never
-/// write the real `~/.claude.json`.
+/// Called only by boot's startup refresh, not by integration harness background loops.
 pub fn spawn_at_boot() {
     tokio::spawn(async {
         let config_dir = match std::env::var_os("CLAUDE_CONFIG_DIR") {
@@ -140,25 +220,62 @@ pub fn spawn_at_boot() {
             _ => match crate::agent_hooks::ConfigHome::from_env() {
                 Ok(home) => home.home,
                 Err(e) => {
-                    tracing::warn!("mcp self-registration: no home dir ({e}); skipped");
+                    tracing::warn!("Claude MCP maintenance: no home dir ({e}); skipped");
                     return;
                 }
             },
         };
         let claude_bin =
             crate::exe_path::resolve("claude").unwrap_or_else(|| PathBuf::from("claude"));
-        match run(&config_dir, &claude_bin).await {
-            Ok(outcome) => tracing::info!("mcp self-registration: {outcome}"),
-            Err(reason) => tracing::warn!("mcp self-registration: {reason}"),
+        #[cfg(windows)]
+        let result = run(&config_dir, &claude_bin).await;
+        #[cfg(not(windows))]
+        let result = cleanup(&config_dir, &claude_bin).await;
+        match result {
+            Ok(outcome) => tracing::info!("Claude MCP maintenance: {outcome}"),
+            Err(reason) => tracing::warn!("Claude MCP maintenance: {reason}"),
         }
     });
 }
 
-pub fn config_path(home: &Path) -> PathBuf {
-    home.join(".claude.json")
+#[cfg(all(test, unix))]
+mod cleanup_tests {
+    use super::*;
+
+    fn placeholder_entry() -> String {
+        serde_json::json!({"mcpServers": {"houston": {
+            "type": "http", "url": URL_PLACEHOLDER,
+            "headers": {"Authorization": format!("Bearer {TOKEN_PLACEHOLDER}")}
+        }}})
+        .to_string()
+    }
+
+    #[test]
+    fn cleanup_only_selects_the_exact_legacy_entry() {
+        assert_eq!(
+            cleanup_decision(Some(&placeholder_entry())),
+            CleanupDecision::Remove
+        );
+        for entry in [
+            serde_json::json!({"type":"http","url":"http://127.0.0.1:1/mcp","headers":{"Authorization":format!("Bearer {TOKEN_PLACEHOLDER}")}}),
+            serde_json::json!({"type":"http","url":URL_PLACEHOLDER,"headers":{"Authorization":"Bearer custom"}}),
+            serde_json::json!({"type":"http","url":URL_PLACEHOLDER,"headers":{"Authorization":format!("Bearer {TOKEN_PLACEHOLDER}"),"X-Other":"x"}}),
+            serde_json::json!({"type":"http","url":URL_PLACEHOLDER,"headers":{"Authorization":format!("Bearer {TOKEN_PLACEHOLDER}")},"disabled":true}),
+            serde_json::json!({"url":URL_PLACEHOLDER,"headers":{"Authorization":format!("Bearer {TOKEN_PLACEHOLDER}")}}),
+        ] {
+            let config = serde_json::json!({"mcpServers":{"houston":entry}}).to_string();
+            assert_eq!(
+                cleanup_decision(Some(&config)),
+                CleanupDecision::Keep,
+                "{config}"
+            );
+        }
+        assert_eq!(cleanup_decision(None), CleanupDecision::Keep);
+        assert_eq!(cleanup_decision(Some("not json")), CleanupDecision::Keep);
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 

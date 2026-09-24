@@ -234,6 +234,15 @@ fi
 unset __tr_token_file
 if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi
 
+unalias claude 2>/dev/null
+claude() {
+  if [ -n "${HOUSTON_MCP_CONFIG-}" ]; then
+    command claude --mcp-config "$HOUSTON_MCP_CONFIG" "$@"
+  else
+    command claude "$@"
+  fi
+}
+
 __tr_ran=""
 __tr_at_prompt=""
 __tr_in_pc=""
@@ -292,6 +301,15 @@ if [ -n "$HOUSTON_USER_ZDOTDIR" ] && [ -f "$HOUSTON_USER_ZDOTDIR/.zshrc" ]; then
 elif [ -f "$HOME/.zshrc" ]; then
   . "$HOME/.zshrc"
 fi
+
+unalias claude 2>/dev/null
+claude() {
+  if [ -n "${HOUSTON_MCP_CONFIG-}" ]; then
+    command claude --mcp-config "$HOUSTON_MCP_CONFIG" "$@"
+  else
+    command claude "$@"
+  fi
+}
 
 typeset -g __tr_ran=""
 
@@ -449,6 +467,61 @@ mod tests {
         assert!(dir.join("zsh/.zshenv").is_file());
         let bashrc = std::fs::read_to_string(dir.join("bashrc")).unwrap();
         assert!(bashrc.contains("133;C"), "bash rc emits command markers");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn claude_shell_function_uses_inline_config_only_when_present() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = materialize(tmp.path()).unwrap();
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let stub = bin.join("claude");
+        std::fs::write(
+            &stub,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOUSTON_TEST_ARGS\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let args_file = tmp.path().join("args");
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        for (shell, rc) in [
+            ("bash", dir.join("bashrc")),
+            ("zsh", dir.join("zsh/.zshrc")),
+        ] {
+            for config in [None, Some(r#"{"mcpServers":{"houston":{}}}"#)] {
+                let mut command = crate::spawn::command(shell);
+                command
+                    .args([
+                        "-c",
+                        "source \"$1\"; claude first 'two words'",
+                        "houston-test",
+                    ])
+                    .arg(&rc)
+                    .env("HOME", tmp.path())
+                    .env("PATH", &path)
+                    .env("HOUSTON_TEST_ARGS", &args_file);
+                if let Some(config) = config {
+                    command.env(crate::mcp_launch::CONFIG_ENV, config);
+                } else {
+                    command.env_remove(crate::mcp_launch::CONFIG_ENV);
+                }
+                let output = command.output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{shell}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let args = std::fs::read_to_string(&args_file).unwrap();
+                let expected = match config {
+                    Some(value) => format!("--mcp-config\n{value}\nfirst\ntwo words\n"),
+                    None => "first\ntwo words\n".to_string(),
+                };
+                assert_eq!(args, expected, "{shell}");
+            }
+        }
     }
 
     static ZDOTDIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

@@ -1094,6 +1094,46 @@ async fn respawning_a_session_id_retires_the_previous_credential() {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn boot_cleanup_removes_only_the_legacy_claude_entry_via_cli() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let stub = dir.path().join("claude");
+    let args = dir.path().join("args");
+    std::fs::write(
+        &stub,
+        format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", args.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = dir.path().join(".claude.json");
+    std::fs::write(
+        &config,
+        r#"{"mcpServers":{"houston":{"type":"http","url":"${HOUSTON_MCP_URL}","headers":{"Authorization":"Bearer ${HOUSTON_MCP_TOKEN}"}}}}"#,
+    )
+    .unwrap();
+    houston_core::mcp_register::cleanup(dir.path(), &stub)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&args).unwrap(),
+        "mcp\nremove\n--scope\nuser\nhouston\n"
+    );
+    std::fs::remove_file(&args).unwrap();
+    std::fs::write(
+        &config,
+        r#"{"mcpServers":{"houston":{"type":"http","url":"custom"}}}"#,
+    )
+    .unwrap();
+    houston_core::mcp_register::cleanup(dir.path(), &stub)
+        .await
+        .unwrap();
+    assert!(!args.exists());
+}
+
+#[tokio::test]
+#[cfg(windows)]
 #[ignore = "drives the real `claude` CLI; run manually with -- --ignored"]
 async fn flagless_claude_connects_through_the_registered_user_scope_entry() {
     let (addr, _dir, daemon) = common::start_daemon_with_handle().await;
