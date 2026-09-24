@@ -89,6 +89,9 @@ The [development runbook](docs/operations/development.md) contains exact command
 - Run heavy builds under `scripts/oom-shield.sh`, with `nice -n 19` and `-j 3`.
   Never run concurrent Cargo workloads. Run `perf_smoke` at normal priority on an idle
   machine; results obtained under load do not establish a performance regression.
+- Agent worktrees under `.houston/worktrees/` build the dev profile only, never
+  `--release`. Remove a worktree once its branch is integrated; `scripts/sweep-targets.sh`
+  bounds what remains (see the runbook's disk usage section).
 - For each change, run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, relevant
   test binaries and safety scripts in the affected crate. For renderer changes, run
   `bun run typecheck` and affected tests.

@@ -49,7 +49,9 @@ Then:
 
 The development script builds the renderer (`cd ui && bun run build`),
 the debug daemon, supervisor and hook helper (`cargo build --bin houston-core --bin
-houston-supervisor --bin tr-helper` in `core`), the debug app (`cargo build` in
+houston-supervisor --bin tr-helper` in `core`), stages `tr-helper`,
+`houston-core` and the Linux supervisor in `src-tauri/binaries` with the host
+target suffix required by Tauri, builds the debug app (`cargo build` in
 `src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel
 <target>`. The app connects to a running daemon for the target channel or
 spawns one detached, through `houston-supervisor` on Linux — it no longer
@@ -158,6 +160,29 @@ Rationale: full DWARF for the whole dependency tree previously ballooned
 `target/` into the tens of GB (measured 27 GB in `core/`, 25 GB of it debug
 artifacts; 22 GB in `src-tauri/`, doubled there because gates build both the
 default and `--features bench` configurations).
+
+### Disk usage
+
+Every checkout and worktree has its own `target/`, which only grows: each
+branch, profile, feature set and toolchain adds artifacts and none are
+removed. Agent worktrees under `.houston/worktrees/` multiply this.
+
+- `scripts/sweep-targets.sh` deletes artifacts untouched for
+  `HOUSTON_SWEEP_DAYS` (default 3) and artifacts built by toolchains rustup no
+  longer has, in the main checkout and every worktree below it. `--dry-run`
+  lists what it would delete. It needs `cargo install cargo-sweep`.
+- `scripts/sweep-targets.sh --install` runs that sweep daily through a
+  systemd user timer (`houston-sweep-targets.timer`) and writes
+  `.houston/worktrees/.cargo/config.toml` with `incremental = false`, which
+  Cargo applies to builds inside the agent worktrees only.
+- Agent worktrees build and test the dev profile only; `--release` belongs to
+  the main checkout when packaging.
+- Remove an agent worktree with `git worktree remove` once its branch is
+  integrated; its `target/` goes with it.
+
+A shared `CARGO_TARGET_DIR` is not an option: `dev.sh`, `stage-helper.sh` and
+`install-desktop.sh` read binaries from each checkout's own `target/`, and
+worktrees sharing one directory overwrite each other's binaries.
 
 ### Env knobs (developer-facing)
 

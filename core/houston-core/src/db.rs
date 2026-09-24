@@ -716,6 +716,8 @@ pub struct DelegationRow {
     pub no_handback_reported: bool,
     pub no_handback_suppressed: u32,
     pub round: u32,
+    pub reusable: bool,
+    pub cleanup_after: Option<u64>,
 }
 
 pub struct RoutineRunRow {
@@ -747,7 +749,7 @@ pub struct RoutineWrite<'a> {
 
 const DELEGATION_SELECT: &str = "SELECT id, parent_session, child_session, role, state, stalled, \
     brief, created_at, updated_at, ended_at, stop_reason, \
-    no_handback_reported, no_handback_suppressed, round FROM delegations";
+    no_handback_reported, no_handback_suppressed, round, reusable, cleanup_after FROM delegations";
 
 fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
     Ok(DelegationRow {
@@ -765,6 +767,8 @@ fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
         no_handback_reported: r.get::<_, i64>(11)? != 0,
         no_handback_suppressed: r.get(12)?,
         round: r.get(13)?,
+        reusable: r.get::<_, i64>(14)? != 0,
+        cleanup_after: r.get::<_, Option<i64>>(15)?.map(|t| t as u64),
     })
 }
 
@@ -794,6 +798,8 @@ pub struct InboxRow {
     pub delivered_via: Option<String>,
     pub confirmed_at: Option<u64>,
     pub attempts: u32,
+    pub from_codename: Option<String>,
+    pub from_role: Option<String>,
 }
 
 #[derive(Debug)]
@@ -824,7 +830,7 @@ pub struct InboxRecovery {
 const INBOX_SELECT: &str = "SELECT id, to_session, original_to, workspace, from_session, \
     request_id, kind, urgent, summary, body, artifacts, superseded, provisional, corrects, \
     reason, created_at, ready_at, resolved_at, reserved_at, delivery_id, delivered_at, \
-    delivered_via, confirmed_at, attempts FROM pane_inbox";
+    delivered_via, confirmed_at, attempts, from_codename, from_role FROM pane_inbox";
 
 // A row a door is not holding: never reserved, or reserved longer ago than
 // INBOX_RESERVATION_MS so that door is presumed dead. Shared by the reserve claim
@@ -861,6 +867,8 @@ fn map_inbox_row(r: &rusqlite::Row) -> rusqlite::Result<InboxRow> {
         delivered_via: r.get(21)?,
         confirmed_at: r.get::<_, Option<i64>>(22)?.map(|t| t as u64),
         attempts: r.get(23)?,
+        from_codename: r.get(24)?,
+        from_role: r.get(25)?,
     })
 }
 
@@ -1551,7 +1559,9 @@ impl Db {
                 stop_reason TEXT,
                 no_handback_reported INTEGER NOT NULL DEFAULT 0,
                 no_handback_suppressed INTEGER NOT NULL DEFAULT 0,
-                round INTEGER NOT NULL DEFAULT 1
+                round INTEGER NOT NULL DEFAULT 1,
+                reusable INTEGER NOT NULL DEFAULT 1,
+                cleanup_after INTEGER
             );
             CREATE INDEX IF NOT EXISTS delegations_parent ON delegations(parent_session);
             CREATE UNIQUE INDEX IF NOT EXISTS delegations_child ON delegations(child_session);",
@@ -1573,6 +1583,18 @@ impl Db {
             "delegations",
             "round",
             "round INTEGER NOT NULL DEFAULT 1",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "delegations",
+            "reusable",
+            "reusable INTEGER NOT NULL DEFAULT 1",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "delegations",
+            "cleanup_after",
+            "cleanup_after INTEGER",
         )?;
         // Three timestamps, three meanings: created_at is persisted, delivered_at is sent,
         // confirmed_at is proven — and what "sent" is worth depends on delivered_via, since
@@ -1602,7 +1624,10 @@ impl Db {
                 delivered_at  INTEGER,
                 delivered_via TEXT,
                 confirmed_at  INTEGER,
-                attempts      INTEGER NOT NULL DEFAULT 0
+                attempts      INTEGER NOT NULL DEFAULT 0,
+                from_codename TEXT,
+                from_role     TEXT,
+                excerpt       TEXT
             );
             CREATE INDEX IF NOT EXISTS pane_inbox_eligible
                 ON pane_inbox(to_session, created_at)
@@ -1610,8 +1635,27 @@ impl Db {
             CREATE INDEX IF NOT EXISTS pane_inbox_workspace
                 ON pane_inbox(workspace, created_at) WHERE to_session = 0;",
         )?;
+        add_column_if_missing(&conn, "pane_inbox", "from_codename", "from_codename TEXT")?;
+        add_column_if_missing(&conn, "pane_inbox", "from_role", "from_role TEXT")?;
+        add_column_if_missing(&conn, "pane_inbox", "excerpt", "excerpt TEXT")?;
         migrate_staged_results_into_the_inbox(&conn)?;
         migrate_pending_swarm_mail_into_the_inbox(&conn)?;
+        conn.execute(
+            "UPDATE pane_inbox
+             SET from_codename = COALESCE(
+                     from_codename,
+                     (SELECT substr(COALESCE(NULLIF(s.codename, ''), NULLIF(s.title, '')), 1, 40)
+                        FROM sessions s WHERE s.id = pane_inbox.from_session)
+                 ),
+                 from_role = COALESCE(
+                     from_role,
+                     (SELECT substr(d.role, 1, 32)
+                        FROM delegations d WHERE d.child_session = pane_inbox.from_session)
+                 )
+             WHERE from_session IS NOT NULL
+               AND (from_codename IS NULL OR from_role IS NULL)",
+            [],
+        )?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -1749,6 +1793,18 @@ impl Db {
             rusqlite::params![id],
         )?;
         Ok(())
+    }
+
+    pub fn session_is_closed(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT state FROM sessions WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .is_some_and(|state| state == "closed"))
     }
 
     pub fn next_session_id(&self) -> Result<u32> {
@@ -1974,6 +2030,18 @@ impl Db {
             anyhow::bail!("no session row with id {id} to record codename {codename:?}");
         }
         Ok(())
+    }
+
+    pub fn session_codename(&self, id: u32) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT COALESCE(NULLIF(codename, ''), NULLIF(title, ''))
+                 FROM sessions WHERE id = ?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     pub fn tag_list(&self) -> Result<Vec<proto::TagInfo>> {
@@ -2875,15 +2943,32 @@ impl Db {
         brief: &str,
         now: u64,
     ) -> Result<i64> {
+        // Rows created before lifecycle was exposed remain reusable. This keeps
+        // restored delegations from being closed merely because they predate the
+        // temporary-child default.
+        self.delegation_create_with_lifecycle(parent, child, role, brief, true, now)
+    }
+
+    pub fn delegation_create_with_lifecycle(
+        &self,
+        parent: u32,
+        child: u32,
+        role: Option<&str>,
+        brief: &str,
+        reusable: bool,
+        now: u64,
+    ) -> Result<i64> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT INTO delegations
-                (parent_session, child_session, role, state, brief, created_at, updated_at, round)
-             VALUES (?1, ?2, ?5, 'spawning', ?3, ?4, ?4, 1)
+                (parent_session, child_session, role, state, brief, created_at, updated_at, round,
+                 reusable, cleanup_after)
+             VALUES (?1, ?2, ?5, 'spawning', ?3, ?4, ?4, 1, ?6, NULL)
              ON CONFLICT(child_session) DO UPDATE SET
                 parent_session = ?1, role = ?5, state = 'spawning', stalled = 0,
-                brief = ?3, updated_at = ?4, ended_at = NULL, stop_reason = NULL, round = 1",
-            rusqlite::params![parent, child, brief, now as i64, role],
+                brief = ?3, updated_at = ?4, ended_at = NULL, stop_reason = NULL, round = 1,
+                reusable = ?6, cleanup_after = NULL",
+            rusqlite::params![parent, child, brief, now as i64, role, reusable as i64],
         )?;
         Ok(conn.query_row(
             "SELECT id FROM delegations WHERE child_session = ?1",
@@ -2903,6 +2988,17 @@ impl Db {
             .optional()?)
     }
 
+    pub fn delegation_parent_of(&self, child: u32) -> Result<Option<u32>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT parent_session FROM delegations WHERE child_session = ?1",
+                rusqlite::params![child],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn delegations_for_parent(&self, parent: u32) -> Result<Vec<DelegationRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(&format!(
@@ -2917,7 +3013,8 @@ impl Db {
     pub fn delegation_set_state(&self, child: u32, state: &str, now: u64) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE delegations SET state = ?2, updated_at = ?3 WHERE child_session = ?1",
+            "UPDATE delegations SET state = ?2, cleanup_after = NULL, updated_at = ?3
+             WHERE child_session = ?1",
             rusqlite::params![child, state, now as i64],
         )?;
         Ok(())
@@ -2929,7 +3026,7 @@ impl Db {
             "UPDATE delegations SET
                 state = ?2, stop_reason = NULL, ended_at = NULL,
                 no_handback_reported = 0, no_handback_suppressed = 0, updated_at = ?3,
-                round = round + 1
+                round = round + 1, cleanup_after = NULL
              WHERE child_session = ?1",
             rusqlite::params![child, state, now as i64],
         )?;
@@ -2984,7 +3081,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "UPDATE delegations SET state = ?2, stop_reason = ?3, ended_at = ?4, updated_at = ?4,
-                no_handback_reported = 0, no_handback_suppressed = 0
+                no_handback_reported = 0, no_handback_suppressed = 0, cleanup_after = NULL
              WHERE child_session = ?1",
             rusqlite::params![child, state, stop_reason, now as i64],
         )?;
@@ -3001,6 +3098,46 @@ impl Db {
             .query_map([], map_delegation_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    pub fn delegations_cleanup_due(&self, now: u64) -> Result<Vec<DelegationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{DELEGATION_SELECT} WHERE reusable = 0 AND state = 'done'
+             AND cleanup_after IS NOT NULL AND cleanup_after <= ?1 ORDER BY id"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params![now as i64], map_delegation_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delegations_cleanup_pending(&self) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        let pending: i64 = conn.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM delegations
+                 WHERE reusable = 0 AND state = 'done' AND cleanup_after IS NOT NULL
+             )",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(pending != 0)
+    }
+
+    pub fn delegation_set_cleanup_after(
+        &self,
+        child: u32,
+        cleanup_after: Option<u64>,
+        now: u64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE delegations SET cleanup_after = ?2, updated_at = ?3
+             WHERE child_session = ?1",
+            rusqlite::params![child, cleanup_after.map(|t| t as i64), now as i64],
+        )?;
+        Ok(())
     }
 
     pub fn inbox_reserve(
@@ -3184,6 +3321,24 @@ impl Db {
             .optional()?)
     }
 
+    pub fn inbox_set_excerpt(&self, id: i64, excerpt: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE pane_inbox SET excerpt = ?2 WHERE id = ?1",
+            rusqlite::params![id, excerpt],
+        )?;
+        Ok(())
+    }
+
+    pub fn inbox_excerpt(&self, id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT excerpt FROM pane_inbox WHERE id = ?1",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn inbox_readdress_to_operator(&self, id: i64, reason: &str) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
@@ -3361,6 +3516,23 @@ impl Db {
                 |r| r.get(0),
             )
             .optional()?)
+    }
+
+    pub fn inbox_round_has_result(
+        &self,
+        to_session: u32,
+        from_session: u32,
+        request_id: u32,
+    ) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pane_inbox
+             WHERE from_session = ?2 AND request_id = ?3 AND kind = 'result'
+               AND (to_session = ?1 OR (to_session = 0 AND original_to = ?1))",
+            rusqlite::params![to_session, from_session, request_id],
+            |r| r.get(0),
+        )?;
+        Ok(count > 0)
     }
 
     pub fn inbox_round_handed_back(
@@ -3558,7 +3730,8 @@ impl Db {
         if closed {
             tx.execute(
                 "UPDATE delegations SET state = ?2, stop_reason = ?3, ended_at = ?4,
-                    updated_at = ?4, no_handback_reported = 0, no_handback_suppressed = 0
+                    updated_at = ?4, no_handback_reported = 0, no_handback_suppressed = 0,
+                    cleanup_after = NULL
                  WHERE child_session = ?1",
                 rusqlite::params![child, state, stop_reason, now as i64],
             )?;
@@ -3575,7 +3748,8 @@ impl Db {
     pub fn delegation_bump_round(&self, child: u32, now: u64) -> Result<Option<u32>> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE delegations SET round = round + 1, updated_at = ?2 WHERE child_session = ?1",
+            "UPDATE delegations SET round = round + 1, cleanup_after = NULL, updated_at = ?2
+             WHERE child_session = ?1",
             rusqlite::params![child, now as i64],
         )?;
         Ok(conn
@@ -3621,9 +3795,19 @@ fn insert_inbox_row(conn: &Connection, row: &NewInboxRow, now: u64) -> Result<i6
             if let Some(id) = existing {
                 conn.execute(
                     "UPDATE pane_inbox SET
-                            body = ?2, summary = ?3, artifacts = ?4, superseded = superseded + 1
+                            body = ?2, summary = ?3, artifacts = ?4, superseded = superseded + 1,
+                            from_codename = COALESCE(
+                                from_codename,
+                                (SELECT substr(COALESCE(NULLIF(s.codename, ''), NULLIF(s.title, '')), 1, 40)
+                                   FROM sessions s WHERE s.id = ?5)
+                            ),
+                            from_role = COALESCE(
+                                from_role,
+                                (SELECT substr(d.role, 1, 32)
+                                   FROM delegations d WHERE d.child_session = ?5)
+                            )
                          WHERE id = ?1",
-                    rusqlite::params![id, row.body, row.summary, artifacts_json],
+                    rusqlite::params![id, row.body, row.summary, artifacts_json, row.from_session],
                 )?;
                 return Ok(id);
             }
@@ -3632,8 +3816,13 @@ fn insert_inbox_row(conn: &Connection, row: &NewInboxRow, now: u64) -> Result<i6
     conn.execute(
         "INSERT INTO pane_inbox
                 (to_session, workspace, from_session, request_id, kind, urgent, summary, body,
-                 artifacts, provisional, corrects, reason, created_at, ready_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 artifacts, provisional, corrects, reason, created_at, ready_at,
+                 from_codename, from_role)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                     (SELECT substr(COALESCE(NULLIF(s.codename, ''), NULLIF(s.title, '')), 1, 40)
+                        FROM sessions s WHERE s.id = ?3),
+                     (SELECT substr(d.role, 1, 32)
+                        FROM delegations d WHERE d.child_session = ?3))",
         rusqlite::params![
             row.to_session,
             row.workspace,
@@ -5845,8 +6034,40 @@ mod tests {
         assert_eq!(row.updated_at, 100);
         assert_eq!(row.ended_at, None);
         assert_eq!(row.stop_reason, None);
+        assert!(row.reusable, "legacy creation keeps the child reusable");
+        assert_eq!(row.cleanup_after, None);
 
         assert_eq!(db.delegations_for_parent(1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn temporary_lifecycle_and_cleanup_marker_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("t.db");
+        let db = Db::open(&path).unwrap();
+
+        db.delegation_create_with_lifecycle(7, 8, Some("reviewer"), "brief", false, 100)
+            .unwrap();
+        assert_eq!(db.delegation_parent_of(8).unwrap(), Some(7));
+        db.delegation_finish(8, "done", None, 200).unwrap();
+        db.delegation_set_cleanup_after(8, Some(300), 201).unwrap();
+        drop(db);
+        let db = Db::open(&path).unwrap();
+
+        let row = db.delegation_for_child(8).unwrap().unwrap();
+        assert!(!row.reusable);
+        assert_eq!(row.cleanup_after, Some(300));
+        assert!(db.delegations_cleanup_pending().unwrap());
+        assert!(db
+            .delegations_cleanup_due(300)
+            .unwrap()
+            .iter()
+            .any(|row| { row.child_session == 8 && row.cleanup_after == Some(300) }));
+
+        db.delegation_bump_round(8, 301).unwrap();
+        let row = db.delegation_for_child(8).unwrap().unwrap();
+        assert_eq!(row.cleanup_after, None, "new input cancels pending cleanup");
+        assert!(!db.delegations_cleanup_pending().unwrap());
     }
 
     #[test]

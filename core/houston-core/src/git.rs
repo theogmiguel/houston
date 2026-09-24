@@ -321,9 +321,8 @@ pub fn head_sha(dir: &Path) -> Result<String> {
     Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
-/// What one `rev-parse` answers for a directory: the branch a pane's chip shows,
-/// and the checkout identity the ownership warning groups by. Every field is
-/// absent when git cannot answer, which the renderer reads as "unknown".
+/// The branch shown in a pane and the checkout identity used by its tooltip.
+/// Fields are absent when git cannot answer.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CheckoutFacts {
     pub branch: Option<String>,

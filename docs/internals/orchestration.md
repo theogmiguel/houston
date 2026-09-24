@@ -45,7 +45,7 @@ spelling, or a verb that is CLI-only).
 
 | Tool | Registered in | `hs-pane` twin | What it does |
 |---|---|---|---|
-| `workspace_info` | `mcp_server.rs` | `hs-pane whoami` | the caller's own fixed workspace and session id, shared with `whoami` (`Daemon::orchestrate_whoami`) |
+| `workspace_info` | `mcp_server.rs` | `hs-pane whoami` | the caller's workspace and session id plus registered target workspaces, shared with `whoami` (`Daemon::orchestrate_whoami_json`) |
 | `pane_spawn` | `mcp_orchestration.rs` | `hs-pane spawn` | open a child agent pane; `kind: custom` is refused by name (no hooks, so its parent could never be told when it finished) |
 | `pane_list` | `mcp_orchestration.rs` | `hs-pane list` | list the caller's live children, each with its full delegation record (state, stall, `pending_handback`, `inbox_owed`, the capability note) |
 | `pane_get` | `mcp_orchestration.rs` | `hs-pane get` | one pane in the caller's own subtree, in one call: its state, its children and depth, what would end its turn, and its role/brief/stall/staged-result if it is a child of the caller |
@@ -70,7 +70,11 @@ during setup. This is the one place `core/` gains a capability it cannot see its
 `browser_click` and `browser_type` pass a human confirmation gate before acting.
 
 `pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok`), `prompt`,
-and optional `model`, `cwd`, `auto_approve`, `profile`, `role`, `output_format`, `boundaries`.
+and optional `model`, `cwd`, `target_workspace`, `reusable`, `effort`, `auto_approve`,
+`profile`, `role`, `output_format`, `boundaries`. `target_workspace` must match a registered
+workspace after canonicalization, and `cwd` must remain under that root. `reusable` defaults
+to false for new API spawns; legacy delegation rows migrate as reusable to preserve their
+prior behavior. `effort` is provider-validated at the launch boundary.
 `pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`.
 
 `orchestrate.rs` is the pure layer under all of it — no DB, no PTY: scope and cap
@@ -122,14 +126,18 @@ restart, and turning it on seeds the `hs-pane` skill stub.
 
 A per-pane bearer token is minted at spawn and bound to an
 `McpScope { workspace_id, session_id }` (`mcp_creds.rs`).
+A child may be spawned in a different registered workspace, but its credential remains
+scoped to that target. The parent's control authority is the persisted `delegations`
+ancestry, not workspace equality; an arbitrary filesystem path never grants authority.
 
 - Only the **SHA-256 hash** is stored. The raw token exists exactly twice: in argv (or an
   env var) and in the CLI's own memory.
 - Lookup is by hash and deliberately not constant-time, with the reasoning recorded at the
   call site.
 - Re-issuing a scope's token **revokes** the previous one.
-- There is no "resolve by session id" API. A token names its own scope, which makes
-  cross-workspace addressing structurally impossible rather than merely checked.
+- There is no "resolve by session id" API. A token names its own session and workspace;
+  a parent controls a registered cross-workspace descendant only through its own token
+  and the persisted delegation ancestry.
 
 This is a different secret from `daemon.token`, which authenticates the renderer over `/ws`
 and is one secret for the whole app.
@@ -213,6 +221,8 @@ eligible.
 `to_session` is the pane owed the row (`0` is the operator); `from_session` is the pane
 (or the daemon, for a notice) that produced it; `workspace` is the workspace identity every
 other table already keys on; `request_id` is the `delegations.round` the row answers.
+`from_codename` and `from_role` are bounded snapshots of the sender identity, so a renderer
+can keep naming a result after temporary cleanup removes the live session.
 `kind` is one of `InboxKind`: `result` (a `pane_submit` body), `no_handback` (a turn ended
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
 gone), `stalled`, `operator_note` (the operator ended or interrupted the child), and `mail`
@@ -428,16 +438,33 @@ file the CLI has already written still be.
 
 A block is one **episode**, opened by the event that names the tool (`PermissionRequest`,
 or Antigravity's `PreToolUse` on an ask tool) and keyed by the CLI's own invocation id where
-the payload has one (`tool_use_id`), else by `(prompt_id, tool_name, generation)` where
-`generation` counts how many times that pair has already asked — so the same tool asked
-twice in one request is two questions. A `Notification(permission_prompt)` never opens an
+the payload has one (`tool_use_id`), else by `(prompt_id, tool_name, generation)`.
+Codex command episodes also carry a SHA-256 fingerprint: distinct commands remain open
+independently, while a repeated request with the same turn, tool and fingerprint reuses
+its episode. A `Notification(permission_prompt)` never opens an
 episode: it fires beside the `PermissionRequest` that names the tool, so it attaches to the
 newest open episode (filling in a reason it did not have) or is dropped with a debug log if
-none is open. An episode resolves on evidence that THAT execution moved on — its
-`PostToolUse`, the next `PermissionRequest` for the session, or the session's next `Stop` /
-`UserPromptSubmit` — never on "any later hook". A resolved row still undelivered gets
+none is open. An episode resolves on its matching `PostToolUse` or the session's next
+`Stop` / `UserPromptSubmit`, never on an arbitrary later hook. A new `PermissionRequest`
+replaces only generated episodes without a fingerprint; identified commands remain
+pending. A resolved row still undelivered gets
 `resolved_at` and is never handed to the parent as a live question; it stays for the
 operator as history.
+
+For a fingerprint-backed episode, completion must carry the same command fingerprint
+and, when the request supplied one, the exact turn id. Missing correlation evidence
+keeps the episode open until a turn boundary. Without an invocation id, two concurrent
+requests for the same command and tool in the same turn cannot be distinguished from
+duplicate delivery; they share one episode. Raw commands are not persisted for this
+correlation.
+
+**Codex Auto's block grace window.** A Codex hook carries no field distinguishing an
+Auto-mode reviewer's self-resolving approval from one waiting on a human, and most
+resolve within seconds (observed: 4-6 s). For a session recorded with `ApprovalMode::Auto`,
+the urgent `needs_input` row to the parent is delayed by `CODEX_AUTO_BLOCK_GRACE_MS`
+(`daemon.rs`) and dropped instead of written if the episode has already resolved by then;
+the child's own delegation state still moves to `needs_input` immediately. Every other
+approval mode, and every other agent kind, writes the row synchronously as before.
 
 ### Which request a body answers
 
@@ -477,10 +504,12 @@ identity), so the collapse is by request, not by authentication.
 ### Composition is one function for every door
 
 `orchestrate::compose_inbox` writes a header naming the count and the delivery id, then per
-row `[kind] #id from <role (codename)>: <summary>`, the body, and the artifact paths. Door 3
-also appends a fresh tail of the sender's own screen where one corroborates something; door
-1 and door 2 pass `None` — inside a tool result or a hook's stdout, a screen tail is content
-the agent did not ask for, and a parent that wants it can `pane_read`. A row past its first
+row `[kind] #id from <codename (role)>: <summary>`, the body, and the artifact paths. Door 3
+also appends a sanitized screen excerpt captured at submission and stored with the result,
+capped at 400 characters plus a truncation marker. The snapshot survives temporary cleanup;
+legacy rows without a snapshot fall back to the live screen when available. Door 1 and door
+2 omit the excerpt. Request a reusable child when later terminal inspection is needed.
+A row past its first
 attempt says "possibly delivered before". A `Result` and an `Exited` from the same child in
 one batch compose as one story ("it answered, then its pane ended"), and so do an
 `OperatorNote` and an `Exited`; a `NeedsInput` whose block ended before any door carried it
@@ -538,6 +567,23 @@ hands back is NOT here — it is a `pane_inbox` row addressed to the parent. The
 `spawning -> working <-> needs_input`, closing at `done | failed | cancelled | unknown`.
 Stalling is a flag beside the state, never a state: the stall signal cannot tell a wedged
 child from a long silent turn, and a terminal `stalled` would kill live delegations.
+
+The row also persists `reusable` and an optional `cleanup_after`. New API spawns default to
+temporary; migrations give older rows `reusable = true` because their original intent is
+not inferable. Cleanup is armed only after a durable result is released by an authoritative
+completed round (or a process exit), never by `pane_submit` alone. It is deferred while a
+live descendant exists, a wake or composer input is queued, or internal sub-agent evidence
+is still outstanding. A provisional round has the bounded `OWED_NOTIFICATION_MAX_MS`
+resolution window; late evidence can correct it before that deadline, after which the
+round's in-memory hold is released so completed ordinary panes do not remain forever.
+The wake-lane map owns both queued and in-flight delivery, and the cleanup marker is
+rechecked under a shared lock with prompts, key input and submits so a follow-up cannot
+remove a reopened round.
+Removal emits `SessionRemoved` but leaves the delegation and inbox rows durable. The
+historical parent chain continues to authorize the parent's `pane_wait` for that child;
+it does not authorize unrelated panes or resurrect terminal controls. Descendant removal
+rechecks deferred cleanup up the recorded ancestor chain. Explicit operator close remains
+separate and retains its cancellation semantics.
 
 **Closed is not the same as terminal**, and the two predicates on
 `DelegationState` are not interchangeable. All four closing states are CLOSED:
@@ -689,8 +735,8 @@ operator gains a new power over a running agent.
 codename and the first prompt replaces it — so the codename is stored separately
 (`sessions.codename`, written at spawn, backfilled on read) and rides
 `SessionInfo.codename`. Every parent-facing label reads it: `Daemon::child_label`
-and `inbox_sender_label` spell `role (codename)`, which is what makes
-`compose_inbox`'s `from <role (codename)>` hold by construction, and the
+and `inbox_sender_label` spell `codename (role)`, which is what makes
+`compose_inbox`'s `from <codename (role)>` hold by construction, and the
 `pane_spawn`/`pane_list` shapes carry the field. A child's card names its parent
 the same way ("child of oak", id in the tooltip).
 
@@ -726,6 +772,12 @@ call the two tools it keeps. The Codex gateway's `call_tool` enforces the same
 predicate, so a leaf Codex pane cannot bypass the gate through the meta-tool;
 its `list_tools` still serves the full catalogue, listable-but-not-callable.
 
+A tool Codex's own Auto-mode approval rule would never gate (read-only, or
+local and not open-world — `mcp_server::codex_requires_approval`) is listed
+directly in `tools/list` by its own name and schema instead of behind
+`call_tool`, so a Codex caller spends no approval round-trip on it; a gated
+tool named directly is refused, naming `call_tool` as the way to reach it.
+
 **Depth-aware advertisement.** `pane_spawn` is in a pane's tool list exactly
 when that pane could use it: orchestration is on, it has a free child slot, and
 the child would fit under the depth cap. The default depth is **1** —
@@ -754,11 +806,11 @@ name.
 |---|---|---|---|---|---|---|
 | **Turn end** | `Stop` | `Stop` (hooks.json; `notify` retired) | `Stop` | `session.idle` for the root session only | `stop` (`status`, `loop_count`) | `Stop` (`fullyIdle`, `terminationReason`) |
 | **Last message** | `Stop.last_assistant_message` | `Stop.last_assistant_message` | not in payload: capped tail | plugin reads `client.session.messages` at idle | `afterAgentResponse.text` | not in payload; every payload carries `transcriptPath` (the CLI's own JSONL), read the last assistant entry there, never the screen |
-| **Needs input, with reason** | `PermissionRequest.tool_name` + typed `Notification` | `PermissionRequest.tool_name` | `Notification` (`permission_prompt`, `elicitation_dialog`) | `permission.asked` (`permission`, `patterns`); also subscribed `permission.updated` for older builds | **none exists**: stall row, named in `pane_list` | `PreToolUse` (matcher dialect) for `ask_question` / `ask_permission` / `ask_custom_permission` with no `PostToolUse` yet; `toolCall.args.questions[].question` is the reason |
+| **Needs input, with reason** | `PermissionRequest.tool_name` + typed `Notification` | `PermissionRequest.tool_name`; `PostToolUse` resolves the matching permission episode | `Notification` (`permission_prompt`, `elicitation_dialog`) | `permission.asked` (`permission`, `patterns`); also subscribed `permission.updated` for older builds | **none exists**: stall row, named in `pane_list` | `PreToolUse` (matcher dialect) for `ask_question` / `ask_permission` / `ask_custom_permission` with no `PostToolUse` yet; `toolCall.args.questions[].question` is the reason |
 | **Sub-agent vs child** | the round rule above | `SubagentStop` is separate; main `Stop` fires once, parent stays busy | `SubagentStart`/`Stop` separate; `spawn_subagent` blocks the parent by default | child is a session with `parentID`; plugin maps ids from `session.created`, parent stays busy | `subagentStart`/`Stop` carry `subagent_id`, `parent_conversation_id` | sub-agent is a second `conversationId` firing the same hooks; the parent's own `Stop` while it waits has `fullyIdle=false`. Pin the root id at the first `SessionStart`, drop the rest |
 | **Door 2** | `Stop` → `{"decision":"block","reason"}` | same shape, `exit 0`, live-verified | none enabled: docs contradict; door 3 carries the rows | none enabled: plugin injection still to probe; door 3 carries the rows | none enabled: `stop` → `{"followup_message"}` documented, not live-verified; door 3 carries the rows | `Stop` → `{"decision":"continue","reason"}`, exit 0; the re-fired `Stop` carries `executionNum: 1` |
 | **Houston tools in the child** | `--mcp-config`, added to the user's own servers (no `--strict-mcp-config`) | `-c mcp_servers.*` + token env | user-scope `grok mcp add` with a `${HOUSTON_MCP_TOKEN}` header | `OPENCODE_CONFIG_CONTENT` env with a `remote` server and bearer header | user-scope `~/.cursor/mcp.json` entry with `${env:HOUSTON_MCP_TOKEN}`, `_houston` marker | `~/.gemini/config/mcp_config.json` headers; bearer silently ignored upstream, smoke-test |
-| **Verified how** | live, 2.1.263 | live, 0.153.4 | docs + repo; login needed to probe | live, 1.18.27 (child sessions, idle, permission event) | docs; login needed to probe | live, 1.1.26 (all six rows) |
+| **Verified how** | live, 2.1.263 | local schema + docs, 0.155.1 | docs + repo; login needed to probe | live, 1.18.27 (child sessions, idle, permission event) | docs; login needed to probe | live, 1.1.26 (all six rows) |
 
 Capabilities are typed per session, not per provider name: `orchestrate::ProviderCapabilities`
 carries `turn_end`, `last_message`, `block` and `door2`, derived from the event map and the
@@ -770,10 +822,13 @@ What changes per provider, beyond the shared inbox:
 
 - **Codex.** `agent_hooks.rs` installs `~/.codex/hooks.json` in the Claude schema for
   `SessionStart`, `UserPromptSubmit`, `Stop`, `PermissionRequest`, plus
-  `SubagentStart`/`SubagentStop`/`SessionEnd` correlation-only, with the
+  `SubagentStart`/`SubagentStop`/`SessionEnd`/`PreToolUse`/`PostToolUse` correlation-only, with the
   same managed-marker discipline as Cursor's file; `notify` is removed from `config.toml`
   (parked, or deleted outright if it is Houston's own stale entry). Codex maps to
-  `HooksFull`. **Trust** is Codex's own, not Houston's to grant: an untrusted hook is
+  `HooksFull`. In the 0.155.1 event shape, `PermissionRequest` has no `tool_use_id`;
+  the helper carries its `turn_id` and a SHA-256 digest of `tool_input.command`, and
+  `PostToolUse` clears only the matching episode without storing the raw command.
+  **Trust** is Codex's own, not Houston's to grant: an untrusted hook is
   silently skipped, so a Codex pane's `SessionStart` drop never arrives and its status
   reads `ProcessOnly` until the operator trusts Houston's hooks in Codex's own review
   screen. Houston never passes `--dangerously-bypass-hook-trust` — a spawn into a repo

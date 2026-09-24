@@ -126,4 +126,8 @@ describe('pane header container-query ladder (SessionPane.tsx / RenameTitle.tsx)
     ).not.toBeNull()
     expect(Number(m![1])).toBeGreaterThan(0)
   })
+
+  it('lets the task title give up width before fixed identity badges', () => {
+    expect(extractPaneTitleCls()).toContain('[flex:0_1_auto]')
+  })
 })

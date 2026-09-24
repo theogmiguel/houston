@@ -89,16 +89,18 @@ const PANE_ROUTING: &str = concat!(
     "a pane is visible to the user in the grid, runs in the project directory, outlives your session, ",
     "and the user can read it and type into it while it works — none of which is true of an in-process sub-agent. ",
     "When the user says \"spawn an agent\", \"another agent\", \"a Claude in another pane\" or similar, they mean a pane. ",
-    "`pane_spawn` returns as soon as the child is up. Then call `pane_wait`: it blocks at \
-     zero token cost until your inbox has a result, a question, or an exit, and hands the \
-     row back inside this same call — end your turn instead only when you have other work \
-     to do while the child runs, since a child's `pane_submit` reaches you at your own next \
-     `pane_wait` or turn end either way. ",
+    "`pane_spawn` returns as soon as the child is up. Your next action is either independent \
+     work or `pane_wait`: it blocks at zero token cost until your inbox has a result, a \
+     question, or an exit. Use diagnostics only after a wait timeout, for help, or when the \
+     operator asks; do not sit in a diagnostic loop. ",
     "Its signature: `pane_spawn{kind: claude|codex|antigravity|opencode|cursor|grok, prompt, model?, cwd?, ",
-    "auto_approve?, profile?, role?, output_format?, boundaries?}` — `role` is your own short name ",
+    "auto_approve?, profile?, role?, target_workspace?, reusable?, effort?, output_format?, \
+     boundaries?}` — `role` is your own short name ",
     "for that child, unique among your live children, and it is how every wake from it identifies ",
     "itself; `output_format` and `boundaries` are the other two thirds of a brief, composed into ",
     "the prompt for you. ",
+    "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
+     of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
     "`pane_send_keys`, `pane_kill`, `pane_submit`. ",
     "A pane that needs input will not take a `pane_prompt` — read it, then answer it with ",
@@ -235,13 +237,29 @@ impl ToolProvider for OrchestrationTools {
                     let auto_approve = args.get("auto_approve").and_then(Value::as_bool);
                     let profile = opt_str(args, "profile");
                     let role = opt_str(args, "role");
+                    let target_workspace = opt_str(args, "target_workspace");
+                    let reusable = args
+                        .get("reusable")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    let effort = args
+                        .get("effort")
+                        .cloned()
+                        .filter(|value| !value.is_null())
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|e| {
+                            ToolError(format!(
+                                "effort must be one of low|medium|high|xhigh|max: {e}"
+                            ))
+                        })?;
                     let brief = orchestrate::Brief {
                         prompt,
                         output_format: opt_str(args, "output_format"),
                         boundaries: opt_str(args, "boundaries"),
                     };
                     let info = tokio::task::spawn_blocking(move || {
-                        daemon.orchestrate_spawn(
+                        daemon.orchestrate_spawn_with_options(
                             caller,
                             kind,
                             model,
@@ -250,6 +268,9 @@ impl ToolProvider for OrchestrationTools {
                             auto_approve,
                             profile,
                             role,
+                            target_workspace,
+                            reusable,
+                            effort,
                         )
                     })
                     .await
@@ -261,6 +282,9 @@ impl ToolProvider for OrchestrationTools {
                         "codename": info.codename,
                         "agent": info.agent,
                         "cwd": info.cwd,
+                        "workspace": info.project_dir,
+                        "reusable": reusable,
+                        "next_action": orchestrate::SPAWN_NEXT_ACTION,
                     })))
                 }
                 "pane_list" => {
@@ -369,6 +393,7 @@ impl ToolProvider for OrchestrationTools {
                         .await
                         .map_err(refused)?;
                     let message = outcome.message();
+                    let next_action = outcome.next_action();
                     match outcome {
                         orchestrate::InboxWaitOutcome::Delivered {
                             rows,
@@ -401,16 +426,23 @@ impl ToolProvider for OrchestrationTools {
                             waited_ms,
                             status,
                             status_source,
-                        } => Ok(ToolOutput {
-                            text: message,
-                            structured: Some(json!({
-                                "rows": [],
-                                "timed_out": true,
-                                "waited_ms": waited_ms,
-                                "status": status,
-                                "status_source": status_source,
-                            })),
-                        }),
+                        } => {
+                            let text = match &next_action {
+                                Some(next) => format!("{message}\n{next}"),
+                                None => message,
+                            };
+                            Ok(ToolOutput {
+                                text,
+                                structured: Some(json!({
+                                    "rows": [],
+                                    "timed_out": true,
+                                    "waited_ms": waited_ms,
+                                    "status": status,
+                                    "status_source": status_source,
+                                    "next_action": next_action,
+                                })),
+                            })
+                        }
                         orchestrate::InboxWaitOutcome::Stalled { .. } => Err(ToolError(message)),
                     }
                 }
@@ -497,13 +529,34 @@ impl OrchestrationTools {
                         "model": {
                             "type": "string",
                             "description":
-                                "Model for that CLI. Omitted inherits its own default; see \
-                                 the description above for sizing one.",
+                                "Exact model identifier accepted by that CLI, forwarded unchanged \
+                                 (for Codex, e.g. gpt-5.6-luna, not luna). Omitted inherits \
+                                 the CLI default.",
                         },
                         "cwd": {
                             "type": "string",
                             "description":
-                                "Working directory; may only narrow INTO this workspace.",
+                                "Working directory; must remain inside the selected target workspace.",
+                        },
+                        "target_workspace": {
+                            "type": "string",
+                            "description":
+                                "A registered workspace path for the child. Omitted inherits \
+                                 the parent's current workspace; arbitrary paths are refused.",
+                        },
+                        "reusable": {
+                            "type": "boolean",
+                            "default": false,
+                            "description":
+                                "Keep the pane after a completed handback for follow-up prompts. \
+                                 Omit or set false for automatic cleanup after the final round.",
+                        },
+                        "effort": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "xhigh", "max"],
+                            "description":
+                                "Optional per-run reasoning effort; unsupported providers refuse \
+                                 the spawn.",
                         },
                         "auto_approve": {
                             "type": "boolean",
@@ -778,7 +831,7 @@ impl OrchestrationTools {
                     "required": ["body"],
                     "additionalProperties": false,
                 }),
-                annotations: local(Annotations::destructive()),
+                annotations: Annotations::local_write(),
             },
         ];
         if !spawnable {
@@ -839,15 +892,51 @@ mod tests {
                 spec.name.as_str(),
                 "pane_list" | "pane_get" | "pane_read" | "pane_wait"
             );
+            // pane_submit is neither: a local additive write, not a read and not
+            // destructive (it only appends a row to the parent's own inbox).
+            let local_write = spec.name == "pane_submit";
             assert_eq!(
                 spec.annotations.read_only, readonly,
                 "{} read_only annotation",
                 spec.name
             );
             assert_eq!(
-                spec.annotations.destructive, !readonly,
+                spec.annotations.destructive,
+                !readonly && !local_write,
                 "{} destructive annotation",
                 spec.name
+            );
+        }
+    }
+
+    #[test]
+    fn the_codex_gateway_would_serve_pane_submit_and_pane_wait_directly_but_gate_spawn_and_kill() {
+        let provider = OrchestrationTools {
+            daemon: Weak::new(),
+        };
+        let by_name: std::collections::HashMap<String, ToolSpec> = provider
+            .all_tools()
+            .into_iter()
+            .map(|s| (s.name.clone(), s))
+            .collect();
+        for name in [
+            "pane_submit",
+            "pane_wait",
+            "pane_list",
+            "pane_get",
+            "pane_read",
+        ] {
+            let spec = &by_name[name];
+            assert!(
+                !crate::mcp_server::codex_requires_approval(spec.annotations),
+                "{name} should be servable directly by the Codex gateway"
+            );
+        }
+        for name in ["pane_spawn", "pane_kill", "pane_send_keys", "pane_prompt"] {
+            let spec = &by_name[name];
+            assert!(
+                crate::mcp_server::codex_requires_approval(spec.annotations),
+                "{name} must stay behind call_tool"
             );
         }
     }

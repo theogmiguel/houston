@@ -19,9 +19,9 @@ export function inboxFromLabel(
 ): string {
   if (row.from_session == null) return 'Houston'
   const pane = sessions.get(row.from_session)
-  const name = pane?.codename || `#${row.from_session}`
-  const role = pane?.delegation?.role
-  return role ? `${role} (${name})` : name
+  const name = row.from_codename || pane?.codename || `#${row.from_session}`
+  const role = row.from_role ?? pane?.delegation?.role
+  return role ? `${name} · ${role}` : name
 }
 
 export function inboxTargetLabel(
@@ -125,9 +125,13 @@ export function inboxJumpTarget(
   row: InboxRow,
   sessions: ReadonlyMap<number, SessionInfo>
 ): { workspace: string; session: number } | null {
-  if (row.original_to != null && sessions.has(row.original_to))
-    return { workspace: row.workspace, session: row.original_to }
-  if (row.from_session != null && sessions.has(row.from_session))
-    return { workspace: row.workspace, session: row.from_session }
+  if (row.original_to != null) {
+    const target = sessions.get(row.original_to)
+    if (target) return { workspace: target.project_dir, session: target.id }
+  }
+  if (row.from_session != null) {
+    const sender = sessions.get(row.from_session)
+    if (sender) return { workspace: sender.project_dir, session: sender.id }
+  }
   return null
 }

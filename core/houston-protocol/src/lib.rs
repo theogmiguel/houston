@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 113;
+pub const PROTOCOL_VERSION: u32 = 114;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -1060,6 +1060,8 @@ pub struct DelegationInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub hold_reason: Option<String>,
+    #[serde(default)]
+    pub reusable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1130,6 +1132,12 @@ pub struct InboxRow {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub confirmed_at: Option<u64>,
     pub attempts: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub from_codename: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub from_role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -94,7 +94,7 @@ async fn a_correlation_hook_cannot_leave_a_pane_spawning_forever() {
         .create_session(CreateParams {
             agent: proto::AgentKind::Codex,
             project_dir: dir.path().to_path_buf(),
-            cmd: Some(vec!["sleep".into(), "30".into()]),
+            cmd: Some(vec!["sh".into(), "-c".into(), "exec sleep 30".into()]),
             cols: 80,
             rows: 24,
             cwd_from: None,

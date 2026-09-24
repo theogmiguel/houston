@@ -104,7 +104,14 @@ fn orphan_normal_exit_is_relayed_with_real_code() {
         ],
     );
 
-    let result = poll_until(POLL_TIMEOUT, || read_to_string(&result_file));
+    let status = poll_until(POLL_TIMEOUT, || guard.0.try_wait().ok().flatten());
+    assert!(
+        status.success(),
+        "supervisor must exit 0 once idle: {status:?}"
+    );
+
+    let result =
+        std::fs::read_to_string(&result_file).expect("the completed daemon wrote its report");
     let mut lines = result.lines();
     let _reported_pid: i32 = lines.next().unwrap().parse().unwrap();
     let code = lines.next().unwrap();
@@ -114,12 +121,6 @@ fn orphan_normal_exit_is_relayed_with_real_code() {
         "real exit code must survive the handoff: {result:?}"
     );
     assert_eq!(signal, "None");
-
-    let status = poll_until(POLL_TIMEOUT, || guard.0.try_wait().ok().flatten());
-    assert!(
-        status.success(),
-        "supervisor must exit 0 once idle: {status:?}"
-    );
 }
 
 #[test]
@@ -150,7 +151,14 @@ fn orphan_signal_kill_is_relayed_with_real_signal() {
 
     signal_process(orphan_pid, Signal::Kill).expect("SIGKILL the orphan");
 
-    let result = poll_until(POLL_TIMEOUT, || read_to_string(&result_file));
+    let status = poll_until(POLL_TIMEOUT, || guard.0.try_wait().ok().flatten());
+    assert!(
+        status.success(),
+        "supervisor must exit 0 once idle: {status:?}"
+    );
+
+    let result =
+        std::fs::read_to_string(&result_file).expect("the completed daemon wrote its report");
     let mut lines = result.lines();
     let _reported_pid: i32 = lines.next().unwrap().parse().unwrap();
     let code = lines.next().unwrap();
@@ -159,12 +167,6 @@ fn orphan_signal_kill_is_relayed_with_real_signal() {
     assert_eq!(
         signal, "Some(9)",
         "the real signal (SIGKILL=9) must survive: {result:?}"
-    );
-
-    let status = poll_until(POLL_TIMEOUT, || guard.0.try_wait().ok().flatten());
-    assert!(
-        status.success(),
-        "supervisor must exit 0 once idle: {status:?}"
     );
 }
 

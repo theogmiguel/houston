@@ -427,7 +427,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 }
                 Some(Ok(Message::Binary(buf))) => {
                     if let Some((id, payload)) = proto::decode_stdin_frame(&buf) {
-                        daemon.note_operator_keystroke(id);
+                        daemon.note_operator_keystroke(id, payload);
                         if let Err(e) = daemon.write_stdin(id, payload) {
                             send_error(&mut sink, e.to_string(), Some("stdin".into())).await;
                         }
@@ -3534,6 +3534,12 @@ struct SpawnBody {
     #[serde(default)]
     role: Option<String>,
     #[serde(default)]
+    target_workspace: Option<String>,
+    #[serde(default)]
+    reusable: bool,
+    #[serde(default)]
+    effort: Option<proto::ChatEffort>,
+    #[serde(default)]
     output_format: Option<String>,
     #[serde(default)]
     boundaries: Option<String>,
@@ -3548,8 +3554,9 @@ async fn orch_spawn(
         Ok(s) => s,
         Err(r) => return *r,
     };
+    let reusable = body.reusable;
     let result = tokio::task::spawn_blocking(move || {
-        daemon.orchestrate_spawn(
+        daemon.orchestrate_spawn_with_options(
             scope.session_id,
             body.kind,
             body.model,
@@ -3562,6 +3569,9 @@ async fn orch_spawn(
             body.auto_approve,
             body.profile,
             body.role,
+            body.target_workspace,
+            body.reusable,
+            body.effort,
         )
     })
     .await
@@ -3569,9 +3579,14 @@ async fn orch_spawn(
     match result {
         Ok(info) => (
             StatusCode::OK,
-            axum::Json(
-                json!({ "session_id": info.id, "title": info.title, "codename": info.codename }),
-            ),
+            axum::Json(json!({
+                "session_id": info.id,
+                "title": info.title,
+                "codename": info.codename,
+                "workspace": info.project_dir,
+                "reusable": reusable,
+                "next_action": crate::orchestrate::SPAWN_NEXT_ACTION,
+            })),
         )
             .into_response(),
         Err(e) => orch_err_response(e),
@@ -3668,6 +3683,7 @@ async fn orch_wait(
     };
     use crate::orchestrate::InboxWaitOutcome;
     let message = outcome.message();
+    let next_action = outcome.next_action();
     match outcome {
         InboxWaitOutcome::Delivered {
             rows,
@@ -3699,6 +3715,7 @@ async fn orch_wait(
                 "waited_ms": waited_ms,
                 "status": status,
                 "status_source": status_source,
+                "next_action": next_action,
             })),
         )
             .into_response(),
