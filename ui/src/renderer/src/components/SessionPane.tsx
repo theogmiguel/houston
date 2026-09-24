@@ -26,6 +26,7 @@ import {
   IconEllipsis,
   IconEraser,
   IconFolder,
+  IconGitBranch,
   IconMaximize,
   IconMinimize,
   IconPlus,
@@ -301,6 +302,33 @@ export function OrchestratorBadge({
   )
 }
 
+// The branch a pane's cwd is on, once git has answered for it. No answer means
+// no chip, never a placeholder; the tooltip gives the full name on hover and on
+// keyboard focus, plus a quiet note naming the panes that share the checkout.
+export function BranchChip({
+  branch,
+  note
+}: {
+  branch?: string | null
+  note?: string | null
+}): React.JSX.Element | null {
+  if (branch == null || branch === '') return null
+  const label = note ? `${branch}\n${note}` : branch
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        data-testid="branch-chip"
+        aria-label={`Branch ${branch}`}
+        className="[@container_(max-width:400px)]:hidden inline-flex items-center gap-[var(--space-1-5)] min-w-0 flex-none max-w-[180px] px-[var(--space-1-5)] h-[var(--h-tag-chip)] rounded-[var(--tr-radius-sm)] border-0 bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] text-[var(--text-secondary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-default"
+      >
+        <Icon glyph={IconGitBranch} role="small" />
+        <span className="truncate">{branch}</span>
+      </button>
+    </Tooltip>
+  )
+}
+
 export function ProfileBadge({ label }: { label: string }): React.JSX.Element {
   return (
     <Tooltip label={`Running as account profile "${label}"`}>
@@ -329,6 +357,10 @@ interface Props {
   copyOnSelect: boolean
   stripBoxGlyphs: boolean
   showProject: boolean
+  /** The branch this pane's cwd is on, once git has answered; absent hides the chip. */
+  branch?: string | null
+  /** A quiet note for the chip's tooltip: who else shares the checkout or repository. */
+  branchNote?: string | null
   registerOutput: RegisterOutput
   shellIntegration: boolean
   onReconnectSsh: (id: number) => void
@@ -362,6 +394,8 @@ function SessionPaneImpl({
   copyOnSelect,
   stripBoxGlyphs,
   showProject,
+  branch,
+  branchNote,
   registerOutput,
   shellIntegration,
   onReconnectSsh,
@@ -442,6 +476,7 @@ function SessionPaneImpl({
             title={info.title}
             onRename={(t) => client.renameSession(info.id, t)}
           />
+          <BranchChip branch={branch} note={branchNote} />
           {info.spawned_by != null && (
             <OriginBadge
               info={info}

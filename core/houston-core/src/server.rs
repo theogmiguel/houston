@@ -1320,10 +1320,19 @@ async fn dispatch(
         },
         proto::ClientMsg::GitBranch { dir } => {
             let d = PathBuf::from(&dir);
-            let branch = tokio::task::spawn_blocking(move || crate::git::branch(&d))
+            let facts = tokio::task::spawn_blocking(move || crate::git::checkout_facts(&d))
                 .await
-                .unwrap_or(None);
-            let _ = send_msg(sink, &proto::ServerMsg::GitBranch { dir, branch }).await;
+                .unwrap_or_default();
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::GitBranch {
+                    dir,
+                    branch: facts.branch,
+                    toplevel: facts.toplevel,
+                    common_dir: facts.common_dir,
+                },
+            )
+            .await;
             Ok(())
         }
         proto::ClientMsg::GitStage { dir, paths } => {

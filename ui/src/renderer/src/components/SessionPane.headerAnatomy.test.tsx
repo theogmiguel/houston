@@ -52,6 +52,7 @@ function mountPane(opts: {
   acp?: string | null
   liveChildren?: number
   profileLabel?: string | null
+  branch?: string | null
   context?: SessionContext | null
   onAddPane?: (id: number, rect: DOMRect) => void
   onHeaderPointerDown?: (id: number, e: React.PointerEvent) => void
@@ -86,6 +87,7 @@ function mountPane(opts: {
         copyOnSelect={false}
         stripBoxGlyphs={false}
         showProject={false}
+        branch={opts.branch ?? null}
         registerOutput={() => noop}
         shellIntegration={false}
         onReconnectSsh={noop}
@@ -149,10 +151,19 @@ describe('pane header anatomy (step 13, reference shape)', () => {
     expect(shellGlyph.querySelector('rect')).not.toBeNull()
   })
 
-  it('renders no branch chip at all — D4: the prop itself is gone, not just unread', () => {
-    const el = mountPane({})
-    expect(el.querySelector('[data-testid="branch-chip"]')).toBeNull()
-    expect(el.querySelector('[data-testid="header-divider"]')).toBeNull()
+  it('renders no branch chip until git answers, and one after the title when it does', () => {
+    const bare = mountPane({})
+    expect(bare.querySelector('[data-testid="branch-chip"]')).toBeNull()
+    expect(bare.querySelector('[data-testid="header-divider"]')).toBeNull()
+
+    const el = mountPane({ branch: 'feat/x' })
+    const chip = el.querySelector('[data-testid="branch-chip"]')!
+    expect(chip.textContent).toContain('feat/x')
+    const title = el.querySelector('[data-testid="pane-title-mock"]')!
+    expect(
+      title.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING,
+      'the branch chip belongs after the pane title'
+    ).toBeTruthy()
   })
 
   it('renders the origin/ACP/orchestrator badges as bare text, no pill chrome', () => {
