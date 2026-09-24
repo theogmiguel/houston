@@ -234,7 +234,7 @@ fi
 unset __tr_token_file
 if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi
 
-unalias claude 2>/dev/null
+unalias claude 2>/dev/null || true
 claude() {
   if [ -n "${HOUSTON_MCP_CONFIG-}" ]; then
     command claude --mcp-config "$HOUSTON_MCP_CONFIG" "$@"
@@ -302,7 +302,7 @@ elif [ -f "$HOME/.zshrc" ]; then
   . "$HOME/.zshrc"
 fi
 
-unalias claude 2>/dev/null
+unalias claude 2>/dev/null || true
 claude() {
   if [ -n "${HOUSTON_MCP_CONFIG-}" ]; then
     command claude --mcp-config "$HOUSTON_MCP_CONFIG" "$@"
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn claude_shell_function_uses_inline_config_only_when_present() {
+    fn claude_shell_function_uses_inline_config_only_when_present_with_errexit() {
         use std::os::unix::fs::PermissionsExt;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -495,6 +495,7 @@ mod tests {
                 let mut command = crate::spawn::command(shell);
                 command
                     .args([
+                        "-e",
                         "-c",
                         "source \"$1\"; claude first 'two words'",
                         "houston-test",
