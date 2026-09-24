@@ -28,6 +28,16 @@ stack, or open a new cell instead.
 A pane's session can be renamed; the name is what you and the sidebar chips use to
 identify it, independent of which agent CLI is running underneath.
 
+Agent panes involved in orchestration also have a stable codename. Houston shows the
+codename beside the task name in the pane header and uses it in the orchestration
+roster and details card. Roster entries put the codename first, followed by the
+delegated role or task, so messages can be matched to a pane without translating a
+numeric session ID.
+
+When an inbox row offers a jump to a pane, Houston opens the workspace that contains
+that target pane. This also works when the message was recorded in a different
+workspace from the pane it names.
+
 ## Click-to-type
 
 Only one pane at a time receives keystrokes — the one you have clicked into. Every key

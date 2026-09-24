@@ -1,4 +1,4 @@
-# Wire protocol v112
+# Wire protocol v113
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -412,9 +412,10 @@ SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), 
                    ids, never names, so a rename/recolor needs no session rewrite)
 DelegationInfo     parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
-                   last_result_corrected_by?, capability_note?, hold_reason? (v98: what the child
+                   last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
                    still owes its parent, the correction link, what its CLI cannot report, and
-                   why door 3 is holding the rows). The record a pane is the CHILD of; `None`
+                   why door 3 is holding the rows; `reusable` is the persisted lifecycle choice).
+                   The record a pane is the CHILD of; `None`
                    for an operator-spawned pane. Deliberately NOT the record's `brief` (8 000 chars, on
                    every roster broadcast) — that stays MCP-only, on `pane_get`'s `DelegationView`
 DelegationState    snake: spawning | working | needs_input | done | failed | cancelled | unknown
@@ -423,8 +424,8 @@ TurnEndSource      kebab: stop-hook | acp-turn | quiet-settle
 InboxRow           v96: id, to_session, original_to?, workspace, from_session?, request_id?,
                    kind: InboxKind, urgent, summary, body, artifacts, superseded, provisional, corrects?,
                    reason?, created_at, ready_at?, resolved_at?, delivered_at?, delivered_via?:
-                   InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door). The renderer's
-                   copy of a `pane_inbox` row —
+                   InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door),
+                   from_codename?, from_role? (bounded sender identity snapshots). The renderer's copy of a `pane_inbox` row —
                    drops `reserved_at`/`delivery_id` (door internals)
 InboxKind          snake: result | no_handback | needs_input | exited | stalled | operator_note | mail
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
@@ -839,6 +840,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 113 | **Orchestration spans registered workspaces and records child lifetime.** `pane_spawn`/`hs-pane spawn` gain registered `target_workspace`, `reusable` lifecycle selection and provider-validated `effort`; `DelegationInfo` carries the persisted reusable choice. Temporary children are removed only after a durable completed handback, while the delegation ancestry, inbox rows and bounded sender identity snapshots remain available for scoped historical waits |
 | 112 | **Pane lifecycle reports uncertainty.** `AgentStatus` gains `unavailable`: a hook-capable or ACP pane enters `spawning` at process creation and moves there if no lifecycle signal arrives within the bounded grace period, instead of being guessed idle. Later provider evidence replaces it normally |
 | 111 | **The per-pane context indicator.** `SessionInfo` gains an optional `context: SessionContext` and a matching `session_context` broadcast, both runtime-only. `SessionContext` carries `used_tokens` (the latest context occupancy, including output tokens), a nullable `window_tokens` and `used_percent`, a `state` (`unknown`\|`idle`\|`working`\|`near_limit`\|`reset`), a `source` (`reported`\|`derived` — the window's provenance) and `as_of_ms`. The daemon reads the transcript path reported by Claude or Codex hooks (`HookDrop` carries `transcript_path`) and broadcasts on turn boundaries. Codex reports its effective window; Claude uses the model catalog. Unsupported providers carry no `context` and the client renders no indicator |
 | 110 | **One update channel.** `UpdatePolicy` loses its `channel` field and `UpdateChannel` is deleted. The daemon always asks `releases/latest` and offers only a strictly newer release; a draft and a prerelease are refused unconditionally, so a release candidate can never reach a stable install. The stored `updates_channel` settings row is left in place, inert |

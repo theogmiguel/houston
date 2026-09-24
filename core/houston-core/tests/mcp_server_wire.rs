@@ -50,6 +50,37 @@ mod gateway {
         }
     }
 
+    struct PushButtonTool;
+
+    impl ToolProvider for PushButtonTool {
+        fn tools(&self, _scope: &McpScope) -> Vec<ToolSpec> {
+            Self::specs()
+        }
+        fn all_tools(&self) -> Vec<ToolSpec> {
+            Self::specs()
+        }
+        fn call<'a>(
+            &'a self,
+            _scope: &'a McpScope,
+            _name: &'a str,
+            _args: &'a Value,
+        ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
+            Box::pin(async move { Ok(ToolOutput::text("pushed")) })
+        }
+    }
+
+    impl PushButtonTool {
+        fn specs() -> Vec<ToolSpec> {
+            vec![ToolSpec {
+                name: "push_button".into(),
+                title: "Push a destructive test button".into(),
+                description: "Test-only destructive tool.".into(),
+                input_schema: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+                annotations: Annotations::destructive(),
+            }]
+        }
+    }
+
     struct GatewayHost {
         tools: ToolRegistry,
         scopes: HashMap<String, McpScope>,
@@ -71,6 +102,7 @@ mod gateway {
     fn host(sessions: &[(u32, &str, Option<AgentKind>)]) -> GatewayHost {
         let tools = ToolRegistry::with_builtins();
         tools.register(std::sync::Arc::new(EchoTool));
+        tools.register(std::sync::Arc::new(PushButtonTool));
         let mut scopes = HashMap::new();
         let mut kinds = HashMap::new();
         for (session_id, token, kind) in sessions {
@@ -116,22 +148,68 @@ mod gateway {
     }
 
     #[tokio::test]
-    async fn a_codex_pane_is_served_exactly_the_two_gateway_meta_tools() {
+    async fn a_codex_pane_is_served_the_two_meta_tools_plus_approval_free_ones_directly() {
         let h = host(&[(1, "tok", Some(AgentKind::Codex))]);
         let res = call(&h, "tok", rpc(1, "tools/list", json!({}))).await;
         let tools = res["result"]["tools"].as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names, vec!["list_tools", "call_tool"], "{res}");
-        let list_tools = &tools[0];
+        assert!(names.contains(&"list_tools"), "{res}");
+        assert!(names.contains(&"call_tool"), "{res}");
+        assert!(
+            names.contains(&"echo_workspace"),
+            "read-only tools go direct: {res}"
+        );
+        assert!(
+            !names.contains(&"push_button"),
+            "a destructive tool must stay behind call_tool: {res}"
+        );
+        let named = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap().clone();
+        let list_tools = named("list_tools");
         assert_eq!(list_tools["annotations"]["readOnlyHint"], true, "{res}");
         assert_eq!(list_tools["annotations"]["openWorldHint"], false, "{res}");
-        let call_tool = &tools[1];
+        let call_tool = named("call_tool");
         assert_eq!(call_tool["annotations"]["destructiveHint"], true, "{res}");
         assert_eq!(
             call_tool["inputSchema"]["required"],
             json!(["name"]),
             "{res}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_codex_pane_calls_an_approval_free_tool_directly_by_name() {
+        let h = host(&[(1, "tok", Some(AgentKind::Codex))]);
+        let res = call(
+            &h,
+            "tok",
+            rpc(
+                1,
+                "tools/call",
+                json!({ "name": "echo_workspace", "arguments": {} }),
+            ),
+        )
+        .await;
+        assert_eq!(res["result"]["isError"], false, "{res}");
+        assert_eq!(res["result"]["structuredContent"]["echoedWorkspace"], "tok");
+    }
+
+    #[tokio::test]
+    async fn a_codex_pane_calling_a_gated_tool_directly_is_refused_naming_call_tool() {
+        let h = host(&[(1, "tok", Some(AgentKind::Codex))]);
+        let res = call(
+            &h,
+            "tok",
+            rpc(
+                1,
+                "tools/call",
+                json!({ "name": "push_button", "arguments": {} }),
+            ),
+        )
+        .await;
+        assert_eq!(res["result"]["isError"], true, "{res}");
+        let text = res["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("push_button"), "{text}");
+        assert!(text.contains("call_tool"), "{text}");
     }
 
     #[tokio::test]

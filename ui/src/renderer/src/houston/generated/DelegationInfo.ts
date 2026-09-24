@@ -2,4 +2,4 @@
 import type { DelegationState } from "./DelegationState";
 import type { TurnEndSource } from "./TurnEndSource";
 
-export type DelegationInfo = { parent: number, role?: string | null, state: DelegationState, stalled: boolean, result_staged: boolean, superseded: number, ended_at?: number | null, stop_reason?: string | null, turn_end_source: TurnEndSource, inbox_owed: number, inbox_provisional: number, last_result_corrected_by?: number | null, capability_note?: string | null, hold_reason?: string | null, };
+export type DelegationInfo = { parent: number, role?: string | null, state: DelegationState, stalled: boolean, result_staged: boolean, superseded: number, ended_at?: number | null, stop_reason?: string | null, turn_end_source: TurnEndSource, inbox_owed: number, inbox_provisional: number, last_result_corrected_by?: number | null, capability_note?: string | null, hold_reason?: string | null, reusable: boolean, };

@@ -98,6 +98,13 @@ echo "[dev] building the renderer…"
 echo "[dev] building the daemon, supervisor and hook helper (debug)…"
 (cd "$ROOT/core" && cargo build --bin houston-core --bin houston-supervisor --bin tr-helper)
 
+HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+[ -n "$HOST_TRIPLE" ] || { echo "[dev] could not read the host target triple from rustc -vV" >&2; exit 1; }
+mkdir -p "$ROOT/src-tauri/binaries"
+for sidecar in tr-helper houston-core houston-supervisor; do
+  cp "$ROOT/core/target/debug/$sidecar" "$ROOT/src-tauri/binaries/$sidecar-$HOST_TRIPLE"
+done
+
 echo "[dev] building the app (debug)…"
 (cd "$ROOT/src-tauri" && cargo build)
 

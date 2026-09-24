@@ -83,6 +83,11 @@ pub struct HookDrop {
     // every other tool call is the agent working, not a human being asked.
     #[serde(default)]
     pub tool_name: Option<String>,
+    // A provider may omit its tool-call ID from the permission event while
+    // including the command in the later completion event. Keep only a
+    // digest so command contents never enter daemon state or hook drops.
+    #[serde(default)]
+    pub tool_input_fingerprint: Option<String>,
 }
 
 impl Default for HookDrop {
@@ -111,6 +116,7 @@ impl Default for HookDrop {
             session_id: None,
             fully_idle: None,
             tool_name: None,
+            tool_input_fingerprint: None,
         }
     }
 }
