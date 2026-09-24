@@ -1,4 +1,4 @@
-# Wire protocol v112
+# Wire protocol v114
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -142,7 +142,7 @@ failure not given a typed refusal comes back as `error`.
 |---|---|---|
 | `git_status` | `dir`, `base?` (branch name = branch-vs-base scope; unresolvable base is an `error`) | `git_status` (direct) |
 | `git_diff` | `dir`, `path?` (absent = full patch), `base?` | `git_diff` (direct) |
-| `git_branch` | `dir` | `git_branch` (direct); non-repo/detached yields `branch: null` |
+| `git_branch` | `dir` | `git_branch` (direct); a non-repo yields all three fields null, a detached HEAD keeps `toplevel`/`common_dir` and yields `branch: null` |
 | `git_stage` | `dir`, `paths` (empty = all) | fresh `git_status` (direct) |
 | `git_unstage` | `dir`, `paths` (empty = all) | fresh `git_status` (direct) |
 | `git_commit` | `dir`, `message` | `git_commit` then `git_status` (direct) |
@@ -332,7 +332,7 @@ failure not given a typed refusal comes back as `error`.
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
 | `git_diff` | `dir`, `path?`, `patch`, `truncated`, `base?` | direct reply to `git_diff` |
-| `git_branch` | `dir`, `branch?` | direct reply to `git_branch` |
+| `git_branch` | `dir`, `branch?`, `toplevel?`, `common_dir?` | direct reply to `git_branch`; the branch comes from the checkout's HEAD and one `rev-parse --show-toplevel --path-format=absolute --git-common-dir` answers the identity. `toplevel` names the work tree (equal means one checkout), `common_dir` the repository (equal means main checkout plus worktree); both null outside a work tree |
 | `git_commit` | `dir`, `sha`, `summary` | direct reply to `git_commit`, followed by a fresh `git_status` |
 | `git_review_diffs` | `dir`, `branch?`, `upstream?`, `ahead`, `behind`, `head?`, `files: GitFileStatus[]`, `sections: GitReviewSection[]`, `blocked_paths`, `warnings`, `truncated`, `redacted` | direct reply to `git_review_diffs`; one entry per non-empty scope |
 | `git_branches` | `dir`, `branches: GitBranchInfo[]`, `remotes: GitBranchInfo[]`, `default_branch?`, `truncated` | direct reply to `git_branches` and every branch mutation |
@@ -412,9 +412,10 @@ SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), 
                    ids, never names, so a rename/recolor needs no session rewrite)
 DelegationInfo     parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
-                   last_result_corrected_by?, capability_note?, hold_reason? (v98: what the child
+                   last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
                    still owes its parent, the correction link, what its CLI cannot report, and
-                   why door 3 is holding the rows). The record a pane is the CHILD of; `None`
+                   why door 3 is holding the rows; `reusable` is the persisted lifecycle choice).
+                   The record a pane is the CHILD of; `None`
                    for an operator-spawned pane. Deliberately NOT the record's `brief` (8 000 chars, on
                    every roster broadcast) — that stays MCP-only, on `pane_get`'s `DelegationView`
 DelegationState    snake: spawning | working | needs_input | done | failed | cancelled | unknown
@@ -423,8 +424,8 @@ TurnEndSource      kebab: stop-hook | acp-turn | quiet-settle
 InboxRow           v96: id, to_session, original_to?, workspace, from_session?, request_id?,
                    kind: InboxKind, urgent, summary, body, artifacts, superseded, provisional, corrects?,
                    reason?, created_at, ready_at?, resolved_at?, delivered_at?, delivered_via?:
-                   InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door). The renderer's
-                   copy of a `pane_inbox` row —
+                   InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door),
+                   from_codename?, from_role? (bounded sender identity snapshots). The renderer's copy of a `pane_inbox` row —
                    drops `reserved_at`/`delivery_id` (door internals)
 InboxKind          snake: result | no_handback | needs_input | exited | stalled | operator_note | mail
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
@@ -839,6 +840,8 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 114 | **A pane says which branch it is on.** `git_branch`'s reply gains `toplevel` and `common_dir` beside `branch`, all nullable. The branch is read from the checkout's HEAD, which is also the only source that answers before a repository's first commit; `toplevel` and `common_dir` come from one `rev-parse --show-toplevel --path-format=absolute --git-common-dir`. `toplevel` names the work tree, `common_dir` the repository a checkout belongs to; a non-repo replies with all three null, a detached HEAD keeps `toplevel`/`common_dir` and nulls only `branch`. The renderer shows the branch in the pane header and groups live panes by these two facts: equal `toplevel` is one shared checkout, equal `common_dir` across different toplevels is a main checkout and its worktree. Nothing is persisted and no other message changes |
+| 113 | **Orchestration spans registered workspaces and records child lifetime.** `pane_spawn`/`hs-pane spawn` gain registered `target_workspace`, `reusable` lifecycle selection and provider-validated `effort`; `DelegationInfo` carries the persisted reusable choice. Temporary children are removed only after a durable completed handback, while the delegation ancestry, inbox rows and bounded sender identity snapshots remain available for scoped historical waits |
 | 112 | **Pane lifecycle reports uncertainty.** `AgentStatus` gains `unavailable`: a hook-capable or ACP pane enters `spawning` at process creation and moves there if no lifecycle signal arrives within the bounded grace period, instead of being guessed idle. Later provider evidence replaces it normally |
 | 111 | **The per-pane context indicator.** `SessionInfo` gains an optional `context: SessionContext` and a matching `session_context` broadcast, both runtime-only. `SessionContext` carries `used_tokens` (the latest context occupancy, including output tokens), a nullable `window_tokens` and `used_percent`, a `state` (`unknown`\|`idle`\|`working`\|`near_limit`\|`reset`), a `source` (`reported`\|`derived` — the window's provenance) and `as_of_ms`. The daemon reads the transcript path reported by Claude or Codex hooks (`HookDrop` carries `transcript_path`) and broadcasts on turn boundaries. Codex reports its effective window; Claude uses the model catalog. Unsupported providers carry no `context` and the client renders no indicator |
 | 110 | **One update channel.** `UpdatePolicy` loses its `channel` field and `UpdateChannel` is deleted. The daemon always asks `releases/latest` and offers only a strictly newer release; a draft and a prerelease are refused unconditionally, so a release candidate can never reach a stable install. The stored `updates_channel` settings row is left in place, inert |

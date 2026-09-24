@@ -94,7 +94,7 @@ describe('SessionPane orchestrator badge (v63)', () => {
     const badge = el.querySelector('[data-testid="orchestrator-badge"]')
     expect(badge).not.toBeNull()
     expect(badge!.closest('[data-testid="head-identity"]')).not.toBeNull()
-    expect(badge!.textContent).toBe('2')
+    expect(badge!.textContent).toBe('#1 · 2')
     expect(badge!.querySelector('svg')).not.toBeNull()
   })
 
@@ -157,8 +157,8 @@ describe('SessionPane orchestrator badge (v63)', () => {
       )
     })
     const badge = container!.querySelector('[data-testid="orchestrator-badge"]')
-    expect(badge!.getAttribute('aria-label')).toBe('Orchestrating 3 live child panes')
-    expect(badge!.textContent).toBe('3')
+    expect(badge!.getAttribute('aria-label')).toBe('#1 · orchestrating 3 live child panes')
+    expect(badge!.textContent).toBe('#1 · 3')
   })
 
   it('turns the count into a fraction, in warn ink, only while a child is waiting', () => {
@@ -171,10 +171,54 @@ describe('SessionPane orchestrator badge (v63)', () => {
       )
     })
     const badge = container!.querySelector('[data-testid="orchestrator-badge"]')!
-    expect(badge.textContent).toBe('1/3')
+    expect(badge.textContent).toBe('#1 · 1/3')
     expect(badge.innerHTML).toContain('var(--warn)')
     expect(badge.getAttribute('aria-label')).toBe(
-      'Orchestrating 3 live child panes; 1 waiting on you'
+      '#1 · orchestrating 3 live child panes; 1 waiting on you'
     )
+  })
+
+  it('puts the orchestrator codename before its live count', () => {
+    root = createRoot(container!)
+    act(() => {
+      root!.render(
+        <OrchestratorBadge
+          info={{
+            id: 1,
+            title: 'Plan login',
+            codename: 'Max',
+            live_children: 2,
+            children_waiting: 0
+          } as SessionInfo}
+        />
+      )
+    })
+    const badge = container!.querySelector('[data-testid="orchestrator-badge"]')!
+    expect(badge.textContent).toBe('Max · 2')
+    expect(badge.getAttribute('aria-label')).toBe('Max · orchestrating 2 live child panes')
+    expect(badge.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toBe(
+      'Max · orchestrating 2 live child panes'
+    )
+  })
+
+  it('keeps the count visible without repeating a codename used as the title', () => {
+    root = createRoot(container!)
+    act(() => {
+      root!.render(
+        <OrchestratorBadge
+          info={{
+            id: 1,
+            title: 'Max',
+            codename: 'Max',
+            live_children: 2,
+            children_waiting: 1
+          } as SessionInfo}
+        />
+      )
+    })
+    const badge = container!.querySelector('[data-testid="orchestrator-badge"]')!
+    expect(badge.textContent).toBe('1/2')
+    expect(badge.getAttribute('aria-label')).toContain('Max')
+    expect(badge.getAttribute('aria-label')).toContain('1 waiting on you')
   })
 })

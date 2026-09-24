@@ -86,8 +86,14 @@ describe('pane header container-query ladder (SessionPane.tsx / RenameTitle.tsx)
     ).toBeGreaterThanOrEqual(MIN_SHED_THRESHOLD_PX.engineGlyph)
   })
 
-  it('renders neither `.branch-chip` nor `.header-divider` any more — deleted, not re-thresholded', () => {
-    expect(sessionPaneSrc).not.toContain('data-testid="branch-chip"')
+  it('sheds `.branch-chip` at max-width >= 400px, and renders no `.header-divider`', () => {
+    const px = shedStepForTestid('branch-chip')
+    expect(
+      px,
+      'expected SessionPane.tsx\'s `data-testid="branch-chip"` element to carry a ' +
+        '`[@container_(max-width:Npx)]:hidden` step — the chip joins `.pane-sub` at the 400px tier'
+    ).toBeDefined()
+    expect(px!).toBeGreaterThanOrEqual(400)
     expect(sessionPaneSrc).not.toContain('data-testid="header-divider"')
   })
 
@@ -119,5 +125,9 @@ describe('pane header container-query ladder (SessionPane.tsx / RenameTitle.tsx)
         'icons) outgrow the header'
     ).not.toBeNull()
     expect(Number(m![1])).toBeGreaterThan(0)
+  })
+
+  it('lets the task title give up width before fixed identity badges', () => {
+    expect(extractPaneTitleCls()).toContain('[flex:0_1_auto]')
   })
 })

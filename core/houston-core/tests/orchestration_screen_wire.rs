@@ -295,7 +295,7 @@ async fn an_unsubmitted_turn_end_carries_the_answer_off_the_childs_screen() {
     apply_hook_event(r._state.path(), kid, "Stop").await;
 
     let acc = collect_broadcast_until(&mut rx, parent.id, "End Inbox").await;
-    assert!(acc.contains("from answerer"), "the subject line: {acc:?}");
+    assert!(acc.contains("(answerer)"), "the subject line: {acc:?}");
     assert!(
         acc.contains("❯ Reply with only the word FILLER-6. No tools."),
         "the question, with the spaces the CLI drew by moving the cursor: {acc:?}"
@@ -422,7 +422,7 @@ async fn quiet_settle_sees_a_turn_the_byte_ring_could_not_show_it() {
     r.daemon.delegation_watch_tick_at(20_000 + 2 * QUIET + 2);
     let acc = collect_broadcast_until(&mut rx, parent.id, "End Inbox").await;
     assert!(
-        acc.contains("from answerer"),
+        acc.contains("(answerer)"),
         "a still screen still settles: {acc:?}"
     );
     let excerpt: Vec<&str> = acc

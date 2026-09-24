@@ -134,6 +134,18 @@ Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'ui') -FilePath 'bun' -Argum
 Write-Host '[dev] building the daemon and hook helper (debug)...'
 Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'core') -FilePath 'cargo' -ArgumentList @('build', '--bin', 'houston-core', '--bin', 'tr-helper')
 
+$RustcVersion = & rustc -vV
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$HostTriple = ($RustcVersion | Where-Object { $_ -match '^host: ' }) -replace '^host: ', ''
+if ([string]::IsNullOrWhiteSpace($HostTriple)) {
+    throw '[dev] could not read the host target triple from rustc -vV'
+}
+$SidecarDir = Join-Path $Root 'src-tauri\binaries'
+New-Item -ItemType Directory -Path $SidecarDir -Force | Out-Null
+foreach ($Sidecar in @('tr-helper', 'houston-core')) {
+    Copy-Item -LiteralPath (Join-Path $Root "core\target\debug\$Sidecar.exe") -Destination (Join-Path $SidecarDir "$Sidecar-$HostTriple.exe") -Force
+}
+
 Write-Host '[dev] building the app (debug)...'
 Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'src-tauri') -FilePath 'cargo' -ArgumentList @('build')
 

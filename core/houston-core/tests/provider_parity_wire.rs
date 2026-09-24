@@ -363,6 +363,128 @@ mod codex {
     }
 
     #[tokio::test]
+    async fn codex_permission_request_needs_its_matching_bash_completion() {
+        let _guard = serial().await;
+        shim_dir();
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Codex);
+        drive(
+            state.path(),
+            "UserPromptSubmit",
+            SLUG,
+            info.id,
+            f("codex-0.153.4-02-UserPromptSubmit.json"),
+        )
+        .await;
+
+        let mut rx = daemon.observe();
+        drive(
+            state.path(),
+            "PermissionRequest",
+            SLUG,
+            info.id,
+            f("codex-0.155.1-04-PermissionRequest-Bash.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::NeedsInput
+        );
+
+        let unrelated = f("codex-0.155.1-08-PostToolUse-Bash.json")
+            .replace("cargo test --workspace", "bun run test");
+        drive(state.path(), "PostToolUse", SLUG, info.id, unrelated).await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput),
+            "a Bash completion for another command cannot dismiss the permission"
+        );
+
+        drive(
+            state.path(),
+            "PostToolUse",
+            SLUG,
+            info.id,
+            f("codex-0.155.1-08-PostToolUse-Bash.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working,
+            "the matching Bash completion resumes the same turn"
+        );
+    }
+
+    #[tokio::test]
+    async fn codex_permission_commands_in_one_turn_resolve_independently() {
+        let _guard = serial().await;
+        shim_dir();
+        let (_addr, state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Codex);
+        drive(
+            state.path(),
+            "UserPromptSubmit",
+            SLUG,
+            info.id,
+            f("codex-0.153.4-02-UserPromptSubmit.json"),
+        )
+        .await;
+
+        let mut rx = daemon.observe();
+        drive(
+            state.path(),
+            "PermissionRequest",
+            SLUG,
+            info.id,
+            f("codex-0.155.1-04-PermissionRequest-Bash.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::NeedsInput
+        );
+
+        let permission_b = f("codex-0.155.1-04-PermissionRequest-Bash.json")
+            .replace("cargo test --workspace", "bun run test");
+        drive(
+            state.path(),
+            "PermissionRequest",
+            SLUG,
+            info.id,
+            permission_b,
+        )
+        .await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput),
+            "a second Codex permission in the same turn keeps the pane blocked"
+        );
+
+        let completion_b = f("codex-0.155.1-08-PostToolUse-Bash.json")
+            .replace("cargo test --workspace", "bun run test");
+        drive(state.path(), "PostToolUse", SLUG, info.id, completion_b).await;
+        assert_eq!(
+            daemon.session_status(info.id).unwrap(),
+            Some(proto::AgentStatus::NeedsInput),
+            "completing B cannot dismiss A"
+        );
+
+        drive(
+            state.path(),
+            "PostToolUse",
+            SLUG,
+            info.id,
+            f("codex-0.155.1-08-PostToolUse-Bash.json"),
+        )
+        .await;
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Working,
+            "completing A resumes the turn after B already completed"
+        );
+    }
+
+    #[tokio::test]
     async fn codex_interrupt_returns_to_idle_without_completion() {
         let _guard = serial().await;
         shim_dir();
@@ -417,10 +539,11 @@ mod codex {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -432,7 +555,7 @@ mod codex {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -448,8 +571,8 @@ mod codex {
         names.sort_unstable();
         assert_eq!(
             names,
-            vec!["call_tool", "list_tools"],
-            "codex is gateway-served: {res}"
+            vec!["call_tool", "list_tools", "pane_submit", "workspace_info"],
+            "codex is gateway-served, plus the tools its approval rule would not gate: {res}"
         );
 
         let call = |name: &'static str| {
@@ -494,10 +617,11 @@ mod codex {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -905,10 +1029,11 @@ mod opencode {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -920,7 +1045,7 @@ mod opencode {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -948,10 +1073,11 @@ mod opencode {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1222,10 +1348,11 @@ mod grok {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1237,7 +1364,7 @@ mod grok {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -1265,10 +1392,11 @@ mod grok {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1495,10 +1623,11 @@ mod cursor {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1510,7 +1639,7 @@ mod cursor {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -1538,10 +1667,11 @@ mod cursor {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1861,10 +1991,11 @@ mod antigravity {
             .unwrap();
         daemon.orchestration_set(true).unwrap();
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
         let (status, body) = orchestrate_spawn(
             addr,
@@ -1876,7 +2007,7 @@ mod antigravity {
         let child = body["session_id"].as_u64().unwrap() as u32;
         let child_token = daemon.mcp_creds.issue(McpScope {
             session_id: child,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace.clone(),
         });
 
         let res = mcp_call(
@@ -1906,10 +2037,11 @@ mod antigravity {
         let transcript_dir = tempfile::tempdir().unwrap();
         let transcript = write_transcript(&transcript_dir, "unused");
 
-        let parent = pane(&daemon, proto::AgentKind::Custom).0;
+        let (parent, _parent_dir) = pane(&daemon, proto::AgentKind::Custom);
+        let parent_workspace = parent.project_dir.clone();
         let parent_token = daemon.mcp_creds.issue(McpScope {
             session_id: parent.id,
-            workspace_id: dir.path().display().to_string(),
+            workspace_id: parent_workspace,
         });
         let (status, body) = orchestrate_spawn(
             addr,

@@ -19,6 +19,33 @@ function isWaiting(d: DelegationInfo | null | undefined): boolean {
   return d != null && (d.stalled || d.state === 'needs_input')
 }
 
+export function sessionCodename(info: { codename?: string | null }): string | null {
+  const codename = typeof info.codename === 'string' ? info.codename.trim() : ''
+  return codename || null
+}
+
+export function sessionIdentity(info: { id: number; codename?: string | null }): string {
+  return sessionCodename(info) ?? `#${info.id}`
+}
+
+export function sessionTaskLabel(info: {
+  title?: string | null
+  codename?: string | null
+}): string | null {
+  const title = typeof info.title === 'string' ? info.title.trim() : ''
+  return title !== '' && title !== sessionCodename(info) ? title : null
+}
+
+function titleIsCodename(info: { title?: string | null; codename?: string | null }): boolean {
+  const codename = sessionCodename(info)
+  return codename != null && typeof info.title === 'string' && info.title.trim() === codename
+}
+
+function workspaceLabel(path: string): string {
+  const clean = path.replace(/[\\/]+$/, '')
+  return clean.split(/[\\/]/).pop() || path
+}
+
 // `unknown` is ignorance, not a verdict: the daemon restarted mid-flight, so
 // nobody knows how the work ended. Saying "failed" would be a claim about the
 // child rather than about Houston.
@@ -110,7 +137,7 @@ function ChildIdentityLine({
   parent: SessionInfo | undefined
 }): React.JSX.Element {
   const parentId = info.delegation?.parent ?? info.spawned_by
-  const parentName = parent != null && parent.codename !== '' ? parent.codename : null
+  const parentName = parent != null ? sessionCodename(parent) : null
   const parentShort = parentName ?? (parentId != null ? `#${parentId}` : null)
   return (
     <div className="px-3 pb-2.5 text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
@@ -171,6 +198,9 @@ function RecordBody({
       {d && (
         <div className={SECTION_CLS}>
           <dl className="m-0 grid grid-cols-[86px_minmax(0,1fr)] gap-x-2 gap-y-[5px] items-baseline">
+            <CardRow label="workspace">
+              <Tooltip label={info.project_dir}>{workspaceLabel(info.project_dir)}</Tooltip>
+            </CardRow>
             {d.role != null && (
               <CardRow label="role" tone="text-[var(--text-primary)] font-semibold">
                 {d.role}
@@ -257,7 +287,8 @@ function RosterBody({
       <div className="px-3 pb-2.5 text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
         this pane{' '}
         <b className="text-[var(--text-secondary)]">
-          {info.id} · {info.title}
+          {sessionIdentity(info)}
+          {sessionTaskLabel(info) != null && ` · ${sessionTaskLabel(info)}`}
         </b>
         {atCap && (
           <>
@@ -273,6 +304,9 @@ function RosterBody({
         <div className="flex flex-col -mx-3 -mb-2.5">
           {crew.map((c) => {
             const d = c.delegation
+            const secondary = [d?.role, sessionTaskLabel(c)].filter(
+              (value): value is string => value != null
+            )
             return (
               <button
                 key={c.id}
@@ -280,12 +314,17 @@ function RosterBody({
                 className={CREW_ROW_CLS}
                 onClick={() => onFocusPane?.(c.id)}
               >
-                <span className="flex-none font-semibold text-[var(--text-primary)] whitespace-nowrap overflow-hidden text-ellipsis max-w-[13ch]">
-                  {d?.role ?? c.title}
+                <span
+                  data-testid="roster-identity"
+                  className="flex-none font-semibold text-[var(--text-primary)] whitespace-nowrap overflow-hidden text-ellipsis max-w-[16ch]"
+                >
+                  {sessionIdentity(c)}
                 </span>
-                <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-faint)]">
-                  {c.id}
-                  {d?.role != null ? ` · ${c.title}` : ''}
+                <span
+                  data-testid="roster-secondary"
+                  className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-faint)]"
+                >
+                  {secondary.join(' · ')}
                 </span>
                 <span
                   className={`ml-auto flex-none [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase ${
@@ -320,7 +359,7 @@ export type BadgeKind = 'origin' | 'orchestrator'
 function parentShort(info: SessionInfo, roster: PaneRoster | undefined): string | null {
   const parentId = info.spawned_by
   if (parentId == null) return null
-  const codename = roster?.sessions.get(parentId)?.codename
+  const codename = roster != null ? sessionCodename(roster.sessions.get(parentId) ?? {}) : null
   if (codename) return codename
   return `#${parentId}`
 }
@@ -330,11 +369,12 @@ function badgeLabel(
   info: SessionInfo,
   originName: string | null
 ): string {
+  const identity = sessionIdentity(info)
   if (kind === 'origin')
-    return originName != null && info.spawned_by != null
-      ? `child of ${originName} · pane ${info.spawned_by}`
-      : `Spawned by pane ${info.spawned_by} — this pane is an orchestration child`
-  const base = `Orchestrating ${info.live_children} live child panes`
+    return originName != null
+      ? `${identity} · child of ${originName}`
+      : `${identity} · this pane is an orchestration child`
+  const base = `${identity} · orchestrating ${info.live_children} live child panes`
   return info.children_waiting > 0
     ? `${base}; ${info.children_waiting} waiting on you`
     : base
@@ -355,19 +395,29 @@ function crewOf(
 function BadgeContent({
   kind,
   info,
-  originName
+  selfName
 }: {
   kind: BadgeKind
   info: SessionInfo
-  originName: string | null
+  selfName: string
 }): React.JSX.Element {
-  if (kind === 'origin') return <>{originName ?? info.spawned_by}</>
-  if (info.children_waiting === 0) return <>{info.live_children}</>
-  return (
+  const showIdentity = !titleIsCodename(info)
+  if (kind === 'origin') return showIdentity ? <>{selfName}</> : <></>
+  const count = info.children_waiting === 0 ? (
+    <>{info.live_children}</>
+  ) : (
     <span className="inline-flex items-baseline">
       <span className="text-[var(--warn)]">{info.children_waiting}</span>
       <span className="px-px text-[var(--text-muted)]">/</span>
       {info.live_children}
+    </span>
+  )
+  if (!showIdentity || info.spawned_by != null) return count
+  return (
+    <span className="inline-flex items-baseline">
+      {selfName}
+      <span className="px-px text-[var(--text-muted)]"> · </span>
+      {count}
     </span>
   )
 }
@@ -378,6 +428,7 @@ const CARD_TITLE_CLS =
 
 function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React.JSX.Element {
   const waiting = info.children_waiting
+  const identity = sessionIdentity(info)
   if (kind === 'orchestrator') {
     return (
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
@@ -386,7 +437,10 @@ function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React
           role="small"
           className={waiting > 0 ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}
         />
-        <span className={CARD_TITLE_CLS}>Orchestrating {info.live_children}</span>
+        <span className={`${CARD_TITLE_CLS} flex-none`}>{identity}</span>
+        <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
+          · {info.live_children} live
+        </span>
         <span className="ml-auto" />
         {waiting > 0 && (
           <span className={`${PILL_CLS} bg-[var(--status-todo-bg)] text-[var(--status-todo-text)]`}>
@@ -398,10 +452,12 @@ function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React
   }
   return (
     <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
-      <span className={CARD_TITLE_CLS}>{info.title}</span>
-      <span className="flex-none text-[var(--text-faint)] [font-size:var(--tr-text-xs)] [font-variant-numeric:tabular-nums]">
-        {info.id}
-      </span>
+      <span className={`${CARD_TITLE_CLS} flex-none`}>{identity}</span>
+      {sessionTaskLabel(info) != null && (
+        <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
+          {sessionTaskLabel(info)}
+        </span>
+      )}
       <span className="ml-auto" />
       {info.delegation && (
         <span className={pillCls(info.delegation)}>{stateWord(info.delegation)}</span>
@@ -587,6 +643,7 @@ export function HeaderDelegationBadge({
   const place = useCardPlacement(open, btnRef, cardRef, info)
 
   const originName = kind === 'origin' ? parentShort(info, roster) : null
+  const selfName = sessionIdentity(info)
 
   useEffect(() => {
     if (!open) return
@@ -637,12 +694,12 @@ export function HeaderDelegationBadge({
         role="label"
         className={glyphWarn ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}
       />
-      <BadgeContent kind={kind} info={info} originName={originName} />
+      <BadgeContent kind={kind} info={info} selfName={selfName} />
     </button>
   )
   return (
     <>
-      {kind === 'origin' ? <Tooltip label={label}>{badge}</Tooltip> : badge}
+      <Tooltip label={open ? null : label}>{badge}</Tooltip>
       {open &&
         createPortal(
           <CardPanel

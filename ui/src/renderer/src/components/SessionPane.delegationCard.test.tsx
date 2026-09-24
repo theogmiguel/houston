@@ -40,6 +40,7 @@ function delegation(over: Partial<DelegationInfo> = {}): DelegationInfo {
     turn_end_source: 'stop-hook',
     inbox_owed: 0,
     inbox_provisional: 0,
+    reusable: false,
     ...over
   }
 }
@@ -52,7 +53,7 @@ function pane(over: Partial<SessionInfo> = {}): SessionInfo {
     cwd: '/tmp/p',
     state: 'running',
     title: 'slate-lantern',
-    codename: over.title ?? 'slate-lantern',
+    codename: over.codename ?? 'slate-lantern',
     hidden: false,
     spawned_by: 41,
     live_children: 0,
@@ -75,10 +76,19 @@ function openCard(testid: string): HTMLElement {
 }
 
 describe('the delegation card, opened from a child badge', () => {
+  it.each(['origin', 'orchestrator'] as const)('hides the %s tooltip while its card is open', (kind) => {
+    mount(<HeaderDelegationBadge kind={kind} info={pane({ live_children: 1 })} />)
+    const badge = document.querySelector(`[data-testid="${kind}-badge"]`) as HTMLButtonElement
+    act(() => badge.focus())
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  })
+
   it('renders only the rows that have a value', () => {
     mount(<HeaderDelegationBadge kind="origin" info={pane({ delegation: delegation() })} />)
     const card = openCard('origin-badge')
     const labels = [...card.querySelectorAll('dt')].map((n) => n.textContent)
+    expect(labels).toContain('workspace')
     expect(labels).toContain('role')
     expect(labels).toContain('state')
     expect(labels).not.toContain('stalled')
@@ -170,12 +180,52 @@ describe("the delegation card, opened from a parent's badge", () => {
   })
 
   it('names the pane the card belongs to as this pane, never as one it came from', () => {
-    const parent = pane({ id: 41, title: 'crimson-harbor', spawned_by: null, live_children: 1, children_waiting: 0 })
-    const crew = [pane({ id: 47, title: 'amber-signal', delegation: delegation({ role: 'test-writer' }) })]
+    const parent = pane({
+      id: 41,
+      title: 'Plan login',
+      codename: 'Max',
+      spawned_by: null,
+      live_children: 1,
+      children_waiting: 0
+    })
+    const crew = [
+      pane({
+        id: 47,
+        title: 'Adjust frontend',
+        codename: 'Elle',
+        delegation: delegation({ role: 'test-writer' })
+      })
+    ]
     mount(<HeaderDelegationBadge kind="orchestrator" info={parent} roster={roster(crew, 8)} />)
     const text = openCard('orchestrator-badge').textContent ?? ''
-    expect(text).toContain('41 · crimson-harbor')
+    expect(text).toContain('Max · Plan login')
     expect(text, 'the roster is not FROM the pane it belongs to').not.toMatch(/from\s*41/i)
+  })
+
+  it('puts each child codename first, with role and task as secondary context', () => {
+    const parent = pane({
+      id: 41,
+      title: 'Plan login',
+      codename: 'Max',
+      spawned_by: null,
+      live_children: 1,
+      children_waiting: 0
+    })
+    const crew = [
+      pane({
+        id: 47,
+        title: 'Adjust frontend',
+        codename: 'Elle',
+        delegation: delegation({ role: 'test-writer' })
+      })
+    ]
+    mount(<HeaderDelegationBadge kind="orchestrator" info={parent} roster={roster(crew, 8)} />)
+    const row = openCard('orchestrator-badge').querySelector('button')!
+    expect(row.querySelector('[data-testid="roster-identity"]')?.textContent).toBe('Elle')
+    expect(row.querySelector('[data-testid="roster-secondary"]')?.textContent).toBe(
+      'test-writer · Adjust frontend'
+    )
+    expect(row.textContent).not.toContain('#47')
   })
 
   it('sorts the crew waiting-first, then by id', () => {
@@ -240,19 +290,19 @@ describe('the delegation card names its parent by codename and reports the inbox
     maxLiveChildren: null
   })
 
-  it('the badge reads the parent codename and the tooltip carries the id', () => {
+  it('the badge reads the child codename and the tooltip carries the parent identity', () => {
     mount(
       <HeaderDelegationBadge
         kind="origin"
-        info={pane({ delegation: delegation() })}
+        info={pane({ title: 'Adjust frontend', codename: 'fern', delegation: delegation() })}
         roster={parentRoster()}
       />
     )
     const badge = document.querySelector('[data-testid="origin-badge"]') as HTMLElement
-    expect(badge.textContent).toContain('oak')
-    expect(badge.textContent).not.toContain('41')
+    expect(badge.textContent).toContain('fern')
+    expect(badge.textContent).not.toContain('oak')
     expect(badge.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toBe(
-      'child of oak · pane 41'
+      'fern · child of oak'
     )
     const card = openCard('origin-badge')
     expect(card.textContent).toContain('child of')
@@ -268,6 +318,18 @@ describe('the delegation card names its parent by codename and reports the inbox
       />
     )
     expect(openCard('origin-badge').textContent).toContain('2 owed to parent · 1 provisional')
+  })
+
+  it('does not repeat a codename when it is also the task title in the card heading', () => {
+    mount(
+      <HeaderDelegationBadge
+        kind="origin"
+        info={pane({ title: 'fern', codename: 'fern', delegation: delegation() })}
+        roster={parentRoster()}
+      />
+    )
+    const text = openCard('origin-badge').textContent ?? ''
+    expect(text.match(/fern/g)?.length).toBe(1)
   })
 
   it('a corrected last result links to its correction', () => {

@@ -6,6 +6,24 @@ use serde_json::json;
 // caller control back instead of hanging on a child that never reports a status
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
 
+// Ordinary control-plane calls stay responsive; long-poll responses use the daemon's wait budget.
+const CLI_HTTP_TIMEOUT_MS: u64 = 15_000;
+// Leave time for the daemon to serialize and flush the response at its deadline.
+const CLI_WAIT_RESPONSE_MARGIN_MS: u64 = 1_000;
+const CLI_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(CLI_HTTP_TIMEOUT_MS);
+
+fn cli_wait_timeout_ms(raw: Option<&str>) -> u64 {
+    raw.and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_WAIT_TIMEOUT_MS)
+}
+
+fn cli_wait_transport_timeout(timeout_ms: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(timeout_ms.saturating_add(CLI_WAIT_RESPONSE_MARGIN_MS))
+}
+
+pub const SPAWN_NEXT_ACTION: &str =
+    "Continue independent work; otherwise call `pane_wait` for this child or your inbox. Do not poll status.";
+
 pub const MAX_LIVE_CHILDREN: u32 = 4;
 
 pub const MAX_SPAWN_DEPTH: u32 = 1;
@@ -37,7 +55,7 @@ pub const HANDOFF_EXCERPT_MAX_CHARS: usize = 400;
 
 pub const HANDOFF_CORROBORATING_ROWS: usize = 12;
 
-pub const HANDOFF_TRUNCATION_MARKER: &str = "…[truncated — run hs-pane read <id> for more]";
+pub const HANDOFF_TRUNCATION_MARKER: &str = "…[truncated]";
 
 pub const SUBMIT_BODY_MAX_CHARS: usize = 8_000;
 
@@ -402,6 +420,7 @@ pub struct DelegationView {
     pub ended_at: Option<u64>,
     pub stop_reason: Option<String>,
     pub suppressed_turn_ends: u32,
+    pub reusable: bool,
 }
 
 impl From<DelegationState> for proto::DelegationState {
@@ -478,6 +497,7 @@ pub fn delegation_info(
         last_result_corrected_by: owed.last_result_corrected_by,
         capability_note,
         hold_reason,
+        reusable: row.reusable,
     }
 }
 
@@ -587,6 +607,7 @@ impl DelegationView {
             ended_at: row.ended_at,
             stop_reason: row.stop_reason,
             suppressed_turn_ends: row.no_handback_suppressed,
+            reusable: row.reusable,
         }
     }
 }
@@ -622,6 +643,8 @@ impl From<crate::db::InboxRow> for proto::InboxRow {
                 .map(Into::into),
             confirmed_at: row.confirmed_at,
             attempts: row.attempts,
+            from_codename: row.from_codename,
+            from_role: row.from_role,
         }
     }
 }
@@ -680,6 +703,18 @@ pub enum InboxWaitOutcome {
     },
 }
 
+/// A human word for a wire status, instead of `{status:?}`'s `Some(Working)` / `None`.
+fn status_word(status: Option<proto::AgentStatus>) -> String {
+    match status {
+        Some(proto::AgentStatus::Spawning) => "spawning".to_string(),
+        Some(proto::AgentStatus::Working) => "working".to_string(),
+        Some(proto::AgentStatus::Idle) => "idle".to_string(),
+        Some(proto::AgentStatus::NeedsInput) => "needs input".to_string(),
+        Some(proto::AgentStatus::Unavailable) => "unavailable".to_string(),
+        None => "unknown".to_string(),
+    }
+}
+
 impl InboxWaitOutcome {
     pub fn message(&self) -> String {
         match self {
@@ -707,8 +742,9 @@ impl InboxWaitOutcome {
                      only a submit or its exit will produce a row"
                 ),
                 Some(source) => format!(
-                    "wait timed out after {waited_ms} ms (last status {status:?}; status source \
-                     {source})"
+                    "wait timed out after {waited_ms} ms (last status {}; status source \
+                     {source})",
+                    status_word(*status)
                 ),
                 None => format!("wait timed out after {waited_ms} ms"),
             },
@@ -718,6 +754,37 @@ impl InboxWaitOutcome {
                  hung, or already awaiting input; inspect before retrying"
             ),
         }
+    }
+
+    /// What to do next after a timeout — a timeout is a normal "nothing yet" outcome,
+    /// not a stall, so callers should re-wait rather than read/get/prompt the child.
+    pub fn next_action(&self) -> Option<String> {
+        let Self::TimedOut {
+            status,
+            status_source,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        Some(
+            if *status_source == Some(StatusSource::ProcessOnly.label()) {
+                "No row yet — that is not a stall: this child reports no turn end, so only a \
+             submit or its own exit will ever produce a row for it. Call wait again with \
+             the default timeout; do not read, get or prompt it."
+                    .to_string()
+            } else if status.is_none() {
+                "No row yet — none of your children has handed anything over; that is not a \
+             stall. Call wait again with the default timeout; do not read, get or prompt it."
+                    .to_string()
+            } else {
+                format!(
+                    "No row yet — that is not a stall: the child is still {}. Call wait again \
+                 with the default timeout; do not read, get or prompt it.",
+                    status_word(*status)
+                )
+            },
+        )
     }
 }
 
@@ -790,6 +857,9 @@ pub const PANE_VERBS: &[VerbSpec] = &[
             "auto_approve",
             "profile",
             "role",
+            "target_workspace",
+            "reusable",
+            "effort",
             "output_format",
             "boundaries",
         ],
@@ -1337,6 +1407,16 @@ fn trim_excerpt(s: &str) -> String {
     lines[first..=last].join("\n")
 }
 
+pub fn cap_handoff_excerpt(s: &str) -> Option<String> {
+    let mut excerpt = trim_excerpt(s);
+    if excerpt.chars().count() > HANDOFF_EXCERPT_MAX_CHARS {
+        excerpt = excerpt.chars().take(HANDOFF_EXCERPT_MAX_CHARS).collect();
+        excerpt.push(' ');
+        excerpt.push_str(HANDOFF_TRUNCATION_MARKER);
+    }
+    (!excerpt.is_empty()).then_some(excerpt)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InboxKind {
     Result,
@@ -1720,7 +1800,7 @@ pub(crate) fn http_json(
     stream.set_write_timeout(Some(timeout))?;
     stream.write_all(req.as_bytes())?;
     stream.flush()?;
-    read_loopback_response(&mut stream)
+    read_loopback_response(&mut stream, timeout)
 }
 
 pub(crate) fn http_json_deadline(
@@ -1747,7 +1827,7 @@ pub(crate) fn http_json_deadline(
         .write_all(req.as_bytes())
         .context("writing the request")?;
     stream.flush().context("flushing the request")?;
-    read_loopback_response(&mut stream)
+    read_loopback_response(&mut stream, remaining)
 }
 
 fn remaining_until(deadline: std::time::Instant) -> anyhow::Result<std::time::Duration> {
@@ -1801,10 +1881,21 @@ fn loopback_addr(authority: &str) -> anyhow::Result<std::net::SocketAddr> {
     })
 }
 
-fn read_loopback_response(stream: &mut std::net::TcpStream) -> anyhow::Result<(u16, String)> {
-    use std::io::Read;
+fn read_loopback_response(
+    stream: &mut std::net::TcpStream,
+    timeout: std::time::Duration,
+) -> anyhow::Result<(u16, String)> {
+    use std::io::{ErrorKind, Read};
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw)?;
+    if let Err(error) = stream.read_to_end(&mut raw) {
+        let context = match error.kind() {
+            ErrorKind::WouldBlock | ErrorKind::TimedOut => {
+                format!("reading daemon response timed out after {timeout:?}")
+            }
+            _ => "reading daemon response".to_string(),
+        };
+        return Err(anyhow::Error::new(error).context(context));
+    }
     let text = String::from_utf8_lossy(&raw);
     let (head, resp_body) = text
         .split_once("\r\n\r\n")
@@ -1948,6 +2039,10 @@ user asked for an agent.
 omitted `--model` inherits the child CLI's own default, which is usually the
 largest one configured, and a grep does not need it.
 
+Use the provider's exact CLI model identifier: Houston forwards it unchanged.
+For example, use `gpt-5.6-luna` for Codex, not the shorthand `luna`.
+The model names in the following table apply to Claude.
+
 | the work | model |
 |---|---|
 | search, grep, read-and-report, a mechanical edit | `sonnet` |
@@ -1972,22 +2067,23 @@ The narrower the brief, the smaller the model that can honour it. A vague
 prompt to a large model is the expensive way to get an answer you then have to
 correct.
 
-## Do not sit and wait
+## Wait first
 
 `spawn` returns as soon as the child is up. Then call `pane_wait` (or
 `hs-pane wait`): it blocks at zero token cost until your inbox has the
 child's result, a question, or its exit, and hands the row back inside the
-same call. So the thing to prefer is:
+same call. Your next action is either independent work or this wait:
 
 1. `spawn` the child with a self-contained brief.
 2. `pane_wait` for its result, question or exit — blocking here is free.
 3. Carry on from what the row says.
 
-**End your turn instead only when you have other work to do while the child
-runs.** Either way you get the result: a child's `pane_submit` is delivered
-to your inbox, read when you next wait or end a turn. The one thing `wait`
-costs is wall-clock time when the child is genuinely slow — its default
-timeout is ten minutes.
+`wait`'s default timeout is ten minutes; a timeout is a normal "nothing yet",
+not a stall. Call `wait` again with the default timeout — do not `read`,
+`get` or `prompt` a working child to chase it; diagnose only when the
+operator asks or the child itself reports being blocked. A temporary child
+closes after its final durable handback; use `--reusable` for follow-up
+prompts or a live pane.
 
 ## How a delegation actually goes
 
@@ -2005,6 +2101,10 @@ timeout is ten minutes.
    - You do **not** need to tell the child to report back: a spawned pane is
      told by the daemon that `submit` is its end-of-turn. Spend the brief on
      the task instead.
+   - For a clean-context review, name the exact target and base/head (or a
+     snapshot), list the requirements, and request focused evidence such as
+     `file:line` and tests. Do not paste the parent's full transcript; the
+     temporary review pane is cleaned up after its durable handback.
    - The child starts in its CLI's **auto mode** — it will not stop for
      routine approvals, because nobody is at its keyboard. It can still stop
      for something genuinely dangerous; that shows up as `NeedsInput` and
@@ -2014,15 +2114,15 @@ timeout is ten minutes.
    must have the reply inside this turn (see above). If a wait comes back
    `prompt_stalled`, the text landed but nothing moved within the stall
    window: `read` the pane and look before sending more.
-3. `hs-pane read <id>` — the tail of the child's terminal, ANSI stripped.
-   `hs-pane get <id>` answers the rest in one call: what state it is in, what
-   you asked it, whether it has gone quiet, and whether it is already holding
-   a result for you. Ask that before deciding to wait, prompt or kill.
-4. `hs-pane kill <id>` when the work is done. This dismisses the pane: it
-   leaves the grid and its terminal goes with it, so `read` anything you still
-   need first. If the child spawned children of its own, the kill is refused
-   until you repeat it with `--yes` — that refusal is telling you a subtree
-   exists, so read it before confirming.
+3. Wait for the inbox after finishing independent work. Use `hs-pane get <id>`
+   to diagnose a reported blocker or a timeout; use `hs-pane read <id>` for
+   the current terminal screen when the blocker needs terminal interaction.
+   Neither call is a prerequisite to waiting or a routine progress check.
+4. Temporary children close automatically after their final durable handback
+   and authoritative completion. Use `hs-pane kill <id>` to dismiss a reusable
+   child once its work is done. Its terminal goes with it, so preserve any
+   needed output first. If it has live children, inspect their purpose before
+   confirming the subtree kill with `--yes`.
 
 For a long result, do not try to scrape it out of the terminal. The child
 writes a file and names it in `--artifacts`; the path reaches you in the
@@ -2245,6 +2345,8 @@ hs-pane — a Houston pane controlling sibling agent panes
   hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok> --prompt \"…\"
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
                 [--role NAME]          (unique among your live children)
+                [--target-workspace DIR] [--reusable]
+                [--effort low|medium|high|xhigh|max]
                 [--output-format \"…\"] [--boundaries \"…\"]
                                        (the brief: shape of the answer, and
                                         what the child must not do)
@@ -2303,6 +2405,33 @@ pub(crate) fn parse_flags(
     (positional, flags)
 }
 
+fn cli_call(
+    base: &str,
+    token: &str,
+    method: &str,
+    path: &str,
+    body: Option<serde_json::Value>,
+    timeout: std::time::Duration,
+) -> anyhow::Result<serde_json::Value> {
+    let (status, text) = http_json(base, method, path, token, body.as_ref(), timeout)?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text.clone()));
+    // A wait timeout is a normal "nothing yet" outcome, not a failure: /orchestrate/wait
+    // answers it as 408 with `timed_out: true` so the CLI exits 0 and prints next_action
+    // instead of following a raw HTTP error into a retry storm.
+    if status == 408 && v.get("timed_out").and_then(serde_json::Value::as_bool) == Some(true) {
+        return Ok(v);
+    }
+    if !(200..300).contains(&status) {
+        let msg = v.get("error").and_then(|e| e.as_str()).unwrap_or(&text);
+        if msg.contains("live_children_confirmation_required") {
+            anyhow::bail!("{msg}\nhint: repeat with --yes to confirm killing the children too");
+        }
+        anyhow::bail!("{msg}");
+    }
+    Ok(v)
+}
+
 fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
     let Some(cmd) = args.first() else {
         println!("{USAGE}");
@@ -2327,18 +2456,7 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                 path: &str,
                 body: Option<serde_json::Value>|
      -> anyhow::Result<serde_json::Value> {
-        let timeout = std::time::Duration::from_secs(15);
-        let (status, text) = http_json(&base, method, path, &token, body.as_ref(), timeout)?;
-        let v: serde_json::Value =
-            serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text.clone()));
-        if !(200..300).contains(&status) {
-            let msg = v.get("error").and_then(|e| e.as_str()).unwrap_or(&text);
-            if msg.contains("live_children_confirmation_required") {
-                anyhow::bail!("{msg}\nhint: repeat with --yes to confirm killing the children too");
-            }
-            anyhow::bail!("{msg}");
-        }
-        Ok(v)
+        cli_call(&base, &token, method, path, body, CLI_HTTP_TIMEOUT)
     };
 
     match cmd.as_str() {
@@ -2413,6 +2531,15 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             if let Some(r) = flags.get("role") {
                 body["role"] = json!(r);
             }
+            if let Some(target) = flags.get("target-workspace") {
+                body["target_workspace"] = json!(target);
+            }
+            if flags.contains_key("reusable") {
+                body["reusable"] = json!(true);
+            }
+            if let Some(effort) = flags.get("effort") {
+                body["effort"] = json!(effort);
+            }
             if let Some(f) = flags.get("output-format") {
                 body["output_format"] = json!(f);
             }
@@ -2444,16 +2571,19 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                 return Ok(());
             }
             if flags.contains_key("wait") {
-                let timeout = flags.get("timeout").and_then(|t| t.parse::<u64>().ok());
+                let timeout_ms = cli_wait_timeout_ms(flags.get("timeout").map(String::as_str));
                 let body = json!({
                     "session": id,
                     "stall_guard": true,
-                    "timeout_ms": timeout.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS),
+                    "timeout_ms": timeout_ms,
                 });
-                let w = call(
+                let w = cli_call(
+                    &base,
+                    &token,
                     "POST",
                     &format!("/orchestrate/wait?_={}", now_suffix()),
                     Some(body),
+                    cli_wait_transport_timeout(timeout_ms),
                 )?;
                 println!("{}", serde_json::to_string_pretty(&w)?);
             } else {
@@ -2464,9 +2594,9 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             if flags.contains_key("until") {
                 anyhow::bail!(UNTIL_REMOVED_MSG);
             }
-            let timeout = flags.get("timeout-ms").and_then(|t| t.parse::<u64>().ok());
+            let timeout_ms = cli_wait_timeout_ms(flags.get("timeout-ms").map(String::as_str));
             let mut body = json!({
-                "timeout_ms": timeout.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS),
+                "timeout_ms": timeout_ms,
             });
             if let Some(session) = flags.get("session") {
                 let id: u32 = session
@@ -2480,10 +2610,13 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             if flags.contains_key("stall-guard") {
                 body["stall_guard"] = json!(true);
             }
-            let w = call(
+            let w = cli_call(
+                &base,
+                &token,
                 "POST",
                 &format!("/orchestrate/wait?_={}", now_suffix()),
                 Some(body),
+                cli_wait_transport_timeout(timeout_ms),
             )?;
             println!("{}", serde_json::to_string_pretty(&w)?);
         }
@@ -2746,9 +2879,8 @@ mod tests {
             "the async pattern — blocking in `wait` is what made panes cost more than sub-agents"
         );
         assert!(
-            SKILL_MD.contains("End your turn instead only when you have other work"),
-            "end the turn only when there is other work — a child's submit reaches you at the \
-             next wait or turn end"
+            SKILL_MD.contains("Your next action is either independent work or this wait"),
+            "wait first, then continue from the durable inbox row"
         );
     }
 
@@ -3787,6 +3919,63 @@ mod tests {
     }
 
     #[test]
+    fn cli_wait_timeout_selection_matches_daemon_defaulting() {
+        assert_eq!(cli_wait_timeout_ms(None), DEFAULT_WAIT_TIMEOUT_MS);
+        assert_eq!(cli_wait_timeout_ms(Some("")), DEFAULT_WAIT_TIMEOUT_MS);
+        assert_eq!(cli_wait_timeout_ms(Some("0")), 0);
+        assert_eq!(
+            cli_wait_timeout_ms(Some("not-a-number")),
+            DEFAULT_WAIT_TIMEOUT_MS
+        );
+        assert_eq!(cli_wait_timeout_ms(Some("1234")), 1_234);
+    }
+
+    #[test]
+    fn cli_wait_transport_timeout_preserves_the_normal_budget_and_saturates_margin() {
+        assert_eq!(CLI_HTTP_TIMEOUT, std::time::Duration::from_secs(15));
+        assert_eq!(
+            cli_wait_transport_timeout(1_234),
+            std::time::Duration::from_millis(2_234)
+        );
+        assert_eq!(
+            cli_wait_transport_timeout(u64::MAX),
+            std::time::Duration::from_millis(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn response_read_timeout_names_the_transport_budget() {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("one request");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).expect("the request");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+        });
+
+        let err = http_json(
+            &format!("http://127.0.0.1:{port}"),
+            "POST",
+            "/orchestrate/wait",
+            "token",
+            None,
+            std::time::Duration::from_millis(10),
+        )
+        .expect_err("the delayed response must exceed the read budget");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("reading daemon response timed out"),
+            "the read timeout is contextual: {message}"
+        );
+        assert!(message.contains("10ms"), "the budget is visible: {message}");
+        server.join().expect("the server thread");
+    }
+
+    #[test]
     fn the_wire_enums_spell_the_daemons_states_exactly() {
         for st in [
             DelegationState::Spawning,
@@ -3864,6 +4053,8 @@ mod tests {
             no_handback_reported: false,
             no_handback_suppressed: 0,
             round: 1,
+            reusable: true,
+            cleanup_after: None,
         };
         let info = delegation_info(
             row,
@@ -3923,6 +4114,8 @@ mod tests {
             no_handback_reported: false,
             no_handback_suppressed: 0,
             round: 1,
+            reusable: true,
+            cleanup_after: None,
         };
         let info = delegation_info(
             row,
@@ -4022,8 +4215,14 @@ mod tests {
             "d-abc",
         );
         assert!(out.starts_with("--- Houston Inbox: 2 messages, delivery d-abc ---\n"));
-        assert!(out.contains("[result] #1 from worker-9"), "{out}");
-        assert!(out.contains("[needs_input] #2 from worker-11"), "{out}");
+        assert!(
+            out.contains("[result] #1 from codename-9 (worker-9)"),
+            "{out}"
+        );
+        assert!(
+            out.contains("[needs_input] #2 from codename-11 (worker-11)"),
+            "{out}"
+        );
         assert!(out.ends_with("--- End Inbox ---"));
     }
 
@@ -4209,6 +4408,71 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_timeouts_next_action_tells_the_caller_to_wait_again_not_chase() {
+        let hooked = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: Some(proto::AgentStatus::Working),
+            status_source: Some("hooks-full"),
+        };
+        let next = hooked
+            .next_action()
+            .expect("a timeout always has a next action");
+        assert!(next.contains("Call wait again"), "{next}");
+        assert!(next.contains("do not read, get or prompt it"), "{next}");
+
+        let process_only = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: None,
+            status_source: Some(StatusSource::ProcessOnly.label()),
+        };
+        let next = process_only
+            .next_action()
+            .expect("a timeout always has a next action");
+        assert!(
+            next.contains("only a submit or its own exit will ever produce a row"),
+            "{next}"
+        );
+
+        assert!(InboxWaitOutcome::Delivered {
+            rows: Vec::new(),
+            delivery_id: "d".into(),
+            has_more: false,
+            waited_ms: 1,
+        }
+        .next_action()
+        .is_none());
+    }
+
+    #[test]
+    fn a_timeouts_status_reads_as_a_word_not_a_debug_dump() {
+        let with_status = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: Some(proto::AgentStatus::Working),
+            status_source: Some("hooks-full"),
+        };
+        let next = with_status.next_action().unwrap();
+        assert!(next.contains("the child is still working"), "{next}");
+        assert!(!next.contains("Some("), "{next}");
+        let msg = with_status.message();
+        assert!(msg.contains("last status working"), "{msg}");
+        assert!(!msg.contains("Some("), "{msg}");
+
+        // `status: None` with a status source is a whole-inbox wait (no `session`):
+        // no single child's status to report, not an unknown one.
+        let whole_inbox = InboxWaitOutcome::TimedOut {
+            waited_ms: 42,
+            status: None,
+            status_source: Some("hooks-full"),
+        };
+        let next = whole_inbox.next_action().unwrap();
+        assert!(
+            next.contains("none of your children has handed anything over"),
+            "{next}"
+        );
+        assert!(!next.contains("None"), "{next}");
+    }
+
     static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
@@ -4236,6 +4500,132 @@ mod tests {
         ])
         .unwrap_err();
         assert!(format!("{err:#}").contains("until is gone"), "{err:#}");
+    }
+
+    #[test]
+    fn hs_pane_wait_allows_a_delayed_response_past_the_normal_cli_timeout() {
+        use std::io::{Read, Write};
+
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("one CLI request");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).expect("the CLI request");
+            std::thread::sleep(std::time::Duration::from_secs(16));
+            let body = r#"{"rows":[],"delayed":true}"#;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        });
+        std::env::set_var("HOUSTON_SESSION", "1");
+        std::env::set_var("HOUSTON_MCP_URL", format!("http://127.0.0.1:{port}"));
+        std::env::set_var("HOUSTON_MCP_TOKEN", "unused");
+
+        let result = pane_cli_inner(&[
+            "wait".to_string(),
+            "--timeout-ms".to_string(),
+            "20000".to_string(),
+        ]);
+
+        assert!(
+            result.is_ok(),
+            "a delayed wait response should succeed: {result:#?}"
+        );
+        server.join().expect("the server thread");
+    }
+
+    #[test]
+    fn hs_pane_wait_treats_a_408_timeout_body_as_success_not_a_bail() {
+        use std::io::{Read, Write};
+
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("one CLI request");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).expect("the CLI request");
+            let body = r#"{"rows":[],"timed_out":true,"waited_ms":200,"status":"working",
+                "status_source":"hooks-full","next_action":"Call wait again with the default timeout"}"#;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 408 Request Timeout\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        });
+        std::env::set_var("HOUSTON_SESSION", "1");
+        std::env::set_var("HOUSTON_MCP_URL", format!("http://127.0.0.1:{port}"));
+        std::env::set_var("HOUSTON_MCP_TOKEN", "unused");
+
+        let result = pane_cli_inner(&[
+            "wait".to_string(),
+            "--timeout-ms".to_string(),
+            "200".to_string(),
+        ]);
+
+        assert!(
+            result.is_ok(),
+            "a wait timeout is a normal outcome, not a CLI failure: {result:#?}"
+        );
+        server.join().expect("the server thread");
+    }
+
+    #[test]
+    fn hs_pane_prompt_wait_uses_the_wait_timeout_path() {
+        use std::io::{Read, Write};
+
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let port = listener.local_addr().expect("the listener address").port();
+        let server = std::thread::spawn(move || {
+            let (mut prompt, _) = listener.accept().expect("the prompt request");
+            let mut request = [0_u8; 4096];
+            let _ = prompt.read(&mut request).expect("the prompt body");
+            let body = r#"{"status_source":"acp"}"#;
+            write!(
+                prompt,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .expect("the prompt response");
+            drop(prompt);
+
+            let (mut wait, _) = listener.accept().expect("the wait request");
+            let mut request = [0_u8; 4096];
+            let size = wait.read(&mut request).expect("the wait body");
+            std::thread::sleep(std::time::Duration::from_secs(16));
+            let body = r#"{"rows":[]}"#;
+            write!(
+                wait,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .expect("the wait response");
+            String::from_utf8_lossy(&request[..size]).into_owned()
+        });
+        std::env::set_var("HOUSTON_SESSION", "1");
+        std::env::set_var("HOUSTON_MCP_URL", format!("http://127.0.0.1:{port}"));
+        std::env::set_var("HOUSTON_MCP_TOKEN", "unused");
+
+        let result = pane_cli_inner(&[
+            "prompt".to_string(),
+            "7".to_string(),
+            "go".to_string(),
+            "--wait".to_string(),
+            "--timeout".to_string(),
+            "20000".to_string(),
+        ]);
+
+        let wait_request = server.join().expect("the server thread");
+        assert!(result.is_ok(), "prompt --wait should complete: {result:#?}");
+        assert!(
+            wait_request.contains("\"timeout_ms\":20000"),
+            "the explicit prompt wait timeout reaches the daemon: {wait_request}"
+        );
     }
 
     #[test]
@@ -4376,8 +4766,10 @@ mod tests {
                 delivered_via: None,
                 confirmed_at: None,
                 attempts: 1,
+                from_codename: None,
+                from_role: None,
             },
-            from_label: format!("worker-{from} (codename-{from})"),
+            from_label: format!("codename-{from} (worker-{from})"),
             excerpt: None,
         }
     }
@@ -4396,7 +4788,7 @@ mod tests {
         );
         assert!(out.contains("1 message, delivery d-abc"), "{out}");
         assert!(
-            out.contains("[result] #12 from worker-7 (codename-7): 3 of 7 call sites are unsafe"),
+            out.contains("[result] #12 from codename-7 (worker-7): 3 of 7 call sites are unsafe"),
             "{out}"
         );
         assert!(out.contains("the long form"), "{out}");
@@ -4671,6 +5063,12 @@ impl SubagentRound {
         RoundVerdict::Closes(close)
     }
 
+    /// True once `on_turn_ended` withheld the turn end for an in-flight/owed sub-agent —
+    /// not the separate `stop_continued` case, which never calls `on_turn_ended`.
+    pub fn turn_end_withheld_for_subagents(&self) -> bool {
+        self.withheld_turn_end
+    }
+
     pub fn on_external_prompt(&mut self) {
         let ever = self.ever_seen_subagent;
         let started = std::mem::take(&mut self.started_in);
@@ -4805,7 +5203,9 @@ pub enum EpisodeEnd {
     PromptSubmitted,
     PostToolUse {
         tool_use_id: Option<String>,
+        prompt_id: Option<String>,
         tool_name: Option<String>,
+        tool_input_fingerprint: Option<String>,
     },
 }
 
@@ -4813,6 +5213,7 @@ pub enum EpisodeEnd {
 pub struct Episode {
     pub key: EpisodeKey,
     pub reason: Option<String>,
+    pub tool_input_fingerprint: Option<String>,
     pub opened_ms: u64,
 }
 
@@ -4831,6 +5232,37 @@ impl PermissionEpisodes {
         reason: Option<String>,
         now: u64,
     ) -> (EpisodeKey, Vec<Episode>) {
+        self.open_with_fingerprint(tool_use_id, prompt_id, tool_name, reason, None, now)
+    }
+
+    pub fn open_with_fingerprint(
+        &mut self,
+        tool_use_id: Option<&str>,
+        prompt_id: Option<&str>,
+        tool_name: &str,
+        reason: Option<String>,
+        tool_input_fingerprint: Option<String>,
+        now: u64,
+    ) -> (EpisodeKey, Vec<Episode>) {
+        if tool_use_id.is_none() {
+            if let Some(fingerprint) = tool_input_fingerprint.as_deref() {
+                if let Some(existing) = self.open.iter().find(|ep| {
+                    let EpisodeKey::Generated {
+                        prompt_id: existing_prompt,
+                        tool_name: existing_tool,
+                        ..
+                    } = &ep.key
+                    else {
+                        return false;
+                    };
+                    existing_prompt.as_deref() == prompt_id
+                        && existing_tool == tool_name
+                        && ep.tool_input_fingerprint.as_deref() == Some(fingerprint)
+                }) {
+                    return (existing.key.clone(), Vec::new());
+                }
+            }
+        }
         let key = match tool_use_id {
             Some(id) => EpisodeKey::ToolUseId(id.to_string()),
             None => {
@@ -4848,13 +5280,16 @@ impl PermissionEpisodes {
         let retired = match &key {
             EpisodeKey::ToolUseId(id) => self.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some(id.clone()),
+                prompt_id: None,
                 tool_name: None,
+                tool_input_fingerprint: None,
             }),
             EpisodeKey::Generated { .. } => self.resolve_on(&EpisodeEnd::NextPermissionRequest),
         };
         self.open.push(Episode {
             key: key.clone(),
             reason,
+            tool_input_fingerprint,
             opened_ms: now,
         });
         (key, retired)
@@ -4878,16 +5313,39 @@ impl PermissionEpisodes {
             .partition(|ep| match end {
                 EpisodeEnd::PostToolUse {
                     tool_use_id,
+                    prompt_id,
                     tool_name,
+                    tool_input_fingerprint,
                 } => match &ep.key {
                     EpisodeKey::ToolUseId(id) => tool_use_id.as_ref() == Some(id),
                     EpisodeKey::Generated {
+                        prompt_id: expected_prompt,
                         tool_name: expected,
                         ..
-                    } => tool_name.as_ref() == Some(expected),
+                    } => {
+                        let prompt_matches =
+                            if ep.tool_input_fingerprint.is_some() && expected_prompt.is_some() {
+                                expected_prompt == prompt_id
+                            } else {
+                                expected_prompt
+                                    .as_ref()
+                                    .zip(prompt_id.as_ref())
+                                    .is_none_or(|(expected, actual)| expected == actual)
+                            };
+                        if !prompt_matches || tool_name.as_ref() != Some(expected) {
+                            false
+                        } else {
+                            match (&ep.tool_input_fingerprint, tool_input_fingerprint) {
+                                (Some(expected), Some(actual)) => expected == actual,
+                                (Some(_), None) => false,
+                                (None, _) => true,
+                            }
+                        }
+                    }
                 },
                 EpisodeEnd::NextPermissionRequest => {
                     matches!(ep.key, EpisodeKey::Generated { .. })
+                        && ep.tool_input_fingerprint.is_none()
                 }
                 EpisodeEnd::TurnEnded | EpisodeEnd::PromptSubmitted => true,
             });
@@ -4901,6 +5359,14 @@ impl PermissionEpisodes {
 
     pub fn newest_reason(&self) -> Option<&str> {
         self.open.last().and_then(|ep| ep.reason.as_deref())
+    }
+
+    pub fn newest_key(&self) -> Option<EpisodeKey> {
+        self.open.last().map(|ep| ep.key.clone())
+    }
+
+    pub fn contains(&self, key: &EpisodeKey) -> bool {
+        self.open.iter().any(|ep| &ep.key == key)
     }
 }
 
@@ -5185,17 +5651,175 @@ mod permission_episode_tests {
         assert!(eps
             .resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("toolu_other".into()),
+                prompt_id: None,
                 tool_name: Some("Bash".into()),
+                tool_input_fingerprint: None,
             })
             .is_empty());
         assert_eq!(
             eps.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("toolu_1".into()),
+                prompt_id: None,
                 tool_name: Some("Bash".into()),
+                tool_input_fingerprint: None,
             })
             .len(),
             1
         );
+    }
+
+    #[test]
+    fn a_generated_codex_permission_requires_the_same_tool_input() {
+        let mut eps = PermissionEpisodes::default();
+        eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash".into()),
+            Some("cargo-hash".into()),
+            0,
+        );
+
+        assert!(eps
+            .resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("unrelated-tool-id".into()),
+                prompt_id: None,
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("cargo-hash".into()),
+            })
+            .is_empty());
+        assert_eq!(eps.open_count(), 1);
+
+        assert!(eps
+            .resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("wrong-command-tool-id".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("bun-hash".into()),
+            })
+            .is_empty());
+        assert_eq!(eps.open_count(), 1);
+
+        assert!(eps
+            .resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("other-turn-tool-id".into()),
+                prompt_id: Some("turn-2".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("cargo-hash".into()),
+            })
+            .is_empty());
+        assert_eq!(eps.open_count(), 1);
+
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("matching-tool-id".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("cargo-hash".into()),
+            })
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn distinct_fingerprinted_permissions_in_one_turn_resolve_independently() {
+        let mut eps = PermissionEpisodes::default();
+        let (a, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash A".into()),
+            Some("hash-a".into()),
+            0,
+        );
+        assert!(retired.is_empty());
+        let (b, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash B".into()),
+            Some("hash-b".into()),
+            1,
+        );
+        assert!(retired.is_empty());
+        assert_ne!(a, b);
+        assert_eq!(eps.open_count(), 2);
+
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("post-b".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("hash-b".into()),
+            })
+            .len(),
+            1
+        );
+        assert_eq!(eps.open_count(), 1);
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: Some("post-a".into()),
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("Bash".into()),
+                tool_input_fingerprint: Some("hash-a".into()),
+            })
+            .len(),
+            1
+        );
+        assert_eq!(eps.open_count(), 0);
+    }
+
+    #[test]
+    fn a_duplicate_fingerprinted_permission_reuses_the_existing_episode() {
+        let mut eps = PermissionEpisodes::default();
+        let (first, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash".into()),
+            Some("hash-a".into()),
+            0,
+        );
+        assert!(retired.is_empty());
+        let (duplicate, retired) = eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            Some("Bash".into()),
+            Some("hash-a".into()),
+            1,
+        );
+        assert_eq!(duplicate, first);
+        assert!(retired.is_empty());
+        assert_eq!(eps.open_count(), 1);
+    }
+
+    #[test]
+    fn a_legacy_request_cannot_replace_a_fingerprinted_permission() {
+        let mut eps = PermissionEpisodes::default();
+        eps.open_with_fingerprint(
+            None,
+            Some("turn-1"),
+            "Bash",
+            None,
+            Some("command-a".into()),
+            0,
+        );
+        let (_, retired) = eps.open(None, Some("turn-1"), "OtherTool", None, 1);
+        assert!(retired.is_empty());
+        assert_eq!(eps.open_count(), 2);
+        assert_eq!(
+            eps.resolve_on(&EpisodeEnd::PostToolUse {
+                tool_use_id: None,
+                prompt_id: Some("turn-1".into()),
+                tool_name: Some("OtherTool".into()),
+                tool_input_fingerprint: None,
+            })
+            .len(),
+            1
+        );
+        assert_eq!(eps.open_count(), 1);
     }
 
     #[test]
@@ -5208,7 +5832,9 @@ mod permission_episode_tests {
         assert_eq!(
             eps.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("request-1".into()),
+                prompt_id: None,
                 tool_name: None,
+                tool_input_fingerprint: None,
             })
             .len(),
             1
@@ -5217,7 +5843,9 @@ mod permission_episode_tests {
         assert_eq!(
             eps.resolve_on(&EpisodeEnd::PostToolUse {
                 tool_use_id: Some("request-2".into()),
+                prompt_id: None,
                 tool_name: None,
+                tool_input_fingerprint: None,
             })
             .len(),
             1

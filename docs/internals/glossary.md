@@ -22,6 +22,7 @@ named.
 | **session** | One PTY (or SSH channel) running an agent CLI or a shell in a project directory. Has a process `state` and, orthogonally, an agent `status`. | `daemon.rs::Session` |
 | **pane** | A session's cell in the grid. Its identity (`LeafNode.id`) outlives the session in it. | `layout/tree.ts` |
 | **workspace** | A project directory the daemon knows. Sessions belong to one; hooks are installed per workspace. `workspace_id` on the wire and in `pane_inbox` is the workspace's own path — Houston's only workspace key, so no separate id table can drift from it. | `db.rs::workspaces` |
+| **checkout** | The working tree at one `toplevel`: a workspace directory, or a linked worktree of one. Two panes in one checkout share a branch move; a main checkout and its worktree are separate checkouts of one repository (equal `common_dir`). A worktree is a separate checkout, never the same workspace. | `git.rs::checkout_facts` |
 | **grid** | A named layout under a workspace holding a split tree. Renderer state only (`tr-grids:<path>`, `tr-layout:<path>::<gridId>`). | `layout/tree.ts::GridMeta` |
 | **stack** | A tabbed group of panes in one grid slot, capped at 4. | `StackTabs.tsx` |
 | **codename** | A pane's auto-generated name, from a fixed pool, replaced by a better name as one arrives. | `pane_name.rs` |

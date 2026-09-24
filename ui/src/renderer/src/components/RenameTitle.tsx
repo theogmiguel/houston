@@ -5,7 +5,7 @@ import { Icon } from './Icon'
 import { PANE_TITLE_INK_CLS } from '../windowFocus'
 
 const PANE_TITLE_CLS =
-  "pane-title font-medium tracking-[-0.01em] leading-[1.4] whitespace-nowrap overflow-hidden text-ellipsis min-w-[32px] max-w-[220px] [@container_(min-width:560px)]:max-w-[300px] [@container_(min-width:760px)]:max-w-[420px] [@container_(min-width:1000px)]:max-w-[560px] [@container_(min-width:1300px)]:max-w-[720px] [@container_(max-width:460px)]:max-w-[180px] [@container_(max-width:400px)]:max-w-[140px] [@container_(max-width:280px)]:max-w-[100px] [@container_(max-width:200px)]:max-w-[80px] [@container_(max-width:200px)]:min-w-[12px]"
+  "pane-title font-medium tracking-[-0.01em] leading-[1.4] whitespace-nowrap overflow-hidden text-ellipsis [flex:0_1_auto] min-w-[32px] max-w-[220px] [@container_(min-width:560px)]:max-w-[300px] [@container_(min-width:760px)]:max-w-[420px] [@container_(min-width:1000px)]:max-w-[560px] [@container_(min-width:1300px)]:max-w-[720px] [@container_(max-width:460px)]:max-w-[180px] [@container_(max-width:400px)]:max-w-[140px] [@container_(max-width:280px)]:max-w-[100px] [@container_(max-width:200px)]:max-w-[80px] [@container_(max-width:200px)]:min-w-[12px]"
 
 interface Props {
   title: string

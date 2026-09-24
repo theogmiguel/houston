@@ -89,6 +89,29 @@ function parentAndChild(): ReturnType<typeof makeSession>[] {
 }
 
 describe('the operator inbox bell surface', () => {
+  it('keeps the sender identity after the temporary pane is removed', async () => {
+    harness = await renderReadyApp({ sessions: [], workspaces: [makeWorkspace()] })
+    const row = owedRow({ from_codename: 'fern', from_role: 'reviewer' })
+    deliverControl({ type: 'inbox_rows', workspace: '/tmp/project', rows: [row] })
+    openBell(harness)
+
+    expect(owedRows(harness)[0].textContent).toContain('[result] fern · reviewer → #41')
+    expect(owedRows(harness)[0].textContent).not.toContain('Jump to pane')
+  })
+
+  it('uses the identity recorded with the result when the live role has changed', async () => {
+    harness = await renderReadyApp({
+      sessions: parentAndChild(),
+      workspaces: [makeWorkspace()]
+    })
+    const row = owedRow({ from_codename: 'fern', from_role: 'migration' })
+    deliverControl({ type: 'inbox_rows', workspace: '/tmp/project', rows: [row] })
+    openBell(harness)
+
+    expect(owedRows(harness)[0].textContent).toContain('fern · migration')
+    expect(owedRows(harness)[0].textContent).not.toContain('fern · reviewer')
+  })
+
   it('rows_outlive_every_pane_involved: rows render with both panes gone from the roster', async () => {
     harness = await renderReadyApp({ sessions: [], workspaces: [makeWorkspace()] })
     const row = owedRow()
@@ -112,6 +135,7 @@ describe('the operator inbox bell surface', () => {
     deliverControl({ type: 'inbox_rows', workspace: '/tmp/project', rows: [row] })
     openBell(harness)
     const el = owedRows(harness)[0]
+    expect(el.textContent).toContain('fern · reviewer')
     expect(el.classList.contains('border-l-2')).toBe(true)
     const open = Array.from(el.querySelectorAll('button')).find(
       (b) => b.textContent === 'Open'
@@ -132,6 +156,66 @@ describe('the operator inbox bell surface', () => {
     expect(
       Array.from(after.querySelectorAll('button')).some((b) => b.textContent === 'Resolve')
     ).toBe(true)
+  })
+
+  it('jumping_to_a_cross_workspace_original_target_selects_the_target_workspace', async () => {
+    const source = '/tmp/project'
+    const target = '/tmp/other'
+    harness = await renderReadyApp({
+      sessions: [
+        makeSession({ id: 41, project_dir: target, cwd: target, title: 'parent' }),
+        makeSession({ id: 58, project_dir: source, cwd: source, title: 'child' })
+      ],
+      workspaces: [
+        makeWorkspace({ path: source, name: 'project' }),
+        makeWorkspace({ path: target, name: 'other' })
+      ]
+    })
+    const row = owedRow({ workspace: source, original_to: 41, from_session: 58 })
+    deliverControl({ type: 'inbox_rows', workspace: source, rows: [row] })
+    openBell(harness)
+    const jump = Array.from(owedRows(harness)[0].querySelectorAll('button')).find(
+      (b) => b.textContent === 'Jump to pane'
+    )
+    expect(jump).toBeTruthy()
+
+    act(() => jump!.click())
+
+    const selected = Array.from(
+      harness.container.querySelectorAll<HTMLElement>('.witem[aria-current="true"]')
+    )
+    expect(selected.some((item) => item.textContent?.includes('other'))).toBe(true)
+    expect(selected.some((item) => item.textContent?.includes('project'))).toBe(false)
+  })
+
+  it('jumping_to_a_cross_workspace_sender_uses_the_sender_workspace_when_no_original_target_exists', async () => {
+    const source = '/tmp/project'
+    const target = '/tmp/other'
+    harness = await renderReadyApp({
+      sessions: [
+        makeSession({ id: 41, project_dir: source, cwd: source, title: 'parent' }),
+        makeSession({ id: 58, project_dir: target, cwd: target, title: 'child' })
+      ],
+      workspaces: [
+        makeWorkspace({ path: source, name: 'project' }),
+        makeWorkspace({ path: target, name: 'other' })
+      ]
+    })
+    const row = owedRow({ workspace: source, original_to: null, from_session: 58 })
+    deliverControl({ type: 'inbox_rows', workspace: source, rows: [row] })
+    openBell(harness)
+    const jump = Array.from(owedRows(harness)[0].querySelectorAll('button')).find(
+      (b) => b.textContent === 'Jump to pane'
+    )
+    expect(jump).toBeTruthy()
+
+    act(() => jump!.click())
+
+    const selected = Array.from(
+      harness.container.querySelectorAll<HTMLElement>('.witem[aria-current="true"]')
+    )
+    expect(selected.some((item) => item.textContent?.includes('other'))).toBe(true)
+    expect(selected.some((item) => item.textContent?.includes('project'))).toBe(false)
   })
 
   it('a_corrected_row_is_struck_and_links_to_its_correction', async () => {

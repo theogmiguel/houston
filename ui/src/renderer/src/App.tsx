@@ -230,6 +230,7 @@ import { SourceControlPanel } from "./components/SourceControlPanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
+import { useCheckoutFacts } from "./useCheckoutFacts";
 import {
   addGrid,
   autoNameGrid,
@@ -534,6 +535,38 @@ function handleTagWireMessage(
   } else if (msg.type === "tag_deleted") {
     setTags((prev) => prev.filter((t) => t.id !== msg.tag));
   }
+}
+
+// A roster patch is applied here and settles the message; the dispatch below
+// continues only for the messages that are not one.
+function patchRosterIfNeeded(
+  msg: ServerMsg,
+  setSessions: Dispatch<SetStateAction<Map<number, SessionInfo>>>,
+): boolean {
+  if (!isRosterPatch(msg)) return false;
+  setSessions((prev) => patchRosterFields(prev, msg));
+  return true;
+}
+
+// After a hello, restore the selected workspace: the remembered one when it
+// still exists, else the first; an empty roster opens the launcher instead.
+function applyWorkspaceSelection(
+  workspaces: Workspace[],
+  setShowLauncher: Dispatch<SetStateAction<boolean>>,
+  setSelectedWs: Dispatch<SetStateAction<string>>,
+): void {
+  if (workspaces.length === 0) {
+    setShowLauncher(true);
+    return;
+  }
+  setSelectedWs((cur) => {
+    if (workspaces.some((w) => w.path === cur)) return cur;
+    const remembered = localStorage.getItem(SELECTED_WS_KEY);
+    if (remembered && workspaces.some((w) => w.path === remembered)) {
+      return remembered;
+    }
+    return workspaces[0].path;
+  });
 }
 
 function railToggleLabels(attentionCount: number): { tooltip: string; ariaLabel: string } {
@@ -1012,6 +1045,16 @@ export function App(): React.JSX.Element {
 
   const [paneHandoff, setPaneHandoff] = useState<HandoffSource | null>(null);
 
+  // The checkout facts lifecycle (state, requests, propagation, notes) lives in
+  // its own module; App only wires it into the message dispatch and the panes.
+  const checkout = useCheckoutFacts({
+    conn,
+    activeId,
+    sessions,
+    sessionsRef,
+    workspaces,
+  });
+
   const [sshModal, setSshModal] = useState(false);
   const [sshPrefill, setSshPrefill] = useState<SshInitial | null>(null);
   const [sshProfiles, setSshProfiles] = useState<SshProfile[]>([]);
@@ -1160,12 +1203,10 @@ export function App(): React.JSX.Element {
             return;
           }
         }
-        if (isRosterPatch(msg)) {
-          setSessions((prev) => patchRosterFields(prev, msg));
-          return;
-        }
+        if (patchRosterIfNeeded(msg, setSessions)) return;
         handleInboxRowMessage(msg, setInboxRows);
         handleTagWireMessage(msg, setTags);
+        checkout.handleMessage(msg);
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1173,6 +1214,10 @@ export function App(): React.JSX.Element {
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
             setWorkspaces(msg.workspaces);
             setTags(msg.tags);
+            // Facts and pending asks belong to the connection that made them:
+            // a replaced connection re-asks rather than trusting a lost reply.
+            checkout.reset(msg.sessions);
+            checkout.requestForRoster(client, msg.sessions);
             if (boot && msg.recovery && !recoveryShown.current) {
               recoveryShown.current = true;
               const { respawned, deferred, crashed } = msg.recovery;
@@ -1187,19 +1232,7 @@ export function App(): React.JSX.Element {
                   [toNotice(bootRec), ...prev].slice(0, 200),
                 );
             }
-            if (msg.workspaces.length === 0) setShowLauncher(true);
-            else
-              setSelectedWs((cur) => {
-                if (msg.workspaces.some((w) => w.path === cur)) return cur;
-                const remembered = localStorage.getItem(SELECTED_WS_KEY);
-                if (
-                  remembered &&
-                  msg.workspaces.some((w) => w.path === remembered)
-                ) {
-                  return remembered;
-                }
-                return msg.workspaces[0].path;
-              });
+            applyWorkspaceSelection(msg.workspaces, setShowLauncher, setSelectedWs);
             client.sessionPolicyGet();
             client.agentHooks();
             client.routineList();
@@ -1217,6 +1250,7 @@ export function App(): React.JSX.Element {
           case "session_created": {
             setSessions((prev) => new Map(prev).set(msg.info.id, msg.info));
             setActiveId(msg.info.id);
+            checkout.requestForSession(client, msg.info);
             {
               const rv = reviewIntents.current;
               while (
@@ -1327,6 +1361,7 @@ export function App(): React.JSX.Element {
               return next;
             });
             break;
+
           case "agent_notice": {
             if (
               msg.kind === "finished" &&
@@ -3585,6 +3620,8 @@ export function App(): React.JSX.Element {
                   <LayoutView
                     tree={currentTree}
                     sessions={sessions}
+                    branches={checkout.chips}
+                    branchNotes={checkout.notes}
                     roster={paneRoster}
                     onFocusPane={focusPane}
                     viewAll
@@ -3676,6 +3713,8 @@ export function App(): React.JSX.Element {
                               tree={tree}
                               warm={!gridSelected}
                               sessions={sessions}
+                              branches={checkout.chips}
+                    branchNotes={checkout.notes}
                               roster={paneRoster}
                               onFocusPane={focusPane}
                               viewAll={false}
