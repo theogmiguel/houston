@@ -16,7 +16,6 @@ vi.mock('./houston/bridge', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./houston/bridge')>()
   return {
     ...actual,
-    homeDir: vi.fn().mockResolvedValue('/home/test'),
     pickDirectories: vi.fn(async () => {
       if (picked.throws) throw picked.throws
       return picked.value
@@ -129,7 +128,7 @@ describe('step 1 — "Add Workspace" is the folder picker, no screen in between'
     expect(empty?.textContent).toContain('Nothing running here yet')
   })
 
-  it('Refused — root, $HOME and a secret dir are turned away by path, and the good pick still lands', async () => {
+  it('Refused — root and a secret dir are turned away while home and a good pick land', async () => {
     harness = await renderReadyApp()
     const client = currentClient()
     picked.value = ['/', '/home/test', '/home/test/.ssh', '/home/test/ok']
@@ -137,6 +136,7 @@ describe('step 1 — "Add Workspace" is the folder picker, no screen in between'
     await clickAdd(harness)
 
     expect((client.addWorkspace as ReturnType<typeof vi.fn>).mock.calls).toEqual([
+      ['/home/test'],
       ['/home/test/ok']
     ])
   })

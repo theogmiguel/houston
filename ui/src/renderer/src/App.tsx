@@ -81,7 +81,6 @@ import { useBrowserFocus } from "./houston/browserFocus";
 import { useBrowserOpenRequest } from "./houston/browserOpenRequest";
 import {
   getLogsDir,
-  homeDir,
   isFocused,
   openExternal,
   pickDirectories,
@@ -752,19 +751,6 @@ export function App(): React.JSX.Element {
   const [addWorkspaceError, setAddWorkspaceError] = useState<string | null>(
     null,
   );
-  const homePathRef = useRef("");
-  useEffect(() => {
-    void homeDir()
-      .then((h) => {
-        homePathRef.current = h;
-      })
-      .catch((err: unknown) => {
-        console.warn(
-          "houston: homeDir() failed; the home-folder workspace rule is off",
-          err,
-        );
-      });
-  }, []);
   const workspacesEmptyOpen =
     showLauncher || (conn.kind === "ready" && workspaces.length === 0);
 
@@ -1649,7 +1635,7 @@ export function App(): React.JSX.Element {
       const refusals: string[] = [];
       const accepted: string[] = [];
       for (const path of picked) {
-        const refusal = workspaceRefusal(path, homePathRef.current);
+        const refusal = workspaceRefusal(path);
         if (refusal !== null) refusals.push(refusal);
         else if (!accepted.includes(path)) accepted.push(path);
       }

@@ -12,6 +12,8 @@ grids for different arrangements of the same project.
 ## Making a workspace and opening a pane
 
 Add a project directory as a workspace, then open a pane and pick which CLI runs in it.
+Your home directory can also be a workspace. The disk root (`/`), credential directories
+such as `.ssh`, `.gnupg` and `.aws`, and paths containing secrets cannot be workspaces.
 Panes are not only terminals: a workspace can also hold a Files pane, an editor, a
 browser pane, or a Skills pane (see `docs/user/files-editor-browser.md`). Git changes
 and pull requests open in Source control beside the grid (see `docs/user/changes.md`).

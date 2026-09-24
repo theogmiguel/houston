@@ -69,14 +69,14 @@ describe('WorkspacesEmpty — state matrix', () => {
   it('Refused — one alert line per path, each naming the path AND the rule', () => {
     const refusals = [
       `/ can't be a workspace — ${WORKSPACE_REFUSAL_RULE}`,
-      `/home/dev can't be a workspace — ${WORKSPACE_REFUSAL_RULE}`,
+      `/home/dev/secrets can't be a workspace — ${WORKSPACE_REFUSAL_RULE}`,
       `/home/dev/.ssh can't be a workspace — ${WORKSPACE_REFUSAL_RULE}`
     ]
     render(props({ refusals }))
     const region = container.querySelector('[data-testid="workspaces-empty-refusals"]')
     expect(region?.getAttribute('role')).toBe('alert')
     expect(region?.querySelectorAll('p')).toHaveLength(3)
-    for (const path of ['/home/dev', '/home/dev/.ssh']) {
+    for (const path of ['/home/dev/secrets', '/home/dev/.ssh']) {
       expect(region?.textContent).toContain(path)
     }
     expect(region?.textContent).toContain(WORKSPACE_REFUSAL_RULE)
