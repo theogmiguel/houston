@@ -1,6 +1,6 @@
 {
   "name": "houston-ui",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "private": true,
   "description": "Houston renderer (React + libghostty-vt), built by Vite and embedded in the Tauri binary",
   "license": "Apache-2.0",
