@@ -48,6 +48,13 @@ fi
 echo "[build-app] checking the built renderer against the wire protocol…"
 ./scripts/check-renderer-fresh.sh
 
+# Whisper otherwise uses -march=native; shipped binaries must run off the build host.
+export GGML_NATIVE=OFF GGML_SSE42=OFF GGML_AVX=OFF GGML_AVX2=OFF
+export GGML_F16C=OFF GGML_FMA=OFF GGML_BMI2=OFF
+# whisper-rs-sys does not track GGML_* changes in Cargo's build-script cache.
+cargo clean --release --manifest-path core/Cargo.toml -p whisper-rs-sys
+cargo clean --release --manifest-path src-tauri/Cargo.toml -p whisper-rs-sys
+
 ./scripts/stage-helper.sh --bin tr-helper --profile release
 ./scripts/stage-helper.sh --bin houston-core --profile release
 ./scripts/stage-helper.sh --bin houston-supervisor --profile release

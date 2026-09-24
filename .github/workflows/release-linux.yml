@@ -267,6 +267,19 @@ jobs:
           deb=$(find dist -name '*.deb' -print -quit)
           ./scripts/check-linux-abi.sh "$deb" "${{ matrix.arch }}"
 
+      - name: Boot the packaged binaries on a baseline x86_64 CPU
+        if: matrix.arch == 'x86_64'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-user
+          package_root=$(mktemp -d)
+          trap 'rm -rf "$package_root"' EXIT
+          deb=$(find dist -name '*.deb' -print -quit)
+          dpkg-deb -x "$deb" "$package_root"
+          qemu-x86_64 -cpu qemu64 "$package_root/usr/bin/houston" --version
+          qemu-x86_64 -cpu qemu64 "$package_root/usr/bin/houston-core" --print-protocol
+
       - uses: actions/upload-artifact@v7
         with:
           name: houston-${{ inputs.version }}-linux-${{ matrix.arch }}
