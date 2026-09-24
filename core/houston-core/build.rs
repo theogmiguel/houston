@@ -102,6 +102,8 @@ fn build_ghostty_vt() {
                 .env("GIT_CEILING_DIRECTORIES", &cache)
                 .arg("build")
                 .arg("-Demit-lib-vt")
+                // Release artifacts must not inherit the build runner's CPU features.
+                .arg("-Dcpu=baseline")
                 .arg("-Doptimize=ReleaseFast")
                 .arg(format!("-Dlib-version-string={version_string}"))
                 .arg("-p")

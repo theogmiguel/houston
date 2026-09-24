@@ -140,7 +140,13 @@ job installs only the runtime libraries a desktop install already has, extracts
 the AppImage and runs `--version`, so a missing host dependency or a build that
 overran the glibc floor fails there. It runs for every caller of the bundle
 workflow, and `publish` waits for it. A graphical run is still a person's job:
-a runner has no display.
+a runner has no display. The packaged x86_64 app and daemon also start under
+QEMU's baseline `qemu64` CPU before upload. Containers share the runner's CPU
+features, so distribution coverage alone cannot detect instructions unsupported
+by users' processors. The native terminal library is built with `-Dcpu=baseline`
+to avoid inheriting the build runner's instruction set. The Linux bundle script
+also rebuilds Whisper with native CPU detection and optional x86 extensions
+disabled; its Cargo build script does not track changes to those CMake options.
 
 ### The lifecycle of a tag
 
