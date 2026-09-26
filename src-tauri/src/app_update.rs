@@ -170,6 +170,22 @@ fn linux_handoff_plan(bundle: &BundleType, daemon_bin_dir: &Path) -> HandoffPlan
 }
 
 #[cfg(any(target_os = "linux", test))]
+fn linux_relaunch_refusal(plan: &HandoffPlan, has_appimage_path: bool) -> Option<String> {
+    match plan {
+        HandoffPlan::Candidate(_) => None,
+        HandoffPlan::Relaunch if has_appimage_path => None,
+        HandoffPlan::Relaunch => Some(
+            "app_update_install: refusing to update: $APPIMAGE is not set, so Houston cannot \
+             reopen the updated AppImage automatically. Launch the AppImage normally and retry"
+                .to_string(),
+        ),
+        HandoffPlan::Refuse { reason } => {
+            Some(format!("app_update_install: refusing to update: {reason}"))
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
 fn installed_but_daemon_stays(version: &str, reason: &str, live_sessions: u32) -> String {
     let sessions = match live_sessions {
         0 => "no sessions were running to move".to_string(),
@@ -282,8 +298,13 @@ fn updater_error(
 #[derive(Debug, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AppUpdateOutcome {
-    UpToDate { version: String },
-    Installed { version: String },
+    UpToDate {
+        version: String,
+    },
+    #[cfg(any(not(target_os = "linux"), test))]
+    Installed {
+        version: String,
+    },
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -340,6 +361,12 @@ pub async fn app_update_install(
             daemon_host::spawn_bin_dir(&houston_core::exe_path::strip_deleted_exe_suffix(&exe));
         linux_handoff_plan(&bundle, &bin_dir)
     };
+    #[cfg(target_os = "linux")]
+    if let Some(refusal) =
+        linux_relaunch_refusal(&handoff_plan, std::env::var_os("APPIMAGE").is_some())
+    {
+        return Err(refusal);
+    }
 
     let target = updater_target(bundle, tauri_plugin_updater::target())?;
     let _flight = flight.claim()?;
@@ -440,33 +467,32 @@ pub async fn app_update_install(
         .install(bytes)
         .map_err(|e| updater_error("installing", endpoint, &target, e))?;
 
-    // The install succeeded; now move the daemon onto it, or say by name why
-    // it stays where it is. Sessions are never killed, on any path.
+    // The install succeeded; move the daemon before restarting this app. The
+    // new AppImage's sidecar is only reachable after the new app starts.
     #[cfg(target_os = "linux")]
-    match &handoff_plan {
-        HandoffPlan::Relaunch => {
-            if std::env::var_os("APPIMAGE").is_some() {
-                // Only a fresh launch mounts the replaced AppImage, and Tauri
-                // relaunches `$APPIMAGE` itself; the new app's startup precheck
-                // then hands the running daemon to the new mount's sidecar.
-                eprintln!(
-                    "app_update_install: Houston {} installed; relaunching into the new \
-                     AppImage",
-                    update.version
-                );
-                app.restart();
+    {
+        match &handoff_plan {
+            HandoffPlan::Candidate(_) => {
+                move_daemon_to_new_build(state_dir, &handoff_plan, &update.version).await?
             }
-            // Without `$APPIMAGE` a restart would re-exec the old mount: leave
-            // the daemon alone and let the operator reopen from the new file.
-            eprintln!(
-                "app_update_install: Houston {} installed; $APPIMAGE is not set, so quit and \
-                 reopen Houston to run it",
-                update.version
-            );
+            HandoffPlan::Relaunch => {}
+            HandoffPlan::Refuse { .. } => {
+                unreachable!("linux_relaunch_refusal rejected unsupported bundle types")
+            }
         }
-        plan => move_daemon_to_new_build(state_dir, plan, &update.version).await?,
+        if let Some(tracker) =
+            app.try_state::<std::sync::Arc<crate::window_state::WindowStateTracker>>()
+        {
+            tracker.flush();
+        }
+        eprintln!(
+            "app_update_install: Houston {} installed; relaunching the updated app",
+            update.version
+        );
+        app.restart();
     }
 
+    #[cfg(not(target_os = "linux"))]
     Ok(AppUpdateOutcome::Installed {
         version: update.version.clone(),
     })
@@ -639,6 +665,18 @@ mod tests {
             HandoffPlan::Relaunch,
             "an AppImage's new sidecar is only reachable after a fresh launch"
         );
+    }
+
+    #[test]
+    fn linux_package_and_appimage_updates_have_an_automatic_relaunch_path() {
+        let package = linux_handoff_plan(&BundleType::Deb, Path::new("/usr/bin"));
+        assert!(linux_relaunch_refusal(&package, false).is_none());
+
+        let appimage = linux_handoff_plan(&BundleType::AppImage, Path::new("/tmp/.mount_x"));
+        assert!(linux_relaunch_refusal(&appimage, true).is_none());
+        let refusal = linux_relaunch_refusal(&appimage, false).unwrap();
+        assert!(refusal.contains("$APPIMAGE"), "{refusal}");
+        assert!(refusal.contains("reopen"), "{refusal}");
     }
 
     #[test]

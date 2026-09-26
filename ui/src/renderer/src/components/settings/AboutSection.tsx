@@ -93,13 +93,13 @@ function installCopy(
     case 'installing':
       return {
         title: `Houston ${version}`,
-        desc: 'Downloaded and signature-verified. Installing now.'
+        desc: 'Downloaded and signature-verified. Installing now; Houston will reopen automatically.'
       }
     case 'installed':
       return install.version === version
         ? {
             title: `Houston ${install.version} installed`,
-            desc: 'Quit and reopen Houston to run the new version.'
+            desc: 'Houston is reopening with the new version.'
           }
         : null
     case 'failed':
