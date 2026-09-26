@@ -501,7 +501,7 @@ fn manage_http_client_with(timeout: Duration) -> reqwest::Client {
 /// What the release-channel daemon reports about live sessions. `None` means
 /// no daemon (nothing to protect); an `Err` means one is named live but did
 /// not answer — never read that as zero sessions.
-#[cfg(any(windows, target_os = "linux", test))]
+#[cfg(any(windows, test))]
 pub(crate) async fn probe_live_sessions(
     state_dir: &Path,
 ) -> Result<Option<houston_protocol::ManageLiveSessions>, String> {

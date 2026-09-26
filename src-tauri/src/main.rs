@@ -432,7 +432,10 @@ fn main() {
     builder = builder.manage(browser::BrowserRegistry::new());
     builder = builder.manage(browser::confirm::ConfirmRegistry::new());
     builder = builder.manage(app_update::UpdateFlight::new());
-    builder = builder.manage(app_update::ActiveStateDir::new(state_dir.clone()));
+    #[cfg(windows)]
+    {
+        builder = builder.manage(app_update::ActiveStateDir::new(state_dir.clone()));
+    }
 
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));

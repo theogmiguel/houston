@@ -36,11 +36,9 @@ naming the release either way.
 
 **Install update** downloads the artifact published for the exact build you are running,
 checks its signature against Houston's signing key, and only then installs it. The panel
-shows download progress. After installation and any required daemon handoff succeed,
-Houston closes and reopens on the new build.
-If anything does not line up — no artifact for this build, a signature that does not
-verify, or a manifest that moved on since the offer was shown — nothing is installed
-and the panel says why.
+shows download progress. If anything does not line up — no artifact for this build, a
+signature that does not verify, or a manifest that moved on since the offer was shown —
+nothing is installed and the panel says why.
 
 ## Linux
 
@@ -49,12 +47,11 @@ replaces the running file in place. Houston relaunches after either install. An 
 started without `$APPIMAGE` cannot be relaunched safely, so the update is refused before
 download.
 
-After a `.deb` install, Houston moves the running daemon and its sessions to the new build
-before reopening the app. An AppImage reopens first; during startup, the new app moves the
-daemon to its new sidecar. If a handoff cannot complete, the current daemon keeps its
-sessions and Houston reports the reason. You can also install a downloaded `.deb` or
-`.AppImage` yourself, exactly as you did the first time; Houston then attaches to the
-running daemon as usual.
+During startup, the reopened app moves the running daemon and its sessions to the new
+build. If that handoff cannot complete, the current daemon keeps every session: the new
+app attaches to it when their protocols match, and otherwise names the reason instead of
+attaching. You can also install a downloaded `.deb` or `.AppImage` yourself, exactly as
+you did the first time; Houston then attaches to the running daemon as usual.
 
 ## Windows
 
