@@ -2,7 +2,10 @@
 //! builds a manifest cannot name, hold the operator's version to what it
 //! publishes, then let the plugin download, verify and install.
 
-use std::path::{Path, PathBuf};
+#[cfg(any(windows, test))]
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 
 // The ManageLiveSessions payload only reaches this module on Windows, where the
@@ -13,6 +16,7 @@ use tauri::utils::config::BundleType;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 
+#[cfg(any(windows, test))]
 use crate::daemon_host;
 
 /// Progress for the About panel, emitted to the main window only.
@@ -122,10 +126,12 @@ fn active_channel_label(state_dir: &Path) -> String {
 }
 
 /// The state dir this app process resolved from its own argv (`--channel`) and
-/// is driving. Managed by `main`, so update safety inspects the daemon this app
-/// is actually attached to — an installed app launched on `dev` checks `dev`.
+/// is driving, so Windows update safety inspects the daemon this app is attached
+/// to. Linux needs none: the relaunched app's startup hands the daemon off.
+#[cfg(windows)]
 pub struct ActiveStateDir(PathBuf);
 
+#[cfg(windows)]
 impl ActiveStateDir {
     pub fn new(state_dir: PathBuf) -> Self {
         Self(state_dir)
@@ -136,106 +142,24 @@ impl ActiveStateDir {
     }
 }
 
-/// What a Linux install leaves to hand the sessions to.
+/// Linux installs relaunch into the new build, whose startup precheck hands
+/// the running daemon to the new sidecar. Refuses, before download, any layout
+/// Houston could install but not reopen.
 #[cfg(any(target_os = "linux", test))]
-#[derive(Debug, PartialEq, Eq)]
-enum HandoffPlan {
-    /// The freshly installed daemon binary to spawn as the successor.
-    Candidate(PathBuf),
-    /// The install replaced the running AppImage; relaunch so the new mount
-    /// carries the daemon binary the startup handoff then moves sessions to.
-    Relaunch,
-    /// No candidate this build can run; the daemon is left in place and this
-    /// reason is surfaced verbatim.
-    Refuse { reason: String },
-}
-
-/// How each Linux layout reaches the installed daemon binary: the sibling
-/// sidecar for deb/rpm, a fresh launch for an AppImage (its sidecar is only
-/// readable inside the mount).
-#[cfg(any(target_os = "linux", test))]
-fn linux_handoff_plan(bundle: &BundleType, daemon_bin_dir: &Path) -> HandoffPlan {
+fn linux_relaunch_refusal(bundle: &BundleType, has_appimage_path: bool) -> Option<String> {
     match bundle {
-        BundleType::Deb | BundleType::Rpm => {
-            HandoffPlan::Candidate(daemon_bin_dir.join(crate::daemon_host::daemon_binary_name()))
-        }
-        BundleType::AppImage => HandoffPlan::Relaunch,
-        other => HandoffPlan::Refuse {
-            reason: format!(
-                "this build carries bundle type {other:?}, which has no known path to a freshly \
-                 installed daemon binary"
-            ),
-        },
+        BundleType::Deb | BundleType::Rpm => None,
+        BundleType::AppImage if has_appimage_path => None,
+        BundleType::AppImage => Some(
+            "app_update_install: refusing to update: $APPIMAGE is not set, so Houston cannot \
+             reopen the updated AppImage automatically. Launch the AppImage normally and retry"
+                .to_string(),
+        ),
+        other => Some(format!(
+            "app_update_install: refusing to update: this build carries bundle type {other:?}; \
+             expected Deb, Rpm or AppImage, the Linux layouts Houston can reopen after install"
+        )),
     }
-}
-
-#[cfg(any(target_os = "linux", test))]
-fn installed_but_daemon_stays(version: &str, reason: &str, live_sessions: u32) -> String {
-    let sessions = match live_sessions {
-        0 => "no sessions were running to move".to_string(),
-        1 => "the 1 live session keeps running on the current daemon".to_string(),
-        n => format!("all {n} live sessions keep running on the current daemon"),
-    };
-    format!(
-        "app_update_install: Houston {version} was installed, but the daemon was left on the \
-         running build: {reason}. Nothing was stopped; {sessions}."
-    )
-}
-
-/// Move the running daemon onto the freshly installed build, or refuse by
-/// name with the current daemon and every session untouched — sessions are
-/// never killed to make room for an update.
-#[cfg(any(target_os = "linux", test))]
-async fn move_daemon_to_new_build(
-    state_dir: &Path,
-    plan: &HandoffPlan,
-    version: &str,
-) -> Result<(), String> {
-    let live = daemon_host::probe_live_sessions(state_dir)
-        .await
-        .map_err(|e| {
-            format!(
-                "app_update_install: Houston {version} was installed, but the running daemon's \
-                 live sessions could not be confirmed, so it was left exactly as it is: {e}. \
-                 Nothing was stopped."
-            )
-        })?;
-    let Some(live) = live else {
-        return Ok(());
-    };
-    let candidate = match plan {
-        HandoffPlan::Candidate(candidate) => candidate,
-        HandoffPlan::Relaunch => return Ok(()),
-        HandoffPlan::Refuse { reason } => {
-            return Err(installed_but_daemon_stays(version, reason, live.count));
-        }
-    };
-    if let Some(problem) = daemon_host::candidate_problem(candidate) {
-        return Err(installed_but_daemon_stays(
-            version,
-            &format!(
-                "the freshly installed daemon binary {} {problem}",
-                candidate.display()
-            ),
-            live.count,
-        ));
-    }
-    let result = daemon_host::request_candidate_handoff(state_dir, Some(candidate))
-        .await
-        .map_err(|e| {
-            format!(
-                "app_update_install: Houston {version} was installed, but asking the daemon to \
-                 move the running sessions to it failed: {e}. Nothing was stopped; the current \
-                 daemon still owns every session."
-            )
-        })?;
-    if !result.accepted {
-        let reason = result
-            .reason
-            .unwrap_or_else(|| "the daemon gave no reason".to_string());
-        return Err(installed_but_daemon_stays(version, &reason, live.count));
-    }
-    Ok(())
 }
 
 /// Stable installs only a strictly newer version; an equal or older manifest is
@@ -282,8 +206,13 @@ fn updater_error(
 #[derive(Debug, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AppUpdateOutcome {
-    UpToDate { version: String },
-    Installed { version: String },
+    UpToDate {
+        version: String,
+    },
+    #[cfg(any(not(target_os = "linux"), test))]
+    Installed {
+        version: String,
+    },
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -315,7 +244,6 @@ fn emit_progress(app: &AppHandle, phase: &'static str, downloaded: u64, total: O
 pub async fn app_update_install(
     app: AppHandle,
     flight: State<'_, UpdateFlight>,
-    active: State<'_, ActiveStateDir>,
     expected_version: String,
 ) -> Result<AppUpdateOutcome, String> {
     let bundle = tauri::utils::platform::bundle_type();
@@ -323,23 +251,15 @@ pub async fn app_update_install(
         return Err(refusal);
     }
     let bundle = bundle.expect("install_refusal returns a refusal for every absent bundle type");
+    #[cfg(windows)]
+    let active = app.state::<ActiveStateDir>();
+    #[cfg(windows)]
     let state_dir = active.path();
 
-    // Resolved now, while this app's own executable is still the installed
-    // one: an in-place dpkg/rpm install can leave `current_exe()` reading
-    // "… (deleted)" by the time the daemon needs the successor's path.
     #[cfg(target_os = "linux")]
-    let handoff_plan = {
-        let exe = std::env::current_exe().map_err(|e| {
-            format!(
-                "app_update_install: resolving this app's own path to locate the freshly \
-                 installed daemon binary: {e}"
-            )
-        })?;
-        let bin_dir =
-            daemon_host::spawn_bin_dir(&houston_core::exe_path::strip_deleted_exe_suffix(&exe));
-        linux_handoff_plan(&bundle, &bin_dir)
-    };
+    if let Some(refusal) = linux_relaunch_refusal(&bundle, std::env::var_os("APPIMAGE").is_some()) {
+        return Err(refusal);
+    }
 
     let target = updater_target(bundle, tauri_plugin_updater::target())?;
     let _flight = flight.claim()?;
@@ -382,7 +302,7 @@ pub async fn app_update_install(
 
     // Windows only, and before the download: the installer replaces the daemon
     // binary, so a live session there would die with it. Linux never refuses
-    // here — it moves the daemon after the install instead.
+    // here — the relaunched app moves the daemon during startup instead.
     #[cfg(windows)]
     {
         let channel_label = active_channel_label(state_dir);
@@ -440,33 +360,23 @@ pub async fn app_update_install(
         .install(bytes)
         .map_err(|e| updater_error("installing", endpoint, &target, e))?;
 
-    // The install succeeded; now move the daemon onto it, or say by name why
-    // it stays where it is. Sessions are never killed, on any path.
+    // The install succeeded; the relaunched app's startup precheck hands the
+    // daemon to the new build's sidecar; a failed handoff keeps the old daemon.
     #[cfg(target_os = "linux")]
-    match &handoff_plan {
-        HandoffPlan::Relaunch => {
-            if std::env::var_os("APPIMAGE").is_some() {
-                // Only a fresh launch mounts the replaced AppImage, and Tauri
-                // relaunches `$APPIMAGE` itself; the new app's startup precheck
-                // then hands the running daemon to the new mount's sidecar.
-                eprintln!(
-                    "app_update_install: Houston {} installed; relaunching into the new \
-                     AppImage",
-                    update.version
-                );
-                app.restart();
-            }
-            // Without `$APPIMAGE` a restart would re-exec the old mount: leave
-            // the daemon alone and let the operator reopen from the new file.
-            eprintln!(
-                "app_update_install: Houston {} installed; $APPIMAGE is not set, so quit and \
-                 reopen Houston to run it",
-                update.version
-            );
+    {
+        if let Some(tracker) =
+            app.try_state::<std::sync::Arc<crate::window_state::WindowStateTracker>>()
+        {
+            tracker.flush();
         }
-        plan => move_daemon_to_new_build(state_dir, plan, &update.version).await?,
+        eprintln!(
+            "app_update_install: Houston {} installed; relaunching the updated app",
+            update.version
+        );
+        app.restart();
     }
 
+    #[cfg(not(target_os = "linux"))]
     Ok(AppUpdateOutcome::Installed {
         version: update.version.clone(),
     })
@@ -621,33 +531,32 @@ mod tests {
     }
 
     #[test]
-    fn a_deb_handoff_plan_names_the_sidecar_in_the_daemon_bin_dir() {
-        assert_eq!(
-            linux_handoff_plan(&BundleType::Deb, Path::new("/usr/bin")),
-            HandoffPlan::Candidate(PathBuf::from("/usr/bin/houston-core"))
-        );
-        assert_eq!(
-            linux_handoff_plan(&BundleType::Rpm, Path::new("/usr/lib/houston")),
-            HandoffPlan::Candidate(PathBuf::from("/usr/lib/houston/houston-core"))
-        );
+    fn linux_package_updates_relaunch_regardless_of_appimage_path() {
+        for bundle in [BundleType::Deb, BundleType::Rpm] {
+            assert!(
+                linux_relaunch_refusal(&bundle, false).is_none(),
+                "{bundle:?}"
+            );
+            assert!(
+                linux_relaunch_refusal(&bundle, true).is_none(),
+                "{bundle:?}"
+            );
+        }
     }
 
     #[test]
-    fn an_appimage_handoff_plan_relaunches_into_the_new_mount() {
-        assert_eq!(
-            linux_handoff_plan(&BundleType::AppImage, Path::new("/tmp/.mount_x/usr/bin")),
-            HandoffPlan::Relaunch,
-            "an AppImage's new sidecar is only reachable after a fresh launch"
-        );
+    fn an_appimage_update_needs_its_path_to_relaunch() {
+        assert!(linux_relaunch_refusal(&BundleType::AppImage, true).is_none());
+        let refusal = linux_relaunch_refusal(&BundleType::AppImage, false).unwrap();
+        assert!(refusal.contains("$APPIMAGE"), "{refusal}");
+        assert!(refusal.contains("reopen"), "{refusal}");
     }
 
     #[test]
     fn an_unknown_bundle_type_is_refused_by_name() {
-        let plan = linux_handoff_plan(&BundleType::Nsis, Path::new("/usr/bin"));
-        let HandoffPlan::Refuse { reason } = plan else {
-            panic!("NSIS is not a Linux layout: {plan:?}");
-        };
-        assert!(reason.contains("Nsis"), "{reason}");
+        let refusal = linux_relaunch_refusal(&BundleType::Nsis, true).unwrap();
+        assert!(refusal.contains("Nsis"), "{refusal}");
+        assert!(refusal.contains("AppImage"), "{refusal}");
     }
 
     #[test]
@@ -656,18 +565,6 @@ mod tests {
         let missing = dir.path().join("missing-houston-core");
         let problem = daemon_host::candidate_problem(&missing).expect("a missing file is unusable");
         assert!(problem.contains("cannot be read"), "{problem}");
-        let full = installed_but_daemon_stays(
-            "1.2.4",
-            &format!(
-                "the freshly installed daemon binary {} {problem}",
-                missing.display()
-            ),
-            1,
-        );
-        assert!(
-            full.contains("missing-houston-core"),
-            "the refusal must name the path it could not read: {full}"
-        );
 
         let problem = daemon_host::candidate_problem(dir.path()).expect("a directory is unusable");
         assert!(problem.contains("not a regular file"), "{problem}");
@@ -685,19 +582,5 @@ mod tests {
             std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
             assert_eq!(daemon_host::candidate_problem(&file), None);
         }
-    }
-
-    #[test]
-    fn the_daemon_stays_message_counts_sessions_and_names_the_version() {
-        let none = installed_but_daemon_stays("1.2.4", "a reason", 0);
-        assert!(none.contains("no sessions were running"), "{none}");
-        assert!(none.contains("1.2.4"), "{none}");
-        assert!(none.contains("a reason"), "{none}");
-
-        let one = installed_but_daemon_stays("1.2.4", "a reason", 1);
-        assert!(one.contains("the 1 live session keeps"), "{one}");
-
-        let many = installed_but_daemon_stays("1.2.4", "a reason", 7);
-        assert!(many.contains("all 7 live sessions keep"), "{many}");
     }
 }

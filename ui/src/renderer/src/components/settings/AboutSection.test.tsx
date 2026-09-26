@@ -189,6 +189,7 @@ describe('AboutSection update rows', () => {
       await Promise.resolve()
     })
     expect(screen.getByText('Houston 1.2.3 installed')).not.toBeNull()
+    expect(screen.getByText('Houston is reopening with the new version.')).not.toBeNull()
     expect(screen.queryByTestId('update-install')).toBeNull()
     expect(screen.getByRole('button', { name: 'Check now' })).not.toBeNull()
   })
