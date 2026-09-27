@@ -23,16 +23,22 @@ impl BrowserTools {
 // nothing after that is a named error, never a silent no-op.
 const OPEN_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 
-async fn resolve_surface(app: &AppHandle, scope: &McpScope) -> Result<String, ToolError> {
-    if let Some(id) = super::surfaces_in(app, &scope.workspace_id)
+fn existing_surface(app: &AppHandle, scope: &McpScope) -> Option<String> {
+    super::surfaces_in(app, &scope.workspace_id)
         .into_iter()
         .next()
-    {
-        return Ok(id);
-    }
+}
+
+// A browser pane registers a surface only once it has a page, so the open request must
+// carry the URL: a pane opened empty shows its start screen and never becomes reachable.
+async fn open_surface_at(
+    app: &AppHandle,
+    scope: &McpScope,
+    url: &str,
+) -> Result<String, ToolError> {
     if let Err(err) = app.emit(
         super::state::OPEN_REQUEST_EVENT,
-        &json!({ "workspaceId": scope.workspace_id }),
+        &json!({ "workspaceId": scope.workspace_id, "url": url }),
     ) {
         return Err(ToolError(format!(
             "no browser pane in workspace {:?}, and asking the app to open one failed: {err}",
@@ -42,25 +48,32 @@ async fn resolve_surface(app: &AppHandle, scope: &McpScope) -> Result<String, To
     let deadline = std::time::Instant::now() + OPEN_WAIT;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(WAIT_POLL).await;
-        if let Some(id) = super::surfaces_in(app, &scope.workspace_id)
-            .into_iter()
-            .next()
-        {
+        if let Some(id) = existing_surface(app, scope) {
             return Ok(id);
         }
     }
     Err(ToolError(no_pane_after_wait(
         &scope.workspace_id,
+        url,
         OPEN_WAIT,
     )))
 }
 
-fn no_pane_after_wait(workspace_id: &str, waited: std::time::Duration) -> String {
+fn no_pane_after_wait(workspace_id: &str, url: &str, waited: std::time::Duration) -> String {
     format!(
-        "no browser pane in workspace {workspace_id:?} — asked the app to open one and none \
-         appeared within {}s. Open a browser pane in this workspace and retry. (Browser tools \
-         only ever reach panes in the workspace this agent session runs in.)",
+        "no browser pane in workspace {workspace_id:?} — asked the app to open one at {url:?} \
+         and none appeared within {}s. Open a browser pane in this workspace and retry. \
+         (Browser tools only ever reach panes in the workspace this agent session runs in.)",
         waited.as_secs()
+    )
+}
+
+fn no_page_open(workspace_id: &str, tool: &str) -> String {
+    format!(
+        "{tool} found no browser pane with a page open in workspace {workspace_id:?}. Call \
+         browser_navigate with a URL first; it opens a browser pane at that URL when the \
+         workspace has none. (Browser tools only ever reach panes in the workspace this agent \
+         session runs in.)"
     )
 }
 
@@ -84,11 +97,21 @@ impl ToolProvider for BrowserTools {
         args: &'a Value,
     ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
         Box::pin(async move {
-            let surface = resolve_surface(&self.app, scope).await?;
+            if name == "browser_navigate" {
+                let url = navigate_url(args)?;
+                return match existing_surface(&self.app, scope) {
+                    Some(surface) => navigate(&self.app, &surface, url),
+                    None => {
+                        let surface = open_surface_at(&self.app, scope, url).await?;
+                        Ok(navigated(&surface, url))
+                    }
+                };
+            }
+            let surface = existing_surface(&self.app, scope)
+                .ok_or_else(|| ToolError(no_page_open(&scope.workspace_id, name)))?;
             match name {
                 "browser_current_page" => current_page(&self.app, &surface),
                 "browser_capture" => capture(&self.app, &surface).await,
-                "browser_navigate" => navigate(&self.app, &surface, args),
                 "browser_snapshot" => snapshot(&self.app, &surface).await,
                 "browser_click" => {
                     let element = required_ref(args, "browser_click")?;
@@ -287,7 +310,7 @@ async fn capture(app: &AppHandle, surface: &str) -> Result<ToolOutput, ToolError
     })))
 }
 
-fn navigate(app: &AppHandle, surface: &str, args: &Value) -> Result<ToolOutput, ToolError> {
+fn navigate_url(args: &Value) -> Result<&str, ToolError> {
     let url = args
         .get("url")
         .and_then(Value::as_str)
@@ -298,13 +321,21 @@ fn navigate(app: &AppHandle, surface: &str, args: &Value) -> Result<ToolOutput, 
              This pane is the user's authenticated browser session."
         )));
     }
+    Ok(url)
+}
+
+fn navigate(app: &AppHandle, surface: &str, url: &str) -> Result<ToolOutput, ToolError> {
     let registry = app.state::<BrowserRegistry>();
     super::browser_navigate(app.clone(), registry, surface.to_string(), url.to_string())
         .map_err(ToolError)?;
-    Ok(ToolOutput::structured(json!({
+    Ok(navigated(surface, url))
+}
+
+fn navigated(surface: &str, url: &str) -> ToolOutput {
+    ToolOutput::structured(json!({
         "surfaceId": surface,
         "navigatedTo": url,
-    })))
+    }))
 }
 
 enum HistoryStep {
@@ -669,11 +700,31 @@ mod tests {
 
     #[test]
     fn the_no_pane_error_names_the_workspace_the_wait_and_the_fix() {
-        let msg = no_pane_after_wait(&scope().workspace_id, OPEN_WAIT);
+        let msg = no_pane_after_wait(&scope().workspace_id, "http://localhost:4388/", OPEN_WAIT);
         assert!(msg.contains("/home/dev/proj"));
-        assert!(msg.contains("asked the app to open one"));
+        assert!(msg.contains("asked the app to open one at \"http://localhost:4388/\""));
         assert!(msg.contains("within 8s"));
         assert!(msg.contains("Open a browser pane"));
+    }
+
+    #[test]
+    fn a_tool_with_no_page_open_names_the_workspace_and_points_at_navigate() {
+        let msg = no_page_open(&scope().workspace_id, "browser_snapshot");
+        assert!(msg.starts_with("browser_snapshot "));
+        assert!(msg.contains("/home/dev/proj"));
+        assert!(msg.contains("Call browser_navigate with a URL first"));
+    }
+
+    #[test]
+    fn navigate_validates_the_url_before_any_pane_is_opened() {
+        assert_eq!(
+            navigate_url(&json!({ "url": "http://127.0.0.1:4388/" })).unwrap(),
+            "http://127.0.0.1:4388/"
+        );
+        let refused = navigate_url(&json!({ "url": "file:///etc/passwd" })).unwrap_err();
+        assert!(refused.0.contains("\"file:///etc/passwd\""));
+        let missing = navigate_url(&json!({})).unwrap_err();
+        assert!(missing.0.contains("needs a string \"url\" argument"));
     }
 
     #[test]

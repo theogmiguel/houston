@@ -12,7 +12,7 @@ vi.mock('./host', () => ({ isTauri: () => isTauriMock() }))
 const { useBrowserOpenRequest } = await import('./browserOpenRequest')
 
 function captureHandler(): {
-  fire: (payload: { workspaceId: string }) => void
+  fire: (payload: { workspaceId: string; url: string }) => void
   dispose: ReturnType<typeof vi.fn>
 } {
   const dispose = vi.fn()
@@ -34,12 +34,12 @@ function captureHandler(): {
 let container: HTMLDivElement
 let root: Root
 
-function Probe({ onRequest }: { onRequest: (ws: string) => void }): null {
+function Probe({ onRequest }: { onRequest: (ws: string, url: string) => void }): null {
   useBrowserOpenRequest(onRequest)
   return null
 }
 
-async function mount(onRequest: (ws: string) => void): Promise<void> {
+async function mount(onRequest: (ws: string, url: string) => void): Promise<void> {
   act(() => {
     root.render(<Probe onRequest={onRequest} />)
   })
@@ -69,12 +69,12 @@ describe('useBrowserOpenRequest', () => {
     expect(listenMock).not.toHaveBeenCalled()
   })
 
-  it('forwards the workspace the host asked for', async () => {
+  it('forwards the workspace and the url the host asked for', async () => {
     const { fire } = captureHandler()
-    const seen: string[] = []
-    await mount((ws) => seen.push(ws))
-    fire({ workspaceId: '/home/u/proj' })
-    expect(seen).toEqual(['/home/u/proj'])
+    const seen: Array<[string, string]> = []
+    await mount((ws, url) => seen.push([ws, url]))
+    fire({ workspaceId: '/home/u/proj', url: 'http://127.0.0.1:4388/' })
+    expect(seen).toEqual([['/home/u/proj', 'http://127.0.0.1:4388/']])
   })
 
   it('calls the LATEST callback after a re-render, without resubscribing', async () => {
@@ -83,7 +83,7 @@ describe('useBrowserOpenRequest', () => {
     const second: string[] = []
     await mount((ws) => first.push(ws))
     await mount((ws) => second.push(ws))
-    fire({ workspaceId: '/home/u/proj' })
+    fire({ workspaceId: '/home/u/proj', url: 'http://x.test/' })
     expect(first).toEqual([])
     expect(second).toEqual(['/home/u/proj'])
     expect(listenMock).toHaveBeenCalledTimes(1)

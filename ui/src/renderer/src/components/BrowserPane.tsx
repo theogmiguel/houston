@@ -32,6 +32,7 @@ import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { Tooltip } from './Tooltip'
 import { BrowserActConfirm } from './BrowserActConfirm'
 import { useBrowserConfirm } from '../houston/browserConfirm'
+import { useBrowserPaneLoad } from '../houston/browserOpenRequest'
 import {
   type BrowserTab,
   TabWebview,
@@ -149,6 +150,7 @@ export function BrowserPane({
     setFailMsg,
     setRecents
   )
+  useBrowserPaneLoad(node.id, openUrl)
 
   const [surfaceMountFailed, setSurfaceMountFailed] = useState(false)
   useEffect(() => {

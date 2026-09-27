@@ -15,6 +15,7 @@ const { __resetNativeSuppressionForTests, setSuppressionSink } = await import(
   '../layout/nativeSuppression'
 )
 const { __resetBrowserSurfaceRegistryForTests } = await import('../houston/browserSurfaceRegistry')
+const { requestBrowserPaneLoad } = await import('../houston/browserOpenRequest')
 
 const RECT = { x: 0, y: 0, width: 400, height: 300 }
 const LEAF_ID = 'b-fresh'
@@ -99,5 +100,31 @@ describe('a newly-created browser pane opens on the fresh state (M8)', () => {
       'browser_mount',
       expect.objectContaining({ id: LEAF_ID, url: 'https://example.test/' })
     )
+  })
+
+  it('loads an agent open request into the fresh pane so its surface mounts', async () => {
+    renderPane('')
+    await flush()
+
+    let routed = false
+    act(() => {
+      routed = requestBrowserPaneLoad(LEAF_ID, 'http://127.0.0.1:4388/')
+    })
+    await flush()
+
+    expect(routed).toBe(true)
+    expect(invokeMock).toHaveBeenCalledWith(
+      'browser_mount',
+      expect.objectContaining({ id: LEAF_ID, url: 'http://127.0.0.1:4388/' })
+    )
+  })
+
+  it('refuses an open request for a pane that is no longer mounted', async () => {
+    renderPane('')
+    await flush()
+    act(() => root.unmount())
+    root = createRoot(container)
+
+    expect(requestBrowserPaneLoad(LEAF_ID, 'http://127.0.0.1:4388/')).toBe(false)
   })
 })

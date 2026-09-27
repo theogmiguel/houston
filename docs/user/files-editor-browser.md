@@ -21,6 +21,10 @@ A browser pane is a real browser surface embedded in the grid, and an agent can 
 it: click, type, hover, press a key, or select an option, the same way it can type into
 a terminal pane.
 
+When an agent asks to open a page and its workspace has no browser pane showing one,
+Houston opens a browser pane at that page. The agent's other browser actions need a page
+open first.
+
 ### Why this needs a consent gate
 
 An agent acting inside a browser pane can be acting inside a session that is logged in

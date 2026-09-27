@@ -58,7 +58,7 @@ spelling, or a verb that is CLI-only).
 | `pane_send_keys` | `mcp_orchestration.rs` | — | press a small set of keys in a pane (see the tool's own description for the list) |
 | `browser_current_page` | `src-tauri/src/browser/mcp_tools.rs` | — | URL, title, favicon, loading state |
 | `browser_capture` | `mcp_tools.rs` | — | PNG screenshot of the browser pane |
-| `browser_navigate` | `mcp_tools.rs` | — | load an http(s) URL |
+| `browser_navigate` | `mcp_tools.rs` | — | load an http(s) URL, opening a pane at it when the workspace has none |
 | `browser_snapshot` | `mcp_tools.rs` | — | accessibility-style snapshot with `ref`s |
 | `browser_click`, `_type`, `_hover`, `_press_key`, `_select_option` | `mcp_tools.rs` | — | act on an element by `ref` |
 | `browser_go_back`, `_go_forward` | `mcp_tools.rs` | — | history navigation |

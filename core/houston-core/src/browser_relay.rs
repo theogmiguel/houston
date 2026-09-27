@@ -42,9 +42,9 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         ToolSpec {
             name: "browser_navigate".into(),
             title: "Navigate the browser pane".into(),
-            description: "Load an http(s) URL in the browser pane in this agent's \
-                              workspace. This drives the user's real, logged-in browser \
-                              session — the page will be authenticated as them."
+            description: "Load an http(s) URL in this agent's workspace browser pane, \
+                              opening one when none shows a page; call this before the \
+                              other browser tools. The page is authenticated as the user."
                 .into(),
             input_schema: json!({
                 "type": "object",

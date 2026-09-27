@@ -78,7 +78,10 @@ import { useTrayBridge } from "./houston/useTray";
 import { stopConfirmCopy } from "./components/daemonStopConfirmCopy";
 import { QuitAndStopDaemonConfirm } from "./components/QuitAndStopDaemonConfirm";
 import { useBrowserFocus } from "./houston/browserFocus";
-import { useBrowserOpenRequest } from "./houston/browserOpenRequest";
+import {
+  requestBrowserPaneLoad,
+  useBrowserOpenRequest,
+} from "./houston/browserOpenRequest";
 import {
   getLogsDir,
   isFocused,
@@ -2819,12 +2822,13 @@ export function App(): React.JSX.Element {
     const tree = currentTreeRef.current;
     setActiveLeaf(tree && findPane(tree, id) ? id : null);
   });
-  useBrowserOpenRequest((workspaceDir) => {
+  useBrowserOpenRequest((workspaceDir, url) => {
     if (!workspacesRef.current.some((w) => w.path === workspaceDir)) return;
     const key = keyForRef(workspaceDir);
     const tree = (layoutsRef.current.get(key) ?? loadLayout(key)).tree;
-    if (preorderNonSessionPanes(tree).some((p) => p.kind === "browser")) return;
-    openBrowserPane(workspaceDir, null);
+    const pane = preorderNonSessionPanes(tree).find((p) => p.kind === "browser");
+    if (pane && requestBrowserPaneLoad(pane.id, url)) return;
+    openBrowserPane(workspaceDir, null, url);
   });
 
   const voiceClient = conn.kind === "ready" ? conn.client : null;
