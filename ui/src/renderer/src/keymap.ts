@@ -10,6 +10,10 @@ export function isSwitchGoverned(category: ShortcutCategory): boolean {
 
 export type Chord = KeyChord
 
+// Where a shortcut answers: 'root' only as a bare chord (modifier chords), 'both' as a
+// single key with no pane focused and after the prefix, 'prefix' only after the prefix.
+export type ShortcutLayer = 'root' | 'both' | 'prefix'
+
 export interface ShortcutEntry {
   id: string
   keyLabel: string
@@ -18,6 +22,7 @@ export interface ShortcutEntry {
   match?: (e: KeyboardEvent) => boolean
   chord?: Chord
   remappable?: boolean
+  layer?: ShortcutLayer
 }
 
 export const escapeShortcut: ShortcutEntry = {
@@ -113,6 +118,7 @@ export const selectPane: ShortcutEntry = {
   keyLabel: '1–9',
   description: 'select pane (visual order)',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key >= '1' && e.key <= '9'
 }
 
@@ -121,6 +127,7 @@ export const newTerminal: ShortcutEntry = {
   keyLabel: 't',
   description: 'new terminal in this workspace',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 't'
 }
 
@@ -129,6 +136,7 @@ export const openFileShortcut: ShortcutEntry = {
   keyLabel: 'o',
   description: 'open a file in the editor',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'o'
 }
 
@@ -137,6 +145,7 @@ export const newBrowserPane: ShortcutEntry = {
   keyLabel: 'b',
   description: 'new browser pane in this workspace',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'b'
 }
 
@@ -145,6 +154,7 @@ export const expandPane: ShortcutEntry = {
   keyLabel: 'z',
   description: 'expand / collapse pane',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'z'
 }
 
@@ -153,6 +163,7 @@ export const splitRight: ShortcutEntry = {
   keyLabel: 'd',
   description: 'split the pane to the right',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'd'
 }
 
@@ -161,6 +172,7 @@ export const splitUp: ShortcutEntry = {
   keyLabel: 'w',
   description: 'split the pane upward',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'w'
 }
 
@@ -169,6 +181,7 @@ export const splitLeft: ShortcutEntry = {
   keyLabel: 'a',
   description: 'split the pane to the left',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'a'
 }
 
@@ -177,6 +190,7 @@ export const splitDown: ShortcutEntry = {
   keyLabel: 's',
   description: 'split the pane downward',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 's'
 }
 
@@ -185,6 +199,7 @@ export const tidyGrid: ShortcutEntry = {
   keyLabel: 'y',
   description: 'tidy panes into a balanced grid',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'y'
 }
 
@@ -193,6 +208,7 @@ export const equalizePanes: ShortcutEntry = {
   keyLabel: '=',
   description: 'reset every split to an even share',
   category: 'global',
+  layer: 'both',
   match: (e) => !e.ctrlKey && !e.altKey && !e.metaKey && e.key === '='
 }
 
@@ -201,6 +217,7 @@ export const focusPrevPane: ShortcutEntry = {
   keyLabel: '[',
   description: 'focus the previous pane',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === '['
 }
 
@@ -209,6 +226,7 @@ export const focusNextPane: ShortcutEntry = {
   keyLabel: ']',
   description: 'focus the next pane',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === ']'
 }
 
@@ -217,6 +235,7 @@ export const movePanePrev: ShortcutEntry = {
   keyLabel: '{',
   description: 'swap this pane with the previous one',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === '{'
 }
 
@@ -225,6 +244,7 @@ export const movePaneNext: ShortcutEntry = {
   keyLabel: '}',
   description: 'swap this pane with the next one',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === '}'
 }
 
@@ -233,6 +253,7 @@ export const toggleGit: ShortcutEntry = {
   keyLabel: 'g',
   description: 'toggle the Source control panel',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === 'g'
 }
 
@@ -241,6 +262,7 @@ export const shortcutSheetShortcut: ShortcutEntry = {
   keyLabel: '?',
   description: 'show this shortcuts sheet',
   category: 'global',
+  layer: 'both',
   match: (e) => e.key === '?'
 }
 
@@ -266,6 +288,72 @@ export const commandPaletteShortcut: ShortcutEntry = {
   description: 'open the command palette',
   category: 'global',
   match: (e) => e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')
+}
+
+const NO_MODS = (e: KeyboardEvent): boolean => !e.ctrlKey && !e.altKey && !e.metaKey
+
+export const prefixShortcut: ShortcutEntry = {
+  id: 'prefix',
+  keyLabel: 'Ctrl+Space',
+  description: 'prefix: the next key is a Houston shortcut, even inside a focused terminal',
+  category: 'global',
+  layer: 'root',
+  match: (e) =>
+    e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && (e.code === 'Space' || e.key === ' ')
+}
+
+export const wsPrev: ShortcutEntry = {
+  id: 'workspace-prev',
+  keyLabel: 'p',
+  description: 'previous workspace',
+  category: 'global',
+  layer: 'both',
+  match: (e) => NO_MODS(e) && e.key === 'p'
+}
+
+export const wsNext: ShortcutEntry = {
+  id: 'workspace-next',
+  keyLabel: 'n',
+  description: 'next workspace',
+  category: 'global',
+  layer: 'both',
+  match: (e) => NO_MODS(e) && e.key === 'n'
+}
+
+export const wsLast: ShortcutEntry = {
+  id: 'workspace-last',
+  keyLabel: 'Tab',
+  description: 'back to the last workspace (after the prefix)',
+  category: 'global',
+  layer: 'prefix',
+  match: (e) => NO_MODS(e) && !e.shiftKey && e.key === 'Tab'
+}
+
+export const gridPrev: ShortcutEntry = {
+  id: 'grid-prev',
+  keyLabel: ',',
+  description: 'previous grid in this workspace',
+  category: 'global',
+  layer: 'both',
+  match: (e) => NO_MODS(e) && e.key === ','
+}
+
+export const gridNext: ShortcutEntry = {
+  id: 'grid-next',
+  keyLabel: '.',
+  description: 'next grid in this workspace',
+  category: 'global',
+  layer: 'both',
+  match: (e) => NO_MODS(e) && e.key === '.'
+}
+
+export const paletteLayer: ShortcutEntry = {
+  id: 'palette-prefix',
+  keyLabel: 'Space',
+  description: 'open the command palette (after the prefix)',
+  category: 'global',
+  layer: 'prefix',
+  match: (e) => NO_MODS(e) && !e.shiftKey && (e.code === 'Space' || e.key === ' ')
 }
 
 export function focusedPaneOwnsKey(e: KeyboardEvent): boolean {
@@ -308,7 +396,14 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   shortcutSheetShortcut,
   browserFocusUrl,
   settingsShortcut,
-  commandPaletteShortcut
+  commandPaletteShortcut,
+  prefixShortcut,
+  wsPrev,
+  wsNext,
+  wsLast,
+  gridPrev,
+  gridNext,
+  paletteLayer
 ]
 
 export const dictationShortcut: ShortcutEntry = {
@@ -526,6 +621,25 @@ const SPLIT_SIDES: readonly (readonly [ShortcutEntry, SplitSide])[] = [
 export function splitSideFor(e: KeyboardEvent, overrides: KeymapOverrides): SplitSide | null {
   for (const [entry, side] of SPLIT_SIDES) {
     if (resolveGlobalMatch(entry, overrides)(e)) return side
+  }
+  return null
+}
+
+// The zoom chords a focused pane answers itself: whole-app zoom or terminal font size.
+export type ZoomHit = { target: 'app' | 'font'; dir: 1 | -1 | 0 }
+
+const ZOOM_ENTRIES: readonly (readonly [ShortcutEntry, ZoomHit])[] = [
+  [zoomIn, { target: 'app', dir: 1 }],
+  [zoomOut, { target: 'app', dir: -1 }],
+  [zoomReset, { target: 'app', dir: 0 }],
+  [fontZoomIn, { target: 'font', dir: 1 }],
+  [fontZoomOut, { target: 'font', dir: -1 }],
+  [fontZoomReset, { target: 'font', dir: 0 }]
+]
+
+export function zoomHitFor(e: KeyboardEvent, overrides: KeymapOverrides): ZoomHit | null {
+  for (const [entry, hit] of ZOOM_ENTRIES) {
+    if (resolveGlobalMatch(entry, overrides)(e)) return hit
   }
   return null
 }

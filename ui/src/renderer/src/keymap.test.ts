@@ -63,8 +63,9 @@ describe('KEYMAP', () => {
   })
 
   it('has no stale n-for-new-session entry', () => {
-    const matchesN = GLOBAL_SHORTCUTS.some((s) => s.match?.(fakeKey('n')))
-    expect(matchesN).toBe(false)
+    // `n` is "next workspace" now; the only thing it must never be is the old new-session row.
+    const onN = GLOBAL_SHORTCUTS.filter((s) => s.match?.(fakeKey('n'))).map((s) => s.id)
+    expect(onN).toEqual(['workspace-next'])
     const staleRow = KEYMAP.some(
       (s) => s.keyLabel.trim().toLowerCase() === 'n' && /new session/i.test(s.description)
     )
@@ -291,5 +292,35 @@ describe('findConflict (P4 #16)', () => {
     const e = fakeKey('unused', { code: 'Equal', ctrlKey: true })
     expect(zoomIn.id).toBe('zoom-in')
     expect(findConflict('zoom-in', e, noOverrides)).toBeNull()
+  })
+})
+
+describe('prefix layer entries', () => {
+  it('the prefix matches Ctrl+Space and nothing else', async () => {
+    const { prefixShortcut, wsNext, wsLast, paletteLayer, gridPrev } = await import('./keymap')
+    const none: KeymapOverrides = { bindings: {}, shortcuts_enabled: true }
+    expect(resolveMatch(prefixShortcut, none)(fakeKey(' ', { ctrlKey: true, code: 'Space' } as Partial<KeyboardEvent>))).toBe(true)
+    expect(resolveMatch(prefixShortcut, none)(fakeKey(' ', { ctrlKey: true, shiftKey: true, code: 'Space' } as Partial<KeyboardEvent>))).toBe(false)
+    expect(resolveMatch(prefixShortcut, none)(fakeKey(' ', { code: 'Space' } as Partial<KeyboardEvent>))).toBe(false)
+    expect(prefixShortcut.category).toBe('global')
+    expect(GLOBAL_SHORTCUTS).toContain(prefixShortcut)
+    // single keys answer only without modifiers, so Ctrl+N stays readline's
+    expect(resolveMatch(wsNext, none)(fakeKey('n'))).toBe(true)
+    expect(resolveMatch(wsNext, none)(fakeKey('n', { ctrlKey: true }))).toBe(false)
+    expect(resolveMatch(gridPrev, none)(fakeKey(','))).toBe(true)
+    expect(resolveMatch(gridPrev, none)(fakeKey(',', { ctrlKey: true }))).toBe(false)
+    expect(wsLast.layer).toBe('prefix')
+    expect(paletteLayer.layer).toBe('prefix')
+  })
+
+  it('a rebound prefix follows the override and reports its label', async () => {
+    const { prefixShortcut } = await import('./keymap')
+    const ov: KeymapOverrides = {
+      bindings: { prefix: { code: 'KeyA', ctrl: true, alt: false, shift: false, meta: false } },
+      shortcuts_enabled: true
+    }
+    expect(resolveMatch(prefixShortcut, ov)(fakeChord({ code: 'KeyA', ctrl: true }))).toBe(true)
+    expect(resolveMatch(prefixShortcut, ov)(fakeChord({ code: 'Space', ctrl: true }))).toBe(false)
+    expect(effectiveLabel(prefixShortcut, ov)).toBe('Ctrl+A')
   })
 })

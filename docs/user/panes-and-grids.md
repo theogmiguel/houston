@@ -57,7 +57,9 @@ Only one pane at a time receives keystrokes — the one you have clicked into. E
 you send there reaches the agent, including Esc and Ctrl+C: Houston does not intercept
 them for its own purposes. This is why Houston keeps its own keyboard shortcuts to a
 minimum, and why Settings ▸ Shortcuts has a "Pass through to terminal" option — an
-escape hatch for a shortcut you'd rather the agent receive than Houston.
+escape hatch for a shortcut you'd rather the agent receive than Houston. To reach a
+shortcut without leaving the keyboard, press the prefix key (`Ctrl+Space`) and then the
+shortcut; see `docs/user/keybindings.md`.
 
 ## Scrollback
 

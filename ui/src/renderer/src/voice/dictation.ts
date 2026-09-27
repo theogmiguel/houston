@@ -25,6 +25,10 @@ export function toggleActiveFor(): number | null {
   return toggleActive
 }
 
+export function dictationActiveFor(session: number): boolean {
+  return holding === session || toggleActive === session
+}
+
 export function voiceChordDown(session: number): boolean {
   if (!config?.enabled) return false
   if (config.captureMode === 'toggle') {

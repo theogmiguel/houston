@@ -28,6 +28,8 @@ named.
 | **codename** | A pane's auto-generated name, from a fixed pool, replaced by a better name as one arrives. | `pane_name.rs` |
 | **title source** | Where a pane's current name came from — codename, first prompt, the CLI's own window title, or the user. A weaker source never overwrites a stronger one. | `daemon.rs`, `osc_title.rs` |
 | **Tidy** | The topbar action that rebalances the grid into even splits. | `App.tsx` |
+| **prefix key** | The one chord Houston keeps from a focused terminal (`Ctrl+Space` by default): it arms the prefix layer. Rebindable, never unbound; a second press sends the chord itself. | `keymap.ts::prefixShortcut` |
+| **prefix layer** | The one-shot state the prefix key arms: the next key resolves as a Houston shortcut, then the layer is down. `Esc` or an unbound key cancels it; an 8 s safety timeout forgets a stray prefix. The terminal pane recognises it before ghostty encodes the key. | `prefixLayer.ts`, `PrefixHint.tsx` |
 | **rail** | The left sidebar: nav rows plus the workspace tree. 240 px, hide/show. | `Sidebar.tsx` |
 | **Custom** | The background mode (Settings ▸ Appearance ▸ Background): one image behind the whole window instead of the theme's flat ground. Solid is the default. | `backgroundMode.ts` |
 | **the field** | The dithered image Custom paints as a single surface behind everything — rail, topbar, gutters and panes. | `backdrop/`, `CustomBackdrop.tsx` |

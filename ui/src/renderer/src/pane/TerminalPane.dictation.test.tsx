@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
+import type { KeymapOverrides } from '../houston/generated/KeymapOverrides'
 import { ExpandedContext } from '../layout/expandedContext'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 
@@ -25,7 +26,8 @@ Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
   get: () => 300
 })
 
-import { configureDictation, resetDictationForTests } from '../voice/dictation'
+import { configureDictation, resetDictationForTests, voiceChordDown } from '../voice/dictation'
+import { prefixLayer } from '../prefixLayer'
 import { insertVoiceText, resetVoiceStoreForTests } from './../voice/store'
 import {
   flushGhosttyAttach,
@@ -52,11 +54,13 @@ describe('TerminalPane × dictation (v55)', () => {
   let root: Root
   let fakeClient: HoustonClient
 
-  async function render(): Promise<void> {
+  async function render(
+    overrides: KeymapOverrides = { bindings: {}, shortcuts_enabled: true }
+  ): Promise<void> {
     act(() => {
       root.render(
         <ExpandedContext.Provider value={null}>
-          <KeymapOverridesContext.Provider value={{ bindings: {}, shortcuts_enabled: true }}>
+          <KeymapOverridesContext.Provider value={overrides}>
             <TerminalPane
               client={fakeClient}
               info={makeSession()}
@@ -109,6 +113,7 @@ describe('TerminalPane × dictation (v55)', () => {
   })
 
   afterEach(() => {
+    prefixLayer.disarm()
     act(() => root.unmount())
     container.remove()
     resetDictationForTests()
@@ -135,6 +140,64 @@ describe('TerminalPane × dictation (v55)', () => {
     expect(down.defaultPrevented).toBe(true)
     expect(ghosttyMock.emitKey(chordUp())).toBe(true)
     expect(calls).toEqual(['start:1', 'stop:1'])
+  })
+
+  describe('the prefix key during a dictation', () => {
+    const prefixDown = (): KeyboardEvent =>
+      new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true, cancelable: true })
+
+    it('does not arm while a toggle dictation is active in this pane, and reaches the terminal', async () => {
+      const calls: string[] = []
+      configureDictation({
+        enabled: true,
+        captureMode: 'toggle',
+        start: (s) => calls.push(`start:${s}`),
+        stop: (s) => calls.push(`stop:${s}`)
+      })
+      await render()
+      ghosttyMock.emitKey(chordDown())
+      ghosttyMock.emitKey(chordUp())
+      expect(calls).toEqual(['start:1'])
+      expect(ghosttyMock.emitKey(prefixDown())).toBe(true)
+      expect(prefixLayer.isArmed()).toBe(false)
+      expect(calls).toEqual(['start:1'])
+    })
+
+    it('does not arm or end a held dictation rebound to F8', async () => {
+      const calls: string[] = []
+      configureDictation({
+        enabled: true,
+        captureMode: 'hold',
+        start: (s) => calls.push(`start:${s}`),
+        stop: (s) => calls.push(`stop:${s}`)
+      })
+      await render({
+        bindings: { 'voice-dictate': { code: 'F8', ctrl: false, alt: false, shift: false, meta: false } },
+        shortcuts_enabled: true
+      })
+      ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'F8', key: 'F8', cancelable: true }))
+      expect(calls).toEqual(['start:1'])
+      expect(ghosttyMock.emitKey(prefixDown())).toBe(true)
+      ghosttyMock.emitKey(new KeyboardEvent('keyup', { code: 'Space', key: ' ', ctrlKey: true }))
+      ghosttyMock.emitKey(new KeyboardEvent('keyup', { code: 'ControlLeft', key: 'Control' }))
+      expect(prefixLayer.isArmed()).toBe(false)
+      expect(calls).toEqual(['start:1'])
+    })
+
+    it('arms while a dictation runs in another pane: the guard is per session', async () => {
+      configureDictation({ enabled: true, captureMode: 'toggle', start: () => {}, stop: () => {} })
+      await render()
+      voiceChordDown(2)
+      expect(ghosttyMock.emitKey(prefixDown())).toBe(false)
+      expect(prefixLayer.isArmed()).toBe(true)
+    })
+
+    it('arms as usual when no dictation running in this pane', async () => {
+      configureDictation({ enabled: true, captureMode: 'hold', start: () => {}, stop: () => {} })
+      await render()
+      expect(ghosttyMock.emitKey(prefixDown())).toBe(false)
+      expect(prefixLayer.isArmed()).toBe(true)
+    })
   })
 
   it('ends the hold when a modifier comes up before Space does', async () => {

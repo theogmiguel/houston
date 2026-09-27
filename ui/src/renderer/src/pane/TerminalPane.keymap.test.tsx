@@ -7,6 +7,7 @@ import type { KeymapOverrides } from '../houston/generated/KeymapOverrides'
 import { ExpandedContext } from '../layout/expandedContext'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import { setPaneCapsForTests } from '../paneCaps'
+import { prefixLayer } from '../prefixLayer'
 import {
   flushGhosttyAttach,
   ghosttyMock,
@@ -244,5 +245,156 @@ describe('TerminalPane zoom/font chord seam (P4 #16)', () => {
       ).toBe(false)
       expect(onShellZoom).toHaveBeenCalledWith(1)
     })
+  })
+})
+
+describe('TerminalPane prefix layer', () => {
+  let container: HTMLDivElement
+  let root: Root
+  let fakeClient: HoustonClient
+
+  async function render(
+    overrides: KeymapOverrides = { bindings: {}, shortcuts_enabled: true }
+  ): Promise<void> {
+    act(() => {
+      root.render(
+        <StrictMode>
+          <ExpandedContext.Provider value={null}>
+            <KeymapOverridesContext.Provider value={overrides}>
+              <TerminalPane
+                client={fakeClient}
+                info={makeSession()}
+                theme="warm-espresso"
+                active={false}
+                connected={true}
+                fontSize={13}
+                copyOnSelect={false}
+                stripBoxGlyphs={true}
+                registerOutput={() => () => {}}
+                onActivate={() => {}}
+                onZoom={() => {}}
+                onShellZoom={() => {}}
+                onOpenFile={() => {}}
+                onOpenDir={() => {}}
+              />
+            </KeymapOverridesContext.Provider>
+          </ExpandedContext.Provider>
+        </StrictMode>
+      )
+    })
+    await act(async () => {
+      await flushGhosttyAttach()
+    })
+  }
+
+  beforeEach(() => {
+    ghosttyMock.reset()
+    prefixLayer.disarm()
+    fakeClient = {
+      resizeSession: vi.fn(),
+      attachSession: vi.fn(),
+      sessionVisibility: vi.fn(),
+      sendStdin: vi.fn()
+    } as unknown as HoustonClient
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    prefixLayer.disarm()
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('Ctrl+Space arms the layer and is not sent to the terminal', async () => {
+    await render()
+    const handled = ghosttyMock.emitKey(
+      new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true })
+    )
+    expect(handled).toBe(false)
+    expect(prefixLayer.isArmed()).toBe(true)
+  })
+
+  it('the key after the prefix is consumed and re-emitted on window for the app', async () => {
+    await render()
+    ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true }))
+    const got: KeyboardEvent[] = []
+    const on = (e: Event): void => {
+      got.push(e as KeyboardEvent)
+    }
+    window.addEventListener('keydown', on)
+    const handled = ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'KeyN', key: 'n' }))
+    window.removeEventListener('keydown', on)
+    expect(handled).toBe(false)
+    expect(got.map((e) => e.key)).toEqual(['n'])
+  })
+
+  it('a second Ctrl+Space disarms and lets the chord reach the terminal', async () => {
+    await render()
+    ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true }))
+    const handled = ghosttyMock.emitKey(
+      new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true })
+    )
+    expect(handled).toBe(true)
+    expect(prefixLayer.isArmed()).toBe(false)
+  })
+
+  it('agent keys reach the terminal: the prefix is the only chord the layer reserves', async () => {
+    await render()
+    const agentKeys: KeyboardEventInit[] = [
+      { code: 'Escape', key: 'Escape' },
+      { code: 'KeyC', key: 'c', ctrlKey: true },
+      { code: 'Tab', key: 'Tab', shiftKey: true },
+      { code: 'KeyB', key: 'b', ctrlKey: true },
+      { code: 'KeyK', key: 'k', ctrlKey: true },
+      { code: 'KeyL', key: 'l', ctrlKey: true },
+      { code: 'KeyR', key: 'r', ctrlKey: true }
+    ]
+    for (const init of agentKeys) {
+      const handled = ghosttyMock.emitKey(new KeyboardEvent('keydown', { cancelable: true, ...init }))
+      expect({ key: init.code, handled }).toEqual({ key: init.code, handled: true })
+      expect(prefixLayer.isArmed()).toBe(false)
+    }
+  })
+
+  it('a rebound prefix arms the layer and Ctrl+Space goes back to the terminal', async () => {
+    await render({
+      bindings: { prefix: { code: 'KeyA', ctrl: true, alt: true, shift: false, meta: false } },
+      shortcuts_enabled: true
+    })
+    expect(
+      ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true }))
+    ).toBe(true)
+    expect(prefixLayer.isArmed()).toBe(false)
+    expect(
+      ghosttyMock.emitKey(
+        new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', ctrlKey: true, altKey: true })
+      )
+    ).toBe(false)
+    expect(prefixLayer.isArmed()).toBe(true)
+  })
+
+  it('pass-through keeps the prefix: it still arms while other governed chords reach the terminal', async () => {
+    setPaneCapsForTests({ passThrough: true })
+    try {
+      await render()
+      expect(
+        ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'Equal', ctrlKey: true }))
+      ).toBe(true)
+      expect(
+        ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true }))
+      ).toBe(false)
+      expect(prefixLayer.isArmed()).toBe(true)
+    } finally {
+      setPaneCapsForTests({ passThrough: false })
+    }
+  })
+
+  it('a bare modifier while armed keeps the layer armed', async () => {
+    await render()
+    ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'Space', key: ' ', ctrlKey: true }))
+    ghosttyMock.emitKey(new KeyboardEvent('keydown', { code: 'ShiftLeft', key: 'Shift', shiftKey: true }))
+    expect(prefixLayer.isArmed()).toBe(true)
   })
 })

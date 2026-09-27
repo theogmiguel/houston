@@ -176,7 +176,7 @@ export function ShortcutsSection({
         </Row>
         <Row
           title="Pass through to terminal"
-          desc="A focused pane gets Houston's remappable chords. Copy and find still belong to Houston."
+          desc="A focused pane gets Houston's remappable chords, except the prefix key. Copy and find still belong to Houston."
         >
           <Toggle
             on={passThrough}

@@ -4,12 +4,14 @@ import {
   APPEARANCE_PICKER_COMMAND_ID,
   buildCommands,
   filterCommands,
+  paletteNavActions,
   type PaletteActions
 } from './commandRegistry'
 import type { Workspace } from '../houston/generated/Workspace'
 import { SETTINGS_SECTIONS } from '../settingsSections'
 import { isSettingsOpen, setSettingsNavForTests } from '../settingsNav'
 import { consumeSettingsRowJump } from '../settingsRowJump'
+import { gridNext, gridPrev, wsLast, wsNext, wsPrev } from '../keymap'
 
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
@@ -34,6 +36,9 @@ function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
     selectNavRow: vi.fn(),
     switchWorkspace: vi.fn(),
     switchGrid: vi.fn(),
+    stepWorkspace: vi.fn(),
+    selectLastWorkspace: vi.fn(),
+    stepGrid: vi.fn(),
     ...overrides
   }
 }
@@ -247,6 +252,8 @@ describe('commandRegistry — buildCommands', () => {
     expect(gridCommands.map((c) => c.id)).toEqual([
       'grid.tidy',
       'grid.equalize',
+      'grid.prev',
+      'grid.next',
       'grid.layout.1',
       'grid.layout.2',
       'grid.layout.3',
@@ -287,7 +294,13 @@ describe('commandRegistry — buildCommands', () => {
       workspaces: WORKSPACES
     })
     const wsCommands = commands.filter((c) => c.group === 'Workspaces')
-    expect(wsCommands.length).toBe(WORKSPACES.length + 1)
+    expect(wsCommands.map((c) => c.id)).toEqual([
+      'workspaces.all',
+      'workspaces.prev',
+      'workspaces.next',
+      'workspaces.last',
+      ...WORKSPACES.map((w) => `workspaces.switch.${w.path}`)
+    ])
     wsCommands.find((c) => c.title === 'proj-b')?.run()
     expect(switchWorkspace).toHaveBeenCalledWith('/home/dev/proj-b')
     wsCommands.find((c) => c.id === 'workspaces.all')?.run()
@@ -353,5 +366,128 @@ describe('commandRegistry — filterCommands (fuzzy ranking)', () => {
     const keywordOnlyHit = results.findIndex((c) => c.id.startsWith('go-to.nav.'))
     expect(titleHit).toBeGreaterThanOrEqual(0)
     if (keywordOnlyHit >= 0) expect(titleHit).toBeLessThan(keywordOnlyHit)
+  })
+})
+
+describe('commandRegistry — workspace and grid navigation', () => {
+  const build = (overrides: Partial<PaletteActions> = {}): ReturnType<typeof buildCommands> =>
+    buildCommands({ actions: makeActions(overrides), hasWorkspace: true, workspaces: WORKSPACES })
+  const byId = (commands: ReturnType<typeof buildCommands>, id: string) => {
+    const found = commands.find((c) => c.id === id)
+    if (!found) throw new Error(`no command ${id}`)
+    return found
+  }
+
+  it('lists previous, next and last workspace in Workspaces, each with its layer key', () => {
+    const commands = build()
+    const rows = [
+      ['workspaces.prev', 'Previous workspace', wsPrev],
+      ['workspaces.next', 'Next workspace', wsNext],
+      ['workspaces.last', 'Last workspace', wsLast]
+    ] as const
+    for (const [id, title, chord] of rows) {
+      const c = byId(commands, id)
+      expect(c.title).toBe(title)
+      expect(c.group).toBe('Workspaces')
+      expect(c.chord).toBe(chord)
+      expect(c.enabled).toBe(true)
+    }
+  })
+
+  it('lists previous and next grid in Grid, each with its layer key', () => {
+    const commands = build()
+    const rows = [
+      ['grid.prev', 'Previous grid', gridPrev],
+      ['grid.next', 'Next grid', gridNext]
+    ] as const
+    for (const [id, title, chord] of rows) {
+      const c = byId(commands, id)
+      expect(c.title).toBe(title)
+      expect(c.group).toBe('Grid')
+      expect(c.chord).toBe(chord)
+      expect(c.enabled).toBe(true)
+    }
+  })
+
+  it('navigation commands dispatch to the same actions the prefix layer uses', () => {
+    const stepWorkspace = vi.fn()
+    const selectLastWorkspace = vi.fn()
+    const stepGrid = vi.fn()
+    const commands = build({ stepWorkspace, selectLastWorkspace, stepGrid })
+    byId(commands, 'workspaces.next').run()
+    byId(commands, 'workspaces.prev').run()
+    byId(commands, 'workspaces.last').run()
+    byId(commands, 'grid.next').run()
+    byId(commands, 'grid.prev').run()
+    expect(stepWorkspace.mock.calls).toEqual([[1], [-1]])
+    expect(selectLastWorkspace).toHaveBeenCalledTimes(1)
+    expect(stepGrid.mock.calls).toEqual([[1], [-1]])
+  })
+
+  it('workspace stepping disabled with a named reason when there is no workspace to step to', () => {
+    const commands = build({ stepWorkspace: undefined })
+    for (const id of ['workspaces.prev', 'workspaces.next']) {
+      const c = byId(commands, id)
+      expect(c.enabled).toBe(false)
+      expect(c.disabledReason).toBe('Add a workspace to switch workspaces')
+    }
+  })
+
+  it('last workspace disabled with a named reason before a second workspace was visited', () => {
+    const c = byId(build({ selectLastWorkspace: undefined }), 'workspaces.last')
+    expect(c.enabled).toBe(false)
+    expect(c.disabledReason).toBe('No previous workspace yet')
+  })
+
+  it('grid stepping disabled with a named reason when the workspace has one grid', () => {
+    const commands = build({ stepGrid: undefined })
+    for (const id of ['grid.prev', 'grid.next']) {
+      const c = byId(commands, id)
+      expect(c.enabled).toBe(false)
+      expect(c.disabledReason).toBe('Open a second grid to switch grids')
+    }
+  })
+})
+
+describe('paletteNavActions — when each move is offered', () => {
+  const moves = {
+    stepWorkspace: vi.fn(),
+    selectLastWorkspace: vi.fn(),
+    stepGrid: vi.fn()
+  }
+  const twoGrids = (): readonly unknown[] => [{}, {}]
+
+  it('offers every move with two workspaces, a previous one, and two grids', () => {
+    const nav = paletteNavActions({
+      ...moves,
+      workspaceCount: 2,
+      lastWorkspace: '/w/a',
+      selectedWs: '/w/b',
+      gridsFor: twoGrids
+    })
+    expect(nav).toEqual(moves)
+  })
+
+  it('no workspace: no workspace stepping', () => {
+    const nav = paletteNavActions({ ...moves, workspaceCount: 0, lastWorkspace: null, selectedWs: 'all', gridsFor: twoGrids })
+    expect(nav.stepWorkspace).toBeUndefined()
+  })
+
+  it('no workspace visited before this one: no last workspace', () => {
+    const nav = paletteNavActions({ ...moves, workspaceCount: 2, lastWorkspace: null, selectedWs: '/w/a', gridsFor: twoGrids })
+    expect(nav.selectLastWorkspace).toBeUndefined()
+    expect(nav.stepWorkspace).toBe(moves.stepWorkspace)
+  })
+
+  it('All workspaces selected: no grid stepping, and its grids are never read', () => {
+    const gridsFor = vi.fn(twoGrids)
+    const nav = paletteNavActions({ ...moves, workspaceCount: 2, lastWorkspace: '/w/a', selectedWs: 'all', gridsFor })
+    expect(nav.stepGrid).toBeUndefined()
+    expect(gridsFor).not.toHaveBeenCalled()
+  })
+
+  it('one grid in the selected workspace: no grid stepping', () => {
+    const nav = paletteNavActions({ ...moves, workspaceCount: 2, lastWorkspace: '/w/a', selectedWs: '/w/a', gridsFor: () => [{}] })
+    expect(nav.stepGrid).toBeUndefined()
   })
 })

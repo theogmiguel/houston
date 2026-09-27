@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommandPalette, type CommandPaletteProps } from './CommandPalette'
 import { buildCommands, type PaletteActions } from './commandRegistry'
 import { THEMES } from '../theme'
+import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
@@ -28,6 +29,9 @@ function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
     selectNavRow: vi.fn(),
     switchWorkspace: vi.fn(),
     switchGrid: vi.fn(),
+    stepWorkspace: vi.fn(),
+    selectLastWorkspace: vi.fn(),
+    stepGrid: vi.fn(),
     ...overrides
   }
 }
@@ -104,6 +108,26 @@ describe('CommandPalette — state matrix', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     })
   }
+
+  it('a rebound navigation chord shows its new key on the palette row', () => {
+    act(() => {
+      root.render(
+        <KeymapOverridesContext.Provider
+          value={{
+            bindings: { 'workspace-next': { code: 'KeyM', ctrl: false, alt: false, shift: false, meta: false } },
+            shortcuts_enabled: true
+          }}
+        >
+          <CommandPalette {...baseProps()} />
+        </KeymapOverridesContext.Provider>
+      )
+    })
+    typeInto(search(), 'next workspace')
+    const row = rowById('workspaces.next')
+    expect(row).not.toBeNull()
+    expect(row!.textContent).toContain('Next workspace')
+    expect(row!.querySelector('span.font-mono')?.textContent).toBe('M')
+  })
 
   it('Filled — opens grouped, with the first command highlighted', () => {
     act(() => {

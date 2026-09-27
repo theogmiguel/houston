@@ -85,8 +85,8 @@
       "over": 1
     },
     "src/renderer/src/pane/TerminalPane.tsx": {
-      "total": 331,
-      "worst": 28,
+      "total": 361,
+      "worst": 21,
       "over": 1
     }
   }

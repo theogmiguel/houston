@@ -17,6 +17,11 @@ import {
   equalizePanes as equalizePanesShortcut,
   shortcutSheetShortcut,
   settingsShortcut,
+  wsPrev,
+  wsNext,
+  wsLast,
+  gridPrev,
+  gridNext,
   type ShortcutEntry
 } from '../keymap'
 
@@ -71,6 +76,30 @@ export interface PaletteActions {
   switchWorkspace: (path: string | 'all') => void
 
   switchGrid: (path: string, gridId: string) => void
+
+  stepWorkspace?: (offset: 1 | -1) => void
+  selectLastWorkspace?: () => void
+  stepGrid?: (offset: 1 | -1) => void
+}
+
+type PaletteNav = Pick<PaletteActions, 'stepWorkspace' | 'selectLastWorkspace' | 'stepGrid'>
+
+// A navigation command with nowhere to go is disabled with its reason, so each move
+// is offered only when it can act.
+export function paletteNavActions(
+  nav: Required<PaletteNav> & {
+    workspaceCount: number
+    lastWorkspace: string | null
+    selectedWs: string
+    gridsFor: (path: string) => readonly unknown[]
+  }
+): PaletteNav {
+  const gridsToStep = nav.selectedWs !== 'all' && nav.gridsFor(nav.selectedWs).length > 1
+  return {
+    stepWorkspace: nav.workspaceCount > 0 ? nav.stepWorkspace : undefined,
+    selectLastWorkspace: nav.lastWorkspace !== null ? nav.selectLastWorkspace : undefined,
+    stepGrid: gridsToStep ? nav.stepGrid : undefined
+  }
 }
 
 export const APPEARANCE_PICKER_COMMAND_ID = 'go-to.appearance-picker'
@@ -274,6 +303,21 @@ function buildGridCommands(actions: PaletteActions): Command[] {
       run: () => actions.equalizePanes?.()
     }
   ]
+  const gridSteps = [
+    { id: 'grid.prev', title: 'Previous grid', chord: gridPrev, offset: -1 },
+    { id: 'grid.next', title: 'Next grid', chord: gridNext, offset: 1 }
+  ] as const
+  for (const g of gridSteps)
+    commands.push({
+      id: g.id,
+      title: g.title,
+      group: 'Grid',
+      keywords: ['tab', 'switch', 'cycle'],
+      chord: g.chord,
+      enabled: actions.stepGrid !== undefined,
+      disabledReason: actions.stepGrid === undefined ? 'Open a second grid to switch grids' : undefined,
+      run: () => actions.stepGrid?.(g.offset)
+    })
   for (const n of cols)
     commands.push({
       id: `grid.layout.${n}`,
@@ -394,6 +438,32 @@ function buildWorkspaceCommands(actions: PaletteActions, workspaces: readonly Wo
       run: () => actions.switchWorkspace('all')
     }
   ]
+  const wsSteps = [
+    { id: 'workspaces.prev', title: 'Previous workspace', chord: wsPrev, offset: -1 },
+    { id: 'workspaces.next', title: 'Next workspace', chord: wsNext, offset: 1 }
+  ] as const
+  for (const w of wsSteps)
+    commands.push({
+      id: w.id,
+      title: w.title,
+      group: 'Workspaces',
+      keywords: ['project', 'switch', 'cycle'],
+      chord: w.chord,
+      enabled: actions.stepWorkspace !== undefined,
+      disabledReason:
+        actions.stepWorkspace === undefined ? 'Add a workspace to switch workspaces' : undefined,
+      run: () => actions.stepWorkspace?.(w.offset)
+    })
+  commands.push({
+    id: 'workspaces.last',
+    title: 'Last workspace',
+    group: 'Workspaces',
+    keywords: ['project', 'switch', 'back', 'previous'],
+    chord: wsLast,
+    enabled: actions.selectLastWorkspace !== undefined,
+    disabledReason: actions.selectLastWorkspace === undefined ? 'No previous workspace yet' : undefined,
+    run: () => actions.selectLastWorkspace?.()
+  })
   for (const w of workspaces) {
     commands.push({
       id: `workspaces.switch.${w.path}`,

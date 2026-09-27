@@ -28,18 +28,8 @@ import { ExpandedContext } from '../layout/expandedContext'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
-import {
-  fontZoomIn,
-  fontZoomOut,
-  fontZoomReset,
-  endsDictationHold,
-  isDictationChord,
-  isPasteChord,
-  resolveGlobalMatch,
-  zoomIn,
-  zoomOut,
-  zoomReset
-} from '../keymap'
+import { claimLayerKey } from '../prefixLayer'
+import { endsDictationHold, isDictationChord, isPasteChord, zoomHitFor } from '../keymap'
 import {
   IconArrowDown,
   IconArrowUp,
@@ -52,7 +42,7 @@ import { BTN_ICO } from '../components/buttonChrome'
 
 const DROPZONE_FILE_ICON = resolveTightGlyph(IconFileDown, 'ui')
 import { registerVoiceInsert, registerVoiceNotice } from '../voice/store'
-import { abandonDictation, voiceChordDown, voiceChordUp } from '../voice/dictation'
+import { abandonDictation, dictationActiveFor, voiceChordDown, voiceChordUp } from '../voice/dictation'
 import { SPIN_CLASS } from '../components/git/DiffBody'
 import { outputText, stripBoxGlyphs as stripBox } from './copyOutput'
 import {
@@ -563,24 +553,17 @@ export function TerminalPane({
         e.preventDefault()
         return false
       }
-      if (!passKeysToTerminal()) {
-        const kc = keymapOverridesRef.current
-        const isZoomIn = resolveGlobalMatch(zoomIn, kc)(e)
-        const isZoomOut = resolveGlobalMatch(zoomOut, kc)(e)
-        const isZoomReset = resolveGlobalMatch(zoomReset, kc)(e)
-        if (isZoomIn || isZoomOut || isZoomReset) {
-          e.preventDefault()
-          onShellZoomRef.current(isZoomReset ? 0 : isZoomIn ? 1 : -1)
-          return false
-        }
-        const isFontIn = resolveGlobalMatch(fontZoomIn, kc)(e)
-        const isFontOut = resolveGlobalMatch(fontZoomOut, kc)(e)
-        const isFontReset = resolveGlobalMatch(fontZoomReset, kc)(e)
-        if (isFontIn || isFontOut || isFontReset) {
-          e.preventDefault()
-          onZoomRef.current(isFontReset ? 0 : isFontIn ? 1 : -1)
-          return false
-        }
+      // Prefix layer. ghostty stops propagation of every key it encodes, so the
+      // prefix is recognised here, before the encode.
+      if (claimLayerKey(e, keymapOverridesRef.current, dictationActiveFor(info.id))) {
+        e.preventDefault()
+        return false
+      }
+      const zoom = passKeysToTerminal() ? null : zoomHitFor(e, keymapOverridesRef.current)
+      if (zoom) {
+        e.preventDefault()
+        ;(zoom.target === 'app' ? onShellZoomRef : onZoomRef).current(zoom.dir)
+        return false
       }
       const shiftEnter = shiftEnterSequence(e, shiftEnterRef.current)
       if (shiftEnter !== null) {

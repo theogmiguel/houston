@@ -184,6 +184,14 @@ import {
   splitSideFor,
   resolveMatch,
   focusedPaneOwnsKey,
+  gridNext,
+  gridPrev,
+  isModifierKeydown,
+  paletteLayer,
+  prefixShortcut,
+  wsLast,
+  wsNext,
+  wsPrev,
   selectPane,
   settingsShortcut,
   shortcutSheetShortcut,
@@ -194,8 +202,14 @@ import {
   zoomOut,
   zoomReset,
 } from "./keymap";
+import { prefixLayer } from "./prefixLayer";
+import { PrefixHint } from "./components/PrefixHint";
 import { CommandPalette } from "./components/CommandPalette";
-import type { GridTarget, PaletteActions } from "./components/commandRegistry";
+import {
+  paletteNavActions,
+  type GridTarget,
+  type PaletteActions,
+} from "./components/commandRegistry";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { setRailView, useRailView, type RailView } from "./railView";
 import { touchGrid } from "./gridRecency";
@@ -983,6 +997,45 @@ export function App(): React.JSX.Element {
   }, [workspaces]);
   const selectedWsRef = useRef(selectedWs);
   selectedWsRef.current = selectedWs;
+  // "Last workspace" for the prefix layer: the one selected before the current one.
+  const lastWsRef = useRef<string | null>(null);
+  const prevSelectedWsRef = useRef(selectedWs);
+  useEffect(() => {
+    if (prevSelectedWsRef.current !== selectedWs) {
+      lastWsRef.current = prevSelectedWsRef.current;
+      prevSelectedWsRef.current = selectedWs;
+    }
+  }, [selectedWs]);
+  const selectWorkspaceFromKeyboard = useCallback((path: string): void => {
+    setSelectedWs(path);
+    setShowLauncher(false);
+  }, []);
+  const stepWorkspace = useCallback(
+    (offset: 1 | -1): void => {
+      const list = orderedWorkspaces;
+      if (list.length === 0) return;
+      const idx = list.findIndex((w) => w.path === selectedWs);
+      const next =
+        idx === -1
+          ? offset > 0
+            ? 0
+            : list.length - 1
+          : (idx + offset + list.length) % list.length;
+      selectWorkspaceFromKeyboard(list[next].path);
+    },
+    [orderedWorkspaces, selectedWs, selectWorkspaceFromKeyboard],
+  );
+  const lastWorkspace = useCallback((): string | null => {
+    const last = lastWsRef.current;
+    if (last === null) return null;
+    return last === "all" || workspaces.some((w) => w.path === last)
+      ? last
+      : null;
+  }, [workspaces]);
+  const selectLastWorkspace = useCallback((): void => {
+    const last = lastWorkspace();
+    if (last !== null) selectWorkspaceFromKeyboard(last);
+  }, [lastWorkspace, selectWorkspaceFromKeyboard]);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const sessionsRef = useRef(sessions);
@@ -1992,6 +2045,17 @@ export function App(): React.JSX.Element {
     setShowLauncher(false);
     touchGrid(path, gridId);
   }, []);
+  const stepGrid = useCallback(
+    (offset: 1 | -1): void => {
+      if (selectedWs === "all") return;
+      const grids = gridsFor(selectedWs);
+      if (grids.length < 2) return;
+      const idx = grids.findIndex((g) => g.id === activeGridId(selectedWs));
+      const next = (Math.max(idx, 0) + offset + grids.length) % grids.length;
+      handleSelectGrid(selectedWs, grids[next].id);
+    },
+    [selectedWs, gridsFor, activeGridId, handleSelectGrid],
+  );
   const handleAddGrid = useCallback((path: string): void => {
     const next = addGrid(path, "Untitled");
     setGridsByWs((prev) => new Map(prev).set(path, next));
@@ -2869,6 +2933,23 @@ export function App(): React.JSX.Element {
         return;
       if (target.isContentEditable) return;
       if (paletteOpen) return;
+      // Prefix layer: one-shot. Whatever key follows the prefix resolves once, then
+      // the layer is down. Esc only cancels it and never reaches the pane.
+      const layerArmed = prefixLayer.isArmed();
+      if (layerArmed && isModifierKeydown(e)) return;
+      if (layerArmed) prefixLayer.disarm();
+      if (layerArmed && resolveMatch(escapeShortcut, keymapOverrides)(e)) {
+        e.preventDefault();
+        return;
+      }
+      if (
+        !layerArmed &&
+        resolveGlobalMatch(prefixShortcut, keymapOverrides)(e)
+      ) {
+        e.preventDefault();
+        prefixLayer.arm();
+        return;
+      }
       if (resolveMatch(escapeShortcut, keymapOverrides)(e) && paneHandoff) {
         e.preventDefault();
         setPaneHandoff(null);
@@ -2904,7 +2985,7 @@ export function App(): React.JSX.Element {
         changeFont(0);
         return;
       }
-      if (activeId !== null && focusedPaneOwnsKey(e)) return;
+      if (activeId !== null && !layerArmed && focusedPaneOwnsKey(e)) return;
       if (resolveMatch(escapeShortcut, keymapOverrides)(e)) {
         if (bellOpen) closePopover("bell");
         else if (shortcutSheet) setShortcutSheet(false);
@@ -3010,6 +3091,31 @@ export function App(): React.JSX.Element {
         resolveGlobalMatch(shortcutSheetShortcut, keymapOverrides)(e)
       ) {
         setShortcutSheet(true);
+      } else if (resolveGlobalMatch(wsNext, keymapOverrides)(e)) {
+        e.preventDefault();
+        stepWorkspace(1);
+      } else if (resolveGlobalMatch(wsPrev, keymapOverrides)(e)) {
+        e.preventDefault();
+        stepWorkspace(-1);
+      } else if (
+        layerArmed &&
+        resolveGlobalMatch(wsLast, keymapOverrides)(e)
+      ) {
+        e.preventDefault();
+        selectLastWorkspace();
+      } else if (resolveGlobalMatch(gridNext, keymapOverrides)(e)) {
+        e.preventDefault();
+        stepGrid(1);
+      } else if (resolveGlobalMatch(gridPrev, keymapOverrides)(e)) {
+        e.preventDefault();
+        stepGrid(-1);
+      } else if (
+        layerArmed &&
+        resolveGlobalMatch(paletteLayer, keymapOverrides)(e)
+      ) {
+        e.preventDefault();
+        setPaletteOpen(true);
+        setActivePopover(null);
       } else if (
         resolveGlobalMatch(commandPaletteShortcut, keymapOverrides)(e)
       ) {
@@ -3057,6 +3163,9 @@ export function App(): React.JSX.Element {
     focusAdjacentPane,
     markPaneNoticesRead,
     movePaneBy,
+    stepWorkspace,
+    selectLastWorkspace,
+    stepGrid,
   ]);
 
   if (conn.kind === "connecting")
@@ -3233,6 +3342,15 @@ export function App(): React.JSX.Element {
       setShowLauncher(false);
     },
     switchGrid: handleSelectGrid,
+    ...paletteNavActions({
+      workspaceCount: orderedWorkspaces.length,
+      lastWorkspace: lastWorkspace(),
+      selectedWs,
+      gridsFor,
+      stepWorkspace,
+      selectLastWorkspace,
+      stepGrid,
+    }),
   };
 
   return (
@@ -4236,6 +4354,8 @@ export function App(): React.JSX.Element {
               onNewSession={() => setComposer("current-grid")}
             />
           )}
+
+          <PrefixHint />
 
           <AnimOut open={shortcutSheet} suppress="modal">
             <ShortcutSheet onClose={() => setShortcutSheet(false)} />
