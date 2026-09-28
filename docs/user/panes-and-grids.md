@@ -40,6 +40,22 @@ When an inbox row offers a jump to a pane, Houston opens the workspace that cont
 that target pane. This also works when the message was recorded in a different
 workspace from the pane it names.
 
+## Tags
+
+A tag is a named colour you attach to mark work, such as `code review`. Grids and panes
+carry tags independently: a grid's tags are set from its context menu in the sidebar and
+appear on its sidebar row, and a pane's tags are set from the pane's ··· menu or its
+right-click menu and appear in the pane header. Adding a tag to a grid does not add it to
+the grid's panes, and a pane's tag does not appear on its grid's row. Each grid and each
+pane carries at most five tags.
+
+The sidebar tag filter keeps a grid when the grid itself or any of its panes carries an
+active tag. Create, rename, recolour and delete tags from Manage tags in a grid's context
+menu; deleting a tag removes it from every grid and pane that carries it.
+
+Grids saved by a version in which a grid's tags were its panes' combined tags keep those
+tags as the grid's own the first time they open; their panes' copies are removed.
+
 ## The branch and shared checkouts
 
 A pane whose directory is inside a git work tree shows the branch that checkout is on,
