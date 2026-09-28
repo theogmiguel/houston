@@ -211,6 +211,7 @@ import {
   type PaletteActions,
 } from "./components/commandRegistry";
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
+import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
 import { touchGrid } from "./gridRecency";
 import { useNativeSuppressionCount } from "./layout/nativeSuppression";
@@ -3356,6 +3357,7 @@ export function App(): React.JSX.Element {
   return (
     <TerminalTuningContext.Provider value={terminalTuning}>
       <KeymapOverridesContext.Provider value={keymapOverrides}>
+      <TagsContext.Provider value={tags}>
         <Shell
           chromeTheme={chromeTheme}
           onBackgroundUnavailable={onBackgroundUnavailable}
@@ -4467,6 +4469,7 @@ export function App(): React.JSX.Element {
           )}
 
         </Shell>
+      </TagsContext.Provider>
       </KeymapOverridesContext.Provider>
     </TerminalTuningContext.Provider>
   );

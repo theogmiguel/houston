@@ -78,7 +78,7 @@ export function TagChipRow({
   compact = false,
 }: {
   tags: TagInfo[];
-  onToggle: (tag: TagInfo) => void;
+  onToggle?: (tag: TagInfo) => void;
   compact?: boolean;
 }): React.JSX.Element | null {
   if (tags.length === 0) return null;
@@ -88,7 +88,12 @@ export function TagChipRow({
       data-testid="tag-chips"
       className="inline-flex items-center gap-[4px] flex-none"
     >
-      <TagChip tag={first} onToggle={() => onToggle(first)} compact={compact} />
+      <TagChip
+        tag={first}
+        onToggle={onToggle && (() => onToggle(first))}
+        tooltip={onToggle ? undefined : first.name}
+        compact={compact}
+      />
       {rest.length > 0 && (
         <Tooltip label={`Also ${rest.map((t) => t.name).join(", ")}`}>
           <span data-testid="tag-chips-more" className={TAG_MORE_CLS}>

@@ -43,6 +43,7 @@ import { BTN_ICO_STRUCTURE } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
+import { PaneHeaderTags, PaneTagMenu } from './PaneTags'
 import {
   effectiveLabel,
   fontZoomIn,
@@ -477,6 +478,7 @@ function SessionPaneImpl({
             onRename={(t) => client.renameSession(info.id, t)}
           />
           <BranchChip branch={branch} note={branchNote} />
+          <PaneHeaderTags tagIds={info.tags} />
           {info.spawned_by != null && (
             <OriginBadge
               info={info}
@@ -743,6 +745,12 @@ function SessionPaneImpl({
             glyph={IconCopy}
             label="Copy Path"
             onClick={menuItem(() => void navigator.clipboard.writeText(cwd))}
+          />
+          <PaneTagMenu
+            tagIds={info.tags}
+            onChange={(tags) => client.setSessionTags(info.id, tags)}
+            itemCls={CTX_ITEM_CLS}
+            sepCls={CTX_SEP_CLS}
           />
           <div className={CTX_SEP_CLS} />
           <CtxRow
