@@ -1,4 +1,5 @@
 import { STACK_CAP_MAX, stackCapacity } from '../paneCaps'
+import { MAX_TAGS_PER_SESSION } from '../houston/generated/DEFAULTS'
 
 export interface LeafNode {
   kind: 'leaf'
@@ -665,6 +666,16 @@ export interface GridMeta {
   id: string
   name: string
   named?: boolean
+  // The grid's own tags, independent of the tags its panes carry. Absent on a
+  // grid saved when a grid's tags were the union of its panes' tags.
+  tags?: number[]
+}
+
+// The same cap as a pane, so a grid row's chips fit the rail as a pane's do.
+export const MAX_TAGS_PER_GRID = MAX_TAGS_PER_SESSION
+
+export function gridTagIds(g: GridMeta): number[] {
+  return Array.isArray(g.tags) ? g.tags.filter((t) => Number.isInteger(t)) : []
 }
 
 export function isAutoNameable(g: GridMeta): boolean {
@@ -722,7 +733,7 @@ export function loadGrids(path: string): GridMeta[] {
 
 export function addGrid(path: string, name: string): GridMeta[] {
   const grids = loadGrids(path)
-  const grid: GridMeta = { id: newGridId(), name, named: false }
+  const grid: GridMeta = { id: newGridId(), name, named: false, tags: [] }
   const next = [...grids, grid]
   saveGrids(path, next)
   return next
@@ -737,6 +748,24 @@ export function renameGrid(path: string, gridId: string, name: string): GridMeta
 export function autoNameGrid(path: string, gridId: string, name: string): GridMeta[] {
   const next = loadGrids(path).map((g) =>
     g.id === gridId && isAutoNameable(g) ? { ...g, name, named: true } : g
+  )
+  saveGrids(path, next)
+  return next
+}
+
+export function setGridTags(path: string, gridId: string, tags: number[]): GridMeta[] {
+  const next = loadGrids(path).map((g) => (g.id === gridId ? { ...g, tags: [...new Set(tags)] } : g))
+  saveGrids(path, next)
+  return next
+}
+
+// Tag ids are reused once deleted, so a deleted tag must leave every grid
+// before a new tag can take its id. Returns null when no grid carried it.
+export function dropTagFromGrids(path: string, tagId: number): GridMeta[] | null {
+  const grids = loadGrids(path)
+  if (!grids.some((g) => gridTagIds(g).includes(tagId))) return null
+  const next = grids.map((g) =>
+    g.tags === undefined ? g : { ...g, tags: gridTagIds(g).filter((t) => t !== tagId) }
   )
   saveGrids(path, next)
   return next

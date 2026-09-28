@@ -76,6 +76,7 @@ const TREE = {
         name: 'alpha main',
         sessionIds: [11],
         tagIds: [1],
+        paneTagIds: [],
         count: 1,
         state: 'working'
       },
@@ -84,6 +85,7 @@ const TREE = {
         name: 'alpha review',
         sessionIds: [12],
         tagIds: [2, 3],
+        paneTagIds: [],
         count: 1,
         state: 'idle'
       }
@@ -94,14 +96,15 @@ const TREE = {
         name: 'bravo main',
         sessionIds: [13],
         tagIds: [],
+        paneTagIds: [],
         count: 1,
         state: 'idle'
       }
     ]
   },
   sessions: [
-    taggedSession(11, '/a', [1]),
-    taggedSession(12, '/a', [2, 3]),
+    taggedSession(11, '/a', []),
+    taggedSession(12, '/a', []),
     taggedSession(13, '/b', [])
   ]
 } satisfies Partial<React.ComponentProps<typeof Sidebar>>
@@ -167,7 +170,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
   const badge = (): HTMLElement | null =>
     container.querySelector('[data-testid="tree-filter-badge"]')
 
-  it('renders the tag union of a grid\u2019s sessions as ONE named chip plus a count', () => {
+  it('renders a grid\u2019s own tags as ONE named chip plus a count', () => {
     render(TREE)
     const row = gridRow('alpha review')
     const chips = chipsOf(row)
@@ -194,13 +197,14 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
             name: 'alpha main',
             sessionIds: [11],
             tagIds: [1, 2, 3],
+            paneTagIds: [],
             count: 1,
             state: 'working'
           }
         ],
         '/b': [{ id: 'b1', name: 'bravo main' }]
       },
-      sessions: [taggedSession(11, '/a', [1, 2, 3])]
+      sessions: [taggedSession(11, '/a', [])]
     })
     const row = gridRow('alpha main')
     expect(chipsOf(row)).toHaveLength(1)
@@ -306,10 +310,12 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
       ...TREE,
       gridsByWorkspace: {
         '/a': [
-          { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [1], count: 1 },
-          { id: 'a9', name: 'alpha unknown', sessionIds: [], count: 1 }
+          { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [1], paneTagIds: [], count: 1 },
+          { id: 'a9', name: 'alpha unknown', tagIds: [] }
         ],
-        '/b': [{ id: 'b1', name: 'bravo main', sessionIds: [13], tagIds: [], count: 1 }]
+        '/b': [
+          { id: 'b1', name: 'bravo main', sessionIds: [13], tagIds: [], paneTagIds: [], count: 1 }
+        ]
       }
     })
     act(() => {
@@ -323,8 +329,12 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     render({
       ...TREE,
       gridsByWorkspace: {
-        '/a': [{ id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [2], count: 1 }],
-        '/b': [{ id: 'b1', name: 'bravo main', sessionIds: [13], tagIds: [], count: 1 }]
+        '/a': [
+          { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [], paneTagIds: [2], count: 1 }
+        ],
+        '/b': [
+          { id: 'b1', name: 'bravo main', sessionIds: [13], tagIds: [], paneTagIds: [], count: 1 }
+        ]
       },
       sessions: [taggedSession(11, '/a', [2]), taggedSession(13, '/b', [])]
     })
@@ -370,5 +380,81 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     render(TREE)
 
     expect(badge()?.textContent).toBe('1')
+  })
+
+  it('a pane\u2019s own tag is not drawn as its grid\u2019s chip, yet the filter finds the grid through it', () => {
+    render({
+      ...TREE,
+      gridsByWorkspace: {
+        '/a': [
+          { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [], paneTagIds: [1], count: 1 },
+          { id: 'a2', name: 'alpha review', sessionIds: [12], tagIds: [], paneTagIds: [], count: 1 }
+        ],
+        '/b': [
+          { id: 'b1', name: 'bravo main', sessionIds: [13], tagIds: [], paneTagIds: [], count: 1 }
+        ]
+      },
+      sessions: [taggedSession(11, '/a', [1]), taggedSession(12, '/a', []), taggedSession(13, '/b', [])]
+    })
+    expect(chipsOf(gridRow('alpha main'))).toHaveLength(0)
+
+    openFilter()
+    act(() => options()[0].click())
+    expect(gridRow('alpha main')).not.toBeUndefined()
+    expect(gridRow('alpha review')).toBeUndefined()
+    expect(gridRow('bravo main')).toBeUndefined()
+  })
+
+  const openGridMenu = (name: string): void => {
+    act(() => {
+      gridRow(name).dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 })
+      )
+    })
+  }
+
+  const gridMenuTag = (id: number): HTMLButtonElement =>
+    document.querySelector(`[data-testid="menu-tag-item"][data-tag="${id}"]`) as HTMLButtonElement
+
+  it('a grid menu tag toggles the grid\u2019s own tags and never writes its panes', () => {
+    const calls: [string, string, number[]][] = []
+    render({
+      ...TREE,
+      sessions: [taggedSession(11, '/a', [3]), taggedSession(12, '/a', []), taggedSession(13, '/b', [])],
+      onRenameGrid: noop,
+      onSetGridTags: (path, gridId, tagIds) => calls.push([path, gridId, tagIds])
+    })
+    openGridMenu('alpha main')
+    expect(gridMenuTag(1).getAttribute('aria-checked')).toBe('true')
+    expect(gridMenuTag(3).getAttribute('aria-checked')).toBe('false')
+
+    act(() => gridMenuTag(2).click())
+    expect(calls).toEqual([['/a', 'a1', [1, 2]]])
+    expect(gridMenuTag(2).getAttribute('aria-checked')).toBe('true')
+
+    act(() => gridMenuTag(1).click())
+    expect(calls[1]).toEqual(['/a', 'a1', [2]])
+  })
+
+  it('a grid at the MAX_TAGS_PER_GRID cap cannot take another tag, and can still drop one', () => {
+    const many: TagInfo[] = [1, 2, 3, 4, 5, 6].map((id) => ({ id, name: `t${id}`, color: '#a78bfa' }))
+    const calls: number[][] = []
+    render({
+      ...TREE,
+      tags: many,
+      gridsByWorkspace: {
+        '/a': [
+          { id: 'a1', name: 'alpha main', sessionIds: [11], tagIds: [1, 2, 3, 4, 5], paneTagIds: [], count: 1 }
+        ],
+        '/b': [{ id: 'b1', name: 'bravo main' }]
+      },
+      onRenameGrid: noop,
+      onSetGridTags: (_path, _gridId, tagIds) => calls.push(tagIds)
+    })
+    openGridMenu('alpha main')
+    expect(gridMenuTag(6).disabled).toBe(true)
+    expect(gridMenuTag(5).disabled).toBe(false)
+    act(() => gridMenuTag(5).click())
+    expect(calls).toEqual([[1, 2, 3, 4]])
   })
 })

@@ -1,5 +1,6 @@
 import type { TagInfo } from "../houston/generated/TagInfo";
-import { MAX_TAGS_PER_SESSION } from "../houston/generated/DEFAULTS";
+import { MAX_TAGS_PER_GRID } from "../layout/tree";
+import type { TagUsage } from "./TagManager";
 import { TagChipRow } from "./tags";
 import type { TagEditorState } from "./tagEditing";
 import { FOCUS_HALO } from "./shadowChrome";
@@ -301,15 +302,11 @@ interface Props {
       attentionTone?: GridItem["attentionTone"];
       sessionIds?: number[];
       tagIds?: number[];
+      paneTagIds?: number[];
     }[]
   >;
   tags?: TagInfo[];
-  onSetGridTags?: (
-    path: string,
-    gridId: string,
-    sessionIds: number[],
-    tagIds: number[],
-  ) => void;
+  onSetGridTags?: (path: string, gridId: string, tagIds: number[]) => void;
   onTagCreate?: (name: string, color: string) => void;
   onTagUpdate?: (tag: number, name: string, color: string) => void;
   onTagDelete?: (tag: number) => void;
@@ -443,7 +440,6 @@ interface GridCtxMenu {
   gridId: string;
   name: string;
   canRemove: boolean;
-  sessionIds: number[];
   tagIds: number[];
 }
 
@@ -546,7 +542,7 @@ function TagManagerSurface({
 }: {
   open: boolean;
   tags: TagInfo[];
-  usage: Map<number, number>;
+  usage: Map<number, TagUsage>;
   highlight: string | null;
   onClose: () => void;
   onTagCreate?: (name: string, color: string) => void;
@@ -682,7 +678,6 @@ function WorkspaceContextMenu({
 function GridContextMenu({
   gridMenu,
   workspaces,
-  sessions,
   tags,
   onClose,
   onStartRename,
@@ -694,7 +689,6 @@ function GridContextMenu({
 }: {
   gridMenu: GridCtxMenu;
   workspaces: Workspace[];
-  sessions: SessionInfo[];
   tags: TagInfo[];
   onClose: () => void;
   onStartRename: (path: string, gridId: string) => void;
@@ -706,7 +700,6 @@ function GridContextMenu({
 }): React.JSX.Element {
   const workspaceName =
     workspaces.find((w) => w.path === gridMenu.path)?.name ?? gridMenu.path;
-  const taggable = gridMenu.sessionIds.length > 0;
   return (
     <div
       className={CTXMENU_CLS}
@@ -746,7 +739,7 @@ function GridContextMenu({
             <span>Close Tab</span>
           </button>
         )}
-        {taggable && tags.length > 0 && (
+        {tags.length > 0 && (
           <>
             <div className="ctx-sep" />
             <div
@@ -758,15 +751,7 @@ function GridContextMenu({
             {tags.map((t) => {
               const on = gridMenu.tagIds.includes(t.id);
               const capBlocked =
-                !on &&
-                gridMenu.sessionIds.some((sid) => {
-                  const s = sessions.find((x) => x.id === sid);
-                  return (
-                    s !== undefined &&
-                    !tagsOf(s).includes(t.id) &&
-                    tagsOf(s).length >= MAX_TAGS_PER_SESSION
-                  );
-                });
+                !on && gridMenu.tagIds.length >= MAX_TAGS_PER_GRID;
               return (
                 <button
                   key={t.id}
@@ -848,6 +833,7 @@ type GridItem = {
   attentionTone?: "error" | "needs-input" | "info";
   sessionIds?: number[];
   tagIds?: number[];
+  paneTagIds?: number[];
 };
 
 const TAG_FILTER_KEY = "houston.tagFilter";
@@ -1094,15 +1080,17 @@ function GridAttentionCount({
   );
 }
 
-// A tag filter is a filter, not a highlight: a tab carrying none of the active
-// tags leaves the rail. Unknown membership (tagIds undefined) is not "carries
-// none", so it stays — a filter must never hide what it cannot see.
+// A tab whose own and panes' tags carry no active tag leaves the rail. Unknown
+// pane membership (paneTagIds undefined) stays: never hide what it cannot see.
 function hiddenByTagFilter(
-  tagIds: number[] | undefined,
+  g: Pick<GridItem, "tagIds" | "paneTagIds">,
   activeTagIds: number[],
 ): boolean {
-  if (activeTagIds.length === 0 || tagIds === undefined) return false;
-  return !tagIds.some((id) => activeTagIds.includes(id));
+  if (activeTagIds.length === 0) return false;
+  const carries = (ids: number[] | undefined): boolean =>
+    ids?.some((id) => activeTagIds.includes(id)) ?? false;
+  if (carries(g.tagIds)) return false;
+  return g.paneTagIds !== undefined && !carries(g.paneTagIds);
 }
 
 function workspaceCarriesTag(
@@ -1113,12 +1101,24 @@ function workspaceCarriesTag(
 ): boolean {
   if (activeTagIds.length === 0) return true;
   if (grids && grids.length > 0)
-    return grids.some((g) => !hiddenByTagFilter(g.tagIds, activeTagIds));
+    return grids.some((g) => !hiddenByTagFilter(g, activeTagIds));
   return sessions.some(
     (s) =>
       s.project_dir === path &&
       tagsOf(s).some((id) => activeTagIds.includes(id)),
   );
+}
+
+// A pane matches through its own tags or through the tags of the grid holding it.
+function carriesActiveTag(
+  s: SessionInfo,
+  grids: GridItem[] | undefined,
+  activeTagIds: number[],
+): boolean {
+  const hit = (ids: number[] | undefined): boolean =>
+    ids?.some((id) => activeTagIds.includes(id)) ?? false;
+  if (hit(tagsOf(s))) return true;
+  return grids?.some((g) => g.sessionIds?.includes(s.id) && hit(g.tagIds)) ?? false;
 }
 
 function filterLabelFor(activeTagCount: number): string {
@@ -1327,7 +1327,7 @@ function ExpandedGridsRow({
       </Tooltip>
       )}
       {grids.map((g) => {
-        if (hiddenByTagFilter(g.tagIds, activeTagIds)) return null;
+        if (hiddenByTagFilter(g, activeTagIds)) return null;
         const gridOn =
           selected === w.path && selectedGridId === g.id;
         const stateDot = (
@@ -2110,8 +2110,9 @@ function RailTree({
             const own = liveCount(all);
             const matched =
               activeTagIds.length > 0
-                ? all.filter((s) => tagsOf(s).some((t) => activeTagIds.includes(t)))
-                    .length
+                ? all.filter((s) =>
+                    carriesActiveTag(s, gridsByWorkspace[w.path], activeTagIds),
+                  ).length
                 : 0;
             const unread = unreadByWs[w.path] ?? 0;
             const owed = owedByWs[w.path] ?? 0;
@@ -2570,7 +2571,6 @@ export function Sidebar({
       gridId: grid.id,
       name: grid.name,
       canRemove,
-      sessionIds: grid.sessionIds ?? [],
       tagIds: grid.tagIds ?? [],
     });
   };
@@ -2582,11 +2582,17 @@ export function Sidebar({
   const filterLabel = filterLabelFor(activeTagIds.length);
 
   const tagUsage = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const s of sessions)
-      for (const t of tagsOf(s)) m.set(t, (m.get(t) ?? 0) + 1);
+    const m = new Map<number, TagUsage>();
+    const at = (t: number): TagUsage => {
+      const u = m.get(t) ?? { panes: 0, grids: 0 };
+      m.set(t, u);
+      return u;
+    };
+    for (const s of sessions) for (const t of tagsOf(s)) at(t).panes += 1;
+    for (const grids of Object.values(gridsByWorkspace ?? {}))
+      for (const g of grids) for (const t of g.tagIds ?? []) at(t).grids += 1;
     return m;
-  }, [sessions]);
+  }, [sessions, gridsByWorkspace]);
 
   const toggleTagFilter = (id: number): void => {
     setTagFilter((cur) =>
@@ -2599,26 +2605,18 @@ export function Sidebar({
   };
 
   const toggleGridTag = (menu: GridCtxMenu, tagId: number): void => {
-    if (!menu.tagIds.includes(tagId)) {
-      const over = menu.sessionIds.filter((sid) => {
-        const s = sessions.find((x) => x.id === sid);
-        return (
-          s !== undefined &&
-          !tagsOf(s).includes(tagId) &&
-          tagsOf(s).length >= MAX_TAGS_PER_SESSION
-        );
-      });
-      if (over.length > 0) {
-        onOpenExternalError?.(
-          `refused: session ${over[0]} already carries ${MAX_TAGS_PER_SESSION} tags (the MAX_TAGS_PER_SESSION cap)`,
-        );
-        return;
-      }
+    const on = menu.tagIds.includes(tagId);
+    if (!on && menu.tagIds.length >= MAX_TAGS_PER_GRID) {
+      onOpenExternalError?.(
+        `refused: grid "${menu.name}" already carries ${menu.tagIds.length} tags (the MAX_TAGS_PER_GRID cap of ${MAX_TAGS_PER_GRID})`,
+      );
+      return;
     }
-    const next = menu.tagIds.includes(tagId)
+    const next = on
       ? menu.tagIds.filter((t) => t !== tagId)
       : [...menu.tagIds, tagId];
-    onSetGridTags?.(menu.path, menu.gridId, menu.sessionIds, next);
+    setGridMenu({ ...menu, tagIds: next });
+    onSetGridTags?.(menu.path, menu.gridId, next);
   };
 
   const openTagEditorAt = (e: React.MouseEvent, tag: TagInfo | null): void => {
@@ -2660,7 +2658,6 @@ export function Sidebar({
     <GridContextMenu
       gridMenu={gridMenu}
       workspaces={workspaces}
-      sessions={sessions}
       tags={tags}
       onClose={() => setGridMenu(null)}
       onStartRename={(path, gridId) => setGridRenaming({ path, gridId })}

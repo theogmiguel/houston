@@ -100,7 +100,8 @@ function makeFakeClient(): HoustonClientType {
     routineUpdate: vi.fn(),
     routineDelete: vi.fn(),
     routineRunNow: vi.fn(),
-    routineRuns: vi.fn()
+    routineRuns: vi.fn(),
+    setSessionTags: vi.fn()
   }
   return new Proxy(base, {
     get(target, prop, receiver) {

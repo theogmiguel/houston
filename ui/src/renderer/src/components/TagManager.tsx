@@ -102,6 +102,23 @@ function TagForm({
   );
 }
 
+export interface TagUsage {
+  panes: number;
+  grids: number;
+}
+
+const NO_USAGE: TagUsage = { panes: 0, grids: 0 };
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+function usageText(u: TagUsage, joiner = ", "): string {
+  if (u.grids === 0) return plural(u.panes, "pane");
+  if (u.panes === 0) return plural(u.grids, "grid");
+  return `${plural(u.panes, "pane")}${joiner}${plural(u.grids, "grid")}`;
+}
+
 function TagRow({
   tag,
   count,
@@ -110,7 +127,7 @@ function TagRow({
   onDelete,
 }: {
   tag: TagInfo;
-  count: number;
+  count: TagUsage;
   isNew: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -131,7 +148,7 @@ function TagRow({
         {tag.name}
       </span>
       <span className="flex-none text-[var(--text-faint)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tabular-nums">
-        {count} session{count === 1 ? "" : "s"}
+        {usageText(count)}
       </span>
       <Tooltip label={`Rename or recolour ${tag.name}`}>
         <button
@@ -171,7 +188,7 @@ export function TagManager({
 }: {
   open: boolean;
   tags: TagInfo[];
-  usage: Map<number, number>;
+  usage: Map<number, TagUsage>;
   /** Name of a tag just made elsewhere, marked once so the eye can find it. */
   highlight?: string | null;
   onCreate: (name: string, color: string) => void;
@@ -245,7 +262,7 @@ export function TagManager({
                     <TagRow
                       key={t.id}
                       tag={t}
-                      count={usage.get(t.id) ?? 0}
+                      count={usage.get(t.id) ?? NO_USAGE}
                       isNew={highlight !== null && t.name === highlight}
                       onEdit={() => {
                         setCreating(false);
@@ -312,7 +329,7 @@ export function TagManager({
       {confirmDelete && (
         <TagDeleteConfirm
           tag={confirmDelete}
-          count={usage.get(confirmDelete.id) ?? 0}
+          count={usage.get(confirmDelete.id) ?? NO_USAGE}
           onCancel={() => setConfirmDelete(null)}
           onConfirm={() => {
             onDelete(confirmDelete.id);
@@ -332,7 +349,7 @@ function TagDeleteConfirm({
   onCancel,
 }: {
   tag: TagInfo;
-  count: number;
+  count: TagUsage;
   onConfirm: () => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -341,9 +358,9 @@ function TagDeleteConfirm({
       title="DELETE TAG"
       confirmLabel="Delete"
       message={
-        count === 0
+        count.panes + count.grids === 0
           ? `Delete the tag "${tag.name}"?`
-          : `"${tag.name}" is on ${count} session${count === 1 ? "" : "s"} — remove it from all of them?`
+          : `"${tag.name}" is on ${usageText(count, " and ")} — remove it from all of them?`
       }
       onConfirm={onConfirm}
       onCancel={onCancel}

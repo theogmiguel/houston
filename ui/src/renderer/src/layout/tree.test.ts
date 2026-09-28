@@ -30,6 +30,9 @@ import {
   regrid,
   removeGrid,
   renameGrid,
+  setGridTags,
+  dropTagFromGrids,
+  gridTagIds,
   reviveLeaf,
   setActiveStackTab,
   sessionPaneIds,
@@ -714,6 +717,37 @@ describe('grid auto-naming (the tab-naming rule)', () => {
     renameGrid('/ws/auto-user-rename', g.id, 'my review')
     const after = autoNameGrid('/ws/auto-user-rename', g.id, 'Claude Code')
     expect(after.find((x) => x.id === g.id)?.name).toBe('my review')
+  })
+})
+
+describe('grid tags are the grid\u2019s own, apart from its panes\u2019 tags', () => {
+  it('a new grid starts with an empty tag list, a legacy grid with none recorded', () => {
+    const [legacy, fresh] = addGrid('/ws/tags-new', 'Untitled')
+    expect(legacy.tags).toBeUndefined()
+    expect(fresh.tags).toEqual([])
+  })
+
+  it('setGridTags persists one grid\u2019s tags, deduplicated, and leaves its siblings alone', () => {
+    const [g1, g2] = addGrid('/ws/tags-set', 'Second')
+    setGridTags('/ws/tags-set', g2.id, [4, 2, 4])
+    const loaded = loadGrids('/ws/tags-set')
+    expect(gridTagIds(loaded[1])).toEqual([4, 2])
+    expect(loaded[0]).toEqual(g1)
+  })
+
+  it('a deleted tag leaves every grid that carried it, and nothing is written when none did', () => {
+    const [g1, g2] = addGrid('/ws/tags-drop', 'Second')
+    setGridTags('/ws/tags-drop', g1.id, [1, 2])
+    setGridTags('/ws/tags-drop', g2.id, [2])
+    const next = dropTagFromGrids('/ws/tags-drop', 2)
+    expect(next?.map(gridTagIds)).toEqual([[1], []])
+    expect(loadGrids('/ws/tags-drop').map(gridTagIds)).toEqual([[1], []])
+    expect(dropTagFromGrids('/ws/tags-drop', 9)).toBeNull()
+  })
+
+  it('gridTagIds ignores a malformed stored value rather than trusting it', () => {
+    expect(gridTagIds({ id: 'g', name: 'x', tags: 'nope' as unknown as number[] })).toEqual([])
+    expect(gridTagIds({ id: 'g', name: 'x', tags: [1, 1.5, 3] })).toEqual([1, 3])
   })
 })
 

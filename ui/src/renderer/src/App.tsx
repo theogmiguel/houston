@@ -274,6 +274,9 @@ import {
   regrid,
   removeGrid,
   renameGrid,
+  setGridTags,
+  dropTagFromGrids,
+  gridTagIds,
   setActiveStackTab,
   sessionForPaneId,
   removeLeaf,
@@ -942,6 +945,12 @@ export function App(): React.JSX.Element {
   );
   const gridsByWsRef = useRef(gridsByWs);
   gridsByWsRef.current = gridsByWs;
+  const dropDeletedTagFromGrids = useCallback((tag: number): void => {
+    for (const path of gridsByWsRef.current.keys()) {
+      const next = dropTagFromGrids(path, tag);
+      if (next) setGridsByWs((prev) => new Map(prev).set(path, next));
+    }
+  }, []);
   const selectedGridByWsRef = useRef(selectedGridByWs);
   selectedGridByWsRef.current = selectedGridByWs;
   const keyForRef = (path: string): string => {
@@ -1263,6 +1272,7 @@ export function App(): React.JSX.Element {
         if (patchRosterIfNeeded(msg, setSessions)) return;
         handleInboxRowMessage(msg, setInboxRows);
         handleTagWireMessage(msg, setTags);
+        if (msg.type === "tag_deleted") dropDeletedTagFromGrids(msg.tag);
         checkout.handleMessage(msg);
         switch (msg.type) {
           case "hello_ok":
@@ -1709,7 +1719,7 @@ export function App(): React.JSX.Element {
       clearTimeout(bootTimer);
       bootClient?.close();
     };
-  }, [pushError, retryNonce]);
+  }, [pushError, retryNonce, dropDeletedTagFromGrids]);
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     outputHandlers.current.set(id, sink);
@@ -1787,6 +1797,7 @@ export function App(): React.JSX.Element {
         attentionTone?: "error" | "needs-input" | "info";
         sessionIds?: number[];
         tagIds?: number[];
+        paneTagIds?: number[];
       }[]
     > = {};
     const unreadBySession = new Map<number, Notice[]>();
@@ -1799,7 +1810,8 @@ export function App(): React.JSX.Element {
     for (const w of orderedWorkspaces) {
       out[w.path] = gridsFor(w.path).map((g) => {
         const st = warmLayouts.get(gridStorageKey(w.path, g.id));
-        if (!st) return { id: g.id, name: g.name };
+        const tagIds = gridTagIds(g);
+        if (!st) return { id: g.id, name: g.name, tagIds };
         const ids = preorderSessions(st.tree);
         const gridSessions = ids
           .map((id) => sessions.get(id))
@@ -1815,7 +1827,7 @@ export function App(): React.JSX.Element {
           : gridNotices.some((notice) => notice.severity === "needs-input")
             ? "needs-input"
             : "info";
-        const tagIds = [
+        const paneTagIds = [
           ...new Set(
             ids.flatMap((id) => sessions.get(id)?.tags ?? []),
           ),
@@ -1830,6 +1842,7 @@ export function App(): React.JSX.Element {
           attentionTone,
           sessionIds: ids,
           tagIds,
+          paneTagIds,
         };
       });
     }
@@ -2108,6 +2121,27 @@ export function App(): React.JSX.Element {
       }
     }
   }, [gridsByWs, layouts, sessions]);
+  // A legacy grid's tags were its panes' union, written to every pane: move the
+  // union to the grid once and clear the panes. An empty tree may be unsynced.
+  useEffect(() => {
+    if (conn.kind !== "ready") return;
+    for (const [path, grids] of gridsByWs) {
+      for (const g of grids) {
+        if (g.tags !== undefined) continue;
+        const st = layouts.get(gridStorageKey(path, g.id));
+        if (!st) continue;
+        const known = preorderSessions(st.tree)
+          .map((id) => sessions.get(id))
+          .filter((s): s is SessionInfo => s !== undefined);
+        if (known.length === 0) continue;
+        const tagged = known.filter((s) => (s.tags ?? []).length > 0);
+        const union = [...new Set(tagged.flatMap((s) => s.tags))];
+        const next = setGridTags(path, g.id, union);
+        setGridsByWs((prev) => new Map(prev).set(path, next));
+        for (const s of tagged) conn.client.setSessionTags(s.id, []);
+      }
+    }
+  }, [conn, gridsByWs, layouts, sessions]);
   const handleRemoveGrid = useCallback((path: string, gridId: string): void => {
     const before = gridsByWsRef.current.get(path) ?? loadGrids(path);
     const next = removeGrid(path, gridId);
@@ -3422,10 +3456,11 @@ export function App(): React.JSX.Element {
               onSshConnect={openSshConnect}
               gridsByWorkspace={gridsByWorkspace}
               tags={tags}
-              onSetGridTags={(_path, _gridId, sessionIds, tagIds) => {
-                if (conn.kind !== "ready") return;
-                for (const sid of sessionIds) conn.client.setSessionTags(sid, tagIds);
-              }}
+              onSetGridTags={(path, gridId, tagIds) =>
+                setGridsByWs((prev) =>
+                  new Map(prev).set(path, setGridTags(path, gridId, tagIds)),
+                )
+              }
               onTagCreate={(name, color) => {
                 if (conn.kind === "ready") conn.client.tagCreate(name, color);
               }}
