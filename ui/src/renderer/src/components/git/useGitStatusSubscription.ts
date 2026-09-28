@@ -23,6 +23,7 @@ export interface GitStatusSubscriptionParams {
   setBehind: Dispatch<SetStateAction<number>>
   setUpstream: Dispatch<SetStateAction<string | null>>
   setDefaultBase: Dispatch<SetStateAction<string | null>>
+  setNotARepo: Dispatch<SetStateAction<boolean>>
   setStatusError: Dispatch<SetStateAction<string | null>>
   setCommitError: Dispatch<SetStateAction<string | null>>
   setCommitting: Dispatch<SetStateAction<boolean>>
@@ -47,6 +48,7 @@ export function useGitStatusSubscription({
   setBehind,
   setUpstream,
   setDefaultBase,
+  setNotARepo,
   setStatusError,
   setCommitError,
   setCommitting,
@@ -58,6 +60,7 @@ export function useGitStatusSubscription({
     setFiles(null)
     setDiff(null)
     setSelected(null)
+    setNotARepo(false)
     setStatusError(null)
     setCommitError(null)
     if (!client || !repoDir) return
@@ -72,6 +75,7 @@ export function useGitStatusSubscription({
       setBehind(msg.behind)
       setUpstream(msg.upstream ?? null)
       setDefaultBase(msg.default_base ?? null)
+      setNotARepo(msg.not_a_repo)
       setPushAfterCommit(false)
       // `git_push` has no reply of its own — a fresh `git_status` broadcast IS
       // the push's receipt, which is why pendingPush clears here.

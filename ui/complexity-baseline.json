@@ -36,7 +36,7 @@
     },
     "src/renderer/src/components/ChangesPane.tsx": {
       "total": 192,
-      "worst": 27,
+      "worst": 26,
       "over": 1
     },
     "src/renderer/src/components/Chip.tsx": {

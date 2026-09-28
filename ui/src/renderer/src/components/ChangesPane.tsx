@@ -547,6 +547,7 @@ export function ChangesPane({
   const [behind, setBehind] = useState(0)
   const [upstream, setUpstream] = useState<string | null>(null)
   const [defaultBase, setDefaultBase] = useState<string | null>(null)
+  const [notARepo, setNotARepo] = useState(false)
   const [scope, setScope] = useState<'working' | 'branch'>('working')
   const [selected, setSelected] = useState<string | null>(null)
   const [diff, setDiff] = useState<DiffState | null>(null)
@@ -643,6 +644,7 @@ export function ChangesPane({
     setBehind,
     setUpstream,
     setDefaultBase,
+    setNotARepo,
     setStatusError,
     setCommitError,
     setCommitting,
@@ -822,8 +824,7 @@ export function ChangesPane({
     [client, repoDir]
   )
 
-  const notARepo = statusError !== null && statusError.includes('not a git repository')
-  const paneState = paneStateFor(repoDir, statusError, rows.length, files !== null)
+  const paneState = paneStateFor(repoDir, notARepo, statusError, rows.length, files !== null)
 
   const reviewing = review !== null
 

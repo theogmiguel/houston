@@ -2407,14 +2407,19 @@ async fn send_git_status(
 ) -> anyhow::Result<()> {
     let d = PathBuf::from(&dir);
     let b = base.clone();
-    let (files, sync, default_base) = tokio::task::spawn_blocking(move || {
+    let (files, sync, default_base, not_a_repo) = tokio::task::spawn_blocking(move || {
+        // A missing directory stays an error; one that exists without git is
+        // a workspace the panel reports as such, not a failed request.
+        if d.is_dir() && !crate::git::is_git_repo(&d) {
+            return anyhow::Ok((Vec::new(), crate::git::SyncStatus::default(), None, true));
+        }
         let files = match b.as_deref() {
             Some(base) => crate::git::status_vs_base(&d, base)?,
             None => crate::git::status(&d)?,
         };
         let sync = crate::git::sync(&d);
         let default_base = crate::git::default_base(&d);
-        anyhow::Ok((files, sync, default_base))
+        anyhow::Ok((files, sync, default_base, false))
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("git status task panicked: {e}")))?;
@@ -2429,6 +2434,7 @@ async fn send_git_status(
             behind: sync.behind,
             base,
             default_base,
+            not_a_repo,
         },
     )
     .await;
