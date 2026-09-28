@@ -58,9 +58,9 @@ describe('Changes pane — state matrix (§14)', () => {
     expect(h.client.gitStatusCalls.length).toBeGreaterThan(before)
   })
 
-  it('not-a-repo: the daemon\'s own substring routes to a distinct state naming `git init`', () => {
+  it('not-a-repo: the status reply\'s flag routes to a distinct state naming `git init`', () => {
     const h = mount({})
-    act(() => h.client.emit({ type: 'error', message: '/repo is not a git repository' }))
+    h.status([], { branch: null, upstream: null, default_base: null, not_a_repo: true })
     expect(state()).toBe('not-a-repo')
     const body = q('[data-testid="changes-not-a-repo"]')!
     expect(body.textContent).toContain('git init')

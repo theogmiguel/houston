@@ -370,8 +370,10 @@ async fn oversized_diff_sets_the_truncation_flag() {
     assert!(patch.len() <= 512 * 1024);
 }
 
+// A directory without git is a normal workspace, not a failure: an error
+// envelope here surfaces as an app-wide error on every Changes refresh.
 #[tokio::test]
-async fn non_git_dir_returns_error_envelope() {
+async fn non_git_dir_replies_not_a_repo_status() {
     let (addr, _state) = start_daemon().await;
     let plain = tempfile::tempdir().unwrap();
 
@@ -386,14 +388,14 @@ async fn non_git_dir_returns_error_envelope() {
     ws.send(Message::text(msg)).await.unwrap();
     loop {
         match next_control(&mut ws).await {
-            proto::ServerMsg::Error { message, .. } => {
-                assert!(
-                    message.contains("not a git repository"),
-                    "unexpected error: {message}"
-                );
+            proto::ServerMsg::GitStatus {
+                not_a_repo, files, ..
+            } => {
+                assert!(not_a_repo, "a plain directory must reply not_a_repo");
+                assert!(files.is_empty(), "a non-repo has no files: {files:?}");
                 break;
             }
-            proto::ServerMsg::GitStatus { .. } => panic!("expected an error envelope"),
+            proto::ServerMsg::Error { message, .. } => panic!("unexpected error: {message}"),
             _ => continue,
         }
     }

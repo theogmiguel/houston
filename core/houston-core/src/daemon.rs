@@ -11916,6 +11916,86 @@ impl Daemon {
         reusable: bool,
         effort: Option<proto::ChatEffort>,
     ) -> Result<proto::SessionInfo> {
+        self.spawn_agent_pane(
+            caller,
+            kind,
+            model,
+            cwd,
+            brief,
+            auto_approve,
+            profile,
+            role,
+            target_workspace,
+            reusable,
+            effort,
+            false,
+        )
+    }
+
+    /// A handoff pane is a top-level pane with no delegation, so the caller stays free to
+    /// close. Orchestration and the approval ceiling still apply; only a parentless pane
+    /// may hand off, so a child cannot escape its parent's caps through it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn orchestrate_handoff(
+        self: &Arc<Self>,
+        caller: u32,
+        kind: proto::AgentKind,
+        model: Option<String>,
+        cwd: Option<String>,
+        brief: orchestrate::Brief,
+        auto_approve: Option<bool>,
+        profile: Option<String>,
+        role: Option<String>,
+        target_workspace: Option<String>,
+        effort: Option<proto::ChatEffort>,
+    ) -> Result<proto::SessionInfo> {
+        self.spawn_agent_pane(
+            caller,
+            kind,
+            model,
+            cwd,
+            brief,
+            auto_approve,
+            profile,
+            role,
+            target_workspace,
+            false,
+            effort,
+            true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_agent_pane(
+        self: &Arc<Self>,
+        caller: u32,
+        kind: proto::AgentKind,
+        model: Option<String>,
+        cwd: Option<String>,
+        brief: orchestrate::Brief,
+        auto_approve: Option<bool>,
+        profile: Option<String>,
+        role: Option<String>,
+        target_workspace: Option<String>,
+        reusable: bool,
+        effort: Option<proto::ChatEffort>,
+        handoff: bool,
+    ) -> Result<proto::SessionInfo> {
+        if handoff {
+            if let Some(parent) = self.parent_of(caller) {
+                bail!(
+                    "handoff refused: pane {caller} is a child of pane {parent} — a child \
+                     reports its work to its parent through pane_submit; only a pane without \
+                     a parent may hand off to a new independent pane"
+                );
+            }
+            if brief.output_format.is_some() {
+                bail!(
+                    "handoff refused: output_format describes an answer for a parent, and a \
+                     handoff pane has no parent to answer — put the expected result in prompt"
+                );
+            }
+        }
         // Cleanup and registration share the parent/child live roster. Keep the parent alive
         // through the whole spawn so a completed temporary parent cannot disappear between the
         // cap check and its durable delegation row.
@@ -11977,22 +12057,24 @@ impl Daemon {
             }
             None => project_dir.clone(),
         };
-        if let Some(role) = &role {
-            self.assert_role_free(caller, role)?;
-        }
-        let direct = self.live_children_of(caller).len() as u32;
-        if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::children_cap_verdict(
-            caller,
-            direct,
-            self.orchestration_max_live_children(),
-        ) {
-            bail!("{msg}");
-        }
-        if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::depth_cap_verdict(
-            self.spawn_depth_of(caller) + 1,
-            self.orchestration_max_spawn_depth(),
-        ) {
-            bail!("{msg}");
+        if !handoff {
+            if let Some(role) = &role {
+                self.assert_role_free(caller, role)?;
+            }
+            let direct = self.live_children_of(caller).len() as u32;
+            if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::children_cap_verdict(
+                caller,
+                direct,
+                self.orchestration_max_live_children(),
+            ) {
+                bail!("{msg}");
+            }
+            if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::depth_cap_verdict(
+                self.spawn_depth_of(caller) + 1,
+                self.orchestration_max_spawn_depth(),
+            ) {
+                bail!("{msg}");
+            }
         }
 
         let (prompts_dir, _bin_dir) = init_orchestration_scope(&project_dir)?;
@@ -12073,7 +12155,7 @@ impl Daemon {
             hidden: false,
             shell_override: None,
             swarm_agent: None,
-            spawned_by: Some(caller),
+            spawned_by: (!handoff).then_some(caller),
             extra_args,
             extra_env,
             wrap: None,
@@ -12083,6 +12165,9 @@ impl Daemon {
         });
         let info = spawned?;
         self.record_approval_mode(sid, requested_mode);
+        if handoff {
+            return Ok(info);
+        }
         if let Err(parent_error) = self.get(caller) {
             let rollback = self.rollback_spawned_child(sid);
             return match rollback {

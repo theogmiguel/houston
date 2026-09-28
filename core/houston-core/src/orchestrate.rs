@@ -24,6 +24,14 @@ fn cli_wait_transport_timeout(timeout_ms: u64) -> std::time::Duration {
 pub const SPAWN_NEXT_ACTION: &str =
     "Continue independent work; otherwise call `pane_wait` for this child or your inbox. Do not poll status.";
 
+pub const HANDOFF_NEXT_ACTION: &str =
+    "The new pane is independent: it is not your child, never reports back, and the pane_* verbs \
+     cannot address it. Tell the operator its title; they may close this pane.";
+
+pub const HANDOFF_REUSABLE_REFUSED: &str =
+    "handoff refused: reusable keeps a child for its parent's follow-up prompts, and a handoff \
+     pane has no parent — it is never closed automatically, so omit reusable";
+
 pub const MAX_LIVE_CHILDREN: u32 = 4;
 
 pub const MAX_SPAWN_DEPTH: u32 = 1;
@@ -859,6 +867,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
             "role",
             "target_workspace",
             "reusable",
+            "handoff",
             "effort",
             "output_format",
             "boundaries",
@@ -2085,6 +2094,17 @@ operator asks or the child itself reports being blocked. A temporary child
 closes after its final durable handback; use `--reusable` for follow-up
 prompts or a live pane.
 
+## Handing off
+
+When the operator asks for a handoff — the work continues in a new pane they
+will drive, and this pane is no longer needed — spawn with `--handoff`
+(`handoff: true` on `pane_spawn`). The new pane is an ordinary top-level
+pane, not your child: it never reports back, the pane verbs cannot address
+it, and the operator can close this pane without killing it. Put everything
+it needs in the prompt, since it cannot ask you. `--output-format` and
+`--reusable` are refused with `--handoff`, and only a pane without a parent
+may hand off.
+
 ## How a delegation actually goes
 
 1. `hs-pane spawn --kind <cli> --prompt "…" [--output-format "…"]
@@ -2346,6 +2366,8 @@ hs-pane — a Houston pane controlling sibling agent panes
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
                 [--role NAME]          (unique among your live children)
                 [--target-workspace DIR] [--reusable]
+                [--handoff]            (an independent pane, not a child:
+                                        no handback, and this pane may close)
                 [--effort low|medium|high|xhigh|max]
                 [--output-format \"…\"] [--boundaries \"…\"]
                                        (the brief: shape of the answer, and
@@ -2536,6 +2558,9 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             }
             if flags.contains_key("reusable") {
                 body["reusable"] = json!(true);
+            }
+            if flags.contains_key("handoff") {
+                body["handoff"] = json!(true);
             }
             if let Some(effort) = flags.get("effort") {
                 body["effort"] = json!(effort);

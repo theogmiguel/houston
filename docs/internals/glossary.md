@@ -43,6 +43,7 @@ named.
 | **routine** | A standalone workspace automation: a named prompt with a cadence and its own execution settings (engine, model, effort, working directory, permission mode, isolation). Fired by `routine_fire_loop` on its cadence, attended or not; `routine_run_now` fires the same path by hand with `trigger = Manual`. | `routines.rs`, `daemon.rs::routine_fire_in_pane` |
 | **run** | One firing of a routine, recorded independently as a `routine_runs` row (trigger, status, its pane session, timestamps, error) — never only a message. Every run starts a fresh terminal pane with a fresh context; nothing resumes. Ends with a typed `RoutineOutcome`. | `db.rs::routine_runs`, `daemon.rs::RoutineRun` |
 | **handoff** | Giving a pane's conversation to a DIFFERENT CLI: the packet (the pane's thread plus the operator's ask) a new pane is launched with. | `PaneHandoff.tsx`, `handoffPacket.ts` |
+| **handoff pane** | A pane an agent opens with `pane_spawn{handoff: true}`: top-level, with no parent or delegation, so the caller closes without the live-children guard. Refused from a child. | `daemon.rs::orchestrate_handoff` |
 | **handoff document** | The older, generative form: a budgeted prompt assembled from a pane's command blocks, written by a hidden CLI session. Wire and daemon only — no UI door. | `handoff.rs` |
 
 ## Runtime nouns

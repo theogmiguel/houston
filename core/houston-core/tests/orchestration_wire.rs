@@ -1074,6 +1074,111 @@ async fn killing_a_parent_with_live_children_needs_confirmation() {
 }
 
 #[tokio::test]
+async fn a_handoff_pane_is_independent_so_its_caller_closes_without_confirmation() {
+    let _guard = serial().await;
+    let r = rig("handoff-independent").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (status, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({
+                "kind": "codex",
+                "prompt": "continue the manual QA",
+                "role": "qa",
+                "handoff": true,
+            }),
+        )
+        .await;
+    assert_eq!(status, 200, "body: {body}");
+    assert_eq!(body["handoff"], true, "{body}");
+    let next = body["next_action"].as_str().unwrap();
+    assert!(next.contains("independent"), "{next}");
+    let handed: u32 = body["session_id"].as_u64().unwrap() as u32;
+    let info = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|s| s.id == handed)
+        .expect("the handoff pane is live");
+    assert_eq!(info.spawned_by, None, "a handoff pane has no parent");
+    assert_eq!(info.title, "qa", "role titles the handoff pane");
+
+    let (status, body) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/prompt",
+        &token,
+        Some(serde_json::json!({"session": handed, "text": "more"})),
+    )
+    .await;
+    assert_ne!(
+        status, 200,
+        "the caller must not address a handoff pane: {body}"
+    );
+
+    r.daemon
+        .session_kill_checked(pane.id, false)
+        .expect("the caller of a handoff has no live children to confirm");
+    assert!(
+        r.daemon.list().iter().any(|s| s.id == handed),
+        "closing the caller must leave the handoff pane running"
+    );
+    r.daemon.kill(handed).unwrap();
+}
+
+#[tokio::test]
+async fn a_handoff_is_refused_from_a_child_and_with_parent_only_options() {
+    let _guard = serial().await;
+    let r = rig("handoff-refusals").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+
+    for (extra, needle) in [
+        (serde_json::json!({"reusable": true}), "reusable"),
+        (
+            serde_json::json!({"output_format": "one line"}),
+            "output_format",
+        ),
+    ] {
+        let mut req = serde_json::json!({"kind": "codex", "prompt": "go", "handoff": true});
+        req.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let (status, body) = r.post_spawn(&token, req).await;
+        assert_eq!(status, 409, "{body}");
+        let err = body["error"].as_str().unwrap();
+        assert!(
+            err.contains("handoff refused") && err.contains(needle),
+            "{err}"
+        );
+    }
+
+    let (_, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "kid"}),
+        )
+        .await;
+    let child: u32 = body["session_id"].as_u64().unwrap() as u32;
+    let (status, body) = r
+        .post_spawn(
+            &r.token_for(child),
+            serde_json::json!({"kind": "codex", "prompt": "go", "handoff": true}),
+        )
+        .await;
+    assert_eq!(status, 409, "{body}");
+    let err = body["error"].as_str().unwrap();
+    assert!(
+        err.contains("handoff refused") && err.contains(&format!("child of pane {}", pane.id)),
+        "{err}"
+    );
+    r.daemon.kill(child).unwrap();
+}
+
+#[tokio::test]
 async fn the_status_source_follows_the_detected_cli_not_the_spawn_kind() {
     let _guard = serial().await;
     let r = rig("detected-source").await;

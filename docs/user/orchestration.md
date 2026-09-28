@@ -82,6 +82,16 @@ result does not by itself close the pane. Set `reusable: true` in MCP/HTTP, or p
 `--reusable` to `hs-pane spawn`, when the child must remain available for follow-up
 prompts or terminal inspection. A reusable child is never closed by this cleanup.
 
+## Handing work off to a new pane
+
+When you ask an agent to hand its work off to a new pane, and you no longer need the
+original pane, the agent spawns with `handoff: true` (`--handoff` for `hs-pane spawn`).
+The new pane is an ordinary pane rather than a child: it does not report back, the
+original agent cannot prompt or wait on it, and you can close the original pane without
+closing the new one. Only a pane without a parent can hand off, and `reusable` and
+`output_format` are refused with `handoff`. Orchestration must be enabled in
+Settings → Orchestration.
+
 Spawn may also request `effort` (`low`, `medium`, `high`, `xhigh` or `max`) through MCP,
 HTTP or `hs-pane spawn --effort`; omitting it keeps the CLI default, and providers without a
 per-run effort setting refuse that request.

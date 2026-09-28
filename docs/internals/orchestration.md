@@ -70,11 +70,16 @@ during setup. This is the one place `core/` gains a capability it cannot see its
 `browser_click` and `browser_type` pass a human confirmation gate before acting.
 
 `pane_spawn` takes `kind` (`claude | codex | antigravity | opencode | cursor | grok`), `prompt`,
-and optional `model`, `cwd`, `target_workspace`, `reusable`, `effort`, `auto_approve`,
-`profile`, `role`, `output_format`, `boundaries`. `target_workspace` must match a registered
+and optional `model`, `cwd`, `target_workspace`, `reusable`, `handoff`, `effort`,
+`auto_approve`, `profile`, `role`, `output_format`, `boundaries`. `target_workspace` must match a registered
 workspace after canonicalization, and `cwd` must remain under that root. `reusable` defaults
 to false for new API spawns; legacy delegation rows migrate as reusable to preserve their
 prior behavior. `effort` is provider-validated at the launch boundary.
+`handoff: true` opens a top-level pane instead of a child: no `spawned_by`, no delegation
+row, so no handback, cleanup or live-children guard on the caller's close. It bypasses the
+child and depth caps, so it is refused from any pane that has a parent, and with `reusable`
+or `output_format`, which only mean something to a parent. Orchestration must still be on,
+and the approval ceiling still applies.
 `pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`.
 
 `orchestrate.rs` is the pure layer under all of it — no DB, no PTY: scope and cap

@@ -94,11 +94,14 @@ const PANE_ROUTING: &str = concat!(
      question, or an exit. Use diagnostics only after a wait timeout, for help, or when the \
      operator asks; do not sit in a diagnostic loop. ",
     "Its signature: `pane_spawn{kind: claude|codex|antigravity|opencode|cursor|grok, prompt, model?, cwd?, ",
-    "auto_approve?, profile?, role?, target_workspace?, reusable?, effort?, output_format?, \
-     boundaries?}` — `role` is your own short name ",
+    "auto_approve?, profile?, role?, target_workspace?, reusable?, handoff?, effort?, \
+     output_format?, boundaries?}` — `role` is your own short name ",
     "for that child, unique among your live children, and it is how every wake from it identifies ",
     "itself; `output_format` and `boundaries` are the other two thirds of a brief, composed into ",
     "the prompt for you. ",
+    "When the user asks for a handoff — the work continues in a new pane and this one is no \
+     longer needed — pass `handoff: true`: the new pane is independent, not your child, so it \
+     never reports back and the user can close this pane without killing it. ",
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
@@ -242,6 +245,13 @@ impl ToolProvider for OrchestrationTools {
                         .get("reusable")
                         .and_then(Value::as_bool)
                         .unwrap_or(false);
+                    let handoff = args
+                        .get("handoff")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    if handoff && reusable {
+                        return Err(ToolError(orchestrate::HANDOFF_REUSABLE_REFUSED.to_string()));
+                    }
                     let effort = args
                         .get("effort")
                         .cloned()
@@ -259,19 +269,34 @@ impl ToolProvider for OrchestrationTools {
                         boundaries: opt_str(args, "boundaries"),
                     };
                     let info = tokio::task::spawn_blocking(move || {
-                        daemon.orchestrate_spawn_with_options(
-                            caller,
-                            kind,
-                            model,
-                            cwd,
-                            brief,
-                            auto_approve,
-                            profile,
-                            role,
-                            target_workspace,
-                            reusable,
-                            effort,
-                        )
+                        if handoff {
+                            daemon.orchestrate_handoff(
+                                caller,
+                                kind,
+                                model,
+                                cwd,
+                                brief,
+                                auto_approve,
+                                profile,
+                                role,
+                                target_workspace,
+                                effort,
+                            )
+                        } else {
+                            daemon.orchestrate_spawn_with_options(
+                                caller,
+                                kind,
+                                model,
+                                cwd,
+                                brief,
+                                auto_approve,
+                                profile,
+                                role,
+                                target_workspace,
+                                reusable,
+                                effort,
+                            )
+                        }
                     })
                     .await
                     .map_err(|e| ToolError(format!("spawn task panicked: {e}")))?
@@ -284,7 +309,12 @@ impl ToolProvider for OrchestrationTools {
                         "cwd": info.cwd,
                         "workspace": info.project_dir,
                         "reusable": reusable,
-                        "next_action": orchestrate::SPAWN_NEXT_ACTION,
+                        "handoff": handoff,
+                        "next_action": if handoff {
+                            orchestrate::HANDOFF_NEXT_ACTION
+                        } else {
+                            orchestrate::SPAWN_NEXT_ACTION
+                        },
                     })))
                 }
                 "pane_list" => {
@@ -551,6 +581,15 @@ impl OrchestrationTools {
                                 "Keep the pane after a completed handback for follow-up prompts. \
                                  Omit or set false for automatic cleanup after the final round.",
                         },
+                        "handoff": {
+                            "type": "boolean",
+                            "default": false,
+                            "description":
+                                "Open an independent pane instead of a child: no handback, no \
+                                 cleanup, and your pane may close without killing it. For when \
+                                 the user hands the work off and no longer needs this pane. \
+                                 Refused from a child pane and with reusable or output_format.",
+                        },
                         "effort": {
                             "type": "string",
                             "enum": ["low", "medium", "high", "xhigh", "max"],
@@ -579,7 +618,8 @@ impl OrchestrationTools {
                             "description":
                                 "Your own short name for this child (\"reviewer\"), carried \
                                  in `pane_list` and in every handback. Lowercase, digits and \
-                                 hyphens; unique among your live children.",
+                                 hyphens; unique among your live children. With handoff, \
+                                 only the new pane's title.",
                         },
                         "output_format": {
                             "type": "string",

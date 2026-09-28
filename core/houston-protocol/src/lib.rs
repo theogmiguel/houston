@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 114;
+pub const PROTOCOL_VERSION: u32 = 115;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -2790,6 +2790,9 @@ pub enum ServerMsg {
         behind: u32,
         base: Option<String>,
         default_base: Option<String>,
+        /// `dir` exists but is outside any work tree; every other field is empty.
+        #[serde(default)]
+        not_a_repo: bool,
     },
     GitDiff {
         dir: String,
@@ -3680,6 +3683,7 @@ mod tests {
             behind: 0,
             base: None,
             default_base: Some("main".into()),
+            not_a_repo: false,
         };
         let value = serde_json::to_value(&msg).unwrap();
         let obj = value.as_object().unwrap();
@@ -3696,6 +3700,7 @@ mod tests {
             "behind",
             "base",
             "default_base",
+            "not_a_repo",
         ];
         expected.sort_unstable();
         assert_eq!(keys, expected);

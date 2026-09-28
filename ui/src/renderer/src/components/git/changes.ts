@@ -199,12 +199,13 @@ export type ChangesPaneState = 'idle' | 'not-a-repo' | 'error' | 'loading' | 'em
 
 export function paneStateFor(
   repoDir: string | null,
+  notARepo: boolean,
   statusError: string | null,
   rowCount: number,
   statusLoaded: boolean
 ): ChangesPaneState {
   if (repoDir === null) return 'idle'
-  if (statusError !== null && statusError.includes('not a git repository')) return 'not-a-repo'
+  if (notARepo) return 'not-a-repo'
   if (statusError !== null) return 'error'
   if (!statusLoaded) return 'loading'
   return rowCount === 0 ? 'empty' : 'filled'
