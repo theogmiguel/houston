@@ -2410,7 +2410,7 @@ async fn send_git_status(
     let (files, sync, default_base, not_a_repo) = tokio::task::spawn_blocking(move || {
         // A missing directory stays an error; one that exists without git is
         // a workspace the panel reports as such, not a failed request.
-        if d.is_dir() && !crate::git::is_git_repo(&d) {
+        if d.is_dir() && !crate::git::probe_repo(&d)? {
             return anyhow::Ok((Vec::new(), crate::git::SyncStatus::default(), None, true));
         }
         let files = match b.as_deref() {

@@ -783,6 +783,77 @@ pub fn is_git_repo(dir: &Path) -> bool {
     dir.is_dir() && run_git(dir, &["rev-parse", "--is-inside-work-tree"]).is_ok()
 }
 
+pub fn probe_repo(dir: &Path) -> Result<bool> {
+    const ARGS: &[&str] = &["rev-parse", "--is-inside-work-tree"];
+
+    let out = crate::spawn::command("git")
+        .env("LC_ALL", "C")
+        .arg("-C")
+        .arg(dir)
+        .args(ARGS)
+        .output()
+        .with_context(|| format!("spawning git {ARGS:?}"))?;
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.success() {
+        return Ok(true);
+    }
+
+    if out.status.code() == Some(128)
+        && is_not_repository_diagnostic(&stderr)
+        && !has_git_marker(dir)?
+    {
+        return Ok(false);
+    }
+
+    bail!(
+        "git {ARGS:?} in {} failed (exit {:?}): {}",
+        dir.display(),
+        out.status.code(),
+        stderr.trim()
+    );
+}
+
+fn is_not_repository_diagnostic(stderr: &str) -> bool {
+    const NOT_A_REPOSITORY: &str =
+        "fatal: not a git repository (or any of the parent directories): .git";
+    const BOUNDARY_PREFIX: &str = "fatal: not a git repository (or any parent up to mount point ";
+    const BOUNDARY_SUFFIX: &str =
+        "Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).";
+
+    let stderr = stderr
+        .strip_suffix("\r\n")
+        .or_else(|| stderr.strip_suffix('\n'))
+        .unwrap_or(stderr);
+    if stderr == NOT_A_REPOSITORY {
+        return true;
+    }
+
+    let Some((first, second)) = stderr.split_once('\n') else {
+        return false;
+    };
+    let Some(mount_point) = first
+        .strip_prefix(BOUNDARY_PREFIX)
+        .and_then(|line| line.strip_suffix(')'))
+    else {
+        return false;
+    };
+    !mount_point.is_empty() && second == BOUNDARY_SUFFIX
+}
+
+fn has_git_marker(dir: &Path) -> Result<bool> {
+    for ancestor in dir.ancestors() {
+        let marker = ancestor.join(".git");
+        match std::fs::symlink_metadata(&marker) {
+            Ok(_) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| format!("checking {}", marker.display()));
+            }
+        }
+    }
+    Ok(false)
+}
+
 pub fn worktree_add(repo: &Path, dest: &Path) -> Result<PathBuf> {
     ensure_repo(repo)?;
     if dest.exists() {
@@ -1683,6 +1754,24 @@ mod tests {
         assert!(!is_git_repo(tmp.path()));
         init_repo(tmp.path());
         assert!(is_git_repo(tmp.path()));
+    }
+
+    #[test]
+    fn not_repository_diagnostic_matches_only_complete_git_messages() {
+        assert!(is_not_repository_diagnostic(
+            "fatal: not a git repository (or any of the parent directories): .git\n"
+        ));
+        assert!(is_not_repository_diagnostic(
+            "fatal: not a git repository (or any parent up to mount point /dev)\n\
+             Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n"
+        ));
+        assert!(!is_not_repository_diagnostic(
+            "fatal: detected dubious ownership in repository at '/repo'\n"
+        ));
+        assert!(!is_not_repository_diagnostic(
+            "fatal: not a git repository (or any parent up to mount point /dev)\n\
+             Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n\n"
+        ));
     }
 
     const SENSITIVE_PATH_FIXTURE: &[(&str, bool)] = &[

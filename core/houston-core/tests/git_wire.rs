@@ -402,6 +402,110 @@ async fn non_git_dir_replies_not_a_repo_status() {
 }
 
 #[tokio::test]
+async fn git_status_preserves_failure_for_a_broken_gitfile() {
+    let (addr, _state) = start_daemon().await;
+    let workspace = tempfile::tempdir().unwrap();
+    let missing_git_dir = workspace.path().join("missing-metadata");
+    std::fs::write(
+        workspace.path().join(".git"),
+        format!("gitdir: {}\n", missing_git_dir.display()),
+    )
+    .unwrap();
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitStatus {
+            dir: workspace.path().display().to_string(),
+            base: None,
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => {
+                assert!(
+                    message.contains("not a git repository"),
+                    "unexpected error: {message}"
+                );
+                break;
+            }
+            proto::ServerMsg::GitStatus { .. } => {
+                panic!("a broken .git pointer must preserve Git's error")
+            }
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn git_status_preserves_failure_for_an_empty_git_marker() {
+    let (addr, _state) = start_daemon().await;
+    let workspace = tempfile::tempdir().unwrap();
+    std::fs::create_dir(workspace.path().join(".git")).unwrap();
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitStatus {
+            dir: workspace.path().display().to_string(),
+            base: None,
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => {
+                assert!(
+                    message.contains("not a git repository"),
+                    "unexpected error: {message}"
+                );
+                break;
+            }
+            proto::ServerMsg::GitStatus { .. } => {
+                panic!("an empty .git marker must preserve Git's error")
+            }
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn git_status_for_a_missing_directory_remains_an_error() {
+    let (addr, _state) = start_daemon().await;
+    let parent = tempfile::tempdir().unwrap();
+    let missing = parent.path().join("missing-workspace");
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::GitStatus {
+            dir: missing.display().to_string(),
+            base: None,
+        },
+    )
+    .await;
+    loop {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::Error { message, .. } => {
+                assert!(
+                    message.contains("git target is not a directory"),
+                    "unexpected error: {message}"
+                );
+                break;
+            }
+            proto::ServerMsg::GitStatus { .. } => {
+                panic!("a missing directory must remain an error")
+            }
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
 async fn git_stage_and_commit_over_the_wire() {
     let (addr, _state) = start_daemon().await;
     let repo = tempfile::tempdir().unwrap();
