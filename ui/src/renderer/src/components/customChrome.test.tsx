@@ -280,7 +280,6 @@ describe('the chrome surfaces stand on the field', () => {
           selected="/p"
           customColors={{}}
           colorIndexByPath={{}}
-          unreadByWs={{}}
           onSelect={NOOP}
           onAddWorkspace={NOOP}
           onRemoveWorkspace={NOOP}

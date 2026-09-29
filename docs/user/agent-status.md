@@ -31,14 +31,6 @@ neutral gray for ready, amber for needs input, and a hollow gray dot when status
 unavailable. Green is reserved for successful completion and red for failure. A grid's
 tooltip lists the contributing pane states, so the indicator does not rely on color alone.
 
-An unread pane notification appears as a count on the grid that contains the pane. A
-completion count uses blue, needs-input uses amber, and an error uses red. The attention
-inbox keeps at most the latest pending event for each pane instead of building an activity
-log. Opening a workspace does not clear these counts; focusing the affected pane does and
-removes its pending item.
-If the process exits with a nonzero code, its exit notification takes precedence over
-an agent completion, even when the completion arrives later.
-
 ## Settings ▸ Agent setup
 
 This screen lists every CLI Houston knows how to wire, and what each row means:
@@ -73,13 +65,3 @@ exactly what Houston added:
 To repair a broken setup, use "Check again" to have Houston re-read every CLI's hooks,
 then flip the switch off and back on for a row that shows "needs attention" — that
 reruns the install.
-
-## Settings ▸ Notifications
-
-Desktop notifications pop an OS notification when an agent finishes, needs input, or
-hits an error, for any detected agent. They are suppressed while you are looking at the
-exact pane in question, not merely another pane in the same workspace. Play sound gives
-each alert its own sound, previewable per row
-before you turn it on. If the OS has denied Houston permission to notify at all, a
-**Blocked by the OS** row appears: nothing will show until you re-allow notifications for
-Houston at the OS level.

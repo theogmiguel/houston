@@ -245,9 +245,8 @@ mod codex {
         )
         .await;
         let mut saw_idle = 0;
-        let mut saw_finished = 0;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && saw_finished == 0 {
+        while tokio::time::Instant::now() < deadline && saw_idle == 0 {
             match tokio::time::timeout(
                 Duration::from_millis(200),
                 common::next_broadcast_control(&mut rx),
@@ -258,10 +257,6 @@ mod codex {
                     assert_eq!(status, proto::AgentStatus::Idle);
                     saw_idle += 1;
                 }
-                Ok(proto::ServerMsg::AgentNotice { session, kind }) if session == info.id => {
-                    assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                    saw_finished += 1;
-                }
                 Ok(proto::ServerMsg::Error { message, .. }) => panic!("daemon error: {message}"),
                 Ok(_) => continue,
                 Err(_) => break,
@@ -271,7 +266,6 @@ mod codex {
             saw_idle, 1,
             "exactly one turn end, not one per correlation event"
         );
-        assert_eq!(saw_finished, 1, "exactly one Finished notice");
     }
 
     #[tokio::test]
@@ -754,9 +748,8 @@ mod opencode {
         )
         .await;
         let mut saw_idle = 0;
-        let mut saw_finished = 0;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && saw_finished == 0 {
+        while tokio::time::Instant::now() < deadline && saw_idle == 0 {
             match tokio::time::timeout(
                 Duration::from_millis(200),
                 common::next_broadcast_control(&mut rx),
@@ -767,10 +760,6 @@ mod opencode {
                     assert_eq!(status, proto::AgentStatus::Idle);
                     saw_idle += 1;
                 }
-                Ok(proto::ServerMsg::AgentNotice { session, kind }) if session == info.id => {
-                    assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                    saw_finished += 1;
-                }
                 Ok(proto::ServerMsg::Error { message, .. }) => panic!("daemon error: {message}"),
                 Ok(_) => continue,
                 Err(_) => break,
@@ -780,7 +769,6 @@ mod opencode {
             saw_idle, 1,
             "exactly one turn end, not one per correlation event"
         );
-        assert_eq!(saw_finished, 1, "exactly one Finished notice");
     }
 
     #[tokio::test]
@@ -982,22 +970,10 @@ mod opencode {
             f("opencode-1.18.31-08-session.error.json"),
         )
         .await;
-        let mut saw_idle = false;
-        let mut saw_error = false;
-        while !(saw_idle && saw_error) {
-            match common::next_broadcast_control(&mut rx).await {
-                proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
-                    assert_eq!(status, proto::AgentStatus::Idle);
-                    saw_idle = true;
-                }
-                proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
-                    assert_eq!(kind, proto::AgentNoticeKind::Error);
-                    saw_error = true;
-                }
-                proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
-                _ => continue,
-            }
-        }
+        assert_eq!(
+            next_status(&mut rx, info.id).await,
+            proto::AgentStatus::Idle
+        );
 
         drive(
             state.path(),
@@ -1014,7 +990,7 @@ mod opencode {
             )
             .await
             .is_err(),
-            "the legacy idle emitted after session.error must not create a second notice"
+            "the legacy idle emitted after session.error must not emit a second status"
         );
     }
 
@@ -1274,9 +1250,8 @@ mod grok {
         )
         .await;
         let mut saw_idle = 0;
-        let mut saw_finished = 0;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && saw_finished == 0 {
+        while tokio::time::Instant::now() < deadline && saw_idle == 0 {
             match tokio::time::timeout(
                 Duration::from_millis(200),
                 common::next_broadcast_control(&mut rx),
@@ -1287,10 +1262,6 @@ mod grok {
                     assert_eq!(status, proto::AgentStatus::Idle);
                     saw_idle += 1;
                 }
-                Ok(proto::ServerMsg::AgentNotice { session, kind }) if session == info.id => {
-                    assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                    saw_finished += 1;
-                }
                 Ok(proto::ServerMsg::Error { message, .. }) => panic!("daemon error: {message}"),
                 Ok(_) => continue,
                 Err(_) => break,
@@ -1300,7 +1271,6 @@ mod grok {
             saw_idle, 1,
             "exactly one turn end, not one per correlation event"
         );
-        assert_eq!(saw_finished, 1, "exactly one Finished notice");
     }
 
     #[tokio::test]
@@ -1564,9 +1534,8 @@ mod cursor {
         )
         .await;
         let mut saw_idle = 0;
-        let mut saw_finished = 0;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && saw_finished == 0 {
+        while tokio::time::Instant::now() < deadline && saw_idle == 0 {
             match tokio::time::timeout(
                 Duration::from_millis(200),
                 common::next_broadcast_control(&mut rx),
@@ -1577,10 +1546,6 @@ mod cursor {
                     assert_eq!(status, proto::AgentStatus::Idle);
                     saw_idle += 1;
                 }
-                Ok(proto::ServerMsg::AgentNotice { session, kind }) if session == info.id => {
-                    assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                    saw_finished += 1;
-                }
                 Ok(proto::ServerMsg::Error { message, .. }) => panic!("daemon error: {message}"),
                 Ok(_) => continue,
                 Err(_) => break,
@@ -1590,7 +1555,6 @@ mod cursor {
             saw_idle, 1,
             "exactly one turn end, not one per correlation event"
         );
-        assert_eq!(saw_finished, 1, "exactly one Finished notice");
     }
 
     #[tokio::test]
@@ -1858,9 +1822,8 @@ mod antigravity {
         )
         .await;
         let mut saw_idle = 0;
-        let mut saw_finished = 0;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && saw_finished == 0 {
+        while tokio::time::Instant::now() < deadline && saw_idle == 0 {
             match tokio::time::timeout(
                 Duration::from_millis(200),
                 common::next_broadcast_control(&mut rx),
@@ -1871,10 +1834,6 @@ mod antigravity {
                     assert_eq!(status, proto::AgentStatus::Idle);
                     saw_idle += 1;
                 }
-                Ok(proto::ServerMsg::AgentNotice { session, kind }) if session == info.id => {
-                    assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                    saw_finished += 1;
-                }
                 Ok(proto::ServerMsg::Error { message, .. }) => panic!("daemon error: {message}"),
                 Ok(_) => continue,
                 Err(_) => break,
@@ -1884,7 +1843,6 @@ mod antigravity {
             saw_idle, 1,
             "exactly one turn end, not one per sub-agent or parked Stop"
         );
-        assert_eq!(saw_finished, 1, "exactly one Finished notice");
         assert_eq!(
             daemon.last_hook_message(info.id).as_deref(),
             Some("root turn done"),

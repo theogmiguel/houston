@@ -121,7 +121,7 @@ Houston does not parse `~/.claude/projects/*.jsonl` and does not speak Claude Co
 `control_request` stdio protocol. Integration goes through hooks, `--permission-prompt-tool`,
 documented flags (`--print --output-format stream-json`), ACP, and official SDKs.
 
-Five recorded carve-outs stand. Further exceptions need the same recorded treatment.
+Six recorded carve-outs stand. Further exceptions need the same recorded treatment.
 
 | # | File | Bound |
 |---|---|---|
@@ -130,6 +130,7 @@ Five recorded carve-outs stand. Further exceptions need the same recorded treatm
 | 3 | `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**/*.jsonl` | Settings → Usage streams them for token counts. Read-only and only while a client asked (no timer, watcher or boot scan); counts only — a line becomes a tally and is dropped; fail-soft; **no semantics** — drives no status or behaviour. Terms: `core/houston-core/src/usage/mod.rs` |
 | 4 | `<the CLI's own transcriptPath>, Antigravity only` | The path comes from the provider's own hook payload and is never constructed by Houston; the last assistant entry only; read once, at a turn end, in the helper process; fail-soft (any error is no last message, never an error to the CLI); capped at the submit cap. Terms: `core/houston-core/src/antigravity_transcript.rs` |
 | 5 | `<the CLI's own transcript_path>, Claude and Codex only` | Read only on turn completion, from the hook-reported path; at most the last 8 MiB. Claude's latest main-agent usage and Codex's latest `token_count` provide context occupancy. Retain only token counts, model id and compaction state; never drive agent status, retain content, scan directories or watch transcripts. Missing data hides the indicator. Terms: `core/houston-core/src/context_window.rs` |
+| 6 | `~/.claude/projects/<workspace slug>*/*.jsonl` (and `$CLAUDE_CONFIG_DIR/projects`), `~/.codex/sessions/**/*.jsonl` (or `$CODEX_HOME/sessions`), Claude and Codex only | Read by `hs-harness digest`, never by the daemon or the app: the agent of a harness review run calls it inside its own visible pane, and it refuses unless `HOUSTON_ROUTINE_RUN` is set, which only a routine run's pane has. Only transcripts whose cwd is the workspace or below it; OpenCode, Cursor, Grok and Antigravity are refused by name. Output only under `<workspace>/.houston/harness/<run>/`, capped at 64 KiB per session line and 2 MiB per digest; the digest never enters the database and nothing drives status. What enters it is what the run's agent publishes through `harness_publish`: the bounded fields of `findings.json`, including its short quotes. No timer, watcher or boot scan: a run happens because the user created the review routine and pressed Run review or enabled its cadence. Terms: `core/houston-core/src/harness/` |
 
 ### App-initiated config writes use reversible managed markers
 
@@ -216,7 +217,7 @@ must be named and recorded here, not blended in.
 **One turn end per provider.** A provider's `agent_events.rs` table carries at most one
 `AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a
 per-step event that happens to land near the end of a turn. `TurnEnded` is not a status
-nudge: it raises a `Finished` notice, closes a delegation and opens a `no_handback` round,
+nudge: it settles the pane at `Idle`, closes a delegation and opens a `no_handback` round,
 so a second row ends one turn twice and tells a parent a handback went missing that was
 never due yet. The same rule refuses a sub-agent's completion event (Claude's
 `SubagentStop`, OpenCode's child-session `session.idle`): a sub-agent finishes *inside*

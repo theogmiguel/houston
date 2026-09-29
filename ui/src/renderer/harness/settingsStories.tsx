@@ -25,7 +25,6 @@ function SettingsScreen({
         selected="/home/dev/code/houston"
         customColors={{}}
         colorIndexByPath={{}}
-        unreadByWs={{}}
         renaming={null}
         onSelect={noop}
         onAddWorkspace={noop}

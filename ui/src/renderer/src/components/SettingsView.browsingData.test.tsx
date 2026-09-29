@@ -4,7 +4,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type React from 'react'
 import { setSettingsNavForTests } from '../settingsNav'
-import { NOTIFY_KINDS_DEFAULT } from '../notifyPrefs'
 
 const { isTauriMock } = vi.hoisted(() => ({ isTauriMock: vi.fn(() => true) }))
 vi.mock('../houston/host', () => ({ isTauri: () => isTauriMock() }))
@@ -56,8 +55,6 @@ const props = (): React.ComponentProps<typeof SettingsView> => ({
   fontFamilyId: 'nerd',
   shiftEnterNewline: true,
   openLinksInPane: false,
-  notifyKinds: NOTIFY_KINDS_DEFAULT,
-  onNotifyKinds: () => {},
   onOpenLinksInPane: () => {},
   onShiftEnterNewline: () => {},
   onFontFamilyId: () => {},
@@ -99,11 +96,6 @@ const props = (): React.ComponentProps<typeof SettingsView> => ({
     onAgentHooksSet: () => {},
     onAgentHooksRefresh: () => {},
     onRevealSessionDb: () => {},
-  notifyEnabled: false,
-  onNotifyEnabled: () => {},
-  notifySound: true,
-  onNotifySound: () => {},
-  onNotifyPreview: () => {},
   keymapOverrides: { bindings: {}, shortcuts_enabled: true },
   onKeymapOverrides: () => {}
 })

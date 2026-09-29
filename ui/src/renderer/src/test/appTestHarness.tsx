@@ -1,11 +1,9 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { vi } from 'vitest'
-import { resetPaneNoticeRingsForTests } from '../components/SessionPane'
 import { setRailViewForTests } from '../railView'
 import { resetRailWidthForTests } from '../railWidth'
 import { resetScmWidthForTests } from '../scmPanel'
-import { resetNotificationStoreForTests } from '../notificationStore'
 import type { HoustonClient as HoustonClientType, SessionInfo, Workspace } from '../houston/client'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { SwarmInfo } from '../houston/generated/SwarmInfo'
@@ -179,8 +177,6 @@ export function resetHarness(): void {
   rosterCwds = new Map()
   connectMock.mockClear()
   installHoustonBridge()
-  resetNotificationStoreForTests()
-  resetPaneNoticeRingsForTests()
   setRailViewForTests({ view: null, hidden: [] })
   resetRailWidthForTests()
   resetScmWidthForTests()

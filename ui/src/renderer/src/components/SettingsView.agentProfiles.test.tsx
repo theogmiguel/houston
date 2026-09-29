@@ -4,7 +4,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SettingsView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
-import { NOTIFY_KINDS_DEFAULT } from '../notifyPrefs'
 import { pickOption, selectTrigger, selectValue } from '../test/selectHarness'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentProfileState } from './SettingsView'
@@ -48,8 +47,6 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
     fontFamilyId: 'nerd',
     shiftEnterNewline: true,
     openLinksInPane: false,
-    notifyKinds: NOTIFY_KINDS_DEFAULT,
-    onNotifyKinds: () => {},
     onOpenLinksInPane: () => {},
     onShiftEnterNewline: () => {},
     onFontFamilyId: () => {},
@@ -93,11 +90,6 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
     onRevealSessionDb: () => {},
     keymapOverrides: {} as KeymapOverrides,
     onKeymapOverrides: () => {},
-    notifyEnabled: false,
-    onNotifyEnabled: () => {},
-    notifySound: true,
-    onNotifySound: () => {},
-    onNotifyPreview: () => {}
   }
 }
 

@@ -56,6 +56,8 @@ spelling, or a verb that is CLI-only).
 | `pane_submit` | `mcp_orchestration.rs` | `hs-pane submit` | worker→parent result handoff, with an optional summary and artifact paths; wakes the parent |
 | — | — | `hs-pane keys` | press a small set of keys in a pane (the CLI-only spelling of `pane_send_keys`) |
 | `pane_send_keys` | `mcp_orchestration.rs` | — | press a small set of keys in a pane (see the tool's own description for the list) |
+| `harness_publish` | `mcp_harness.rs` | `hs-harness publish` | not a pane verb: a harness review run hands its `report.md` and `findings.json` to the Harness view. Offered only to that run's pane while it is in flight, whatever the orchestration setting |
+| — | — | `hs-harness` | the extractor a harness review run calls (`inventory`, `digest`, `publish`); its wrapper sits beside `hs-pane`, and `digest` refuses outside a routine run (carve-out #6 in `invariants.md`) |
 | `browser_current_page` | `src-tauri/src/browser/mcp_tools.rs` | — | URL, title, favicon, loading state |
 | `browser_capture` | `mcp_tools.rs` | — | PNG screenshot of the browser pane |
 | `browser_navigate` | `mcp_tools.rs` | — | load an http(s) URL, opening a pane at it when the workspace has none |
@@ -80,7 +82,9 @@ row, so no handback, cleanup or live-children guard on the caller's close. It by
 child and depth caps, so it is refused from any pane that has a parent, and with `reusable`
 or `output_format`, which only mean something to a parent. Orchestration must still be on,
 and the approval ceiling still applies.
-`pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`.
+`pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`. A pane nobody
+spawned has nobody to submit to and is refused; a harness review run's refusal names
+`harness_publish` instead.
 
 `orchestrate.rs` is the pure layer under all of it — no DB, no PTY: scope and cap
 verdicts, wait and stall decisions, inbox composition and the sub-agent and permission
@@ -538,12 +542,13 @@ operator), keeping `original_to`, `workspace` and a `reason` (`parent_dead`, `pa
 `attempts`, `late`, `lane_full`, `backlog`). The operator inbox is a **workspace** surface,
 not a pane surface: the pane may be gone, so `inbox_list{workspace}` answers rows by the
 workspace they came from. The wire carries `InboxList { workspace }` → `inbox_rows`,
-`InboxAck { id }`, `InboxResolve { id }` and `SessionInfo.inbox_unread`; reconnecting
-replays the list. **Read is not resolved**: opening a row marks it `delivered_via =
-'operator'` and `confirmed_at`; only an explicit resolve (or the block ending) sets
-`resolved_at`, because reading about a blocked child does not unblock it. Children keep
+`InboxAck { id }`, `InboxResolve { id }` and `SessionInfo.inbox_unread`; clients can
+request the list after reconnecting. **Read is not resolved**: `inbox_ack` sets
+`delivered_via = 'operator'` and `confirmed_at`; only an explicit resolve (or the block
+ending) sets `resolved_at`, because reading about a blocked child does not unblock it. Children keep
 running. Retention is `INBOX_OPERATOR_MAX_ROWS` for confirmed rows, never for unconfirmed
-ones. The bell renders it — see `renderer.md`'s "Operator inbox".
+ones. The app has no surface for this queue: the wire messages remain, but nothing in
+the renderer requests, acks or resolves operator rows.
 
 ### Restart and migration
 
@@ -719,9 +724,8 @@ worse than one that asks to be hovered — so the sentence moved into the card a
 `aria-label`, where a screen reader hears exactly what it heard before.
 
 One alarm, split by who can already see it. A child blocked on its own pane needs nothing
-extra: its `StatusDot` is already `--warn` and `.pane-notice-ring.needs-input` already
-holds `--warn` on the pane's edge. A STALLED child gets one modifier — its badge glyph
-turns `--warn` — because `stalled` is a flag on `working`, so the dot is green and pulsing
+extra: its `StatusDot` is already `--warn`. A STALLED child gets one modifier — its badge
+glyph turns `--warn` — because `stalled` is a flag on `working`, so the dot is green and pulsing
 while nothing is happening, and that is the one place the grid actively lies. On the
 PARENT neither can wait: its children may be in another grid, scrolled off, or on a
 workspace nobody is looking at, so the count becomes `⑂ 1/3` with the numerator in

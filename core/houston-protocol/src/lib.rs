@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 115;
+pub const PROTOCOL_VERSION: u32 = 117;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -307,6 +307,99 @@ pub enum RoutineErrorKind {
     /// A manual run was asked for while this routine's previous run is still
     /// in flight; one routine runs one turn at a time.
     AlreadyRunning,
+}
+
+/// A harness review's state. `Running` until its pane publishes; a run that
+/// ends without publishing is `Failed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessReviewStatus {
+    Running,
+    Published,
+    Failed,
+}
+
+/// One harness review run of a workspace.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessReview {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: u32,
+    pub workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub routine_id: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub run_id: u32,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub session_id: Option<u32>,
+    pub status: HarnessReviewStatus,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub started_at_ms: i64,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub ended_at_ms: Option<i64>,
+    /// The run's directory, `<workspace>/.houston/harness/r<run_id>`.
+    pub run_dir: String,
+    /// `[since, until]` as `YYYY-MM-DD`, from the published `findings.json`.
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "[string, string] | null"))]
+    pub window: Option<(String, String)>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub sessions: Option<u32>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub prompts: Option<u32>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub cost_usd: Option<f64>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub finding_count: u32,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub summary: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub error: Option<String>,
+}
+
+/// A model from the local model catalog that can be selected for a Harness review.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessModelOption {
+    pub provider: AgentKind,
+    pub id: String,
+}
+
+/// The operator's decision on a finding, kept per workspace and finding key so
+/// it outlives the review that raised it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessFindingState {
+    Open,
+    Dismissed,
+    Resolved,
+}
+
+/// A finding as its most recent review recorded it. `state` is the operator's
+/// decision, unless a later review raised the finding again after it
+/// (`recurred`), which reopens it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessFinding {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub review_id: u32,
+    pub key: String,
+    pub title: String,
+    pub category: String,
+    pub confidence: String,
+    pub sessions: Vec<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub count: u32,
+    pub quotes: Vec<String>,
+    pub recommendation_kind: String,
+    pub target: String,
+    pub recommendation: String,
+    pub apply_prompt: String,
+    pub state: HarnessFindingState,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub decided_at_ms: Option<i64>,
+    pub recurred: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -802,15 +895,6 @@ impl SessionContext {
             as_of_ms: 0,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "kebab-case")]
-pub enum AgentNoticeKind {
-    Finished,
-    NeedsInput,
-    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2604,6 +2688,34 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         routine_id: Option<u32>,
     },
+    /// A workspace's harness review routine, reviews and findings.
+    HarnessState {
+        workspace: String,
+    },
+    /// Creates the workspace's harness review routine; a workspace has at most
+    /// one. It is changed, run and deleted through the routine messages.
+    HarnessRoutineCreate {
+        workspace: String,
+        engine: AgentKind,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        model: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        effort: Option<ChatEffort>,
+        cadence: Cadence,
+        enabled: bool,
+    },
+    /// A published review's `report.md`, at most `HARNESS_REPORT_MAX_BYTES`.
+    HarnessReport {
+        review_id: u32,
+    },
+    /// Records the operator's decision on a finding; `open` withdraws it.
+    HarnessDecide {
+        workspace: String,
+        key: String,
+        state: HarnessFindingState,
+    },
     SkillSync,
     SkillPush {
         tool: Option<AgentKind>,
@@ -2996,10 +3108,6 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         context: Option<SessionContext>,
     },
-    AgentNotice {
-        session: u32,
-        kind: AgentNoticeKind,
-    },
     OrchestrationState {
         caps: OrchestrationCaps,
         enabled: bool,
@@ -3131,6 +3239,27 @@ pub enum ServerMsg {
     /// One run changed state (started, ended); broadcast as it happens.
     RoutineRunEvent {
         run: RoutineRun,
+    },
+    /// Newest review first, at most `HARNESS_REVIEWS_PAGE`; one finding per
+    /// key, from the most recent review that raised it.
+    HarnessState {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        routine: Option<Routine>,
+        reviews: Vec<HarnessReview>,
+        findings: Vec<HarnessFinding>,
+        models: Vec<HarnessModelOption>,
+    },
+    HarnessReport {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        review_id: u32,
+        markdown: String,
+        truncated: bool,
+    },
+    /// A workspace's reviews, findings or decisions changed; a client showing
+    /// it asks for `harness_state` again.
+    HarnessChanged {
+        workspace: String,
     },
 
     VoiceSettings {
@@ -3360,6 +3489,10 @@ pub const ROUTINE_RUN_MAX_MS: u64 = 1_800_000;
 
 /// How many run rows `routine_runs` answers with, newest first.
 pub const ROUTINE_RUNS_PAGE: u32 = 50;
+/// Harness reviews `harness_state` answers with, newest first.
+pub const HARNESS_REVIEWS_PAGE: u32 = 50;
+/// A `report.md` past this is served cut, with `truncated` set.
+pub const HARNESS_REPORT_MAX_BYTES: usize = 1024 * 1024;
 
 pub const RESTORE_BUDGET_DEFAULT: u32 = 24;
 

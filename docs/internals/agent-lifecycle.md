@@ -38,7 +38,7 @@ race. A late drop file cannot rewrite a finished pane. A WebSocket connection su
 before taking its `hello_ok` snapshot; transitions during handshake remain queued for that
 client.
 
-An event that leaves the status unchanged emits no second status, notice or routine
+An event that leaves the status unchanged emits no second status or routine
 completion. Its delegation effect still runs: a repeated block can refresh the reason, and
 a turn-end can settle the current orchestration round even when the visible status was
 already `Idle`. `InputResolved` is accepted only from `NeedsInput`, so a late reply cannot
@@ -331,13 +331,13 @@ daemon route a drop file written after the pane that wrote it is gone.
 by then the pane becomes `Unavailable`, never falsely `Idle`. A later valid event restores
 the reported state normally.
 
-**Interrupt coverage.** Codex's `Interrupt` settles a cancelled turn without emitting a
-completion notice. Providers that publish no interruption event can still leave `Working`
+**Interrupt coverage.** Codex's `Interrupt` settles a cancelled turn without completing
+a routine run. Providers that publish no interruption event can still leave `Working`
 after Ctrl-C; Houston does not paper over missing lifecycle evidence with a timer.
 
 **ACP.** `acp.rs` decodes line-delimited JSON-RPC over stdio — a documented spec, the same
 category as a hook event, not a reading of terminal content — and sends its events through
-the same status, delegation, routine and notice path as hooks. It deliberately does **not**
+the same status, delegation and routine path as hooks. It deliberately does **not**
 answer `session/request_permission`: that surfaces as `NeedsInput` for the human.
 
 **OS liveness.** `has_child_procs` scans `/proc/{pid}/task/*/children` across all threads —

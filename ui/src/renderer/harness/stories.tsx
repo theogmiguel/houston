@@ -76,7 +76,6 @@ function RailWorkspacesMulti(): React.JSX.Element {
         }}
         customColors={{}}
         colorIndexByPath={{}}
-        unreadByWs={{}}
         renaming={null}
         onSelect={noop}
         onAddWorkspace={noop}

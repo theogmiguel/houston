@@ -31,6 +31,9 @@ keep its definition and stop future scheduled runs.
 Expand a routine's history to see each run's trigger, status, time and error. A run with a
 session link can reopen its pane. Runs do not reuse a previous conversation or context.
 
+A workspace's [harness review](harness-review.md) is also a routine. It is created from the
+**Harness** view and listed here too, where it can be edited, paused or deleted like any other.
+
 Houston runs at most three routines at once and queues due work until a slot is free. If the
 daemon was not running when a schedule elapsed, the routine runs once when the daemon returns;
 it does not replay every missed interval.

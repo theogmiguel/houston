@@ -71,41 +71,6 @@ html[data-motion-paused] .loop-anim {
   }
 }
 
-.pulse-ring-badge::after {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border-radius: inherit;
-  pointer-events: none;
-  border: 1.5px solid var(--pulse-color);
-  opacity: 0;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .pulse-ring-badge::after {
-    animation: pulse-ring-scale 1.6s ease-out 4;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pulse-ring-badge::after {
-    opacity: 0.45;
-    transform: scale(1.35);
-  }
-}
-
-@keyframes pulse-ring-scale {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0;
-  }
-  15% {
-    transform: scale(1.35);
-    opacity: 0.45;
-  }
-}
-
 @keyframes skeleton-cursor-blink {
   0%,
   50% {
@@ -144,70 +109,6 @@ html[data-motion-paused] .loop-anim {
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes notice-ring-pulse {
-  0% {
-    opacity: 0;
-  }
-  25% {
-    opacity: 0.9;
-  }
-  60% {
-    opacity: 0.35;
-  }
-  100% {
-    opacity: 0.15;
-  }
-}
-
-@keyframes notice-ring-settle-pane {
-  from {
-    opacity: 0.15;
-  }
-  to {
-    opacity: 0.5;
-  }
-}
-
-.notice-ring {
-  position: absolute;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0;
-}
-
-.notice-ring.completed {
-  --notice-ring-color: var(--success);
-}
-
-.notice-ring.error {
-  --notice-ring-color: var(--danger);
-}
-
-.notice-ring.needs-input {
-  --notice-ring-color: var(--warn);
-}
-
-.pane-notice-ring {
-  inset: 2px;
-  z-index: var(--z-sticky);
-  box-shadow: 0 0 16px var(--notice-ring-color);
-  animation:
-    notice-ring-pulse 1.6s ease-out 4,
-    notice-ring-settle-pane 0.2s ease-out 1 6.4s forwards;
-}
-
-.pane-notice-ring.needs-input {
-  animation: none;
-  opacity: 0.5;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pane-notice-ring {
-    animation: none;
-    opacity: 0.5;
   }
 }
 

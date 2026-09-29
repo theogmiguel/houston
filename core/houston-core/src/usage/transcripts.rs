@@ -122,7 +122,7 @@ impl CodexScanState {
     }
 }
 
-fn is_forked_session_meta(payload: &serde_json::Map<String, Value>) -> bool {
+pub(crate) fn is_forked_session_meta(payload: &serde_json::Map<String, Value>) -> bool {
     if payload
         .get("forked_from_id")
         .and_then(Value::as_str)

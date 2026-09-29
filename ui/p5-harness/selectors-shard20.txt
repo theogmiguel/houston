@@ -1,5 +1,4 @@
 .grid-menu
-.bell-menu
 .rpanel
 .term-dropzone
 .term-toast

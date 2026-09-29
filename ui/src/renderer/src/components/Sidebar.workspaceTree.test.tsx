@@ -28,7 +28,6 @@ function baseProps(
     selected: '',
     customColors: {},
     colorIndexByPath: {},
-    unreadByWs: {},
     renaming: null,
     onSelect: noop,
     onAddWorkspace: noop,

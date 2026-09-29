@@ -919,6 +919,24 @@ impl DelegationSettleSample {
     }
 }
 
+mod harness_review;
+
+type TranscriptLink = (Option<String>, Option<String>);
+
+/// What a drop adds to the stored link, or `None` when it adds nothing.
+fn transcript_link_update(
+    stored: Option<&TranscriptLink>,
+    path: Option<&str>,
+    native: Option<&str>,
+) -> Option<TranscriptLink> {
+    let (old_path, old_native) = stored.cloned().unwrap_or_default();
+    let next = (
+        path.map(str::to_string).or(old_path.clone()),
+        native.map(str::to_string).or(old_native.clone()),
+    );
+    (next != (old_path, old_native)).then_some(next)
+}
+
 /// A routine run in flight, keyed by routine id. The pane's session is the
 /// whole record: a run has no conversation, only its independent run row.
 #[derive(Debug, Clone, Copy)]
@@ -1030,6 +1048,9 @@ pub struct Daemon {
     permission_episodes: Mutex<HashMap<u32, orchestrate::PermissionEpisodes>>,
     antigravity_roots: Mutex<HashMap<u32, String>>,
     routine_runs: Mutex<HashMap<u32, RoutineRun>>,
+    /// Last transcript path and native id written per session, so a drop
+    /// repeating them costs no write.
+    transcript_links: Mutex<HashMap<u32, TranscriptLink>>,
     routine_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
     routine_pane_cmd_override: Mutex<Option<Vec<String>>>,
     routine_pane_registration_hook_for_test: Mutex<Option<RoutinePaneRegistrationHook>>,
@@ -2258,6 +2279,7 @@ impl Daemon {
             antigravity_roots: Mutex::new(HashMap::new()),
             browser_relay: Arc::new(crate::browser_relay::BrowserRelayState::new()),
             routine_runs: Mutex::new(HashMap::new()),
+            transcript_links: Mutex::new(HashMap::new()),
             routine_settle: Mutex::new(HashMap::new()),
             routine_pane_cmd_override: Mutex::new(None),
             routine_pane_registration_hook_for_test: Mutex::new(None),
@@ -2315,6 +2337,9 @@ impl Daemon {
             .register(Arc::new(crate::browser_relay::BrowserRelayTools::new(
                 &daemon,
             )));
+        daemon
+            .mcp_tools
+            .register(Arc::new(crate::mcp_harness::HarnessTools::new(&daemon)));
         if let Some(adopted) = adopted {
             for (session, reader) in adopted {
                 let id = session.info.id;
@@ -4632,6 +4657,13 @@ impl Daemon {
             Some(next) => next,
             None => row.workspace_id,
         };
+        if let Some(bound_workspace) = self.db.harness_workspace_of_routine(id)? {
+            if workspace_id.as_deref() != Some(bound_workspace.as_str()) {
+                anyhow::bail!(
+                    "Harness review routine {id} is bound to workspace {bound_workspace:?} and cannot be moved to {workspace_id:?}"
+                );
+            }
+        }
         let engine = engine.unwrap_or(row.engine);
         let model = match model {
             Some(next) => next,
@@ -4858,6 +4890,7 @@ impl Daemon {
         error: String,
     ) -> Result<()> {
         let run_id = self.record_run_start(row, trigger, None, now, next)?;
+        self.harness_review_start(row, run_id, None, now);
         self.settle_run(
             run_id,
             row.id,
@@ -4920,6 +4953,7 @@ impl Daemon {
             tracing::warn!("closing routine {routine_id}'s run {run_id}: {e:#}");
         }
         self.broadcast_routine_run(run_id);
+        self.harness_review_settle(run_id, error.as_deref());
         self.settle_routine_run(routine_id, outcome, error);
     }
 
@@ -4959,6 +4993,7 @@ impl Daemon {
                 .expect("the caller refused a routine with no directory at all"),
         };
         let run_id = self.record_run_start(row, trigger, None, now, next)?;
+        self.harness_review_start(row, run_id, Some(dir.as_str()), now);
         let cmd_override = self
             .routine_pane_cmd_override
             .lock()
@@ -4992,19 +5027,22 @@ impl Daemon {
                 }
             },
         };
-        let spawned = self.create_session(CreateParams {
-            agent: row.engine,
-            project_dir: PathBuf::from(&dir),
-            cmd: Some(cmd),
-            cols: 120,
-            rows: 32,
-            cwd_from: None,
-            shell_integration: false,
-            auto_approve: false,
-            acp: None,
-            profile: None,
-            prompt: Some(row.prompt.clone()),
-        });
+        let spawned = self.create_session_with_env(
+            CreateParams {
+                agent: row.engine,
+                project_dir: PathBuf::from(&dir),
+                cmd: Some(cmd),
+                cols: 120,
+                rows: 32,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: Some(row.prompt.clone()),
+            },
+            vec![(crate::harness::RUN_ENV.to_string(), run_id.to_string())],
+        );
         let session = match spawned {
             Ok(info) => info,
             Err(e) => {
@@ -5018,6 +5056,7 @@ impl Daemon {
             }
         };
         self.record_approval_mode(session.id, approval);
+        self.harness_review_session(run_id, session.id);
         if let Err(e) = self.db.set_routine_run_session(run_id, session.id) {
             tracing::warn!("recording routine {}'s pane session: {e:#}", row.id);
         }
@@ -5957,9 +5996,6 @@ impl Daemon {
         }
         if changed {
             self.advance_routine_pane_run(id, ev);
-            if let Some(kind) = ev.notice(event) {
-                self.broadcast_control(&proto::ServerMsg::AgentNotice { session: id, kind });
-            }
         }
     }
 
@@ -6154,6 +6190,15 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
+        self.create_session_with_env(p, Vec::new())
+    }
+
+    /// `env` is exported to the pane on top of the profile's environment.
+    fn create_session_with_env(
+        self: &Arc<Self>,
+        p: CreateParams,
+        env: Vec<(String, String)>,
+    ) -> Result<proto::SessionInfo> {
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
         }
@@ -6219,7 +6264,7 @@ impl Daemon {
         }
         let (profile_env, profile_label) =
             self.resolve_spawn_profile(p.agent, p.profile.as_ref())?;
-        let extra_env = profile_env.into_iter().collect::<Vec<_>>();
+        let extra_env = profile_env.into_iter().chain(env).collect::<Vec<_>>();
         let approval = if p.auto_approve {
             crate::launch::ApprovalMode::Bypass
         } else {
@@ -9160,6 +9205,7 @@ impl Daemon {
             .cloned();
         if let Some(session) = session {
             self.mark_detected(d.session, &session, provider);
+            self.note_transcript_link(d.session, d);
         }
         self.note_hook_last_message(
             d.session,
@@ -9190,6 +9236,26 @@ impl Daemon {
             self.handle_hook_from_with(d.session, provider, &d.event, d.cwd.as_deref(), ambiguous);
         self.note_context_from_hook(d.session, provider, d);
         verdict
+    }
+
+    fn note_transcript_link(&self, session: u32, d: &crate::hook_drop::HookDrop) {
+        let mut links = self.transcript_links.lock().expect("transcript links lock");
+        let Some(next) = transcript_link_update(
+            links.get(&session),
+            d.transcript_path.as_deref().filter(|p| !p.is_empty()),
+            d.session_id.as_deref().filter(|id| !id.is_empty()),
+        ) else {
+            return;
+        };
+        match self
+            .db
+            .update_session_transcript_link(session, next.0.as_deref(), next.1.as_deref())
+        {
+            Ok(()) => {
+                links.insert(session, next);
+            }
+            Err(e) => tracing::warn!("recording session {session}'s transcript link: {e:#}"),
+        }
     }
 
     fn correlate_hook_drop(
@@ -12763,9 +12829,14 @@ impl Daemon {
             .expect("temporary cleanup lock");
         let parent = {
             let s = self.get(child)?;
-            s.info.spawned_by.ok_or_else(|| {
-                anyhow!("session {child} was not spawned by an agent — nothing to submit to")
-            })?
+            match s.info.spawned_by {
+                Some(parent) => parent,
+                None if self.is_harness_review_pane(child) => bail!(
+                    "session {child} is a Harness review run: it publishes its result with \
+                     harness_publish (or `hs-harness publish`), not pane_submit"
+                ),
+                None => bail!("session {child} was not spawned by an agent — nothing to submit to"),
+            }
         };
         let artifacts = self.resolve_artifacts(child, &submission.artifacts)?;
         let workspace = self.current_workspace(child)?;
@@ -14846,6 +14917,7 @@ fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
     let bin_dir = orch_dir.join("bin");
     std::fs::create_dir_all(&bin_dir).with_context(|| format!("creating {}", bin_dir.display()))?;
     write_helper_wrapper(&bin_dir, "hs-pane", "hs-pane")?;
+    write_helper_wrapper(&bin_dir, "hs-harness", "hs-harness")?;
     Ok((prompts_dir, bin_dir))
 }
 
@@ -16509,5 +16581,27 @@ mod codex_trust_row_tests {
             claude_row.trust, None,
             "a provider without a trust seam carries no trust field"
         );
+    }
+}
+
+#[cfg(test)]
+mod transcript_link_tests {
+    use super::transcript_link_update;
+
+    #[test]
+    fn same_values_skip_the_write() {
+        let first = transcript_link_update(None, Some("/t/a.jsonl"), Some("abc"))
+            .expect("a first drop writes");
+        assert_eq!(first, (Some("/t/a.jsonl".into()), Some("abc".into())));
+        assert_eq!(
+            transcript_link_update(Some(&first), Some("/t/a.jsonl"), Some("abc")),
+            None
+        );
+        assert_eq!(transcript_link_update(Some(&first), None, None), None);
+        assert_eq!(
+            transcript_link_update(Some(&first), Some("/t/b.jsonl"), None),
+            Some((Some("/t/b.jsonl".into()), Some("abc".into())))
+        );
+        assert_eq!(transcript_link_update(None, None, None), None);
     }
 }

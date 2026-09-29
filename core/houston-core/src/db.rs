@@ -6,6 +6,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
+mod harness;
+pub use harness::{
+    HarnessDecisionRow, HarnessFindingRow, HarnessFindingWrite, HarnessPublication,
+    HarnessReviewRow,
+};
+
 #[derive(Debug, Clone)]
 pub struct SkillPushRow {
     pub tool: String,
@@ -1250,6 +1256,13 @@ impl Db {
         add_column_if_missing(&conn, "sessions", "acp", "acp TEXT")?;
         add_column_if_missing(&conn, "sessions", "profile_label", "profile_label TEXT")?;
         add_column_if_missing(&conn, "sessions", "approval_mode", "approval_mode TEXT")?;
+        add_column_if_missing(&conn, "sessions", "transcript_path", "transcript_path TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "native_session_id",
+            "native_session_id TEXT",
+        )?;
         ensure_tag_ids_are_monotonic(&conn)?;
         add_column_if_missing(&conn, "sessions", "tags", "tags TEXT NOT NULL DEFAULT '[]'")?;
         conn.execute_batch(
@@ -1379,6 +1392,7 @@ impl Db {
             CREATE INDEX IF NOT EXISTS idx_routine_runs_routine
                 ON routine_runs(routine_id, id DESC);",
         )?;
+        harness::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",
@@ -1412,6 +1426,7 @@ impl Db {
         migrate_routines_to_first_class(&conn)?;
         migrate_routines_to_standalone(&conn)?;
         close_stale_routine_runs(&conn)?;
+        harness::close_stale_reviews(&conn)?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS command_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2059,6 +2074,31 @@ impl Db {
             anyhow::bail!("no session row with id {id} to record codename {codename:?}");
         }
         Ok(())
+    }
+
+    /// The CLI's own transcript path and session id: a pointer, never content.
+    pub fn update_session_transcript_link(
+        &self,
+        id: u32,
+        transcript_path: Option<&str>,
+        native_session_id: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET transcript_path = COALESCE(?2, transcript_path),
+                native_session_id = COALESCE(?3, native_session_id) WHERE id = ?1",
+            rusqlite::params![id, transcript_path, native_session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn session_transcript_link(&self, id: u32) -> Result<(Option<String>, Option<String>)> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT transcript_path, native_session_id FROM sessions WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?)
     }
 
     pub fn session_codename(&self, id: u32) -> Result<Option<String>> {
@@ -2961,6 +3001,10 @@ impl Db {
     pub fn delete_routine(&self, id: u32) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
         let changed = conn.execute("DELETE FROM routines WHERE id = ?1", rusqlite::params![id])?;
+        conn.execute(
+            "DELETE FROM harness_routines WHERE routine_id = ?1",
+            rusqlite::params![id],
+        )?;
         Ok(changed > 0)
     }
 

@@ -365,6 +365,7 @@ async fn main() -> Result<()> {
             std::process::exit(1)
         }
         Some("hs-pane") => std::process::exit(houston_core::orchestrate::run_pane_cli(&args[2..])),
+        Some("hs-harness") => std::process::exit(houston_core::harness::run_cli(&args[2..])),
         _ => {}
     }
 

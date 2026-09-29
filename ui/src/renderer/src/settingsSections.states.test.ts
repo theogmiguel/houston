@@ -11,9 +11,9 @@ describe('settingsSections — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Filled — fourteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
-    expect(SETTINGS_SECTIONS.length).toBe(14)
-    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(14)
+  it('Filled — thirteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
+    expect(SETTINGS_SECTIONS.length).toBe(13)
+    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(13)
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('usage')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('accounts')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('agent-setup')
@@ -48,7 +48,7 @@ describe('settingsSections — state matrix', () => {
   it('the sections sit in the decided order inside each group', () => {
     const inGroup = (g: string): string[] =>
       SETTINGS_SECTIONS.filter((s) => s.group === g).map((s) => s.id)
-    expect(inGroup('look')).toEqual(['appearance', 'terminal', 'shortcuts', 'notifications'])
+    expect(inGroup('look')).toEqual(['appearance', 'terminal', 'shortcuts'])
     expect(inGroup('agents')).toEqual([
       'accounts',
       'agent-setup',

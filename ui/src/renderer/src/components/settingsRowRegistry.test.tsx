@@ -95,17 +95,12 @@ describe('settingsRowRegistry — every registered title actually renders', () =
       keepInTray: true,
       hidesOnClose: true
     })
-
-    ;(globalThis as unknown as { Notification: { permission: string } }).Notification = {
-      permission: 'denied'
-    }
   })
 
   afterEach(() => {
     act(() => root.unmount())
     host.remove()
     setSettingsNavForTests({ section: 'appearance' })
-    delete (globalThis as { Notification?: unknown }).Notification
   })
 
   it.each(Object.entries(SETTINGS_ROW_REGISTRY) as [SettingsSectionId, readonly string[]][])(

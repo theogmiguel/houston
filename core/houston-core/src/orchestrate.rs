@@ -10,7 +10,8 @@ pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
 const CLI_HTTP_TIMEOUT_MS: u64 = 15_000;
 // Leave time for the daemon to serialize and flush the response at its deadline.
 const CLI_WAIT_RESPONSE_MARGIN_MS: u64 = 1_000;
-const CLI_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(CLI_HTTP_TIMEOUT_MS);
+pub(crate) const CLI_HTTP_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_millis(CLI_HTTP_TIMEOUT_MS);
 
 fn cli_wait_timeout_ms(raw: Option<&str>) -> u64 {
     raw.and_then(|value| value.parse::<u64>().ok())
@@ -2427,7 +2428,7 @@ pub(crate) fn parse_flags(
     (positional, flags)
 }
 
-fn cli_call(
+pub(crate) fn cli_call(
     base: &str,
     token: &str,
     method: &str,

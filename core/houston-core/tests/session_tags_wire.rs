@@ -137,7 +137,7 @@ async fn deleting_the_highest_tag_id_does_not_reuse_it() {
     assert!(saw_deleted);
     assert!(saw_empty_registry);
 
-    send(&mut ws, &tag_create("replacement", "#34d399")).await;
+    send(&mut ws, &tag_create("replacement", "#4ade80")).await;
     let replacement = next_tag_list(&mut ws).await;
     assert_eq!(replacement.len(), 1);
     assert_ne!(replacement[0].id, deleted_id);

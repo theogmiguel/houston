@@ -20,7 +20,6 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
     selected: '/tmp/one',
     customColors: {},
     colorIndexByPath: {},
-    unreadByWs: {},
     renaming: null,
     onSelect: noop,
     onAddWorkspace: noop,

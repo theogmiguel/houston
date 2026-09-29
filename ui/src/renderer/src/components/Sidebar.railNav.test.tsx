@@ -39,7 +39,6 @@ function baseProps(
     },
     customColors: {},
     colorIndexByPath: {},
-    unreadByWs: {},
     renaming: null,
     onSelect: noop,
     onAddWorkspace: noop,
@@ -106,10 +105,10 @@ describe('the rail nav block', () => {
     expect(q('[data-testid="rail-search"]')?.textContent?.trim()).toBe('Search')
   })
 
-  it('all three libraries show by default, in RAIL_VIEWS order', () => {
+  it('every library shows by default, in RAIL_VIEWS order', () => {
     render()
     expect(rows().map((r) => r.getAttribute('data-view'))).toEqual([...RAIL_VIEWS])
-    expect(rows().map((r) => r.textContent)).toEqual(['Skills', 'Routines', 'Connections'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Skills', 'Routines', 'Harness', 'Connections'])
   })
 
   it('the open one is marked, and only it', () => {
@@ -132,7 +131,7 @@ describe('the rail nav block', () => {
     expect(hide.textContent).toContain('Hide from sidebar')
 
     act(() => hide.click())
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['routines', 'mcp'])
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['routines', 'harness', 'mcp'])
     expect(localStorage.getItem('tr-rail-views-hidden')).toContain('skills')
   })
 

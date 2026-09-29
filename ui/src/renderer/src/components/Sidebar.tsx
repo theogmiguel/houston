@@ -35,7 +35,6 @@ import { translateFilteredDropIndex } from "../layout/wsOrder";
 import {
   IconAlertTriangle,
   IconArrowUp,
-  IconBell,
   IconChevronRight,
   IconCheck,
   IconClose,
@@ -94,7 +93,6 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   palette: IconPalette,
   terminal: IconTerminal,
   keyboard: IconKeyboard,
-  bell: IconBell,
   user: IconUser,
   folder: IconFolder,
   fork: IconGitFork,
@@ -306,8 +304,6 @@ interface Props {
   selected: string;
   customColors: Record<string, string>;
   colorIndexByPath: Record<string, number>;
-  unreadByWs: Record<string, number>;
-  owedByWs?: Record<string, number>;
   renaming: string | null;
   onSelect: (key: string) => void;
   onAddWorkspace: () => void;
@@ -330,8 +326,6 @@ interface Props {
       count?: number;
       state?: GridItem["state"];
       statusLabel?: string;
-      attention?: number;
-      attentionTone?: GridItem["attentionTone"];
       sessionIds?: number[];
       tagIds?: number[];
       paneTagIds?: number[];
@@ -365,11 +359,6 @@ interface Props {
 
 function liveCount(sessions: SessionInfo[]): number {
   return sessions.filter((s) => isLive(s.state)).length;
-}
-
-function attentionLabel(unread: number, owed: number): string {
-  if (owed === 0) return `${unread} unread`;
-  return `${unread} unread · ${owed} owed to you`;
 }
 
 function WorkspacePaneCount({
@@ -861,8 +850,6 @@ type GridItem = {
   count?: number;
   state?: "starting" | "working" | "needs-input" | "idle" | "unavailable" | "stopped";
   statusLabel?: string;
-  attention?: number;
-  attentionTone?: "error" | "needs-input" | "info";
   sessionIds?: number[];
   tagIds?: number[];
   paneTagIds?: number[];
@@ -912,8 +899,6 @@ function CollapsedGridsRow({
   onRenameSubmit,
   onRenameCancel,
   on,
-  unread,
-  owed,
   panes,
   tagMatched,
   tagTotal,
@@ -932,8 +917,6 @@ function CollapsedGridsRow({
   i: number;
   color: string;
   on: boolean;
-  unread: number;
-  owed: number;
   panes: number;
   tagMatched?: number;
   tagTotal?: number;
@@ -1023,13 +1006,6 @@ function CollapsedGridsRow({
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
             {pinned && <PinIndicator />}
-            {unread + owed > 0 && (
-              <Tooltip label={attentionLabel(unread, owed)}>
-                <span className="flex-none min-w-4 h-4 leading-4 rounded-full px-1 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-center tabular-nums bg-[var(--accent)] text-white">
-                  {unread + owed}
-                </span>
-              </Tooltip>
-            )}
             <WorkspacePaneCount
               panes={panes}
               live={live}
@@ -1079,35 +1055,6 @@ function GridStateDot({
           opacity: state === "stopped" ? 0.5 : undefined,
         }}
       />
-    </Tooltip>
-  );
-}
-
-function GridAttentionCount({
-  count = 0,
-  tone = "info",
-}: {
-  count?: number;
-  tone?: GridItem["attentionTone"];
-}): React.JSX.Element | null {
-  if (count === 0) return null;
-  const background =
-    tone === "error"
-      ? "var(--danger)"
-      : tone === "needs-input"
-        ? "var(--warning)"
-        : "var(--accent)";
-  return (
-    <Tooltip
-      label={`${count} unread pane notification${count === 1 ? "" : "s"}`}
-    >
-      <span
-        data-testid="grid-attention-count"
-        className="flex-none min-w-4 h-4 leading-4 rounded-full px-1 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-center tabular-nums text-white"
-        style={{ background }}
-      >
-        {count > 99 ? "99+" : count}
-      </span>
     </Tooltip>
   );
 }
@@ -1189,8 +1136,6 @@ function ExpandedGridsRow({
   onRenameSubmit,
   onRenameCancel,
   on,
-  unread,
-  owed,
   panes,
   tagMatched,
   tagTotal,
@@ -1221,8 +1166,6 @@ function ExpandedGridsRow({
   i: number;
   color: string;
   on: boolean;
-  unread: number;
-  owed: number;
   panes: number;
   tagMatched?: number;
   tagTotal?: number;
@@ -1324,13 +1267,6 @@ function ExpandedGridsRow({
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
             {pinned && <PinIndicator />}
-            {unread + owed > 0 && !on && (
-              <Tooltip label={attentionLabel(unread, owed)}>
-                <span className="flex-none min-w-4 h-4 leading-4 rounded-full px-1 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-center tabular-nums bg-[var(--accent)] text-white">
-                  {unread + owed}
-                </span>
-              </Tooltip>
-            )}
             <WorkspacePaneCount
               panes={panes}
               live={live}
@@ -1439,10 +1375,6 @@ function ExpandedGridsRow({
               tags={tags}
               onToggle={(t) => onToggleTagFilter(t.id)}
             />
-            <GridAttentionCount
-              count={g.attention}
-              tone={g.attentionTone}
-            />
             {g.count !== undefined && g.count > 1 && (
               <span data-testid="nav-count" className={COUNT_CHIP_CLS}>
                 {g.count}
@@ -1542,8 +1474,6 @@ function PlainWorkspaceRow({
   i,
   color,
   on,
-  unread,
-  owed,
   allCount,
   ownCount,
   tagMatched,
@@ -1561,8 +1491,6 @@ function PlainWorkspaceRow({
   i: number;
   color: string;
   on: boolean;
-  unread: number;
-  owed: number;
   allCount: number;
   ownCount: number;
   tagMatched?: number;
@@ -1615,13 +1543,6 @@ function PlainWorkspaceRow({
           </span>
           <span className="ml-auto flex gap-1">
             {pinned && <PinIndicator />}
-            {unread + owed > 0 && !on && (
-              <Tooltip label={attentionLabel(unread, owed)}>
-                <span className="min-w-4 h-4 leading-4 rounded-full px-1 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-center tabular-nums bg-[var(--accent)] text-white">
-                  {unread + owed}
-                </span>
-              </Tooltip>
-            )}
             <WorkspacePaneCount
               panes={allCount}
               live={ownCount}
@@ -1694,6 +1615,7 @@ const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Elem
   Object.freeze({
     skills: IconZap,
     routines: IconClock,
+    harness: IconTarget,
     mcp: IconGlobe,
   });
 
@@ -2032,8 +1954,6 @@ function RailTree({
   pinnedWorkspaces,
   pinnedCount,
   sessions,
-  unreadByWs,
-  owedByWs = {},
   colorOf,
   gridsByWorkspace,
   tags,
@@ -2073,8 +1993,6 @@ function RailTree({
   pinnedWorkspaces: ReadonlySet<string>;
   pinnedCount: number;
   sessions: SessionInfo[];
-  unreadByWs: Record<string, number>;
-  owedByWs?: Record<string, number>;
   colorOf: (path: string) => string;
   gridsByWorkspace: Record<string, GridItem[]>;
   tags: TagInfo[];
@@ -2146,8 +2064,6 @@ function RailTree({
                     carriesActiveTag(s, gridsByWorkspace[w.path], activeTagIds),
                   ).length
                 : 0;
-            const unread = unreadByWs[w.path] ?? 0;
-            const owed = owedByWs[w.path] ?? 0;
             const color = colorOf(w.path);
             const on = selected === w.path;
             const grids = gridsByWorkspace[w.path];
@@ -2186,8 +2102,6 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
-                    unread={unread}
-                    owed={owed}
                     panes={all.length}
                     tagMatched={activeTagIds.length > 0 ? matched : undefined}
                     tagTotal={all.length}
@@ -2213,8 +2127,6 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
-                    unread={unread}
-                    owed={owed}
                     panes={all.length}
                     tagMatched={activeTagIds.length > 0 ? matched : undefined}
                     tagTotal={all.length}
@@ -2261,8 +2173,6 @@ function RailTree({
                   i={i}
                   color={color}
                   on={on}
-                  unread={unread}
-                  owed={owed}
                   allCount={all.length}
                   ownCount={own}
                   tagMatched={activeTagIds.length > 0 ? matched : undefined}
@@ -2309,8 +2219,6 @@ export function Sidebar({
   selected,
   customColors,
   colorIndexByPath,
-  unreadByWs,
-  owedByWs,
   renaming,
   onSelect,
   onAddWorkspace,
@@ -2808,8 +2716,6 @@ export function Sidebar({
             pinnedWorkspaces={pinnedWorkspaces}
             pinnedCount={pinnedCount}
             sessions={sessions}
-            unreadByWs={unreadByWs}
-            owedByWs={owedByWs}
             colorOf={colorOf}
             gridsByWorkspace={gridsByWorkspace}
             tags={tags}

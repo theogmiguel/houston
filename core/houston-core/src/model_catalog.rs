@@ -35,16 +35,43 @@ struct Model {
 #[derive(Debug, Default, Clone)]
 pub struct ModelTable {
     models: Arc<HashMap<String, Model>>,
+    options: Arc<Vec<proto::HarnessModelOption>>,
 }
 
 impl ModelTable {
     pub fn from_document(document: &Value) -> Self {
         let mut models = HashMap::new();
+        let mut options = Vec::new();
         if let Some(entries) = document.as_object() {
             for (name, raw) in entries {
                 let Some(entry) = raw.as_object() else {
                     continue;
                 };
+                let id = name.trim();
+                let id_lower = id.to_ascii_lowercase();
+                if !id.is_empty() && !id.contains('/') && !is_non_conversational_model(&id_lower) {
+                    let provider = match (
+                        entry.get("litellm_provider").and_then(Value::as_str),
+                        entry.get("mode").and_then(Value::as_str),
+                    ) {
+                        (Some("anthropic"), Some("chat")) => Some(proto::AgentKind::Claude),
+                        (Some("openai"), Some("chat" | "responses")) => {
+                            Some(proto::AgentKind::Codex)
+                        }
+                        // The bundled context fallback predates provider metadata and contains
+                        // only native Claude model ids.
+                        (None, None) if id_lower.starts_with("claude-") => {
+                            Some(proto::AgentKind::Claude)
+                        }
+                        _ => None,
+                    };
+                    if let Some(provider) = provider {
+                        options.push(proto::HarnessModelOption {
+                            provider,
+                            id: id.to_owned(),
+                        });
+                    }
+                }
                 let cost = |key: &str| {
                     entry
                         .get(key)
@@ -71,9 +98,16 @@ impl ModelTable {
                 }
             }
         }
+        options
+            .sort_by_cached_key(|option| (option.provider as u8, option.id.to_ascii_lowercase()));
         Self {
             models: Arc::new(models),
+            options: Arc::new(options),
         }
+    }
+
+    pub fn options(&self) -> Vec<proto::HarnessModelOption> {
+        self.options.as_ref().clone()
     }
 
     pub fn priced_models(&self) -> usize {
@@ -116,6 +150,21 @@ impl ModelTable {
     pub fn window(&self, model: &str) -> Option<u64> {
         self.model(model)?.window
     }
+}
+
+fn is_non_conversational_model(id: &str) -> bool {
+    [
+        "embedding",
+        "audio",
+        "speech",
+        "transcription",
+        "whisper",
+        "tts",
+        "dall-e",
+        "image-generation",
+    ]
+    .iter()
+    .any(|term| id.contains(term))
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +256,15 @@ impl ModelCatalog {
             .snapshot
             .table
             .window(model)
+    }
+
+    pub fn model_options(&self) -> Vec<proto::HarnessModelOption> {
+        self.state
+            .lock()
+            .expect("model catalog lock")
+            .snapshot
+            .table
+            .options()
     }
 
     /// Blocking IO; startup and Usage call this on the blocking pool, never in a hook.
@@ -720,6 +778,44 @@ mod tests {
         assert!(table.window("bedrock/claude-sonnet-test").is_none());
         assert!(table.rate("unknown/claude-sonnet-test").is_none());
         assert!(table.window("sonnet").is_none());
+    }
+
+    #[test]
+    fn harness_options_include_only_native_chat_models() {
+        let table = ModelTable::from_document(&json!({
+            "claude-sonnet-5": {"litellm_provider": "anthropic", "mode": "chat"},
+            "gpt-5-codex": {"litellm_provider": "openai", "mode": "responses"},
+            "bedrock/anthropic.claude-sonnet-5": {"litellm_provider": "bedrock", "mode": "chat"},
+            "text-embedding-3-large": {"litellm_provider": "openai", "mode": "embedding"},
+            "gpt-4o-audio-preview": {"litellm_provider": "openai", "mode": "audio_chat"},
+            "dall-e-3": {"litellm_provider": "openai", "mode": "image_generation"},
+            "gpt-5-unknown-mode": {"litellm_provider": "openai"},
+        }));
+
+        assert_eq!(
+            table.options(),
+            vec![
+                proto::HarnessModelOption {
+                    provider: proto::AgentKind::Claude,
+                    id: "claude-sonnet-5".into(),
+                },
+                proto::HarnessModelOption {
+                    provider: proto::AgentKind::Codex,
+                    id: "gpt-5-codex".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn bundled_context_fallback_keeps_native_claude_options() {
+        let fallback: Value =
+            serde_json::from_str(include_str!("model-catalog-fallback.json")).unwrap();
+        let options = ModelTable::from_document(&fallback).options();
+        assert!(!options.is_empty());
+        assert!(options
+            .iter()
+            .all(|option| option.provider == proto::AgentKind::Claude));
     }
 
     #[test]

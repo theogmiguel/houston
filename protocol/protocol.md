@@ -1,4 +1,4 @@
-# Wire protocol v115
+# Wire protocol v117
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -252,6 +252,15 @@ failure not given a typed refusal comes back as `error`.
 | `routine_run_now` | `id` | `routines` (bcast) on success — the run starts on exactly the scheduler's path, only `RoutineRun.trigger` differs; `routine_refused` (direct) `not_found`\|`already_running` (one routine runs one turn at a time) |
 | `routine_runs` | `routine_id?` (absent lists every routine's) | `routine_runs` (direct) — the independent run records, newest first, at most `ROUTINE_RUNS_PAGE` |
 
+### Harness review
+
+| Message | Fields | Reply |
+|---|---|---|
+| `harness_state` | `workspace` | `harness_state` (direct) |
+| `harness_routine_create` | `workspace`, `engine`, `model?`, `effort?`, `cadence`, `enabled` | the preset review routine for that workspace, with these fields; `routines` (bcast) and `harness_changed` (bcast) on success, `routine_refused` (direct) for a cap or name; `error` when the workspace is not a directory or already has its review routine. It is changed, run and deleted with the `routine_*` messages |
+| `harness_report` | `review_id` | `harness_report` (direct); `error` when the review has no `report.md` |
+| `harness_decide` | `workspace`, `key`, `state: HarnessFindingState` (`open` withdraws the decision) | `harness_changed` (bcast); `error` when no review of that workspace raised `key` |
+
 ### Skill sync and push
 
 | Message | Fields | Reply |
@@ -328,7 +337,6 @@ failure not given a typed refusal comes back as `error`.
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
-| `agent_notice` | `session`, `kind: AgentNoticeKind` | bcast — an attention-worthy event for the client's notification inbox |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
 | `git_diff` | `dir`, `path?`, `patch`, `truncated`, `base?` | direct reply to `git_diff` |
@@ -371,6 +379,9 @@ failure not given a typed refusal comes back as `error`.
 | `routine_refused` | `id?` (`null` for a refused create), `kind: RoutineErrorKind`, `limit?`, `requested?` | direct reply only; nothing changed |
 | `routine_runs` | `runs: RoutineRun[]` | direct reply to `routine_runs` |
 | `routine_run_event` | `run: RoutineRun` | bcast — one run changed state: opened, refused before it spawned, or ended with an outcome |
+| `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability) | direct reply to `harness_state` |
+| `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
+| `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, or a decision changed; a client showing it asks for `harness_state` again |
 | `voice_settings` | `settings: VoiceSettings`, `cloud_key_present`, `keyring_error?`, `models: VoiceModelState[]` | direct reply to `voice_settings_get`; bcast after any settings or key change |
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
@@ -391,7 +402,6 @@ data are internally tagged; the tag field is named in each entry below.
 AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | droid | copilot | aider | ssh
 SessionState       running | exited | killed | interrupted
 AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
-AgentNoticeKind    kebab: finished | needs-input | error
 ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
 SessionContext     used_tokens, window_tokens?, used_percent? (0-100, floored),
@@ -523,6 +533,17 @@ RoutineOutcome     ok | denied | killed_at_cap | engine_refused | failed
 Cadence            tag "type": interval{seconds >= ROUTINE_MIN_INTERVAL_SECS} | clock{hour, minute, weekdays?}
                    — weekdays absent = daily; 1 = Sunday … 7 = Saturday; an empty list is refused
 RoutineErrorKind   conflict | duplicate_name | limit | not_found | already_running
+HarnessReview      id, workspace, routine_id, run_id, session_id?, status: HarnessReviewStatus,
+                   started_at_ms, ended_at_ms?, run_dir (`<dir>/.houston/harness/r<run_id>`),
+                   window?: [since, until], sessions?, prompts?, cost_usd?, finding_count,
+                   summary?, error?
+HarnessReviewStatus running | published | failed (the run ended without publishing)
+HarnessModelOption provider: AgentKind (Claude or Codex), id (native model id)
+HarnessFinding     review_id, key, title, category, confidence, sessions, count, quotes,
+                   recommendation_kind, target, recommendation, apply_prompt,
+                   state: HarnessFindingState, decided_at_ms?,
+                   recurred (a review published after the decision raised it again, so it is open)
+HarnessFindingState open | dismissed | resolved
 
 Run caps (generated into `DEFAULTS.ts` beside the record caps, so the tab can
 show a limit before it trips): `ROUTINE_TICK_MS` 15 000 — how often the loop
@@ -852,6 +873,8 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 117 | **Harness review results have their own view.** New `harness_state`, `harness_routine_create`, `harness_report` and `harness_decide` client messages and `harness_state`, `harness_report` and `harness_changed` replies, with `HarnessReview`, `HarnessReviewStatus`, `HarnessFinding` and `HarnessFindingState`. A review run publishes with the `harness_publish` MCP tool or `hs-harness publish`, offered only to its own pane, instead of `pane_submit` to the operator's inbox; the daemon stores the run, its findings and the operator's decisions per workspace. The state includes native Claude and Codex model options from the shared local catalog, which describes metadata rather than account availability. No existing message changes |
+| 116 | **The notification feed is removed.** Gone from the wire: the server's `agent_notice` broadcast and the `AgentNoticeKind` enum. `agent_status` keeps carrying every lifecycle change (working, idle, needs-input) and the orchestration inbox messages (`inbox_list`/`inbox_ack`/`inbox_resolve`/`inbox_deliver_now`, `inbox_rows`, `inbox_changed`) are unchanged; there is simply no separate attention feed for a client notification center |
 | 115 | **A workspace without git is not a failure.** `git_status`'s reply gains `not_a_repo`. A plain existing directory with no Git metadata replies `not_a_repo: true` with empty files and null branch fields instead of an `error`, so the renderer shows its not-a-repo state without an app-wide error toast. A missing directory or any Git probe failure remains an `error`; no other message changes |
 | 114 | **A pane says which branch it is on.** `git_branch`'s reply gains `toplevel` and `common_dir` beside `branch`, all nullable. The branch is read from the checkout's HEAD, which is also the only source that answers before a repository's first commit; `toplevel` and `common_dir` come from one `rev-parse --show-toplevel --path-format=absolute --git-common-dir`. `toplevel` names the work tree, `common_dir` the repository a checkout belongs to; a non-repo replies with all three null, a detached HEAD keeps `toplevel`/`common_dir` and nulls only `branch`. The renderer shows the branch in the pane header and groups live panes by these two facts: equal `toplevel` is one shared checkout, equal `common_dir` across different toplevels is a main checkout and its worktree. Nothing is persisted and no other message changes |
 | 113 | **Orchestration spans registered workspaces and records child lifetime.** `pane_spawn`/`hs-pane spawn` gain registered `target_workspace`, `reusable` lifecycle selection and provider-validated `effort`; `DelegationInfo` carries the persisted reusable choice. Temporary children are removed only after a durable completed handback, while the delegation ancestry, inbox rows and bounded sender identity snapshots remain available for scoped historical waits |

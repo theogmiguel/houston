@@ -3,8 +3,6 @@
 # one selector; there is nothing for coverage.mjs to distinguish between them,
 # so it is listed once).
 .key-chip
-.bell-h-actions .ghost
-.bell-item-b .ghost
 .sw
 .sw .sw-knob
 .sw.on

@@ -55,6 +55,7 @@ pub async fn start_with_listener(
         .route("/orchestrate/wait", post(orch_wait))
         .route("/orchestrate/kill", post(orch_kill))
         .route("/orchestrate/submit", post(orch_submit))
+        .route("/harness/publish", post(harness_publish))
         .route("/inbox/reserve", post(inbox_reserve))
         .route("/inbox/delivered", post(inbox_delivered))
         .route(
@@ -1011,6 +1012,48 @@ async fn dispatch(
             let _ = send_msg(sink, &daemon.routine_runs_list(routine_id)).await;
             Ok(())
         }
+        proto::ClientMsg::HarnessState { workspace } => {
+            let msg = daemon.harness_state(&workspace)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::HarnessRoutineCreate {
+            workspace,
+            engine,
+            model,
+            effort,
+            cadence,
+            enabled,
+        } => match daemon
+            .harness_routine_create(&workspace, engine, model, effort, cadence, enabled)?
+        {
+            msg @ proto::ServerMsg::RoutineRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::HarnessReport { review_id } => {
+            match daemon.harness_report(review_id) {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    tracing::warn!("control request failed: {message}");
+                    send_error(sink, message, Some(format!("harness_report:{review_id}"))).await;
+                }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::HarnessDecide {
+            workspace,
+            key,
+            state,
+        } => daemon.harness_decide(&workspace, &key, state),
         proto::ClientMsg::AgentHooks => {
             let models = Arc::clone(daemon);
             tokio::spawn(async move { models.refresh_model_catalog(false).await });
@@ -3830,6 +3873,36 @@ struct SubmitBody {
     artifacts: Vec<String>,
     #[serde(default)]
     request_id: Option<u32>,
+}
+
+#[derive(serde::Deserialize)]
+struct PublishBody {
+    #[serde(default)]
+    summary: Option<String>,
+}
+
+async fn harness_publish(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(payload): axum::Json<PublishBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.harness_publish(scope.session_id, payload.summary)
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("harness publish panicked: {e}")));
+    match result {
+        Ok(note) => (
+            StatusCode::OK,
+            axum::Json(json!({ "published": true, "note": note })),
+        )
+            .into_response(),
+        Err(e) => orch_err_response(e),
+    }
 }
 
 async fn orch_submit(

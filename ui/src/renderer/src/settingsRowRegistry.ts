@@ -17,7 +17,6 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
     'Idle quiet window'
   ],
   shortcuts: ['Enable shortcuts', 'Pass through to terminal'],
-  notifications: ['Desktop notifications', 'Play sound', 'Blocked by the OS'],
   'workspace-defaults': [
     'Restore budget',
     'Close idle background sessions',

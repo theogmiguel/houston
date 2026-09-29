@@ -12,6 +12,7 @@ import type { ServerMsg } from './generated/ServerMsg'
 import type { ChatEffort } from './generated/ChatEffort'
 import type { ChatPermissionMode } from './generated/ChatPermissionMode'
 import type { Cadence } from './generated/Cadence'
+import type { HarnessFindingState } from './generated/HarnessFindingState'
 import type { GitDiscardKind } from './generated/GitDiscardKind'
 import type { GitCheckpointAgainst } from './generated/GitCheckpointAgainst'
 import type { PrMergeMethod } from './generated/PrMergeMethod'
@@ -30,7 +31,6 @@ export type { AgentKind } from './generated/AgentKind'
 export type { SessionState } from './generated/SessionState'
 export type { SessionInfo } from './generated/SessionInfo'
 export type { AgentStatus } from './generated/AgentStatus'
-export type { AgentNoticeKind } from './generated/AgentNoticeKind'
 export type { Workspace } from './generated/Workspace'
 export type { GitFileState } from './generated/GitFileState'
 export type { GitFileStatus } from './generated/GitFileStatus'
@@ -1349,6 +1349,28 @@ export class HoustonClient {
 
   routineRuns(routineId?: number | null): void {
     this.send({ type: 'routine_runs', routine_id: routineId ?? null })
+  }
+
+  harnessState(workspace: string): void {
+    this.send({ type: 'harness_state', workspace })
+  }
+
+  harnessRoutineCreate(setup: {
+    workspace: string
+    engine: AgentKind
+    model: string | null
+    cadence: Cadence
+    enabled: boolean
+  }): void {
+    this.send({ type: 'harness_routine_create', effort: null, ...setup })
+  }
+
+  harnessReport(reviewId: number): void {
+    this.send({ type: 'harness_report', review_id: reviewId })
+  }
+
+  harnessDecide(workspace: string, key: string, state: HarnessFindingState): void {
+    this.send({ type: 'harness_decide', workspace, key, state })
   }
 
   keymapGet(): void {

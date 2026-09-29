@@ -265,9 +265,102 @@ pub fn revision(
     hex
 }
 
+/// The Houston-authored prompt of a harness review run; its first line is the
+/// marker `hs-harness digest` uses to leave review runs out of later digests.
+pub const HARNESS_REVIEW_PROMPT: &str = include_str!("harness_review_prompt.txt");
+
+/// A harness review routine as created, before the user touches it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct HarnessReviewPreset {
+    pub name: String,
+    pub prompt: String,
+    pub cadence: Cadence,
+    pub enabled: bool,
+    pub workspace_id: String,
+    pub engine: houston_protocol::AgentKind,
+    pub model: Option<String>,
+    pub effort: Option<houston_protocol::ChatEffort>,
+    pub permission_mode: ChatPermissionMode,
+    pub isolate: bool,
+}
+
+/// Paused, because every run spends tokens: the cadence is there for the user
+/// to switch on. The model is left to the provider's default.
+pub fn harness_review_preset(workspace: &str) -> HarnessReviewPreset {
+    let base = std::path::Path::new(workspace)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| workspace.to_string());
+    let prefix = "Harness review · ";
+    let base: String = base
+        .chars()
+        .take(ROUTINE_NAME_MAX - prefix.chars().count())
+        .collect();
+    HarnessReviewPreset {
+        name: format!("{prefix}{base}"),
+        prompt: HARNESS_REVIEW_PROMPT.to_string(),
+        cadence: Cadence::Clock {
+            hour: 9,
+            minute: 0,
+            weekdays: Some(vec![1]),
+        },
+        enabled: false,
+        workspace_id: workspace.to_string(),
+        engine: houston_protocol::AgentKind::Claude,
+        model: None,
+        effort: None,
+        permission_mode: ChatPermissionMode::AcceptEdits,
+        isolate: false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn harness_review_prompt_is_bounded_and_opens_with_consent() {
+        let p = HARNESS_REVIEW_PROMPT;
+        assert!(
+            p.chars().count() < ROUTINE_PROMPT_MAX,
+            "{} chars",
+            p.chars().count()
+        );
+        assert!(p.starts_with(crate::harness::digest::REVIEW_MARKER));
+        assert!(p.contains("What this run sends"));
+        assert!(p.contains("sends them to the provider of this routine through your own CLI"));
+        assert!(p.chars().all(|c| c == '\n' || (' '..='~').contains(&c)));
+        validate_prompt(p).expect("the preset prompt passes the routine prompt check");
+    }
+
+    #[test]
+    fn harness_review_prompt_names_every_step() {
+        for needle in [
+            "hs-harness inventory",
+            "hs-harness digest",
+            "digest-meta.json",
+            "findings.json",
+            "report.md",
+            "harness_publish",
+            "hs-harness publish",
+            "decisions.json",
+            "`truncated`",
+            "in the language most of the session prompts are written in",
+            "Do not edit CLAUDE.md, AGENTS.md, rules, skills, settings or hooks",
+            "Recurring asks no skill serves",
+            "say explicitly whether the recommendation still holds against the current file",
+            "Already handled: re-count next run",
+            "\"kind\": \"recount\"",
+            "automatic_answered_with_text",
+            "`denied`",
+            "at most 200 characters",
+        ] {
+            assert!(
+                HARNESS_REVIEW_PROMPT.contains(needle),
+                "the prompt names {needle:?}"
+            );
+        }
+    }
 
     fn interval(seconds: u32) -> Cadence {
         Cadence::Interval { seconds }

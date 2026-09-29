@@ -342,7 +342,7 @@ async fn a_role_change_pushes_tools_list_changed() {
 }
 
 #[tokio::test]
-async fn an_orchestrator_out_of_slots_keeps_its_management_verbs() {
+async fn a_root_out_of_slots_keeps_management_and_handoff() {
     let _guard = serial().await;
     let r = rig("out-of-slots").await;
     r.daemon.orchestration_set(true).unwrap();
@@ -353,8 +353,8 @@ async fn an_orchestrator_out_of_slots_keeps_its_management_verbs() {
 
     let names = tool_names(&r.tools_list(&parent_token).await);
     assert!(
-        !names.iter().any(|n| n == "pane_spawn"),
-        "no slot left, so no spawn verb: {names:?}"
+        names.iter().any(|n| n == "pane_spawn"),
+        "a root keeps the spawn verb for independent handoffs: {names:?}"
     );
     assert!(
         !names.iter().any(|n| n == "pane_submit"),
@@ -372,7 +372,7 @@ async fn an_orchestrator_out_of_slots_keeps_its_management_verbs() {
     ] {
         assert!(
             names.iter().any(|n| n == kept),
-            "only the spawn verb drops: {names:?}"
+            "management verbs stay available: {names:?}"
         );
     }
 }
