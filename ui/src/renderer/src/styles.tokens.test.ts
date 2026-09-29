@@ -11,9 +11,7 @@ const STYLESHEET_RELATIVE_PATHS = [
 ]
 const STYLESHEET_PATHS = STYLESHEET_RELATIVE_PATHS.map((p) => join(__dirname, p))
 
-const RUNTIME_ALLOWLIST = new Set<string>([
-  '--pulse-color',
-])
+const RUNTIME_ALLOWLIST = new Set<string>()
 
 interface VarRef {
   name: string

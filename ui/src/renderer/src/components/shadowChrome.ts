@@ -6,8 +6,6 @@ export const RING_ACCENT_BUTTON = '0_0_0_1px_color-mix(in_srgb,var(--accent)_60%
 
 export const RING_ACCENT_SOLID = '0_0_0_1px_var(--accent)'
 
-export const RING_RAIL_CUTOUT = '0_0_0_2px_var(--rail-bg)'
-
 export const RING_OK_HALO = '0_0_0_4px_color-mix(in_srgb,var(--ok)_15%,transparent)'
 
 export const RING_OK_HALO_PULSE = '0_0_0_3px_color-mix(in_srgb,var(--ok)_13%,transparent)'

@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ChromeTheme, TerminalPaletteChoice } from '../theme'
 import type { KeymapOverrides } from '../houston/client'
-import type { NotifyKinds } from '../notifyPrefs'
-import type { NoticeSeverity } from './noticeSeverity'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
 import type { UpdatePolicy } from '../houston/generated/UpdatePolicy'
@@ -20,7 +18,6 @@ import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
 import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
 import { AboutSection } from './settings/AboutSection'
-import { NotificationsSection } from './settings/NotificationsSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
 import { UsageTabSection } from './settings/UsageTabSection'
 import { AppearanceSection } from './settings/AppearanceSection'
@@ -93,8 +90,6 @@ interface Props {
   onShiftEnterNewline: (on: boolean) => void
   openLinksInPane: boolean
   onOpenLinksInPane: (on: boolean) => void
-  notifyKinds: NotifyKinds
-  onNotifyKinds: (kinds: NotifyKinds) => void
   uiZoom: number
   onUiZoom: (z: number) => void
   zoomMin: number
@@ -127,11 +122,6 @@ interface Props {
   onOpenLogsFolder: () => void
   keymapOverrides: KeymapOverrides
   onKeymapOverrides: (overrides: KeymapOverrides) => void
-  notifyEnabled: boolean
-  onNotifyEnabled: (on: boolean) => void
-  notifySound: boolean
-  onNotifySound: (on: boolean) => void
-  onNotifyPreview: (severity: NoticeSeverity) => void
   onContact: () => void
   onOpenLicense: () => void
   update: { policy: UpdatePolicy; state: UpdateState } | null
@@ -192,8 +182,6 @@ function SectionDispatch({
   onShiftEnterNewline,
   openLinksInPane,
   onOpenLinksInPane,
-  notifyKinds,
-  onNotifyKinds,
   uiZoom,
   onUiZoom,
   voiceSettings,
@@ -223,11 +211,6 @@ function SectionDispatch({
   onOpenLogsFolder,
   keymapOverrides,
   onKeymapOverrides,
-  notifyEnabled,
-  onNotifyEnabled,
-  notifySound,
-  onNotifySound,
-  onNotifyPreview,
   onContact,
   onOpenLicense,
   update,
@@ -356,18 +339,6 @@ function SectionDispatch({
             onHistoryIgnoreGlobsSet={onHistoryIgnoreGlobsSet}
             hostInfo={hostInfo}
             onRevealSessionDb={onRevealSessionDb}
-          />
-        )}
-
-        {section === 'notifications' && (
-          <NotificationsSection
-            notifyKinds={notifyKinds}
-            onNotifyKinds={onNotifyKinds}
-            notifyEnabled={notifyEnabled}
-            onNotifyEnabled={onNotifyEnabled}
-            notifySound={notifySound}
-            onNotifySound={onNotifySound}
-            onNotifyPreview={onNotifyPreview}
           />
         )}
 

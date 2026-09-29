@@ -417,7 +417,7 @@ There is no status bar row — diagnostics live in Settings.
 | Region | Metric / rule |
 |---|---|
 | **Rail** | Resizable between 200 and 420px, remembered per user; `sidebarRail` also hides it, and dragging under 160px collapses it. When hidden, a "Show sidebar" icon button appears in the topbar's left cell. Rail head is 44px; nav rows are ≥28px; Settings section rows are 36px. Selection is one class: an achromatic full-row fill plus `--text-primary` — no left bar, no accent tint. |
-| **Topbar** | 44px. Two-column grid: left = sidebar toggle, right = voice chip → Tidy-panes → notifications → Source control → window controls. The Agents/Code mode `Segmented` floats at the window's centre, a child of the shell root. Drag region; interactive children opt out with `no-drag`. |
+| **Topbar** | 44px. Two-column grid: left = sidebar toggle, right = voice chip → Tidy-panes → Source control → window controls. The Agents/Code mode `Segmented` floats at the window's centre, a child of the shell root. Drag region; interactive children opt out with `no-drag`. |
 | **Window controls** | Ordered from the desktop's own button-layout setting, not a hardcoded cluster. Monochrome, no hue-coded discs, no reserved gutter. Sized in `calc(… / var(--shell-zoom))`. |
 | **Terminal grid** | Panes are absolutely positioned inside one container; geometry is computed as percentages then converted to pixel-gutter `calc()`. Outer margin **8px**, **4px** per shared interior edge. Splitters are 8px hit strips centred on the seam; keyboard nudge is 4% of the span. Expand-to-full hides siblings by `visibility`, it does not unmount them. |
 | **Pane headers** | 28px, every pane kind — session, editor, files, browser, skills. |

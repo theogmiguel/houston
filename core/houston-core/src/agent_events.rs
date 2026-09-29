@@ -29,21 +29,6 @@ impl AgentEvent {
         }
     }
 
-    pub fn notice(self, provider_event: &str) -> Option<proto::AgentNoticeKind> {
-        match self {
-            AgentEvent::TurnEnded if matches!(provider_event, "StopFailure" | "session.error") => {
-                Some(proto::AgentNoticeKind::Error)
-            }
-            AgentEvent::TurnEnded => Some(proto::AgentNoticeKind::Finished),
-            AgentEvent::NeedsInput => Some(proto::AgentNoticeKind::NeedsInput),
-            AgentEvent::SessionStarted
-            | AgentEvent::PromptSubmitted
-            | AgentEvent::Activity
-            | AgentEvent::InputResolved
-            | AgentEvent::TurnInterrupted => None,
-        }
-    }
-
     pub fn applies(
         self,
         current: Option<proto::AgentStatus>,
@@ -497,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn every_event_drives_a_status_and_only_terminal_attention_reports_a_notice() {
+    fn every_event_drives_a_status() {
         assert_eq!(
             AgentEvent::SessionStarted.status(),
             proto::AgentStatus::Idle
@@ -520,28 +505,6 @@ mod tests {
             AgentEvent::NeedsInput.status(),
             proto::AgentStatus::NeedsInput
         );
-
-        assert_eq!(
-            AgentEvent::TurnEnded.notice("Stop"),
-            Some(proto::AgentNoticeKind::Finished)
-        );
-        assert_eq!(
-            AgentEvent::TurnEnded.notice("StopFailure"),
-            Some(proto::AgentNoticeKind::Error)
-        );
-        assert_eq!(
-            AgentEvent::TurnEnded.notice("session.error"),
-            Some(proto::AgentNoticeKind::Error)
-        );
-        assert_eq!(
-            AgentEvent::NeedsInput.notice("PermissionRequest"),
-            Some(proto::AgentNoticeKind::NeedsInput)
-        );
-        assert_eq!(AgentEvent::PromptSubmitted.notice("prompt"), None);
-        assert_eq!(AgentEvent::Activity.notice("session.status"), None);
-        assert_eq!(AgentEvent::InputResolved.notice("resolved"), None);
-        assert_eq!(AgentEvent::TurnInterrupted.notice("Interrupt"), None);
-        assert_eq!(AgentEvent::SessionStarted.notice("start"), None);
     }
 
     #[test]

@@ -5919,9 +5919,6 @@ impl Daemon {
         }
         if changed {
             self.advance_routine_pane_run(id, ev);
-            if let Some(kind) = ev.notice(event) {
-                self.broadcast_control(&proto::ServerMsg::AgentNotice { session: id, kind });
-            }
         }
     }
 

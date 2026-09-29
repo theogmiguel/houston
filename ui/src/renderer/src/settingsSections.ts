@@ -4,7 +4,6 @@ export type SettingsSectionId =
   | 'appearance'
   | 'terminal'
   | 'shortcuts'
-  | 'notifications'
   | 'accounts'
   | 'agent-setup'
   | 'workspace-defaults'
@@ -20,7 +19,6 @@ export type SettingsIconKey =
   | 'palette'
   | 'terminal'
   | 'keyboard'
-  | 'bell'
   | 'user'
   | 'folder'
   | 'fork'
@@ -81,13 +79,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     icon: 'keyboard',
     group: 'look',
     keywords: ['keyboard', 'keybind', 'rebind', 'hotkey', 'keys', 'keymap', 'vim', 'emacs']
-  },
-  {
-    id: 'notifications',
-    label: 'Notifications',
-    icon: 'bell',
-    group: 'look',
-    keywords: ['alerts', 'sound', 'chime', 'os notifications', 'needs input', 'turn complete']
   },
   {
     id: 'accounts',

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 115;
+pub const PROTOCOL_VERSION: u32 = 116;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -802,15 +802,6 @@ impl SessionContext {
             as_of_ms: 0,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "kebab-case")]
-pub enum AgentNoticeKind {
-    Finished,
-    NeedsInput,
-    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2995,10 +2986,6 @@ pub enum ServerMsg {
         session: u32,
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         context: Option<SessionContext>,
-    },
-    AgentNotice {
-        session: u32,
-        kind: AgentNoticeKind,
     },
     OrchestrationState {
         caps: OrchestrationCaps,

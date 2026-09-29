@@ -50,7 +50,6 @@ describe('the rail draws no container lines on its controls', () => {
           selected="/p"
           customColors={{}}
           colorIndexByPath={{}}
-          unreadByWs={{}}
           onSelect={NOOP}
           onAddWorkspace={NOOP}
           onRemoveWorkspace={NOOP}

@@ -216,7 +216,7 @@ must be named and recorded here, not blended in.
 **One turn end per provider.** A provider's `agent_events.rs` table carries at most one
 `AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a
 per-step event that happens to land near the end of a turn. `TurnEnded` is not a status
-nudge: it raises a `Finished` notice, closes a delegation and opens a `no_handback` round,
+nudge: it settles the pane at `Idle`, closes a delegation and opens a `no_handback` round,
 so a second row ends one turn twice and tells a parent a handback went missing that was
 never due yet. The same rule refuses a sub-agent's completion event (Claude's
 `SubagentStop`, OpenCode's child-session `session.idle`): a sub-agent finishes *inside*

@@ -16,7 +16,6 @@ function props(
     selected: '/a',
     customColors: {},
     colorIndexByPath: {},
-    unreadByWs: {},
     renaming: null,
     onSelect: noop,
     onAddWorkspace: noop,

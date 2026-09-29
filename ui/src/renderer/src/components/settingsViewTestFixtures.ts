@@ -1,4 +1,3 @@
-import { NOTIFY_KINDS_DEFAULT } from '../notifyPrefs'
 import type { KeymapOverrides } from '../houston/client'
 import type { HostInfo, SettingsView } from './SettingsView'
 
@@ -41,8 +40,6 @@ export function baseSettingsViewProps(): React.ComponentProps<typeof SettingsVie
     fontFamilyId: 'nerd',
     shiftEnterNewline: true,
     openLinksInPane: false,
-    notifyKinds: NOTIFY_KINDS_DEFAULT,
-    onNotifyKinds: () => {},
     onOpenLinksInPane: () => {},
     onShiftEnterNewline: () => {},
     onFontFamilyId: () => {},
@@ -85,12 +82,7 @@ export function baseSettingsViewProps(): React.ComponentProps<typeof SettingsVie
     onAgentHooksRefresh: () => {},
     onRevealSessionDb: () => {},
     keymapOverrides: {} as KeymapOverrides,
-    onKeymapOverrides: () => {},
-    notifyEnabled: false,
-    onNotifyEnabled: () => {},
-    notifySound: true,
-    onNotifySound: () => {},
-    onNotifyPreview: () => {}
+    onKeymapOverrides: () => {}
   }
 }
 

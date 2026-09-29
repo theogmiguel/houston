@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { SessionInfo } from './houston/client'
 import {
   type AppHarness,
@@ -86,29 +86,5 @@ describe("grid-row state dot follows the grid's live sessions", () => {
       await Promise.resolve()
     })
     expect(dot().dataset.state).toBe('needs-input')
-  })
-
-  it('shows unread pane attention on its grid and clears it only when that pane is focused', async () => {
-    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
-    await boot([makeSession({ id: 1, project_dir: WS, cwd: WS, status: 'working' })])
-
-    deliverControl({ type: 'agent_notice', session: 1, kind: 'finished' })
-    deliverControl({ type: 'agent_notice', session: 1, kind: 'error' })
-    await act(async () => {
-      await Promise.resolve()
-    })
-    const attention = harness!.container.querySelector<HTMLElement>(
-      '[data-testid="grid-attention-count"]'
-    )
-    expect(attention?.textContent).toBe('1')
-    expect(attention?.style.background).toBe('var(--danger)')
-
-    const pane = harness!.container.querySelector('[data-panekey="1"]')
-    if (!(pane instanceof HTMLElement)) throw new Error('pane 1 not rendered')
-    act(() => {
-      pane.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
-    })
-    expect(harness!.container.querySelector('[data-testid="grid-attention-count"]')).toBeNull()
-    hasFocus.mockRestore()
   })
 })

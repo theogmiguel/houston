@@ -1,5 +1,4 @@
 import {
-  Fragment,
   lazy,
   Suspense,
   useCallback,
@@ -9,12 +8,10 @@ import {
   useState,
 } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { RING_RAIL_CUTOUT } from "./components/shadowChrome";
 import type {
   AgentKind,
   KeymapOverrides,
   HoustonClient,
-  InboxRow,
   ServerMsg,
   SessionInfo,
   SessionPolicy,
@@ -53,15 +50,6 @@ import type {
   OrchestrationStateView,
 } from "./components/SettingsView";
 import type { PaneRoster } from "./components/DelegationCard";
-import { BellClearAllButton, OwedInboxSection } from "./components/InboxOwedRow";
-import {
-  isBellEmpty,
-  mergeInboxRows,
-  applyInboxChanged,
-  owedByWorkspace,
-  owedInboxSummary,
-  requestInboxForWorkspaces,
-} from "./inboxOwed";
 import type { SkillToolState } from "./houston/generated/SkillToolState";
 import type { SkillPushRecord } from "./houston/generated/SkillPushRecord";
 import type { ProfileChoice } from "./houston/generated/ProfileChoice";
@@ -84,7 +72,6 @@ import {
 } from "./houston/browserOpenRequest";
 import {
   getLogsDir,
-  isFocused,
   openExternal,
   pickDirectories,
   pickFile,
@@ -125,19 +112,10 @@ import { tabsStorageKey } from "./components/browserTabsKey";
 import { recordAndReload } from "./reloadBudget";
 import { AnimOut } from "./components/AnimOut";
 import {
-  BTN_GHOST,
   BTN_GHOST_BG,
   BTN_ICO,
   BTN_PRIMARY,
-  BELL_GHOST,
-  BELL_ITEM_GHOST,
 } from "./components/buttonChrome";
-import {
-  clearAllPaneNoticeRings,
-  clearPaneNoticeRing,
-  setPaneNoticeRing,
-  type NoticeRingTone,
-} from "./components/SessionPane";
 import { SurfaceBoundary } from "./components/SurfaceBoundary";
 import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
@@ -216,19 +194,9 @@ import { setRailView, useRailView, type RailView } from "./railView";
 import { touchGrid } from "./gridRecency";
 import { useNativeSuppressionCount } from "./layout/nativeSuppression";
 import type { ReviewDiffsData } from "./git/review";
-import { notifyThroughFocusGate, playChime } from "./notifications";
-import { notifyAllowed } from "./notifyPrefs";
-import { addNotification } from "./notificationStore";
 import { useNotices } from "./notices";
 import { NoticeStack } from "./components/NoticeStack";
 import {
-  NOTICE_SEVERITY,
-  NOTICE_SEVERITY_SOUND,
-  NoticeSeverityChip,
-  severityForNotice,
-} from "./components/noticeSeverity";
-import {
-  IconBell,
   IconClose,
   IconGrid,
   IconPanelLeft,
@@ -329,10 +297,8 @@ import {
   FALLBACK_WINDOW_BUTTON_LAYOUT,
   type WindowButtonLayout,
 } from "./windowButtonLayout";
-import { fmtAgo, groupNotices, toNotice, type Notice } from "./noticeFeed";
 import { stackCapacity } from "./paneCaps";
 import { Icon } from "./components/Icon";
-import { POP_ORIGIN_CLS, popOriginStyle } from "./components/overlayChrome";
 
 // lazy() keeps Settings (and everything below) out of the boot chunk
 // WebKitGTK parses before the grid can paint — `bundle-budget.json`'s
@@ -351,13 +317,7 @@ const SshConnectModal = lazy(() =>
 const PaneHandoff = lazy(() =>
   import("./components/PaneHandoff").then((m) => ({ default: m.PaneHandoff })),
 );
-export {
-  isTitlebarDragEligible,
-  isBareTitlebarTarget,
-  fmtAgo,
-  toNotice,
-  type Notice,
-};
+export { isTitlebarDragEligible, isBareTitlebarTarget };
 
 const SELECTED_WS_KEY = "tr-selected-workspace";
 
@@ -395,60 +355,7 @@ const PANE_GROW_TTL_MS = 1_000;
 
 const REVIEW_INTENT_TTL_MS = 10_000;
 
-const OWED_FLASH_MS = 1_200;
-const NOTICE_CORRELATION_MS = 5_000;
-
-type AgentNoticeMessage = Extract<ServerMsg, { type: "agent_notice" }>;
 type SessionStateMessage = Extract<ServerMsg, { type: "session_state" }>;
-type RecentAgentNotice = { kind: AgentNoticeMessage["kind"]; at: number };
-
-const AGENT_NOTICE_PRESENTATION: Record<
-  AgentNoticeMessage["kind"],
-  { text: string; ringTone: NoticeRingTone }
-> = {
-  finished: { text: "finished — awaiting you", ringTone: "completed" },
-  error: { text: "hit an error", ringTone: "error" },
-  "needs-input": { text: "needs your input", ringTone: "needs-input" },
-};
-
-function duplicatesAgentEnd(
-  msg: SessionStateMessage,
-  recentAgent: RecentAgentNotice | undefined,
-): boolean {
-  return (
-    msg.state === "exited" &&
-    recentAgent !== undefined &&
-    recentAgent.kind !== "needs-input" &&
-    (msg.exit_code === 0 || recentAgent.kind === "error") &&
-    Date.now() - recentAgent.at < NOTICE_CORRELATION_MS
-  );
-}
-
-function sessionStateNotification(
-  msg: SessionStateMessage,
-  info: SessionInfo,
-  recentAgent: RecentAgentNotice | undefined,
-) {
-  if (duplicatesAgentEnd(msg, recentAgent)) return null;
-  const text =
-    msg.state === "exited"
-      ? `finished${msg.exit_code !== null ? ` (exit ${msg.exit_code})` : ""}`
-      : msg.state;
-  return addNotification({
-    session: msg.session,
-    kind: "session-state",
-    title: info.title,
-    dir: info.project_dir,
-    text,
-  });
-}
-
-function replacePaneNotice(prev: Notice[], next: Notice): Notice[] {
-  return [
-    next,
-    ...prev.filter((notice) => notice.session !== next.session),
-  ].slice(0, 200);
-}
 
 type GridLifecycle =
   | "starting"
@@ -537,17 +444,6 @@ function patchRosterFields(
   return new Map(prev).set(msg.session, { ...cur, ...patch });
 }
 
-function handleInboxRowMessage(
-  msg: ServerMsg,
-  setInboxRows: Dispatch<SetStateAction<Map<bigint, InboxRow>>>,
-): void {
-  if (msg.type === "inbox_rows") {
-    setInboxRows((prev) => mergeInboxRows(prev, msg.workspace, msg.rows));
-  } else if (msg.type === "inbox_changed") {
-    setInboxRows((prev) => applyInboxChanged(prev, msg.row));
-  }
-}
-
 function handleTagWireMessage(
   msg: ServerMsg,
   setTags: Dispatch<SetStateAction<TagInfo[]>>,
@@ -591,15 +487,6 @@ function applyWorkspaceSelection(
     }
     return workspaces[0].path;
   });
-}
-
-function railToggleLabels(attentionCount: number): { tooltip: string; ariaLabel: string } {
-  if (attentionCount === 0) return { tooltip: "Show sidebar (Ctrl+B)", ariaLabel: "Show sidebar" };
-  const suffix = `${attentionCount} workspace${attentionCount === 1 ? "" : "s"} need attention`;
-  return {
-    tooltip: `Show sidebar (Ctrl+B) — ${suffix}`,
-    ariaLabel: `Show sidebar — ${suffix}`,
-  };
 }
 
 // The rail indicator offers exactly one thing: a release that is newer than this
@@ -690,18 +577,9 @@ export function App(): React.JSX.Element {
     expandedIn,
   } = useShellFocus();
   const railWidth = useRailWidth();
-  const [notices, setNotices] = useState<Notice[]>([]);
-  const recentAgentNoticeRef = useRef(new Map<number, RecentAgentNotice>());
-  const failedSessionExitsRef = useRef(new Set<number>());
-  const [inboxRows, setInboxRows] = useState<Map<bigint, InboxRow>>(new Map());
-  const [flashOwedId, setFlashOwedId] = useState<bigint | null>(null);
-  const flashOwedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
   const editorLeafSeq = useRef(0);
   const browserLeafSeq = useRef(0);
   const currentTreeRef = useRef<LayoutNode | null>(null);
-  const recoveryShown = useRef(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -846,14 +724,6 @@ export function App(): React.JSX.Element {
     kind: "kill" | "close";
     message: string;
   } | null>(null);
-  const [activePopover, setActivePopover] = useState<"bell" | null>(null);
-  const bellOpen = activePopover === "bell";
-  const closePopover = (which: "bell"): void =>
-    setActivePopover((cur) => (cur === which ? null : cur));
-  const togglePopover = (which: "bell"): void => {
-    setActivePopover((cur) => (cur === which ? null : which));
-    setPaletteOpen(false);
-  };
   const [paletteOpen, setPaletteOpen] = useState(false);
   const {
     theme,
@@ -896,15 +766,6 @@ export function App(): React.JSX.Element {
     setCopyOnSelect,
     stripBoxGlyphs,
     setStripBoxGlyphs,
-    notifyEnabled,
-    setNotifyEnabled,
-    notifyEnabledRef,
-    notifyKinds,
-    setNotifyKinds,
-    notifyKindsRef,
-    notifySound,
-    setNotifySound,
-    notifySoundRef,
     changeFont,
     changeZoom,
   } = usePreferences();
@@ -1072,23 +933,6 @@ export function App(): React.JSX.Element {
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
 
-  const markPaneNoticesRead = useCallback((session: number): void => {
-    setNotices((prev) =>
-      prev.some((notice) => notice.session === session)
-        ? prev.filter((notice) => notice.session !== session)
-        : prev,
-    );
-    clearPaneNoticeRing(session);
-  }, []);
-
-  const selectNoticeTarget = (dir: string, session: number): void => {
-    setSelectedWs(dir);
-    if (sessionsRef.current.has(session)) {
-      setActiveId(session);
-      markPaneNoticesRead(session);
-    }
-  };
-
   const paneRoster = useRef<PaneRoster>({
     sessions,
     maxLiveChildren: null,
@@ -1099,7 +943,8 @@ export function App(): React.JSX.Element {
   const focusPane = (session: number): void => {
     const target = sessionsRef.current.get(session);
     if (!target) return;
-    selectNoticeTarget(target.project_dir, session);
+    setSelectedWs(target.project_dir);
+    setActiveId(session);
   };
 
   useTrayBridge({
@@ -1108,15 +953,6 @@ export function App(): React.JSX.Element {
     workspaces,
     onFocusPane: focusPane,
   });
-
-  useEffect(() => {
-    const markVisiblePaneRead = (): void => {
-      if (activeIdRef.current !== null)
-        markPaneNoticesRead(activeIdRef.current);
-    };
-    window.addEventListener("focus", markVisiblePaneRead);
-    return () => window.removeEventListener("focus", markVisiblePaneRead);
-  }, [markPaneNoticesRead]);
 
   const [focusBrowserUrl, setFocusBrowserUrl] = useState(0);
   const [reviewSessions, setReviewSessions] = useState<
@@ -1161,79 +997,7 @@ export function App(): React.JSX.Element {
     let cancelled = false;
     let bootTimer: ReturnType<typeof setTimeout> | undefined;
 
-    function publishPaneNotice(
-      ninfo: SessionInfo,
-      kind: AgentNoticeMessage["kind"],
-      text = AGENT_NOTICE_PRESENTATION[kind].text,
-      recordKind = "agent-notice",
-    ): void {
-      const { ringTone } = AGENT_NOTICE_PRESENTATION[kind];
-      const noticeSeverity = severityForNotice("agent-notice", kind);
-      const bornRead = activeIdRef.current === ninfo.id && document.hasFocus();
-      const noticeRec = addNotification({
-        session: ninfo.id,
-        kind: recordKind,
-        title: ninfo.title,
-        dir: ninfo.project_dir,
-        text,
-        read: bornRead,
-      });
-      if (noticeRec) {
-        if (!bornRead) {
-          setNotices((prev) =>
-            replacePaneNotice(prev, {
-              ...toNotice(noticeRec, kind),
-              severity: noticeSeverity,
-              ringTone,
-            }),
-          );
-          setPaneNoticeRing(ninfo.id, ringTone);
-        }
-        if (
-          notifyAllowed(
-            notifyEnabledRef.current,
-            notifyKindsRef.current,
-            noticeSeverity,
-          )
-        ) {
-          const noticeSession = ninfo.id;
-          const noticeDir = ninfo.project_dir;
-          const noticeTitle = ninfo.title;
-          notifyThroughFocusGate(
-            isFocused,
-            (focused) =>
-              focused && activeIdRef.current === noticeSession,
-            () => ({
-              title: noticeTitle,
-              body: text,
-              soundUrl: notifySoundRef.current
-                ? NOTICE_SEVERITY_SOUND[noticeSeverity]
-                : undefined,
-              onClick: () => {
-                void windowControl("focus").catch((err: unknown) => {
-                  console.warn(
-                    "houston: windowControl(focus) failed",
-                    err,
-                  );
-                });
-                selectNoticeTarget(noticeDir, noticeSession);
-              },
-            }),
-          );
-        }
-      }
-    }
-
     function handleSessionState(msg: SessionStateMessage): void {
-      if (
-        msg.state === "exited" &&
-        msg.exit_code !== null &&
-        msg.exit_code !== 0
-      ) {
-        failedSessionExitsRef.current.add(msg.session);
-      } else {
-        failedSessionExitsRef.current.delete(msg.session);
-      }
       setSessions((prev) => {
         const next = new Map(prev);
         const s = next.get(msg.session);
@@ -1242,29 +1006,6 @@ export function App(): React.JSX.Element {
       });
       if (!isLive(msg.state)) {
         setActiveId((cur) => (cur === msg.session ? null : cur));
-        const info = sessionsRef.current.get(msg.session);
-        const recentAgent = recentAgentNoticeRef.current.get(msg.session);
-        if (info && failedSessionExitsRef.current.has(msg.session)) {
-          if (!duplicatesAgentEnd(msg, recentAgent)) {
-            publishPaneNotice(
-              info,
-              "error",
-              `exited (exit ${msg.exit_code})`,
-              "session-state",
-            );
-          }
-        } else if (info) {
-          const stateRec = sessionStateNotification(
-            msg,
-            info,
-            recentAgent,
-          );
-          if (stateRec) {
-            setNotices((prev) =>
-              replacePaneNotice(prev, toNotice(stateRec)),
-            );
-          }
-        }
       }
     }
 
@@ -1284,7 +1025,6 @@ export function App(): React.JSX.Element {
           }
         }
         if (patchRosterIfNeeded(msg, setSessions)) return;
-        handleInboxRowMessage(msg, setInboxRows);
         handleTagWireMessage(msg, setTags, reconcileGridTags);
         if (msg.type === "tag_deleted") dropDeletedTagFromGrids(msg.tag);
         checkout.handleMessage(msg);
@@ -1300,20 +1040,6 @@ export function App(): React.JSX.Element {
             // a replaced connection re-asks rather than trusting a lost reply.
             checkout.reset(msg.sessions);
             checkout.requestForRoster(client, msg.sessions);
-            if (boot && msg.recovery && !recoveryShown.current) {
-              recoveryShown.current = true;
-              const { respawned, deferred, crashed } = msg.recovery;
-              const bootRec = addNotification({
-                kind: "boot-restore",
-                title: "Boot restore",
-                dir: "",
-                text: `restored ${respawned} session(s), deferred ${deferred}${crashed ? " — previous run crashed" : ""}`,
-              });
-              if (bootRec)
-                setNotices((prev) =>
-                  [toNotice(bootRec), ...prev].slice(0, 200),
-                );
-            }
             applyWorkspaceSelection(msg.workspaces, setShowLauncher, setSelectedWs);
             client.sessionPolicyGet();
             client.agentHooks();
@@ -1321,10 +1047,6 @@ export function App(): React.JSX.Element {
             client.orchestrationSettingsGet();
             client.voiceSettingsGet();
             client.keymapGet();
-            requestInboxForWorkspaces(
-              (path) => client.inboxList(path),
-              msg.workspaces,
-            );
             break;
           case "session_list":
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
@@ -1400,9 +1122,6 @@ export function App(): React.JSX.Element {
             });
             setExpandedId((cur) => (cur === msg.session ? null : cur));
             setActiveId((cur) => (cur === msg.session ? null : cur));
-            clearPaneNoticeRing(msg.session);
-            recentAgentNoticeRef.current.delete(msg.session);
-            failedSessionExitsRef.current.delete(msg.session);
             forgetDictationSession(msg.session);
             setVoiceIndicator(msg.session, null);
             break;
@@ -1414,10 +1133,6 @@ export function App(): React.JSX.Element {
                   ? cur
                   : msg.workspaces[0].path,
               );
-            requestInboxForWorkspaces(
-              (path) => client.inboxList(path),
-              msg.workspaces,
-            );
             break;
           case "agent_detected":
             setSessions((prev) => {
@@ -1444,21 +1159,6 @@ export function App(): React.JSX.Element {
             });
             break;
 
-          case "agent_notice": {
-            if (
-              msg.kind === "finished" &&
-              failedSessionExitsRef.current.has(msg.session)
-            ) break;
-            const ninfo = sessionsRef.current.get(msg.session);
-            if (ninfo) {
-              recentAgentNoticeRef.current.set(msg.session, {
-                kind: msg.kind,
-                at: Date.now(),
-              });
-              publishPaneNotice(ninfo, msg.kind);
-            }
-            break;
-          }
           case "clipboard_set":
             if (osc52Ref.current) {
               void navigator.clipboard.writeText(msg.text).then(
@@ -1808,20 +1508,11 @@ export function App(): React.JSX.Element {
         count?: number;
         state?: GridLifecycle;
         statusLabel?: string;
-        attention?: number;
-        attentionTone?: "error" | "needs-input" | "info";
         sessionIds?: number[];
         tagIds?: number[];
         paneTagIds?: number[];
       }[]
     > = {};
-    const unreadBySession = new Map<number, Notice[]>();
-    for (const notice of notices) {
-      if (notice.read || notice.session === 0) continue;
-      const rows = unreadBySession.get(notice.session) ?? [];
-      rows.push(notice);
-      unreadBySession.set(notice.session, rows);
-    }
     for (const w of orderedWorkspaces) {
       out[w.path] = gridsFor(w.path).map((g) => {
         const st = warmLayouts.get(gridStorageKey(w.path, g.id));
@@ -1832,16 +1523,6 @@ export function App(): React.JSX.Element {
           .map((id) => sessions.get(id))
           .filter((session): session is SessionInfo => session !== undefined);
         const lifecycle = gridLifecycle(gridSessions);
-        const gridNotices = ids.flatMap(
-          (id) => unreadBySession.get(id) ?? [],
-        );
-        const attentionTone = gridNotices.some(
-          (notice) => notice.severity === "error",
-        )
-          ? "error"
-          : gridNotices.some((notice) => notice.severity === "needs-input")
-            ? "needs-input"
-            : "info";
         const paneTagIds = [
           ...new Set(
             ids.flatMap((id) => sessions.get(id)?.tags ?? []),
@@ -1853,8 +1534,6 @@ export function App(): React.JSX.Element {
           count: ids.length,
           state: lifecycle.state,
           statusLabel: lifecycle.label,
-          attention: gridNotices.length,
-          attentionTone,
           sessionIds: ids,
           tagIds,
           paneTagIds,
@@ -1862,7 +1541,7 @@ export function App(): React.JSX.Element {
       });
     }
     return out;
-  }, [orderedWorkspaces, gridsFor, warmLayouts, sessions, notices]);
+  }, [orderedWorkspaces, gridsFor, warmLayouts, sessions]);
 
   const paletteGrids: GridTarget[] = useMemo(
     () =>
@@ -2273,13 +1952,12 @@ export function App(): React.JSX.Element {
       if (typeof key === "number") {
         setActiveLeaf(null);
         setActiveId(key);
-        markPaneNoticesRead(key);
       } else {
         setActiveId(null);
         setActiveLeaf(key);
       }
     },
-    [markPaneNoticesRead, mutateTree, setActiveId, setActiveLeaf],
+    [mutateTree, setActiveId, setActiveLeaf],
   );
   const keyboardTargetPane = useCallback(
     (): PaneKey | null =>
@@ -2340,12 +2018,11 @@ export function App(): React.JSX.Element {
         return;
       }
       setActiveId(target);
-      markPaneNoticesRead(target);
       if (!cur.client.sendStdin(target, invoke)) {
         pushError("connection lost — skill invocation was not delivered");
       }
     },
-    [markPaneNoticesRead, pushError],
+    [pushError],
   );
   const canRunSkill = conn.kind === "ready" && orderedIds.some(
     (id) => isLive(sessions.get(id)?.state ?? "exited"),
@@ -2925,7 +2602,6 @@ export function App(): React.JSX.Element {
       if (!sessionPane) setActiveId(null);
       setActiveLeaf(paneEl && !sessionPane ? paneKeyAttr : null);
       if (!t.closest(".add-pane-popover")) setAddPanePopover(null);
-      if (!t.closest(".bell-menu-wrap")) closePopover("bell");
     };
     window.addEventListener("pointerdown", onDown, true);
     return () => window.removeEventListener("pointerdown", onDown, true);
@@ -3037,8 +2713,7 @@ export function App(): React.JSX.Element {
       }
       if (activeId !== null && !layerArmed && focusedPaneOwnsKey(e)) return;
       if (resolveMatch(escapeShortcut, keymapOverrides)(e)) {
-        if (bellOpen) closePopover("bell");
-        else if (shortcutSheet) setShortcutSheet(false);
+        if (shortcutSheet) setShortcutSheet(false);
         else if (settings) setSettings(false);
         else if (railView !== null) setRailView(null);
         else if (composer) setComposer(null);
@@ -3099,7 +2774,6 @@ export function App(): React.JSX.Element {
               mutateTree((t) => setActiveStackTab(t, container.id, id));
           }
           setActiveId(id);
-          markPaneNoticesRead(id);
         }
       } else if (resolveGlobalMatch(newTerminalShortcut, keymapOverrides)(e)) {
         newTerminal();
@@ -3165,13 +2839,11 @@ export function App(): React.JSX.Element {
       ) {
         e.preventDefault();
         setPaletteOpen(true);
-        setActivePopover(null);
       } else if (
         resolveGlobalMatch(commandPaletteShortcut, keymapOverrides)(e)
       ) {
         e.preventDefault();
         setPaletteOpen(true);
-        setActivePopover(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -3186,7 +2858,6 @@ export function App(): React.JSX.Element {
     workspacesEmptyOpen,
     workspaces,
     shortcutSheet,
-    bellOpen,
     paletteOpen,
     confirmRemoveWs,
     activeId,
@@ -3211,7 +2882,6 @@ export function App(): React.JSX.Element {
     tidyPanes,
     equalizePanesNow,
     focusAdjacentPane,
-    markPaneNoticesRead,
     movePaneBy,
     stepWorkspace,
     selectLastWorkspace,
@@ -3250,56 +2920,6 @@ export function App(): React.JSX.Element {
   const client = conn.client;
   const connected = conn.kind === "ready";
 
-  const {
-    owed,
-    correctedBy: owedCorrectedBy,
-    unread: owedUnread,
-    needsInput: owedNeedsInput,
-  } = owedInboxSummary(inboxRows);
-  const unread = notices.filter((n) => !n.read).length + owedUnread;
-  const needsInput =
-    notices.filter((n) => !n.read && n.severity === "needs-input").length +
-    owedNeedsInput;
-  const bellSummary =
-    unread === 0 && needsInput === 0
-      ? "No unread notifications"
-      : needsInput === 0
-        ? `${unread} unread`
-        : unread === 0
-          ? `${needsInput} waiting for your input`
-          : `${unread} unread, ${needsInput} waiting for your input`;
-  const noticeSections = groupNotices(notices);
-
-  const unreadByWs: Record<string, number> = {};
-  for (const n of notices)
-    if (!n.read && n.dir) unreadByWs[n.dir] = (unreadByWs[n.dir] ?? 0) + 1;
-  const owedByWs = owedByWorkspace(owed);
-  const attentionCount = orderedWorkspaces.filter(
-    (w) => (unreadByWs[w.path] ?? 0) + (owedByWs[w.path] ?? 0) > 0,
-  ).length;
-  const railToggle = railToggleLabels(attentionCount);
-
-  const jumpTo = (n: Notice): void => {
-    selectNoticeTarget(n.dir, n.session);
-    setNotices((prev) => prev.filter((x) => x.id !== n.id));
-    closePopover("bell");
-  };
-
-  const jumpToOwed = (workspace: string, session: number): void => {
-    selectNoticeTarget(workspace, session);
-    closePopover("bell");
-  };
-
-  const flashOwedRow = (id: bigint): void => {
-    setFlashOwedId(id);
-    if (flashOwedTimer.current !== undefined)
-      clearTimeout(flashOwedTimer.current);
-    flashOwedTimer.current = setTimeout(() => {
-      flashOwedTimer.current = undefined;
-      setFlashOwedId(null);
-    }, OWED_FLASH_MS);
-  };
-
   const renameWorkspaceSubmit = (path: string, name: string): void => {
     setWsRenaming(null);
     const trimmed = name.trim();
@@ -3308,9 +2928,6 @@ export function App(): React.JSX.Element {
     client.renameWorkspace(path, trimmed);
   };
 
-  const liveCount = [...sessions.values()].filter((s) =>
-    isLive(s.state),
-  ).length;
   const wsName = workspaces.find((w) => w.path === selectedWs)?.name ?? null;
 
   const handleTitlebarMouseDown = (e: React.MouseEvent): void => {
@@ -3360,11 +2977,6 @@ export function App(): React.JSX.Element {
     setGridLayout: (cols) => resetLayout(cols),
     tidyPanes: paneCount > 1 ? tidyPanes : undefined,
     equalizePanes: paneCount > 1 ? equalizePanesNow : undefined,
-    openNotifications: () => setActivePopover("bell"),
-    markAllNotificationsRead: () => {
-      setNotices([]);
-      clearAllPaneNoticeRings();
-    },
     openShortcutSheet: () => setShortcutSheet(true),
     windowMinimize: () =>
       void windowControl("minimize").catch((err: unknown) => {
@@ -3442,8 +3054,6 @@ export function App(): React.JSX.Element {
                     : [...prev, path],
                 )
               }
-              unreadByWs={unreadByWs}
-              owedByWs={owedByWs}
               renaming={wsRenaming}
               onSelect={(key) => {
                 setSelectedWs(key);
@@ -3520,20 +3130,14 @@ export function App(): React.JSX.Element {
             <div className="flex items-center gap-1.5 min-w-0 pl-2.5">
               {}
               {sidebarRail && (
-                <Tooltip label={railToggle.tooltip}>
+                <Tooltip label="Show sidebar (Ctrl+B)">
                   <button
                     type="button"
                     className={`relative ${BTN_ICO} [-webkit-app-region:no-drag]`}
-                    aria-label={railToggle.ariaLabel}
+                    aria-label="Show sidebar"
                     onClick={() => setSidebarRail(false)}
                   >
                     <Icon glyph={IconPanelLeft} role="ui" />
-                    {attentionCount > 0 && (
-                      <span
-                        data-testid="rail-toggle-attention"
-                        className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[${RING_RAIL_CUTOUT}]`}
-                      />
-                    )}
                   </button>
                 </Tooltip>
               )}
@@ -3560,160 +3164,6 @@ export function App(): React.JSX.Element {
                   <Icon glyph={IconGrid} role="ui" />
                 </button>
               </Tooltip>
-              <div className="bell-menu-wrap relative">
-                <Tooltip
-                  label={`Notifications · ${bellSummary} · ${liveCount} running`}
-                >
-                  <button
-                    className={`${BTN_ICO} bell-btn relative [-webkit-app-region:no-drag] ${bellOpen ? "on-accent" : ""}`}
-                    aria-label={`Notifications, ${bellSummary}`}
-                    data-attention={
-                      needsInput > 0
-                        ? "waiting"
-                        : unread > 0
-                          ? "unread"
-                          : undefined
-                    }
-                    onClick={() => togglePopover("bell")}
-                  >
-                    <span
-                      className="flex items-center justify-center"
-                      style={
-                        needsInput > 0
-                          ? { color: "var(--warning)" }
-                          : unread > 0 || bellOpen
-                            ? { color: "var(--text-primary)" }
-                            : undefined
-                      }
-                    >
-                      <Icon glyph={IconBell} role="ui" />
-                    </span>
-                    {unread > 0 && (
-                      <span className="pulse-ring-badge [--pulse-color:var(--accent)] absolute -top-1 -right-[5px] min-w-[13px] h-[13px] px-[3px] rounded-full bg-[var(--accent)] text-white [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] leading-[13px] text-center tabular-nums">
-                        {unread > 99 ? "99+" : unread}
-                      </span>
-                    )}
-                  </button>
-                </Tooltip>
-                <AnimOut open={bellOpen} suppress="popover">
-                  <div
-                    className={`bell-menu [-webkit-app-region:no-drag] select-text absolute top-[30px] right-0 z-[var(--z-popover)] w-[330px] max-h-[60vh] flex flex-col bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] shadow-[var(--shadow-1)] overflow-hidden [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`}
-                    style={popOriginStyle("right", "top")}
-                  >
-                    <div className="flex items-center justify-between gap-2 py-[9px] px-3 border-b border-b-[var(--divider)] [font-size:var(--tr-text-label-size)] font-bold tracking-[0.06em]">
-                      <span>
-                        {unread > 0 || needsInput > 0
-                          ? `Notifications · ${bellSummary}`
-                          : "Notifications"}
-                      </span>
-                      <span className="flex gap-0.5">
-                        <button
-                          className={`btn ${BTN_GHOST} ${BELL_GHOST} [-webkit-app-region:no-drag]`}
-                          onClick={() => {
-                            setNotices([]);
-                            clearAllPaneNoticeRings();
-                            for (const r of owed)
-                              if (r.delivered_at == null) client.inboxAck(r.id);
-                          }}
-                        >
-                          Mark all read
-                        </button>
-                        <BellClearAllButton
-                          onClear={() => {
-                            setNotices([]);
-                            clearAllPaneNoticeRings();
-                            for (const r of owed) client.inboxResolve(r.id);
-                          }}
-                        />
-                      </span>
-                    </div>
-                    {isBellEmpty(notices.length, owed.length) ? (
-                      <div className="py-4.5 px-3.5 text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5]">
-                        Nothing yet — finished sessions land here.
-                      </div>
-                    ) : (
-                      <div className="overflow-y-auto">
-                        <OwedInboxSection
-                          rows={owed}
-                          sessions={sessions}
-                          correctedBy={owedCorrectedBy}
-                          flashId={flashOwedId}
-                          onAck={(id) => client.inboxAck(id)}
-                          onResolve={(id) => client.inboxResolve(id)}
-                          onJump={jumpToOwed}
-                          onFlashCorrection={flashOwedRow}
-                        />
-                        {noticeSections.map((sec) => (
-                          <Fragment key={sec.title}>
-                            <h2
-                              className="m-0 px-3 pt-2 pb-1 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase"
-                              style={{
-                                color: sec.needsYou
-                                  ? "var(--warning)"
-                                  : "var(--text-faint)",
-                              }}
-                            >
-                              {sec.title}
-                            </h2>
-                            {sec.notices.map((n) => (
-                              <div
-                                key={n.id}
-                                className={`bell-item py-2 px-3 border-b border-b-[var(--divider)] last:border-b-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] ${n.read ? "" : "border-l-2"} flex flex-col gap-[3px]`}
-                                style={
-                                  n.read
-                                    ? undefined
-                                    : {
-                                        borderLeftColor:
-                                          NOTICE_SEVERITY[n.severity].tone,
-                                        background: `color-mix(in srgb, ${NOTICE_SEVERITY[n.severity].tone} 8%, transparent)`,
-                                      }
-                                }
-                              >
-                                <div className="text-[var(--text-secondary)]">
-                                  <b className="text-[var(--text-primary)]">
-                                    {n.title}
-                                  </b>{" "}
-                                  {n.text}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <NoticeSeverityChip severity={n.severity} />
-                                  <span className="text-[var(--text-faint)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] mr-auto tabular-nums">
-                                    {fmtAgo(n.time)}
-                                  </span>
-                                  <button
-                                    className={`btn ${BTN_GHOST} ${BELL_ITEM_GHOST} [-webkit-app-region:no-drag]`}
-                                    onClick={() => jumpTo(n)}
-                                  >
-                                    Jump to pane
-                                  </button>
-                                  <Tooltip label="Dismiss">
-                                    <button
-                                      className={`btn ${BTN_GHOST} ${BELL_ITEM_GHOST} [-webkit-app-region:no-drag]`}
-                                      aria-label="Dismiss"
-                                      onClick={() => {
-                                        setNotices((prev) => {
-                                          const next = prev.filter(
-                                            (x) => x.id !== n.id,
-                                          );
-                                          if (n.ringTone)
-                                            clearPaneNoticeRing(n.session);
-                                          return next;
-                                        });
-                                      }}
-                                    >
-                                      <Icon glyph={IconClose} role="label" />
-                                    </button>
-                                  </Tooltip>
-                                </div>
-                              </div>
-                            ))}
-                          </Fragment>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </AnimOut>
-              </div>
               <SourceControlToggle
                 open={scmOpen}
                 chord={effectiveLabel(toggleGit, keymapOverrides)}
@@ -3817,10 +3267,7 @@ export function App(): React.JSX.Element {
                     shellIntegration={shellIntegration}
                     workspaceDir={selectedWs}
                     onReconnectSsh={openSshReconnect}
-                    onActivate={(id) => {
-                      setActiveId(id);
-                      markPaneNoticesRead(id);
-                    }}
+                    onActivate={(id) => setActiveId(id)}
                     onExpand={handleExpand}
                     onZoom={changeFont}
                     onShellZoom={changeZoom}
@@ -3914,10 +3361,7 @@ export function App(): React.JSX.Element {
                               shellIntegration={shellIntegration}
                               workspaceDir={w.path}
                               onReconnectSsh={openSshReconnect}
-                              onActivate={(id) => {
-                                setActiveId(id);
-                                markPaneNoticesRead(id);
-                              }}
+                              onActivate={(id) => setActiveId(id)}
                               onExpand={handleExpand}
                               onZoom={changeFont}
                               onShellZoom={changeZoom}
@@ -4131,8 +3575,6 @@ export function App(): React.JSX.Element {
                       onShiftEnterNewline={setShiftEnterNewline}
                       openLinksInPane={openLinksInPane}
                       onOpenLinksInPane={setOpenLinksInPane}
-                      notifyKinds={notifyKinds}
-                      onNotifyKinds={setNotifyKinds}
                       uiZoom={uiZoom}
                       onUiZoom={setUiZoom}
                       zoomMin={ZOOM_MIN}
@@ -4210,13 +3652,6 @@ export function App(): React.JSX.Element {
                         setKeymapOverrides(next);
                         conn.client.keymapSet(next);
                       }}
-                      notifyEnabled={notifyEnabled}
-                      onNotifyEnabled={setNotifyEnabled}
-                      notifySound={notifySound}
-                      onNotifySound={setNotifySound}
-                      onNotifyPreview={(severity) =>
-                        playChime(NOTICE_SEVERITY_SOUND[severity])
-                      }
                       update={update}
                       onUpdateCheckNow={() => {
                         if (conn.kind === "ready") conn.client.updateCheckNow();

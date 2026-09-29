@@ -40,11 +40,6 @@ export const BTN_ICO_STRUCTURE =
   'border-none p-0 leading-none inline-flex items-center justify-center flex-none ' +
   '[&_svg]:block [&_svg]:flex-none'
 
-export const BELL_GHOST =
-  'border-none [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] py-0.5 px-1.5'
-export const BELL_ITEM_GHOST =
-  'border-none [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] py-px px-1.5'
-
 export const LINK_INLINE =
   'underline text-[var(--accent)] bg-transparent border-0 p-0 font-[inherit] cursor-pointer ' +
   'hover:text-[var(--accent-hover)] ' +

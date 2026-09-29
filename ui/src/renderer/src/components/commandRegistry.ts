@@ -62,8 +62,6 @@ export interface PaletteActions {
   setGridLayout: (cols: 1 | 2 | 3 | 4) => void
   tidyPanes?: () => void
   equalizePanes?: () => void
-  openNotifications: () => void
-  markAllNotificationsRead: () => void
   openShortcutSheet: () => void
 
   windowMinimize?: () => void
@@ -340,22 +338,6 @@ function buildViewCommands(actions: PaletteActions): Command[] {
       chord: toggleSidebarShortcut,
       enabled: true,
       run: () => actions.toggleSidebarRail()
-    },
-    {
-      id: 'view.notifications.open',
-      title: 'Open notifications',
-      group: 'View',
-      keywords: ['bell', 'alerts'],
-      enabled: true,
-      run: () => actions.openNotifications()
-    },
-    {
-      id: 'view.notifications.mark-all-read',
-      title: 'Mark all notifications read',
-      group: 'View',
-      keywords: ['bell', 'clear', 'unread'],
-      enabled: true,
-      run: () => actions.markAllNotificationsRead()
     },
     {
       id: 'view.shortcuts',

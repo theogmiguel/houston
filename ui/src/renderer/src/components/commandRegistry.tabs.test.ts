@@ -17,8 +17,6 @@ function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
     toggleChromeTheme: vi.fn(),
     openAddPanePopover: vi.fn(),
     setGridLayout: vi.fn(),
-    openNotifications: vi.fn(),
-    markAllNotificationsRead: vi.fn(),
     openShortcutSheet: vi.fn(),
     windowMinimize: vi.fn(),
     windowMaximize: vi.fn(),

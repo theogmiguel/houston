@@ -21,20 +21,6 @@ button.tl.min
 button.tl.min:hover
 button.tl.max
 button.tl.max:hover
-.bell-menu-wrap
-.bell-btn
-.bell-menu
-.bell-h
-.bell-h-actions
-.bell-empty
-.bell-list
-.bell-item
-.bell-item:last-child
-.bell-item-t
-.bell-item-t b
-.bell-item-b
-.bell-time
-.bell-badge
 .grid-menu-wrap
 .grid-menu
 .grid-item

@@ -141,7 +141,7 @@ async fn a_correlation_hook_cannot_leave_a_pane_spawning_forever() {
 }
 
 #[tokio::test]
-async fn hook_events_drive_status_and_notices() {
+async fn hook_events_drive_status() {
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     let (info, _dir) = a_pane(&daemon);
     assert!(
@@ -157,22 +157,10 @@ async fn hook_events_drive_status_and_notices() {
     );
 
     drop_and_await_apply(state.path(), &drop_for("Stop", info.id)).await;
-    let mut saw_idle = false;
-    let mut saw_finished = false;
-    while !(saw_idle && saw_finished) {
-        match next_broadcast_control(&mut rx).await {
-            proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
-                assert_eq!(status, proto::AgentStatus::Idle);
-                saw_idle = true;
-            }
-            proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
-                assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                saw_finished = true;
-            }
-            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
-            _ => continue,
-        }
-    }
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Idle
+    );
 
     drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", info.id)).await;
     assert_eq!(
@@ -180,22 +168,10 @@ async fn hook_events_drive_status_and_notices() {
         proto::AgentStatus::Working
     );
     drop_and_await_apply(state.path(), &drop_for("Notification", info.id)).await;
-    let mut saw_needs = false;
-    let mut saw_notice = false;
-    while !(saw_needs && saw_notice) {
-        match next_broadcast_control(&mut rx).await {
-            proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
-                assert_eq!(status, proto::AgentStatus::NeedsInput);
-                saw_needs = true;
-            }
-            proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
-                assert_eq!(kind, proto::AgentNoticeKind::NeedsInput);
-                saw_notice = true;
-            }
-            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
-            _ => continue,
-        }
-    }
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::NeedsInput
+    );
 
     daemon.kill(info.id).ok();
 }
@@ -207,22 +183,10 @@ async fn a_post_stop_notification_does_not_stick_the_pane_at_needs_input() {
     let mut rx = daemon.observe();
 
     drop_and_await_apply(state.path(), &drop_for("Stop", info.id)).await;
-    let mut saw_idle = false;
-    let mut saw_finished = false;
-    while !(saw_idle && saw_finished) {
-        match next_broadcast_control(&mut rx).await {
-            proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
-                assert_eq!(status, proto::AgentStatus::Idle);
-                saw_idle = true;
-            }
-            proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
-                assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                saw_finished = true;
-            }
-            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
-            _ => continue,
-        }
-    }
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Idle
+    );
 
     drop_and_await_apply(state.path(), &drop_for("Notification", info.id)).await;
 
@@ -373,7 +337,7 @@ async fn claude_mcp_elicitation_blocks_until_its_result() {
 }
 
 #[tokio::test]
-async fn a_stop_failure_reports_error_attention_instead_of_completion() {
+async fn a_stop_failure_settles_the_pane_at_idle() {
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     let (info, _dir) = a_pane(&daemon);
     let mut rx = daemon.observe();
@@ -384,23 +348,10 @@ async fn a_stop_failure_reports_error_attention_instead_of_completion() {
         proto::AgentStatus::Working
     );
     drop_and_await_apply(state.path(), &drop_for("StopFailure", info.id)).await;
-
-    let mut saw_idle = false;
-    let mut saw_error = false;
-    while !(saw_idle && saw_error) {
-        match next_broadcast_control(&mut rx).await {
-            proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
-                assert_eq!(status, proto::AgentStatus::Idle);
-                saw_idle = true;
-            }
-            proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
-                assert_eq!(kind, proto::AgentNoticeKind::Error);
-                saw_error = true;
-            }
-            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
-            _ => continue,
-        }
-    }
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Idle
+    );
 
     daemon.kill(info.id).ok();
 }
@@ -432,22 +383,10 @@ async fn a_providers_own_event_name_drives_status_and_a_foreign_one_does_not() {
     let mut rx = daemon.observe();
 
     drop_and_await_apply(state.path(), &drop_from("cursor", "stop", info.id)).await;
-    let mut saw_idle = false;
-    let mut saw_finished = false;
-    while !(saw_idle && saw_finished) {
-        match next_broadcast_control(&mut rx).await {
-            proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
-                assert_eq!(status, proto::AgentStatus::Idle);
-                saw_idle = true;
-            }
-            proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
-                assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                saw_finished = true;
-            }
-            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
-            _ => continue,
-        }
-    }
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Idle
+    );
 
     drop_and_await_apply(state.path(), &drop_from("cursor", "Notification", info.id)).await;
     drop_and_await_apply(state.path(), &drop_for("UserPromptSubmit", info.id)).await;
@@ -492,23 +431,10 @@ async fn antigravitys_mid_turn_events_never_end_the_turn() {
     }
 
     drop_and_await_apply(state.path(), &drop_from("antigravity", "Stop", info.id)).await;
-    let mut saw_idle = false;
-    let mut finished = 0usize;
-    while !(saw_idle && finished == 1) {
-        match next_broadcast_control(&mut rx).await {
-            proto::ServerMsg::AgentStatus { session, status } if session == info.id => {
-                assert_eq!(status, proto::AgentStatus::Idle);
-                saw_idle = true;
-            }
-            proto::ServerMsg::AgentNotice { session, kind } if session == info.id => {
-                assert_eq!(kind, proto::AgentNoticeKind::Finished);
-                finished += 1;
-                assert_eq!(finished, 1, "one turn raises exactly one Finished notice");
-            }
-            proto::ServerMsg::Error { message, .. } => panic!("daemon error: {message}"),
-            _ => continue,
-        }
-    }
+    assert_eq!(
+        expect_status(&mut rx, info.id).await,
+        proto::AgentStatus::Idle
+    );
 
     daemon.kill(info.id).ok();
 }

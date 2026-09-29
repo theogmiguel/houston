@@ -318,8 +318,6 @@ const settingsProps: Parameters<typeof SettingsView>[0] = {
   fontFamilyId: 'nerd',
   shiftEnterNewline: true,
   openLinksInPane: false,
-  notifyKinds: { completed: true, error: true, 'needs-input': true, info: true },
-  onNotifyKinds: () => {},
   onOpenLinksInPane: () => {},
   onShiftEnterNewline: () => {},
   onFontFamilyId: () => {},
@@ -337,11 +335,6 @@ const settingsProps: Parameters<typeof SettingsView>[0] = {
   onOpenLogsFolder: () => {},
   keymapOverrides: { bindings: {}, shortcuts_enabled: true },
   onKeymapOverrides: () => {},
-  notifyEnabled: true,
-  onNotifyEnabled: () => {},
-  notifySound: false,
-  onNotifySound: () => {},
-  onNotifyPreview: () => {},
   onContact: () => {}
 }
 
@@ -351,7 +344,6 @@ const sidebarFixtureProps: Parameters<typeof Sidebar>[0] = {
   selected: WORKSPACES[0].path,
   customColors: {},
   colorIndexByPath: Object.fromEntries(WORKSPACES.map((w, i) => [w.path, i])),
-  unreadByWs: {},
   renaming: null,
   onSelect: () => {},
   onAddWorkspace: () => {},
@@ -656,25 +648,6 @@ const CASES: Case[] = [
       { sel: '.ctx-menu', prop: 'animation-name', is: 'menu-out', motion: 'no-preference', unfrozen: true },
       { sel: '.ctx-menu', prop: 'animation-name', is: 'none', motion: 'reduce', unfrozen: true }
     ]
-  },
-
-  {
-    id: 'app-bell-populated',
-    w: 1200,
-    h: 800,
-    surface: 'app',
-    deliver: [{ type: 'agent_notice', session: 3, kind: 'finished' }],
-    prep: [{ name: 'Notifications ·' }],
-    assert: [{ sel: '.bell-menu', prop: 'animation-name', is: 'none', motion: 'reduce', unfrozen: true }]
-  },
-
-  {
-    id: 'app-bell-closing',
-    w: 1200,
-    h: 800,
-    surface: 'app',
-    deliver: [{ type: 'agent_notice', session: 3, kind: 'finished' }],
-    prep: [{ name: 'Notifications ·' }, { name: 'Notifications ·' }]
   },
 
   {

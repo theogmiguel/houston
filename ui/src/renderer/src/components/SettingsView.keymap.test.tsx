@@ -4,7 +4,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
-import { NOTIFY_KINDS_DEFAULT } from '../notifyPrefs'
 import type { KeymapOverrides } from '../houston/client'
 
 ;(globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = '0.0.0-test'
@@ -49,8 +48,6 @@ function baseProps(overrides: {
     fontFamilyId: 'nerd',
     shiftEnterNewline: true,
     openLinksInPane: false,
-    notifyKinds: NOTIFY_KINDS_DEFAULT,
-    onNotifyKinds: () => {},
     onOpenLinksInPane: () => {},
     onShiftEnterNewline: () => {},
     onFontFamilyId: () => {},
@@ -92,11 +89,6 @@ function baseProps(overrides: {
     onAgentHooksSet: () => {},
     onAgentHooksRefresh: () => {},
     onRevealSessionDb: () => {},
-    notifyEnabled: false,
-    onNotifyEnabled: () => {},
-    notifySound: true,
-    onNotifySound: () => {},
-    onNotifyPreview: () => {},
     ...overrides
   }
 }

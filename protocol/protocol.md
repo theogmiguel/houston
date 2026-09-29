@@ -1,4 +1,4 @@
-# Wire protocol v115
+# Wire protocol v116
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -328,7 +328,6 @@ failure not given a typed refusal comes back as `error`.
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
-| `agent_notice` | `session`, `kind: AgentNoticeKind` | bcast — an attention-worthy event for the client's notification inbox |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
 | `git_diff` | `dir`, `path?`, `patch`, `truncated`, `base?` | direct reply to `git_diff` |
@@ -391,7 +390,6 @@ data are internally tagged; the tag field is named in each entry below.
 AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | droid | copilot | aider | ssh
 SessionState       running | exited | killed | interrupted
 AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
-AgentNoticeKind    kebab: finished | needs-input | error
 ContextState       snake: unknown | idle | working | near_limit | reset
 ContextSource      snake: reported | derived
 SessionContext     used_tokens, window_tokens?, used_percent? (0-100, floored),
@@ -840,6 +838,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 116 | **The notification feed is removed.** Gone from the wire: the server's `agent_notice` broadcast and the `AgentNoticeKind` enum. `agent_status` keeps carrying every lifecycle change (working, idle, needs-input) and the orchestration inbox messages (`inbox_list`/`inbox_ack`/`inbox_resolve`/`inbox_deliver_now`, `inbox_rows`, `inbox_changed`) are unchanged; there is simply no separate attention feed for a client notification center |
 | 115 | **A workspace without git is not a failure.** `git_status`'s reply gains `not_a_repo`. A plain existing directory with no Git metadata replies `not_a_repo: true` with empty files and null branch fields instead of an `error`, so the renderer shows its not-a-repo state without an app-wide error toast. A missing directory or any Git probe failure remains an `error`; no other message changes |
 | 114 | **A pane says which branch it is on.** `git_branch`'s reply gains `toplevel` and `common_dir` beside `branch`, all nullable. The branch is read from the checkout's HEAD, which is also the only source that answers before a repository's first commit; `toplevel` and `common_dir` come from one `rev-parse --show-toplevel --path-format=absolute --git-common-dir`. `toplevel` names the work tree, `common_dir` the repository a checkout belongs to; a non-repo replies with all three null, a detached HEAD keeps `toplevel`/`common_dir` and nulls only `branch`. The renderer shows the branch in the pane header and groups live panes by these two facts: equal `toplevel` is one shared checkout, equal `common_dir` across different toplevels is a main checkout and its worktree. Nothing is persisted and no other message changes |
 | 113 | **Orchestration spans registered workspaces and records child lifetime.** `pane_spawn`/`hs-pane spawn` gain registered `target_workspace`, `reusable` lifecycle selection and provider-validated `effort`; `DelegationInfo` carries the persisted reusable choice. Temporary children are removed only after a durable completed handback, while the delegation ancestry, inbox rows and bounded sender identity snapshots remain available for scoped historical waits |

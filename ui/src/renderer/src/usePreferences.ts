@@ -11,7 +11,6 @@ import {
   type ThemeName
 } from './theme'
 import { setZoomFactor } from './houston/bridge'
-import { loadNotifyKinds, saveNotifyKinds, type NotifyKinds } from './notifyPrefs'
 import { TERMINAL_FONTS, terminalFontStack } from './pane/terminalFonts'
 import { SHIFT_ENTER_KEY, shiftEnterEnabled } from './pane/shiftEnter'
 
@@ -77,10 +76,6 @@ const OSC52_KEY = 'tr-osc52'
 const COPY_ON_SELECT_KEY = 'tr-copy-on-select'
 
 const STRIP_BOX_GLYPHS_KEY = 'tr-strip-box-glyphs'
-
-const NOTIFY_KEY = 'tr-notify-desktop'
-
-const NOTIFY_SOUND_KEY = 'tr-notify-sound'
 
 function loadStringMap(key: string): Record<string, string> {
   try {
@@ -153,15 +148,6 @@ export function usePreferences(): {
   setCopyOnSelect: React.Dispatch<React.SetStateAction<boolean>>
   stripBoxGlyphs: boolean
   setStripBoxGlyphs: React.Dispatch<React.SetStateAction<boolean>>
-  notifyEnabled: boolean
-  setNotifyEnabled: React.Dispatch<React.SetStateAction<boolean>>
-  notifyEnabledRef: React.MutableRefObject<boolean>
-  notifyKinds: NotifyKinds
-  setNotifyKinds: React.Dispatch<React.SetStateAction<NotifyKinds>>
-  notifyKindsRef: React.MutableRefObject<NotifyKinds>
-  notifySound: boolean
-  setNotifySound: React.Dispatch<React.SetStateAction<boolean>>
-  notifySoundRef: React.MutableRefObject<boolean>
   changeFont: (dir: 1 | -1 | 0) => void
   changeZoom: (dir: 1 | -1 | 0) => void
 } {
@@ -202,19 +188,6 @@ export function usePreferences(): {
   const [stripBoxGlyphs, setStripBoxGlyphs] = useState(
     () => localStorage.getItem(STRIP_BOX_GLYPHS_KEY) !== '0'
   )
-  const [notifyEnabled, setNotifyEnabled] = useState(
-    () => localStorage.getItem(NOTIFY_KEY) === '1'
-  )
-  const notifyEnabledRef = useRef(notifyEnabled)
-  notifyEnabledRef.current = notifyEnabled
-  const [notifyKinds, setNotifyKinds] = useState<NotifyKinds>(loadNotifyKinds)
-  const notifyKindsRef = useRef(notifyKinds)
-  notifyKindsRef.current = notifyKinds
-  const [notifySound, setNotifySound] = useState(
-    () => localStorage.getItem(NOTIFY_SOUND_KEY) !== '0'
-  )
-  const notifySoundRef = useRef(notifySound)
-  notifySoundRef.current = notifySound
 
   useEffect(() => applyTheme(theme), [theme])
   useEffect(() => saveTerminalPaletteChoice(themeChoice), [themeChoice])
@@ -256,12 +229,6 @@ export function usePreferences(): {
   useEffect(
     () => localStorage.setItem(STRIP_BOX_GLYPHS_KEY, stripBoxGlyphs ? '1' : '0'),
     [stripBoxGlyphs]
-  )
-  useEffect(() => localStorage.setItem(NOTIFY_KEY, notifyEnabled ? '1' : '0'), [notifyEnabled])
-  useEffect(() => saveNotifyKinds(notifyKinds), [notifyKinds])
-  useEffect(
-    () => localStorage.setItem(NOTIFY_SOUND_KEY, notifySound ? '1' : '0'),
-    [notifySound]
   )
   useEffect(() => {
     void setZoomFactor(uiZoom).catch((err: unknown) => {
@@ -324,15 +291,6 @@ export function usePreferences(): {
     setCopyOnSelect,
     stripBoxGlyphs,
     setStripBoxGlyphs,
-    notifyEnabled,
-    setNotifyEnabled,
-    notifyEnabledRef,
-    notifyKinds,
-    setNotifyKinds,
-    notifyKindsRef,
-    notifySound,
-    setNotifySound,
-    notifySoundRef,
     changeFont,
     changeZoom
   }

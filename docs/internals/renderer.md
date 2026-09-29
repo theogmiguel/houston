@@ -154,7 +154,7 @@ does is walk plain DOM order:
 
 1. `Sidebar` (rail), when expanded — workspace rows, then their nav-row buttons.
 2. The titlebar (`App.tsx`'s `<header>`) — rail toggle (only when the rail is
-   collapsed), mode `Segmented`, Tidy, the bell popover, `WindowControls`.
+   collapsed), mode `Segmented`, Tidy, `WindowControls`.
 3. `<main>` — exactly one of the pane grid (`LayoutView`), Settings, a rail nav-row
    surface, Agents chat, or the new-session composer. These are alternates in one
    ternary, never siblings, so nothing after this point is reachable in the same
@@ -172,7 +172,7 @@ keys do nothing there. A terminal pane's real tab stop is a transparent
 implicit default of `0`.
 
 Escape is centrally chained only while no pane is focused: `App.tsx`'s global
-keydown handler closes, in priority order, the bell popover, the shortcut sheet,
+keydown handler closes, in priority order, the shortcut sheet,
 Settings, the rail nav-row surface, the new-session composer, the workspace
 launcher, then collapses an expanded pane. Once a pane is selected
 (`activeId !== null`), that chain is skipped entirely and Escape passes straight
@@ -181,38 +181,6 @@ still close on Escape only because opening them happens to clear `activeId` firs
 not because the chain reaches them. Every modal, popover and menu outside that
 chain (roughly 30 of them) handles Escape itself, independently, with no shared
 priority list.
-
-## Operator inbox
-
-Rows addressed to the operator (`to_session = 0`) are daemon state the bell
-reads, never owns. App holds them in a map keyed by row id: `inbox_rows`
-replaces one workspace's whole surface, `inbox_changed` replaces one row. The
-list is pulled per workspace at `hello_ok` and on every workspace change —
-rows outlive the panes involved, so the roster cannot scope them.
-
-The bell renders unresolved rows oldest-first as "Owed to you", above the
-time buckets, in the same `--warning` ink as "Needs you". Opening a row sends
-`inbox_ack` (delivery, not resolution); `Resolve` sends `inbox_resolve` and is
-offered only for `needs_input`, `exited` and `stalled`. "Mark all read" acks
-every unread owed row; "Clear all" drops renderer notices and resolves every
-owed row, whatever its kind — the bell is an attention surface, and a row the
-operator clears is no longer owed. `inbox_changed` is broadcast for every row
-write, a pane's rows included, so `applyInboxChanged` keeps only rows with
-`to_session = 0` and drops any other. The badge count adds unread owed rows
-to unread notices; the `--warning` bell state adds unresolved `needs_input`
-owed rows.
-
-"Corrected" is derived client-side from the set's own `corrects` links
-(`correctedByMap` in `inboxOwed.ts`): a corrected row's summary is struck
-through with a link that scrolls to its correction and holds a fill on it,
-and a correction's first line reads `corrects #id`. A provisional row carries
-the "may be corrected" marker it shares with the pane card. Jump targets
-resolve against the live roster (`original_to`, else `from_session`) and the
-button renders only while one of them is still on it.
-
-The sidebar folds unread owed rows into the workspace row's existing attention
-pip (`owedByWs` beside `unreadByWs`); the tooltip breaks the number down
-("3 unread · 2 owed to you"). No new element.
 
 ## The shell
 

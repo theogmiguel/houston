@@ -27,7 +27,6 @@ function props(
     selectedGridId: 'a1',
     customColors: {},
     colorIndexByPath: {},
-    unreadByWs: {},
     renaming: null,
     onSelect: noop,
     onAddWorkspace: noop,

@@ -8,7 +8,6 @@ import {
 } from 'react'
 import { BORDER_HAIRLINE_INSET } from './shadowChrome'
 import { normalizeUrl, type WebviewEl } from '../houston/browserUrl'
-import { addNotification } from '../notificationStore'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { useBrowserOpenUrl } from '../houston/browserState'
 import { IconClose, IconPlus } from './icons'
@@ -112,14 +111,7 @@ export function announcePopupRefusal(
   onAppError?: (text: string) => void
 ): void {
   console.warn(`houston: ${text} (surface ${JSON.stringify(surfaceId)})`)
-  const record = addNotification({
-    agentId: `browser:${surfaceId}`,
-    kind: 'browser-popup-blocked',
-    title: 'Popup blocked',
-    dir: '',
-    text
-  })
-  if (record) onAppError?.(text)
+  onAppError?.(text)
 }
 
 export function nextFailMsg(

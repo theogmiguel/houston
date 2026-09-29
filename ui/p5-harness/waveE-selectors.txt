@@ -1,13 +1,10 @@
 .key-chip
 .anim-out .pop-backdrop
 .anim-out .pop
-.anim-out .bell-menu
 .anim-out .handoff-overlay
 .boot
 .boot.error
 .boot-actions
-.bell-h-actions .ghost
-.bell-item-b .ghost
 .sw
 .sw .sw-knob
 .sw.on

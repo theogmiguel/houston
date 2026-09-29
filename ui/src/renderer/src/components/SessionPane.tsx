@@ -1,4 +1,4 @@
-import { memo, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useContext, useRef, useState } from 'react'
 import { RING_ACCENT_ICON } from './shadowChrome'
 import type {
   AgentKind,
@@ -64,44 +64,6 @@ export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
 export const HANDOFF_PROVIDERS = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const
 export type HandoffProvider = (typeof HANDOFF_PROVIDERS)[number]
-
-export type NoticeRingTone = 'completed' | 'error' | 'needs-input'
-
-const paneNoticeRings = new Map<number, NoticeRingTone>()
-const paneRingListeners = new Set<() => void>()
-
-function notifyPaneRingListeners(): void {
-  for (const l of paneRingListeners) l()
-}
-
-export function setPaneNoticeRing(session: number, tone: NoticeRingTone): void {
-  paneNoticeRings.set(session, tone)
-  notifyPaneRingListeners()
-}
-
-export function clearAllPaneNoticeRings(): void {
-  if (paneNoticeRings.size === 0) return
-  paneNoticeRings.clear()
-  notifyPaneRingListeners()
-}
-
-export function clearPaneNoticeRing(session: number): void {
-  if (paneNoticeRings.delete(session)) notifyPaneRingListeners()
-}
-
-export function resetPaneNoticeRingsForTests(): void {
-  paneNoticeRings.clear()
-}
-
-function usePaneNoticeRing(session: number): NoticeRingTone | null {
-  return useSyncExternalStore(
-    (onChange) => {
-      paneRingListeners.add(onChange)
-      return () => paneRingListeners.delete(onChange)
-    },
-    () => paneNoticeRings.get(session) ?? null
-  )
-}
 
 export function endedLabel(s: SessionInfo['state']): string | null {
   switch (s) {
@@ -420,11 +382,6 @@ function SessionPaneImpl({
 
   const focusTier = usePaneFocusTier(active)
 
-  const noticeRing = usePaneNoticeRing(info.id)
-  useEffect(() => {
-    if (active && paneNoticeRings.delete(info.id)) notifyPaneRingListeners()
-  }, [active, info.id])
-
   const keymapOverrides = useContext(KeymapOverridesContext)
   const [confirmRestart, setConfirmRestart] = useState(false)
   const termActions = useRef<TermActions | null>(null)
@@ -450,7 +407,6 @@ function SessionPaneImpl({
         openMenuAt(e.clientX, e.clientY)
       }}
     >
-      {noticeRing && <div aria-hidden className={`notice-ring pane-notice-ring ${noticeRing}`} />}
       <header
         className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[10px] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b border-b-[var(--divider)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [.pane-slot.drag-src_&]:cursor-grabbing [transition:background_0.2s] @container ${PANE_HEAD_BG_CLS[focusTier]}`}
         onPointerDown={(e) => {

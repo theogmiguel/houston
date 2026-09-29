@@ -28,7 +28,6 @@ BASELINE=(
   "ui/src/renderer/src/components/settings/AppearanceSection.tsx 2"
   "ui/src/renderer/src/components/SettingsDetail.tsx 6"
   "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 9"
-  "ui/src/renderer/src/components/settings/NotificationsSection.tsx 2"
   "ui/src/renderer/src/components/settings/OrchestrationSection.tsx 7"
   "ui/src/renderer/src/components/settingsPrimitives.tsx 1"
   "ui/src/renderer/src/components/settings/PrivacySection.tsx 4"
