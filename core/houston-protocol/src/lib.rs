@@ -3391,6 +3391,10 @@ pub enum ManageVerb {
     /// installer's verb, so a session that appeared after its own check is
     /// never killed. An older daemon refuses it by name (manual update).
     DaemonShutdownIfIdle,
+    /// `daemon_shutdown`, but only when the live set is exactly
+    /// `expected_sessions`: the update modal's verb, so a session the user
+    /// never saw is never stopped. An older daemon refuses it by name.
+    DaemonShutdownIfSessions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3404,6 +3408,11 @@ pub struct ManageRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub candidate_bin: Option<String>,
+    /// `daemon_shutdown_if_sessions` only: the live session ids the user
+    /// confirmed. Any other verb carrying it is refused by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<number> | null"))]
+    pub expected_sessions: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4240,6 +4249,7 @@ mod tests {
             manage_version: MANAGE_VERSION,
             verb: ManageVerb::DaemonHandoff,
             candidate_bin: Some("/usr/bin/houston-core".to_string()),
+            expected_sessions: None,
         };
         let json = serde_json::to_string(&with_candidate).unwrap();
         assert!(
@@ -4251,6 +4261,7 @@ mod tests {
             manage_version: MANAGE_VERSION,
             verb: ManageVerb::DaemonStatus,
             candidate_bin: None,
+            expected_sessions: None,
         };
         let json = serde_json::to_string(&without).unwrap();
         assert!(
@@ -4258,5 +4269,28 @@ mod tests {
             "an absent candidate must not ride the wire: {json}"
         );
         assert_eq!(json, r#"{"manage_version":1,"verb":"daemon_status"}"#);
+    }
+
+    #[test]
+    fn manage_request_expected_sessions_is_additive() {
+        let legacy: ManageRequest =
+            serde_json::from_str(r#"{"manage_version":1,"verb":"daemon_shutdown"}"#).unwrap();
+        assert_eq!(legacy.expected_sessions, None);
+
+        let confirmed: ManageRequest = serde_json::from_str(
+            r#"{"manage_version":1,"verb":"daemon_shutdown_if_sessions","expected_sessions":[3,1]}"#,
+        )
+        .unwrap();
+        assert_eq!(confirmed.verb, ManageVerb::DaemonShutdownIfSessions);
+        assert_eq!(confirmed.expected_sessions, Some(vec![3, 1]));
+
+        let json = serde_json::to_string(&ManageRequest {
+            manage_version: MANAGE_VERSION,
+            verb: ManageVerb::DaemonShutdown,
+            candidate_bin: None,
+            expected_sessions: None,
+        })
+        .unwrap();
+        assert!(!json.contains("expected_sessions"), "{json}");
     }
 }

@@ -75,6 +75,7 @@ async fn run_status() -> Result<()> {
         manage_version: houston_protocol::MANAGE_VERSION,
         verb: houston_protocol::ManageVerb::DaemonStatus,
         candidate_bin: None,
+        expected_sessions: None,
     };
     let resp = client
         .post(&url)

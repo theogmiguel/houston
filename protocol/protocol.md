@@ -729,11 +729,13 @@ one of those.
   richer `ManageDaemonHandoffResult` landed under this rule at version 1.
   `ManageRequest::candidate_bin` landed under it too: it is optional, every
   shipped caller omits it, and its absence is exactly the old behaviour.
-  `daemon_shutdown_if_idle` is likewise additive: only the updater sends it,
-  and older daemons refuse the unknown verb instead of changing an existing
-  caller's response shape.
+  `daemon_shutdown_if_idle` and `daemon_shutdown_if_sessions` are likewise
+  additive: only the updater sends them, and older daemons refuse the unknown
+  verb instead of changing an existing caller's response shape.
+  `ManageRequest::expected_sessions` is optional and absent for every other
+  verb.
 - **Request**: `POST /manage` with
-  `{"manage_version":1,"verb":"daemon_status"|"daemon_shutdown"|"daemon_shutdown_if_idle"|"daemon_handoff","candidate_bin"?:"/absolute/path"}`.
+  `{"manage_version":1,"verb":"daemon_status"|"daemon_shutdown"|"daemon_shutdown_if_idle"|"daemon_shutdown_if_sessions"|"daemon_handoff","candidate_bin"?:"/absolute/path","expected_sessions"?:[1,2]}`.
   This exact shape — and every response shape below — is pinned by the
   renderer's own hand-written client and its tests
   (`ui/src/renderer/src/houston/manage.ts`, `manage.test.ts`); it is
@@ -752,6 +754,10 @@ one of those.
   keeps the old behaviour — the daemon resolves its own executable, which is
   what `scripts/dev.sh --fresh` sends. Any other verb carrying `candidate_bin`
   gets `400` naming the field.
+  `expected_sessions` is meaningful only with `daemon_shutdown_if_sessions`
+  and required there: the live session ids the user confirmed (an empty
+  array confirms that none are live). Any other verb carrying it, or that
+  verb without it, gets `400` naming the field.
   - `daemon_status` → `200` with
     ```json
     {
@@ -780,12 +786,18 @@ one of those.
     nothing marked clean. Both land on `200`: the daemon answered, it just
     declined — the client discriminates by the presence of `error`, never
     by HTTP status.
-  - `daemon_shutdown_if_idle` (Windows updater only) → closes the mutation
+  - `daemon_shutdown_if_idle` (updater, Keep path on Windows) → closes the mutation
     gate, then stops the daemon only when it owns no live sessions. If any
     session is live it returns `200 {"ok":false,"error":"…",
     "unterminated":[…]}` naming the count and ids, kills nothing, and keeps
     the daemon running. This closes the race between the updater's initial
     session check and the installer replacing the running sidecar.
+  - `daemon_shutdown_if_sessions` (updater, "stop everything") → closes the
+    mutation gate, then behaves as `daemon_shutdown` only when the sorted
+    live session ids equal the sorted `expected_sessions`. On any difference
+    it returns `200 {"ok":false,"error":"…","unterminated":[…]}` naming both
+    sets, kills nothing and keeps the daemon running, so a session the user
+    never saw in the update modal is never stopped.
   - `daemon_handoff` (Linux only) → asks the running daemon to hand its
     live sessions to a fresh generation in place (`adoption.rs`). `200
     {"accepted":true,"reason":null,"generation":2,"sessions_transferred":3}`

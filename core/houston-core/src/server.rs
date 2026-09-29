@@ -250,6 +250,26 @@ async fn manage_post(
             ),
         );
     }
+    if request.expected_sessions.is_some()
+        && request.verb != proto::ManageVerb::DaemonShutdownIfSessions
+    {
+        return manage_error(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "expected_sessions is only meaningful with daemon_shutdown_if_sessions, not {:?}",
+                request.verb
+            ),
+        );
+    }
+    if request.verb == proto::ManageVerb::DaemonShutdownIfSessions
+        && request.expected_sessions.is_none()
+    {
+        return manage_error(
+            StatusCode::BAD_REQUEST,
+            "daemon_shutdown_if_sessions requires expected_sessions: the array of live session \
+             ids the caller confirmed (an empty array confirms that none are live)",
+        );
+    }
     match request.verb {
         proto::ManageVerb::DaemonStatus => manage_json(StatusCode::OK, &daemon.manage_status()),
         proto::ManageVerb::DaemonHandoff => {
@@ -273,15 +293,18 @@ async fn manage_post(
             }
             manage_json(StatusCode::OK, &result)
         }
-        proto::ManageVerb::DaemonShutdown | proto::ManageVerb::DaemonShutdownIfIdle => {
-            let if_idle = request.verb == proto::ManageVerb::DaemonShutdownIfIdle;
+        proto::ManageVerb::DaemonShutdown
+        | proto::ManageVerb::DaemonShutdownIfIdle
+        | proto::ManageVerb::DaemonShutdownIfSessions => {
+            let verb = request.verb;
+            let expected = request.expected_sessions.clone().unwrap_or_default();
             let for_shutdown = Arc::clone(&daemon);
-            let result = tokio::task::spawn_blocking(move || {
-                if if_idle {
-                    for_shutdown.manage_shutdown_if_idle()
-                } else {
-                    for_shutdown.manage_shutdown()
+            let result = tokio::task::spawn_blocking(move || match verb {
+                proto::ManageVerb::DaemonShutdownIfIdle => for_shutdown.manage_shutdown_if_idle(),
+                proto::ManageVerb::DaemonShutdownIfSessions => {
+                    for_shutdown.manage_shutdown_if_sessions(&expected)
                 }
+                _ => for_shutdown.manage_shutdown(),
             })
             .await
             .unwrap_or_else(|e| {

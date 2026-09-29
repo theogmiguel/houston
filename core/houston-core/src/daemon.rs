@@ -1158,6 +1158,13 @@ struct ReapArm {
     handle: tokio::task::JoinHandle<()>,
 }
 
+/// What `manage_shutdown_inner` requires of the live set before it stops it.
+enum ShutdownGuard<'a> {
+    Unconditional,
+    IfIdle,
+    IfExactly(&'a [u32]),
+}
+
 #[derive(Debug)]
 pub struct ShutdownFailure {
     pub reason: String,
@@ -2734,7 +2741,7 @@ impl Daemon {
     pub fn manage_shutdown(
         self: &Arc<Self>,
     ) -> Result<proto::ManageDaemonShutdownOk, ShutdownFailure> {
-        self.manage_shutdown_inner(false)
+        self.manage_shutdown_inner(ShutdownGuard::Unconditional)
     }
 
     /// `manage_shutdown` for an installer: the gate goes up first, so a session
@@ -2743,12 +2750,23 @@ impl Daemon {
     pub fn manage_shutdown_if_idle(
         self: &Arc<Self>,
     ) -> Result<proto::ManageDaemonShutdownOk, ShutdownFailure> {
-        self.manage_shutdown_inner(true)
+        self.manage_shutdown_inner(ShutdownGuard::IfIdle)
+    }
+
+    /// `manage_shutdown` for the update modal: stops the live sessions only
+    /// when they are exactly the ids the user confirmed, so a session that
+    /// appeared (or ended) since the list was shown is a refusal naming both
+    /// sets, never a victim.
+    pub fn manage_shutdown_if_sessions(
+        self: &Arc<Self>,
+        expected: &[u32],
+    ) -> Result<proto::ManageDaemonShutdownOk, ShutdownFailure> {
+        self.manage_shutdown_inner(ShutdownGuard::IfExactly(expected))
     }
 
     fn manage_shutdown_inner(
         self: &Arc<Self>,
-        refuse_if_live: bool,
+        guard: ShutdownGuard<'_>,
     ) -> Result<proto::ManageDaemonShutdownOk, ShutdownFailure> {
         self.shutting_down.store(true, Ordering::Release);
         let routines_armed = self.db.enabled_routine_count().unwrap_or_else(|e| {
@@ -2763,17 +2781,38 @@ impl Daemon {
             .filter(|(_, s)| s.state.lock().expect("state lock").is_live())
             .map(|(id, _)| *id)
             .collect();
-        if refuse_if_live && !live_ids.is_empty() {
-            self.shutting_down.store(false, Ordering::Release);
-            return Err(ShutdownFailure {
-                reason: format!(
-                    "refusing to stop: {} live session(s) are running (ids {:?}); an update must \
-                     not kill them, and nothing was stopped",
-                    live_ids.len(),
-                    live_ids
-                ),
-                unterminated: live_ids,
-            });
+        match guard {
+            ShutdownGuard::Unconditional => {}
+            ShutdownGuard::IfIdle if live_ids.is_empty() => {}
+            ShutdownGuard::IfIdle => {
+                self.shutting_down.store(false, Ordering::Release);
+                return Err(ShutdownFailure {
+                    reason: format!(
+                        "refusing to stop: {} live session(s) are running (ids {:?}); an update \
+                         must not kill them, and nothing was stopped",
+                        live_ids.len(),
+                        live_ids
+                    ),
+                    unterminated: live_ids,
+                });
+            }
+            ShutdownGuard::IfExactly(expected) => {
+                let mut live_sorted = live_ids.clone();
+                live_sorted.sort_unstable();
+                let mut expected_sorted = expected.to_vec();
+                expected_sorted.sort_unstable();
+                expected_sorted.dedup();
+                if live_sorted != expected_sorted {
+                    self.shutting_down.store(false, Ordering::Release);
+                    return Err(ShutdownFailure {
+                        reason: format!(
+                            "refusing to stop: live sessions are {live_sorted:?}, the update \
+                             confirmed {expected_sorted:?}; nothing was stopped"
+                        ),
+                        unterminated: live_ids,
+                    });
+                }
+            }
         }
         let mut kill_failures = Vec::new();
         for id in &live_ids {

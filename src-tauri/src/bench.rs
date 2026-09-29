@@ -366,6 +366,7 @@ async fn probe_live_session_count(port: u16, token: &str) -> Option<usize> {
         manage_version: houston_protocol::MANAGE_VERSION,
         verb: houston_protocol::ManageVerb::DaemonStatus,
         candidate_bin: None,
+        expected_sessions: None,
     };
     let resp = client
         .post(format!("http://127.0.0.1:{port}/manage"))

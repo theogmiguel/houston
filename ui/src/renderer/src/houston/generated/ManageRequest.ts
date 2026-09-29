@@ -7,4 +7,9 @@ export type ManageRequest = { manage_version: number, verb: ManageVerb,
  * spawn as its successor; absent means it resolves its own executable.
  * Shape and refusal rules: protocol/protocol.md.
  */
-candidate_bin?: string | null, };
+candidate_bin?: string | null,
+/**
+ * `daemon_shutdown_if_sessions` only: the live session ids the user
+ * confirmed. Any other verb carrying it is refused by name.
+ */
+expected_sessions?: Array<number> | null, };

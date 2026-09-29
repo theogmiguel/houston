@@ -21,6 +21,7 @@ async fn manage_request(
             manage_version,
             verb,
             candidate_bin: None,
+            expected_sessions: None,
         })
         .send()
         .await
@@ -82,6 +83,7 @@ async fn missing_bearer_is_unauthorized() {
             manage_version: proto::MANAGE_VERSION,
             verb: proto::ManageVerb::DaemonStatus,
             candidate_bin: None,
+            expected_sessions: None,
         })
         .send()
         .await
@@ -363,6 +365,7 @@ async fn post_from_the_webview_origin_gets_the_cors_header_on_the_response() {
             manage_version: proto::MANAGE_VERSION,
             verb: proto::ManageVerb::DaemonStatus,
             candidate_bin: None,
+            expected_sessions: None,
         })
         .send()
         .await
@@ -402,6 +405,7 @@ async fn manage_request_with_candidate(
             manage_version: proto::MANAGE_VERSION,
             verb,
             candidate_bin: candidate_bin.map(str::to_string),
+            expected_sessions: None,
         })
         .send()
         .await
@@ -446,4 +450,140 @@ async fn candidate_bin_is_refused_on_verbs_that_do_not_use_it() {
         "the refusal must name the verb that does take it: {}",
         body.error
     );
+}
+
+async fn manage_request_expecting(
+    addr: std::net::SocketAddr,
+    verb: proto::ManageVerb,
+    expected_sessions: Option<Vec<u32>>,
+) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(manage_url(addr))
+        .header("Authorization", format!("Bearer {TOKEN}"))
+        .json(&proto::ManageRequest {
+            manage_version: proto::MANAGE_VERSION,
+            verb,
+            candidate_bin: None,
+            expected_sessions,
+        })
+        .send()
+        .await
+        .expect("sending /manage request")
+}
+
+async fn start_with_one_live_session() -> (
+    std::net::SocketAddr,
+    tempfile::TempDir,
+    std::sync::Arc<houston_core::daemon::Daemon>,
+    common::WsStream,
+) {
+    let (addr, dir, daemon) = common::start_daemon_with_handle().await;
+    let mut ws = common::connect_and_hello(addr, TOKEN).await;
+    common::next_control(&mut ws).await;
+    let create = common::create_custom_msg(vec!["sleep", "5"], dir.path());
+    use futures_util::SinkExt;
+    ws.send(tokio_tungstenite::tungstenite::Message::text(create))
+        .await
+        .unwrap();
+    common::expect_created(&mut ws).await;
+    (addr, dir, daemon, ws)
+}
+
+#[tokio::test]
+async fn daemon_shutdown_if_sessions_refuses_a_different_live_set_and_stops_nothing() {
+    let (addr, _dir, daemon, _ws) = start_with_one_live_session().await;
+    let exited = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let exited = exited.clone();
+        daemon.reap_set_exit_hook_for_test(Box::new(move || {
+            exited.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+    }
+
+    let resp = manage_request_expecting(
+        addr,
+        proto::ManageVerb::DaemonShutdownIfSessions,
+        Some(vec![1, 2]),
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let body: proto::ManageDaemonShutdownFailed = resp.json().await.unwrap();
+    assert!(!body.ok);
+    assert!(
+        body.error.contains("[1]") && body.error.contains("[1, 2]"),
+        "the refusal must name the live set and the confirmed set: {}",
+        body.error
+    );
+    assert!(body.error.contains("nothing was stopped"), "{}", body.error);
+
+    let status: proto::ManageDaemonStatus = manage_request(
+        addr,
+        TOKEN,
+        proto::MANAGE_VERSION,
+        proto::ManageVerb::DaemonStatus,
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(
+        status.live_sessions.ids,
+        vec![1],
+        "the session must survive"
+    );
+    assert!(!exited.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn daemon_shutdown_if_sessions_stops_exactly_the_confirmed_set() {
+    let (addr, dir, daemon, _ws) = start_with_one_live_session().await;
+    std::fs::write(dir.path().join("daemon.json"), "{\"pid\":1}").expect("seed daemon.json");
+    let exited = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let exited = exited.clone();
+        daemon.reap_set_exit_hook_for_test(Box::new(move || {
+            exited.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+    }
+
+    let resp = manage_request_expecting(
+        addr,
+        proto::ManageVerb::DaemonShutdownIfSessions,
+        Some(vec![1]),
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let body: proto::ManageDaemonShutdownOk = resp.json().await.unwrap();
+    assert!(body.ok);
+    assert_eq!(body.stopped_sessions, 1);
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !exited.load(std::sync::atomic::Ordering::SeqCst) {
+        if tokio::time::Instant::now() >= deadline {
+            panic!("daemon_shutdown_if_sessions' ok:true landed but the exit hook never fired");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(!dir.path().join("daemon.json").exists());
+}
+
+#[tokio::test]
+async fn expected_sessions_is_refused_on_other_verbs_and_required_on_its_own() {
+    let (addr, _dir) = common::start_daemon().await;
+    let resp =
+        manage_request_expecting(addr, proto::ManageVerb::DaemonShutdown, Some(vec![1])).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: proto::ManageErrorBody = resp.json().await.unwrap();
+    assert!(body.error.contains("expected_sessions"), "{}", body.error);
+    assert!(
+        body.error.contains("daemon_shutdown_if_sessions"),
+        "the refusal must name the verb that accepts the field: {}",
+        body.error
+    );
+
+    let resp =
+        manage_request_expecting(addr, proto::ManageVerb::DaemonShutdownIfSessions, None).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: proto::ManageErrorBody = resp.json().await.unwrap();
+    assert!(body.error.contains("expected_sessions"), "{}", body.error);
 }
