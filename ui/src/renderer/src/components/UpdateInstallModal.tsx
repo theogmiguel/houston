@@ -406,152 +406,10 @@ export function UpdateInstallModal({
   }
 
   const steps = installSteps(stopCount, stopCount === 0 ? live : 0)
-  const stepIndex = currentStepIndex(install, steps)
   const header = running ? `Installing Houston ${version}` : `Install Houston ${version}`
-
-  let body: React.ReactNode
-  let action: React.ReactNode = null
-  if (running) {
-    body = <StepList steps={steps} active={stepIndex} percent={downloadPercent(install)} />
-  } else {
-    const summary = summarizeReleaseNotes(release.notes)
-    const actionLabel = (base: string): string => (failed ? 'Try again' : base)
-    const stopLabel = failed
-      ? `Stop ${plural(live, 'session')} and try again`
-      : `Stop ${plural(live, 'session')} and install`
-    body = (
-      <>
-        {failed && (
-          <Callout tone="stop">
-            <b className="font-semibold text-[var(--text-primary)]">The last attempt did not install.</b>{' '}
-            <span data-testid="update-failure">{failed.error}</span>
-          </Callout>
-        )}
-        {summary !== null && <ReleaseSummary summary={summary} />}
-        {notice !== null && <Callout tone="warn">{notice}</Callout>}
-        {status.kind === 'loading' && (
-          <p className="m-0 text-[var(--text-secondary)]">Checking which sessions are running…</p>
-        )}
-        {status.kind === 'error' && (
-          <Callout tone="warn">
-            Could not read the daemon&apos;s live sessions, so the choice cannot be shown: {status.message}
-          </Callout>
-        )}
-        {status.kind === 'ready' && live === 0 && (
-          <p className="m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-body-size)] leading-relaxed">
-            Houston closes, installs {version} and reopens. No sessions are running, so nothing is
-            interrupted.
-          </p>
-        )}
-        {status.kind === 'ready' && live > 0 && !handoffSupported && (
-          <>
-            <Callout tone="warn">
-              <b className="font-semibold text-[var(--text-primary)]">
-                This update has to stop every session.
-              </b>{' '}
-              The daemon cannot move sessions to the new build this time, so they cannot be kept
-              running.
-            </Callout>
-            <SessionList ids={ids} sessions={sessions} />
-            <details className="text-[var(--text-muted)] [font-size:var(--tr-text-small-size)]">
-              <summary className="cursor-pointer">Why sessions cannot be kept</summary>
-              <div className="pt-[var(--space-1)]">
-                <code
-                  data-testid="update-handoff-reason"
-                  className="block whitespace-pre-wrap break-words rounded-[var(--tr-radius-sm)] bg-[var(--content-bg)] p-[var(--space-2)] font-mono text-[var(--text-secondary)]"
-                >
-                  {status.handoff.reason}
-                </code>
-              </div>
-            </details>
-          </>
-        )}
-        {status.kind === 'ready' && live > 0 && handoffSupported && (
-          <>
-            <p className="m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-body-size)] leading-relaxed">
-              Houston closes and reopens on {version}. Choose what happens to your{' '}
-              {plural(live, 'live session')}.
-            </p>
-            <div
-              role="radiogroup"
-              aria-label="Sessions during the update"
-              className="grid gap-[var(--space-2)]"
-              onKeyDown={(e) => {
-                if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                  e.preventDefault()
-                  const next = mode === 'keep' ? 'stop' : 'keep'
-                  setChoice(next)
-                  e.currentTarget.querySelector<HTMLElement>(`[data-choice="${next}"]`)?.focus()
-                }
-              }}
-            >
-              <RadioCard
-                choice="keep"
-                checked={mode === 'keep'}
-                tone="accent"
-                onSelect={() => setChoice('keep')}
-                title={
-                  <>
-                    Keep sessions running
-                    <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] text-[var(--accent)]">
-                      Recommended
-                    </span>
-                  </>
-                }
-                desc="Agents keep working while Houston restarts. Sessions move to the new daemon; if that fails, they stay where they are."
-              />
-              <RadioCard
-                choice="stop"
-                checked={mode === 'stop'}
-                tone="stop"
-                onSelect={() => setChoice('stop')}
-                title="Stop everything and update"
-                desc={`Ends all ${live} sessions. Use it for a clean start.`}
-              />
-            </div>
-            {mode === 'stop' && <SessionList ids={ids} sessions={sessions} />}
-          </>
-        )}
-      </>
-    )
-    if (status.kind === 'ready') {
-      action = stopMode ? (
-        <button
-          type="button"
-          data-testid="update-confirm-stop"
-          className={`btn ${BTN_DANGER_SOLID} inline-flex items-center gap-[var(--space-1-5)]`}
-          disabled={busy}
-          onClick={() => void confirm()}
-        >
-          <Icon glyph={IconAlertTriangle} role="ui" />
-          {stopLabel}
-        </button>
-      ) : (
-        <button
-          type="button"
-          data-testid="update-confirm-keep"
-          className={`btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)]`}
-          disabled={busy}
-          onClick={() => void confirm()}
-        >
-          <Icon glyph={IconRefresh} role="ui" />
-          {actionLabel('Install and reopen')}
-        </button>
-      )
-    } else if (status.kind === 'error') {
-      action = (
-        <button
-          type="button"
-          className={`btn ${BTN_PRIMARY}`}
-          onClick={() => {
-            setStatus({ kind: 'loading' })
-            void refresh().then(setStatus)
-          }}
-        >
-          Check again
-        </button>
-      )
-    }
+  const retry = (): void => {
+    setStatus({ kind: 'loading' })
+    void refresh().then(setStatus)
   }
 
   return (
@@ -575,7 +433,22 @@ export function UpdateInstallModal({
             {currentVersion} → {version}
           </span>
         </div>
-        <div className="grid gap-[var(--space-3)] overflow-auto px-5 py-[18px]">{body}</div>
+        <div className="grid gap-[var(--space-3)] overflow-auto px-5 py-[18px]">
+          {running ? (
+            <StepList steps={steps} active={currentStepIndex(install, steps)} percent={downloadPercent(install)} />
+          ) : (
+            <OfferBody
+              failed={failed}
+              notes={release.notes}
+              notice={notice}
+              status={status}
+              version={version}
+              mode={mode}
+              sessions={sessions}
+              onChoose={setChoice}
+            />
+          )}
+        </div>
         <div className="flex flex-wrap items-center justify-end gap-2 px-5 pb-5">
           {running ? (
             <>
@@ -611,11 +484,205 @@ export function UpdateInstallModal({
               >
                 Later
               </button>
-              {action}
+              <OfferAction
+                status={status.kind}
+                stopMode={stopMode}
+                failed={failed !== null}
+                live={live}
+                busy={busy}
+                onConfirm={() => void confirm()}
+                onRetry={retry}
+              />
             </>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+type Failure = Extract<UpdateInstallState, { kind: 'failed' }>
+
+function OfferBody({
+  failed,
+  notes,
+  notice,
+  status,
+  version,
+  mode,
+  sessions,
+  onChoose
+}: {
+  failed: Failure | null
+  notes: string
+  notice: string | null
+  status: LiveStatus
+  version: string
+  mode: SessionChoice
+  sessions: SessionInfo[]
+  onChoose: (choice: SessionChoice) => void
+}): React.JSX.Element {
+  const summary = summarizeReleaseNotes(notes)
+  return (
+    <>
+      {failed && (
+        <Callout tone="stop">
+          <b className="font-semibold text-[var(--text-primary)]">The last attempt did not install.</b>{' '}
+          <span data-testid="update-failure">{failed.error}</span>
+        </Callout>
+      )}
+      {summary !== null && <ReleaseSummary summary={summary} />}
+      {notice !== null && <Callout tone="warn">{notice}</Callout>}
+      {status.kind === 'loading' && (
+        <p className="m-0 text-[var(--text-secondary)]">Checking which sessions are running…</p>
+      )}
+      {status.kind === 'error' && (
+        <Callout tone="warn">
+          Could not read the daemon&apos;s live sessions, so the choice cannot be shown: {status.message}
+        </Callout>
+      )}
+      {status.kind === 'ready' && (
+        <SessionsChoice status={status} version={version} mode={mode} sessions={sessions} onChoose={onChoose} />
+      )}
+    </>
+  )
+}
+
+function SessionsChoice({
+  status,
+  version,
+  mode,
+  sessions,
+  onChoose
+}: {
+  status: Extract<LiveStatus, { kind: 'ready' }>
+  version: string
+  mode: SessionChoice
+  sessions: SessionInfo[]
+  onChoose: (choice: SessionChoice) => void
+}): React.JSX.Element {
+  const live = status.ids.length
+  if (live === 0) {
+    return (
+      <p className="m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-body-size)] leading-relaxed">
+        Houston closes, installs {version} and reopens. No sessions are running, so nothing is
+        interrupted.
+      </p>
+    )
+  }
+  if (!status.handoff.supported) {
+    return (
+      <>
+        <Callout tone="warn">
+          <b className="font-semibold text-[var(--text-primary)]">This update has to stop every session.</b>{' '}
+          The daemon cannot move sessions to the new build this time, so they cannot be kept running.
+        </Callout>
+        <SessionList ids={status.ids} sessions={sessions} />
+        <details className="text-[var(--text-muted)] [font-size:var(--tr-text-small-size)]">
+          <summary className="cursor-pointer">Why sessions cannot be kept</summary>
+          <div className="pt-[var(--space-1)]">
+            <code
+              data-testid="update-handoff-reason"
+              className="block whitespace-pre-wrap break-words rounded-[var(--tr-radius-sm)] bg-[var(--content-bg)] p-[var(--space-2)] font-mono text-[var(--text-secondary)]"
+            >
+              {status.handoff.reason}
+            </code>
+          </div>
+        </details>
+      </>
+    )
+  }
+  const onArrow = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
+    e.preventDefault()
+    const next = mode === 'keep' ? 'stop' : 'keep'
+    onChoose(next)
+    e.currentTarget.querySelector<HTMLElement>(`[data-choice="${next}"]`)?.focus()
+  }
+  return (
+    <>
+      <p className="m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-body-size)] leading-relaxed">
+        Houston closes and reopens on {version}. Choose what happens to your {plural(live, 'live session')}.
+      </p>
+      <div role="radiogroup" aria-label="Sessions during the update" className="grid gap-[var(--space-2)]" onKeyDown={onArrow}>
+        <RadioCard
+          choice="keep"
+          checked={mode === 'keep'}
+          tone="accent"
+          onSelect={() => onChoose('keep')}
+          title={
+            <>
+              Keep sessions running
+              <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] text-[var(--accent)]">
+                Recommended
+              </span>
+            </>
+          }
+          desc="Agents keep working while Houston restarts. Sessions move to the new daemon; if that fails, they stay where they are."
+        />
+        <RadioCard
+          choice="stop"
+          checked={mode === 'stop'}
+          tone="stop"
+          onSelect={() => onChoose('stop')}
+          title="Stop everything and update"
+          desc={`Ends all ${live} sessions. Use it for a clean start.`}
+        />
+      </div>
+      {mode === 'stop' && <SessionList ids={status.ids} sessions={sessions} />}
+    </>
+  )
+}
+
+function OfferAction({
+  status,
+  stopMode,
+  failed,
+  live,
+  busy,
+  onConfirm,
+  onRetry
+}: {
+  status: LiveStatus['kind']
+  stopMode: boolean
+  failed: boolean
+  live: number
+  busy: boolean
+  onConfirm: () => void
+  onRetry: () => void
+}): React.JSX.Element | null {
+  if (status === 'error') {
+    return (
+      <button type="button" className={`btn ${BTN_PRIMARY}`} onClick={onRetry}>
+        Check again
+      </button>
+    )
+  }
+  if (status !== 'ready') return null
+  if (stopMode) {
+    return (
+      <button
+        type="button"
+        data-testid="update-confirm-stop"
+        className={`btn ${BTN_DANGER_SOLID} inline-flex items-center gap-[var(--space-1-5)]`}
+        disabled={busy}
+        onClick={onConfirm}
+      >
+        <Icon glyph={IconAlertTriangle} role="ui" />
+        {`Stop ${plural(live, 'session')} and ${failed ? 'try again' : 'install'}`}
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      data-testid="update-confirm-keep"
+      className={`btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)]`}
+      disabled={busy}
+      onClick={onConfirm}
+    >
+      <Icon glyph={IconRefresh} role="ui" />
+      {failed ? 'Try again' : 'Install and reopen'}
+    </button>
   )
 }
