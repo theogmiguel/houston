@@ -244,9 +244,11 @@ impl RawMasterPty {
         let pid: u32 = pid
             .try_into()
             .map_err(|_| anyhow!("adopted child pid {pid} is not a signallable pid"))?;
-        match crate::pid::signal_process_checked(pid, crate::pid::Signal::Term) {
+        // SIGHUP, as for a session this generation spawned: an interactive shell
+        // ignores SIGTERM, and the reader still holds the master, so no hangup follows.
+        match crate::pid::signal_process_checked(pid, crate::pid::Signal::Hup) {
             Ok(_) => Ok(()),
-            Err(e) => bail!("SIGTERM to adopted pid {pid}: {e}"),
+            Err(e) => bail!("SIGHUP to adopted pid {pid}: {e}"),
         }
     }
 

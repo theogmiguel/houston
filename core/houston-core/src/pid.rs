@@ -13,6 +13,7 @@ pub type RawPid = u32;
 pub enum Signal {
     Check,
     Term,
+    Hup,
     Int,
     Kill,
 }
@@ -23,6 +24,7 @@ impl Signal {
         match self {
             Signal::Check => 0,
             Signal::Term => libc::SIGTERM,
+            Signal::Hup => libc::SIGHUP,
             Signal::Int => libc::SIGINT,
             Signal::Kill => libc::SIGKILL,
         }
@@ -282,7 +284,7 @@ pub fn signal_process_checked_identity(
     }
     match sig {
         Signal::Check => deliver_or_classify(pid, win::QUERY, |_, _| Ok(())),
-        Signal::Term | Signal::Int | Signal::Kill => {
+        Signal::Term | Signal::Hup | Signal::Int | Signal::Kill => {
             deliver_or_classify(pid, win::TERMINATE, |_, handle| win::terminate(handle))
         }
     }
