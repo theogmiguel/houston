@@ -691,8 +691,10 @@ function newGridId(): string {
   return `g${Date.now()}-${++gridSeq}`
 }
 
+const GRIDS_KEY_PREFIX = 'tr-grids:'
+
 function gridsKey(path: string): string {
-  return 'tr-grids:' + path
+  return GRIDS_KEY_PREFIX + path
 }
 
 export function gridStorageKey(path: string, gridId: string): string {
@@ -706,6 +708,10 @@ function isGridMeta(x: unknown): x is GridMeta {
     typeof (x as Record<string, unknown>).id === 'string' &&
     typeof (x as Record<string, unknown>).name === 'string'
   )
+}
+
+function parseGridMetaArray(raw: unknown): GridMeta[] | null {
+  return Array.isArray(raw) && raw.every(isGridMeta) ? raw : null
 }
 
 function saveGrids(path: string, grids: GridMeta[]): void {
@@ -724,8 +730,8 @@ function migrateLegacyLayout(path: string): GridMeta[] {
 
 export function loadGrids(path: string): GridMeta[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(gridsKey(path)) ?? 'null')
-    if (Array.isArray(raw) && raw.length > 0 && raw.every(isGridMeta)) return raw
+    const raw = parseGridMetaArray(JSON.parse(localStorage.getItem(gridsKey(path)) ?? 'null'))
+    if (raw && raw.length > 0) return raw
   } catch {
   }
   return migrateLegacyLayout(path)
@@ -759,8 +765,51 @@ export function setGridTags(path: string, gridId: string, tags: number[]): GridM
   return next
 }
 
-// Tag ids are reused once deleted, so a deleted tag must leave every grid
-// before a new tag can take its id. Returns null when no grid carried it.
+// Tag ids must be removed from persisted grids when an authoritative registry
+// snapshot no longer contains them. The renderer can miss the live delete while
+// disconnected, and unopened workspaces still have saved grid metadata.
+export function reconcileSavedGridTags(validTagIds: ReadonlySet<number>): Map<string, GridMeta[]> {
+  const updated = new Map<string, GridMeta[]>()
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key !== null && key.startsWith(GRIDS_KEY_PREFIX)) keys.push(key)
+    }
+    for (const key of keys) {
+      let raw: unknown
+      try {
+        raw = JSON.parse(localStorage.getItem(key) ?? 'null')
+      } catch {
+        continue
+      }
+      const storedGrids = parseGridMetaArray(raw)
+      if (!storedGrids) continue
+      let changed = false
+      const grids = storedGrids.map((g) => {
+        if (g.tags === undefined) return g
+        const tags = gridTagIds(g).filter((id) => validTagIds.has(id))
+        if (
+          Array.isArray(g.tags) &&
+          tags.length === g.tags.length &&
+          tags.every((id, i) => id === g.tags![i])
+        )
+          return g
+        changed = true
+        return { ...g, tags }
+      })
+      if (!changed) continue
+      const path = key.slice(GRIDS_KEY_PREFIX.length)
+      saveGrids(path, grids)
+      updated.set(path, grids)
+    }
+  } catch {
+  }
+  return updated
+}
+
+// A live deletion also removes the id from a saved grid before the next
+// authoritative registry snapshot arrives.
 export function dropTagFromGrids(path: string, tagId: number): GridMeta[] | null {
   const grids = loadGrids(path)
   if (!grids.some((g) => gridTagIds(g).includes(tagId))) return null

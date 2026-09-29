@@ -104,6 +104,42 @@ fn add_column_if_missing(
     Ok(())
 }
 
+fn ensure_tag_ids_are_monotonic(conn: &Connection) -> Result<()> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    let schema: Option<String> = tx
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tags'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match schema {
+        Some(sql) if sql.to_ascii_uppercase().contains("AUTOINCREMENT") => {}
+        Some(_) => tx.execute_batch(
+            "ALTER TABLE tags RENAME TO tags_without_autoincrement;
+             CREATE TABLE tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                color TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+             );
+             INSERT INTO tags (id, name, color, created_at)
+                SELECT id, name, color, created_at FROM tags_without_autoincrement;
+             DROP TABLE tags_without_autoincrement;",
+        )?,
+        None => tx.execute_batch(
+            "CREATE TABLE tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                color TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+        )?,
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 fn migrate_staged_results_into_the_inbox(conn: &Connection) -> Result<()> {
     let present: bool = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info('delegations') WHERE name = 'staged_result'",
@@ -1214,14 +1250,7 @@ impl Db {
         add_column_if_missing(&conn, "sessions", "acp", "acp TEXT")?;
         add_column_if_missing(&conn, "sessions", "profile_label", "profile_label TEXT")?;
         add_column_if_missing(&conn, "sessions", "approval_mode", "approval_mode TEXT")?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS tags (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-                color TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            );",
-        )?;
+        ensure_tag_ids_are_monotonic(&conn)?;
         add_column_if_missing(&conn, "sessions", "tags", "tags TEXT NOT NULL DEFAULT '[]'")?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS ssh_profiles (
@@ -4452,6 +4481,67 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tags_migration_preserves_ids_and_session_references_then_never_reuses_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("t.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE tags (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    color TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                INSERT INTO tags (id, name, color, created_at)
+                    VALUES (4, 'first', '#a78bfa', 10), (9, 'last', '#f59e0b', 20);
+                CREATE TABLE sessions (
+                    id INTEGER PRIMARY KEY,
+                    agent TEXT NOT NULL,
+                    project_dir TEXT NOT NULL,
+                    cwd TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    exit_code INTEGER,
+                    created_at INTEGER NOT NULL,
+                    ended_at INTEGER,
+                    tags TEXT NOT NULL DEFAULT '[]'
+                );
+                INSERT INTO sessions (id, agent, project_dir, cwd, state, created_at, tags)
+                    VALUES (7, 'shell', '/tmp/project', '/tmp/project', 'running', 1, '[4,9]');",
+            )
+            .unwrap();
+        }
+
+        let db = Db::open(&path).unwrap();
+        let tags = db.tag_list().unwrap();
+        assert_eq!(tags.iter().map(|t| t.id).collect::<Vec<_>>(), [4, 9]);
+        let stored: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT tags FROM sessions WHERE id = 7", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(stored, "[4,9]");
+        drop(db);
+
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.tag_list().unwrap().len(), 2, "migration is idempotent");
+        db.tag_delete(9).unwrap();
+        let next = db.tag_create("replacement", "#34d399").unwrap();
+        assert!(next.id > 9, "deleted maximum id was reused: {next:?}");
+    }
+
+    #[test]
+    fn fresh_tag_table_does_not_reuse_deleted_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let first = db.tag_create("first", "#a78bfa").unwrap();
+        db.tag_delete(first.id).unwrap();
+        let next = db.tag_create("next", "#34d399").unwrap();
+        assert!(next.id > first.id, "deleted id was reused: {next:?}");
+    }
 
     #[test]
     fn command_history_cap_keeps_the_newest_per_workspace() {

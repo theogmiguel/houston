@@ -103,4 +103,48 @@ describe('grid tags stand apart from pane tags', () => {
     expect(storedGrids()[0].tags).toEqual([2])
     expect(gridChipNames()[0]).toContain('wait-human')
   })
+
+  it('an authoritative hello removes deleted ids from saved and closed-workspace grids', async () => {
+    const orphanWorkspace = '/tmp/closed-workspace'
+    localStorage.setItem(
+      `tr-grids:${WS}`,
+      JSON.stringify([{ id: DEFAULT_GRID_ID, name: 'Grid 1', tags: [1] }])
+    )
+    localStorage.setItem(
+      `tr-grids:${orphanWorkspace}`,
+      JSON.stringify([{ id: DEFAULT_GRID_ID, name: 'Grid 1', tags: [1] }])
+    )
+    harness = await renderReadyApp({
+      tags: [],
+      sessions: [makeSession({ project_dir: WS, cwd: WS })],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+    await settle()
+
+    expect(storedGrids()[0].tags).toEqual([])
+    expect(JSON.parse(localStorage.getItem(`tr-grids:${orphanWorkspace}`) ?? '[]')[0].tags).toEqual([])
+
+    deliverControl({ type: 'tag_list', tags: [{ id: 2, name: 'new tag', color: '#34d399' }] })
+    await settle()
+    expect(storedGrids()[0].tags).toEqual([])
+    expect(gridChipNames()).toEqual([])
+  })
+
+  it('an authoritative tag list removes ids deleted after hello and preserves remaining grid tags', async () => {
+    localStorage.setItem(
+      `tr-grids:${WS}`,
+      JSON.stringify([{ id: DEFAULT_GRID_ID, name: 'Grid 1', tags: [1, 2] }])
+    )
+    harness = await renderReadyApp({
+      tags: TAGS,
+      sessions: [makeSession({ project_dir: WS, cwd: WS, tags: [] })],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+    await settle()
+
+    deliverControl({ type: 'tag_list', tags: [TAGS[1]] })
+    await settle()
+    expect(storedGrids()[0].tags).toEqual([2])
+    expect(gridChipNames()[0]).toContain('wait-human')
+  })
 })

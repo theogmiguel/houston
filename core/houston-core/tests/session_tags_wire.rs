@@ -113,6 +113,47 @@ async fn registry_flows_whole_and_refusals_name_the_limit() {
 }
 
 #[tokio::test]
+async fn deleting_the_highest_tag_id_does_not_reuse_it() {
+    let (addr, _dir, _daemon) = start_daemon_with_handle().await;
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _hello = next_control(&mut ws).await;
+
+    send(&mut ws, &tag_create("first", "#a78bfa")).await;
+    let created = next_tag_list(&mut ws).await;
+    let deleted_id = created[0].id;
+    send(&mut ws, &proto::ClientMsg::TagDelete { tag: deleted_id }).await;
+    let mut saw_deleted = false;
+    let mut saw_empty_registry = false;
+    for _ in 0..4 {
+        match next_control(&mut ws).await {
+            proto::ServerMsg::TagDeleted { tag } if tag == deleted_id => saw_deleted = true,
+            proto::ServerMsg::TagList { tags } if tags.is_empty() => saw_empty_registry = true,
+            _ => {}
+        }
+        if saw_deleted && saw_empty_registry {
+            break;
+        }
+    }
+    assert!(saw_deleted);
+    assert!(saw_empty_registry);
+
+    send(&mut ws, &tag_create("replacement", "#34d399")).await;
+    let replacement = next_tag_list(&mut ws).await;
+    assert_eq!(replacement.len(), 1);
+    assert_ne!(replacement[0].id, deleted_id);
+    assert!(replacement[0].id > deleted_id);
+
+    let mut late = connect_and_hello(addr, TOKEN).await;
+    match next_control(&mut late).await {
+        proto::ServerMsg::HelloOk { tags, .. } => {
+            assert_eq!(tags, replacement);
+            assert!(!tags.iter().any(|tag| tag.id == deleted_id));
+        }
+        other => panic!("expected hello_ok, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn session_tags_set_round_trips_and_refuses_bad_sets() {
     let (addr, _dir, daemon) = start_daemon_with_handle().await;
     let mut ws = connect_and_hello(addr, TOKEN).await;

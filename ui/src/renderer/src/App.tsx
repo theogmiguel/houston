@@ -277,6 +277,7 @@ import {
   setGridTags,
   dropTagFromGrids,
   gridTagIds,
+  reconcileSavedGridTags,
   setActiveStackTab,
   sessionForPaneId,
   removeLeaf,
@@ -550,9 +551,11 @@ function handleInboxRowMessage(
 function handleTagWireMessage(
   msg: ServerMsg,
   setTags: Dispatch<SetStateAction<TagInfo[]>>,
+  reconcileGridTags: (tags: TagInfo[]) => void,
 ): void {
   if (msg.type === "tag_list") {
     setTags(msg.tags);
+    reconcileGridTags(msg.tags);
   } else if (msg.type === "tag_deleted") {
     setTags((prev) => prev.filter((t) => t.id !== msg.tag));
   }
@@ -951,6 +954,17 @@ export function App(): React.JSX.Element {
       if (next) setGridsByWs((prev) => new Map(prev).set(path, next));
     }
   }, []);
+  const reconcileGridTags = useCallback((tags: TagInfo[]): void => {
+    const updated = reconcileSavedGridTags(new Set(tags.map((tag) => tag.id)));
+    if (updated.size === 0) return;
+    setGridsByWs((prev) => {
+      const next = new Map(prev);
+      for (const [path, grids] of updated) {
+        if (prev.has(path)) next.set(path, grids);
+      }
+      return next;
+    });
+  }, []);
   const selectedGridByWsRef = useRef(selectedGridByWs);
   selectedGridByWsRef.current = selectedGridByWs;
   const keyForRef = (path: string): string => {
@@ -1271,13 +1285,14 @@ export function App(): React.JSX.Element {
         }
         if (patchRosterIfNeeded(msg, setSessions)) return;
         handleInboxRowMessage(msg, setInboxRows);
-        handleTagWireMessage(msg, setTags);
+        handleTagWireMessage(msg, setTags, reconcileGridTags);
         if (msg.type === "tag_deleted") dropDeletedTagFromGrids(msg.tag);
         checkout.handleMessage(msg);
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
             client.snapshotFormatVersion = msg.snapshot_format_version;
+            reconcileGridTags(msg.tags);
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
             setWorkspaces(msg.workspaces);
             setTags(msg.tags);
@@ -1719,7 +1734,7 @@ export function App(): React.JSX.Element {
       clearTimeout(bootTimer);
       bootClient?.close();
     };
-  }, [pushError, retryNonce, dropDeletedTagFromGrids]);
+  }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
     outputHandlers.current.set(id, sink);
