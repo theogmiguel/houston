@@ -33,6 +33,7 @@ import {
 } from "../settingsSections";
 import { translateFilteredDropIndex } from "../layout/wsOrder";
 import {
+  IconAlertTriangle,
   IconArrowUp,
   IconBell,
   IconChevronRight,
@@ -85,6 +86,8 @@ import {
 import { MATERIAL_CLS, materialAttrs } from "./material";
 import { HIT_TARGET_28 } from "./hitTarget";
 import { BTN_ICO_STRUCTURE } from "./buttonChrome";
+import { openUpdateModal } from "../updateModal";
+import { isUpdateInstallRunning, useUpdateInstall, type UpdateInstallState } from "../updateInstall";
 import { CONTROL_SIZE_SQUARE_CLS } from "./controlSize";
 
 const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
@@ -118,30 +121,59 @@ const CHEVRON_HIT_CLS = `flex-none -ml-[3px] flex items-center justify-center w-
 
 const FOOT_ICON_BTN = `${BTN_ICO_STRUCTURE} ${CONTROL_SIZE_SQUARE_CLS.regular} rounded-[var(--tr-radius-sm)] bg-transparent text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)]`;
 
-// Glyph and version in one button, not a square: the version rides inside it, so
-// there is one hit target, one focus ring and one tooltip over the pair.
-const FOOT_UPDATE_BTN = `${BTN_ICO_STRUCTURE} ml-auto h-[var(--h-ctl)] gap-[3px] pl-[5px] pr-[4px] rounded-[var(--tr-radius-sm)] bg-transparent text-[var(--accent)] hover:bg-[var(--card-hover)]`;
+// A worded chip, not a square: the words ride inside it, so there is one hit
+// target, one focus ring and one tooltip. Warn-coloured when the install failed.
+const FOOT_UPDATE_BTN = `${BTN_ICO_STRUCTURE} ml-auto h-[var(--h-ctl)] gap-[var(--space-1-5)] px-[var(--space-2-5)] rounded-full whitespace-nowrap [font-size:var(--tr-text-small-size)] [font-weight:600]`;
+const FOOT_UPDATE_OK = "bg-[var(--accent-muted)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]";
+const FOOT_UPDATE_FAILED = "bg-[color-mix(in_srgb,var(--warn)_16%,transparent)] text-[var(--warn)] hover:bg-[color-mix(in_srgb,var(--warn)_24%,transparent)]";
+
+export function railUpdateChip(
+  version: string | null | undefined,
+  install: UpdateInstallState,
+): { label: string; tooltip: string; failed: boolean } | null {
+  if (isUpdateInstallRunning(install)) {
+    const pct =
+      install.kind === "downloading" && install.total !== null && install.total > 0
+        ? Math.min(100, Math.floor((install.downloaded / install.total) * 100))
+        : null;
+    return {
+      label: pct === null ? "Updating…" : `Updating ${pct}%`,
+      tooltip: "Houston is installing an update. Open to see the steps",
+      failed: false,
+    };
+  }
+  if (install.kind === "failed") {
+    return {
+      label: "Update failed",
+      tooltip: `Houston ${install.version} did not install. Open to see why and try again`,
+      failed: true,
+    };
+  }
+  if (version == null) return null;
+  return {
+    label: `${version} available`,
+    tooltip: `Houston v${version} is available. Open to install`,
+    failed: false,
+  };
+}
 
 // Its own component so the foot keeps no branch of its own: nothing at all is
-// rendered until a release is actually waiting.
+// rendered until a release is waiting or an install is running or has failed.
 function RailUpdateButton({ version }: { version?: string | null }): React.JSX.Element | null {
-  if (version == null) return null;
+  const install = useUpdateInstall();
+  const chip = railUpdateChip(version, install);
+  if (chip === null) return null;
   return (
-    <Tooltip label={`Houston v${version} is available`}>
+    <Tooltip label={chip.tooltip}>
       <button
         type="button"
         data-testid="rail-update-available"
-        aria-label={`Houston v${version} is available`}
-        className={FOOT_UPDATE_BTN}
-        onClick={() => {
-          setSettingsSection("about");
-          setSettingsOpen(true);
-        }}
+        aria-label={chip.tooltip}
+        className={`${FOOT_UPDATE_BTN} ${chip.failed ? FOOT_UPDATE_FAILED : FOOT_UPDATE_OK}`}
+        onClick={openUpdateModal}
       >
-        <Icon glyph={IconArrowUp} role="ui" />
-        <span className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] px-1.5 py-0.5 rounded-[var(--tr-radius-sm)] bg-[var(--accent-muted)] flex-none">
-          {version}
-        </span>
+        <Icon glyph={chip.failed ? IconAlertTriangle : IconArrowUp} role="ui" />
+        <span>{chip.label}</span>
       </button>
     </Tooltip>
   );

@@ -247,7 +247,9 @@ import {
 import { SourceControlPanel } from "./components/SourceControlPanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
-import { useDismissedUpdate } from "./updateDismissal";
+import { dismissUpdate, useDismissedUpdate } from "./updateDismissal";
+import { closeUpdateModal, useUpdateModalOpen } from "./updateModal";
+import { UpdateInstallModal } from "./components/UpdateInstallModal";
 import { useCheckoutFacts } from "./useCheckoutFacts";
 import {
   addGrid,
@@ -619,6 +621,7 @@ const RECONNECT_MS = 1000;
 export function App(): React.JSX.Element {
   const [conn, setConn] = useState<Conn>({ kind: "connecting" });
   const dismissedUpdate = useDismissedUpdate();
+  const updateModalOpen = useUpdateModalOpen();
   const customChrome = useCustomSurface();
 
   // Gates every `.loop-anim` via one CSS attribute. Deliberately VISIBILITY,
@@ -4226,6 +4229,7 @@ export function App(): React.JSX.Element {
                           conn.client.updatePolicySet(policy);
                       }}
                       onOpenExternal={(url) => void openExternal(url)}
+                      liveSessionCount={[...sessions.values()].filter((s) => isLive(s.state)).length}
                       onOpenLicense={() =>
                         void openExternal(
                           "https://github.com/theogmiguel/houston/blob/main/NOTICE",
@@ -4508,6 +4512,27 @@ export function App(): React.JSX.Element {
               onAnswer={answerHostKey}
               onRejectRemaining={rejectRemainingHostKeys}
             />
+          </AnimOut>
+
+          <AnimOut
+            open={updateModalOpen && update?.state.kind === "available"}
+            suppress="modal"
+          >
+            {update?.state.kind === "available" && (
+              <UpdateInstallModal
+                release={update.state.release}
+                currentVersion={__APP_VERSION__}
+                sessions={[...sessions.values()]}
+                onClose={closeUpdateModal}
+                onLater={() => {
+                  if (update.state.kind === "available") {
+                    dismissUpdate(update.state.release.version);
+                  }
+                  closeUpdateModal();
+                }}
+                onOpenExternal={(url) => void openExternal(url)}
+              />
+            )}
           </AnimOut>
 
           {pendingAct && !pendingAct.hasScreenshot && (

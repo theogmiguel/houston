@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Sidebar } from './Sidebar'
 import { isSettingsOpen, setSettingsNavForTests } from '../settingsNav'
+import { closeUpdateModal, isUpdateModalOpen } from '../updateModal'
+import { resetUpdateInstall, setUpdateInstallForTests } from '../updateInstall'
 import type { SessionInfo, Workspace } from '../houston/client'
 
 function noop(): void {}
@@ -50,6 +52,8 @@ describe('Sidebar railfoot — Settings and theme icon buttons', () => {
     container.remove()
     vi.restoreAllMocks()
     setSettingsNavForTests({ open: false })
+    resetUpdateInstall()
+    closeUpdateModal()
   })
 
   function render(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}): void {
@@ -122,31 +126,47 @@ describe('Sidebar railfoot — Settings and theme icon buttons', () => {
     expect(foot().querySelectorAll('button')).toHaveLength(2)
   })
 
-  it('offers one button carrying the glyph and the version, pushed to the far end', () => {
+  it('offers one worded chip carrying the glyph and the version, pushed to the far end', () => {
     render({ updateVersion: '1.2.3' })
     const buttons = Array.from(foot().querySelectorAll('button'))
     expect(buttons).toHaveLength(3)
     const indicator = buttons[2]
     expect(indicator.getAttribute('data-testid')).toBe('rail-update-available')
-    expect(indicator.getAttribute('aria-label')).toBe('Houston v1.2.3 is available')
-    expect(indicator.textContent).toContain('1.2.3')
+    expect(indicator.getAttribute('aria-label')).toBe('Houston v1.2.3 is available. Open to install')
+    expect(indicator.textContent).toBe('1.2.3 available')
     expect(indicator.querySelector('svg')).not.toBeNull()
-    // One hit target for the pair: the version is inside the button, and the
+    // One hit target for the pair: the words are inside the button, and the
     // button is the only thing in the foot that owns the right edge.
     expect(indicator.querySelectorAll('button')).toHaveLength(0)
     expect(indicator.className).toContain('ml-auto')
   })
 
-  it('opens Settings at About when the indicator is clicked', () => {
+  it('opens the install modal, not Settings, when the chip is clicked', () => {
     setSettingsNavForTests({ open: false, section: 'appearance' })
-    localStorage.removeItem('tr-settings-section')
+    closeUpdateModal()
     render({ updateVersion: '1.2.3' })
     const indicator = foot().querySelector('[data-testid="rail-update-available"]') as HTMLButtonElement
     act(() => indicator.click())
-    expect(isSettingsOpen()).toBe(true)
-    // settingsNav persists the section under this key; it is the only view of it
-    // that is not a hook.
-    expect(localStorage.getItem('tr-settings-section')).toBe('about')
+    expect(isUpdateModalOpen()).toBe(true)
+    expect(isSettingsOpen()).toBe(false)
+    closeUpdateModal()
+  })
+
+  it('shows the running install as a percentage, even for a release waved off', () => {
+    render({ updateVersion: null })
+    act(() => setUpdateInstallForTests({ kind: 'downloading', downloaded: 42, total: 100 }))
+    const chip = foot().querySelector('[data-testid="rail-update-available"]') as HTMLButtonElement
+    expect(chip.textContent).toBe('Updating 42%')
+    act(() => setUpdateInstallForTests({ kind: 'installing' }))
+    expect(chip.textContent).toBe('Updating…')
+  })
+
+  it('shows a failed install in the warn colour with its own words', () => {
+    render({ updateVersion: '1.2.3' })
+    act(() => setUpdateInstallForTests({ kind: 'failed', version: '1.2.3', error: 'boom' }))
+    const chip = foot().querySelector('[data-testid="rail-update-available"]') as HTMLButtonElement
+    expect(chip.textContent).toBe('Update failed')
+    expect(chip.className).toContain('--warn')
   })
 
   it('the Settings button reflects settingsOpen with aria-pressed', () => {

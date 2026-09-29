@@ -27,11 +27,21 @@ beforeEach(() => {
 describe('appUpdateInstall', () => {
   it('invokes app_update_install with the version the panel showed', async () => {
     invokeMock.mockResolvedValue({ kind: 'installed', version: '1.2.3' })
-    const outcome = await appUpdateInstall('1.2.3')
+    const outcome = await appUpdateInstall('1.2.3', { mode: 'keep' })
     expect(invokeMock).toHaveBeenCalledWith('app_update_install', {
-      expectedVersion: '1.2.3'
+      expectedVersion: '1.2.3',
+      sessions: { mode: 'keep' }
     })
     expect(outcome).toEqual({ kind: 'installed', version: '1.2.3' })
+  })
+
+  it('sends the confirmed session ids when stopping everything', async () => {
+    invokeMock.mockResolvedValue({ kind: 'installed', version: '1.2.3' })
+    await appUpdateInstall('1.2.3', { mode: 'stop_all', expected: [4, 9] })
+    expect(invokeMock).toHaveBeenCalledWith('app_update_install', {
+      expectedVersion: '1.2.3',
+      sessions: { mode: 'stop_all', expected: [4, 9] }
+    })
   })
 
   it('rejects with the backend refusal verbatim, never a synthetic message', async () => {
@@ -39,7 +49,7 @@ describe('appUpdateInstall', () => {
       'app_update_install: refusing the downloaded update: its signature does not verify ' +
       'against the configured public key (bad signature). Nothing was installed'
     invokeMock.mockRejectedValue(refusal)
-    await expect(appUpdateInstall('1.2.3')).rejects.toBe(refusal)
+    await expect(appUpdateInstall('1.2.3', { mode: 'keep' })).rejects.toBe(refusal)
   })
 })
 

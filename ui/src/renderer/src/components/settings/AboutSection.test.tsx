@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AboutSection } from './AboutSection'
 import { restoreUpdate, setDismissedUpdateForTests } from '../../updateDismissal'
 import { resetUpdateInstall, setUpdateInstallForTests } from '../../updateInstall'
-import type { AppUpdateProgress } from '../../houston/appUpdate'
+import { closeUpdateModal, isUpdateModalOpen } from '../../updateModal'
 import type { HostInfo } from '../SettingsView'
 
 const appUpdateMocks = vi.hoisted(() => ({ install: vi.fn(), subscribe: vi.fn() }))
@@ -73,39 +73,10 @@ function renderAbout(
   )
 }
 
-async function flush(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve()
-    await Promise.resolve()
-  })
-}
-
-// A promise the test resolves when it wants the install flight to land.
-function deferInstall(): { resolve: (outcome: unknown) => void } {
-  let resolve!: (outcome: unknown) => void
-  appUpdateMocks.install.mockReturnValue(
-    new Promise((r) => {
-      resolve = r
-    })
-  )
-  return { resolve }
-}
-
-let emitProgress: ((progress: AppUpdateProgress) => void) | null = null
-
 beforeEach(() => {
   appUpdateMocks.install.mockReset()
   appUpdateMocks.subscribe.mockReset()
-  emitProgress = null
   resetUpdateInstall()
-  appUpdateMocks.subscribe.mockImplementation(
-    async (handler: (progress: AppUpdateProgress) => void) => {
-      emitProgress = handler
-      return () => {
-        emitProgress = null
-      }
-    }
-  )
 })
 
 afterEach(() => {
@@ -158,91 +129,74 @@ describe('AboutSection update rows', () => {
     expect(screen.getByRole('button', { name: 'Release notes' })).not.toBeNull()
   })
 
-  it('installs only on the click, handing the backend the version on screen', async () => {
-    const { resolve } = deferInstall()
+  it('opens the install modal on the click and starts nothing itself', () => {
+    closeUpdateModal()
     renderAbout({ update: AVAILABLE })
+    expect(isUpdateModalOpen()).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Install update…' }))
+    expect(isUpdateModalOpen()).toBe(true)
     expect(appUpdateMocks.install).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Install update' }))
-    await flush()
-    expect(appUpdateMocks.install).toHaveBeenCalledWith('1.2.3')
-    resolve({ kind: 'installed', version: '1.2.3' })
+    closeUpdateModal()
   })
 
-  it('walks downloading, installing and installed, with no cancel anywhere', async () => {
-    const { resolve } = deferInstall()
-    renderAbout({ update: AVAILABLE })
-    fireEvent.click(screen.getByRole('button', { name: 'Install update' }))
-    await flush()
+  it('names the live session count before the click, and the empty set as words', () => {
+    const { unmount } = renderAbout({ update: AVAILABLE, liveSessionCount: 3 })
+    expect(screen.getByTestId('update-live-sessions').textContent).toBe('3 live sessions')
+    unmount()
+    const again = renderAbout({ update: AVAILABLE, liveSessionCount: 1 })
+    expect(screen.getByTestId('update-live-sessions').textContent).toBe('1 live session')
+    again.unmount()
+    renderAbout({ update: AVAILABLE, liveSessionCount: 0 })
+    expect(screen.getByTestId('update-live-sessions').textContent).toBe('No live sessions')
+  })
 
-    act(() => emitProgress!({ phase: 'downloading', downloaded: 42, total: 100 }))
+  it('shows every running step as progress that reopens the modal, with no cancel anywhere', () => {
+    closeUpdateModal()
+    renderAbout({ update: AVAILABLE })
+    act(() => setUpdateInstallForTests({ kind: 'downloading', downloaded: 42, total: 100 }))
     expect(screen.getByTestId('update-install-progress').textContent).toBe('Downloading… 42%')
     expect(screen.getByText(/Downloading the installer — 42%/)).not.toBeNull()
     expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull()
+    expect(screen.queryByTestId('update-install')).toBeNull()
 
-    act(() => emitProgress!({ phase: 'installing', downloaded: 100, total: null }))
+    act(() => setUpdateInstallForTests({ kind: 'verifying' }))
+    expect(screen.getByTestId('update-install-progress').textContent).toBe('Verifying…')
+    act(() => setUpdateInstallForTests({ kind: 'stopping' }))
+    expect(screen.getByTestId('update-install-progress').textContent).toBe('Stopping sessions…')
+    act(() => setUpdateInstallForTests({ kind: 'installing' }))
     expect(screen.getByTestId('update-install-progress').textContent).toBe('Installing…')
-    expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull()
 
-    await act(async () => {
-      resolve({ kind: 'installed', version: '1.2.3' })
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    fireEvent.click(screen.getByTestId('update-install-progress'))
+    expect(isUpdateModalOpen()).toBe(true)
+    closeUpdateModal()
+
+    act(() => setUpdateInstallForTests({ kind: 'installed', version: '1.2.3' }))
     expect(screen.getByText('Houston 1.2.3 installed')).not.toBeNull()
     expect(screen.getByText('Houston is reopening with the new version.')).not.toBeNull()
-    expect(screen.queryByTestId('update-install')).toBeNull()
     expect(screen.getByRole('button', { name: 'Check now' })).not.toBeNull()
   })
 
-  it('never starts a second download while one is in flight', async () => {
-    deferInstall()
-    renderAbout({ update: AVAILABLE })
-    fireEvent.click(screen.getByRole('button', { name: 'Install update' }))
-    await flush()
-    expect(screen.queryByRole('button', { name: 'Install update' })).toBeNull()
-    expect(appUpdateMocks.install).toHaveBeenCalledTimes(1)
-  })
-
-  it.each([
-    [
-      'development build',
-      'app_update_install: refusing in a development build; only an installed bundle can be replaced. Update the packaged app instead'
-    ],
-    [
-      'missing target',
-      "app_update_install: https://example.com/latest.json publishes no updater artifact for this build: it offers [\"linux-x86_64-deb\"] and this build needs \"linux-x86_64-appimage\""
-    ],
-    [
-      'signature',
+  it('puts a refusal on screen verbatim and reopens the modal to try again', () => {
+    closeUpdateModal()
+    const refusal =
       'app_update_install: refusing the downloaded update: its signature does not verify against the configured public key (bad signature). Nothing was installed'
-    ],
-    [
-      'live-session handoff',
-      'app_update_install: refusing to hand the daemon off: a live SSH session in pane 3 would stop; 2 panes would drop'
-    ]
-  ])('puts a %s refusal on screen verbatim and offers a retry', async (_label, refusal) => {
-    appUpdateMocks.install.mockRejectedValueOnce(refusal)
     renderAbout({ update: AVAILABLE })
-    fireEvent.click(screen.getByRole('button', { name: 'Install update' }))
-    await flush()
+    act(() => setUpdateInstallForTests({ kind: 'failed', version: '1.2.3', error: refusal }))
     expect(screen.getByText(refusal)).not.toBeNull()
-    appUpdateMocks.install.mockResolvedValueOnce({ kind: 'installed', version: '1.2.3' })
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await flush()
-    expect(appUpdateMocks.install).toHaveBeenCalledTimes(2)
+    expect(isUpdateModalOpen()).toBe(true)
+    closeUpdateModal()
   })
 
-  it('reports an up-to-date feed after the click and lets Check now start over', async () => {
-    appUpdateMocks.install.mockResolvedValue({ kind: 'up_to_date', version: '0.0.0-test' })
+  it('reports an up-to-date feed after the install and lets Check now start over', () => {
     const onUpdateCheckNow = vi.fn()
     renderAbout({ update: AVAILABLE, onUpdateCheckNow })
-    fireEvent.click(screen.getByRole('button', { name: 'Install update' }))
-    await flush()
+    act(() => setUpdateInstallForTests({ kind: 'up_to_date' }))
     expect(screen.getByText(/nothing was installed/)).not.toBeNull()
     expect(screen.queryByTestId('update-install')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
     expect(onUpdateCheckNow).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Install update' })).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Install update…' })).not.toBeNull()
   })
 
   it('puts the daemon check error on screen verbatim when a check fails', () => {
@@ -311,6 +265,6 @@ describe('AboutSection update rows', () => {
     act(() => setUpdateInstallForTests({ kind: 'failed', version: '1.0.0', error: 'stale' }))
     renderAbout({ update: AVAILABLE })
     expect(screen.queryByText('stale')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Install update' })).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Install update…' })).not.toBeNull()
   })
 })

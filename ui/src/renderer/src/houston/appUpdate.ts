@@ -10,16 +10,22 @@ export type AppUpdateOutcome =
 
 /** Mirrors the `app-update://progress` payload from src-tauri/src/app_update.rs. */
 export interface AppUpdateProgress {
-  phase: 'downloading' | 'installing'
+  phase: 'downloading' | 'verifying' | 'stopping' | 'installing'
   downloaded: number
   total: number | null
 }
 
 export const APP_UPDATE_PROGRESS_EVENT = 'app-update://progress'
 
-export async function appUpdateInstall(expectedVersion: string): Promise<AppUpdateOutcome> {
+/** Mirrors `UpdateSessions` in src-tauri/src/app_update.rs. */
+export type UpdateSessions = { mode: 'keep' } | { mode: 'stop_all'; expected: number[] }
+
+export async function appUpdateInstall(
+  expectedVersion: string,
+  sessions: UpdateSessions
+): Promise<AppUpdateOutcome> {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<AppUpdateOutcome>('app_update_install', { expectedVersion })
+  return invoke<AppUpdateOutcome>('app_update_install', { expectedVersion, sessions })
 }
 
 export async function onAppUpdateProgress(

@@ -1,4 +1,5 @@
 import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
+import { Chip } from '../Chip'
 import { Toggle } from '../settingsPrimitives'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
 import { Group, Row } from './shared'
@@ -7,11 +8,12 @@ import type { UpdatePolicy } from '../../houston/generated/UpdatePolicy'
 import type { UpdateState } from '../../houston/generated/UpdateState'
 import { summarizeReleaseNotes } from '../../releaseNotes'
 import {
+  isUpdateInstallRunning,
   resetUpdateInstall,
-  startUpdateInstall,
   useUpdateInstall,
   type UpdateInstallState
 } from '../../updateInstall'
+import { openUpdateModal } from '../../updateModal'
 import { dismissUpdate, restoreUpdate, useDismissedUpdate } from '../../updateDismissal'
 
 export interface AboutSectionProps {
@@ -22,6 +24,8 @@ export interface AboutSectionProps {
   onUpdateCheckNow: () => void
   onUpdatePolicySet: (policy: UpdatePolicy) => void
   onOpenExternal: (url: string) => void
+  /** Live sessions the daemon owns, so the Install row says what an update touches. */
+  liveSessionCount?: number
 }
 
 // No Intl: the test must not depend on the machine's locale.
@@ -71,6 +75,8 @@ function downloadPercent(install: UpdateInstallState): number | null {
 }
 
 function progressLabel(install: UpdateInstallState): string {
+  if (install.kind === 'verifying') return 'Verifying…'
+  if (install.kind === 'stopping') return 'Stopping sessions…'
   if (install.kind === 'installing') return 'Installing…'
   const pct = downloadPercent(install)
   return pct === null ? 'Downloading…' : `Downloading… ${pct}%`
@@ -90,6 +96,16 @@ function installCopy(
         desc: `Downloading the installer${pct === null ? '' : ` — ${pct}%`}. Its signature is verified against Houston's signing key before anything is installed.`
       }
     }
+    case 'verifying':
+      return {
+        title: `Houston ${version}`,
+        desc: "Downloaded. Checking the signature against Houston's signing key before anything is installed."
+      }
+    case 'stopping':
+      return {
+        title: `Houston ${version}`,
+        desc: 'Signature verified. Stopping the sessions you confirmed, then installing.'
+      }
     case 'installing':
       return {
         title: `Houston ${version}`,
@@ -159,7 +175,8 @@ function updateControls(
   waved: boolean,
   install: UpdateInstallState,
   onCheckNow: () => void,
-  onOpenExternal: (url: string) => void
+  onOpenExternal: (url: string) => void,
+  liveSessionCount: number | undefined
 ): React.JSX.Element {
   if (state.kind !== 'available') {
     return (
@@ -174,11 +191,15 @@ function updateControls(
   }
   const version = state.release.version
   const notes = <ReleaseNotesButton url={state.release.notes_url} onOpenExternal={onOpenExternal} />
-  if (install.kind === 'downloading' || install.kind === 'installing') {
+  if (isUpdateInstallRunning(install)) {
     return (
       <div className="flex items-center gap-[var(--space-2)]">
         {notes}
-        <button className={`btn ${BTN_GHOST}`} disabled data-testid="update-install-progress">
+        <button
+          className={`btn ${BTN_GHOST}`}
+          data-testid="update-install-progress"
+          onClick={openUpdateModal}
+        >
           {progressLabel(install)}
         </button>
       </div>
@@ -199,7 +220,7 @@ function updateControls(
         <button
           className={`btn ${BTN_PRIMARY}`}
           data-testid="update-retry"
-          onClick={() => void startUpdateInstall(version)}
+          onClick={openUpdateModal}
         >
           Try again
         </button>
@@ -220,12 +241,25 @@ function updateControls(
       {notes}
       <CheckNowButton onCheckNow={onCheckNow} />
       <LaterButton version={version} waved={waved} />
+      {liveSessionCount !== undefined && (
+        <span data-testid="update-live-sessions">
+          <Chip
+            variant="state"
+            tone={liveSessionCount > 0 ? 'info' : 'default'}
+            label={
+              liveSessionCount === 0
+                ? 'No live sessions'
+                : `${liveSessionCount} live session${liveSessionCount === 1 ? '' : 's'}`
+            }
+          />
+        </span>
+      )}
       <button
         className={`btn ${BTN_PRIMARY}`}
         data-testid="update-install"
-        onClick={() => void startUpdateInstall(version)}
+        onClick={openUpdateModal}
       >
-        Install update
+        Install update…
       </button>
     </div>
   )
@@ -236,13 +270,15 @@ function UpdateOfferRow({
   waved,
   install,
   onCheckNow,
-  onOpenExternal
+  onOpenExternal,
+  liveSessionCount
 }: {
   state: UpdateState
   waved: boolean
   install: UpdateInstallState
   onCheckNow: () => void
   onOpenExternal: (url: string) => void
+  liveSessionCount: number | undefined
 }): React.JSX.Element {
   const copy =
     (state.kind === 'available' ? installCopy(install, state.release.version) : null) ??
@@ -252,7 +288,7 @@ function UpdateOfferRow({
   return (
     <>
       <Row title={copy.title} desc={copy.desc}>
-        {updateControls(state, waved, install, onCheckNow, onOpenExternal)}
+        {updateControls(state, waved, install, onCheckNow, onOpenExternal, liveSessionCount)}
       </Row>
       {summary !== null && (
         <div
@@ -273,7 +309,8 @@ export function AboutSection({
   update,
   onUpdateCheckNow,
   onUpdatePolicySet,
-  onOpenExternal
+  onOpenExternal,
+  liveSessionCount
 }: AboutSectionProps): React.JSX.Element {
   const dismissed = useDismissedUpdate()
   const install = useUpdateInstall()
@@ -321,6 +358,7 @@ export function AboutSection({
           install={install}
           onCheckNow={checkNow}
           onOpenExternal={onOpenExternal}
+          liveSessionCount={liveSessionCount}
         />
         <Row
           title="Check for updates"
