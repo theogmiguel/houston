@@ -122,10 +122,10 @@ describe('UpdateInstallModal', () => {
     renderModal()
     await settle()
     expect(document.activeElement).toBe(screen.getByTestId('update-modal-later'))
-    const keep = screen.getByRole('radio', { name: /Keep sessions running/ }) as HTMLInputElement
-    const stop = screen.getByRole('radio', { name: /Stop everything and update/ }) as HTMLInputElement
-    expect(keep.checked).toBe(true)
-    expect(stop.checked).toBe(false)
+    const keep = screen.getByRole('radio', { name: /Keep sessions running/ })
+    const stop = screen.getByRole('radio', { name: /Stop everything and update/ })
+    expect(keep.getAttribute('aria-checked')).toBe('true')
+    expect(stop.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByRole('button', { name: 'Install and reopen' })).not.toBeNull()
     expect(screen.queryByTestId('update-session-list')).toBeNull()
   })
@@ -137,6 +137,20 @@ describe('UpdateInstallModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Install and reopen' }))
     await settle()
     expect(mocks.install).toHaveBeenCalledWith('1.2.3', { mode: 'keep' })
+  })
+
+  it('moves the choice with the arrow keys, keeping one option in the tab order', async () => {
+    mocks.status.mockResolvedValue(daemon([1, 2, 3]))
+    renderModal()
+    await settle()
+    const keep = screen.getByRole('radio', { name: /Keep sessions running/ })
+    const stop = screen.getByRole('radio', { name: /Stop everything and update/ })
+    expect(keep.tabIndex).toBe(0)
+    expect(stop.tabIndex).toBe(-1)
+    fireEvent.keyDown(keep, { key: 'ArrowDown' })
+    expect(stop.getAttribute('aria-checked')).toBe('true')
+    expect(document.activeElement).toBe(stop)
+    expect(stop.tabIndex).toBe(0)
   })
 
   it('lists the sessions that end and sends exactly those ids when stopping everything', async () => {

@@ -98,7 +98,68 @@ const NOTES_CLS =
   'm-0 list-disc rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--card-bg)] py-[var(--space-2-5)] pr-[var(--space-3)] pl-[var(--space-6)] [font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]'
 
 const OPTION_CLS =
-  'grid grid-cols-[18px_minmax(0,1fr)] gap-[var(--space-2-5)] rounded-[var(--tr-radius-md)] border p-[var(--space-3)] cursor-pointer bg-[var(--card-bg)] hover:border-[var(--border-hover)] focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--accent)]'
+  'grid grid-cols-[18px_minmax(0,1fr)] gap-[var(--space-2-5)] rounded-[var(--tr-radius-md)] border p-[var(--space-3)] cursor-pointer bg-[var(--card-bg)] hover:border-[var(--border-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]'
+
+// Literal class strings: Tailwind only generates classes it can read verbatim.
+const RADIO_INK = {
+  accent: {
+    card: 'border-[color-mix(in_srgb,var(--accent)_55%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_6%,var(--card-bg))]',
+    ring: 'border-[var(--accent)]',
+    dot: 'bg-[var(--accent)]'
+  },
+  stop: {
+    card: 'border-[color-mix(in_srgb,var(--stop)_55%,var(--border))] bg-[color-mix(in_srgb,var(--stop)_6%,var(--card-bg))]',
+    ring: 'border-[var(--stop)]',
+    dot: 'bg-[var(--stop)]'
+  }
+} as const
+
+// A drawn radio: a native one takes its box from the OS theme, never ours.
+function RadioCard({
+  choice,
+  checked,
+  tone,
+  onSelect,
+  title,
+  desc
+}: {
+  choice: SessionChoice
+  checked: boolean
+  tone: 'accent' | 'stop'
+  onSelect: () => void
+  title: React.ReactNode
+  desc: string
+}): React.JSX.Element {
+  const ink = RADIO_INK[tone]
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      data-choice={choice}
+      tabIndex={checked ? 0 : -1}
+      onClick={onSelect}
+      className={`${OPTION_CLS} text-left ${checked ? ink.card : 'border-[var(--border)]'}`}
+    >
+      <span
+        aria-hidden="true"
+        className={`relative top-[2px] grid h-[16px] w-[16px] place-items-center rounded-full border-[1.5px] ${
+          checked ? ink.ring : 'border-[var(--border-hover)]'
+        }`}
+      >
+        {checked && <span className={`h-[8px] w-[8px] rounded-full ${ink.dot}`} />}
+      </span>
+      <span className="grid gap-[2px]">
+        <span className="flex flex-wrap items-center gap-[var(--space-2)] font-semibold text-[var(--text-primary)]">
+          {title}
+        </span>
+        <span className="text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)]">
+          {desc}
+        </span>
+      </span>
+    </button>
+  )
+}
 
 function Callout({
   tone,
@@ -207,7 +268,7 @@ function StepList({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent ?? undefined}
-          className="h-[4px] overflow-hidden rounded-[4px] bg-[var(--divider)]"
+          className="h-[4px] overflow-hidden rounded-[var(--tr-radius-input)] bg-[var(--divider)]"
         >
           <div
             className="h-full bg-[var(--accent)] motion-safe:transition-[width]"
@@ -392,59 +453,42 @@ export function UpdateInstallModal({
               Houston closes and reopens on {version}. Choose what happens to your{' '}
               {plural(live, 'live session')}.
             </p>
-            <div role="radiogroup" aria-label="Sessions during the update" className="grid gap-[var(--space-2)]">
-              <label
-                className={`${OPTION_CLS} ${
-                  mode === 'keep'
-                    ? 'border-[color-mix(in_srgb,var(--accent)_55%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_6%,var(--card-bg))]'
-                    : 'border-[var(--border)]'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="update-sessions"
-                  value="keep"
-                  checked={mode === 'keep'}
-                  onChange={() => setChoice('keep')}
-                  className="relative top-[2px] accent-[var(--accent)]"
-                />
-                <span className="grid gap-[2px]">
-                  <span className="flex flex-wrap items-center gap-[var(--space-2)] font-semibold text-[var(--text-primary)]">
+            <div
+              role="radiogroup"
+              aria-label="Sessions during the update"
+              className="grid gap-[var(--space-2)]"
+              onKeyDown={(e) => {
+                if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                  e.preventDefault()
+                  const next = mode === 'keep' ? 'stop' : 'keep'
+                  setChoice(next)
+                  e.currentTarget.querySelector<HTMLElement>(`[data-choice="${next}"]`)?.focus()
+                }
+              }}
+            >
+              <RadioCard
+                choice="keep"
+                checked={mode === 'keep'}
+                tone="accent"
+                onSelect={() => setChoice('keep')}
+                title={
+                  <>
                     Keep sessions running
                     <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] text-[var(--accent)]">
                       Recommended
                     </span>
-                  </span>
-                  <span className="text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)]">
-                    Agents keep working while Houston restarts. Sessions move to the new daemon; if
-                    that fails, they stay where they are.
-                  </span>
-                </span>
-              </label>
-              <label
-                className={`${OPTION_CLS} ${
-                  mode === 'stop'
-                    ? 'border-[color-mix(in_srgb,var(--stop)_55%,var(--border))] bg-[color-mix(in_srgb,var(--stop)_6%,var(--card-bg))]'
-                    : 'border-[var(--border)]'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="update-sessions"
-                  value="stop"
-                  checked={mode === 'stop'}
-                  onChange={() => setChoice('stop')}
-                  className="relative top-[2px] accent-[var(--stop)]"
-                />
-                <span className="grid gap-[2px]">
-                  <span className="font-semibold text-[var(--text-primary)]">
-                    Stop everything and update
-                  </span>
-                  <span className="text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)]">
-                    Ends all {live} sessions. Use it for a clean start.
-                  </span>
-                </span>
-              </label>
+                  </>
+                }
+                desc="Agents keep working while Houston restarts. Sessions move to the new daemon; if that fails, they stay where they are."
+              />
+              <RadioCard
+                choice="stop"
+                checked={mode === 'stop'}
+                tone="stop"
+                onSelect={() => setChoice('stop')}
+                title="Stop everything and update"
+                desc={`Ends all ${live} sessions. Use it for a clean start.`}
+              />
             </div>
             {mode === 'stop' && <SessionList ids={ids} sessions={sessions} />}
           </>

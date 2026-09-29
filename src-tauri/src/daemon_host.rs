@@ -546,10 +546,9 @@ pub(crate) enum RetireGuard {
     IfSessions(Vec<u32>),
 }
 
-/// Retire the active daemon so an installer can replace its binary (Windows
-/// locks a running one; a stop-everything update wants a fresh one). The
-/// refusal-or-stop decision lives inside the daemon, so a raced session is
-/// never killed; no daemon is the normal no-op.
+/// Retire the active daemon so an installer can replace its binary. The daemon
+/// itself decides refuse-or-stop, so a raced session is never killed; no
+/// daemon is the normal no-op.
 pub(crate) async fn retire_daemon_for_update(
     state_dir: &Path,
     channel_label: &str,

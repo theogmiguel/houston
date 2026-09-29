@@ -342,10 +342,9 @@ pub async fn app_update_install(
         ));
     }
 
-    // Windows `Keep` only, and before the download: the installer replaces the
-    // daemon binary, so a live session there would die with it. Linux never
-    // refuses here — the relaunched app moves the daemon during startup instead.
-    // `StopAll` needs no probe: the daemon's compare-and-stop decides.
+    // Windows `Keep`, before the download: the installer replaces the daemon
+    // binary, so a live session would die with it. Linux moves the daemon at
+    // startup instead; `StopAll` leaves the decision to the daemon's guard.
     #[cfg(windows)]
     if sessions.refuses_live_sessions_on_windows() {
         let channel_label = active_channel_label(state_dir);
@@ -385,10 +384,9 @@ pub async fn app_update_install(
         .map_err(|e| updater_error("downloading", endpoint, &target, e))?;
     let total_bytes = downloaded.load(AtomicOrdering::Relaxed);
 
-    // Retire the daemon after the bytes verified and before the installer
-    // replaces its binary. `StopAll` stops exactly the confirmed sessions, and
-    // a set that changed since the modal listed it refuses inside the daemon,
-    // never dies here. Windows `Keep` retires only an idle daemon.
+    // Retire the daemon after the bytes verified, before the installer replaces
+    // its binary: `StopAll` stops exactly the confirmed set (a changed set is
+    // refused by the daemon); Windows `Keep` retires only an idle daemon.
     let stopped = match &sessions {
         UpdateSessions::StopAll { expected } => {
             emit_progress(&app, "stopping", total_bytes, None);

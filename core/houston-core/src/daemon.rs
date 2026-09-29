@@ -2753,10 +2753,9 @@ impl Daemon {
         self.manage_shutdown_inner(ShutdownGuard::IfIdle)
     }
 
-    /// `manage_shutdown` for the update modal: stops the live sessions only
-    /// when they are exactly the ids the user confirmed, so a session that
-    /// appeared (or ended) since the list was shown is a refusal naming both
-    /// sets, never a victim.
+    /// `manage_shutdown` for the update modal: stops only when the live sessions
+    /// are exactly the confirmed ids; a set that changed since the modal listed
+    /// it is a refusal naming both sets, never a victim.
     pub fn manage_shutdown_if_sessions(
         self: &Arc<Self>,
         expected: &[u32],
