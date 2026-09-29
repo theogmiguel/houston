@@ -26,19 +26,37 @@ cached data remain available offline. Usage's explicit **Refresh rates** action 
 the catalog while automatic checks are off.
 
 When a release is newer than what you are running, the panel names it, shows the start of
-its notes, and offers **Install update** beside **Release notes** and **Later**. The bottom
-of the sidebar says so too, beside the theme switch: a button carrying the new version
-number, which opens this panel. It appears only while a newer release is waiting, and
-**Later** puts it away until a release newer still comes along — the panel itself goes on
-naming the release either way.
+its notes and how many sessions are live, and offers **Install update…** beside **Release
+notes** and **Later**. The bottom of the sidebar says so too, beside the theme switch: a
+chip reading "*version* available" that opens the same install dialog directly. It shows
+"Updating *n*%" while an install runs and "Update failed" if one did not finish. It appears
+only while a newer release is waiting, and **Later** puts it away until a release newer
+still comes along — the panel itself goes on naming the release either way.
 
 ## Installing the update
 
-**Install update** downloads the artifact published for the exact build you are running,
-checks its signature against Houston's signing key, and only then installs it. The panel
-shows download progress. If anything does not line up — no artifact for this build, a
-signature that does not verify, or a manifest that moved on since the offer was shown —
-nothing is installed and the panel says why.
+**Install update…** opens a dialog with the release notes and, when sessions are running,
+a choice about them:
+
+- **Keep sessions running** (the default) — the update installs, Houston reopens, and the
+  running sessions move to a new daemon on the new build. If the move fails, they stay on
+  the current daemon.
+- **Stop everything and update** — the dialog lists the sessions that will end. Houston
+  stops exactly those sessions, installs, and reopens on a fresh daemon. If the running
+  sessions change while the dialog is open, Houston refreshes the list and asks again
+  instead of stopping a session you were not shown.
+
+When the daemon cannot move its sessions (a live SSH session, Windows, or no supervisor in
+front of the daemon), only the stop option is offered and the dialog shows the daemon's
+reason. With no live sessions the dialog is a plain confirmation.
+
+The download's signature is checked against Houston's signing key before anything is
+stopped or installed. The dialog then shows each step — download, verify, stop, install,
+reopen — and **Hide** closes it while the install continues; the sidebar chip shows the
+progress. If anything does not line up — no artifact for this build, a signature that does
+not verify, or a manifest that moved on since the offer was shown — nothing is installed
+and the dialog says why. If the install fails after the sessions were stopped, Houston
+restarts the daemon and the error says how many sessions had already ended.
 
 ## Linux
 
@@ -60,8 +78,8 @@ previous version first, and Houston's own uninstall hook stops that old version'
 process as part of that step — matched by the process ID recorded for that install, never
 by process name, so it can't affect an unrelated Houston install or channel.
 
-Because the installer replaces the daemon binary, Houston refuses to update while the
-channel's daemon has sessions running; close them and try again. The Windows installer is
+Because the installer replaces the daemon binary, sessions cannot be kept running: the
+dialog offers only **Stop everything and update** while sessions are live. The Windows installer is
 not code-signed, so SmartScreen warns on first run. That is expected.
 
 ## What happens to running agents
@@ -78,8 +96,8 @@ sessions, then restart the daemon before opening the new app again.
 
 To replace an idle daemon explicitly, launch Houston with `--daemon-fresh` from a terminal,
 not from inside a Houston pane on the channel being restarted. It requests an orderly
-shutdown, waits for the daemon to exit, then starts the installed binary; it does not
-force-kill live sessions.
+shutdown, waits for the daemon to exit, then starts the installed binary; it never stops
+live sessions without an explicit confirmation.
 
 ## From a terminal
 

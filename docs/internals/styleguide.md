@@ -489,8 +489,9 @@ Escape, pointerdown, scroll, resize and blur.
 
 ### Modals
 
-`ConfirmModal`, `SaveDiscardModal`, `HostKeyModal` and `SshConnectModal` share one
-scrim + `.pop` panel shell; **only the width differs** (380 / 380 / 460 / 420px,
+`ConfirmModal`, `SaveDiscardModal`, `HostKeyModal`, `SshConnectModal` and
+`UpdateInstallModal` share one scrim + `.pop` panel shell; **only the width differs**
+(380 / 380 / 460 / 420 / 460px,
 always `max-w-[92vw]`). The scrim is `--overlay` + a light backdrop blur and cancels
 on mouse-down; the panel is `--raised` + `--shadow-2` + `--tr-radius-md` with a
 `panel-in` entrance. Footer grammar: ghost Cancel left of the affirmative action; a
