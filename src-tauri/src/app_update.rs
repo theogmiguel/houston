@@ -2,11 +2,9 @@
 //! builds a manifest cannot name, hold the operator's version to what it
 //! publishes, then let the plugin download, verify and install.
 
-#[cfg(any(windows, test))]
-use std::path::Path;
-#[cfg(windows)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
+use std::sync::Arc;
 
 // The ManageLiveSessions payload only reaches this module on Windows, where the
 // live-session refusal is built, and in its tests.
@@ -16,7 +14,6 @@ use tauri::utils::config::BundleType;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 
-#[cfg(any(windows, test))]
 use crate::daemon_host;
 
 /// Progress for the About panel, emitted to the main window only.
@@ -110,14 +107,13 @@ fn windows_live_sessions_refusal(channel: &str, live: &proto::ManageLiveSessions
     format!(
         "app_update_install: refusing to update: the {channel} channel's daemon has {} live \
          session(s) (ids {:?}). The Windows installer replaces houston-core.exe, which would \
-         stop them; close those sessions and retry.",
+         stop them; close those sessions or choose to stop everything, then retry.",
         live.count, live.ids
     )
 }
 
 /// The channel the active state dir belongs to, for messages: an absent suffix
 /// is the release channel, anything else names itself.
-#[cfg(any(windows, test))]
 fn active_channel_label(state_dir: &Path) -> String {
     match houston_core::paths::channel_of_state_dir(state_dir) {
         Some(channel) => channel,
@@ -125,21 +121,68 @@ fn active_channel_label(state_dir: &Path) -> String {
     }
 }
 
-/// The state dir this app process resolved from its own argv (`--channel`) and
-/// is driving, so Windows update safety inspects the daemon this app is attached
-/// to. Linux needs none: the relaunched app's startup hands the daemon off.
-#[cfg(windows)]
-pub struct ActiveStateDir(PathBuf);
+/// The daemon this app process drives, resolved from its own argv
+/// (`--channel`): the update inspects and stops this channel's daemon, and
+/// respawns it if an install fails after the sessions were stopped.
+pub struct ActiveStateDir {
+    state_dir: PathBuf,
+    channel: Option<String>,
+    render_overrides: Arc<crate::webview_render::AppliedOverrides>,
+}
 
-#[cfg(windows)]
 impl ActiveStateDir {
-    pub fn new(state_dir: PathBuf) -> Self {
-        Self(state_dir)
+    pub fn new(
+        state_dir: PathBuf,
+        channel: Option<String>,
+        render_overrides: Arc<crate::webview_render::AppliedOverrides>,
+    ) -> Self {
+        Self {
+            state_dir,
+            channel,
+            render_overrides,
+        }
     }
 
     pub fn path(&self) -> &Path {
-        &self.0
+        &self.state_dir
     }
+
+    fn channel_flag(&self) -> Vec<&str> {
+        match self.channel.as_deref() {
+            Some(channel) => vec!["--channel", channel],
+            None => Vec::new(),
+        }
+    }
+}
+
+/// What the install does with the sessions the daemon owns. `Keep` leaves them
+/// to the relaunched app's startup handoff (Linux) and refuses on Windows,
+/// which cannot move them; `StopAll` stops exactly the confirmed live ids.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum UpdateSessions {
+    Keep,
+    StopAll { expected: Vec<u32> },
+}
+
+impl UpdateSessions {
+    /// Only `Keep` needs the pre-download refusal on Windows: `StopAll` names
+    /// the sessions it ends and the daemon confirms them.
+    #[cfg(any(windows, test))]
+    fn refuses_live_sessions_on_windows(&self) -> bool {
+        matches!(self, UpdateSessions::Keep)
+    }
+}
+
+fn stop_all_install_failed(stopped: usize, cause: &str, restart: Result<(), String>) -> String {
+    let daemon = match restart {
+        Ok(()) => "the daemon was restarted".to_string(),
+        Err(e) => format!("restarting the daemon also failed ({e}); restart Houston"),
+    };
+    format!(
+        "app_update_install: the install failed after {stopped} session(s) had already been \
+         stopped; {daemon}. Cause: {cause}"
+    )
 }
 
 /// Linux installs relaunch into the new build, whose startup precheck hands
@@ -245,15 +288,14 @@ pub async fn app_update_install(
     app: AppHandle,
     flight: State<'_, UpdateFlight>,
     expected_version: String,
+    sessions: UpdateSessions,
 ) -> Result<AppUpdateOutcome, String> {
     let bundle = tauri::utils::platform::bundle_type();
     if let Some(refusal) = install_refusal(cfg!(debug_assertions), bundle.as_ref()) {
         return Err(refusal);
     }
     let bundle = bundle.expect("install_refusal returns a refusal for every absent bundle type");
-    #[cfg(windows)]
     let active = app.state::<ActiveStateDir>();
-    #[cfg(windows)]
     let state_dir = active.path();
 
     #[cfg(target_os = "linux")]
@@ -300,11 +342,12 @@ pub async fn app_update_install(
         ));
     }
 
-    // Windows only, and before the download: the installer replaces the daemon
-    // binary, so a live session there would die with it. Linux never refuses
-    // here — the relaunched app moves the daemon during startup instead.
+    // Windows `Keep` only, and before the download: the installer replaces the
+    // daemon binary, so a live session there would die with it. Linux never
+    // refuses here — the relaunched app moves the daemon during startup instead.
+    // `StopAll` needs no probe: the daemon's compare-and-stop decides.
     #[cfg(windows)]
-    {
+    if sessions.refuses_live_sessions_on_windows() {
         let channel_label = active_channel_label(state_dir);
         match daemon_host::probe_live_sessions(state_dir).await {
             Ok(Some(live)) if live.count > 0 => {
@@ -325,6 +368,7 @@ pub async fn app_update_install(
     let downloaded = std::sync::Arc::new(AtomicU64::new(0));
     let on_chunk_seen = std::sync::Arc::clone(&downloaded);
     let app_on_chunk = app.clone();
+    let app_on_finish = app.clone();
     // `download` verifies the signature before it returns, so "installing" is
     // only claimed once the bytes are known good; a bad signature fails in the
     // downloading phase with nothing said about installing.
@@ -335,30 +379,63 @@ pub async fn app_update_install(
                     + chunk_len as u64;
                 emit_progress(&app_on_chunk, "downloading", done, content_len);
             },
-            || {},
+            move || emit_progress(&app_on_finish, "verifying", 0, None),
         )
         .await
         .map_err(|e| updater_error("downloading", endpoint, &target, e))?;
+    let total_bytes = downloaded.load(AtomicOrdering::Relaxed);
 
-    emit_progress(
-        &app,
-        "installing",
-        downloaded.load(AtomicOrdering::Relaxed),
-        None,
-    );
+    // Retire the daemon after the bytes verified and before the installer
+    // replaces its binary. `StopAll` stops exactly the confirmed sessions, and
+    // a set that changed since the modal listed it refuses inside the daemon,
+    // never dies here. Windows `Keep` retires only an idle daemon.
+    let stopped = match &sessions {
+        UpdateSessions::StopAll { expected } => {
+            emit_progress(&app, "stopping", total_bytes, None);
+            let channel_label = active_channel_label(state_dir);
+            daemon_host::retire_daemon_for_update(
+                state_dir,
+                &channel_label,
+                daemon_host::RetireGuard::IfSessions(expected.clone()),
+            )
+            .await?;
+            Some(expected.len())
+        }
+        #[cfg(windows)]
+        UpdateSessions::Keep => {
+            let channel_label = active_channel_label(state_dir);
+            daemon_host::retire_daemon_for_update(
+                state_dir,
+                &channel_label,
+                daemon_host::RetireGuard::IfIdle,
+            )
+            .await?;
+            None
+        }
+        #[cfg(not(windows))]
+        UpdateSessions::Keep => None,
+    };
 
-    // Windows: retire the daemon now, after the bytes verified and before the
-    // installer replaces its binary; a session that appeared since the
-    // pre-download check refuses inside the daemon, never dies here.
-    #[cfg(windows)]
-    {
-        let channel_label = active_channel_label(state_dir);
-        daemon_host::retire_daemon_for_update(state_dir, &channel_label).await?;
+    emit_progress(&app, "installing", total_bytes, None);
+
+    if let Err(e) = update.install(bytes) {
+        let cause = updater_error("installing", endpoint, &target, e);
+        return Err(match stopped {
+            Some(count) => {
+                let restart = daemon_host::spawn_and_wait(
+                    state_dir.to_path_buf(),
+                    &active.channel_flag(),
+                    &daemon_host::StaleReason::Missing,
+                    &active.render_overrides,
+                )
+                .await
+                .map(|_| ())
+                .map_err(|refusal| refusal.message);
+                stop_all_install_failed(count, &cause, restart)
+            }
+            None => cause,
+        });
     }
-
-    update
-        .install(bytes)
-        .map_err(|e| updater_error("installing", endpoint, &target, e))?;
 
     // The install succeeded; the relaunched app's startup precheck hands the
     // daemon to the new build's sidecar; a failed handoff keeps the old daemon.
@@ -483,6 +560,50 @@ mod tests {
         );
         assert!(err.contains("windows-x86_64-nsis"), "{err}");
         assert!(err.contains("does not ship an installer"), "{err}");
+    }
+
+    #[test]
+    fn update_sessions_deserializes_both_modes() {
+        let keep: UpdateSessions = serde_json::from_str(r#"{"mode":"keep"}"#).unwrap();
+        assert_eq!(keep, UpdateSessions::Keep);
+        let stop: UpdateSessions =
+            serde_json::from_str(r#"{"mode":"stop_all","expected":[3,1]}"#).unwrap();
+        assert_eq!(
+            stop,
+            UpdateSessions::StopAll {
+                expected: vec![3, 1]
+            }
+        );
+    }
+
+    #[test]
+    fn the_windows_live_session_refusal_applies_only_to_keep() {
+        assert!(UpdateSessions::Keep.refuses_live_sessions_on_windows());
+        assert!(!UpdateSessions::StopAll { expected: vec![1] }.refuses_live_sessions_on_windows());
+    }
+
+    #[test]
+    fn update_sessions_rejects_a_stop_without_the_confirmed_ids() {
+        let err = serde_json::from_str::<UpdateSessions>(r#"{"mode":"stop_all"}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("expected"), "{err}");
+        assert!(serde_json::from_str::<UpdateSessions>(r#"{"mode":"stop"}"#).is_err());
+    }
+
+    #[test]
+    fn a_failed_install_after_a_stop_says_what_was_stopped_and_what_happened_to_the_daemon() {
+        let ok = stop_all_install_failed(3, "disk full", Ok(()));
+        assert!(
+            ok.contains("3 session(s)") && ok.contains("restarted"),
+            "{ok}"
+        );
+        assert!(ok.contains("disk full"), "{ok}");
+        let bad = stop_all_install_failed(3, "disk full", Err("no supervisor".to_string()));
+        assert!(
+            bad.contains("no supervisor") && bad.contains("restart Houston"),
+            "{bad}"
+        );
     }
 
     #[test]

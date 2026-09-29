@@ -526,34 +526,49 @@ pub(crate) async fn probe_live_sessions(
     Ok(Some(status.live_sessions))
 }
 
-/// How long a Windows update waits for the daemon it just retired to exit. The
+/// How long an update waits for the daemon it just retired to exit. The
 /// daemon answers the shutdown, then exits on its own within ~50ms; ten seconds
 /// is a tripwire for a wedged process, not a budget for a slow one.
-#[cfg(any(windows, test))]
 pub(crate) const UPDATE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Retire the active daemon so a Windows installer can replace houston-core.exe,
-/// which a running daemon locks. The refusal-or-stop decision lives inside the
-/// daemon, so a raced session is never killed; no daemon is the normal no-op.
-#[cfg(any(windows, test))]
-#[cfg_attr(not(windows), allow(dead_code))]
+/// The retire request itself waits on the daemon's SIGTERM drain (5s) and its
+/// scrollback checkpoint before it answers, so it outlives `MANAGE_HTTP_TIMEOUT`.
+const UPDATE_RETIRE_HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// What the daemon must find live before it agrees to retire for an update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RetireGuard {
+    /// No live session: the Windows `Keep` path, which cannot move sessions.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    IfIdle,
+    /// Exactly these sessions: the ids the update modal listed and the user
+    /// confirmed stopping.
+    IfSessions(Vec<u32>),
+}
+
+/// Retire the active daemon so an installer can replace its binary (Windows
+/// locks a running one; a stop-everything update wants a fresh one). The
+/// refusal-or-stop decision lives inside the daemon, so a raced session is
+/// never killed; no daemon is the normal no-op.
 pub(crate) async fn retire_daemon_for_update(
     state_dir: &Path,
     channel_label: &str,
+    guard: RetireGuard,
 ) -> Result<(), String> {
     retire_daemon_for_update_with(
         state_dir,
         channel_label,
+        guard,
         &houston_core::pid::process_comm,
         UPDATE_SHUTDOWN_TIMEOUT,
     )
     .await
 }
 
-#[cfg(any(windows, test))]
 async fn retire_daemon_for_update_with(
     state_dir: &Path,
     channel_label: &str,
+    guard: RetireGuard,
     alive: &(dyn Fn(u32) -> Option<String> + Sync),
     timeout: Duration,
 ) -> Result<(), String> {
@@ -571,11 +586,19 @@ async fn retire_daemon_for_update_with(
             daemon_json_path.display()
         )
     })?;
-    let client = manage_http_client();
+    let client = manage_http_client_with(UPDATE_RETIRE_HTTP_TIMEOUT);
+    let (verb, expected_sessions) = match guard {
+        RetireGuard::IfIdle => (houston_protocol::ManageVerb::DaemonShutdownIfIdle, None),
+        RetireGuard::IfSessions(ids) => (
+            houston_protocol::ManageVerb::DaemonShutdownIfSessions,
+            Some(ids),
+        ),
+    };
     let request = houston_protocol::ManageRequest {
         manage_version: houston_protocol::MANAGE_VERSION,
-        verb: houston_protocol::ManageVerb::DaemonShutdownIfIdle,
+        verb,
         candidate_bin: None,
+        expected_sessions,
     };
     let (http_status, json) =
         match manage_post_request(&client, fields.port, &fields.token, &request).await {
@@ -624,7 +647,6 @@ async fn retire_daemon_for_update_with(
 /// Confirm the retired generation is gone before an installer overwrites its
 /// binary. A different live generation named in daemon.json is a refusal: the
 /// installer would race a daemon it did not retire, so it must not start.
-#[cfg(any(windows, test))]
 async fn wait_for_daemon_exit(
     daemon_json_path: &Path,
     pid: u32,
@@ -679,6 +701,7 @@ pub(crate) async fn request_candidate_handoff(
         manage_version: houston_protocol::MANAGE_VERSION,
         verb: houston_protocol::ManageVerb::DaemonHandoff,
         candidate_bin: candidate.map(|p| p.to_string_lossy().into_owned()),
+        expected_sessions: None,
     };
     let (status, json) = manage_post_request(&client, fields.port, &fields.token, &request).await?;
     if !status.is_success() {
@@ -701,6 +724,7 @@ async fn manage_post(
         manage_version: houston_protocol::MANAGE_VERSION,
         verb,
         candidate_bin: None,
+        expected_sessions: None,
     };
     manage_post_request(client, port, token, &body).await
 }
@@ -2324,11 +2348,15 @@ mod tests {
             (pid == 4242 && calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0)
                 .then(|| "houston-core".to_string())
         };
-        retire_daemon_for_update_with(dir.path(), "dev", &alive, Duration::from_secs(1))
-            .await
-            .expect(
-                "a pid that is already gone needs no retirement and must not block the install",
-            );
+        retire_daemon_for_update_with(
+            dir.path(),
+            "dev",
+            RetireGuard::IfIdle,
+            &alive,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("a pid that is already gone needs no retirement and must not block the install");
     }
 
     #[tokio::test]
@@ -2341,9 +2369,15 @@ mod tests {
         )
         .await;
         let alive = |_pid: u32| Some("houston-core".to_string());
-        let err = retire_daemon_for_update_with(dir.path(), "dev", &alive, Duration::from_secs(1))
-            .await
-            .expect_err("a daemon holding live sessions must refuse to retire");
+        let err = retire_daemon_for_update_with(
+            dir.path(),
+            "dev",
+            RetireGuard::IfIdle,
+            &alive,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect_err("a daemon holding live sessions must refuse to retire");
         assert!(
             err.contains("2 live session(s)") && err.contains("no session was stopped"),
             "the refusal must carry the daemon's own count and say nothing was stopped: {err}"
@@ -2360,6 +2394,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn retire_daemon_for_update_sends_the_confirmed_ids_with_the_compare_and_stop_verb() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = serve_manage_once(
+            dir.path(),
+            "200 OK",
+            r#"{"ok":false,"error":"refusing to stop: live sessions are [1, 2, 3], the update confirmed [1, 2]; nothing was stopped","unterminated":[1,2,3]}"#,
+        )
+        .await;
+        let alive = |_pid: u32| Some("houston-core".to_string());
+        let err = retire_daemon_for_update_with(
+            dir.path(),
+            "dev",
+            RetireGuard::IfSessions(vec![1, 2]),
+            &alive,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect_err("a differing live set must refuse");
+        assert!(
+            err.contains("[1, 2, 3]") && err.contains("no session was stopped"),
+            "{err}"
+        );
+        let request = server.await.unwrap();
+        assert!(
+            request.contains(r#""verb":"daemon_shutdown_if_sessions""#)
+                && request.contains(r#""expected_sessions":[1,2]"#),
+            "the stop path must carry the confirmed ids: {request}"
+        );
+    }
+
+    #[tokio::test]
     async fn retire_daemon_for_update_refuses_a_daemon_that_predates_the_verb() {
         let dir = tempfile::tempdir().unwrap();
         let server = serve_manage_once(
@@ -2369,10 +2434,15 @@ mod tests {
         )
         .await;
         let alive = |_pid: u32| Some("houston-core".to_string());
-        let err =
-            retire_daemon_for_update_with(dir.path(), "release", &alive, Duration::from_secs(1))
-                .await
-                .expect_err("an older daemon cannot answer the retire request");
+        let err = retire_daemon_for_update_with(
+            dir.path(),
+            "release",
+            RetireGuard::IfIdle,
+            &alive,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect_err("an older daemon cannot answer the retire request");
         assert!(
             err.contains("stop the daemon from the tray") && err.contains("retry the install"),
             "an old daemon must produce the manual-update refusal: {err}"
@@ -2400,9 +2470,15 @@ mod tests {
             (asked == pid && live.load(std::sync::atomic::Ordering::SeqCst))
                 .then(|| "houston-core".to_string())
         };
-        retire_daemon_for_update_with(dir.path(), "dev", &alive, Duration::from_secs(5))
-            .await
-            .expect("the retired daemon exits and the updater confirms it");
+        retire_daemon_for_update_with(
+            dir.path(),
+            "dev",
+            RetireGuard::IfIdle,
+            &alive,
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("the retired daemon exits and the updater confirms it");
     }
 
     #[tokio::test]
