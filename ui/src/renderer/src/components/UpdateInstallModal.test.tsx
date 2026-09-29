@@ -117,6 +117,14 @@ describe('UpdateInstallModal helpers', () => {
 })
 
 describe('UpdateInstallModal', () => {
+  it('shows bullet release notes as list items, without their markdown markers', async () => {
+    mocks.status.mockResolvedValue(daemon([]))
+    renderModal()
+    await settle()
+    const items = screen.getByTestId('update-release-summary').querySelectorAll('li')
+    expect(Array.from(items, (li) => li.textContent)).toEqual(['a fix', 'a feature'])
+  })
+
   it('starts focus on Later and preselects keeping the sessions', async () => {
     mocks.status.mockResolvedValue(daemon([1, 2, 3]))
     renderModal()

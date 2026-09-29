@@ -95,7 +95,33 @@ const CALLOUT_WARN_CLS = `${CALLOUT_CLS} border-[color-mix(in_srgb,var(--warn)_4
 const CALLOUT_STOP_CLS = `${CALLOUT_CLS} border-[color-mix(in_srgb,var(--stop)_45%,var(--border))] bg-[color-mix(in_srgb,var(--stop)_8%,var(--card-bg))]`
 
 const NOTES_CLS =
-  'm-0 list-disc rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--card-bg)] py-[var(--space-2-5)] pr-[var(--space-3)] pl-[var(--space-6)] [font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]'
+  'm-0 rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--card-bg)] py-[var(--space-2-5)] px-[var(--space-3)] [font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]'
+
+const BULLET = /^\s*[-*•]\s+/
+
+// Bullet lines become list items; any other summary keeps its own line breaks.
+function ReleaseSummary({ summary }: { summary: string }): React.JSX.Element {
+  const lines = summary.split('\n').filter((l) => l.trim() !== '')
+  if (lines.length > 0 && lines.every((l) => BULLET.test(l))) {
+    return (
+      <ul
+        data-testid="update-release-summary"
+        className={`${NOTES_CLS} grid list-disc gap-[2px] pl-[var(--space-6)]`}
+      >
+        {lines.map((l, i) => (
+          <li key={i} className="break-words">
+            {l.replace(BULLET, '')}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  return (
+    <div data-testid="update-release-summary" className={`${NOTES_CLS} whitespace-pre-wrap break-words`}>
+      {summary}
+    </div>
+  )
+}
 
 const OPTION_CLS =
   'grid grid-cols-[18px_minmax(0,1fr)] gap-[var(--space-2-5)] rounded-[var(--tr-radius-md)] border p-[var(--space-3)] cursor-pointer bg-[var(--card-bg)] hover:border-[var(--border-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]'
@@ -139,7 +165,7 @@ function RadioCard({
       data-choice={choice}
       tabIndex={checked ? 0 : -1}
       onClick={onSelect}
-      className={`${OPTION_CLS} text-left ${checked ? ink.card : 'border-[var(--border)]'}`}
+      className={`${OPTION_CLS} w-full whitespace-normal text-left ${checked ? ink.card : 'border-[var(--border)]'}`}
     >
       <span
         aria-hidden="true"
@@ -149,7 +175,7 @@ function RadioCard({
       >
         {checked && <span className={`h-[8px] w-[8px] rounded-full ${ink.dot}`} />}
       </span>
-      <span className="grid gap-[2px]">
+      <span className="grid min-w-0 gap-[2px]">
         <span className="flex flex-wrap items-center gap-[var(--space-2)] font-semibold text-[var(--text-primary)]">
           {title}
         </span>
@@ -192,7 +218,7 @@ function SessionList({
   return (
     <ul
       data-testid="update-session-list"
-      className="m-0 list-none overflow-hidden rounded-[var(--tr-radius-sm)] border border-[var(--divider)] p-0"
+      className="m-0 list-none overflow-hidden rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--card-bg)] p-0"
     >
       {ids.map((id) => {
         const s = byId.get(id)
@@ -401,14 +427,7 @@ export function UpdateInstallModal({
             <span data-testid="update-failure">{failed.error}</span>
           </Callout>
         )}
-        {summary !== null && (
-          <div
-            data-testid="update-release-summary"
-            className={`${NOTES_CLS} whitespace-pre-wrap break-words`}
-          >
-            {summary}
-          </div>
-        )}
+        {summary !== null && <ReleaseSummary summary={summary} />}
         {notice !== null && <Callout tone="warn">{notice}</Callout>}
         {status.kind === 'loading' && (
           <p className="m-0 text-[var(--text-secondary)]">Checking which sessions are running…</p>
