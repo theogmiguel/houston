@@ -12363,10 +12363,14 @@ impl Daemon {
         self.spawn_depth_of(id) < self.orchestration_max_spawn_depth()
     }
 
+    pub(crate) fn handoffable_by(&self, id: u32) -> bool {
+        self.orchestration_enabled() && self.parent_of(id).is_none()
+    }
+
     pub(crate) fn tool_role_of(&self, id: u32) -> orchestrate::ToolRole {
         orchestrate::tool_role(
             self.parent_of(id).is_some(),
-            self.spawnable_by(id),
+            self.spawnable_by(id) || self.handoffable_by(id),
             !self.live_children_of(id).is_empty(),
         )
     }

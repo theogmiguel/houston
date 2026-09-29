@@ -49,8 +49,9 @@ Orchestration:
   cost of a tree compounds per generation, and a pointer to raise the cap in Settings ▸
   Orchestration if a longer chain is what you meant.
 
-Both caps can be raised (up to a fixed ceiling in Settings), never bypassed by an agent
-itself.
+Both caps can be raised (up to a fixed ceiling in Settings). They limit child delegations;
+a top-level pane's explicit handoff creates an independent pane outside those per-parent
+caps. A child pane cannot hand off, and the approval ceiling still applies.
 
 A related but separate rule: a spawned child never gets a wider permission bypass than
 its parent holds. If a parent tries to spawn a child at the full approval bypass while

@@ -101,7 +101,8 @@ const PANE_ROUTING: &str = concat!(
     "the prompt for you. ",
     "When the user asks for a handoff — the work continues in a new pane and this one is no \
      longer needed — pass `handoff: true`: the new pane is independent, not your child, so it \
-     never reports back and the user can close this pane without killing it. ",
+     never reports back and the user can close this pane without killing it. Only a top-level \
+     pane can hand off; child and depth caps apply to child spawning. ",
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
@@ -134,10 +135,11 @@ fn worker_duty(parent: u32) -> String {
 }
 
 const SPAWNING_AUTHORITY: &str = concat!(
-    "Whether you may spawn depends on the operator's orchestration switch, on how many child slots ",
+    "Whether you may spawn a child depends on the operator's orchestration switch, on how many child slots ",
     "you have left, and on how deep you already sit — and all three can change while you are running. ",
     "Your tool list is the live answer, not this paragraph: `pane_spawn` is advertised exactly when ",
-    "you could actually use it, and `pane_list`'s description always carries the current state — your ",
+    "you could actually use it. A top-level pane can still use `handoff: true` with its child slots full. ",
+    "`pane_list`'s description always carries the current state — your ",
     "free slots and the depth cap, or, when `pane_spawn` is missing, which of the three closed it and ",
     "how it reopens. If `pane_spawn` is absent but `pane_list` is present, read that description and act on it — free a slot, ",
     "or say plainly that the operator has to enable spawning or raise a cap in Settings → ",
@@ -182,6 +184,7 @@ impl ToolProvider for OrchestrationTools {
         let depth_cap = daemon.orchestration_max_spawn_depth();
         let would_be = daemon.spawn_depth_of(scope.session_id) + 1;
         let spawnable = daemon.spawnable_by(scope.session_id);
+        let handoffable = daemon.handoffable_by(scope.session_id);
         let live = if !enabled {
             "ORCHESTRATION IS OFF right now — the operator turns it on in Settings → \
              Orchestration. `pane_submit` still works. "
@@ -190,7 +193,7 @@ impl ToolProvider for OrchestrationTools {
             let why = if free == 0 {
                 format!(
                     "all {max} of your child slots are in use — `pane_kill` one, or wait for \
-                     one to finish, and `pane_spawn` comes back"
+                     one to finish, to restore child spawning"
                 )
             } else {
                 format!(
@@ -200,14 +203,21 @@ impl ToolProvider for OrchestrationTools {
                     would_be - 1
                 )
             };
-            format!("`pane_spawn` IS NOT AVAILABLE TO YOU right now: {why}. ")
+            if handoffable {
+                format!(
+                    "CHILD SPAWNING IS NOT AVAILABLE right now: {why}. `pane_spawn` remains \
+                     available with `handoff: true` for an independent pane. "
+                )
+            } else {
+                format!("`pane_spawn` IS NOT AVAILABLE TO YOU right now: {why}. ")
+            }
         } else {
             format!(
                 "ORCHESTRATION IS ON here: {free} of {max} child slots free, depth cap \
                  {depth_cap}. "
             )
         };
-        self.pane_tools(Some(live), spawnable)
+        self.pane_tools(Some(live), spawnable || handoffable)
     }
 
     fn all_tools(&self) -> Vec<ToolSpec> {
@@ -529,8 +539,11 @@ impl OrchestrationTools {
             ..a
         };
         let spawn_description = String::from(
-            "Start a new agent pane as a child of your own, with `prompt` as its first \
-             instruction — self-contained, since the child cannot see your conversation. \
+            "Start a new agent pane with `prompt` as its first instruction — self-contained, \
+             since the new pane cannot see your conversation. By default it is your child and \
+             consumes a child slot; set `handoff: true` from a top-level pane to create an \
+             independent pane instead. Child spawning obeys the child and depth caps; \
+             handoff does not consume a child slot. \
              Returns its session id, used by every other pane_* tool. SCALE THE SPAWN TO THE \
              WORK: do it yourself when the task is smaller than the brief it needs, or when \
              you cannot go on without the answer this turn; spawn a separable chunk — a \

@@ -1179,6 +1179,125 @@ async fn a_handoff_is_refused_from_a_child_and_with_parent_only_options() {
 }
 
 #[tokio::test]
+async fn a_root_at_its_child_cap_can_still_handoff_through_mcp() {
+    let _guard = serial().await;
+    let r = rig("mcp-handoff-at-child-cap").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(1, 1).unwrap();
+
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "first child"}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+
+    let (_, listed) = http_json(
+        r.addr,
+        "POST",
+        "/mcp",
+        &token,
+        Some(serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}
+        })),
+    )
+    .await;
+    let tools = listed["result"]["tools"].as_array().unwrap();
+    assert!(
+        tools.iter().any(|tool| tool["name"] == "pane_spawn"),
+        "a top-level pane must retain pane_spawn for independent handoff when its child cap is full"
+    );
+    let spawn_status = tools
+        .iter()
+        .find(|tool| tool["name"] == "pane_list")
+        .unwrap()["description"]
+        .as_str()
+        .unwrap();
+    assert!(
+        spawn_status.contains("CHILD SPAWNING IS NOT AVAILABLE")
+            && spawn_status.contains("handoff: true"),
+        "the live description distinguishes child spawning from handoff: {spawn_status}"
+    );
+
+    let handed_off = mcp_call(
+        r.addr,
+        &token,
+        "pane_spawn",
+        serde_json::json!({
+            "kind": "codex", "prompt": "continue independently", "handoff": true
+        }),
+    )
+    .await;
+    assert_eq!(handed_off["isError"], false, "{handed_off}");
+    assert_eq!(
+        handed_off["structuredContent"]["handoff"], true,
+        "{handed_off}"
+    );
+    let independent = handed_off["structuredContent"]["session"].as_u64().unwrap() as u32;
+    let independent_info = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|session| session.id == independent)
+        .expect("the independent pane is live");
+    assert_eq!(
+        independent_info.spawned_by, None,
+        "handoff must create an independent top-level pane"
+    );
+
+    let ordinary_spawn = mcp_call(
+        r.addr,
+        &token,
+        "pane_spawn",
+        serde_json::json!({"kind": "codex", "prompt": "over the cap"}),
+    )
+    .await;
+    assert_eq!(ordinary_spawn["isError"], true, "{ordinary_spawn}");
+    assert!(
+        ordinary_spawn["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("already has 1 live children"),
+        "ordinary child spawn remains bounded: {ordinary_spawn}"
+    );
+
+    let (_, child_listed) = http_json(
+        r.addr,
+        "POST",
+        "/mcp",
+        &r.token_for(child),
+        Some(serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}
+        })),
+    )
+    .await;
+    assert!(
+        !child_listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| tool["name"] == "pane_spawn"),
+        "a child at the depth cap must not be offered spawning"
+    );
+    let child_handoff = mcp_call(
+        r.addr,
+        &r.token_for(child),
+        "pane_spawn",
+        serde_json::json!({
+            "kind": "codex", "prompt": "escape parent", "handoff": true
+        }),
+    )
+    .await;
+    assert_eq!(child_handoff["isError"], true, "{child_handoff}");
+
+    r.daemon.kill(child).unwrap();
+    r.daemon.kill(independent).unwrap();
+}
+
+#[tokio::test]
 async fn the_status_source_follows_the_detected_cli_not_the_spawn_kind() {
     let _guard = serial().await;
     let r = rig("detected-source").await;
@@ -5014,9 +5133,10 @@ async fn pane_spawn_is_advertised_only_while_it_could_be_used() {
     let kid = body["session_id"].as_u64().unwrap() as u32;
 
     let tools = listed(token.clone()).await;
-    assert!(!has_spawn(&tools), "no slot left, so no verb");
+    assert!(has_spawn(&tools), "a capped root can still hand off");
     let why = listing_says(&tools);
-    assert!(why.contains("NOT AVAILABLE"), "{why}");
+    assert!(why.contains("CHILD SPAWNING IS NOT AVAILABLE"), "{why}");
+    assert!(why.contains("handoff: true"), "{why}");
     assert!(why.contains("pane_kill"), "the way back is named: {why}");
 
     let kid_tools = listed(r.token_for(kid)).await;
