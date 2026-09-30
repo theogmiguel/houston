@@ -134,7 +134,8 @@ export function useCheckoutFacts({
 
   // A pane's branch is a live git fact, not stored state: focus resolves the
   // session's live cwd and asks again on refocus, so a `git switch` shows up
-  // without a timer. While the ask is unanswered the chip stays off.
+  // without a timer. The chip stays off until the first answer; a refresh keeps
+  // the last answer so the header does not reflow on every focus change.
   useEffect(() => {
     if (conn.kind !== 'ready' || activeId === null) return
     const info = sessionsRef.current.get(activeId)
@@ -157,7 +158,7 @@ export function useCheckoutFacts({
     for (const s of sessions.values()) {
       if (s.agent === 'ssh') continue
       const dir = paneCwds.get(s.id) ?? s.cwd
-      if (pending.has(dir)) continue
+      if (pending.has(dir) && !facts.has(dir)) continue
       const branch = facts.get(dir)?.branch
       if (branch) out.set(s.id, branch)
     }

@@ -190,11 +190,41 @@ describe('branch chip in the focused pane', () => {
 
     focusPane(harness, 1)
     await flush()
-    expect(paneChip(harness, 1)).toBeNull()
+    expect(callsFor(REPO)).toBe(2)
+    expect(
+      paneChip(harness, 1)?.textContent,
+      'a refresh keeps the last answer, so the header does not reflow while it is in flight'
+    ).toContain('feat/first')
 
     reply(REPO, 'feat/second', REPO, `${REPO}/.git`)
     await flush()
     expect(paneChip(harness, 1)?.textContent).toContain('feat/second')
+  })
+
+  it('switching focus within one checkout keeps every chip', async () => {
+    harness = await renderReadyApp({
+      sessions: [
+        makeSession({ id: 1, cwd: REPO, project_dir: WS }),
+        makeSession({ id: 2, cwd: REPO, project_dir: WS }),
+        makeSession({ id: 3, cwd: REPO, project_dir: WS })
+      ],
+      workspaces: [makeWorkspace({ path: WS })]
+    })
+
+    focusPane(harness, 1)
+    await flush()
+    reply(REPO, 'main', REPO, `${REPO}/.git`)
+    await flush()
+
+    focusPane(harness, 2)
+    await flush()
+    expect(callsFor(REPO)).toBe(2)
+    for (const id of [1, 2, 3]) {
+      expect(
+        paneChip(harness, id)?.textContent,
+        `pane ${id} lost its chip while another pane's refresh was in flight`
+      ).toContain('main')
+    }
   })
 
   it('narrow pane hides the chip', async () => {
