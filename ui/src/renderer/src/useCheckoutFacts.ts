@@ -132,10 +132,9 @@ export function useCheckoutFacts({
     [request]
   )
 
-  // A pane's branch is a live git fact, not stored state: focus resolves the
-  // session's live cwd and asks again on refocus, so a `git switch` shows up
-  // without a timer. The chip stays off until the first answer; a refresh keeps
-  // the last answer so the header does not reflow on every focus change.
+  // Focus re-reads the live cwd's branch, so a `git switch` shows up without a
+  // timer. The chip stays off until the first answer; a refresh keeps the last
+  // answer so the header does not reflow on every focus change.
   useEffect(() => {
     if (conn.kind !== 'ready' || activeId === null) return
     const info = sessionsRef.current.get(activeId)
