@@ -22,6 +22,7 @@ export interface FileTabsState {
   langLabel: string
   previewFile: (path: string) => void
   pinFile: (path: string) => void
+  transferTab: (path: string) => void
   requestCloseTab: (path: string) => void
   closeOthers: (path: string) => void
   closeToRight: (path: string) => void
@@ -274,6 +275,7 @@ export function useFileTabs(workspaceDir: string): FileTabsState {
     langLabel,
     previewFile,
     pinFile,
+    transferTab: closeTab,
     requestCloseTab,
     closeOthers,
     closeToRight,

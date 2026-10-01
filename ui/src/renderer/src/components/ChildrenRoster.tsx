@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { openSideOverview } from '../sidePanel'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import { HeaderDelegationBadge, stateWord, type PaneRoster } from './DelegationCard'
@@ -23,7 +24,7 @@ export function childGroup(info: SessionInfo): 'Needs you' | 'Working' | 'Settle
   return 'Working'
 }
 
-export function observedAge(start: number, now: number): string {
+export function delegationAge(start: number, now: number): string {
   const seconds = Math.max(0, Math.floor((now - start) / 1000))
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`
 }
@@ -44,9 +45,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const latest = useRef(children)
   latest.current = children
-  const observed = useRef(new Map<number, number>())
   const [now, setNow] = useState(Date.now)
-  for (const child of children) if (!observed.current.has(child.id)) observed.current.set(child.id, now)
   useEffect(() => {
     // Ages only need second resolution, independent of terminal rendering.
     const tick = setInterval(() => setNow(Date.now()), 1000)
@@ -99,7 +98,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
             <div className="children-group"><span>{group}</span><span>{items.length}</span></div>
             {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
               <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}>{dot(child)}{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong></HeaderDelegationBadge>
-              <span className="children-slot"><span className="children-state">{child.delegation ? stateWord(child.delegation) : childGroup(child) === 'Settled' ? 'done' : child.status ?? 'working'} · {observedAge(observed.current.get(child.id) ?? now, now)}</span>
+              <span className="children-slot"><span className="children-state">{child.delegation ? stateWord(child.delegation) : childGroup(child) === 'Settled' ? 'done' : child.status ?? 'working'} · {delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span>
                 <span className="children-actions">
                   {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><button className={ROSTER_ICON} aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>}
                   <Tooltip label="Open"><button className={ROSTER_ICON} aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>
@@ -114,7 +113,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
       </div>
       <footer className="children-footer">
         {pending.length > 0 ? <><span className="truncate">Closing {pending.length}</span><button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={undoClose}>Undo</button></> : <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} disabled={!settled.length} onClick={closeSettled}>Close settled ({settled.length})</button>}
-        <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={() => {}}>Overview</button>
+        <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={() => openSideOverview(parent.id)}>Overview</button>
       </footer>
     </aside>}
     {strip}

@@ -103,6 +103,15 @@ export function useEditorSurface(workspaceDir: string, path: string): EditorSurf
       })
   }
 
+  useEffect(() => {
+    if (!path || !ready) return
+    const check = (): void => {
+      void import('./buffers').then(({ checkBufferRevision }) => checkBufferRevision(workspaceDir, path)).catch((error) => setError(cleanError(error)))
+    }
+    window.addEventListener('focus', check)
+    return () => window.removeEventListener('focus', check)
+  }, [workspaceDir, path, ready])
+
   const mediaKind = classifyMediaKind(path)
   const isMediaPreview = mediaKind === 'image' || mediaKind === 'video' || mediaKind === 'audio'
   const isMarkdown = mediaKind === 'markdown'

@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ChildrenRoster, childGroup, observedAge } from './ChildrenRoster'
+import { ChildrenRoster, childGroup, delegationAge } from './ChildrenRoster'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 
 const child = (id: number, state: SessionInfo['state'] = 'running'): SessionInfo => ({ id, state, codename: `child-${id}`, hidden: false, inbox_unread: 0, resumable: false, title: `worker ${id}`, agent: 'claude', cwd: '/tmp/p', project_dir: '/tmp/p', spawned_by: 1, status: 'working', children_waiting: 0, live_children: 0, tags: [] } as SessionInfo)
@@ -58,8 +58,19 @@ describe('settled children', () => {
     expect(host.querySelector('[aria-label="Orchestrator"]')?.getAttribute('aria-pressed')).toBe('false')
   })
   it('formats observation ages without negative values', () => {
-    expect(observedAge(1000, 0)).toBe('0s')
-    expect(observedAge(0, 65000)).toBe('1m')
-    expect(observedAge(0, 3600000)).toBe('1h')
+    expect(delegationAge(1000, 0)).toBe('0s')
+    expect(delegationAge(0, 65000)).toBe('1m')
+    expect(delegationAge(0, 3600000)).toBe('1h')
   })
+})
+
+describe('roster carry-overs', () => {
+  it('opens the overview tab from its footer', () => {
+    const handler = vi.fn()
+    window.addEventListener('houston:side-open', handler)
+    render(); click('Overview')
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: 'overview', orchestrator: 1 } }))
+    window.removeEventListener('houston:side-open', handler)
+  })
+
 })

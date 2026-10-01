@@ -84,7 +84,7 @@ describe('commandRegistry — buildCommands', () => {
     expect(commands.find((c) => c.id === 'panes.new-git')).toBeUndefined()
     const git = commands.find((c) => c.id === 'panes.toggle-git')
     expect(git?.enabled).toBe(true)
-    expect(git?.title).toContain('source control')
+    expect(git?.title).toContain('side panel')
     expect(git?.keywords).toContain('git')
     expect(git?.keywords).toContain('review')
   })

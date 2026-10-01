@@ -7,6 +7,10 @@ import type { EditorNode } from '../layout/tree'
 import { EditorLeaf } from './EditorLeaf'
 import { getBuffer } from '../editor/buffers'
 
+vi.mock('../houston/bridge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../houston/bridge')>()
+  return { ...actual, writeFileChecked: async () => { throw new Error('FILE_SAVE_CONFLICT: expected hash differs from current hash') } }
+})
 await import('./EditorSurface')
 
 async function flush(): Promise<void> {
@@ -76,6 +80,7 @@ describe('EditorLeaf conflict bar copy (Phase 6 item 4 batch 2)', () => {
     await flush()
     await makeDirty(path)
 
+    await (await import("../editor/buffers")).contentHash("hello")
     act(() => ctrlS())
     await flush()
 

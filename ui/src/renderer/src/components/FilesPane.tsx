@@ -1,8 +1,10 @@
+import type { GitFileStatus, HoustonClient } from '../houston/client'
+import { FILE_REFERENCE_MIME, fileReference, gitTreeStatus } from './files/fileActions'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { RING_ACCENT_ICON } from './shadowChrome'
 import type { DirEntry } from '../env'
 import type { FilesNode, PaneKey } from '../layout/tree'
-import { readDir, showItemInFolder } from '../houston/bridge'
+import { readDir, showItemInFolder, createFile, createDirectory, renameFile, trashFile } from '../houston/bridge'
 import {
   PANE_BORDER_CLS,
   PANE_HEAD_BG_CLS,
@@ -24,6 +26,7 @@ import { classifyFileTreeEntry, FileTreeIcon } from './fileTreeIcons'
 import { flattenTree, treeKeyAction, visibleEntries, type TreeRow } from './files/filesTree'
 import { useFileTabs, type FileTab } from './files/useFileTabs'
 import {
+  IconArrowUpRight,
   IconChevronDown,
   IconChevronRight,
   IconClose,
@@ -90,6 +93,10 @@ const NOTICE_TITLE =
 const NOTICE_HINT = 'text-[length:var(--tr-text-xs)] text-[var(--text-muted)] max-w-[36ch] break-all'
 
 export interface FilesPaneProps {
+  panel?: boolean
+  client?: HoustonClient | null
+  openFile?: { path: string; line?: number; col?: number } | null
+  onMoveToEditor?: (path: string) => void
   node: FilesNode
   workspaceDir: string
   onClose: () => void
@@ -101,6 +108,10 @@ export interface FilesPaneProps {
 }
 
 export function FilesPane({
+  panel,
+  client,
+  openFile,
+  onMoveToEditor,
   node,
   workspaceDir,
   onClose,
@@ -133,6 +144,20 @@ export function FilesPane({
   const [tabsOverflow, setTabsOverflow] = useState(false)
 
   const fileTabs = useFileTabs(workspaceDir)
+  const [gitFiles, setGitFiles] = useState<GitFileStatus[]>([])
+  const [mutation, setMutation] = useState<{ kind: 'file' | 'directory' | 'rename'; path: string; name: string } | null>(null)
+  useEffect(() => {
+    if (openFile) fileTabs.pinFile(openFile.path)
+  }, [openFile, fileTabs.pinFile])
+  useEffect(() => {
+    setGitFiles([])
+    if (!client) return
+    const off = client.subscribe('git_status', (message) => {
+      if (message.dir === root && message.base == null) setGitFiles(message.files)
+    })
+    client.gitStatus(root, null)
+    return off
+  }, [client, root])
 
   const readInto = useCallback(async (dir: string, isRoot: boolean): Promise<void> => {
     try {
@@ -210,6 +235,14 @@ export function FilesPane({
   })
 
   const onTreeKeyDown = (e: React.KeyboardEvent, index: number): void => {
+    const row = rows[index]
+    if (row && (e.key === 'F2' || e.key === 'Delete')) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'F2') setMutation({ kind: 'rename', path: row.path, name: row.name })
+      else void removeEntry(row.path)
+      return
+    }
     const action = treeKeyAction(rows, index, e.key)
     if (action.kind === 'none') return
     e.preventDefault()
@@ -234,6 +267,33 @@ export function FilesPane({
   const reportError = (message: string): void => {
     if (onError) onError(message)
     else fileTabs.surface.setError(message)
+  }
+
+  const removeEntry = async (path: string): Promise<void> => {
+    try {
+      await trashFile(path)
+      for (const tab of fileTabs.tabs) if (tab.path === path || tab.path.startsWith(`${path}/`)) fileTabs.markMissing(tab.path, true)
+      refreshTree()
+    } catch (error) { reportError(String(error)) }
+  }
+  const applyMutation = async (): Promise<void> => {
+    if (!mutation) return
+    const name = mutation.name
+    if (!name || name === '.' || name === '..' || /[\/\\\u0000-\u001f\u007f]/.test(name)) {
+      reportError(`Cannot use ${JSON.stringify(name)}: expected a single non-empty filename without traversal or control characters`)
+      return
+    }
+    const path = `${mutation.kind === 'rename' ? parentDir(mutation.path) : mutation.path}/${name}`
+    try {
+      if (mutation.kind === 'rename') {
+        await renameFile(mutation.path, path)
+        for (const tab of fileTabs.tabs) if (tab.path === mutation.path || tab.path.startsWith(`${mutation.path}/`)) fileTabs.markMissing(tab.path, true)
+        if (!rows.find((row) => row.path === mutation.path)?.dir) fileTabs.pinFile(path)
+      } else if (mutation.kind === 'file') { await createFile(path); fileTabs.pinFile(path) }
+      else await createDirectory(path)
+      setMutation(null)
+      refreshTree()
+    } catch (error) { reportError(String(error)) }
   }
 
   useEffect(() => {
@@ -291,7 +351,7 @@ export function FilesPane({
         </span>
       </Tooltip>
       <span className="head-actions flex items-center gap-px flex-none ml-auto">
-        {}
+        <FileHeaderActions root={root} panel={panel} path={fileTabs.activePath} onCreate={() => setMutation({ kind: 'file', path: root, name: '' })} onMove={onMoveToEditor} onClose={fileTabs.transferTab} />
         <span className={`${TREE_VISIBLE}:hidden inline-flex`}>
           <Tooltip label={treeOpen ? 'Hide tree' : 'Show tree'}>
             <button
@@ -413,6 +473,11 @@ export function FilesPane({
           <TreeNodeRow
             key={row.path}
             row={row}
+            status={gitTreeStatus(root, row.path, row.dir, gitFiles)}
+            onDragStart={(event) => {
+              try { fileReference(row.path, row.dir); event.dataTransfer.setData(FILE_REFERENCE_MIME, JSON.stringify({ path: row.path, directory: row.dir })); event.dataTransfer.effectAllowed = "copy" }
+              catch (error) { event.preventDefault(); reportError(String(error)) }
+            }}
             selected={row.path === fileTabs.activePath}
             tabIndex={i === focusIndex ? 0 : -1}
             failure={dirErrors.get(row.path) ?? null}
@@ -446,7 +511,12 @@ export function FilesPane({
   const treeColumn = (
     <aside
       data-testid="files-tree-column"
-      className={`${TREE_W} flex-none flex flex-col min-h-0 border-r border-[color-mix(in_srgb,var(--divider)_55%,transparent)] ${
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest('[role="treeitem"]')) return
+        event.preventDefault()
+        setMenu({ x: event.clientX, y: event.clientY, path: root, dir: true })
+      }}
+      className={`files-tree-column ${TREE_W} flex-none flex flex-col min-h-0 border-r border-[color-mix(in_srgb,var(--divider)_55%,transparent)] ${
         treeOpen ? 'flex' : `hidden ${TREE_VISIBLE}:flex`
       }`}
     >
@@ -456,7 +526,7 @@ export function FilesPane({
 
   const editorColumn = (
     <div className="editor-leaf flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--tool-code-bg)]">
-      <FileTabStrip
+      <FilesEditorHeader panel={panel} path={fileTabs.activePath} onMove={onMoveToEditor} onClose={fileTabs.transferTab} tabs={<FileTabStrip
         tabs={fileTabs.tabs}
         activePath={fileTabs.activePath}
         workspaceDir={workspaceDir}
@@ -468,7 +538,7 @@ export function FilesPane({
         onClose={fileTabs.requestCloseTab}
         onContextMenu={(x, y, path) => setTabMenu({ x, y, path })}
         onOpenOverflow={(x, y) => setOverflowMenu({ x, y })}
-      />
+      />} />
       {fileTabs.activePath ? (
         <>
           <Suspense fallback={<div className={EHOST_WRAP_CLS} />}>
@@ -497,7 +567,7 @@ export function FilesPane({
             </span>
             {/* Facts about the file, not choices: every read is UTF-8, and the
                 line ending is what the buffer recorded at load. */}
-            <span className={`${STRIP_CELL} font-mono`}>{fileTabs.activeBuf?.lineEnding ?? 'LF'}</span>
+            <span className={`${STRIP_CELL} font-mono`}>{fileLineEnding(fileTabs.activeBuf)}</span>
             <span className={`${STRIP_CELL} font-mono`}>UTF-8</span>
           </div>
         </>
@@ -512,12 +582,12 @@ export function FilesPane({
 
   return (
     <section
-      className={`pane files-pane flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${active ? 'focus' : ''}`}
+      className={`pane files-pane ${panel ? "files-panel" : ""} flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${active ? 'focus' : ''}`}
       data-panekey={node.id}
       data-testid="files-pane"
     >
-      {header}
-      <div className="flex-1 min-h-0 flex">
+      <FilesPaneHeader panel={panel} header={header} />
+      <div className="files-columns flex-1 min-h-0 flex">
         {treeColumn}
         {editorColumn}
       </div>
@@ -536,6 +606,8 @@ export function FilesPane({
             })()}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {(['file', 'directory', 'rename'] as const).map((kind) => <button key={kind} role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { setMutation({ kind, path: kind === 'rename' || menu.dir ? menu.path : parentDir(menu.path), name: kind === 'rename' ? basename(menu.path) : '' }); setMenu(null) }}>{kind === 'file' ? 'New file' : kind === 'directory' ? 'New folder' : 'Rename'}</button>)}
+            <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { void removeEntry(menu.path); setMenu(null) }}>Move to trash</button>
             <OpenInMenu
               path={menu.path}
               label={menu.dir ? 'Open folder in' : 'Open in'}
@@ -597,6 +669,8 @@ export function FilesPane({
           }}
         />
       </MenuLayer>
+      {mutation && <FileMutationForm mutation={mutation} onChange={setMutation} onSubmit={() => void applyMutation()} />}
+
       <AnimOut open={fileTabs.confirmClose !== null} suppress="modal">
         {fileTabs.confirmClose && (
           <SaveDiscardModal
@@ -612,6 +686,8 @@ export function FilesPane({
 }
 
 function TreeNodeRow({
+  status,
+  onDragStart,
   row,
   selected,
   tabIndex,
@@ -622,6 +698,8 @@ function TreeNodeRow({
   onKeyDown,
   onContextMenu
 }: {
+  status: GitFileStatus["status"] | null
+  onDragStart: (event: React.DragEvent) => void
   row: TreeRow
   selected: boolean
   tabIndex: number
@@ -637,6 +715,9 @@ function TreeNodeRow({
     <Tooltip label={failure ? `${row.path} — ${failure}` : row.path} className="flex w-full">
       <button
         ref={registerRef}
+        draggable
+        onDragStart={onDragStart}
+        data-git-status={status ?? undefined}
         role="treeitem"
         aria-selected={selected}
         aria-expanded={row.dir ? row.expanded : undefined}
@@ -661,6 +742,7 @@ function TreeNodeRow({
         </span>
         <FileTreeIcon kind={icon} role="ui" />
         <span className="flex-1 min-w-0 overflow-hidden text-ellipsis">{row.name}</span>
+        {status && <span className={`font-mono text-[length:var(--tr-text-xs)] ${status === 'conflicted' || status === 'deleted' ? 'text-[var(--stop)]' : status === 'added' ? 'text-[var(--ok)]' : 'text-[var(--warn)]'}`}>{status === 'untracked' ? '?' : status[0].toUpperCase()}</span>}
       </button>
     </Tooltip>
   )
@@ -905,4 +987,47 @@ function ancestorDirs(root: string, path: string): string[] {
     dir = parentDir(dir)
   }
   return out
+}
+
+type FileMutation = { kind: 'file' | 'directory' | 'rename'; path: string; name: string }
+
+function FileMutationForm({ mutation, onChange, onSubmit }: {
+  mutation: FileMutation
+  onChange: (value: FileMutation | null) => void
+  onSubmit: () => void
+}): React.JSX.Element {
+  const renaming = mutation.kind === 'rename'
+  return <form className="flex-none flex items-center gap-2 p-2" aria-label={`${renaming ? 'Rename' : 'Create in'} ${mutation.path}`} onSubmit={(event) => { event.preventDefault(); onSubmit() }}>
+    <input autoFocus aria-label="Filename" value={mutation.name} onChange={(event) => onChange({ ...mutation, name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onChange(null) } }} className="min-w-0 flex-1 bg-[var(--tool-code-bg)] border border-[var(--border)] rounded-[var(--tr-radius-sm)]" />
+    <button className="btn border-none" type="submit">{renaming ? 'Rename' : 'Create'}</button>
+    <button className="btn border-none" type="button" onClick={() => onChange(null)}>Cancel</button>
+  </form>
+}
+
+function FileHeaderActions({ panel, path, onCreate, onMove, onClose }: {
+  root: string
+  panel?: boolean
+  path: string | null
+  onCreate: () => void
+  onMove?: (path: string) => void
+  onClose: (path: string) => void
+}): React.JSX.Element {
+  return <>
+    <Tooltip label="New file"><button className="btn border-none" aria-label="New file" onClick={onCreate}>New file</button></Tooltip>
+    {panel && path && onMove && <button className="btn border-none" onClick={() => { onMove(path); onClose(path) }}>Open in editor pane</button>}
+  </>
+}
+
+function fileLineEnding(buffer: ReturnType<typeof getBuffer>): string {
+  return buffer?.lineEnding ?? 'LF'
+}
+
+function FilesPaneHeader({ panel, header }: { panel?: boolean; header: React.ReactNode }): React.JSX.Element | null {
+  return panel ? null : <>{header}</>
+}
+
+function FilesEditorHeader({ panel, path, onMove, onClose, tabs }: { panel?: boolean; path: string | null; onMove?: (path: string) => void; onClose: (path: string) => void; tabs: React.ReactNode }): React.JSX.Element {
+  if (!panel) return <>{tabs}</>
+  if (!path) return <></>
+  return <div className="files-viewer-head"><span className="truncate flex-1">{path}</span><Tooltip label="Open in editor pane"><button className={BTN_ICO_STRUCTURE} aria-label="Open in editor pane" onClick={() => { onMove?.(path); onClose(path) }}><Icon glyph={IconArrowUpRight} role="label" /></button></Tooltip></div>
 }

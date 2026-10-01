@@ -1,3 +1,5 @@
+import { TERMINAL_FOCUS_EVENT } from '../sidePanel'
+import { FILE_REFERENCE_MIME, fileReference } from '../components/files/fileActions'
 import { claimVisibility } from './registration'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
@@ -629,14 +631,14 @@ export function TerminalPane({
       return { count: count || 1, hasImages }
     }
     const onDragOver = (e: DragEvent): void => {
-      if (!dragCarriesFiles(e.dataTransfer)) return
+      if (!e.dataTransfer?.types.includes(FILE_REFERENCE_MIME) && !dragCarriesFiles(e.dataTransfer)) return
       e.preventDefault()
       const { count, hasImages } = readDragItems(e.dataTransfer)
       setDragFileCount(count)
       setDragHasImages(hasImages)
     }
     const onDragEnter = (e: DragEvent): void => {
-      if (!dragCarriesFiles(e.dataTransfer)) return
+      if (!e.dataTransfer?.types.includes(FILE_REFERENCE_MIME) && !dragCarriesFiles(e.dataTransfer)) return
       dragCounterRef.current++
       setDragOver(true)
       const { count, hasImages } = readDragItems(e.dataTransfer)
@@ -644,7 +646,7 @@ export function TerminalPane({
       setDragHasImages(hasImages)
     }
     const onDragLeave = (e: DragEvent): void => {
-      if (!dragCarriesFiles(e.dataTransfer)) return
+      if (!e.dataTransfer?.types.includes(FILE_REFERENCE_MIME) && !dragCarriesFiles(e.dataTransfer)) return
       dragCounterRef.current = Math.max(0, dragCounterRef.current - 1)
       if (dragCounterRef.current === 0) setDragOver(false)
     }
@@ -729,6 +731,17 @@ export function TerminalPane({
 
     const onDrop = (e: DragEvent): void => {
       dragCounterRef.current = 0
+      const reference = e.dataTransfer?.getData(FILE_REFERENCE_MIME)
+      if (reference) {
+        e.preventDefault()
+        setDragOver(false)
+        try {
+          const entry = JSON.parse(reference) as { path: string; directory: boolean }
+          if (typeof entry.path !== 'string' || typeof entry.directory !== 'boolean') throw new Error(`Cannot insert ${reference}: expected a file path and directory flag`)
+          term.paste(fileReference(entry.path, entry.directory))
+        } catch (error) { pushToast('Cannot insert file reference', String(error), 'danger') }
+        return
+      }
       const entries = readDropEntries(e.dataTransfer)
       if (entries.length === 0) {
         setDragOver(false)
@@ -1119,6 +1132,14 @@ export function TerminalPane({
       pushToastRef.current('Uploaded', msg.remote_path, 'success')
     })
   }, [client, info.id, info.ssh_host])
+
+  useEffect(() => {
+    const focus = (event: Event): void => {
+      if ((event as CustomEvent<{ session: number }>).detail.session === info.id) termRef.current?.focus()
+    }
+    window.addEventListener(TERMINAL_FOCUS_EVENT, focus)
+    return () => window.removeEventListener(TERMINAL_FOCUS_EVENT, focus)
+  }, [info.id])
 
   useEffect(() => {
     const term = termRef.current

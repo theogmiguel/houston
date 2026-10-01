@@ -6,6 +6,7 @@ import type { EditorState, Extension } from '@codemirror/state'
 export interface EditorBuffer {
   state: EditorState
   dirty: boolean
+  sha256?: string
   mtimeMs: number | null
   conflict: boolean
   wrap: boolean
@@ -45,6 +46,7 @@ export function bufferKey(workspaceDir: string, path: string): string {
 
 export interface StoreEntry {
   buf: EditorBuffer
+  revision?: Promise<string>
   extensions: Extension[]
 }
 

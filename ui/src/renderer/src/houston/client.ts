@@ -1249,6 +1249,18 @@ export class HoustonClient {
     })
   }
 
+  settledRetentionSet(hours: number): void {
+    this.send({ type: 'settled_retention_set', hours })
+  }
+
+  workspaceRoutingGet(workspace: string): void {
+    this.send({ type: 'workspace_routing_get', workspace })
+  }
+
+  workspaceRoutingSet(workspace: string, routes: Extract<ClientMsg, { type: 'workspace_routing_set' }>['routes']): void {
+    this.send({ type: 'workspace_routing_set', workspace, routes })
+  }
+
   mailboxRetentionSet(hours: number): void {
     this.send({ type: 'mailbox_retention_set', hours })
   }

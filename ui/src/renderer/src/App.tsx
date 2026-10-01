@@ -1,3 +1,4 @@
+import { useOrchestrationNotifications } from './orchestrationNotifications';
 import { registerOwned } from './pane/registration';
 import {
   lazy,
@@ -205,7 +206,7 @@ import {
 } from "./components/icons";
 import { setRailWidth, useRailWidth } from "./railWidth";
 import {
-  SCM_WIDTH_DEFAULT,
+  defaultScmWidth,
   focusedRepoDir,
   loadScmOpen,
   saveScmOpen,
@@ -214,7 +215,8 @@ import {
   useScmWidth,
   type ScmTab,
 } from "./scmPanel";
-import { SourceControlPanel } from "./components/SourceControlPanel";
+import { SidePanelIntegration } from "./components/SidePanel";
+import { SIDE_OPEN_EVENT, SIDE_SELECT_EVENT, type SideOpen } from "./sidePanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
@@ -523,6 +525,11 @@ function mcpSurfaceLists(mcp: McpStateView | null) {
   };
 }
 
+function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent): boolean {
+  if (surface === "side") return event.key === "Escape" || ((event.ctrlKey || event.metaKey) && ["s", "l"].includes(event.key.toLowerCase()));
+  return focusedPaneOwnsKey(event);
+}
+
 export function App(): React.JSX.Element {
   const [conn, setConn] = useState<Conn>({ kind: "connecting" });
   const dismissedUpdate = useDismissedUpdate();
@@ -805,6 +812,19 @@ export function App(): React.JSX.Element {
   );
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
   const scmWidth = useScmWidth();
+  const [sideRequest, setSideRequest] = useState<SideOpen | null>(null);
+  const [activeSurface, setActiveSurface] = useState<"grid" | "side">("grid");
+  const [sideReview, setSideReview] = useState<SessionInfo | null>(null);
+  useEffect(() => {
+    const open = (event: Event): void => {
+      setSideRequest((event as CustomEvent<SideOpen>).detail);
+      setScmOpen(true);
+    };
+    const select = (): void => setActiveSurface("grid");
+    window.addEventListener(SIDE_OPEN_EVENT, open);
+    window.addEventListener(SIDE_SELECT_EVENT, select);
+    return () => { window.removeEventListener(SIDE_OPEN_EVENT, open); window.removeEventListener(SIDE_SELECT_EVENT, select); };
+  }, []);
   const [wsRenaming, setWsRenaming] = useState<string | null>(null);
   // Keyed by `gridStorageKey(path, gridId)` for a real workspace, never the
   // bare path — 'all' is the one exception, bypassing grids entirely.
@@ -952,6 +972,8 @@ export function App(): React.JSX.Element {
   const voiceSettingsRef = useRef(voiceSettings);
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
+
+  useOrchestrationNotifications(sessions);
 
   const paneRoster = useMemo<PaneRoster>(() => ({
     sessions,
@@ -2238,7 +2260,9 @@ export function App(): React.JSX.Element {
     (session: number, path: string, line?: number, col?: number): void => {
       const info = sessionsRef.current.get(session);
       if (!info) return;
-      openEditorFile(info.project_dir, path, session, line, col);
+      setSideRequest({ kind: "files", root: info.project_dir, path, line, col });
+      setScmOpen(true);
+      setActiveSurface("side");
     },
     [openEditorFile],
   );
@@ -2266,7 +2290,7 @@ export function App(): React.JSX.Element {
   // The panel reviews the focused pane's workspace in All view, and the
   // selected workspace otherwise — never a session's dir left over from
   // another workspace, which would point the panel at the wrong repo.
-  const scmDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
+  const scmDir = sideReview?.project_dir ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   // Editing or browsing from the panel must land where the user can see it:
   // in All view the focused pane's repo has no visible grid, so reveal it
   // first rather than inserting into a hidden tree.
@@ -2313,7 +2337,7 @@ export function App(): React.JSX.Element {
     setScmOpen((open) => !open);
   }, []);
   const resetScmWidth = useCallback((): void => {
-    setScmWidth(SCM_WIDTH_DEFAULT);
+    setScmWidth(defaultScmWidth(window.innerWidth));
   }, []);
 
   const scmProps = useMemo(() => {
@@ -2333,6 +2357,10 @@ export function App(): React.JSX.Element {
           }
         : undefined,
       onReviewPacket: (data: ReviewDiffsData) => {
+        if (sideReview) {
+          setReviewSessions((current) => new Map(current).set(data.dir, { session: sideReview.id, data }));
+          return;
+        }
         reviewIntents.current.push({
           projectDir: data.dir,
           data,
@@ -2348,7 +2376,7 @@ export function App(): React.JSX.Element {
             }
           : null,
     };
-  }, [conn, scmDir, openScmFile, revealWorkspace, openBrowserPane, reviewSessions, sessions]);
+  }, [conn, scmDir, openScmFile, revealWorkspace, openBrowserPane, reviewSessions, sessions, sideReview]);
 
   const removeWorkspace = useCallback(
     (path: string) => {
@@ -2795,7 +2823,7 @@ export function App(): React.JSX.Element {
         changeFont(0);
         return;
       }
-      if (activeId !== null && !layerArmed && focusedPaneOwnsKey(e)) return;
+      if (activeId !== null && !layerArmed && focusedSurfaceOwnsKey(activeSurface, e)) return;
       if (resolveMatch(escapeShortcut, keymapOverrides)(e)) {
         if (shortcutSheet) setShortcutSheet(false);
         else if (settings) setSettings(false);
@@ -2965,6 +2993,7 @@ export function App(): React.JSX.Element {
     paneCount,
     tidyPanes,
     equalizePanesNow,
+    activeSurface,
     focusAdjacentPane,
     movePaneBy,
     stepWorkspace,
@@ -3309,7 +3338,7 @@ export function App(): React.JSX.Element {
           {}
           <main
             data-custom={customChrome.dataCustom}
-            className="grid-region [grid-area:grid] min-w-0 min-h-0 flex flex-col relative overflow-hidden"
+            className={`grid-region ${scmOpen ? "with-side" : ""} [grid-area:grid] min-w-0 min-h-0 flex flex-col relative overflow-hidden`}
           >
             <NoticeStack
               anchor="workspace-top"
@@ -3317,10 +3346,12 @@ export function App(): React.JSX.Element {
               store={appNotices}
             />
 
-            <div className="flex-1 min-w-0 min-h-0 flex">
+            <div className="side-panel-row flex-1 min-w-0 min-h-0 flex">
               <div
                 aria-hidden={gridHidden || undefined}
                 inert={gridHidden}
+                onPointerDownCapture={() => setActiveSurface("grid")}
+                onFocusCapture={() => setActiveSurface("grid")}
                 className={`grid-slot contents ${gridHidden ? "grid-hidden invisible" : ""}`}
               >
               {selectedWs === "all" ? (
@@ -3506,7 +3537,17 @@ export function App(): React.JSX.Element {
               )}
               </div>
               {scmOpen && (
-                <SourceControlPanel
+                <SidePanelIntegration
+                  selectedWorkspace={selectedWs}
+                  activeId={activeId}
+                  sessions={sessions}
+                  request={sideRequest}
+                  reviewChild={sideReview}
+                  onSurface={setActiveSurface}
+                  onFocusPane={focusPane}
+                  onRevealWorkspace={revealWorkspace}
+                  onOpenEditor={openEditorFile}
+                  onReviewChild={(child) => { setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
                   dir={scmProps.dir}
                   client={scmProps.client}
                   width={scmWidth}
@@ -3641,6 +3682,7 @@ export function App(): React.JSX.Element {
                   ) : (
                   <Suspense fallback={<div className="flex-1" />}>
                     <SettingsView
+                      daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
                       onChromeTheme={setChromeTheme}
                       theme={themeChoice}

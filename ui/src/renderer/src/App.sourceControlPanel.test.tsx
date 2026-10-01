@@ -87,7 +87,7 @@ describe('source control panel — shell integration', () => {
   }
 
   const panel = (): HTMLElement | null =>
-    harness!.container.querySelector('[data-testid="source-control-panel"]')
+    harness!.container.querySelector('[data-testid="side-panel"]')
 
   const slotFor = (key: number | string): HTMLElement => {
     const inner = harness!.container.querySelector<HTMLElement>(`[data-panekey="${key}"]`)
@@ -349,7 +349,7 @@ describe('source control panel — shell integration', () => {
 
   it('the palette row still toggles the panel through the old command id', async () => {
     await boot([1])
-    runPaletteRow('source control')
+    runPaletteRow('side panel')
     await settlePanel()
     expect(panel()).not.toBeNull()
   })

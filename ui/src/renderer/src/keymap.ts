@@ -251,7 +251,7 @@ export const movePaneNext: ShortcutEntry = {
 export const toggleGit: ShortcutEntry = {
   id: 'toggle-git',
   keyLabel: 'g',
-  description: 'toggle the Source control panel',
+  description: 'toggle the side panel',
   category: 'global',
   layer: 'both',
   match: (e) => e.key === 'g'

@@ -409,3 +409,23 @@ export async function dismissAgentSession(
     nativeSessionId
   })
 }
+
+export async function createFile(path: string): Promise<void> {
+  const invoke = await invoker()
+  return invoke<void>('fs_create_file', { filePath: path })
+}
+
+export async function createDirectory(path: string): Promise<void> {
+  const invoke = await invoker()
+  return invoke<void>('fs_create_directory', { dirPath: path })
+}
+
+export async function renameFile(from: string, to: string): Promise<void> {
+  const invoke = await invoker()
+  return invoke<void>('fs_rename', { fromPath: from, toPath: to })
+}
+
+export async function trashFile(path: string): Promise<void> {
+  const invoke = await invoker()
+  return invoke<void>('fs_delete', { targetPath: path })
+}

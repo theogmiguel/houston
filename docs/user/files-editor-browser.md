@@ -3,12 +3,32 @@
 Besides terminal sessions, a workspace can hold three other kinds of pane: Files,
 editor, and browser.
 
+## Side panel
+
+Press `g` to toggle the side panel. Each workspace keeps its own Source control and
+Files tabs, plus closable orchestration overviews. Source control retains its Changes
+and Pull request views. Drag the panel divider to resize it; double-click resets its width.
+
+Ctrl-click a file path in a terminal to open it in Files at the linked line and column.
+Files uses that session's workspace, including when the session belongs to a different
+checkout. Choose **Open in editor pane** to move the file into the grid.
+
 ## Files pane
 
 A Files pane is a directory tree next to a tabbed editor, in one grid cell. Opening a
 file from the tree adds a tab and shows it in the editor half of the pane. The file's
 contents are shared with any plain editor pane open on the same path — editing it in one
 place shows the change in the other, live.
+
+The tree shows Git status, with folders carrying their most severe descendant status.
+Use its context menu to create a file or folder, rename an entry, or move it to the OS
+trash. `F2` renames the focused entry; `Delete` moves it to the trash. Drag an entry onto
+a terminal to paste an `@path` reference; directories keep a trailing slash and paths
+with spaces are quoted.
+
+Saves check the file's content revision atomically. When another process changes an
+unsaved file, Houston keeps your edits and offers Reload or Overwrite. Returning focus
+to the window also checks for external changes.
 
 ## Editor pane
 

@@ -21,8 +21,8 @@ beforeEach(() => {
 })
 
 describe('source control width contract', () => {
-  it('opens at 480, floors at 340, and keeps 360 for the terminals', () => {
-    expect(clampScmWidth(SCM_WIDTH_DEFAULT, 1500)).toBe(480)
+  it('opens at the compact floor, floors at 340, and keeps 360 for the terminals', () => {
+    expect(clampScmWidth(SCM_WIDTH_DEFAULT, 1500)).toBe(340)
     expect(clampScmWidth(200, 1500)).toBe(SCM_WIDTH_MIN)
     expect(clampScmWidth(2000, 1500)).toBe(1500 - SCM_TERMINAL_FLOOR)
     expect(scmWidthMax(1500)).toBe(1500 - SCM_TERMINAL_FLOOR)
@@ -31,7 +31,7 @@ describe('source control width contract', () => {
   it('clamps to the available width instead of overflowing a narrow window', () => {
     expect(clampScmWidth(480, 300)).toBe(300)
     expect(clampScmWidth(480, 700)).toBe(SCM_WIDTH_MIN)
-    expect(clampScmWidth(480, 0)).toBe(SCM_WIDTH_DEFAULT)
+    expect(clampScmWidth(480, 0)).toBe(480)
   })
 
   it('does not store a viewport clamp: a wider window restores the request', () => {

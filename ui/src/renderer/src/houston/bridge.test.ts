@@ -604,3 +604,17 @@ describe('bridge — Electron branch: forwards to window.houston unchanged', () 
     expect(await bridge.readClipboardText()).toBe('echo hi')
   })
 })
+
+describe('Files mutation bridge', () => {
+  beforeEach(() => setTauriPresent(true))
+  it('maps create, rename and trash to the existing commands', async () => {
+    await bridge.createFile('/ws/new')
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_create_file', { filePath: '/ws/new' })
+    await bridge.createDirectory('/ws/dir')
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_create_directory', { dirPath: '/ws/dir' })
+    await bridge.renameFile('/ws/old', '/ws/new')
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_rename', { fromPath: '/ws/old', toPath: '/ws/new' })
+    await bridge.trashFile('/ws/new')
+    expect(invokeMock).toHaveBeenLastCalledWith('fs_delete', { targetPath: '/ws/new' })
+  })
+})
