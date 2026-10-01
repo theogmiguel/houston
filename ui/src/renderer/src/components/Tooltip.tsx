@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { useNativeSuppression } from '../layout/nativeSuppression'
 import { createPortal } from 'react-dom'
 
 // Hover is delayed, keyboard focus is not: a tabbed-to control already committed
@@ -29,7 +28,6 @@ export function Tooltip({ label, side = 'bottom', className, openOnClick = false
   const bubbleRef = useRef<HTMLDivElement | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [open, setOpen] = useState(false)
-  useNativeSuppression('popover', open && Boolean(label))
   const [place, setPlace] = useState<Placement | null>(null)
 
   const cancel = useCallback(() => {

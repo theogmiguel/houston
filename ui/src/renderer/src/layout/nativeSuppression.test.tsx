@@ -37,7 +37,7 @@ afterEach(() => {
   __resetNativeSuppressionForTests()
 })
 
-describe('assert/release ref-counting (mirrors suppress.rs)', () => {
+describe('assert/release ref-counting (coalesces wire reason states)', () => {
   it('starts unsuppressed', () => {
     expect(isNativelySuppressed()).toBe(false)
   })

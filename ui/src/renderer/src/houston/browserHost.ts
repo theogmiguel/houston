@@ -20,22 +20,23 @@ async function invoker(): Promise<
 const pendingDestruction = new Map<string, Promise<void>>()
 
 function tauriBrowserCommands(): BrowserCommands {
+  const ready = invoker()
   return {
     async mount(id, url, fullscreen, rect, workspaceId) {
       await pendingDestruction.get(id)
-      const invoke = await invoker()
+      const invoke = await ready
       return invoke<Rect>('browser_mount', { id, url, fullscreen, rect, workspaceId })
     },
     async resize(id, rect) {
-      const invoke = await invoker()
+      const invoke = await ready
       return invoke<Rect>('browser_resize', { id, rect })
     },
     async setVisible(id, visible, reason) {
-      const invoke = await invoker()
+      const invoke = await ready
       return invoke<void>('browser_set_visible', { id, visible, reason })
     },
     destroy(id) {
-      const destruction = invoker().then((invoke) => invoke<void>('browser_destroy', { id }))
+      const destruction = ready.then((invoke) => invoke<void>('browser_destroy', { id }))
       pendingDestruction.set(id, destruction)
       void destruction.finally(() => {
         if (pendingDestruction.get(id) === destruction) pendingDestruction.delete(id)

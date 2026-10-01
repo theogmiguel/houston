@@ -308,11 +308,11 @@ describe('BrowserPane under a mocked Tauri host (C9)', () => {
     root = createRoot(container)
     await flush()
 
-    expect(invokeMock).toHaveBeenCalledWith('browser_set_visible', {
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledWith('browser_set_visible', {
       id: 'leaf-other-2',
       visible: true,
       reason: 'modal'
-    })
+    }))
 
     act(() => rootB.unmount())
     containerB.remove()

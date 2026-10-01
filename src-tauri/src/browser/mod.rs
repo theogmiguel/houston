@@ -163,6 +163,7 @@ struct ChildEntry {
     window_label: String,
     workspace_id: Option<String>,
     last_rect: Rect,
+    rect_spec: Option<RectSpec>,
     device_zoom: Option<f64>,
     suppressed: suppress::SuppressionSet,
     closing: bool,
@@ -503,6 +504,7 @@ pub fn browser_mount(
             ));
         }
         entry.last_rect = committed;
+        entry.rect_spec = Some(rect);
         entry.fullscreen = fullscreen;
         entry.workspace_id = workspace_id;
         return Ok(committed);
@@ -629,6 +631,7 @@ pub fn browser_mount(
             workspace_id,
             last_state: None,
             last_rect: committed,
+            rect_spec: Some(rect),
             device_zoom: None,
             suppressed: suppress::SuppressionSet::new(),
             closing: false,
@@ -759,6 +762,7 @@ pub fn browser_detach(
     let mut state = lock_registry(&registry)?;
     if let Some(entry) = state.children.get_mut(&id) {
         entry.window_label = window_label;
+        entry.rect_spec = None;
         entry.last_rect = committed;
     }
     Ok(committed)
@@ -791,6 +795,7 @@ pub fn browser_reattach(
         let mut state = lock_registry(&registry)?;
         if let Some(entry) = state.children.get_mut(&id) {
             entry.window_label = HOST_WINDOW.to_string();
+            entry.rect_spec = None;
             entry.last_rect = committed;
         }
     }
@@ -882,6 +887,7 @@ pub fn browser_resize(
     let mut state = lock_registry(&registry)?;
     if let Some(entry) = state.children.get_mut(&id) {
         entry.last_rect = committed;
+        entry.rect_spec = Some(rect);
     }
     Ok(committed)
 }
@@ -967,7 +973,7 @@ pub fn browser_set_visible(
     reason: String,
 ) -> Result<(), String> {
     id::validate_surface_id(&id)?;
-    let (label, mut suppressed) = {
+    let (label, window_label, rect_spec, device_zoom, mut suppressed) = {
         let state = lock_registry(&registry)?;
         let entry = state.children.get(&id).ok_or_else(|| {
             format!(
@@ -975,7 +981,13 @@ pub fn browser_set_visible(
                  visibility"
             )
         })?;
-        (entry.label.clone(), entry.suppressed.clone())
+        (
+            entry.label.clone(),
+            entry.window_label.clone(),
+            entry.rect_spec,
+            entry.device_zoom,
+            entry.suppressed.clone(),
+        )
     };
     if visible {
         suppressed.release(&reason)?;
@@ -986,14 +998,28 @@ pub fn browser_set_visible(
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("browser: no webview labelled {label:?} for id {id:?}"))?;
-    let result = if should_hide {
-        webview.hide()
-    } else {
-        webview.show()
-    };
-    result.map_err(|err| {
-        format!("browser: set_visible(hidden={should_hide}) on id {id:?} (label {label:?}): {err}")
-    })?;
+    suppress::apply_visibility(
+        should_hide,
+        |visible| {
+            let result = if visible {
+                webview.show()
+            } else {
+                webview.hide()
+            };
+            result.map_err(|err| {
+                format!("browser: set_visible(hidden={should_hide}) on id {id:?} (label {label:?}): {err}")
+            })
+        },
+        || {
+            if let Some(rect) = rect_spec {
+                gtk_host::commit_rect(&app, &window_label, &label, rect)?;
+            }
+            if let Some(zoom) = device_zoom {
+                set_device_zoom(&app, &webview, &id, &window_label, zoom)?;
+            }
+            Ok(())
+        },
+    )?;
     let mut state = lock_registry(&registry)?;
     if let Some(entry) = state.children.get_mut(&id) {
         entry.suppressed = suppressed;

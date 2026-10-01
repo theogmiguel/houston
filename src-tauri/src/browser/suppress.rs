@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
-// Counted per reason, not a boolean or a plain set: two asserters of the same reason
-// must be told apart, so the first release cannot un-hide a child the second still
-// needs hidden.
+// Renderer counts collapse to one asserted state per reason on the wire. Replays
+// during surface registration must therefore be idempotent.
 #[derive(Debug, Clone, Default)]
-pub struct SuppressionSet(BTreeMap<String, usize>);
+pub struct SuppressionSet(BTreeSet<String>);
 
 impl SuppressionSet {
     pub fn new() -> Self {
@@ -12,18 +11,13 @@ impl SuppressionSet {
     }
 
     pub fn assert(&mut self, reason: &str) -> Result<(), String> {
-        *self.0.entry(normalize_reason(reason)?).or_insert(0) += 1;
+        self.0.insert(normalize_reason(reason)?);
         Ok(())
     }
 
     pub fn release(&mut self, reason: &str) -> Result<(), String> {
         let reason = normalize_reason(reason)?;
-        if let Some(count) = self.0.get_mut(&reason) {
-            *count -= 1;
-            if *count == 0 {
-                self.0.remove(&reason);
-            }
-        }
+        self.0.remove(&reason);
         Ok(())
     }
 
@@ -32,8 +26,20 @@ impl SuppressionSet {
     }
 
     pub fn reasons(&self) -> Vec<String> {
-        self.0.keys().cloned().collect()
+        self.0.iter().cloned().collect()
     }
+}
+
+pub fn apply_visibility(
+    hidden: bool,
+    set_visible: impl FnOnce(bool) -> Result<(), String>,
+    restore: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    set_visible(!hidden)?;
+    if !hidden {
+        restore()?;
+    }
+    Ok(())
 }
 
 fn normalize_reason(reason: &str) -> Result<String, String> {
@@ -91,17 +97,45 @@ mod tests {
     }
 
     #[test]
-    fn two_asserters_of_the_same_reason_both_need_releasing() {
+    fn replaying_renderer_state_does_not_leak_a_reason() {
         let mut set = SuppressionSet::new();
-        set.assert("modal").unwrap();
-        set.assert("modal").unwrap();
-        set.release("modal").unwrap();
-        assert!(
-            set.is_hidden(),
-            "must still be hidden after releasing only one of two same-reason asserts"
-        );
-        set.release("modal").unwrap();
+        set.assert("popover").unwrap();
+        set.assert("popover").unwrap();
+        set.release("popover").unwrap();
         assert!(!set.is_hidden());
+    }
+
+    #[test]
+    fn showing_restores_geometry_and_device_zoom_after_reveal() {
+        let calls = std::cell::RefCell::new(Vec::new());
+        apply_visibility(
+            false,
+            |visible| {
+                calls
+                    .borrow_mut()
+                    .push(if visible { "show" } else { "hide" });
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().extend(["geometry", "device-zoom"]);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*calls.borrow(), ["show", "geometry", "device-zoom"]);
+        calls.borrow_mut().clear();
+        apply_visibility(
+            true,
+            |_| {
+                calls.borrow_mut().push("hide");
+                Ok(())
+            },
+            || {
+                panic!("hidden surfaces must not restore geometry or zoom");
+            },
+        )
+        .unwrap();
+        assert_eq!(*calls.borrow(), ["hide"]);
     }
 
     #[test]

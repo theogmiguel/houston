@@ -1145,8 +1145,9 @@ checkout and can return a review prompt to that child.
 The side panel stores tab placement per workspace in localStorage. Browser surfaces
 remain mounted while their tabs or panel are hidden, with id-scoped native suppression;
 closing a browser tab destroys its surface and frees a native-webview slot. Popovers,
-menus, tooltips and resize drags assert shared suppression reasons because native children
-paint above the renderer DOM. Moving a browser between panel and grid preserves its
+menus, modals and resize drags assert shared suppression reasons because native children
+paint above the renderer DOM. Tooltips never suppress: they sit over chrome rows, and a
+global hide on every hover blanks the page. Moving a browser between panel and grid preserves its
 surface identity and saved tab state, while remounting the surface at its new placement.
 
 Worktree spawning passes Codex a session-local inline `projects` trust table for the

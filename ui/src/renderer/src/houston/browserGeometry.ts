@@ -96,6 +96,7 @@ export class BrowserGeometryEngine {
 // result that resolves after `destroy()` or a fresh `mount()` bumped it is
 // dropped, so a late reply never resizes a surface that has moved on.
   private generation = 0
+  private visibilityQueue: Promise<void> = Promise.resolve()
   private mountStatus: MountStatus = 'idle'
   private lastCommittedRect: Rect | null = null
 
@@ -220,10 +221,17 @@ export class BrowserGeometryEngine {
   }
 
   setVisible(visible: boolean, reason: string): Promise<void> {
-    return this.commands.setVisible(this.id, visible, reason).catch((err) => {
+    const generation = this.generation
+    const command = this.visibilityQueue.then(() => {
+      if (generation !== this.generation) return
+      return this.commands.setVisible(this.id, visible, reason)
+    }).catch((err) => {
       this.onError?.('setVisible', this.id, err)
       throw err
     })
+    // A release must not overtake its hide; a failed command must not block later releases.
+    this.visibilityQueue = command.catch(() => undefined)
+    return command
   }
 
   destroy(): void {
