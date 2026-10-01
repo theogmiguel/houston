@@ -6075,6 +6075,13 @@ impl Daemon {
     }
 
     fn expire_spawn_grace(&self, id: u32) {
+        // Folder trust can block startup before the CLI emits any lifecycle event.
+        if self.get(id).is_ok_and(|session| {
+            session.info.worktree.is_some()
+                && crate::launch::worktree_trust_warning(session.info.agent).is_some()
+        }) {
+            return;
+        }
         self.replace_live_status(
             id,
             Some(proto::AgentStatus::Spawning),
@@ -13576,6 +13583,11 @@ impl Daemon {
             }
         };
         self.record_approval_mode(sid, requested_mode);
+        if created.is_some() {
+            if let Some(warning) = crate::launch::worktree_trust_warning(kind) {
+                self.note_to_operator(sid, "worktree_trust", &warning);
+            }
+        }
         if handoff {
             return Ok(info);
         }

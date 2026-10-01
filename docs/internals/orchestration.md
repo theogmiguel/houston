@@ -1152,10 +1152,14 @@ surface identity and saved tab state, while remounting the surface at its new pl
 Worktree spawning passes Codex a session-local inline `projects` trust table for the
 child checkout and the repository's main checkout,
 passes Cursor its supported `--trust` flag, and appends a reversible managed-marker
-block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved. Claude, Antigravity and
-OpenCode are refused by provider name until a safe folder-trust mechanism is verified.
-Houston never rewrites Claude's global project state. Trust flags do not change the
-requested tool approval mode.
+block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved.
+Claude, Antigravity and OpenCode worktree spawns return a warning and a matching operator
+note: the provider may ask to trust the new folder before starting, and the operator must
+answer in the child's pane. A child without CLI progress remains `spawning`; the ordinary
+stall notice still reaches its parent through `pane_wait`. Claude's parent-folder trust
+walk stops at the linked worktree's git root, so workspace trust does not carry over.
+Houston never rewrites Claude's global project state or uses undocumented environment
+variables to bypass folder trust. Trust flags do not change the requested tool approval mode.
 
 A second live child in the same checkout emits an operator note and a `warning` field
 in the spawn reply. The `effort` reply names the requested effort or `CLI default` when

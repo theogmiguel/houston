@@ -17,7 +17,10 @@ pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<St
             let path = toml::Value::String(directory.clone()).to_string();
             let mut projects = format!("{path}={{trust_level=\"trusted\"}}");
             if cwd.is_dir() {
-                if let Some(main) = crate::worktrees::list(cwd)?.into_iter().find(|tree| tree.is_main && !tree.is_bare) {
+                if let Some(main) = crate::worktrees::list(cwd)?
+                    .into_iter()
+                    .find(|tree| tree.is_main && !tree.is_bare)
+                {
                     let main = main.path.display().to_string();
                     if main != directory {
                         let main = toml::Value::String(main).to_string();
@@ -29,9 +32,21 @@ pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<St
         }
         Cursor => Ok(vec!["--trust".into()]),
         Grok => Ok(Vec::new()),
-        Claude | Antigravity | Opencode => bail!("worktree spawn refused for provider {agent:?}: no verified folder-trust mechanism; expected a CLI-supported trust setting or flag"),
-        other => bail!("worktree spawn refused for provider {other:?}: expected a spawnable provider"),
+        Claude | Antigravity | Opencode => Ok(Vec::new()),
+        other => {
+            bail!("worktree spawn refused for provider {other:?}: expected a spawnable provider")
+        }
     }
+}
+
+pub fn worktree_trust_warning(agent: proto::AgentKind) -> Option<String> {
+    let provider = match agent {
+        proto::AgentKind::Claude => "Claude",
+        proto::AgentKind::Antigravity => "Antigravity",
+        proto::AgentKind::Opencode => "OpenCode",
+        _ => return None,
+    };
+    Some(format!("{provider} may ask to trust this new worktree folder before it starts; answer it in the child's pane"))
 }
 
 pub fn prepare_worktree_trust(agent: proto::AgentKind, cwd: &Path) -> Result<()> {

@@ -908,7 +908,7 @@ async fn k6_colliding_slug_refusal_names_both_slugs() {
     r.daemon.close(parent.id).unwrap();
 }
 
-async fn k6_provider_worktree_trust(kind: &str, supported: bool, flag: &str) {
+async fn provider_worktree_trust(kind: &str, automatic_trust: bool, flag: &str) {
     let _guard = SERIAL.lock().await;
     let r = rig(kind, true).await;
     let parent = r.pane();
@@ -919,14 +919,66 @@ async fn k6_provider_worktree_trust(kind: &str, supported: bool, flag: &str) {
             serde_json::json!({"kind":kind,"prompt":"go","worktree":"trust"}),
         )
         .await;
-    if !supported {
-        let error = refusal_text(&response);
-        assert!(
-            error.to_lowercase().contains(kind) && error.contains("folder-trust"),
-            "{error}"
+    if !automatic_trust {
+        let id = spawned_session(&response);
+        let provider = match kind {
+            "claude" => "Claude",
+            "antigravity" => "Antigravity",
+            "opencode" => "OpenCode",
+            _ => unreachable!(),
+        };
+        let warning = format!("{provider} may ask to trust this new worktree folder before it starts; answer it in the child's pane");
+        assert_eq!(response["structuredContent"]["warning"], warning);
+        assert!(r.worktrees_dir().join("trust").is_dir());
+        assert_eq!(r.rows().len(), 1);
+        await_output(&r.daemon, id, "FIXTURE-READY").await;
+        assert_eq!(r.daemon.delegation_of(id).unwrap().state, "spawning");
+        r.daemon.expire_spawn_grace_for_test(id);
+        assert_eq!(
+            r.daemon.session_status(id).unwrap(),
+            Some(proto::AgentStatus::Spawning)
         );
-        assert!(r.rows().is_empty());
-        assert!(!r.worktrees_dir().join("trust").exists());
+        assert!(r
+            .daemon
+            .inbox_rows_for_test(0)
+            .iter()
+            .any(|row| row.kind == "operator_note" && row.body == warning));
+        r.daemon
+            .delegation_watch_tick_at(1_000_000 + houston_core::orchestrate::DELEGATION_STALL_MS);
+        let row = r.daemon.delegation_of(id).unwrap();
+        assert_eq!(row.state, "spawning");
+        assert!(row.stalled);
+        let waited = r
+            .daemon
+            .orchestrate_wait(
+                parent.id,
+                Some(id),
+                Some(houston_core::orchestrate::InboxKind::Stalled),
+                1000,
+                false,
+            )
+            .await
+            .unwrap();
+        let houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } = waited else {
+            panic!("expected the stall notice through pane_wait");
+        };
+        assert!(rows
+            .iter()
+            .any(|row| row.kind == "stalled" && row.from_session == Some(id)));
+        r.daemon.close(id).unwrap();
+        let (status, body) = http_json(r.addr, "POST", "/orchestrate/spawn", &token,
+            Some(serde_json::json!({"kind":kind,"prompt":"go","worktree":"trust-cli","handoff":true}))).await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["warning"], warning);
+        let handoff = body["session_id"].as_u64().unwrap() as u32;
+        assert!(r
+            .daemon
+            .inbox_rows_for_test(0)
+            .iter()
+            .any(|row| row.kind == "operator_note"
+                && row.from_session == Some(handoff)
+                && row.body == warning));
+        r.daemon.close(handoff).unwrap();
     } else {
         let id = spawned_session(&response);
         if kind == "grok" {
@@ -973,28 +1025,28 @@ async fn k6_provider_worktree_trust(kind: &str, supported: bool, flag: &str) {
 }
 
 #[tokio::test]
-async fn k6_claude_worktree_trust() {
-    k6_provider_worktree_trust("claude", false, "").await;
+async fn claude_worktree_spawn_warns_and_stays_visible_until_cli_progress() {
+    provider_worktree_trust("claude", false, "").await;
 }
 #[tokio::test]
 async fn k6_codex_worktree_trust() {
-    k6_provider_worktree_trust("codex", true, "trust_level").await;
+    provider_worktree_trust("codex", true, "trust_level").await;
 }
 #[tokio::test]
-async fn k6_antigravity_worktree_trust() {
-    k6_provider_worktree_trust("antigravity", false, "").await;
+async fn antigravity_worktree_spawn_warns_and_stays_visible_until_cli_progress() {
+    provider_worktree_trust("antigravity", false, "").await;
 }
 #[tokio::test]
-async fn k6_opencode_worktree_trust() {
-    k6_provider_worktree_trust("opencode", false, "").await;
+async fn opencode_worktree_spawn_warns_and_stays_visible_until_cli_progress() {
+    provider_worktree_trust("opencode", false, "").await;
 }
 #[tokio::test]
 async fn k6_cursor_worktree_trust() {
-    k6_provider_worktree_trust("cursor", true, "--trust").await;
+    provider_worktree_trust("cursor", true, "--trust").await;
 }
 #[tokio::test]
 async fn k6_grok_worktree_trust() {
-    k6_provider_worktree_trust("grok", true, "FIXTURE-READY").await;
+    provider_worktree_trust("grok", true, "FIXTURE-READY").await;
 }
 
 #[tokio::test]
