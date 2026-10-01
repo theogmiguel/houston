@@ -1,3 +1,4 @@
+import { registerOwned } from './pane/registration';
 import {
   lazy,
   Suspense,
@@ -377,7 +378,7 @@ function gridLifecycle(sessions: SessionInfo[]): {
 
   const count = (status: SessionInfo["status"]): number =>
     live.filter((session) => session.status === status).length;
-  const needsInput = count("needs-input");
+  const needsInput = live.filter((session) => session.status === "needs-input" || session.children_waiting > 0).length;
   const working = count("working");
   const starting = count("spawning");
   const idle = count("idle");
@@ -952,16 +953,26 @@ export function App(): React.JSX.Element {
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
 
-  const paneRoster = useRef<PaneRoster>({
+  const paneRoster = useMemo<PaneRoster>(() => ({
     sessions,
-    maxLiveChildren: null,
-  }).current;
-  paneRoster.sessions = sessions;
-  paneRoster.maxLiveChildren = orchestration?.caps.max_live_children ?? null;
+    maxLiveChildren: orchestration?.caps.max_live_children ?? null,
+  }), [sessions, orchestration]);
 
   const focusPane = (session: number): void => {
     const target = sessionsRef.current.get(session);
     if (!target) return;
+    for (const w of workspacesRef.current) {
+      for (const g of gridsFor(w.path)) {
+        const key = gridStorageKey(w.path, g.id);
+        const tree = layouts.get(key)?.tree ?? loadLayout(key).tree;
+        if (preorderSessions(tree).includes(session)) {
+          setSelectedWs(w.path);
+          handleSelectGrid(w.path, g.id);
+          setActiveId(session);
+          return;
+        }
+      }
+    }
     setSelectedWs(target.project_dir);
     setActiveId(session);
   };
@@ -1072,7 +1083,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_created": {
             setSessions((prev) => new Map(prev).set(msg.info.id, msg.info));
-            setActiveId(msg.info.id);
+            if (msg.info.spawned_by == null) setActiveId(msg.info.id);
             checkout.requestForSession(client, msg.info);
             {
               const rv = reviewIntents.current;
@@ -1456,8 +1467,7 @@ export function App(): React.JSX.Element {
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
-    outputHandlers.current.set(id, sink);
-    return () => outputHandlers.current.delete(id);
+    return registerOwned(outputHandlers.current, id, sink);
   }, []);
 
   const addWorkspaceFromPicker = useCallback(async (): Promise<void> => {
@@ -1502,7 +1512,7 @@ export function App(): React.JSX.Element {
       const grids = gridsFor(w.path);
       const active = activeGridId(w.path);
       const wsSessionIds = [...sessions.values()]
-        .filter((sess) => sess.project_dir === w.path)
+        .filter((sess) => sess.project_dir === w.path || sessions.get(sess.spawned_by ?? -1)?.project_dir === w.path)
         .map((sess) => sess.id)
         .sort((a, b) => a - b);
       const synced = syncWorkspaceGrids(
@@ -1512,6 +1522,7 @@ export function App(): React.JSX.Element {
         wsSessionIds,
         layouts,
         replacedSessions,
+        wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
       );
       for (const [key, st] of synced) map.set(key, st);
     }
@@ -1583,7 +1594,7 @@ export function App(): React.JSX.Element {
   );
 
   const wsIds = [...sessions.values()]
-    .filter((s) => selectedWs === "all" || s.project_dir === selectedWs)
+    .filter((s) => selectedWs === "all" || s.project_dir === selectedWs || sessions.get(s.spawned_by ?? -1)?.project_dir === selectedWs)
     .map((s) => s.id)
     .sort((a, b) => a - b);
   const idsKey = wsIds.join(",");
@@ -1601,7 +1612,7 @@ export function App(): React.JSX.Element {
     const ids = idsKey ? idsKey.split(",").map(Number) : [];
     setLayouts((prev) => {
       const cur = prev.get("all") ?? loadLayout("all");
-      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions);
+      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions, ids.filter((id) => sessions.get(id)?.spawned_by == null));
       return new Map(prev).set("all", { ...cur, tree });
     });
   }, [selectedWs, idsKey, replacedSessions, conn.kind]);
@@ -1610,9 +1621,9 @@ export function App(): React.JSX.Element {
     const perWs = workspaces
       .map((w) => {
         const ids = [...sessions.values()]
-          .filter((s) => s.project_dir === w.path)
-          .map((s) => s.id)
-          .sort((a, b) => a - b)
+          .filter((s) => s.project_dir === w.path || sessions.get(s.spawned_by ?? -1)?.project_dir === w.path)
+          .sort((a, b) => a.id - b.id)
+          .map((s) => `${s.id}:${s.spawned_by ?? "root"}`)
           .join(",");
         const grids = gridsFor(w.path)
           .map((g) => g.id)
@@ -1635,7 +1646,7 @@ export function App(): React.JSX.Element {
         const grids = gridsFor(w.path);
         const active = activeGridId(w.path);
         const wsSessionIds = [...sessions.values()]
-          .filter((s) => s.project_dir === w.path)
+          .filter((s) => s.project_dir === w.path || sessions.get(s.spawned_by ?? -1)?.project_dir === w.path)
           .map((s) => s.id)
           .sort((a, b) => a - b);
         const synced = syncWorkspaceGrids(
@@ -1645,6 +1656,7 @@ export function App(): React.JSX.Element {
           wsSessionIds,
           prev,
           replacedSessions,
+          wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
         );
         for (const [key, st] of synced) {
           next.set(key, st);
@@ -1735,7 +1747,7 @@ export function App(): React.JSX.Element {
       const persisted = loadLayout("all");
       return {
         ...persisted,
-        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions),
+        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions, wsIds.filter((id) => sessions.get(id)?.spawned_by == null)),
       };
     }
     const key = gridStorageKey(selectedWs, activeGridId(selectedWs));
@@ -1744,6 +1756,37 @@ export function App(): React.JSX.Element {
   }, [layouts, warmLayouts, selectedWs, idsKey, activeGridId, replacedSessions]);
   const currentTree = wsState.tree;
   currentTreeRef.current = currentTree;
+  const mountedGridSessionIds = new Set<number>();
+  for (const state of warmLayouts.values()) {
+    for (const id of preorderSessions(state.tree)) mountedGridSessionIds.add(id);
+  }
+  for (const id of preorderSessions(currentTree)) mountedGridSessionIds.add(id);
+  const moveChildToGrid = (parent: number, child: number): void => {
+    const path = sessions.get(parent)?.project_dir;
+    if (!path) return;
+    const key = gridStorageKey(path, activeGridId(path));
+    setLayouts((prev) => {
+      const cur = prev.get(key) ?? warmLayouts.get(key) ?? loadLayout(key);
+      const tree = cur.tree ? insertBeside(cur.tree, parent, leaf(child), "right") : leaf(child);
+      return new Map(prev).set(key, { ...cur, tree });
+    });
+    setSelectedWs(path);
+    setActiveId(child);
+  };
+  const returnChildToRoster = (child: number): void => {
+    setLayouts((prev) => {
+      const next = new Map(prev);
+      const allLayouts = new Map([...warmLayouts, ...prev]);
+      for (const [key, state] of allLayouts) {
+        if (preorderSessions(state.tree).includes(child) && state.tree) {
+          next.set(key, { ...state, tree: removeLeaf(state.tree, child) });
+        }
+      }
+      return next;
+    });
+    const parent = sessions.get(child)?.spawned_by;
+    if (parent != null) setActiveId(parent);
+  };
   const orderedIds = preorderSessions(currentTree);
 
   useEffect(() => {
@@ -1775,7 +1818,7 @@ export function App(): React.JSX.Element {
     setLayouts((prev) => {
       const cur = prev.get(key) ?? loadLayout(key);
       return new Map(prev).set(key, {
-        tree: regrid(cur.tree, wsIds, n),
+        tree: regrid(cur.tree, preorderSessions(cur.tree), n),
         cols: n,
       });
     });
@@ -2200,14 +2243,15 @@ export function App(): React.JSX.Element {
     [openEditorFile],
   );
   const openTerminalDir = useCallback(
-    (path: string): void => {
-      if (selectedWs === "all") {
+    (path: string, session?: number): void => {
+      const root = session == null ? selectedWs : sessionsRef.current.get(session)?.project_dir ?? selectedWs;
+      if (root === "all") {
         void showItemInFolder(path).then((res) => {
           if (!res.ok) pushError(res.error);
         });
         return;
       }
-      openFilesPaneAt(selectedWs, path, null);
+      openFilesPaneAt(root, path, null);
     },
     [selectedWs],
   );
@@ -3287,6 +3331,9 @@ export function App(): React.JSX.Element {
                     branches={checkout.chips}
                     branchNotes={checkout.notes}
                     roster={paneRoster}
+                    gridSessionIds={mountedGridSessionIds}
+                    onMoveChildToGrid={moveChildToGrid}
+                    onReturnChildToRoster={returnChildToRoster}
                     onFocusPane={focusPane}
                     viewAll
                     client={client}
@@ -3377,6 +3424,9 @@ export function App(): React.JSX.Element {
                               branches={checkout.chips}
                     branchNotes={checkout.notes}
                               roster={paneRoster}
+                              gridSessionIds={mountedGridSessionIds}
+                              onMoveChildToGrid={moveChildToGrid}
+                              onReturnChildToRoster={returnChildToRoster}
                               onFocusPane={focusPane}
                               viewAll={false}
                               client={client}

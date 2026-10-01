@@ -127,6 +127,17 @@ describe('pane header container-query ladder (SessionPane.tsx / RenameTitle.tsx)
     expect(Number(m![1])).toBeGreaterThan(0)
   })
 
+  it('keeps the measured header bands exact with the roster below the full-width header', () => {
+    expect(shedStepForTestid('pane-state')).toBe(490)
+    expect(shedStepForTestid('pane-sub')).toBe(400)
+    expect(shedStepForTestid('engine-glyph')).toBe(360)
+    const headerEnd = sessionPaneSrc.indexOf('</header>', sessionPaneSrc.indexOf('function SessionPaneImpl'))
+    expect(sessionPaneSrc.indexOf('className={`children-split')).toBeGreaterThan(headerEnd)
+    const header = sessionPaneSrc.slice(sessionPaneSrc.indexOf('<header', sessionPaneSrc.indexOf('function SessionPaneImpl')), headerEnd)
+    expect(header).not.toContain('<OriginBadge')
+    expect(header).not.toContain('<OrchestratorBadge')
+  })
+
   it('lets the task title give up width before fixed identity badges', () => {
     expect(extractPaneTitleCls()).toContain('[flex:0_1_auto]')
   })

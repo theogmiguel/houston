@@ -1,3 +1,4 @@
+import { claimVisibility } from './registration'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
   GhosttyPaneTerminal,
@@ -227,6 +228,10 @@ export function TerminalPane({
   const onOpenUrlInPaneRef = useRef(onOpenUrlInPane)
   onOpenUrlInPaneRef.current = onOpenUrlInPane
   const hostRef = useRef<HTMLDivElement>(null)
+  const visibilityOwner = useRef<ReturnType<typeof claimVisibility> | null>(null)
+  const reportVisibility = (visible: boolean): void => {
+    if (visibilityOwner.current?.owns()) clientRef.current.sessionVisibility(info.id, visible)
+  }
   const termRef = useRef<PaneTerminal | null>(null)
   const writeQueueRef = useRef<PaneWriteQueue | null>(null)
   const searchRef = useRef<PaneFinder | null>(null)
@@ -942,6 +947,8 @@ export function TerminalPane({
       s.cursor = offset + data.length
       return true
     }
+    const owner = claimVisibility(clientRef.current, info.id)
+    visibilityOwner.current = owner
     const unregister = registerOutput(info.id, {
       frame: (offset, data) => {
         const s = seqRef.current
@@ -1046,7 +1053,7 @@ export function TerminalPane({
       clipboardCopied: () => pushToast('Copied', undefined, 'success', 'auto-copy')
     })
     if (!warmRef.current) {
-      clientRef.current.sessionVisibility(info.id, true)
+      reportVisibility(true)
       sendAttach(activeAtMountRef.current ? ATTACH_REPLAY_BYTES : ATTACH_REPLAY_BYTES_BACKGROUND)
       attachedRef.current = true
     }
@@ -1062,7 +1069,8 @@ export function TerminalPane({
     observer.observe(host)
 
     return () => {
-      if (attachedRef.current) clientRef.current.sessionVisibility(info.id, false)
+      if (attachedRef.current && owner.owns()) clientRef.current.sessionVisibility(info.id, false)
+      owner.release()
       observer.disconnect()
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       if (resizeReassertTimerRef.current !== undefined) {
@@ -1206,7 +1214,7 @@ export function TerminalPane({
         syncSizeRef.current()
         seqRef.current.catchup = true
         if (seqRef.current.synced) skipSnapshotOnceRef.current = true
-        clientRef.current.sessionVisibility(info.id, true)
+        reportVisibility(true)
         sendAttach(ATTACH_REPLAY_BYTES)
         attachedRef.current = true
       }
@@ -1222,7 +1230,7 @@ export function TerminalPane({
     hibernateTimerRef.current = setTimeout(() => {
       hibernateTimerRef.current = undefined
       if (!warmRef.current || !attachedRef.current) return
-      clientRef.current.sessionVisibility(info.id, false)
+      reportVisibility(false)
       attachedRef.current = false
     }, HIBERNATE_DEBOUNCE_MS)
     return () => {

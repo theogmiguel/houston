@@ -89,19 +89,9 @@ function mountPane(
 }
 
 describe('SessionPane origin badge (v62 D3)', () => {
-  it('renders iff spawned_by is set, inside the header identity group', () => {
+  it('keeps child delegation badges out of the header', () => {
     const el = mountPane(42)
-    const badge = el.querySelector('[data-testid="origin-badge"]')
-    expect(badge).not.toBeNull()
-    expect(badge!.closest('[data-testid="head-identity"]')).not.toBeNull()
-    expect(badge!.textContent).toBe('#1')
-    expect(badge!.querySelector('svg')).not.toBeNull()
-  })
-
-  it('is a real button, so the header drag cannot swallow the click', () => {
-    const el = mountPane(42)
-    const badge = el.querySelector('[data-testid="origin-badge"]') as HTMLElement
-    expect(badge.tagName).toBe('BUTTON')
+    expect(el.querySelector('.pane-head [data-testid="origin-badge"]')).toBeNull()
   })
 
   it('renders nothing for an operator-spawned pane', () => {
@@ -109,12 +99,12 @@ describe('SessionPane origin badge (v62 D3)', () => {
     expect(el.querySelector('[data-testid="origin-badge"]')).toBeNull()
   })
 
-  it('keeps the child codename beside its task title in the pane header', () => {
+  it('keeps the child task title without adding a header badge', () => {
     const el = mountPane(42, null, { title: 'Adjust frontend', codename: 'Elle' })
     expect(el.querySelector('[data-testid="pane-title-mock"]')?.textContent).toBe(
       'Adjust frontend'
     )
-    expect(el.querySelector('[data-testid="origin-badge"]')?.textContent).toBe('Elle')
+    expect(el.querySelector('[data-testid="origin-badge"]')).toBeNull()
   })
 
   it('keeps the full sentence as its accessible name, so nothing regresses for a screen reader', () => {
@@ -202,9 +192,9 @@ describe('SessionPane ACP badge (v62 #11)', () => {
     expect(mountPane(null).querySelector('[data-testid="acp-badge"]')).toBeNull()
   })
 
-  it('shows both badges on an agent-spawned ACP pane — they answer different questions', () => {
+  it('keeps ACP identity in the header without an origin badge', () => {
     const el = mountPane(42, 'acp-grok')
-    expect(el.querySelector('[data-testid="origin-badge"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="origin-badge"]')).toBeNull()
     expect(el.querySelector('[data-testid="acp-badge"]')).not.toBeNull()
   })
 

@@ -1,4 +1,7 @@
 import { memo, useContext, useRef, useState } from 'react'
+import { ChildrenRoster, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
+import { GridHiddenContext } from '../layout/gridHiddenContext'
+import { WarmContext } from '../layout/warmContext'
 import { RING_ACCENT_ICON } from './shadowChrome'
 import type {
   AgentKind,
@@ -344,7 +347,10 @@ interface Props {
   onHandoff: (source: HandoffSource) => void
   onSwapAdjacent?: (id: number, offset: 1 | -1) => void
   onOpenFile: (id: number, path: string, line?: number, col?: number) => void
-  onOpenDir: (path: string) => void
+  onOpenDir: (path: string, session?: number) => void
+  gridSessionIds?: ReadonlySet<number>
+  onMoveChildToGrid?: (parent: number, child: number) => void
+  onReturnChildToRoster?: (child: number) => void
   roster?: PaneRoster
   onFocusPane?: (id: number) => void
 }
@@ -381,8 +387,35 @@ function SessionPaneImpl({
   onOpenFile,
   onOpenDir,
   roster,
+  gridSessionIds,
+  onMoveChildToGrid,
+  onReturnChildToRoster,
   onFocusPane
 }: Props): React.JSX.Element {
+  const [peekId, setPeekId] = useState<number | null>(null)
+  const [recent, setRecent] = useState<number[]>([])
+  const [collapsed, setCollapsed] = useState(false)
+  const gridHidden = useContext(GridHiddenContext)
+  const gridWarm = useContext(WarmContext)
+  const children = [...(roster?.sessions.values() ?? [])].filter((child) => child.spawned_by === info.id).sort((a, b) => a.id - b.id)
+  const peek = children.find((child) => child.id === peekId && !gridSessionIds?.has(child.id))
+  const selectChild = (id: number | null): void => {
+    if (id != null && gridSessionIds?.has(id)) {
+      onFocusPane?.(id)
+      return
+    }
+    setPeekId(id)
+    if (id != null) setRecent((prev) => [id, ...prev.filter((other) => other !== id)].slice(0, PEEK_KEEP_MOUNTED))
+  }
+  const moveChild = (id: number): void => {
+    if (gridSessionIds?.has(id)) {
+      onFocusPane?.(id)
+      return
+    }
+    setPeekId(null)
+    setRecent((prev) => prev.filter((other) => other !== id))
+    onMoveChildToGrid?.(info.id, id)
+  }
   const live = isLive(info.state)
   const ended = endedLabel(info.state)
 
@@ -424,7 +457,7 @@ function SessionPaneImpl({
           data-testid="head-identity"
           className="head-identity inline-flex items-center gap-2 min-w-0 overflow-hidden [flex:0_1_auto]"
         >
-          <StatusDot status={info.status} live={live} />
+          <StatusDot status={info.children_waiting > 0 ? 'needs-input' : info.status} live={live || info.children_waiting > 0} />
           <Tooltip label={`${glyphAgent} session`}>
             <span
               data-testid="engine-glyph"
@@ -441,17 +474,6 @@ function SessionPaneImpl({
           />
           <BranchChip branch={branch} note={branchNote} />
           <PaneHeaderTags tagIds={info.tags} />
-          {info.spawned_by != null && (
-            <OriginBadge
-              info={info}
-              roster={roster}
-              onFocusPane={onFocusPane}
-              onDeliverNow={(session) => client.inboxDeliverNow(session)}
-            />
-          )}
-          {info.live_children > 0 && (
-            <OrchestratorBadge info={info} roster={roster} onFocusPane={onFocusPane} />
-          )}
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
           {showProject && (
@@ -552,27 +574,31 @@ function SessionPaneImpl({
         notice={info.resume_notice}
         buttonClassName={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
       />
-      <TerminalPane
-        client={client}
-        info={info}
-        theme={theme}
-        active={active}
-        connected={connected}
-        fontSize={fontSize}
-                fontFamily={fontFamily}
-                shiftEnterNewline={shiftEnterNewline}
-                openLinksInPane={openLinksInPane}
-                onOpenUrlInPane={onOpenUrlInPane}
-        copyOnSelect={copyOnSelect}
-        stripBoxGlyphs={stripBoxGlyphs}
-        registerOutput={registerOutput}
-        onActivate={() => onActivate(info.id)}
-        onZoom={onZoom}
-        onShellZoom={onShellZoom}
-        onOpenFile={(path, line, col) => onOpenFile(info.id, path, line, col)}
-        onOpenDir={onOpenDir}
-        actions={termActions}
-      />
+      <div className={`children-split ${collapsed ? 'collapsed' : 'auto'}`}>
+        {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} />}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {peek && <div className="children-peekbar">
+            <button className="btn border-none bg-transparent min-h-7 truncate" onClick={() => selectChild(null)}>Orchestrator</button><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
+            <span className="flex-1" /><button className="btn border-none bg-transparent min-h-7 shrink-0" onClick={() => moveChild(peek.id)}>Move to grid</button>
+            <Tooltip label="Return to orchestrator"><button className={BTN_ICO_STRUCTURE + ' min-w-7 min-h-7'} aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></button></Tooltip>
+          </div>}
+          <div className="relative flex-1 min-h-0 min-w-0">
+            {[info, ...recent.flatMap((id) => {
+              const child = children.find((item) => item.id === id)
+              return child && !gridSessionIds?.has(id) ? [child] : []
+            })].map((shown) => {
+              const hidden = shown.id !== (peek?.id ?? info.id)
+              return <div key={shown.id} data-peek-session={shown.id} className="absolute inset-0 flex min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', contentVisibility: 'hidden', contain: 'strict', pointerEvents: 'none' } : undefined}>
+                <GridHiddenContext.Provider value={gridHidden || hidden}>
+                  <WarmContext.Provider value={gridWarm || hidden}>
+                    <TerminalPane client={client} info={shown} theme={theme} active={active && !hidden} connected={connected} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={() => onActivate(info.id)} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={(path, line, col) => onOpenFile(shown.id, path, line, col)} onOpenDir={(path) => onOpenDir(path, shown.id)} actions={shown.id === info.id ? termActions : undefined} />
+                  </WarmContext.Provider>
+                </GridHiddenContext.Provider>
+              </div>
+            })}
+          </div>
+        </div>
+      </div>
       <DictationIndicator session={info.id} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
@@ -604,6 +630,7 @@ function SessionPaneImpl({
             </span>
           </div>
           <div className={CTX_SEP_CLS} />
+          {info.spawned_by != null && onReturnChildToRoster && <CtxRow glyph={IconArrowUpRight} label="Return to roster" onClick={menuItem(() => onReturnChildToRoster(info.id))} />}
           <CtxRow
             glyph={IconSplitRight}
             label="Split Right"

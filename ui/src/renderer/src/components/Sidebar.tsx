@@ -900,6 +900,7 @@ function CollapsedGridsRow({
   onRenameCancel,
   on,
   panes,
+  waiting,
   tagMatched,
   tagTotal,
   live,
@@ -918,6 +919,7 @@ function CollapsedGridsRow({
   color: string;
   on: boolean;
   panes: number;
+  waiting: boolean;
   tagMatched?: number;
   tagTotal?: number;
   live: number;
@@ -1005,6 +1007,7 @@ function CollapsedGridsRow({
             {w.name}
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
+            {waiting && <Tooltip label="Children need input"><span role="img" aria-label="Children need input" className="w-[7px] h-[7px] flex-none rounded-full bg-[var(--warn)]" /></Tooltip>}
             {pinned && <PinIndicator />}
             <WorkspacePaneCount
               panes={panes}
@@ -1137,6 +1140,7 @@ function ExpandedGridsRow({
   onRenameCancel,
   on,
   panes,
+  waiting,
   tagMatched,
   tagTotal,
   live,
@@ -1167,6 +1171,7 @@ function ExpandedGridsRow({
   color: string;
   on: boolean;
   panes: number;
+  waiting: boolean;
   tagMatched?: number;
   tagTotal?: number;
   live: number;
@@ -1266,6 +1271,7 @@ function ExpandedGridsRow({
             {w.name}
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
+            {waiting && <Tooltip label="Children need input"><span role="img" aria-label="Children need input" className="w-[7px] h-[7px] flex-none rounded-full bg-[var(--warn)]" /></Tooltip>}
             {pinned && <PinIndicator />}
             <WorkspacePaneCount
               panes={panes}
@@ -2056,7 +2062,9 @@ function RailTree({
           className={`wlist flex flex-col gap-1 p-2 overflow-y-auto ${dragPath !== null ? "cursor-grabbing" : ""}`}
         >
           {filteredWorkspaces.map((w, i) => {
-            const all = sessions.filter((s) => s.project_dir === w.path);
+            const placed = new Set((gridsByWorkspace[w.path] ?? []).flatMap((grid) => grid.sessionIds ?? []));
+            const all = sessions.filter((s) => (s.project_dir === w.path && s.spawned_by == null) || placed.has(s.id));
+            const waiting = sessions.some((s) => s.project_dir === w.path && s.children_waiting > 0);
             const own = liveCount(all);
             const matched =
               activeTagIds.length > 0
@@ -2102,6 +2110,7 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
+                    waiting={waiting}
                     panes={all.length}
                     tagMatched={activeTagIds.length > 0 ? matched : undefined}
                     tagTotal={all.length}
@@ -2127,6 +2136,7 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
+                    waiting={waiting}
                     panes={all.length}
                     tagMatched={activeTagIds.length > 0 ? matched : undefined}
                     tagTotal={all.length}
