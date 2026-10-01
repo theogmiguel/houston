@@ -113,8 +113,8 @@
 .changes-pane[data-compact="true"] .changes-file-status{font-size:11px;font-weight:700;width:12px;justify-content:center}
 .changes-compact-tools{position:absolute;right:6px;top:0;z-index:var(--z-sticky)}
 .changes-compact-tools>span>button{display:flex;align-items:center;justify-content:center;width:22px;height:22px;background:var(--card-bg);opacity:0}
-.changes-pane[data-compact="true"]:hover .changes-compact-tools>span>button,.changes-compact-tools>span>button:focus-visible{opacity:1}
-.changes-compact-tools-body{width:300px;border:1px solid var(--border);border-radius:var(--tr-radius-sm);background:var(--card-bg);box-shadow:var(--shadow-1)}
+.changes-pane[data-compact="true"]:hover .changes-compact-tools>span>button,.changes-compact-tools>span>button:focus-visible,.changes-compact-tools>span>button[aria-expanded="true"]{opacity:1}
+.changes-compact-tools-body{width:300px;max-width:100vw}
 .changes-pane[data-compact="true"] .changes-commit{margin:0 10px 10px;padding:0;gap:0;border:1px solid var(--border);border-radius:var(--tr-radius-button);background:var(--card-bg)}
 .changes-pane[data-compact="true"] .changes-commit textarea{height:56px;padding:9px 10px;border:0;background:transparent;border-radius:0;font-size:12.5px}
 .changes-pane[data-compact="true"] [data-testid="changes-actions"]{border-top:1px solid var(--divider);padding:6px 6px 6px 10px;font-size:11.5px}

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle } from './overlayChrome'
 import { RING_ACCENT_ICON, RING_ACCENT_INSET_45 } from './shadowChrome'
 import type { AgentKind, GitFileStatus, HoustonClient } from '../houston/client'
 import { DIFF_EMPTY_CLASS, SPIN_CLASS } from './git/DiffBody'
@@ -1221,7 +1223,54 @@ function MenuItem({
 
 
 function ChangesToolbar({ compact, strip }: { compact: boolean; strip: React.ReactNode }): React.JSX.Element {
-  const [expanded, setExpanded] = useState(false)
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!anchor) return
+    const close = (): void => setAnchor(null)
+    const onMouseDown = (event: MouseEvent): void => {
+      if (event.target instanceof Node && trigger.current?.contains(event.target)) return
+      close()
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('blur', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('blur', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [anchor])
   if (!compact) return <>{strip}</>
-  return <div className="changes-compact-tools"><Tooltip label="Git actions and diff scope"><button aria-label="Git actions and diff scope" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><Icon glyph={IconEllipsis} role="ui" /></button></Tooltip>{expanded && <div className="changes-compact-tools-body">{strip}</div>}</div>
+  return (
+    <div className="changes-compact-tools">
+      <Tooltip label="Git actions and diff scope">
+        <button
+          ref={trigger}
+          aria-label="Git actions and diff scope"
+          aria-expanded={anchor !== null}
+          onClick={() => {
+            const rect = trigger.current!.getBoundingClientRect()
+            setAnchor(anchor ? null : { top: rect.bottom, right: window.innerWidth - rect.right })
+          }}
+        >
+          <Icon glyph={IconEllipsis} role="ui" />
+        </button>
+      </Tooltip>
+      {anchor && createPortal(
+        <div
+          {...OVERLAY_GLASS_OVERLAY_ATTRS}
+          className={`changes-compact-tools-body z-[var(--z-popover)] ${OVERLAY_GLASS_OVERLAY_CLS}`}
+          style={{ position: 'fixed', ...anchor, ...popOriginStyle('right', 'top') }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {strip}
+        </div>,
+        document.body
+      )}
+    </div>
+  )
 }
