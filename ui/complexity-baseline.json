@@ -79,11 +79,6 @@
       "worst": 21,
       "over": 1
     },
-    "src/renderer/src/components/SshConnectModal.tsx": {
-      "total": 102,
-      "worst": 39,
-      "over": 1
-    },
     "src/renderer/src/pane/TerminalPane.tsx": {
       "total": 361,
       "worst": 21,

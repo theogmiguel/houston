@@ -160,7 +160,9 @@ Managed worktrees show their branch and changed-file count. Live siblings sharin
 checkout are identified by role. The latest result excerpt remains available after reopening
 the overview, subject to inbox retention. Review comments can be sent back to that child. Closing the overview only closes the view.
 
-Settled contains ended sessions. A live resumed child stays in Working or Needs you even
+Settled contains ended sessions. A settled child's process has exited; selecting it shows
+its saved transcript read-only, with when it ended and how long it is kept. Continue and
+Close sit under the transcript. A live resumed child stays in Working or Needs you even
 if its previous delegation was marked unknown. Close settled counts only ended children
 and offers five seconds to Undo; a child that resumes during that interval is preserved.
 Continue resumes a retained Claude or Codex conversation with its earlier transcript.
