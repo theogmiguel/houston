@@ -109,7 +109,7 @@ const PANE_ROUTING: &str = concat!(
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
     "`pane_send_keys`, `pane_kill`, `pane_submit`. ",
     "A pane that needs input will not take a `pane_prompt` — read it, then answer it with ",
-    "`pane_send_keys` (esc enter up down tab ctrl+c y n). ",
+    "`pane_send_keys` (esc enter up down tab ctrl+c y n), or escalate to the user when their decision is required. Child needs-input belongs to its parent and does not notify the desktop. ",
     "Scale the spawn to the work: do it yourself when the task is smaller than the brief it would ",
     "need, and when you do delegate, size the model to that chunk rather than taking the CLI's own ",
     "default. A long result is a file the child names in `pane_submit{artifacts}`, never a body ",
@@ -368,6 +368,7 @@ impl ToolProvider for OrchestrationTools {
                         "handoff": handoff,
                         "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
                         "warning": if isolated { crate::launch::worktree_trust_warning(info.agent) } else { reply_daemon.spawn_checkout_warning(info.id) },
+                        "warnings": reply_daemon.spawn_warnings(&info, isolated),
                         "next_action": if handoff {
                             orchestrate::HANDOFF_NEXT_ACTION
                         } else {

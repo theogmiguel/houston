@@ -355,7 +355,7 @@ busy, so unrelated terminal input does not wait for a spawn.
 prompt remains on the bounded wake lane and reports `held`; an immediately writable
 prompt returns PTY write errors synchronously. The hold is rechecked before paste and
 before Enter. A hold detected before writing requeues the prompt; a partial or unsubmitted
-paste creates an operator note containing the prompt and is never retried automatically.
+paste creates a note for the prompt sender containing the prompt and is never retried automatically. A queued prompt retains its sender until delivery. If that sender has died, its nearest live ancestor inherits the note; the operator receives it only when no ancestor is live.
 
 ### Door 2: the synchronous `Stop` hook
 
@@ -430,8 +430,10 @@ window. Three refusals hold it back, and the rows stay pending through all of th
 - **never twice.** `Backend::write_stdin` uses `write_all`, which can fail AFTER part of
   the payload landed, so `write_stdin_counting` drives `write` itself and reports how far
   it got. Only a proven zero retries, at the next settle, with the attempt counted;
-  anything else — including a backend that cannot say — is `reason = 'partial'` and goes to
-  the operator at once. `PASTE_ATTEMPTS_MAX` proven-zero attempts also go to the operator.
+  anything else — including a backend that cannot say — is `reason = 'partial: …'` and remains with
+  its live parent through `pane_wait`, without further automatic delivery. The same
+  rule applies after `PASTE_ATTEMPTS_MAX` proven-zero attempts. A dead parent's nearest
+  live ancestor inherits the row; only the absence of a live ancestor reaches the operator.
 
 The framing's first line carries the `delivery_id`, and the parent's next `UserPromptSubmit`
 whose prompt HEAD carries that exact id sets `confirmed_at`. `PASTE_CONFIRM_MS` counts from
@@ -577,18 +579,18 @@ is resolved instead — skipped by the doors, kept for the operator as history.
 
 ### Limits are visible, and a producer is refused only by the disk
 
-Over `INBOX_PENDING_PER_PANE_MAX` a row is still written, then re-addressed to the operator
-naming the limit, the count and the row. The operator queue is bounded by
-`INBOX_OPERATOR_MAX_ROWS`, pruning the oldest CONFIRMED rows first and never an unread one.
-A full wake lane is a row to the operator rather than a `warn!` nobody reads. A failed
-insert is what `pane_submit` returns, with the body's size and the caps — never success on
-a failed commit.
+Over `INBOX_PENDING_PER_PANE_MAX` a row remains addressed to its live parent, naming
+the limit, count and row in its reason. Backlog, exhausted paste attempts and partial
+paste disable automatic Stop-hook and paste delivery for that row; `pane_wait` can
+still deliver it with the reason. A full prompt wake lane reports to the prompt sender.
+A failed insert is returned to the producer with the body's size and caps.
 
 ### The operator inbox
 
-Rows addressed to a pane that is dead or restored-dead re-address to `to_session = 0` (the
-operator), keeping `original_to`, `workspace` and a `reason` (`parent_dead`, `partial`,
-`attempts`, `late`, `lane_full`, `backlog`). The operator inbox is a **workspace** surface,
+Rows addressed to a dead pane go to its nearest live ancestor orchestrator, keeping
+`original_to`, `workspace` and `reason = 'parent_dead'`. Only when no ancestor is live
+do they reach `to_session = 0` (the operator). Restart recovery uses the same rule.
+The operator inbox is a **workspace** surface,
 not a pane surface: the pane may be gone, so `inbox_list{workspace}` answers rows by the
 workspace they came from. The wire carries `InboxList { workspace }` → `inbox_rows`,
 `InboxAck { id }`, `InboxResolve { id }` and `SessionInfo.inbox_unread`; clients can
@@ -596,8 +598,7 @@ request the list after reconnecting. **Read is not resolved**: `inbox_ack` sets
 `delivered_via = 'operator'` and `confirmed_at`; only an explicit resolve (or the block
 ending) sets `resolved_at`, because reading about a blocked child does not unblock it. Children keep
 running. Retention is `INBOX_OPERATOR_MAX_ROWS` for confirmed rows, never for unconfirmed
-ones. The app has no surface for this queue: the wire messages remain, but nothing in
-the renderer requests, acks or resolves operator rows.
+ones. The overview shows genuine operator rows in "Addressed to you" and hides that group when empty. Child warnings and delivery failures with a live ancestor remain in the orchestrator inbox.
 
 ### Restart and migration
 
@@ -622,8 +623,8 @@ restarts produce one state, and it runs **after** restore:
    empty live set. It releases every reservation; puts `paste` rows sent and unconfirmed
    back to pending (the paste may or may not have landed; the row keeps its attempt count);
    puts unacked `operator` rows back to unread; leaves `wait` and `stop_hook` rows final and
-   untouched; and re-addresses rows whose `to_session` did not survive with
-   `reason = 'parent_dead'`. A row is never auto-pasted into a process that is not the one
+   untouched; and re-addresses rows whose `to_session` did not survive to the nearest
+   live ancestor, or the operator if none remains, with `reason = 'parent_dead'`. A row is never auto-pasted into a process that is not the one
    it was addressed to: a restored pane's pending rows wait for its first
    `UserPromptSubmit` (the operator is there) or go through door 1 when it asks.
 
@@ -1120,9 +1121,11 @@ tables, `SwarmMessage`/`SwarmAgent` wire events and the hook-delivery loop `swar
 It does not identify a separate user-facing workflow.
 
 `Daemon::swarm_send` writes a `pane_inbox` row addressed to the recipient's live session;
-a recipient with no live session is re-addressed to the operator (`reason = "parent_dead"`).
-`Db::open` imports legacy message files under `<root>/.houston/swarm/<id>` into
-operator-addressed rows (`reason = "migrated"`).
+a recipient with no live session is re-addressed to its nearest live ancestor. If the recipient has no session identity, the sender's parent inherits the failed delivery. Only the absence of a live ancestor reaches the operator (`reason = "parent_dead"`).
+`Db::open` imports legacy message files under `<root>/.houston/swarm/<id>` with
+`reason = "migrated"`. A known recipient keeps the row until restart recovery determines
+its live ancestor. Without a recipient, a known sender's parent inherits it; only mail
+without a known owner starts in the operator inbox.
 
 `ScopeLayout`/`scope_dir`/`init_scope` maintain the directories used by the `plan/events/`
 GC sweep. Hook drops use the channel's `hooks/drop/` directory, and `hs-pane` wrappers
@@ -1154,16 +1157,13 @@ Worktree spawning passes Codex a session-local inline `projects` trust table for
 child checkout and the repository's main checkout,
 passes Cursor its supported `--trust` flag, and appends a reversible managed-marker
 block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved.
-Claude, Antigravity and OpenCode worktree spawns return a warning and a matching operator
-note: the provider may ask to trust the new folder before starting, and the operator must
-answer in the child's pane. A child without CLI progress remains `spawning`; the ordinary
+Claude, Antigravity and OpenCode worktree spawns return a `worktree_trust` warning to the caller: the provider may ask to trust the new folder before starting. The parent inspects and answers with `pane_send_keys`, or escalates to the user. A child without CLI progress remains `spawning`; the ordinary
 stall notice still reaches its parent through `pane_wait`. Claude's parent-folder trust
 walk stops at the linked worktree's git root, so workspace trust does not carry over.
 Houston never rewrites Claude's global project state or uses undocumented environment
 variables to bypass folder trust. Trust flags do not change the requested tool approval mode.
 
-A second live child in the same checkout emits an operator note and a `warning` field
-in the spawn reply. The `effort` reply names the requested effort or `CLI default` when
+A second live child in the same checkout returns a `shared_checkout` warning to the caller. Spawn replies carry typed `warnings: [{code, message}]` and retain the legacy nullable `warning` string; neither creates an operator inbox row. The `effort` reply names the requested effort or `CLI default` when
 none was supplied. Omitted `pane_submit.request_id` uses the current request reported by
 `workspace_info` and the reply states that default.
 
@@ -1175,3 +1175,8 @@ composer or descendant hold. Its stop reason names `NO_HANDBACK_SETTLE_MS`.
 Worktree cleanup claims are shared by repository common directory, rechecks live session
 use immediately before removal, and measures only trees with no keep reason. Kept rows
 retain their last byte count and measurement timestamp, or null for not measured.
+
+Child `needs_input` writes an urgent row to the parent. The parent inspects the prompt
+and answers through `pane_send_keys`, or asks the user for a decision. Child status and
+roll-up badges do not trigger native desktop notifications. Only a top-level pane's
+own `needs-input` status triggers one.

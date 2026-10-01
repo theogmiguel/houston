@@ -3249,6 +3249,10 @@ async fn k2_temporary_child_is_ended_and_kept_with_durable_result_after_restart(
         .unwrap()
         .contains("ARCHIVED-RESULT"));
 
+    assert_eq!(r.daemon.resize(child, 100, 40).unwrap(), (100, 40));
+    r.daemon
+        .write_stdin(child, b"ignored after settlement")
+        .unwrap();
     let db_path = r._state.path().join("test.db");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     let state: String = conn
@@ -6463,7 +6467,7 @@ async fn a_failed_paste_keeps_the_row() {
 }
 
 #[tokio::test]
-async fn a_partial_paste_goes_to_the_operator_not_the_pty() {
+async fn k8_partial_paste_stays_with_live_parent() {
     let _guard = serial().await;
     let r = rig("partial-paste").await;
     let pane = r.pane();
@@ -6482,31 +6486,44 @@ async fn a_partial_paste_goes_to_the_operator_not_the_pty() {
     apply_hook_event(r._state.path(), kid, "Stop").await;
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    let ws = r.ws_dir.display().to_string();
     loop {
-        let operator = match r.daemon.inbox_list(&ws).unwrap() {
-            proto::ServerMsg::InboxRows { rows, .. } => rows,
-            other => panic!("inbox_list answered {other:?}"),
-        };
-        if let Some(row) = operator
-            .iter()
-            .find(|row| row.body.contains("PARTIAL-RESULT"))
-        {
-            assert_eq!(row.to_session, 0, "the operator's now");
-            assert_eq!(row.original_to, Some(pane.id), "and it says whose it was");
+        let operator = r.daemon.inbox_rows_for_test(pane.id);
+        if let Some(row) = operator.iter().find(|row| {
+            row.body.contains("PARTIAL-RESULT")
+                && row
+                    .reason
+                    .as_deref()
+                    .is_some_and(|r| r.starts_with("partial:"))
+        }) {
+            assert_eq!(row.to_session, pane.id, "the live parent owns the row");
+            assert_eq!(row.original_to, None);
             let reason = row.reason.clone().expect("a re-addressed row says why");
             assert!(reason.starts_with("partial:"), "{reason}");
             break;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "the partial paste never reached the operator: {operator:?}"
+            "the partial paste was not retained: {operator:?}"
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert!(
-        r.daemon.inbox_rows_for_test(pane.id).is_empty(),
-        "and it is not still queued for the pane, where it would be pasted twice"
+        r.daemon.inbox_rows_for_test(0).is_empty(),
+        "the child never addresses the operator"
+    );
+    assert!(matches!(
+        r.daemon
+            .inbox_reserve_for_stop_hook(pane.id, u64::MAX / 2)
+            .unwrap(),
+        houston_core::orchestrate::StopHookReserveOutcome::Empty
+    ));
+    let delivered = r
+        .daemon
+        .orchestrate_wait(pane.id, Some(kid), None, 1000, false)
+        .await
+        .unwrap();
+    assert!(
+        matches!(delivered, houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } if rows.iter().any(|row| row.reason.as_deref().is_some_and(|r| r.starts_with("partial:"))))
     );
 }
 
@@ -6768,7 +6785,7 @@ async fn a_turn_end_after_a_handed_back_round_is_not_a_no_handback() {
 }
 
 #[tokio::test]
-async fn the_lane_cap_is_a_row_to_the_operator_not_a_log_line() {
+async fn k8_lane_cap_notifies_prompt_sender() {
     let _guard = serial().await;
     let r = rig("lane-cap").await;
     let pane = r.pane();
@@ -6792,21 +6809,17 @@ async fn the_lane_cap_is_a_row_to_the_operator_not_a_log_line() {
     let refusal = refusal.expect("the lane cap must be reachable by queueing at it");
     assert!(refusal.contains("nudges queued"), "{refusal}");
 
-    let ws = r.ws_dir.display().to_string();
-    let operator = match r.daemon.inbox_list(&ws).unwrap() {
-        proto::ServerMsg::InboxRows { rows, .. } => rows,
-        other => panic!("inbox_list answered {other:?}"),
-    };
+    let operator = r.daemon.inbox_rows_for_test(pane.id);
     let note = operator
         .iter()
         .find(|row| row.reason.as_deref() == Some("lane_full"))
-        .unwrap_or_else(|| panic!("the refusal must reach the operator: {operator:?}"));
+        .unwrap_or_else(|| panic!("the refusal must reach the sender: {operator:?}"));
     assert!(note.body.contains("the limit is"), "{}", note.body);
     assert!(note.urgent || note.ready_at.is_some());
 }
 
 #[tokio::test]
-async fn a_backlog_over_the_cap_reaches_the_operator_naming_the_limit() {
+async fn k8_backlog_stays_with_live_parent_naming_the_limit() {
     let _guard = serial().await;
     let r = rig("backlog-cap").await;
     let pane = r.pane();
@@ -6832,11 +6845,7 @@ async fn a_backlog_over_the_cap_reaches_the_operator_naming_the_limit() {
         apply_hook_event(r._state.path(), kid, "Stop").await;
     }
 
-    let ws = r.ws_dir.display().to_string();
-    let operator = match r.daemon.inbox_list(&ws).unwrap() {
-        proto::ServerMsg::InboxRows { rows, .. } => rows,
-        other => panic!("inbox_list answered {other:?}"),
-    };
+    let operator = r.daemon.inbox_rows_for_test(pane.id);
     let over = operator
         .iter()
         .find(|row| {
@@ -6844,7 +6853,7 @@ async fn a_backlog_over_the_cap_reaches_the_operator_naming_the_limit() {
                 .as_deref()
                 .is_some_and(|x| x.starts_with("backlog:"))
         })
-        .unwrap_or_else(|| panic!("the overflow must reach the operator: {operator:?}"));
+        .unwrap_or_else(|| panic!("the overflow must remain with the live parent: {operator:?}"));
     let reason = over.reason.clone().unwrap();
     assert!(
         reason.contains("the limit is") || reason.contains("over the 2"),
@@ -6854,10 +6863,11 @@ async fn a_backlog_over_the_cap_reaches_the_operator_naming_the_limit() {
         reason.contains(&format!("#{}", over.id)),
         "it names the row: {reason}"
     );
-    assert_eq!(over.original_to, Some(pane.id));
+    assert_eq!(over.to_session, pane.id);
+    assert_eq!(over.original_to, None);
     assert!(
-        r.daemon.inbox_rows_for_test(pane.id).len() <= 3,
-        "the pane keeps what it can hold, and no producer was refused"
+        r.daemon.inbox_rows_for_test(0).is_empty(),
+        "the parent can retrieve overflow through pane_wait"
     );
 }
 
@@ -9645,45 +9655,58 @@ async fn k3_state_doc_refuses_fifo_without_waiting_for_writer() {
 }
 
 #[tokio::test]
-async fn k3_partial_raw_prompt_is_visible_to_operator() {
+async fn k8_partial_raw_prompt_notifies_sender() {
     let _guard = serial().await;
-    let r = rig("partial-raw-prompt").await;
-    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
-    let parent = r.pane();
-    r.daemon.orchestration_set(true).unwrap();
-    let (_, body) = r
-        .post_spawn(
-            &r.token_for(parent.id),
-            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
-        )
-        .await;
-    let child = body["session_id"].as_u64().unwrap() as u32;
-    apply_hook_event(r._state.path(), child, "Stop").await;
-    r.daemon.note_operator_keystroke(child, b"draft");
-    let (_, _, held) = r
-        .daemon
-        .orchestrate_prompt_with_hold(parent.id, child, "PARTIAL-RAW-PROMPT")
-        .unwrap();
-    assert!(held.is_some());
-    r.daemon.fail_next_stdin_write_after_for_test(child, 12);
-    r.daemon.clear_composer_occupied(child);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    loop {
-        let rows = r.daemon.inbox_rows_for_test(0);
-        if rows.iter().any(|row| {
-            row.reason.as_deref() == Some("partial") && row.body.contains("PARTIAL-RAW-PROMPT")
-        }) {
-            break;
+    for sender_dead in [false, true] {
+        let r = rig("partial-raw-prompt").await;
+        let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+        let parent = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        let (_, body) = r
+            .post_spawn(
+                &r.token_for(parent.id),
+                serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+            )
+            .await;
+        let child = body["session_id"].as_u64().unwrap() as u32;
+        apply_hook_event(r._state.path(), child, "Stop").await;
+        r.daemon.note_operator_keystroke(child, b"draft");
+        let (_, _, held) = r
+            .daemon
+            .orchestrate_prompt_with_hold(parent.id, child, "PARTIAL-RAW-PROMPT")
+            .unwrap();
+        assert!(held.is_some());
+        r.daemon.fail_next_stdin_write_after_for_test(child, 12);
+        if sender_dead {
+            r.daemon.kill(parent.id).unwrap();
         }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "partial held prompt was lost: {rows:?}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        r.daemon.clear_composer_occupied(child);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        loop {
+            let rows = r
+                .daemon
+                .inbox_rows_for_test(if sender_dead { 0 } else { parent.id });
+            if rows.iter().any(|row| {
+                row.reason.as_deref()
+                    == Some(if sender_dead {
+                        "parent_dead"
+                    } else {
+                        "partial"
+                    })
+                    && row.body.contains("PARTIAL-RAW-PROMPT")
+                    && (!sender_dead || row.original_to == Some(parent.id))
+            }) {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "partial held prompt was lost: {rows:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        r.daemon.close(parent.id).unwrap();
     }
-    r.daemon.close(parent.id).unwrap();
 }
-
 #[tokio::test]
 async fn k3_tool_boundary_writes_drop_before_query_and_skips_leaf_query() {
     let _guard = serial().await;
@@ -9884,7 +9907,7 @@ async fn k4_latest_results_are_parent_scoped_bounded_read_only_and_durable() {
     let latest = db
         .inbox_insert(&row, houston_core::daemon::now_ms() + 1)
         .unwrap();
-    db.inbox_readdress_to_operator(latest, "parent unavailable")
+    db.inbox_route_after_failure(latest, 0, "parent unavailable")
         .unwrap();
     let (results, truncated) = k4_results_over_ws(r.addr, parent.id).await;
     assert!(!truncated);
@@ -10027,7 +10050,7 @@ async fn k4_result_snapshot_follows_respawn_identity_and_reports_row_cap() {
         .find(|entry| entry.kind == "result")
         .unwrap()
         .id;
-    db.inbox_readdress_to_operator(id, "parent unavailable")
+    db.inbox_route_after_failure(id, 0, "parent unavailable")
         .unwrap();
     assert!(db
         .inbox_ack_operator(id, houston_core::daemon::now_ms())
@@ -10120,7 +10143,7 @@ async fn k4_result_snapshot_follows_respawn_identity_and_reports_row_cap() {
 }
 
 #[tokio::test]
-async fn k6_spawn_warns_shared_checkout_and_names_cli_default_effort() {
+async fn k8_spawn_returns_warning_without_operator_row() {
     let _guard = serial().await;
     let r = rig("shared-checkout").await;
     let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
@@ -10152,11 +10175,8 @@ async fn k6_spawn_warns_shared_checkout_and_names_cli_default_effort() {
         .as_str()
         .unwrap()
         .contains("checkout_root"));
-    assert!(r
-        .daemon
-        .inbox_rows_for_test(0)
-        .iter()
-        .any(|row| row.kind == "operator_note" && row.body.contains("shared checkout_root")));
+    assert_eq!(second["warnings"][0]["code"], "shared_checkout");
+    assert!(r.daemon.inbox_rows_for_test(0).is_empty());
 }
 
 #[tokio::test]
@@ -10222,6 +10242,11 @@ async fn k6_mcp_spawn_warning_and_submit_default_are_visible() {
         serde_json::json!({"kind":"grok","prompt":"two","reusable":true}),
     )
     .await;
+    assert_eq!(
+        second["structuredContent"]["warnings"][0]["code"],
+        "shared_checkout"
+    );
+    assert!(r.daemon.inbox_rows_for_test(0).is_empty());
     assert!(second["structuredContent"]["warning"]
         .as_str()
         .unwrap()
@@ -10238,4 +10263,112 @@ async fn k6_mcp_spawn_warning_and_submit_default_are_visible() {
         .as_str()
         .unwrap()
         .contains("defaulted to current request 1"));
+}
+
+#[tokio::test]
+async fn k8_dead_parent_result_reaches_nearest_live_ancestor_or_operator() {
+    let _guard = serial().await;
+    for (ancestor_alive, submitted_before_death) in
+        [(true, true), (true, false), (false, true), (false, false)]
+    {
+        let r = rig("ancestor-routing").await;
+        let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+        let root = r.pane();
+        r.daemon.orchestration_set(true).unwrap();
+        r.daemon.set_orchestration_caps(4, 3).unwrap();
+        let (_, parent) = r
+            .post_spawn(
+                &r.token_for(root.id),
+                serde_json::json!({"kind":"codex", "prompt":"parent", "reusable":true}),
+            )
+            .await;
+        let parent = parent["session_id"].as_u64().unwrap() as u32;
+        let (_, child) = r
+            .post_spawn(
+                &r.token_for(parent),
+                serde_json::json!({"kind":"codex", "prompt":"child", "reusable":true}),
+            )
+            .await;
+        let child = child["session_id"].as_u64().unwrap() as u32;
+        let early = submitted_before_death.then(|| {
+            r.daemon
+                .orchestrate_submit(child, "ancestor handback".to_string().into())
+                .unwrap()
+        });
+        r.daemon.kill(parent).unwrap();
+        if !ancestor_alive {
+            r.daemon.kill(root.id).unwrap();
+        }
+        let outcome = early.unwrap_or_else(|| {
+            r.daemon
+                .orchestrate_submit(child, "ancestor handback".to_string().into())
+                .unwrap()
+        });
+        r.daemon.delegation_watch_tick();
+        let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+        let row = db.inbox_get(outcome.row_id).unwrap().unwrap();
+        assert_eq!(row.to_session, if ancestor_alive { root.id } else { 0 });
+        assert_eq!(row.original_to, Some(parent));
+        assert_eq!(row.reason.as_deref(), Some("parent_dead"));
+    }
+}
+
+#[tokio::test]
+async fn k8_exhausted_paste_attempts_remain_available_to_parent_wait() {
+    let _guard = serial().await;
+    let r = rig("exhausted-paste").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    apply_hook_event(r._state.path(), parent.id, "UserPromptSubmit").await;
+    let (_, reply) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex", "prompt":"work", "reusable":true}),
+        )
+        .await;
+    let child = reply["session_id"].as_u64().unwrap() as u32;
+    let result = r
+        .daemon
+        .orchestrate_submit(child, "exhausted attempts result".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    conn.execute(
+        "UPDATE pane_inbox SET attempts = ?2 WHERE id = ?1",
+        rusqlite::params![
+            result.row_id,
+            houston_core::orchestrate::PASTE_ATTEMPTS_MAX - 1
+        ],
+    )
+    .unwrap();
+    r.daemon.fail_next_stdin_write_after_for_test(parent.id, 0);
+    apply_hook_event(r._state.path(), parent.id, "Stop").await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let rows = r.daemon.inbox_rows_for_test(parent.id);
+        if rows.iter().any(|row| {
+            row.id == result.row_id
+                && row
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.starts_with("attempts:"))
+        }) {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "exhausted attempts not retained: {rows:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(r.daemon.inbox_rows_for_test(0).is_empty());
+    let outcome = r
+        .daemon
+        .orchestrate_wait(parent.id, Some(child), None, 1000, false)
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } if rows.iter().any(|row| row.id == result.row_id))
+    );
 }

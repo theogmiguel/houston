@@ -2362,6 +2362,7 @@ async fn dispatch(
             cols,
             rows,
             profile,
+            default_dir,
         } => {
             let mut params = crate::ssh::SshParams {
                 host,
@@ -2371,10 +2372,9 @@ async fn dispatch(
                 cols: cols.unwrap_or(80),
                 rows: rows.unwrap_or(24),
                 config_identity: None,
+                default_dir,
             };
-            if matches!(params.auth, proto::SshAuth::SshConfig) {
-                crate::ssh::apply_ssh_config(&mut params);
-            }
+            crate::ssh::apply_ssh_config(&mut params);
             daemon.ssh_connect(request, params, profile);
             Ok(())
         }
@@ -3770,6 +3770,7 @@ async fn orch_spawn(
                 "handoff": handoff,
                 "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
                 "warning": if isolated { crate::launch::worktree_trust_warning(info.agent) } else { reply_daemon.spawn_checkout_warning(info.id) },
+                "warnings": reply_daemon.spawn_warnings(&info, isolated),
                 "next_action": if handoff {
                     crate::orchestrate::HANDOFF_NEXT_ACTION
                 } else {

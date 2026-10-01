@@ -214,7 +214,7 @@ failure not given a typed refusal comes back as `error`.
 
 | Message | Fields | Reply |
 |---|---|---|
-| `ssh_connect` | `request`, `host`, `port?` (22), `user`, `auth: SshAuth`, `cols?`/`rows?`, `profile?` (name of a saved profile) | runs on its own task: possibly `ssh_host_key`, then `session_created` (bcast) or `error` naming the request |
+| `ssh_connect` | `request`, `host`, `port?` (22), `user`, `auth: SshAuth`, `cols?`/`rows?`, `profile?` (name of a saved profile), `default_dir?` (remote starting directory; `~/` expands on the remote host) | runs on its own task: possibly `ssh_host_key`, then `session_created` (bcast) or `error` naming the request |
 | `ssh_host_key_answer` | `request`, `accept` | none; `accept` records the key (TOFU) and resumes |
 | `ssh_upload_terminal_file` | `request`, `session` (must be a live SSH pane), `local_path`, `remote_name?` (a name: no `/`, no control chars, not `.`/`..`, ≤ 255 bytes) | `ssh_upload_done` (bcast) or `error`. Read by the daemon, streamed on a second channel of the same connection; cap 64 MiB; destination `$HOME/.houston/uploads/`, never clobbering |
 | `ssh_profile_save` | `profile: SshProfile` (upsert by name; `last_used_at` is ignored) | `ssh_profiles` (bcast) |
@@ -902,6 +902,11 @@ manually respawning their parent runs the same child restore and notice delivery
 accepts `state_doc` only with `handoff: true`: text, `{text}`, or `{path}` inside the
 target workspace, bounded by `STATE_DOC_MAX_BYTES` (65536 bytes).
 
+`pane_spawn` HTTP and MCP results include `warnings: PaneSpawnWarning[]`, whose
+entries contain `code` and `message`. Codes are `shared_checkout` and `worktree_trust`.
+The legacy nullable `warning` string remains available. Spawn warnings return to the
+caller and do not create operator-addressed inbox rows.
+
 `POST /inbox/tool-boundary`, authenticated with a pane token, returns `{text: string | null}`
 for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,
 resolve or consume the durable inbox rows.
@@ -926,7 +931,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 121 | **Settled children retain their transcripts and conversations.** Delegation timestamps, `restored` inbox kind, configurable settled retention and per-workspace role routing. Existing operator inbox list/ack/resolve and row pushes cover the operator queue |
+| 121 | **Settled children retain their transcripts and conversations.** Delegation timestamps, `restored` inbox kind, configurable settled retention and per-workspace role routing. Existing operator inbox list/ack/resolve and row pushes cover the operator queue. `ssh_connect` gains `default_dir?`; pane spawn results gain typed `warnings` for caller-owned warnings |
 | 120 | **A worktree whose PR has merged is removed with its build output.** New `worktree_cleanup_set` (reply: `host_info` bcast, which gains `worktree_cleanup_enabled` and `worktree_cleanup_grace_hours`), `worktree_cleanup_status` and `worktree_cleanup_run` (which removes only the confirmed `paths`, or only checks), and the `worktree_cleanup` reply/bcast carrying `ManagedWorktreeInfo` with a typed `WorktreeKeep` reason. Only worktrees Houston recorded (`pane_spawn`'s `worktree`, the Changes pane) are ever removed |
 | 119 | **Restored or restarted Claude and Codex panes resume their conversations.** `SessionInfo` gains `resumable` and `resume_notice?`; `session_respawn` gains `fresh?`; new `restore_resume_set` (reply: `host_info` bcast, which gains `restore_resume`) and `session_resumable` bcast. Boot restore after shutdown or crash and `session_respawn` relaunch a Claude session with `--resume <id>` or Codex with `resume <id>` when it holds a resume handle that passes validation, and start fresh with a one-line `resume_notice` otherwise |
 | 118 | **A restarted session keeps its original pane.** `SessionInfo` gains `session_origin`, the original session id persisted across successive restarts and boot restores. Clients retain the pane in any grid or stack even when they missed intermediate replacements. No message is added or removed |

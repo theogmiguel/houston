@@ -1027,6 +1027,7 @@ export class HoustonClient {
     cols?: number
     rows?: number
     profile?: string
+    default_dir?: string
   }): void {
     this.send({
       type: 'ssh_connect',
@@ -1037,7 +1038,8 @@ export class HoustonClient {
       auth: params.auth,
       cols: params.cols ?? null,
       rows: params.rows ?? null,
-      profile: params.profile ?? null
+      profile: params.profile ?? null,
+      default_dir: params.default_dir ?? null
     })
   }
 

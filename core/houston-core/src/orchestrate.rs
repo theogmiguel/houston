@@ -1244,11 +1244,11 @@ pub fn stalled_body(quiet_ms: u64) -> String {
 pub fn needs_input_body(reason: Option<&str>) -> String {
     match reason.map(str::trim).filter(|r| !r.is_empty()) {
         Some(r) => format!(
-            "this child needs input: {r}. Answer it (`pane_send_keys`), re-prompt it, or \
+            "this child needs input: {r}. Inspect it (`pane_read`) and answer it (`pane_send_keys`), or \
              escalate — it will sit there until somebody does."
         ),
         None => "this child needs input and its CLI did not say why. Inspect it (`pane_read`) \
-                 and answer, re-prompt or escalate."
+                 and answer it (`pane_send_keys`), or escalate to the user."
             .to_string(),
     }
 }
@@ -2119,6 +2119,15 @@ timeout when help is needed, when the operator asks, or when the child
 reports being blocked. A temporary child ends its process after its final durable
 handback and retains its session and transcript until close or retention expiry.
 Use `--reusable` for follow-up prompts or a live pane.
+
+## The parent owns the user conversation
+
+Child results, spawn warnings and requests for input belong to the parent.
+Inspect a blocked child with `pane_read`, then answer through `pane_send_keys`;
+escalate to the user only when their decision is needed. Do not re-prompt a child
+while it is blocked. Delivery failures stay in your inbox and `pane_wait` reports
+why automatic delivery stopped. A dead parent passes rows to its nearest live
+ancestor; only the absence of any live ancestor addresses the operator.
 
 ## Handing off
 

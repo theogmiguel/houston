@@ -41,7 +41,11 @@ describe('orchestrator overview', () => {
     const inboxAck = vi.fn(), inboxResolve = vi.fn()
     const client = { subscribe: (type: string, callback: (message: unknown) => void) => { handlers.set(type, callback); return () => handlers.delete(type) }, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), inboxAck, inboxResolve } as unknown as HoustonClient
     render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, session(2, 1)]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
-    const row = { id: 9n, to_session: 0, original_to: 1, from_session: 2, workspace: '/work', kind: 'result', urgent: false, superseded: 0, provisional: false, attempts: 0, summary: 'Please review', body: 'result', artifacts: [], created_at: 2000n, resolved_at: null } as InboxRow
+    const row = { id: 9n, to_session: 0, original_to: 1, from_session: 2, workspace: '/work', kind: 'result', urgent: false, superseded: 0, provisional: false, attempts: 0, reason: 'parent_dead', summary: 'Please review', body: 'result', artifacts: [], created_at: 2000n, resolved_at: null } as InboxRow
+    act(() => handlers.get('inbox_changed')!({ workspace: '/work', row: { ...row, original_to: null, from_session: 1, reason: null } }))
+    expect(screen.getByRole('region', { name: 'Addressed to you' })).toBeTruthy()
+    act(() => handlers.get('inbox_changed')!({ workspace: '/work', row: { ...row, reason: 'shared_checkout' } }))
+    expect(screen.queryByRole('region', { name: 'Addressed to you' })).toBeNull()
     act(() => handlers.get('inbox_changed')!({ workspace: '/work', row }))
     expect(screen.getByRole('region', { name: 'Addressed to you' })).toBeTruthy()
     fireEvent.click(screen.getByText('Acknowledge')); expect(inboxAck).toHaveBeenCalledWith(9n)

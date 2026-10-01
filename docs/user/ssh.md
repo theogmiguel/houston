@@ -11,9 +11,15 @@ whole workspace at a remote machine.
 ## Connecting
 
 Open **Workspaces → + → Connect via SSH…** and enter a machine hostname, IP address,
-or SSH configuration name. Username is optional when your SSH configuration supplies it.
-Houston reads HostName, User, Port and IdentityFile; ProxyJump, Match and Include are not
-supported. Without a configured user, enter Username explicitly.
+or SSH configuration name. Username is optional: Houston uses the configured User or
+your local account name.
+Houston reads HostName, User, Port and IdentityFile in Host blocks; ProxyJump, Match and
+Include are not supported. Host aliases and wildcard defaults apply with every
+authentication method, including a key selected at connect time. The first matching
+value wins, as in OpenSSH.
+
+The Folder field selects the remote starting directory. `~` and `~/` resolve to the
+remote home directory; spaces and shell metacharacters in the path remain literal.
 
 Expand **Advanced** to change the port or enable **Choose an SSH key when connecting**.
 Connect then opens the native private-key picker; cancelling it leaves the connection

@@ -168,7 +168,13 @@ and offers five seconds to Undo; a child that resumes during that interval is pr
 Continue resumes a retained Claude or Codex conversation with its earlier transcript.
 Set **Settled retention** in Settings ▸ Orchestration to change the default 24-hour horizon.
 
-When a parent ends, pending messages appear under **Addressed to you** in its overview.
+When a parent ends, pending messages go to its nearest running ancestor. If none remains, they appear under **Addressed to you** in the overview.
 Acknowledge marks a message delivered; Resolve marks it handled. Restart notices list
 which child conversations resumed and why others remained ended. Successfully resumed
 children are Working; an interrupted mission is not reported as successful.
+
+Children report results, requests for input and delivery problems to their parent
+orchestrator. The orchestrator answers the child or asks you for a decision. Spawn
+warnings return to the orchestrator; they do not appear in "Addressed to you".
+Only a top-level pane waiting for your input triggers a desktop notification.
+The "Addressed to you" group is hidden when empty.

@@ -286,6 +286,15 @@ fn migrate_pending_swarm_mail_into_the_inbox(conn: &Connection) -> Result<()> {
         };
         for label_entry in inbox_labels.flatten() {
             let label_dir = label_entry.path();
+            let label = label_entry.file_name().to_string_lossy().into_owned();
+            let recipient: Option<u32> = conn
+                .query_row(
+                    "SELECT session_id FROM swarm_agents WHERE swarm_id = ?1 AND label = ?2",
+                    rusqlite::params![swarm_id as i64, label],
+                    |row| row.get::<_, Option<u32>>(0),
+                )
+                .optional()?
+                .flatten();
             let files = match std::fs::read_dir(&label_dir) {
                 Ok(rd) => rd,
                 Err(_) => continue,
@@ -315,10 +324,30 @@ fn migrate_pending_swarm_mail_into_the_inbox(conn: &Connection) -> Result<()> {
                         continue;
                     }
                 };
+                let from_session: Option<u32> = conn
+                    .query_row(
+                        "SELECT session_id FROM swarm_agents WHERE swarm_id = ?1 AND label = ?2",
+                        rusqlite::params![swarm_id as i64, mail.from],
+                        |row| row.get::<_, Option<u32>>(0),
+                    )
+                    .optional()?
+                    .flatten();
+                // Boot recovery resolves liveness after parent and child sessions restore.
+                let to_session = if let Some(recipient) = recipient {
+                    recipient
+                } else if let Some(sender) = from_session {
+                    conn.query_row(
+                        "SELECT parent_session FROM delegations WHERE child_session = ?1
+                         UNION ALL SELECT spawned_by FROM sessions WHERE id = ?1 AND spawned_by IS NOT NULL LIMIT 1",
+                        [sender], |row| row.get::<_, u32>(0),
+                    ).optional()?.unwrap_or(0)
+                } else {
+                    0
+                };
                 let row = match crate::orchestrate::inbox_row_new(
-                    0,
+                    to_session,
                     &root_dir,
-                    None,
+                    from_session,
                     None,
                     crate::orchestrate::InboxKind::Mail,
                     &format!("Mail from {}", mail.from),
@@ -825,6 +854,21 @@ pub struct RoutineWrite<'a> {
     pub permission_mode: &'a str,
     pub isolate: bool,
     pub revision: &'a str,
+}
+
+fn inbox_live_recipient(conn: &rusqlite::Connection, mut to: u32, live: &[u32]) -> Result<u32> {
+    let mut visited = std::collections::HashSet::new();
+    while to != 0 && visited.insert(to) {
+        if live.contains(&to) {
+            return Ok(to);
+        }
+        to = conn.query_row(
+            "SELECT parent_session FROM delegations WHERE child_session = ?1
+             UNION ALL SELECT spawned_by FROM sessions WHERE id = ?1 AND spawned_by IS NOT NULL LIMIT 1",
+            [to], |row| row.get(0),
+        ).optional()?.unwrap_or(0);
+    }
+    Ok(0)
 }
 
 const DELEGATION_SELECT: &str = "SELECT id, parent_session, child_session, role, state, stalled, \
@@ -3560,6 +3604,16 @@ impl Db {
         self.inbox_reserve_matching(to_session, now, max_rows, max_bytes, None, None)
     }
 
+    pub fn inbox_reserve_automatic(
+        &self,
+        to_session: u32,
+        now: u64,
+        max_rows: u32,
+        max_bytes: usize,
+    ) -> Result<Option<(String, Vec<InboxRow>)>> {
+        self.inbox_reserve_impl(to_session, now, max_rows, max_bytes, None, None, true)
+    }
+
     pub fn inbox_reserve_matching(
         &self,
         to_session: u32,
@@ -3568,6 +3622,28 @@ impl Db {
         max_bytes: usize,
         from_session: Option<u32>,
         kind: Option<&str>,
+    ) -> Result<Option<(String, Vec<InboxRow>)>> {
+        self.inbox_reserve_impl(
+            to_session,
+            now,
+            max_rows,
+            max_bytes,
+            from_session,
+            kind,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn inbox_reserve_impl(
+        &self,
+        to_session: u32,
+        now: u64,
+        max_rows: u32,
+        max_bytes: usize,
+        from_session: Option<u32>,
+        kind: Option<&str>,
+        automatic: bool,
     ) -> Result<Option<(String, Vec<InboxRow>)>> {
         let conn = self.conn.lock().expect("db lock");
         let now_i = now as i64;
@@ -3592,6 +3668,9 @@ impl Db {
                 params.len() + 1
             ));
             params.push(rusqlite::types::Value::Text(k.to_string()));
+        }
+        if automatic {
+            sql.push_str(" AND (reason IS NULL OR (reason NOT LIKE 'partial:%' AND reason NOT LIKE 'attempts:%' AND reason NOT LIKE 'backlog:%'))");
         }
         sql.push_str(" ORDER BY created_at, id");
         let candidates = {
@@ -3749,13 +3828,28 @@ impl Db {
         )?)
     }
 
-    pub fn inbox_readdress_to_operator(&self, id: i64, reason: &str) -> Result<()> {
+    pub fn inbox_pending_recipients(&self) -> Result<Vec<u32>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare("SELECT DISTINCT to_session FROM pane_inbox WHERE to_session != 0 AND delivered_at IS NULL AND resolved_at IS NULL")?;
+        let rows = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn inbox_live_recipient(&self, to: u32, live_sessions: &[u32]) -> Result<u32> {
+        let conn = self.conn.lock().expect("db lock");
+        inbox_live_recipient(&conn, to, live_sessions)
+    }
+
+    pub fn inbox_route_after_failure(&self, id: i64, recipient: u32, reason: &str) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE pane_inbox SET original_to = to_session, to_session = 0, reason = ?2,
+            "UPDATE pane_inbox SET original_to = CASE WHEN to_session != ?2 THEN COALESCE(original_to, to_session) ELSE original_to END,
+                to_session = ?2, reason = ?3, ready_at = COALESCE(ready_at, created_at),
                 reserved_at = NULL, delivery_id = NULL
              WHERE id = ?1",
-            rusqlite::params![id, reason],
+            rusqlite::params![id, recipient, reason],
         )?;
         Ok(())
     }
@@ -3802,11 +3896,17 @@ impl Db {
         };
         let readdressed = dead_parent_ids.len() as u32;
         for id in dead_parent_ids {
+            let to: u32 = conn.query_row(
+                "SELECT to_session FROM pane_inbox WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )?;
+            let recipient = inbox_live_recipient(&conn, to, live_sessions)?;
             conn.execute(
-                "UPDATE pane_inbox SET original_to = to_session, to_session = 0, reason = 'parent_dead',
+                "UPDATE pane_inbox SET original_to = COALESCE(original_to, to_session), to_session = ?2, reason = 'parent_dead',
                     reserved_at = NULL, delivery_id = NULL
                  WHERE id = ?1",
-                rusqlite::params![id],
+                rusqlite::params![id, recipient],
             )?;
         }
         Ok(InboxRecovery {
@@ -6491,6 +6591,55 @@ mod tests {
     }
 
     #[test]
+    fn k8_stranded_mail_keeps_known_recipient_for_ancestor_recovery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("t.db");
+        let root = tmp.path().join("repo");
+        std::fs::create_dir_all(&root).unwrap();
+        let swarm_id = {
+            let db = Db::open(&path).unwrap();
+            let (swarm, agents) = db
+                .swarm_create("Stranded", root.to_str().unwrap(), "g", &roster(), 0)
+                .unwrap();
+            let recipient = agents
+                .iter()
+                .find(|agent| agent.label == "Builder-1")
+                .unwrap();
+            db.swarm_agent_bind_session(recipient.id, None, Some(2))
+                .unwrap();
+            db.delegation_create(1, 2, None, "recipient", 100).unwrap();
+            swarm.id
+        };
+        let layout = crate::scope::ScopeLayout::new(&root, swarm_id);
+        let inbox = layout.inbox_for("Builder-1").unwrap();
+        std::fs::create_dir_all(&inbox).unwrap();
+        let mail = MailMessage {
+            id: crate::scope::gen_mailbox_id(),
+            from: "Coordinator".into(),
+            to: "Builder-1".into(),
+            body: "recover to ancestor".into(),
+            kind: proto::SwarmMsgKind::Message,
+            timestamp_ms: 100,
+        };
+        crate::hook_drop::write_atomic(
+            &inbox,
+            &crate::scope::mail_filename(&mail.id),
+            &mail.to_bytes().unwrap(),
+        )
+        .unwrap();
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.inbox_list_for_session(2).unwrap().len(), 1);
+        db.inbox_recover_after_restart(&[1]).unwrap();
+        let rows = db.inbox_list_for_session(1).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].original_to, Some(2));
+        assert!(db
+            .inbox_list_operator(root.to_str().unwrap())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn a_second_open_survives_a_writer_committing_under_it() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("t.db");
@@ -7258,6 +7407,23 @@ mod tests {
         assert_eq!(operator_rows.len(), 1);
         assert_eq!(operator_rows[0].original_to, Some(3));
         assert_eq!(operator_rows[0].reason.as_deref(), Some("parent_dead"));
+    }
+
+    #[test]
+    fn k8_restart_routes_dead_parent_to_nearest_live_ancestor() {
+        for live in [vec![1], vec![]] {
+            let tmp = tempfile::tempdir().unwrap();
+            let db = Db::open(&tmp.path().join("t.db")).unwrap();
+            db.delegation_create(1, 2, None, "parent", 100).unwrap();
+            db.delegation_create(2, 3, None, "child", 100).unwrap();
+            let id = db
+                .inbox_insert(&new_inbox_row(2, "/ws", Some(3), Some(1), true), 100)
+                .unwrap();
+            db.inbox_recover_after_restart(&live).unwrap();
+            let row = db.inbox_get(id).unwrap().unwrap();
+            assert_eq!(row.to_session, live.first().copied().unwrap_or(0));
+            assert_eq!(row.original_to, Some(2));
+        }
     }
 
     #[test]

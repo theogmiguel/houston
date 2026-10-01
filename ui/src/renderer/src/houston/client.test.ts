@@ -1272,3 +1272,13 @@ describe('HoustonClient destroy intents + confirmed re-sends (v62 D3)', () => {
     expect(sent).toContainEqual({ type: 'orchestration_set', enabled: true })
   })
 })
+
+describe('HoustonClient SSH connection', () => {
+  it('carries the remote starting directory to the daemon', async () => {
+    const { client, ws } = await connectFakeClient()
+    client.sshConnect({ request: 1, host: 'edge', user: '', auth: { kind: 'ssh_config' }, default_dir: '~/app folder' })
+    const messages = ws.sent.filter((message): message is string => typeof message === 'string').map((message) => JSON.parse(message))
+    expect(messages.find((message) => message.type === 'ssh_connect')).toMatchObject({ default_dir: '~/app folder', user: '' })
+    client.close()
+  })
+})

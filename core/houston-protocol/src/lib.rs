@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 /// under one coordinated bump instead of each incrementing it.
 pub const PROTOCOL_VERSION: u32 = 121;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts-gen", ts(export))]
+pub struct PaneSpawnWarning {
+    pub code: String,
+    pub message: String,
+}
+
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
 pub const FRAME_OUTPUT: u8 = 1;
@@ -2653,6 +2661,9 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         profile: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        default_dir: Option<String>,
     },
     SshHostKeyAnswer {
         request: u32,

@@ -168,6 +168,7 @@ fn connect_msg(request: u32, addr: std::net::SocketAddr, key_path: &str) -> Stri
         cols: Some(80),
         rows: Some(24),
         profile: None,
+        default_dir: None,
     })
     .unwrap()
 }
@@ -751,4 +752,40 @@ async fn ssh_upload_refuses_a_local_session_and_a_path_shaped_name() {
         }
     };
     assert!(message.contains("not an SSH session"), "message: {message}");
+}
+
+#[tokio::test]
+async fn k8_ssh_connect_starts_in_requested_remote_home_directory() {
+    let addr = start_ssh_server().await;
+    let state = tempfile::tempdir().unwrap();
+    let keydir = tempfile::tempdir().unwrap();
+    let key_path = write_client_key(keydir.path());
+    let mut ws = daemon_ws(state.path()).await;
+    let mut message: serde_json::Value =
+        serde_json::from_str(&connect_msg(1, addr, &key_path)).unwrap();
+    message["default_dir"] = serde_json::json!("~/app folder");
+    ws.send(Message::text(message.to_string())).await.unwrap();
+    expect_host_key(&mut ws).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SshHostKeyAnswer {
+            request: 1,
+            accept: true,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    let info = expect_created(&mut ws).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionAttach {
+            session: info.id,
+            replay_bytes: None,
+            snapshot: None,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    let output = collect_output_until(&mut ws, info.id, "APP FOLDER").await;
+    assert!(output.contains("CD -- \"$HOME\"/'APP FOLDER'"), "{output}");
 }

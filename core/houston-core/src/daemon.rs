@@ -8396,25 +8396,30 @@ impl Daemon {
         }
         self.broadcast_control(&proto::ServerMsg::SessionCreated { info });
 
-        if let Some(name) = profile.as_deref() {
+        let saved_profile = profile.as_deref().and_then(|name| {
             if let Err(e) = self.db.touch_ssh_profile(name) {
                 tracing::warn!("stamping ssh profile {name:?} as used: {e}");
             }
             match self.db.list_ssh_profiles() {
-                Ok(profiles) => {
-                    if let Some(p) = profiles.into_iter().find(|p| p.name == name) {
-                        for line in crate::ssh::post_connect_lines(&p) {
-                            if let Err(e) = self.write_stdin(id, line.as_bytes()) {
-                                tracing::warn!(
-                                    "ssh profile {name:?} post-connect line failed on session \
-                                     {id}: {e}"
-                                );
-                                break;
-                            }
-                        }
-                    }
+                Ok(profiles) => profiles.into_iter().find(|p| p.name == name),
+                Err(e) => {
+                    tracing::warn!("reading ssh profile {name:?} after connect: {e}");
+                    None
                 }
-                Err(e) => tracing::warn!("reading ssh profile {name:?} after connect: {e}"),
+            }
+        });
+        let lines = if let Some(mut saved) = saved_profile {
+            if params.default_dir.is_some() {
+                saved.default_dir.clone_from(&params.default_dir);
+            }
+            crate::ssh::post_connect_lines(&saved)
+        } else {
+            crate::ssh::post_connect_directory(params.default_dir.as_deref())
+        };
+        for line in lines {
+            if let Err(e) = self.write_stdin(id, line.as_bytes()) {
+                tracing::warn!("SSH post-connect line failed on session {id}: {e}");
+                break;
             }
         }
 
@@ -9041,6 +9046,10 @@ impl Daemon {
             )));
         }
         let session = self.get(id).map_err(StdinWriteError::nothing)?;
+        let state = session.state.lock().expect("state lock");
+        if !state.is_live() {
+            return Ok(());
+        }
         if let Some(cap) = self
             .stdin_partial_after
             .lock()
@@ -9070,6 +9079,10 @@ impl Daemon {
             return Ok((cols, rows));
         }
         let session = self.get(id)?;
+        let state = session.state.lock().expect("state lock");
+        if !state.is_live() {
+            return Ok((cols, rows));
+        }
         let applied = session.backend.resize(id, cols, rows)?;
         session.set_geometry(applied.0, applied.1);
         Ok(applied)
@@ -12260,19 +12273,19 @@ impl Daemon {
             .find(|a| a.label == recipient)
             .and_then(|a| a.session);
         let summary = format!("Mail from {}", mail.from);
-        let (to_session, reason) = match live_session {
-            Some(s) => (s, None),
-            None => (
-                0,
-                Some(format!(
-                    "parent_dead: swarm {swarm} agent {recipient:?} has no live session — mail \
-                     from {:?} goes to the operator instead",
-                    mail.from
-                )),
-            ),
-        };
+        let recipient = live_session
+            .or_else(|| {
+                from_session.and_then(|sender| {
+                    self.get(sender)
+                        .ok()
+                        .and_then(|session| session.info.spawned_by)
+                })
+            })
+            .unwrap_or(0);
+        let to_session = self.live_inbox_recipient(recipient);
+        let reason = (live_session.is_none() || to_session != recipient).then_some("parent_dead");
         let row = match orchestrate::inbox_row_new(
-            to_session,
+            recipient,
             workspace,
             from_session,
             None,
@@ -12282,7 +12295,7 @@ impl Daemon {
             Vec::new(),
             false,
             None,
-            reason.as_deref(),
+            reason,
             true,
         ) {
             Ok(row) => row,
@@ -12293,8 +12306,12 @@ impl Daemon {
         };
         match self.db.inbox_insert(&row, now_ms()) {
             Ok(id) => {
-                self.broadcast_inbox_row(id);
-                self.inbox_notify(to_session, false);
+                if to_session != recipient {
+                    self.retain_or_readdress_row(id, "parent_dead");
+                } else {
+                    self.broadcast_inbox_row(id);
+                    self.inbox_notify(to_session, false);
+                }
             }
             Err(e) => tracing::warn!("swarm {swarm}: writing the mail row for {recipient:?}: {e}"),
         }
@@ -12442,7 +12459,12 @@ impl Daemon {
         None
     }
 
-    fn swarm_wake_write(self: &Arc<Self>, session_id: u32, text: &str) -> Result<Option<String>> {
+    fn swarm_wake_write(
+        self: &Arc<Self>,
+        session_id: u32,
+        text: &str,
+        sender: u32,
+    ) -> Result<Option<String>> {
         let held = self.paste_hold_reason(session_id).or_else(|| {
             self.swarm_wake_lanes
                 .lock()
@@ -12451,10 +12473,10 @@ impl Daemon {
                 .then(|| "another prompt is on this pane's wake lane".to_string())
         });
         if held.is_some() {
-            self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string()))?;
+            self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string(), sender))?;
         } else {
-            if !self.paste_text(session_id, text)? {
-                self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string()))?;
+            if !self.paste_text(session_id, text, sender)? {
+                self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string(), sender))?;
                 return Ok(Some("pane became held before paste".to_string()));
             }
         }
@@ -12488,7 +12510,9 @@ impl Daemon {
                             lane.queue.len()
                         );
                         drop(lanes);
-                        self.note_to_operator(session_id, "lane_full", &full);
+                        if let WakeItem::Text(_, sender) = &item {
+                            self.note_to_sender(session_id, *sender, "lane_full", &full);
+                        }
                         bail!("{full}");
                     }
                     lane.queue.push_back(item);
@@ -12541,26 +12565,29 @@ impl Daemon {
                 take_wake_item(&mut lanes, session_id, generation)
             };
             match next {
-                Some(WakeItem::Text(text)) => match this.paste_text(session_id, &text) {
-                    Ok(false) => {
-                        let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
-                        if let Some(lane) = lanes
-                            .get_mut(&session_id)
-                            .filter(|lane| lane.generation == generation)
-                        {
-                            lane.queue.push_front(WakeItem::Text(text));
+                Some(WakeItem::Text(text, sender)) => {
+                    match this.paste_text(session_id, &text, sender) {
+                        Ok(false) => {
+                            let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
+                            if let Some(lane) = lanes
+                                .get_mut(&session_id)
+                                .filter(|lane| lane.generation == generation)
+                            {
+                                lane.queue.push_front(WakeItem::Text(text, sender));
+                            }
+                        }
+                        Ok(true) => {}
+                        Err(e) => {
+                            tracing::warn!("delivering held prompt to pane {session_id}: {e}");
+                            this.note_to_sender(
+                                session_id,
+                                sender,
+                                "prompt_failed",
+                                &format!("prompt for pane {session_id} was not delivered: {e}"),
+                            );
                         }
                     }
-                    Ok(true) => {}
-                    Err(e) => {
-                        tracing::warn!("delivering held prompt to pane {session_id}: {e}");
-                        this.note_to_operator(
-                            session_id,
-                            "prompt_failed",
-                            &format!("prompt for pane {session_id} was not delivered: {e}"),
-                        );
-                    }
-                },
+                }
                 Some(WakeItem::Inbox) => this.paste_inbox(session_id),
                 None => {
                     this.delegation_wake.notify_one();
@@ -12570,7 +12597,7 @@ impl Daemon {
         }
     }
 
-    fn paste_text(self: &Arc<Self>, session_id: u32, text: &str) -> Result<bool> {
+    fn paste_text(self: &Arc<Self>, session_id: u32, text: &str, sender: u32) -> Result<bool> {
         if self.paste_hold_reason(session_id).is_some() {
             return Ok(false);
         }
@@ -12580,7 +12607,7 @@ impl Daemon {
                 return Err(anyhow!("pasting prompt into pane {session_id}: {e}"))
             }
             Err(e) => {
-                self.note_to_operator(session_id, "partial", &format!("partial prompt in pane {session_id}: {e}; inspect its composer before retrying. Pending prompt:\n{text}"));
+                self.note_to_sender(session_id, sender, "partial", &format!("partial prompt in pane {session_id}: {e}; inspect its composer before retrying. Pending prompt:\n{text}"));
                 return Ok(true);
             }
         }
@@ -12593,7 +12620,7 @@ impl Daemon {
                 .map(|e| format!("submitting Enter failed: {e}"))
         };
         if let Some(reason) = partial {
-            self.note_to_operator(session_id, "partial", &format!("partial prompt in pane {session_id}: {reason}; the text remains in its composer, inspect it before retrying. Pending prompt:\n{text}"));
+            self.note_to_sender(session_id, sender, "partial", &format!("partial prompt in pane {session_id}: {reason}; the text remains in its composer, inspect it before retrying. Pending prompt:\n{text}"));
         }
         Ok(true)
     }
@@ -12606,7 +12633,7 @@ struct WakeLane {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum WakeItem {
-    Text(String),
+    Text(String, u32),
     Inbox,
 }
 
@@ -12639,13 +12666,13 @@ mod wake_lane_tests {
             7,
             WakeLane {
                 generation: 11,
-                queue: VecDeque::from([WakeItem::Text("first".into())]),
+                queue: VecDeque::from([WakeItem::Text("first".into(), 0)]),
             },
         )]);
 
         assert_eq!(
             take_wake_item(&mut lanes, 7, 11),
-            Some(WakeItem::Text("first".into()))
+            Some(WakeItem::Text("first".into(), 0))
         );
         assert!(lanes.remove(&7).is_some());
         lanes.insert(
@@ -13583,11 +13610,6 @@ impl Daemon {
             }
         };
         self.record_approval_mode(sid, requested_mode);
-        if created.is_some() {
-            if let Some(warning) = crate::launch::worktree_trust_warning(kind) {
-                self.note_to_operator(sid, "worktree_trust", &warning);
-            }
-        }
         if handoff {
             return Ok(info);
         }
@@ -13608,15 +13630,32 @@ impl Daemon {
                 )),
             };
         }
-        if worktree.is_none() {
-            if let Some(warning) = self.spawn_checkout_warning(sid) {
-                self.note_to_operator(sid, "shared_checkout", &warning);
-            }
-        }
         self.delegation_wake.notify_one();
         self.broadcast_delegation(sid);
         self.broadcast_live_children(caller);
         Ok(info)
+    }
+
+    pub fn spawn_warnings(
+        &self,
+        info: &proto::SessionInfo,
+        isolated: bool,
+    ) -> Vec<proto::PaneSpawnWarning> {
+        let (code, message) = if isolated {
+            (
+                "worktree_trust",
+                crate::launch::worktree_trust_warning(info.agent),
+            )
+        } else {
+            ("shared_checkout", self.spawn_checkout_warning(info.id))
+        };
+        message
+            .into_iter()
+            .map(|message| proto::PaneSpawnWarning {
+                code: code.into(),
+                message,
+            })
+            .collect()
     }
 
     pub fn spawn_checkout_warning(&self, child: u32) -> Option<String> {
@@ -13845,7 +13884,7 @@ impl Daemon {
             Some(round) => format!("{}\n\n{text}", orchestrate::request_header(round)),
             None => text.to_string(),
         };
-        let held = self.swarm_wake_write(target, &framed)?;
+        let held = self.swarm_wake_write(target, &framed, caller)?;
         if source == orchestrate::StatusSource::ProcessOnly {
             match self.db.delegation_bump_round(target, now_ms()) {
                 Ok(Some(round)) => {
@@ -14468,15 +14507,18 @@ impl Daemon {
                 tracing::warn!("persisting the screen excerpt for child result {id} failed: {e}");
             }
         }
+        let recipient = self.live_inbox_recipient(parent);
+        if recipient != parent {
+            self.retain_or_readdress_row(id, "parent_dead");
+        }
         let pending = self.db.inbox_pending_count(parent).unwrap_or(0);
         if pending > self.inbox_pending_max() {
             let why = format!(
                 "backlog: pane {parent} holds {pending} undelivered row(s), over the {} the \
-                 inbox keeps per pane; row #{id} (result) goes to you instead",
+                 inbox keeps per pane; row #{id} (result) waits for pane_wait",
                 self.inbox_pending_max()
             );
-            self.readdress_row_to_operator(id, &why);
-            self.inbox_notify(0, true);
+            self.retain_or_readdress_row(id, &why);
         } else {
             self.broadcast_inbox_row(id);
             if reason == Some("late") || reason == Some("unstamped") {
@@ -14741,7 +14783,7 @@ impl Daemon {
                 blocks,
             });
         }
-        let Some((delivery_id, rows)) = self.db.inbox_reserve(
+        let Some((delivery_id, rows)) = self.db.inbox_reserve_automatic(
             caller,
             now,
             orchestrate::INBOX_BATCH_MAX_ROWS,
@@ -15819,6 +15861,22 @@ impl Daemon {
         if self.refusing_mutations() {
             return;
         }
+        match self.db.inbox_pending_recipients() {
+            Ok(recipients) => {
+                for recipient in recipients {
+                    if self.live_inbox_recipient(recipient) != recipient {
+                        if let Ok(rows) = self.db.inbox_list_for_session(recipient) {
+                            for row in rows.into_iter().filter(|row| {
+                                row.delivered_at.is_none() && row.resolved_at.is_none()
+                            }) {
+                                self.retain_or_readdress_row(row.id, "parent_dead");
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => tracing::warn!("listing pending inbox recipients: {e}"),
+        }
         if let Ok(_guard) = self.temporary_cleanup_lock.try_lock() {
             let pending: Vec<_> = self
                 .pending_cleanup_cancellations
@@ -16339,7 +16397,7 @@ impl Daemon {
             tracing::debug!("holding pane {parent}'s inbox — {why}");
             return;
         }
-        let reserved = self.db.inbox_reserve(
+        let reserved = self.db.inbox_reserve_automatic(
             parent,
             now_ms(),
             orchestrate::INBOX_BATCH_MAX_ROWS,
@@ -16448,9 +16506,8 @@ impl Daemon {
                 row.attempts,
                 orchestrate::PASTE_ATTEMPTS_MAX
             );
-            self.readdress_row_to_operator(row.id, &reason);
+            self.retain_or_readdress_row(row.id, &reason);
         }
-        self.inbox_notify(0, true);
     }
 
     fn paste_went_partial(
@@ -16461,9 +16518,8 @@ impl Daemon {
     ) {
         self.release_reservation(delivery_id);
         for row in rows {
-            self.readdress_row_to_operator(row.id, &format!("partial: {what}"));
+            self.retain_or_readdress_row(row.id, &format!("partial: {what}"));
         }
-        self.inbox_notify(0, true);
     }
 
     fn release_reservation(&self, delivery_id: &str) {
@@ -16472,18 +16528,46 @@ impl Daemon {
         }
     }
 
-    fn readdress_row_to_operator(&self, id: i64, reason: &str) {
-        tracing::warn!("inbox row {id} goes to the operator — {reason}");
-        if let Err(e) = self.db.inbox_readdress_to_operator(id, reason) {
-            tracing::warn!("re-addressing inbox row {id} to the operator: {e}");
-        }
-        self.broadcast_inbox_row(id);
+    fn live_inbox_recipient(&self, to: u32) -> u32 {
+        let live: Vec<_> = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .iter()
+            .filter(|(_, session)| session.state.lock().expect("state lock").is_live())
+            .map(|(id, _)| *id)
+            .collect();
+        self.db.inbox_live_recipient(to, &live).unwrap_or(to)
     }
 
-    fn note_to_operator(self: &Arc<Self>, about: u32, tag: &str, why: &str) {
+    fn retain_or_readdress_row(self: &Arc<Self>, id: i64, reason: &str) {
+        let Ok(Some(row)) = self.db.inbox_get(id) else {
+            return;
+        };
+        let recipient = self.live_inbox_recipient(row.to_session);
+        if let Err(e) = self.db.inbox_route_after_failure(
+            id,
+            recipient,
+            if recipient != row.to_session {
+                "parent_dead"
+            } else {
+                reason
+            },
+        ) {
+            tracing::warn!("routing inbox row {id} to pane {recipient}: {e}");
+            return;
+        }
+        self.broadcast_inbox_row(id);
+        if recipient != row.to_session {
+            self.inbox_notify(recipient, true);
+        }
+    }
+
+    fn note_to_sender(self: &Arc<Self>, about: u32, sender: u32, tag: &str, why: &str) {
         let workspace = self.current_workspace(about).unwrap_or_default();
-        let row = match orchestrate::inbox_row_new(
-            0,
+        // A disappeared sender cannot inspect the composer; its ancestor inherits the note.
+        if let Err(e) = self.inbox_write(
+            sender,
             &workspace,
             Some(about),
             None,
@@ -16491,23 +16575,12 @@ impl Daemon {
             &format!("pane {about}: {tag}"),
             why,
             Vec::new(),
-            false,
-            None,
             Some(tag),
+            None,
+            false,
             true,
         ) {
-            Ok(row) => row,
-            Err(e) => {
-                tracing::warn!("composing the {tag} note about pane {about}: {e}");
-                return;
-            }
-        };
-        match self.db.inbox_insert(&row, now_ms()) {
-            Ok(id) => {
-                self.broadcast_inbox_row(id);
-                self.inbox_notify(0, true);
-            }
-            Err(e) => tracing::warn!("writing the {tag} note about pane {about}: {e}"),
+            tracing::warn!("writing the {tag} note about pane {about}: {e}");
         }
     }
 
@@ -16570,6 +16643,7 @@ impl Daemon {
         provisional: bool,
         ready: bool,
     ) -> Result<i64> {
+        let recipient = self.live_inbox_recipient(to);
         let row = orchestrate::inbox_row_new(
             to,
             workspace,
@@ -16585,16 +16659,19 @@ impl Daemon {
             ready,
         )?;
         let id = self.db.inbox_insert(&row, now_ms())?;
+        if recipient != to {
+            self.retain_or_readdress_row(id, "parent_dead");
+            return Ok(id);
+        }
         let pending = self.db.inbox_pending_count(to).unwrap_or(0);
         if pending > self.inbox_pending_max() {
             let why = format!(
                 "backlog: pane {to} holds {pending} undelivered row(s), over the {} the inbox \
-                 keeps per pane; row #{id} ({}) goes to you instead",
+                 keeps per pane; row #{id} ({}) waits for pane_wait",
                 self.inbox_pending_max(),
                 kind.as_str()
             );
-            self.readdress_row_to_operator(id, &why);
-            self.inbox_notify(0, true);
+            self.retain_or_readdress_row(id, &why);
             return Ok(id);
         }
         self.broadcast_inbox_row(id);
@@ -16923,8 +17000,12 @@ mod swarm_send_inbox_tests {
             "the swarm history table still gets its row"
         );
 
-        let rows = daemon.db.inbox_list_for_session(4242).unwrap();
-        assert_eq!(rows.len(), 1, "Bob's session must have exactly one row");
+        let rows = daemon.db.inbox_list_operator(&info.root_dir).unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "a dead recipient without ancestors reaches the operator"
+        );
         assert_eq!(rows[0].kind, "mail");
         assert!(rows[0].body.contains("ship the thing"));
     }

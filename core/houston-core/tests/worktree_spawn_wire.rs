@@ -938,11 +938,15 @@ async fn provider_worktree_trust(kind: &str, automatic_trust: bool, flag: &str) 
             r.daemon.session_status(id).unwrap(),
             Some(proto::AgentStatus::Spawning)
         );
-        assert!(r
-            .daemon
-            .inbox_rows_for_test(0)
-            .iter()
-            .any(|row| row.kind == "operator_note" && row.body == warning));
+        assert_eq!(
+            response["structuredContent"]["warnings"][0]["code"],
+            "worktree_trust"
+        );
+        assert_eq!(
+            response["structuredContent"]["warnings"][0]["message"],
+            warning
+        );
+        assert!(r.daemon.inbox_rows_for_test(0).is_empty());
         r.daemon
             .delegation_watch_tick_at(1_000_000 + houston_core::orchestrate::DELEGATION_STALL_MS);
         let row = r.daemon.delegation_of(id).unwrap();
@@ -971,13 +975,9 @@ async fn provider_worktree_trust(kind: &str, automatic_trust: bool, flag: &str) 
         assert_eq!(status, 200, "{body}");
         assert_eq!(body["warning"], warning);
         let handoff = body["session_id"].as_u64().unwrap() as u32;
-        assert!(r
-            .daemon
-            .inbox_rows_for_test(0)
-            .iter()
-            .any(|row| row.kind == "operator_note"
-                && row.from_session == Some(handoff)
-                && row.body == warning));
+        assert_eq!(body["warnings"][0]["code"], "worktree_trust");
+        assert_eq!(body["warnings"][0]["message"], warning);
+        assert!(r.daemon.inbox_rows_for_test(0).is_empty());
         r.daemon.close(handoff).unwrap();
     } else {
         let id = spawned_session(&response);
