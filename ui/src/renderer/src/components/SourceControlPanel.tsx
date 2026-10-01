@@ -408,7 +408,7 @@ function SourceControlHeader({ dir, client, tab, onTab, summary, hasPr, prTone, 
   branchText: string
   refresh: () => void
 }): React.JSX.Element {
-  return (<header className="scbar flex-none flex items-center gap-2 h-[var(--h-pane-head)] pl-2.5 pr-1.5 border-b border-b-[var(--divider)] overflow-hidden">
+  return (<header className="scbar flex-none flex items-center gap-2 h-[var(--h-pane-head)] mb-1 pl-2.5 pr-1.5 overflow-hidden">
         <span className="min-w-0 truncate text-[length:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
           {dir ? repoName(dir) : 'No workspace'}
         </span>
