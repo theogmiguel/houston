@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_GRID_ID, gridStorageKey, loadLayout, type LayoutNode } from './layout/tree'
 import { setScmWidth } from './scmPanel'
 import {
@@ -17,6 +17,11 @@ import {
 const WS = '/tmp/project'
 const WS_B = '/tmp/other'
 const GRID_KEY = gridStorageKey(WS, DEFAULT_GRID_ID)
+
+beforeAll(async () => {
+  // Panel routing assertions must not depend on cold module-transform latency.
+  await import('./components/ChangesPane')
+})
 
 beforeEach(() => {
   resetHarness()
@@ -97,9 +102,6 @@ describe('source control panel — shell integration', () => {
   }
 
   async function settlePanel(): Promise<void> {
-    // The pane's lazy chunk loads on first open; a cold import under a
-    // full-suite run measured ~70 of these 5 ms ticks, so 240 is the margin,
-    // not a budget anyone should have to tune again.
     for (let i = 0; i < 240; i++) {
       if (harness!.container.querySelector('[data-testid="changes-pane"]')) return
       await act(async () => {

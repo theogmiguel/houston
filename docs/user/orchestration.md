@@ -156,7 +156,9 @@ Houston never answers a child's question for you.
 
 Overview opens a closable side-panel tab for that orchestrator. Group its children by
 status or worktree, select a terminal, or review changes in the child's checkout.
-Review comments can be sent back to that child. Closing the overview only closes the view.
+Managed worktrees show their branch and changed-file count. Live siblings sharing a
+checkout are identified by role. The latest result excerpt remains available after reopening
+the overview, subject to inbox retention. Review comments can be sent back to that child. Closing the overview only closes the view.
 
 Settled contains ended sessions. A live resumed child stays in Working or Needs you even
 if its previous delegation was marked unknown. Close settled counts only ended children

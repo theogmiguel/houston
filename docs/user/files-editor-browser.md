@@ -7,7 +7,9 @@ editor, and browser.
 
 Press `g` to toggle the side panel. Each workspace keeps its own Source control and
 Files tabs, plus closable orchestration overviews and browser tabs. Source control retains its Changes
-and Pull request views. Drag the panel divider to resize it; double-click resets its width.
+and Pull request views. The pull request summary shows checks, reviews and the merge
+gate. Open pull request details to browse files, leave a review, edit metadata or choose
+additional actions. Drag the panel divider to resize it; double-click resets its width.
 
 Ctrl-click a file path in a terminal to open it in Files at the linked line and column.
 Files uses that session's workspace, including when the session belongs to a different
@@ -48,12 +50,13 @@ Up to eight native webviews can be open at once. A refusal names the limit, curr
 and requested browser; close a browser tab before retrying.
 
 When an agent asks to open its first page, Houston opens a browser tab in the side panel.
-If its browser is already in a hidden tab, show that tab before further agent interaction.
+Navigation to an existing hidden browser reveals that exact tab before loading the page.
 The agent's other browser actions need a visible page first.
 
 Desktop fits the available browser area. Phone previews use a 393 × 852 viewport and
 Tablet previews use 820 × 1180, scaled to fit with the current zoom shown. On hosts
-without device zoom, Phone and Tablet are disabled with an explanatory tooltip.
+without device zoom, including older binaries, Phone and Tablet are disabled and their
+tooltips show the host refusal. Device zoom affects the page only.
 
 The address bar labels HTTPS pages secure, loopback pages local, and other pages not
 secure. This label describes the connection, not whether the page content is trustworthy.

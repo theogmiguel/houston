@@ -1212,6 +1212,10 @@ export class HoustonClient {
     })
   }
 
+  delegationResultsList(parent: number): void {
+    this.send({ type: 'delegation_results_list', parent })
+  }
+
   inboxList(workspace: string): void {
     this.send({ type: 'inbox_list', workspace })
   }

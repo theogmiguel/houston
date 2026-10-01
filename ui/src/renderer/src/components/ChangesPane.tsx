@@ -46,6 +46,8 @@ import {
   IconExternal,
   IconLoaderCircle,
   IconShieldAlert,
+  IconFile,
+  IconEllipsis,
   IconSparkles
 } from './icons'
 import { HIT_TARGET_28 } from './hitTarget'
@@ -80,6 +82,7 @@ export interface ChangesSummary {
 }
 
 export interface ChangesPaneProps {
+  compact?: boolean
   client: HoustonClient | null
   dir: string | null
   onOpenFileInEditor?: (absPath: string) => void
@@ -204,6 +207,7 @@ function ChangesStrip({
 }
 
 function ChangesFileList({
+  compact = false,
   files,
   rows,
   branch,
@@ -226,6 +230,7 @@ function ChangesFileList({
   bulkForGroup,
   setStatusError
 }: {
+  compact?: boolean
   files: GitFileStatus[] | null
   rows: ChangeRow[]
   branch: string | null
@@ -293,8 +298,8 @@ function ChangesFileList({
         const bulkPaths = groupBulkPaths(group.rows)
         return (
           <div key={group.group}>
-            <div className={`${SECTION_HEAD_CLS} ${group.group === 'conflicted' ? 'text-[var(--warn)]' : ''}`}>
-              {GROUP_LABEL[group.group]}
+            <div className={`changes-group-head ${SECTION_HEAD_CLS} ${group.group === 'conflicted' ? 'text-[var(--warn)]' : ''}`}>
+              {compact && group.group === 'unstaged' ? 'Changes' : GROUP_LABEL[group.group]}
               <span className="ml-auto font-mono font-medium text-[length:var(--tr-text-xs)] text-[var(--text-faint)] tabular-nums">
                 {group.rows.length}
               </span>
@@ -314,7 +319,7 @@ function ChangesFileList({
                   {bulkLabelFor(group.group)}
                 </button>
               </Tooltip>
-              {group.group === 'unstaged' && (
+              {!compact && group.group === 'unstaged' && (
                 <Tooltip
                   label={stageAll.length === 0 ? (rows.length === 0 ? 'Nothing to stage' : 'Every unstaged file here is a blocked path — its contents were never shown') : undefined}
                   className="inline-flex"
@@ -413,7 +418,7 @@ function CommitBox({
   hasChanges: boolean
 }): React.JSX.Element {
   return (
-    <div className="flex-none flex flex-col gap-[var(--space-2)] p-[var(--space-2-5)] border-t border-t-[var(--border)] bg-[var(--material-shell-bg)]">
+    <div className="changes-commit flex-none flex flex-col gap-[var(--space-2)] p-[var(--space-2-5)] border-t border-t-[var(--border)] bg-[var(--material-shell-bg)]">
       {hasChanges && <div className="flex items-center gap-1.5">
         <textarea
           data-testid="changes-commit-message"
@@ -537,7 +542,8 @@ export function ChangesPane({
   onReviewPacket,
   review = null,
   onSummary,
-  refreshSignal = 0
+  refreshSignal = 0,
+  compact
 }: ChangesPaneProps): React.JSX.Element {
   const repoDir = dir
 
@@ -836,6 +842,7 @@ export function ChangesPane({
     <section
       className={`changes-pane flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden ${MATERIAL_CLS.shell}`}
       data-testid="changes-pane"
+      data-compact={compact}
       data-state={paneState}
       data-reviewing={reviewing ? 'true' : undefined}
       {...materialAttrs('shell')}
@@ -910,6 +917,8 @@ export function ChangesPane({
     />
   )
 
+  const stripChrome = <ChangesToolbar compact={compact === true} strip={strip} />
+
   const notice = <ReviewNoticeLine reviewNotice={reviewNotice} />
   const errorLine = (text: string, testid: string): React.JSX.Element => (
     <ScmErrorLine text={text} testId={testid} />
@@ -917,6 +926,7 @@ export function ChangesPane({
 
   const fileList = (
     <ChangesFileList
+      compact={compact}
       files={files}
       rows={rows}
       branch={branch}
@@ -983,7 +993,7 @@ export function ChangesPane({
   const body =
     paneState === 'loading' || paneState === 'empty' ? (
       <>
-        {strip}
+        {stripChrome}
         <ToolsNoticeLine notice={toolsNotice} error={toolsError} />
         {commitError ? errorLine(commitError, 'changes-commit-error') : null}
         {fileList}
@@ -992,7 +1002,7 @@ export function ChangesPane({
       </>
     ) : (
       <>
-        {strip}
+        {stripChrome}
         {notice}
         <ToolsNoticeLine notice={toolsNotice} error={toolsError} />
         {reviewError ? errorLine(reviewError, 'changes-review-error') : null}
@@ -1091,7 +1101,7 @@ function FileRow({
     )
   return (
     <div
-      className={`${SCM_ROW_CLS} ${
+      className={`changes-file-row ${SCM_ROW_CLS} ${
         selected
           ? 'bg-[var(--selected-fill)] text-[var(--text-primary)]'
           : ''
@@ -1112,16 +1122,18 @@ function FileRow({
         onClick={onSelect}
         className="flex-1 min-w-0 flex items-center gap-2 bg-transparent border-0 p-0 text-left text-inherit"
       >
-        <span className={`flex-none w-[14px] text-center font-mono text-[length:var(--tr-text-xs)] [font-weight:var(--tr-text-label-weight)] ${MARK_TONE[row.state] ?? MARK_TONE[row.tag]}`} aria-hidden>
+        <span className="changes-file-glyph"><Icon glyph={IconFile} role="label" /></span>
+        <span className={`changes-file-mark flex-none w-[14px] text-center font-mono text-[length:var(--tr-text-xs)] [font-weight:var(--tr-text-label-weight)] ${MARK_TONE[row.state] ?? MARK_TONE[row.tag]}`} aria-hidden>
           {row.blocked ? <Icon glyph={IconShieldAlert} role="label" /> : MARK_GLYPH[row.state]}
         </span>
-        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[length:var(--tr-text-xs)]">
+        <span className="changes-file-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[length:var(--tr-text-xs)]">
           <span className="text-[var(--text-faint)] [@container_(max-width:420px)]:hidden">{row.dir}</span>
-          {row.name}
+          <span>{row.name}</span>
         </span>
       </button>
       <StageToggleButton stage={stage} onStageToggle={onStageToggle} />
       {counts}
+      <span aria-hidden className={`changes-file-status font-mono ${MARK_TONE[row.state] ?? MARK_TONE[row.tag]}`}>{MARK_GLYPH[row.state]}</span>
       <button
         type="button"
         data-testid="changes-row-menu"
@@ -1205,4 +1217,11 @@ function MenuItem({
       </button>
     </Tooltip>
   )
+}
+
+
+function ChangesToolbar({ compact, strip }: { compact: boolean; strip: React.ReactNode }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  if (!compact) return <>{strip}</>
+  return <div className="changes-compact-tools"><Tooltip label="Git actions and diff scope"><button aria-label="Git actions and diff scope" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><Icon glyph={IconEllipsis} role="ui" /></button></Tooltip>{expanded && <div className="changes-compact-tools-body">{strip}</div>}</div>
 }

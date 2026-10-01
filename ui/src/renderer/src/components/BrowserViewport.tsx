@@ -33,6 +33,7 @@ export interface BrowserViewportProps {
   noActiveTab?: boolean
   exemptFromReason?: NativeSuppressionReason
   onDetachedChange?: (detached: boolean) => void
+  onReady?: () => void
   onMountFailure?: (id: string) => void
   onError?: (
     context: 'mount' | 'resize' | 'setVisible' | 'destroy',
@@ -83,6 +84,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
       noActiveTab,
       exemptFromReason,
       onDetachedChange,
+      onReady,
       onMountFailure,
       onError,
       children
@@ -96,6 +98,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
       fullscreen,
       containerRef,
       workspaceId: workspaceDir,
+      onReady,
       onMountFailure,
       onError
     })

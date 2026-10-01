@@ -76,3 +76,12 @@ body {
   .children-split.auto > .children-column { display: none; }
   .children-split.auto > .children-strip { display: flex; }
 }
+
+.children-column .children-open{min-height:19px}
+.children-column .children-slot{width:26px;position:relative}
+.children-column .children-actions{position:absolute;right:0;top:0;background:var(--card-bg)}
+.children-column .children-row.selected .children-actions{background:var(--card-hover)}
+.children-status[data-state="done"] .agent-dot{background:var(--ok)}
+.children-status[data-state="failed"] .agent-dot{background:var(--stop)}
+
+.children-status{display:inline-flex;flex:none}

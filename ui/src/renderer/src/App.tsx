@@ -69,7 +69,7 @@ import { stopConfirmCopy } from "./components/daemonStopConfirmCopy";
 import { QuitAndStopDaemonConfirm } from "./components/QuitAndStopDaemonConfirm";
 import { useBrowserFocus } from "./houston/browserFocus";
 import {
-  requestBrowserPaneLoad,
+  reuseSideBrowser,
   useBrowserOpenRequest,
 } from "./houston/browserOpenRequest";
 import {
@@ -217,7 +217,7 @@ import {
 } from "./scmPanel";
 import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
-import { SIDE_OPEN_EVENT, SIDE_SELECT_EVENT, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, loadSideState, type SideOpen } from "./sidePanel";
+import { reviewCheckoutDir, SIDE_OPEN_EVENT, SIDE_SELECT_EVENT, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, loadSideState, type SideOpen } from "./sidePanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
@@ -2326,7 +2326,7 @@ export function App(): React.JSX.Element {
   // The panel reviews the focused pane's workspace in All view, and the
   // selected workspace otherwise — never a session's dir left over from
   // another workspace, which would point the panel at the wrong repo.
-  const scmDir = sideReview?.project_dir ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
+  const scmDir = reviewCheckoutDir(sideReview) ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   // Editing or browsing from the panel must land where the user can see it:
   // in All view the focused pane's repo has no visible grid, so reveal it
   // first rather than inserting into a hidden tree.
@@ -2766,12 +2766,7 @@ export function App(): React.JSX.Element {
   });
   useBrowserOpenRequest((workspaceDir, url, surfaceId) => {
     if (!workspacesRef.current.some((w) => w.path === workspaceDir)) return;
-    const tab = loadSideState(workspaceDir).tabs.find((tab) => tab.kind === "browser" && (surfaceId === undefined || tab.id === surfaceId));
-    if (tab?.kind === "browser") {
-      openSideBrowser(tab.id, url, workspaceDir);
-      if (!requestBrowserPaneLoad(tab.id, url)) setSideRequest({ kind: "browser", id: tab.id, url, workspace: workspaceDir });
-      return;
-    }
+    if (reuseSideBrowser(workspaceDir, url, surfaceId)) return;
     openBrowserPane(workspaceDir, null, url);
   });
 

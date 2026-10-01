@@ -368,6 +368,7 @@ export function SourceControlPanel({
               onOpenUrlInPane={onOpenUrlInPane}
               onReviewPacket={onReviewPacket}
               review={review}
+              compact={embedded}
               onSummary={onSummary}
               refreshSignal={changesRefresh}
             />
@@ -385,6 +386,7 @@ export function SourceControlPanel({
                 dir={dir}
                 onOpenUrlInPane={onOpenUrlInPane}
                 onShowChanges={() => onTab('changes')}
+                compact={embedded}
                 active={tab === 'pull-request'}
                 refreshSignal={prRefresh}
                 onPrPresenceChange={onPrPresenceChange}

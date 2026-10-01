@@ -9,10 +9,10 @@ export const SIDE_OPEN_EVENT = 'houston:side-open'
 export const TERMINAL_FOCUS_EVENT = 'houston:terminal-focus'
 export const SIDE_BROWSER_MOVE_EVENT = 'houston:side-browser-move'
 export const SIDE_SELECT_EVENT = 'houston:side-select'
-export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string }
+export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string; revealOnly?: boolean }
 
-export function openSideBrowser(id: string, url: string, workspace: string): void {
-  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'browser', id, url, workspace } }))
+export function openSideBrowser(id: string, url: string, workspace: string, revealOnly = false): void {
+  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'browser', id, url, workspace, ...(revealOnly ? { revealOnly: true } : {}) } }))
 }
 
 export function moveBrowserToGrid(id: string, url: string, workspace: string): void {
@@ -44,4 +44,8 @@ export function loadSideState(workspace: string): SideState {
 
 export function saveSideState(workspace: string, state: SideState): void {
   localStorage.setItem(`tr-side:${workspace}`, JSON.stringify(state))
+}
+
+export function reviewCheckoutDir(child: { project_dir: string; worktree?: { path: string } | null } | null): string | undefined {
+  return child?.worktree?.path ?? child?.project_dir
 }

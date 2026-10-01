@@ -3,11 +3,12 @@ import { Tooltip } from './Tooltip'
 import { useEffect, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
+import type { DelegationResult } from '../houston/generated/DelegationResult'
 import type { InboxRow } from '../houston/generated/InboxRow'
 import { selectOverviewChild } from '../sidePanel'
 import { childGroup, childStateWord, delegationAge } from './ChildrenRoster'
 import { sessionIdentity } from './DelegationCard'
-import { IconAgent, IconEye, IconGitBranch, IconStopCircle, IconRespawn } from './icons'
+import { IconAgent, IconEye, IconGitBranch, IconStopCircle, IconRespawn, IconCornerDownRight } from './icons'
 import { StatusDot } from './SessionPane'
 import { BTN_GHOST, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
 
@@ -20,6 +21,7 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
 }): React.JSX.Element {
   const parent = sessions.get(parentId)
   const children = [...sessions.values()].filter((child) => child.spawned_by === parentId)
+  const [results, setResults] = useState<DelegationResult[]>([])
   const [rows, setRows] = useState<InboxRow[]>([])
   const [now, setNow] = useState(Date.now)
   const [counts, setCounts] = useState(new Map<string, number>())
@@ -30,13 +32,14 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
     return () => clearInterval(tick)
   }, [])
   useEffect(() => {
-    const workspaces = new Set([parent?.project_dir, ...children.map((child) => child.project_dir)].filter((dir): dir is string => Boolean(dir)))
+    const workspaces = new Set([parent?.project_dir, ...children.flatMap((child) => [child.project_dir, child.worktree?.path])].filter((dir): dir is string => Boolean(dir)))
     const offRows = client.subscribe('inbox_rows', (message) => {
       if (!workspaces.has(message.workspace)) return
       setRows((current) => [...current.filter((row) => row.workspace !== message.workspace), ...message.rows])
     })
     const offChanged = client.subscribe('inbox_changed', (message) => {
       if (!workspaces.has(message.workspace)) return
+      client.delegationResultsList(parentId)
       setRows((current) => [...current.filter((row) => row.id !== message.row.id), message.row])
     })
     const offGit = client.subscribe('git_status', (message) => {
@@ -45,25 +48,36 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
     })
     for (const workspace of workspaces) { client.inboxList(workspace); client.gitStatus(workspace, null) }
     return () => { offRows(); offChanged(); offGit() }
-  }, [client, parent?.project_dir, children.map((child) => child.project_dir).sort().join('\0')])
+  }, [client, parentId, parent?.project_dir, children.flatMap((child) => [child.project_dir, child.worktree?.path ?? '']).sort().join('\0')])
+  useEffect(() => {
+    setResults([])
+    const refresh = (): void => client.delegationResultsList(parentId)
+    const off = client.subscribe('delegation_results', (message) => {
+      if (message.parent === parentId) setResults(message.results)
+    })
+    refresh()
+    return () => { off() }
+  }, [client, parentId, children.map((child) => `${child.id}:${child.delegation?.state}:${child.delegation?.result_staged}`).join(',')])
   const childIds = new Set(children.map((child) => child.id))
   const addressed = rows.filter((row) => row.to_session === 0 && row.resolved_at == null && (row.original_to === parentId || (row.from_session != null && childIds.has(row.from_session))))
-  const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? a.project_dir.localeCompare(b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
+  const done = children.filter((child) => !isLive(child.state) && child.delegation?.state !== 'failed').length
+  const failed = children.filter((child) => !isLive(child.state) && child.delegation?.state === 'failed').length
+  const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
   const action = (label: string, onClick: () => void): React.JSX.Element => <button className={`btn ${BTN_GHOST}`} onClick={onClick}>{label}</button>
   return <div className="overview">
     <header className="overview-head"><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <IconAgent agent={parent.detected_agent ?? parent.agent} className="w-3.5 h-3.5 flex-none" />}<strong>{parent?.title ?? `Orchestrator ${parentId}`}</strong><span className="font-mono text-[var(--text-faint)]">pane {parentId}</span>{action('Show terminal', () => selectOverviewChild(parentId, null))}</header>
     {(!parent || !isLive(parent.state)) && <div className="overview-summary">Orchestrator ended.{action('Close', onClose)}</div>}
-    <div className="overview-summary"><strong>{children.length}</strong><span className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {children.filter((child) => childGroup(child) === 'Settled').length} settled</span><span className="flex-1" /><button aria-pressed={groupBy === 'status'} onClick={() => setGroupBy('status')}>Status</button><button aria-pressed={groupBy === 'worktree'} onClick={() => setGroupBy('worktree')}>Worktree</button></div>
-    <div className="overview-bar">{(['Needs you', 'Working', 'Settled'] as const).map((group) => <i key={group} data-group={group} style={{ flex: children.filter((child) => childGroup(child) === group).length }} />)}</div>
-    <div className="overview-cards">{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={rows.filter((row) => row.from_session === child.id && row.kind === 'result').sort((a, b) => Number(b.created_at - a.created_at))[0]} now={now} counts={counts} client={client} onReview={onReview} />)}</div>
+    <div className="overview-summary"><strong>{children.length}</strong><span className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</span><span className="flex-1" /><button aria-pressed={groupBy === 'status'} onClick={() => setGroupBy('status')}>Status</button><button aria-pressed={groupBy === 'worktree'} onClick={() => setGroupBy('worktree')}>Worktree</button></div>
+    <div className="overview-bar">{(['Needs you', 'Working', 'Done', 'Failed'] as const).map((group) => <i key={group} data-group={group} style={{ flex: group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length }} />)}</div>
+    <div className="overview-cards">{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={results.find((result) => result.child === child.id)} now={now} counts={counts} client={client} onReview={onReview} />)}</div>
     {addressed.length > 0 && <section aria-label="Addressed to you"><h3 className="overview-summary">Addressed to you</h3>{addressed.map((row) => <article key={String(row.id)} className="overview-child"><div className="overview-task">{row.summary || row.body}</div><div className="overview-actions">{action('Acknowledge', () => client.inboxAck(row.id))}{action('Resolve', () => client.inboxResolve(row.id))}</div></article>)}</section>}
   </div>
 }
 
 function CheckoutChips({ child, parent, shared, count }: { child: SessionInfo; parent?: SessionInfo; shared?: SessionInfo; count?: number }): React.JSX.Element {
   const separate = child.project_dir !== parent?.project_dir
-  const checkout = shared ? `shares checkout with ${shared.delegation?.role ?? sessionIdentity(shared)}` : separate ? 'Separate checkout' : 'shares checkout with orchestrator'
-  return <div className="overview-chips">{separate && <span>{child.project_dir}</span>}<span>{checkout}</span>{separate && count !== undefined && <span>{count} changed files</span>}</div>
+  const checkout = child.worktree?.branch
+  return <div className="overview-chips">{separate && <span>{child.project_dir}</span>}{checkout && <span className="overview-branch"><Icon glyph={IconGitBranch} role="label" />{checkout}</span>}{shared && <span>shares checkout with {shared.delegation?.role ?? sessionIdentity(shared)}</span>}{child.worktree && count !== undefined && <span>{count} changed files</span>}</div>
 }
 
 function OverviewChildCard({ child, parent, parentId, children, result, now, counts, client, onReview }: {
@@ -71,7 +85,7 @@ function OverviewChildCard({ child, parent, parentId, children, result, now, cou
   parent?: SessionInfo
   parentId: number
   children: SessionInfo[]
-  result?: InboxRow
+  result?: DelegationResult
   now: number
   counts: ReadonlyMap<string, number>
   client: HoustonClient
@@ -81,16 +95,21 @@ function OverviewChildCard({ child, parent, parentId, children, result, now, cou
       const needs = childGroup(child) === 'Needs you'
       const settled = childGroup(child) === 'Settled'
 
-      const shared = children.find((other) => other.id !== child.id && other.project_dir === child.project_dir)
+      const shared = isLive(child.state) ? children.find((other) => other.id !== child.id && isLive(other.state) && child.checkout_root != null && other.checkout_root === child.checkout_root) : undefined
       return <article key={child.id} className={`overview-child ${needs ? 'needs' : ''}`}>
-        <div className="overview-child-head"><StatusDot live status={needs ? 'needs-input' : settled ? 'idle' : child.status} /><IconAgent agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state">{childStateWord(child)}</span><span className="age">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span></div>
+        <OverviewChildHead child={child} needs={needs} settled={settled} now={now} />
         <div className="overview-task">{child.title}</div>
-        <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.project_dir)} />
+        <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.worktree?.path ?? child.project_dir)} />
         <div className="overview-actions">{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</div>
-        <div className="overview-result"><span>{childResultExcerpt(child, result, needs)}</span>{needs && <button className={`btn border ${BTN_PRIMARY}`} onClick={() => selectOverviewChild(parentId, child.id)}>Answer</button>}</div>
+        <div className="overview-result">{needs && <Icon glyph={IconCornerDownRight} role="label" />}<span>{childResultExcerpt(child, result, needs)}</span>{needs && <button className={`btn border ${BTN_PRIMARY}`} onClick={() => selectOverviewChild(parentId, child.id)}>Answer</button>}</div>
       </article>
 }
 
-function childResultExcerpt(child: SessionInfo, result: InboxRow | undefined, needs: boolean): string {
-  return result?.summary || result?.body || (needs ? child.delegation?.hold_reason : null) || 'No result excerpt available'
+function childResultExcerpt(child: SessionInfo, result: DelegationResult | undefined, needs: boolean): string {
+  return (needs ? child.delegation?.hold_reason : null) || result?.excerpt || result?.summary || 'no result yet'
+}
+
+
+function OverviewChildHead({ child, needs, settled, now }: { child: SessionInfo; needs: boolean; settled: boolean; now: number }): React.JSX.Element {
+  return <div className="overview-child-head"><span className="overview-dot" data-state={settled ? child.delegation?.state : undefined}><StatusDot live status={needs ? 'needs-input' : settled ? 'idle' : child.status} /></span><IconAgent agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state" data-state={needs ? 'needs_input' : childStateWord(child)}>{needs ? 'Needs you' : childStateWord(child).replace(/^./, (letter) => letter.toUpperCase())}</span><span className="age">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span></div>
 }

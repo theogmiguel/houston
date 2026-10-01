@@ -17,7 +17,7 @@ import { META_ROW_CLS, SCM_CARD_ATTRS, SCM_CARD_CLS, SECTION_HEAD_CLS } from './
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../Disclosure'
 import { Icon } from '../Icon'
-import { IconLoaderCircle, IconPencil } from '../icons'
+import { IconLoaderCircle, IconPencil, IconCheck, IconEllipsis } from '../icons'
 import { Tooltip } from '../Tooltip'
 import { prDecisionLabel } from './changes'
 import { SPIN_CLASS } from './DiffBody'
@@ -45,6 +45,7 @@ export interface PullRequestTabProps {
   active?: boolean
   onPrPresenceChange?: (exists: boolean, tone?: PrPresenceTone) => void
   /** A changing counter from the panel header's Refresh; re-reads the detail. */
+  compact?: boolean
   refreshSignal?: number
 }
 
@@ -680,6 +681,33 @@ function PrNotices({
   )
 }
 
+function PrCompactSummary({ link, detail, pr, method, onOpenUrlInPane, onDetails, linkMessage, actionBar }: {
+  link: PullRequestLink
+  detail: PrDetail
+  pr: PrDetailController
+  method: PrMergeMethod
+  onOpenUrlInPane?: (url: string) => void
+  onDetails: () => void
+  linkMessage: React.ReactNode
+  actionBar: React.ReactNode
+}): React.JSX.Element {
+  const number = link.number
+  const busy = pr.write.busy !== null
+  const mergeReason = detail.merge_disabled_reason ?? null
+  return <div className="pr-compact" data-testid="pr-tab">
+    <PrNotices pr={pr} linkMessage={linkMessage} />
+    <div className="pr-compact-content">
+      <div className="pr-compact-title"><strong data-testid="pr-title">{link.title ?? `Pull request #${number}`}</strong><Tooltip label="Pull request details and actions"><button className="pr-compact-details" aria-label="Pull request details and actions" onClick={() => onDetails()}><Icon glyph={IconEllipsis} role="ui" /></button></Tooltip></div>
+      <div className="pr-compact-sub" data-testid="pr-sub"><span className={`pr-compact-state ${STATE_PILL[link.state]}`}>{stateLabel(link)}</span><span>#{number}</span><span>{detail.head_ref} → {detail.base_ref}</span><span>· {detail.commit_count} {detail.commit_count === 1 ? 'commit' : 'commits'}</span></div>
+      <h3 className="pr-compact-group">Checks <span>{detail.checks.filter((check) => check.state === 'passing').length}/{detail.checks.length}</span></h3>
+      {detail.checks.map((check, index) => <div className="pr-compact-check" data-testid="pr-check-row" key={`${check.name}-${index}`}><span className={check.state === 'passing' ? 'text-[var(--ok)]' : `pr-compact-check-dot ${CHECK_DOT[check.state]}`}>{check.state === 'passing' && <Icon glyph={IconCheck} role="label" />}</span><span className="truncate">{check.name}</span><span className="pr-compact-duration">{checkMeta(check)}</span></div>)}
+      <h3 className="pr-compact-group">Reviews <span>{detail.reviews_total}</span></h3>
+      {detail.reviews_total > 0 ? <PrReviews detail={detail} /> : <div className="pr-compact-check text-[var(--text-muted)]">No reviews yet</div>}
+    </div>
+    {link.state === 'open' && !link.is_draft ? <footer className="pr-compact-footer"><span className="truncate" data-testid="pr-merge-reason">{mergeReason}</span><button className={`btn ${BTN_GHOST}`} disabled={!onOpenUrlInPane} onClick={() => onOpenUrlInPane?.(link.url)}>Open on GitHub</button><Tooltip label={mergeReason ?? undefined}><button className={`btn ${BTN_PRIMARY}`} data-testid="pr-merge" disabled={mergeReason !== null || busy || pr.mergeBusy} onClick={() => pr.merge(number, method, detail.head_sha)}>Merge</button></Tooltip></footer> : actionBar}
+  </div>
+}
+
 function PrDetailView({
   view,
   link,
@@ -689,8 +717,10 @@ function PrDetailView({
   setMethod,
   onOpenUrlInPane,
   onBrowse,
-  linkMessage
+  linkMessage,
+  compact
 }: {
+  compact: boolean
   view: PrDetailView
   link: PullRequestLink
   detail: PrDetail
@@ -701,6 +731,7 @@ function PrDetailView({
   onBrowse: () => void
   linkMessage: React.ReactNode
 }): React.JSX.Element {
+  const [showDetails, setShowDetails] = useState(false)
   const [pane, setPane] = useState<'summary' | 'files'>('summary')
   const [drafts, setDrafts] = useState<PrReviewDraft[]>([])
   const [reviewVerdict, setReviewVerdict] = useState<PrReviewVerdict>('comment')
@@ -779,6 +810,8 @@ function PrDetailView({
     />
   )
 
+  if (compact && !showDetails) return <PrCompactSummary link={link} detail={detail} pr={pr} method={method} onOpenUrlInPane={onOpenUrlInPane} onDetails={() => setShowDetails(true)} linkMessage={linkMessage} actionBar={actionBar} />
+
   return (
     <div className="flex-1 min-h-0 flex flex-col" data-testid="pr-tab">
       <div className="flex-none flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)]">
@@ -821,6 +854,7 @@ function PrDetailView({
           {detail.mergeable === 'conflicting' ? 'conflicts' : ''}
         </span>
       </div>
+      {compact && <button className={`btn ${BTN_GHOST}`} onClick={() => setShowDetails(false)}>Back to summary</button>}
       <PrNotices pr={pr} linkMessage={linkMessage} />
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
         {pane === 'files' ? (
@@ -931,7 +965,8 @@ export function PullRequestTab({
   onShowChanges,
   active = true,
   onPrPresenceChange,
-  refreshSignal = 0
+  refreshSignal = 0,
+  compact = false
 }: PullRequestTabProps): React.JSX.Element {
   const pr = usePrDetail(client, dir, active, refreshSignal)
   const [browsing, setBrowsing] = useState(false)
@@ -1000,6 +1035,7 @@ export function PullRequestTab({
   }
   return (
     <PrDetailView
+      compact={compact}
       view={view}
       link={view.link}
       detail={view.detail}

@@ -123,6 +123,7 @@ export interface UseBrowserHostOptions {
   fullscreen: boolean
   containerRef: React.RefObject<HTMLElement | null>
   workspaceId?: string | null
+  onReady?: () => void
   onMountFailure?: (id: string) => void
   onError?: (context: 'mount' | 'resize' | 'setVisible' | 'destroy', id: string, err: unknown) => void
 }
@@ -174,7 +175,9 @@ export function useBrowserHost(options: UseBrowserHostOptions): UseBrowserHostRe
     engineRef.current = engine
     setDetached(false)
 
-    void engine.mount(url, fullscreen, measure())
+    void engine.mount(url, fullscreen, measure()).then(() => {
+      if (engineRef.current === engine && engine.status === 'mounted') options.onReady?.()
+    })
 
     const observer = new ResizeObserver(() => engine.onResizeObserverBurst(measure))
     observer.observe(container)

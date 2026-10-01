@@ -292,6 +292,7 @@ function render(client: FakeClient | null, opts: Record<string, unknown> = {}): 
         client={client as unknown as HoustonClient | null}
         dir={(opts.dir as string | null | undefined) ?? '/repo'}
         active={(opts.active as boolean | undefined) ?? true}
+        compact={opts.compact as boolean | undefined}
         refreshSignal={(opts.refreshSignal as number | undefined) ?? 0}
         onOpenUrlInPane={opts.onOpenUrlInPane as ((url: string) => void) | undefined}
         onShowChanges={opts.onShowChanges as (() => void) | undefined}
@@ -306,6 +307,7 @@ function mount(
     client?: FakeClient | null
     dir?: string | null
     active?: boolean
+    compact?: boolean
     refreshSignal?: number
     onOpenUrlInPane?: (url: string) => void
     onShowChanges?: () => void
@@ -1134,5 +1136,21 @@ describe('PullRequestTab — stacks', () => {
     click(q('[data-testid="pr-stack-merge"]'))
     expect(client.prStackMergeCalls).toHaveLength(0)
     expect(q('[data-testid="pr-stack-merge"]')!.getAttribute('disabled')).not.toBeNull()
+  })
+})
+
+
+describe('compact side panel pull request', () => {
+  it('shows checks and the merge gate, with the complete workflow available through details', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg())
+    expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
+    expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
+    expect(q('[data-testid="pr-pane-files"]')).toBeNull()
+    click(q('[aria-label="Pull request details and actions"]'))
+    expect(q('[data-testid="pr-pane-files"]')).not.toBeNull()
+    expect(q('[data-testid="pr-actions-menu"]')).not.toBeNull()
+    click(qa('button').find((button) => button.textContent === 'Back to summary')!)
+    expect(q('[data-testid="pr-pane-files"]')).toBeNull()
   })
 })

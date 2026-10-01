@@ -52,7 +52,7 @@ import {
 import { useBrowserNav } from './browserNav'
 import { tabsStorageKey } from './browserTabsKey'
 import { Icon } from './Icon'
-import { BROWSER_DEVICES, browserSecurity, fitBrowserDevice, type BrowserDevice } from './browserDevices'
+import { browserSecurity, useBrowserDevice, type BrowserDevice } from './browserDevices'
 
 interface Props {
   node: BrowserNode
@@ -108,7 +108,6 @@ export function BrowserPane({
   onMoveToGrid,
   focusUrlRequest = 0
 }: Props): React.JSX.Element {
-  const [device, setDevice] = useState<BrowserDevice>('desktop')
   const stageRef = useRef<HTMLDivElement>(null)
   const [stage, setStage] = useState({ width: 0, height: 0 })
   useEffect(() => {
@@ -120,8 +119,7 @@ export function BrowserPane({
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
-  const size = BROWSER_DEVICES[device]
-  const zoom = fitBrowserDevice(device, stage.width, stage.height)
+  const { device, setDevice, size, zoom, deviceRefusal, nativeReady, onReady } = useBrowserDevice(node.id, stage)
   const tabsKey = tabsStorageKey(node.id)
   const [restored] = useState(() => {
     const saved = seedTabs(tabsKey, node.url)
@@ -458,7 +456,7 @@ export function BrowserPane({
         </div>
       )}
       <div className="browser-devrow">
-        <div className="browser-device-buttons" role="group" aria-label="Device preset">{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={isTauri() && value !== 'desktop' ? `${label} unavailable: native viewport zoom is not supported` : label}><button className={NAV_BTN_CLS} aria-label={label} aria-pressed={device === value} disabled={isTauri() && value !== 'desktop'} onClick={() => setDevice(value)}><Icon glyph={glyph} role="label" /></button></Tooltip>)}</div>
+        <DevicePresetButtons device={device} onDevice={setDevice} refusal={deviceRefusal} ready={nativeReady} />
         <span className="browser-caption">{size ? `${size.width} × ${size.height} · ${Math.round(zoom * 100)}%` : 'fit · 100%'}</span>
       </div>
       <PickerStrip id={node.id} controller={picker} />
@@ -479,6 +477,7 @@ export function BrowserPane({
           onNavigate={openUrl}
         >
           <BrowserViewport
+            onReady={onReady}
             id={node.id}
             workspaceDir={workspaceDir}
             url={(active.url ?? tabs.find((t) => t.url !== null)?.url) as string}
@@ -607,4 +606,9 @@ export function BrowserPane({
       </div>
     </section>
   )
+}
+
+
+function DevicePresetButtons({ device, onDevice, refusal, ready }: { device: BrowserDevice; onDevice: (device: BrowserDevice) => void; refusal: string | null; ready: boolean }): React.JSX.Element {
+  return <div className="browser-device-buttons" role="group" aria-label="Device preset">{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={refusal && value !== 'desktop' ? `${label} unavailable: ${refusal}` : label}><button className={NAV_BTN_CLS} aria-label={label} aria-pressed={device === value} disabled={value !== 'desktop' && (refusal != null || (isTauri() && !ready))} onClick={() => onDevice(value)}><Icon glyph={glyph} role="label" /></button></Tooltip>)}</div>
 }
