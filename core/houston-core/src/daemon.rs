@@ -970,6 +970,8 @@ pub struct RoutinePatch {
     pub isolate: Option<bool>,
 }
 
+type SpawnObserver = Arc<dyn Fn(u32) + Send + Sync>;
+
 pub struct Daemon {
     pub token: String,
     pub mcp_creds: crate::mcp_creds::Registry,
@@ -1042,8 +1044,10 @@ pub struct Daemon {
     stdin_partial_after: Mutex<HashMap<u32, usize>>,
     inbox_pending_max: AtomicU32,
     inbox_wake: Mutex<HashMap<u32, Arc<tokio::sync::Notify>>>,
-    inbox_waiting: Mutex<HashSet<u32>>,
+    background_holds: Mutex<HashMap<u32, (u32, u64)>>,
+    inbox_waiting: Mutex<HashMap<u32, Arc<InboxWaitState>>>,
     temporary_cleanup_lock: Mutex<()>,
+    spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
@@ -2292,8 +2296,10 @@ impl Daemon {
             stdin_partial_after: Mutex::new(HashMap::new()),
             inbox_pending_max: AtomicU32::new(orchestrate::INBOX_PENDING_PER_PANE_MAX),
             inbox_wake: Mutex::new(HashMap::new()),
-            inbox_waiting: Mutex::new(HashSet::new()),
+            background_holds: Mutex::new(HashMap::new()),
+            inbox_waiting: Mutex::new(HashMap::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
@@ -3741,9 +3747,11 @@ impl Daemon {
         let pending = self.pending_handback(parent, child);
         let owed = self.inbox_owed(parent, child);
         let capability = self.capability_note_of(child);
-        let hold = (owed.owed > 0)
-            .then(|| self.paste_hold_reason(parent))
-            .flatten();
+        let hold = self.background_hold_reason(child).or_else(|| {
+            (owed.owed > 0)
+                .then(|| self.paste_hold_reason(parent))
+                .flatten()
+        });
         let delegation = orchestrate::delegation_info(
             row,
             self.turn_end_source_of(child),
@@ -6137,9 +6145,11 @@ impl Daemon {
                     let pending = self.pending_handback(row.parent_session, info.id);
                     let owed = self.inbox_owed(row.parent_session, info.id);
                     let capability = self.capability_note_of(info.id);
-                    let hold = (owed.owed > 0)
-                        .then(|| self.paste_hold_reason(row.parent_session))
-                        .flatten();
+                    let hold = self.background_hold_reason(info.id).or_else(|| {
+                        (owed.owed > 0)
+                            .then(|| self.paste_hold_reason(row.parent_session))
+                            .flatten()
+                    });
                     orchestrate::delegation_info(
                         row,
                         self.turn_end_source_of(info.id),
@@ -9669,6 +9679,19 @@ impl Daemon {
             crate::agent_events::AgentEvent::from_provider(provider, &d.event),
             d.last_message.as_deref(),
         );
+        if d.event == "Stop" && provider == proto::AgentKind::Claude {
+            if let Some(count) = d.background_tasks {
+                let mut holds = self.background_holds.lock().expect("background holds lock");
+                if count > 0 {
+                    holds
+                        .entry(d.session)
+                        .and_modify(|hold| hold.0 = count)
+                        .or_insert((count, self.started.elapsed().as_millis() as u64));
+                } else {
+                    holds.remove(&d.session);
+                }
+            }
+        }
         if let Some(verdict) = self.correlate_hook_drop(d, provider) {
             return verdict;
         }
@@ -10458,6 +10481,10 @@ impl Daemon {
         self.composer_occupied
             .lock()
             .expect("composer lock")
+            .retain(|id, _| live.contains(id));
+        self.background_holds
+            .lock()
+            .expect("background holds lock")
             .retain(|id, _| live.contains(id));
         self.paste_confirmations
             .lock()
@@ -11964,8 +11991,20 @@ impl Daemon {
         None
     }
 
-    fn swarm_wake_write(self: &Arc<Self>, session_id: u32, text: &str) -> Result<()> {
-        self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string()))
+    fn swarm_wake_write(self: &Arc<Self>, session_id: u32, text: &str) -> Result<Option<String>> {
+        let held = self.paste_hold_reason(session_id).or_else(|| {
+            self.swarm_wake_lanes
+                .lock()
+                .expect("wake lanes lock")
+                .contains_key(&session_id)
+                .then(|| "another prompt is on this pane's wake lane".to_string())
+        });
+        if held.is_some() {
+            self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string()))?;
+        } else {
+            self.paste_text(session_id, text)?;
+        }
+        Ok(held)
     }
 
     fn swarm_wake_enqueue(self: &Arc<Self>, session_id: u32, item: WakeItem) -> Result<()> {
@@ -12017,41 +12056,60 @@ impl Daemon {
         if !start_drainer {
             return Ok(());
         }
-        let this = Arc::clone(self);
+        let daemon = Arc::downgrade(self);
         std::thread::Builder::new()
             .name(format!("swarm-wake-{session_id}"))
-            .spawn(move || this.swarm_wake_drain(session_id, generation))
+            .spawn(move || Self::swarm_wake_drain(daemon, session_id, generation))
             .with_context(|| format!("spawning the wake lane for session {session_id}"))?;
         Ok(())
     }
 
-    fn swarm_wake_drain(self: &Arc<Self>, session_id: u32, generation: u64) {
+    fn swarm_wake_drain(daemon: std::sync::Weak<Self>, session_id: u32, generation: u64) {
         loop {
+            let Some(this) = daemon.upgrade() else { return };
+            if this.refusing_mutations() || this.get(session_id).is_err() {
+                let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
+                if lanes
+                    .get(&session_id)
+                    .is_some_and(|lane| lane.generation == generation)
+                {
+                    lanes.remove(&session_id);
+                }
+                return;
+            }
+            if this.paste_hold_reason(session_id).is_some() {
+                drop(this);
+                std::thread::sleep(SWARM_WAKE_SETTLE);
+                continue;
+            }
             let next = {
-                let mut lanes = self.swarm_wake_lanes.lock().expect("wake lanes lock");
+                let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
                 take_wake_item(&mut lanes, session_id, generation)
             };
             match next {
-                Some(WakeItem::Text(text)) => self.paste_text(session_id, &text),
-                Some(WakeItem::Inbox) => self.paste_inbox(session_id),
+                Some(WakeItem::Text(text)) => {
+                    if let Err(e) = this.paste_text(session_id, &text) {
+                        tracing::warn!("delivering held prompt to pane {session_id}: {e}");
+                    }
+                }
+                Some(WakeItem::Inbox) => this.paste_inbox(session_id),
                 None => {
-                    self.delegation_wake.notify_one();
+                    this.delegation_wake.notify_one();
                     return;
                 }
             }
         }
     }
 
-    fn paste_text(&self, session_id: u32, text: &str) {
-        let payload = bracketed_paste(text);
-        if let Err(e) = self.write_stdin(session_id, &payload) {
-            tracing::warn!("swarm wake: pasting nudge into session {session_id}: {e}");
-            return;
-        }
+    fn paste_text(&self, session_id: u32, text: &str) -> Result<()> {
+        self.write_stdin(session_id, &bracketed_paste(text))
+            .with_context(|| format!("pasting prompt into pane {session_id}"))?;
         std::thread::sleep(SWARM_WAKE_SETTLE);
-        if let Err(e) = self.write_stdin(session_id, b"\r") {
-            tracing::warn!("swarm wake: submitting nudge for session {session_id}: {e}");
+        if let Some(reason) = self.paste_hold_reason(session_id) {
+            bail!("pane {session_id} prompt was pasted but not submitted: {reason}");
         }
+        self.write_stdin(session_id, b"\r")
+            .with_context(|| format!("submitting prompt in pane {session_id}"))
     }
 }
 
@@ -12126,24 +12184,42 @@ fn bracketed_paste(text: &str) -> Vec<u8> {
     payload
 }
 
+struct InboxWaitState {
+    cancelled: tokio::sync::watch::Sender<bool>,
+    reservation: Mutex<Option<String>>,
+}
+
 struct InboxWaitGuard {
     daemon: Arc<Daemon>,
     session: u32,
     notify: Arc<tokio::sync::Notify>,
+    state: Arc<InboxWaitState>,
 }
 
 impl Drop for InboxWaitGuard {
     fn drop(&mut self) {
-        self.daemon
+        let mut waiting = self
+            .daemon
             .inbox_waiting
             .lock()
-            .expect("inbox waiting lock")
-            .remove(&self.session);
-        self.daemon
-            .inbox_wake
+            .expect("inbox waiting lock");
+        if self
+            .state
+            .reservation
             .lock()
-            .expect("inbox wake lock")
-            .remove(&self.session);
+            .expect("wait reservation lock")
+            .is_none()
+            && waiting
+                .get(&self.session)
+                .is_some_and(|state| Arc::ptr_eq(state, &self.state))
+        {
+            waiting.remove(&self.session);
+            self.daemon
+                .inbox_wake
+                .lock()
+                .expect("inbox wake lock")
+                .remove(&self.session);
+        }
     }
 }
 
@@ -12674,7 +12750,27 @@ impl Daemon {
                 }
                 d
             }
-            None => project_dir.clone(),
+            None => self
+                .get(caller)
+                .ok()
+                .map(|parent| {
+                    parent
+                        .hook_cwd
+                        .lock()
+                        .expect("hook_cwd lock")
+                        .clone()
+                        .unwrap_or_else(|| parent.info.cwd.clone())
+                })
+                .map(PathBuf::from)
+                .filter(|cwd| {
+                    cwd.is_dir()
+                        && cwd
+                            .canonicalize()
+                            .ok()
+                            .zip(project_dir.canonicalize().ok())
+                            .is_some_and(|(cwd, root)| cwd.starts_with(root))
+                })
+                .unwrap_or_else(|| project_dir.clone()),
         };
         if !handoff {
             if let Some(role) = &role {
@@ -12764,6 +12860,31 @@ impl Daemon {
                 (codename.clone(), TitleSource::Codename, codename)
             }
         };
+        if !handoff {
+            if let Err(e) = self.db.delegation_create_with_lifecycle(
+                caller,
+                sid,
+                role.as_deref(),
+                &prompt,
+                reusable,
+                now_ms(),
+            ) {
+                if let Some(c) = &created {
+                    self.discard_spawn_worktree(c);
+                }
+                return Err(e).context(format!(
+                    "opening the delegation record for child {sid} failed; spawn rolled back"
+                ));
+            }
+        }
+        let observer = self
+            .spawn_observer_for_test
+            .lock()
+            .expect("spawn observer lock")
+            .clone();
+        if let Some(observer) = observer {
+            observer(sid);
+        }
         let spawned = self.spawn_session(SpawnParams {
             id: sid,
             agent: kind,
@@ -12793,6 +12914,16 @@ impl Daemon {
         let info = match spawned {
             Ok(info) => info,
             Err(e) => {
+                if self.get(sid).is_ok() {
+                    if let Err(rollback) = self.rollback_spawned_child(sid) {
+                        tracing::warn!("rolling back failed spawn {sid}: {rollback}");
+                    }
+                }
+                if !handoff {
+                    if let Err(discard) = self.db.delegation_discard_spawn(sid) {
+                        tracing::warn!("discarding failed spawn {sid}: {discard}");
+                    }
+                }
                 if let Some(c) = &created {
                     self.discard_spawn_worktree(c);
                 }
@@ -12817,27 +12948,6 @@ impl Daemon {
                     "parent pane {caller} disappeared before the delegation for child {sid} \
                      could be recorded: {parent_error}; rolling back the spawned child also \
                      failed: {rollback_error}"
-                )),
-            };
-        }
-        if let Err(persist_error) = self.db.delegation_create_with_lifecycle(
-            caller,
-            sid,
-            role.as_deref(),
-            &prompt,
-            reusable,
-            now_ms(),
-        ) {
-            let rollback = self.rollback_spawned_child(sid);
-            if let Some(c) = &created {
-                self.discard_spawn_worktree(c);
-            }
-            return match rollback {
-                Ok(()) => Err(persist_error).context(format!(
-                    "opening the delegation record for child {sid} of {caller} failed; the child was rolled back"
-                )),
-                Err(rollback_error) => Err(anyhow!(
-                    "opening the delegation record for child {sid} of {caller} failed: {persist_error}; rolling back the spawned child also failed: {rollback_error}"
                 )),
             };
         }
@@ -12966,9 +13076,11 @@ impl Daemon {
                     let pending = self.pending_handback(parent, info.id);
                     let owed = self.inbox_owed(parent, info.id);
                     let capability = self.capability_note_of(info.id);
-                    let hold = (owed.owed > 0)
-                        .then(|| self.paste_hold_reason(parent))
-                        .flatten();
+                    let hold = self.background_hold_reason(info.id).or_else(|| {
+                        (owed.owed > 0)
+                            .then(|| self.paste_hold_reason(parent))
+                            .flatten()
+                    });
                     let delegation = orchestrate::delegation_info(
                         row,
                         self.turn_end_source_of(info.id),
@@ -12993,6 +13105,16 @@ impl Daemon {
         target: u32,
         text: &str,
     ) -> Result<(&'static str, Option<proto::AgentStatus>)> {
+        let (source, status, _) = self.orchestrate_prompt_with_hold(caller, target, text)?;
+        Ok((source, status))
+    }
+
+    pub fn orchestrate_prompt_with_hold(
+        self: &Arc<Self>,
+        caller: u32,
+        target: u32,
+        text: &str,
+    ) -> Result<(&'static str, Option<proto::AgentStatus>, Option<String>)> {
         let text = text.trim();
         anyhow::ensure!(!text.is_empty(), "prompt text must not be empty");
         let _cleanup_guard = self
@@ -13027,7 +13149,7 @@ impl Daemon {
             Some(round) => format!("{}\n\n{text}", orchestrate::request_header(round)),
             None => text.to_string(),
         };
-        self.swarm_wake_write(target, &framed)?;
+        let held = self.swarm_wake_write(target, &framed)?;
         if source == orchestrate::StatusSource::ProcessOnly {
             match self.db.delegation_bump_round(target, now_ms()) {
                 Ok(Some(round)) => {
@@ -13053,7 +13175,7 @@ impl Daemon {
         } else {
             self.broadcast_delegation(target);
         }
-        Ok((source_label, self.session_status(target)?))
+        Ok((source_label, self.session_status(target)?, held))
     }
 
     pub fn session_status(&self, id: u32) -> Result<Option<proto::AgentStatus>> {
@@ -13096,14 +13218,38 @@ impl Daemon {
         sessions.get(&id).map(|s| s.info.agent)
     }
 
+    #[doc(hidden)]
+    pub fn set_spawn_observer_for_test(&self, observer: Arc<dyn Fn(u32) + Send + Sync>) {
+        *self
+            .spawn_observer_for_test
+            .lock()
+            .expect("spawn observer lock") = Some(observer);
+    }
+
+    #[doc(hidden)]
+    pub fn inbox_wait_active_for_test(&self, caller: u32) -> bool {
+        self.inbox_waiting
+            .lock()
+            .expect("inbox waiting lock")
+            .contains_key(&caller)
+    }
+
     fn enter_inbox_wait(self: &Arc<Self>, caller: u32) -> Result<InboxWaitGuard> {
+        let state = Arc::new(InboxWaitState {
+            cancelled: tokio::sync::watch::channel(false).0,
+            reservation: Mutex::new(None),
+        });
         let mut waiting = self.inbox_waiting.lock().expect("inbox waiting lock");
-        if !waiting.insert(caller) {
-            bail!(
-                "refused: pane {caller} is already inside a pane_wait (one wait per pane) — end \
-                 or time out that wait before starting another; a second wait cannot share its \
-                 reservation"
-            );
+        if let Some(previous) = waiting.insert(caller, Arc::clone(&state)) {
+            previous.cancelled.send_replace(true);
+            if let Some(id) = previous
+                .reservation
+                .lock()
+                .expect("wait reservation lock")
+                .take()
+            {
+                self.release_reservation(&id);
+            }
         }
         drop(waiting);
         let notify = self
@@ -13117,7 +13263,42 @@ impl Daemon {
             daemon: Arc::clone(self),
             session: caller,
             notify,
+            state,
         })
+    }
+
+    pub fn finish_wait_delivery(&self, caller: u32, delivery_id: &str, sent: bool) {
+        let mut waiting = self.inbox_waiting.lock().expect("inbox waiting lock");
+        let Some(state) = waiting.get(&caller) else {
+            return;
+        };
+        let mut reservation = state.reservation.lock().expect("wait reservation lock");
+        if reservation.as_deref() != Some(delivery_id) {
+            return;
+        }
+        if sent {
+            if let Err(e) = self.db.inbox_mark_delivered(delivery_id, "wait", now_ms()) {
+                tracing::warn!("confirming wait delivery {delivery_id}: {e}");
+                self.release_reservation(delivery_id);
+            }
+        } else {
+            self.release_reservation(delivery_id);
+        }
+        reservation.take();
+        drop(reservation);
+        waiting.remove(&caller);
+        self.inbox_wake
+            .lock()
+            .expect("inbox wake lock")
+            .remove(&caller);
+        drop(waiting);
+        if sent {
+            if let Ok(rows) = self.db.inbox_rows_by_delivery(delivery_id) {
+                for row in rows {
+                    self.broadcast_inbox_row(row.id);
+                }
+            }
+        }
     }
 
     pub async fn orchestrate_wait(
@@ -13128,6 +13309,29 @@ impl Daemon {
         timeout_ms: u64,
         stall_guard: bool,
     ) -> Result<orchestrate::InboxWaitOutcome> {
+        let outcome = self
+            .orchestrate_wait_reserved(caller, child, kind, timeout_ms, stall_guard)
+            .await?;
+        if let orchestrate::InboxWaitOutcome::Delivered { delivery_id, .. } = &outcome {
+            self.finish_wait_delivery(caller, delivery_id, true);
+        }
+        Ok(outcome)
+    }
+
+    pub async fn orchestrate_wait_reserved(
+        self: &Arc<Self>,
+        caller: u32,
+        child: Option<u32>,
+        kind: Option<orchestrate::InboxKind>,
+        timeout_ms: u64,
+        stall_guard: bool,
+    ) -> Result<orchestrate::InboxWaitOutcome> {
+        anyhow::ensure!(
+            timeout_ms > 0 && timeout_ms <= orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
+            "pane_wait timeout_ms {timeout_ms} must be 1..={} ms; limit {} ms",
+            orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
+            orchestrate::DEFAULT_WAIT_TIMEOUT_MS
+        );
         if stall_guard && child.is_none() {
             bail!(
                 "wait refused: stall_guard requires session — it watches one child's own status \
@@ -13138,6 +13342,7 @@ impl Daemon {
             self.assert_orchestration_target(caller, target)?;
         }
         let guard = self.enter_inbox_wait(caller)?;
+        let mut cancelled = guard.state.cancelled.subscribe();
         let kind_str = kind.map(orchestrate::InboxKind::as_str);
         let started = std::time::Instant::now();
         let deadline = started + std::time::Duration::from_millis(timeout_ms);
@@ -13146,6 +13351,13 @@ impl Daemon {
         let mut startup_stall_deadline = stall_guard.then_some(started + stall_window);
 
         let try_reserve = |this: &Arc<Self>| -> Result<Option<orchestrate::InboxWaitOutcome>> {
+            let waiting = this.inbox_waiting.lock().expect("inbox waiting lock");
+            if !waiting
+                .get(&caller)
+                .is_some_and(|state| Arc::ptr_eq(state, &guard.state))
+            {
+                return Ok(Some(orchestrate::InboxWaitOutcome::Superseded));
+            }
             let now = now_ms();
             let Some((delivery_id, rows)) = this.db.inbox_reserve_matching(
                 caller,
@@ -13158,13 +13370,11 @@ impl Daemon {
             else {
                 return Ok(None);
             };
-            this.db.inbox_mark_delivered(&delivery_id, "wait", now)?;
-            let mut rows = rows;
-            for row in &mut rows {
-                row.delivered_at = Some(now);
-                row.delivered_via = Some("wait".to_string());
-                this.broadcast_inbox_row(row.id);
-            }
+            *guard
+                .state
+                .reservation
+                .lock()
+                .expect("wait reservation lock") = Some(delivery_id.clone());
             let has_more = this.db.inbox_count_matching(caller, now, child, kind_str)? > 0;
             Ok(Some(orchestrate::InboxWaitOutcome::Delivered {
                 rows,
@@ -13181,8 +13391,17 @@ impl Daemon {
                 .map(|k| orchestrate::status_source(k).label()),
         };
         loop {
+            if *cancelled.borrow() {
+                return Ok(orchestrate::InboxWaitOutcome::Superseded);
+            }
             if let Some(outcome) = try_reserve(self)? {
                 return Ok(outcome);
+            }
+            if child.is_none()
+                && self.live_children_of(caller).is_empty()
+                && self.db.inbox_pending_count(caller)? == 0
+            {
+                return Ok(orchestrate::InboxWaitOutcome::NothingToWaitOn);
             }
             if std::time::Instant::now() >= deadline {
                 return Ok(timed_out(self));
@@ -13210,7 +13429,10 @@ impl Daemon {
             }
             let wait_until = startup_stall_deadline
                 .map_or(deadline, |stall_deadline| deadline.min(stall_deadline));
-            let _ = tokio::time::timeout(wait_until.saturating_duration_since(now), notified).await;
+            tokio::select! {
+                _ = cancelled.changed() => {},
+                _ = tokio::time::timeout(wait_until.saturating_duration_since(now), notified) => {},
+            }
         }
     }
 
@@ -13285,7 +13507,21 @@ impl Daemon {
             turn_end_source: orchestrate::turn_end_source(s.status_kind(), s.acp.is_some()).label(),
             delegation: self.delegation_of(target).map(|row| {
                 let pending = self.pending_handback(row.parent_session, target);
-                orchestrate::DelegationView::from_row(row, pending)
+                let age = self
+                    .db
+                    .inbox_staged_result_age(row.parent_session, target, now_ms())
+                    .ok()
+                    .flatten();
+                let mut view = orchestrate::DelegationView::from_row(row, pending);
+                view.result_staged = age.is_some();
+                view.result_staged_age_ms = age;
+                view.hold_reason = self
+                    .background_holds
+                    .lock()
+                    .expect("background holds lock")
+                    .get(&target)
+                    .map(|(count, _)| format!("background job running ({count})"));
+                view
             }),
             info,
         })
@@ -13321,6 +13557,11 @@ impl Daemon {
                     tracing::warn!("cancelling the delegation for child {child}: {e}");
                 }
                 self.broadcast_delegation(child);
+                if let Some(daemon) = self.self_arc() {
+                    daemon.inbox_notify(row.parent_session, false);
+                } else {
+                    self.notify_inbox_wake(row.parent_session);
+                }
             }
             Ok(_) => {}
             Err(e) => tracing::warn!("reading the delegation record for child {child}: {e}"),
@@ -14197,6 +14438,17 @@ impl Daemon {
                 None
             });
         let staged = pending.is_some();
+        if !staged
+            && event == orchestrate::DelegationEvent::TurnEnded
+            && self
+                .background_holds
+                .lock()
+                .expect("background holds lock")
+                .contains_key(&child)
+        {
+            self.broadcast_delegation(child);
+            return;
+        }
         let to = orchestrate::delegation_transition(from, event, staged).filter(|to| *to != from);
 
         let mut moved_by_close = false;
@@ -14634,6 +14886,14 @@ impl Daemon {
             .remove(&child);
     }
 
+    fn background_hold_reason(&self, child: u32) -> Option<String> {
+        self.background_holds
+            .lock()
+            .expect("background holds lock")
+            .get(&child)
+            .map(|(count, _)| format!("background job running ({count})"))
+    }
+
     fn pending_handback(&self, parent: u32, child: u32) -> orchestrate::PendingHandback {
         orchestrate::PendingHandback::from_superseded(
             self.db
@@ -14856,6 +15116,56 @@ impl Daemon {
         };
         for row in &open {
             let child = row.child_session;
+            let hold = self
+                .background_holds
+                .lock()
+                .expect("background holds lock")
+                .get(&child)
+                .copied();
+            if let Some((count, since)) = hold {
+                let elapsed = now.saturating_sub(since);
+                if elapsed < orchestrate::BACKGROUND_HOLD_MAX_MS {
+                    if let Ok(s) = self.get(child) {
+                        self.delegation_stall_pass(row, &s, true, now);
+                    }
+                    continue;
+                }
+                self.background_holds
+                    .lock()
+                    .expect("background holds lock")
+                    .remove(&child);
+                let pending = self
+                    .db
+                    .inbox_pending_result(row.parent_session, child, row.round)
+                    .ok()
+                    .flatten();
+                if pending.is_some() {
+                    self.advance_delegation(child, crate::agent_events::AgentEvent::TurnEnded);
+                } else if !row.no_handback_reported {
+                    let body = format!("background job running ({count}) exceeded hold limit {} ms; elapsed {elapsed} ms without pane_submit", orchestrate::BACKGROUND_HOLD_MAX_MS);
+                    if self
+                        .inbox_write(
+                            row.parent_session,
+                            &self.current_workspace(child).unwrap_or_default(),
+                            Some(child),
+                            Some(row.round),
+                            orchestrate::InboxKind::NoHandback,
+                            "background job hold expired without a handback",
+                            &body,
+                            Vec::new(),
+                            None,
+                            None,
+                            false,
+                            true,
+                        )
+                        .is_ok()
+                    {
+                        let _ = self.db.delegation_set_no_handback(child, true, 0, now_ms());
+                    }
+                }
+                self.broadcast_delegation(child);
+                continue;
+            }
             let Ok(s) = self.get(child) else { continue };
             let busy = match s.pid {
                 Some(pid) => has_running_procs(pid).unwrap_or(true),
@@ -15122,7 +15432,7 @@ impl Daemon {
         }
     }
 
-    fn paste_hold_reason(&self, parent: u32) -> Option<String> {
+    pub fn paste_hold_reason(&self, parent: u32) -> Option<String> {
         match self.session_status(parent) {
             Ok(Some(proto::AgentStatus::Idle)) => {}
             Ok(Some(proto::AgentStatus::NeedsInput)) => {

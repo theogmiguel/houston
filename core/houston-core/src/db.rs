@@ -3276,6 +3276,28 @@ impl Db {
         )?)
     }
 
+    pub fn delegation_discard_spawn(&self, child: u32) -> Result<()> {
+        self.conn.lock().expect("db lock").execute(
+            "DELETE FROM delegations WHERE child_session = ?1",
+            rusqlite::params![child],
+        )?;
+        Ok(())
+    }
+
+    pub fn inbox_staged_result_age(
+        &self,
+        parent: u32,
+        child: u32,
+        now: u64,
+    ) -> Result<Option<u64>> {
+        let created: Option<i64> = self.conn.lock().expect("db lock").query_row(
+            "SELECT MIN(created_at) FROM pane_inbox WHERE to_session = ?1 AND from_session = ?2
+             AND kind = 'result' AND ready_at IS NULL AND resolved_at IS NULL AND delivered_at IS NULL",
+            rusqlite::params![parent, child], |row| row.get(0),
+        )?;
+        Ok(created.map(|created| now.saturating_sub(created as u64)))
+    }
+
     pub fn delegation_for_child(&self, child: u32) -> Result<Option<DelegationRow>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn
@@ -3377,13 +3399,21 @@ impl Db {
         stop_reason: Option<&str>,
         now: u64,
     ) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE delegations SET state = ?2, stop_reason = ?3, ended_at = ?4, updated_at = ?4,
                 no_handback_reported = 0, no_handback_suppressed = 0, cleanup_after = NULL
              WHERE child_session = ?1",
             rusqlite::params![child, state, stop_reason, now as i64],
         )?;
+        tx.execute(
+            "UPDATE pane_inbox SET ready_at = ?2
+             WHERE from_session = ?1 AND kind = 'result' AND ready_at IS NULL
+             AND request_id = (SELECT round FROM delegations WHERE child_session = ?1)",
+            rusqlite::params![child, now as i64],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 

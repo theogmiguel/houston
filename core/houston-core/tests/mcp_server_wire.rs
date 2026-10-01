@@ -514,7 +514,7 @@ async fn tools_call_with_progress_token_streams_notifications_then_the_final_res
             note["params"]["message"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("confirmation"),
+                .contains("slow_tool"),
             "{note}"
         );
     }

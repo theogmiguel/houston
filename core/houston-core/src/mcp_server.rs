@@ -242,6 +242,12 @@ impl NotifierRegistry {
 }
 
 pub trait ToolProvider: Send + Sync {
+    fn finish_delivery(&self, _scope: &McpScope, _output: &ToolOutput, _sent: bool) {}
+
+    fn progress_message(&self, _scope: &McpScope, _name: &str, _elapsed: u64) -> Option<String> {
+        None
+    }
+
     fn tools(&self, scope: &McpScope) -> Vec<ToolSpec>;
 
     fn all_tools(&self) -> Vec<ToolSpec> {
@@ -263,6 +269,7 @@ pub trait ToolProvider: Send + Sync {
 
 #[derive(Default)]
 pub struct ToolRegistry {
+    active_calls: ActiveCalls,
     providers: RwLock<Vec<Arc<dyn ToolProvider>>>,
     builtins: Option<Arc<BuiltinTools>>,
     daemon: std::sync::OnceLock<Weak<crate::daemon::Daemon>>,
@@ -758,6 +765,19 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
     let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
 
     if is_notification {
+        if method == "notifications/cancelled" {
+            if let Some(request_id) = params.get("requestId") {
+                if let Some(cancel) = host
+                    .tools()
+                    .active_calls
+                    .lock()
+                    .expect("active calls lock")
+                    .get(&(scope.session_id, request_id.to_string()))
+                {
+                    cancel.send_replace(true);
+                }
+            }
+        }
         tracing::debug!(method, "/mcp notification");
         return StatusCode::ACCEPTED.into_response();
     }
@@ -904,28 +924,43 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
                     );
                 }
             }
-            let progress_token = params.get("_meta").and_then(|m| m.get("progressToken"));
-            match progress_token {
-                Some(token) => stream_tools_call(
-                    provider,
-                    scope.clone(),
-                    name.to_string(),
-                    args,
-                    id,
-                    token.clone(),
-                    host.progress_tick(),
-                ),
-                None => match provider.call(scope, name, &args).await {
+            let progress_token = params
+                .get("_meta")
+                .and_then(|m| m.get("progressToken"))
+                .cloned();
+            if progress_token.is_none() && name != "pane_wait" {
+                return match provider.call(scope, name, &args).await {
                     Ok(output) => json_rpc_result(id, output.to_json()),
                     Err(ToolError(message)) => json_rpc_result(
                         id,
                         json!({
-                            "content": [{ "type": "text", "text": message }],
-                            "isError": true,
-                        }),
+                        "content":[{"type":"text","text":message}], "isError":true}),
                     ),
-                },
+                };
             }
+            let (cancel, cancelled) = tokio::sync::watch::channel(false);
+            let key = (scope.session_id, id.to_string());
+            let active_calls = Arc::clone(&host.tools().active_calls);
+            active_calls
+                .lock()
+                .expect("active calls lock")
+                .insert(key.clone(), cancel.clone());
+            let registration = CallRegistration {
+                active_calls,
+                key,
+                cancel,
+            };
+            stream_tools_call(
+                provider,
+                scope.clone(),
+                name.to_string(),
+                args,
+                id,
+                progress_token,
+                host.progress_tick(),
+                cancelled,
+                registration,
+            )
         }
         other => json_rpc_error_response(
             StatusCode::BAD_REQUEST,
@@ -939,17 +974,56 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
     }
 }
 
+type ActiveCalls = Arc<std::sync::Mutex<BTreeMap<(u32, String), tokio::sync::watch::Sender<bool>>>>;
+
+struct CallRegistration {
+    active_calls: ActiveCalls,
+    key: (u32, String),
+    cancel: tokio::sync::watch::Sender<bool>,
+}
+
+impl Drop for CallRegistration {
+    fn drop(&mut self) {
+        let mut calls = self.active_calls.lock().expect("active calls lock");
+        if calls
+            .get(&self.key)
+            .is_some_and(|cancel| cancel.same_channel(&self.cancel))
+        {
+            calls.remove(&self.key);
+        }
+    }
+}
+
+struct ResponseDelivery {
+    provider: Arc<dyn ToolProvider>,
+    scope: McpScope,
+    output: Option<ToolOutput>,
+}
+
+impl Drop for ResponseDelivery {
+    fn drop(&mut self) {
+        if let Some(output) = &self.output {
+            self.provider.finish_delivery(&self.scope, output, false);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn stream_tools_call(
     provider: Arc<dyn ToolProvider>,
     scope: McpScope,
     name: String,
     args: Value,
     id: Value,
-    token: Value,
+    token: Option<Value>,
     tick: Duration,
+    mut cancelled: tokio::sync::watch::Receiver<bool>,
+    registration: CallRegistration,
 ) -> Response {
+    let is_sse = token.is_some();
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(4);
     tokio::spawn(async move {
+        let _registration = registration;
         let start = Instant::now();
         let call = provider.call(&scope, &name, &args);
         tokio::pin!(call);
@@ -957,41 +1031,64 @@ fn stream_tools_call(
         interval.tick().await;
         let result = loop {
             tokio::select! {
+                biased;
+                _ = tx.closed() => return,
+                _ = cancelled.changed() => {
+                    if *cancelled.borrow() { return; }
+                },
                 res = &mut call => break res,
-                _ = interval.tick() => {
+                _ = interval.tick(), if is_sse => {
                     let elapsed = start.elapsed().as_secs();
-                    let note = json!({
-                        "jsonrpc": "2.0",
-                        "method": "notifications/progress",
-                        "params": {
-                            "progressToken": token,
-                            "progress": elapsed,
-                            "message": format!(
-                                "tool still running ({elapsed}s elapsed); a browser act may be \
-                                 awaiting the user's confirmation on screen (up to 120 s)"
-                            ),
-                        }
-                    });
-                    if tx.send(sse_event(&note)).await.is_err() {
-                        return;
+                    let message = if let Some(message) = provider.progress_message(&scope, &name, elapsed) {
+                        message
+                    } else if name == "pane_wait" {
+                        format!("waiting for child results; {elapsed}s elapsed")
+                    } else if name.starts_with("browser_") {
+                        format!("{name} still running ({elapsed}s elapsed); awaiting the user's confirmation on screen (up to 120 s)")
+                    } else {
+                        format!("{name} still running ({elapsed}s elapsed)")
+                    };
+                    let note = json!({"jsonrpc":"2.0", "method":"notifications/progress",
+                        "params":{"progressToken":token, "progress":elapsed,"message":message}});
+                    tokio::select! {
+                        _ = cancelled.changed() => return,
+                        sent = tx.send(sse_event(&note)) => if sent.is_err() { return; },
                     }
                 }
             }
         };
-        let response = match result {
-            Ok(output) => json!({ "jsonrpc": "2.0", "id": id, "result": output.to_json() }),
-            Err(ToolError(message)) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "content": [{ "type": "text", "text": message }],
-                    "isError": true,
-                },
-            }),
+        let mut delivery = ResponseDelivery {
+            provider: Arc::clone(&provider),
+            scope: scope.clone(),
+            output: None,
         };
-        let _ = tx.send(sse_event(&response)).await;
+        let response = match result {
+            Ok(output) => {
+                let response = json!({"jsonrpc":"2.0", "id":id, "result":output.to_json()});
+                delivery.output = Some(output);
+                response
+            }
+            Err(ToolError(message)) => json!({"jsonrpc":"2.0", "id":id,
+                "result":{"content":[{"type":"text","text":message}],"isError":true}}),
+        };
+        let frame = if is_sse {
+            sse_event(&response)
+        } else {
+            Bytes::from(response.to_string())
+        };
+        let sent = tokio::select! {
+            biased;
+            _ = cancelled.changed() => false,
+            result = tx.send(frame) => result.is_ok(),
+        };
+        if sent {
+            if let Some(output) = delivery.output.take() {
+                delivery
+                    .provider
+                    .finish_delivery(&delivery.scope, &output, true);
+            }
+        }
     });
-
     let stream = futures_util::stream::unfold(rx, |mut rx| async move {
         rx.recv()
             .await
@@ -999,10 +1096,17 @@ fn stream_tools_call(
     });
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "text/event-stream")
+        .header(
+            header::CONTENT_TYPE,
+            if is_sse {
+                "text/event-stream"
+            } else {
+                "application/json"
+            },
+        )
         .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from_stream(stream))
-        .expect("static headers plus a streaming body always build a valid response")
+        .expect("static response headers")
 }
 
 fn sse_event(value: &Value) -> Bytes {

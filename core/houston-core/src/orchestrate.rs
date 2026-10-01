@@ -6,6 +6,9 @@ use serde_json::json;
 // caller control back instead of hanging on a child that never reports a status
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
 
+// Match the sub-agent hold bound so an unreported background completion cannot hold a round forever.
+pub const BACKGROUND_HOLD_MAX_MS: u64 = 45 * 60_000;
+
 // Ordinary control-plane calls stay responsive; long-poll responses use the daemon's wait budget.
 const CLI_HTTP_TIMEOUT_MS: u64 = 15_000;
 // Leave time for the daemon to serialize and flush the response at its deadline.
@@ -264,7 +267,7 @@ impl From<String> for Brief {
 
 pub const HANDBACK_PROTOCOL: &str = "\n\n## Handing back\nCall `pane_submit` with your result \
                                     when you are done — that, not this pane, is what reaches \
-                                    whoever asked. Answering only here reaches nobody.";
+                                    whoever asked. Answering only here reaches nobody.\nIf background jobs are still running, wait for them before handing back.";
 
 pub fn request_header(round: u32) -> String {
     format!(
@@ -425,6 +428,8 @@ pub struct DelegationView {
     pub stalled: bool,
     pub brief: String,
     pub result_staged: bool,
+    pub result_staged_age_ms: Option<u64>,
+    pub hold_reason: Option<String>,
     pub superseded: u32,
     pub ended_at: Option<u64>,
     pub stop_reason: Option<String>,
@@ -612,6 +617,8 @@ impl DelegationView {
             stalled: row.stalled,
             brief: row.brief,
             result_staged: pending.stored,
+            result_staged_age_ms: None,
+            hold_reason: None,
             superseded: pending.superseded,
             ended_at: row.ended_at,
             stop_reason: row.stop_reason,
@@ -695,6 +702,8 @@ pub fn status_source(agent: proto::AgentKind) -> StatusSource {
 
 #[derive(Debug, Clone)]
 pub enum InboxWaitOutcome {
+    Superseded,
+    NothingToWaitOn,
     Delivered {
         rows: Vec<crate::db::InboxRow>,
         delivery_id: String,
@@ -727,6 +736,10 @@ fn status_word(status: Option<proto::AgentStatus>) -> String {
 impl InboxWaitOutcome {
     pub fn message(&self) -> String {
         match self {
+            Self::Superseded => "wait superseded by a newer pane_wait".into(),
+            Self::NothingToWaitOn => {
+                "nothing to wait on: no live children or pending inbox rows".into()
+            }
             Self::Delivered {
                 rows,
                 has_more,
@@ -2092,8 +2105,9 @@ same call. Your next action is either independent work or this wait:
 
 `wait`'s default timeout is ten minutes; a timeout is a normal "nothing yet",
 not a stall. Call `wait` again with the default timeout — do not `read`,
-`get` or `prompt` a working child to chase it; diagnose only when the
-operator asks or the child itself reports being blocked. A temporary child
+`get` or `prompt` a working child to chase it. Use diagnostics after a wait
+timeout when help is needed, when the operator asks, or when the child
+reports being blocked. A temporary child
 closes after its final durable handback; use `--reusable` for follow-up
 prompts or a live pane.
 

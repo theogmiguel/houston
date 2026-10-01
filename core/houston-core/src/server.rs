@@ -3754,8 +3754,8 @@ async fn orch_prompt(
         Ok(s) => s,
         Err(r) => return *r,
     };
-    let (source, status) =
-        match daemon.orchestrate_prompt(scope.session_id, body.session, &body.text) {
+    let (source, status, held) =
+        match daemon.orchestrate_prompt_with_hold(scope.session_id, body.session, &body.text) {
             Ok(v) => v,
             Err(e) => return orch_err_response(e),
         };
@@ -3763,6 +3763,7 @@ async fn orch_prompt(
         StatusCode::OK,
         axum::Json(json!({
             "queued": true,
+            "held": held,
             "status_source": source,
             "status_after": status,
         })),
@@ -3781,6 +3782,22 @@ struct WaitBody {
     stall_guard: bool,
     #[serde(default)]
     until: Option<String>,
+}
+
+struct WaitResponseDelivery {
+    daemon: Arc<Daemon>,
+    caller: u32,
+    delivery_id: String,
+    sent: bool,
+}
+
+impl Drop for WaitResponseDelivery {
+    fn drop(&mut self) {
+        if !self.sent {
+            self.daemon
+                .finish_wait_delivery(self.caller, &self.delivery_id, false);
+        }
+    }
 }
 
 async fn orch_wait(
@@ -3815,7 +3832,7 @@ async fn orch_wait(
     };
     let timeout_ms = body.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
     let outcome = daemon
-        .orchestrate_wait(
+        .orchestrate_wait_reserved(
             scope.session_id,
             body.session,
             kind,
@@ -3838,16 +3855,34 @@ async fn orch_wait(
             waited_ms,
         } => {
             let wire_rows: Vec<proto::InboxRow> = rows.into_iter().map(Into::into).collect();
-            (
-                StatusCode::OK,
-                axum::Json(json!({
-                    "rows": wire_rows,
-                    "delivery_id": delivery_id,
-                    "has_more": has_more,
-                    "waited_ms": waited_ms,
-                })),
-            )
-                .into_response()
+            let value = json!({
+                "rows": wire_rows,
+                "delivery_id": delivery_id,
+                "has_more": has_more,
+                "waited_ms": waited_ms,
+            });
+            let bytes = axum::body::Bytes::from(value.to_string());
+            let length = bytes.len();
+            let delivery = WaitResponseDelivery {
+                daemon,
+                caller: scope.session_id,
+                delivery_id,
+                sent: false,
+            };
+            let stream = futures_util::stream::once(async move {
+                let mut delivery = delivery;
+                delivery
+                    .daemon
+                    .finish_wait_delivery(delivery.caller, &delivery.delivery_id, true);
+                delivery.sent = true;
+                Ok::<_, std::convert::Infallible>(bytes)
+            });
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .header(axum::http::header::CONTENT_LENGTH, length)
+                .body(axum::body::Body::from_stream(stream))
+                .expect("static wait response headers")
         }
         InboxWaitOutcome::TimedOut {
             waited_ms,
@@ -3863,6 +3898,16 @@ async fn orch_wait(
                 "status_source": status_source,
                 "next_action": next_action,
             })),
+        )
+            .into_response(),
+        InboxWaitOutcome::Superseded => (
+            StatusCode::OK,
+            axum::Json(json!({"superseded":true,"rows":[]})),
+        )
+            .into_response(),
+        InboxWaitOutcome::NothingToWaitOn => (
+            StatusCode::OK,
+            axum::Json(json!({"nothing_to_wait_on":true,"live_children":0,"rows":[]})),
         )
             .into_response(),
         InboxWaitOutcome::Stalled { .. } => (

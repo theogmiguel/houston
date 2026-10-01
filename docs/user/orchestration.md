@@ -67,9 +67,21 @@ Completion also reaches the parent's inbox through its next supported delivery p
 Routine status checks and terminal reads are unnecessary; reserve them for a reported
 blocker, a timeout, or an explicit request to inspect the child.
 
+A wait can last at most ten minutes. Starting another wait replaces the previous one;
+interrupted waits leave results available for delivery. If there are no live children or
+pending messages, a whole-inbox wait returns immediately. A result submitted before the
+child finishes its turn remains staged; `pane_get` exposes its age when you need to
+diagnose a missing completion. Claude background jobs hold a turn open for at most
+45 minutes before a missing-handback notice reaches the parent.
+
+A follow-up prompt waits when the child is busy or you have unsubmitted text in its
+terminal. The reply names that hold. If Houston can write immediately, a write failure
+is returned directly instead of reporting the prompt as queued.
+
 ## Workspaces and child lifetime
 
-By default, a child starts in the parent's registered workspace. `target_workspace` may
+By default, a child starts in the parent's current directory when it is inside the
+registered workspace, including a worktree. Otherwise it starts at the workspace root. `target_workspace` may
 select another workspace already registered in Settings; Houston does not treat an
 arbitrary filesystem path as authority. If `cwd` is supplied, it must be inside that
 target workspace. The parent may still address the child because delegation ancestry,

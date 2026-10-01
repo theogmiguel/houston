@@ -224,6 +224,30 @@ impl ToolProvider for OrchestrationTools {
         self.pane_tools(None, true)
     }
 
+    fn progress_message(&self, scope: &McpScope, name: &str, elapsed: u64) -> Option<String> {
+        if name != "pane_wait" {
+            return None;
+        }
+        let daemon = self.daemon.upgrade()?;
+        Some(format!(
+            "waiting for {} children; {elapsed}s elapsed",
+            daemon.live_children_of(scope.session_id).len()
+        ))
+    }
+
+    fn finish_delivery(&self, scope: &McpScope, output: &ToolOutput, sent: bool) {
+        if let Some(id) = output
+            .structured
+            .as_ref()
+            .and_then(|v| v.get("delivery_id"))
+            .and_then(Value::as_str)
+        {
+            if let Some(daemon) = self.daemon.upgrade() {
+                daemon.finish_wait_delivery(scope.session_id, id, sent);
+            }
+        }
+    }
+
     fn call<'a>(
         &'a self,
         scope: &'a McpScope,
@@ -403,12 +427,17 @@ impl ToolProvider for OrchestrationTools {
                 "pane_prompt" => {
                     let session = u32_arg(args, "session")?;
                     let text = str_arg(args, "text")?;
-                    let (source, status) = daemon
-                        .orchestrate_prompt(caller, session, text)
-                        .map_err(refused)?;
+                    let text = text.to_string();
+                    let (source, status, held) = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_prompt_with_hold(caller, session, &text)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("prompt task panicked: {e}")))?
+                    .map_err(refused)?;
                     Ok(ToolOutput::structured(json!({
                         "queued": true,
-                        "note": "queued on the pane's wake lane; it types and submits on its own turn",
+                        "held": held,
+                        "note": if held.is_some() { "held on the bounded wake lane until the pane can accept a prompt" } else { "written to the pane and submitted" },
                         "status_source": source,
                         "status_after": status,
                     })))
@@ -439,8 +468,11 @@ impl ToolProvider for OrchestrationTools {
                         .and_then(Value::as_u64)
                         .filter(|n| *n > 0)
                         .unwrap_or(orchestrate::DEFAULT_WAIT_TIMEOUT_MS);
+                    if timeout_ms > orchestrate::DEFAULT_WAIT_TIMEOUT_MS {
+                        return Err(ToolError(format!("pane_wait timeout_ms {timeout_ms} exceeds the limit {} ms; expected 1..={} ms", orchestrate::DEFAULT_WAIT_TIMEOUT_MS, orchestrate::DEFAULT_WAIT_TIMEOUT_MS)));
+                    }
                     let outcome = daemon
-                        .orchestrate_wait(caller, session, kind, timeout_ms, stall_guard)
+                        .orchestrate_wait_reserved(caller, session, kind, timeout_ms, stall_guard)
                         .await
                         .map_err(refused)?;
                     let message = outcome.message();
@@ -494,6 +526,14 @@ impl ToolProvider for OrchestrationTools {
                                 })),
                             })
                         }
+                        orchestrate::InboxWaitOutcome::Superseded => Ok(ToolOutput::structured(
+                            json!({"superseded": true, "rows": []}),
+                        )),
+                        orchestrate::InboxWaitOutcome::NothingToWaitOn => {
+                            Ok(ToolOutput::structured(
+                                json!({"nothing_to_wait_on": true, "live_children": 0, "rows": []}),
+                            ))
+                        }
                         orchestrate::InboxWaitOutcome::Stalled { .. } => Err(ToolError(message)),
                     }
                 }
@@ -516,10 +556,20 @@ impl ToolProvider for OrchestrationTools {
                         body: str_arg(args, "body")?.to_string(),
                         summary: opt_str(args, "summary"),
                         artifacts: str_list_arg(args, "artifacts")?,
-                        request_id: args
-                            .get("request_id")
-                            .and_then(Value::as_u64)
-                            .map(|v| v as u32),
+                        request_id: match args.get("request_id") {
+                            None | Some(Value::Null) => None,
+                            Some(value) => Some(
+                                value
+                                    .as_u64()
+                                    .and_then(|n| u32::try_from(n).ok())
+                                    .ok_or_else(|| {
+                                        ToolError(format!(
+                                            "request_id {value} must be a u64 within 0..={}",
+                                            u32::MAX
+                                        ))
+                                    })?,
+                            ),
+                        },
                     };
                     let outcome = tokio::task::spawn_blocking(move || {
                         daemon.orchestrate_submit(caller, submission)
@@ -678,7 +728,7 @@ impl OrchestrationTools {
                 title: "List your agent panes".into(),
                 description: format!(
                     "{}Every pane you spawned, and their descendants, with each one's \
-                     current status, role and delegation state.",
+                     current status, role and delegation state. Use after a wait timeout, for help, or when the operator asks.",
                     live.unwrap_or_default()
                 ),
                 input_schema: json!({
@@ -691,8 +741,7 @@ impl OrchestrationTools {
                 title: "Everything about one pane".into(),
                 description: "One pane in your subtree, in one call: its state, its children \
                      and depth, what would end its turn, and — if you spawned it — its role, \
-                     brief, stall flag, and whether it is holding a result. Ask before \
-                     deciding to wait, prompt or kill."
+                     brief, stall flag, and whether it is holding a result. Use after a wait timeout, for help, or when the operator asks."
                     .into(),
                 input_schema: json!({
                     "type": "object",
@@ -736,7 +785,7 @@ impl OrchestrationTools {
                 name: "pane_read".into(),
                 title: "Read a pane's terminal".into(),
                 description: format!(
-                    "What a pane is showing, ANSI stripped. Default \
+                    "Use after a wait timeout, for help, or when the operator asks. What a pane is showing, ANSI stripped. Default \
                      {READ_LINES_DEFAULT} lines, at most {READ_LINES_MAX} and {} characters.",
                     orchestrate::READ_TAIL_MAX_CHARS
                 ),
@@ -770,8 +819,7 @@ impl OrchestrationTools {
                 name: "pane_prompt".into(),
                 title: "Send a prompt to a pane".into(),
                 description: "Type `text` into a pane you spawned and submit it. Queued on the \
-                     pane's own wake lane, not typed synchronously — it lands and submits \
-                     on the pane's own turn. Refused when that pane is sitting at a \
+                     pane's own wake lane when held by its status or operator input; otherwise written synchronously. Write failures are returned. Refused when that pane is sitting at a \
                      permission or question prompt — read it and answer what it is \
                      actually asking instead of typing blind."
                     .into(),
@@ -789,7 +837,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_wait".into(),
                 title: "Wait for your inbox".into(),
-                description: "Block until your inbox has something for you — a child's \
+                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. Block until your inbox has something for you — a child's \
                      result, its turn ending with nothing submitted, it asking something, \
                      or its pane ending — and return the rows inside this call, at zero \
                      token cost while blocked. Without `session` this waits on your WHOLE \
@@ -817,6 +865,7 @@ impl OrchestrationTools {
                         "timeout_ms": {
                             "type": "integer",
                             "minimum": 1,
+                            "maximum": orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
                             "description": "Defaults to 10 minutes.",
                         },
                         "stall_guard": {
@@ -915,6 +964,33 @@ impl OrchestrationTools {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wait_descriptions_and_schema_require_bounded_blocking() {
+        let specs = OrchestrationTools {
+            daemon: Weak::new(),
+        }
+        .pane_tools(None, true);
+        let wait = specs.iter().find(|spec| spec.name == "pane_wait").unwrap();
+        assert!(wait.description.contains(
+            "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list"
+        ));
+        assert_eq!(
+            wait.input_schema["properties"]["timeout_ms"]["maximum"],
+            orchestrate::DEFAULT_WAIT_TIMEOUT_MS
+        );
+        let maximum = wait.input_schema["properties"]["timeout_ms"]["maximum"]
+            .as_u64()
+            .unwrap();
+        assert!(maximum < crate::mcp_launch::CODEX_TOOL_TIMEOUT_SEC * 1000);
+        for spec in specs
+            .iter()
+            .filter(|spec| matches!(spec.name.as_str(), "pane_get" | "pane_read" | "pane_list"))
+        {
+            assert!(spec.description.contains("after a wait timeout"));
+            assert!(!spec.description.contains("before deciding to wait"));
+        }
+    }
 
     #[test]
     fn every_tool_is_named_pane_and_schema_closed() {

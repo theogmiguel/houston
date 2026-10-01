@@ -7,9 +7,10 @@ them. It does that over MCP, against the daemon that owns its own PTY, with a cr
 minted for its pane alone. Every signal one pane owes another is one row in `pane_inbox`, the
 single table the three delivery doors read — see "The inbox" below.
 
-Every child runs directly in its own project directory, with its CLI's own bypass/auto flag —
-there is no merge gate or sandbox isolating it (`spawn_session` opens the PTY in the
-session's `project_dir` itself, the same path an operator-opened pane gets). The one
+Every child runs with its CLI's own bypass/auto flag. Unless `cwd` is supplied, it inherits
+the parent's reported working directory when that directory exists inside the target
+workspace; otherwise it starts at the workspace root. There is no merge gate or sandbox
+isolating it. The one
 exception is asked for, never implied: `pane_spawn { worktree: "<slug>" }` (`hs-pane spawn
 --worktree SLUG`) first creates a git worktree at `<workspace>/.houston/worktrees/<slug>` on
 branch `houston/<slug>` (or `branch`), records it in `managed_worktrees`, and starts the
@@ -58,8 +59,8 @@ spelling, or a verb that is CLI-only).
 | `pane_list` | `mcp_orchestration.rs` | `hs-pane list` | list the caller's live children, each with its full delegation record (state, stall, `pending_handback`, `inbox_owed`, the capability note) |
 | `pane_get` | `mcp_orchestration.rs` | `hs-pane get` | one pane in the caller's own subtree, in one call: its state, its children and depth, what would end its turn, and its role/brief/stall/staged-result if it is a child of the caller |
 | `pane_read` | `mcp_orchestration.rs` | `hs-pane read` | a child's terminal, ANSI-stripped, capped: `source=screen` (default) reads the session's emulator (`vt.rs`), `source=tail` splits the byte ring on newlines. Anything else is refused by name |
-| `pane_prompt` | `mcp_orchestration.rs` | `hs-pane prompt` | send follow-up text into a child, queued on the child's own wake lane |
-| `pane_wait` | `mcp_orchestration.rs` | `hs-pane wait` | door 1: block on the caller's own `pane_inbox` until an eligible row exists (or the timeout runs out), reserve it, mark it `delivered_via = 'wait'`, and return the rows in this same call. `session` (optional) scopes to one child; `kind` (optional) filters to one row kind but never hides an urgent one for a waited child. `until` is removed and refused by name, naming `kind` as its replacement |
+| `pane_prompt` | `mcp_orchestration.rs` | `hs-pane prompt` | send follow-up text into a child; return immediate write failures and queue held prompts on the bounded wake lane |
+| `pane_wait` | `mcp_orchestration.rs` | `hs-pane wait` | door 1: block on the caller's own `pane_inbox` until an eligible row exists (or the timeout runs out), reserve it, return the rows in this same call, and mark `delivered_via = 'wait'` after transport acceptance. `session` (optional) scopes to one child; `kind` (optional) filters to one row kind but never hides an urgent one for a waited child. `until` is removed and refused by name, naming `kind` as its replacement |
 | `pane_kill` | `mcp_orchestration.rs` | `hs-pane kill` | end a child pane |
 | `pane_submit` | `mcp_orchestration.rs` | `hs-pane submit` | worker→parent result handoff, with an optional summary and artifact paths; wakes the parent |
 | — | — | `hs-pane keys` | press a small set of keys in a pane (the CLI-only spelling of `pane_send_keys`) |
@@ -311,22 +312,42 @@ A parent already sitting inside a `pane_wait` call gets there first: every produ
 writes a row calls `Daemon::inbox_notify`, which fires a per-session `tokio::sync::Notify`
 (`Daemon::inbox_wake`) before anything else, whether or not the row is urgent. The wait
 loop reserves-then-awaits (never the other order), so a write racing the check is never
-lost — the DB is the truth, the notify is only ever a hint to re-check it sooner. Because
-the reservation happens the instant the row exists, a row door 1 already claimed is
-`delivered_at`-stamped by the time door 3's own batch timer fires, and door 3's own
-eligibility query simply does not see it — no second mechanism keeps the two doors from
-carrying one message twice.
+lost — the DB is the truth, the notify is only a hint to re-check it sooner. Reserved
+rows remain undelivered until the MCP response sender accepts the final frame. A failed
+send releases the reservation. Disconnects cancel immediately through the response
+sender's closed signal; `notifications/cancelled` cancels the matching request in the
+caller's scope. This applies to SSE progress responses and plain JSON waits. Transport
+acceptance means the server accepted the frame, not that the model read it.
 
-Zero tokens are spent while blocked; the result lands as a tool result in the same turn,
-exactly like the CLI's own sub-agent tool. Rows come ordered by `created_at, id`, capped at
-`INBOX_BATCH_MAX_ROWS` / `INBOX_BATCH_MAX_BYTES` with `has_more: true` when cut. A `kind`
-filter scopes to one row kind but never hides an urgent row: `needs_input`, `exited` and
-`stalled` for a waited child return through any filter, so a parent waiting for a `result`
-cannot sit forever on a child that is blocked or dead. `Daemon::inbox_waiting` enforces one
-`pane_wait` per pane: a second concurrent call from the same caller is refused by name
-rather than sharing the first one's reservation. The guard that holds a caller's slot in
-both `inbox_waiting` and `inbox_wake` is released on every exit path — return, `?`, or
-panic — through `Drop`.
+Zero tokens are spent while blocked. After spawn, agents must wait instead of polling
+`pane_get`, `pane_read` or `pane_list`; those are diagnostics after a timeout, for help,
+or at the operator's request. Timeouts are bounded by `DEFAULT_WAIT_TIMEOUT_MS`, below
+Codex's tool timeout. A whole-inbox wait with no live children or pending rows returns
+`nothing_to_wait_on` immediately.
+
+Rows come ordered by `created_at, id`, capped at `INBOX_BATCH_MAX_ROWS` /
+`INBOX_BATCH_MAX_BYTES` with `has_more: true` when cut. A `kind` filter never hides urgent
+rows for a waited child. A new wait supersedes the caller's previous wait and releases
+its reservation; the previous call returns `superseded`. Cancellation guards remove only
+their own registration so an older call cannot remove a replacement wait.
+
+A result staged during a working turn is released when the round closes, including an
+intentional cancellation. `pane_get` exposes `result_staged_age_ms` for a result that
+has not become eligible; no age-based automatic release is applied.
+
+Claude's Stop reports with running background tasks hold an unstaged round open and
+prevent stall notices. `pane_get` names the hold as `background job running (N)`. A Stop
+with zero jobs removes the hold. After `BACKGROUND_HOLD_MAX_MS` (45 minutes), the daemon
+releases a stored result or emits one `no_handback` naming the bound and elapsed time.
+
+Delegation registration precedes PTY creation, and a failed spawn removes its spawning
+record. The cleanup lock still protects the parent throughout spawn: releasing it during
+worktree creation or PTY startup would let cleanup remove a completed temporary parent
+before the child is registered in the live roster.
+
+`pane_prompt` applies the same status and operator-composer hold as inbox pastes. A held
+prompt remains on the bounded wake lane and reports `held`; an immediately writable
+prompt returns PTY write errors synchronously. The hold is rechecked before Enter.
 
 ### Door 2: the synchronous `Stop` hook
 
@@ -983,7 +1004,7 @@ the session row flattened in (so this is `pane_list`'s element shape plus
 extras, not a second vocabulary), the live-children and depth numbers its own
 spawn caps are measured against, its `TurnEndSource`, and its `DelegationView`
 if it has one. The view deliberately reports `result_staged: bool` — read off the
-parent's inbox, since that is where the body lives — rather than the body itself, which
+parent's inbox while `ready_at` is absent, with `result_staged_age_ms` showing its age — rather than the body itself, which
 is the parent's next wake and not a field a caller can drain early. This is the one verb a caller may point at ITSELF: the scope gate's
 self-refusal exists for the verbs that act on a pane, and this one only reads.
 
