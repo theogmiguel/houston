@@ -148,11 +148,9 @@ describe('overlays-03: glass where the site earns it, per the ladder table', () 
           hasWorkspace
           keymapOverrides={{ bindings: {}, shortcuts_enabled: true } as ClientKeymapOverrides}
           onClose={() => {}}
-          onInsertPane={() => {}}
           onNewTerminal={() => {}}
           onSpawnAgent={() => {}}
           onNewGrid={() => {}}
-          onNewSession={() => {}}
           agentProfiles={null}
         />
       )

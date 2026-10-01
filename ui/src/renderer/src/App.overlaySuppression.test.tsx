@@ -50,18 +50,8 @@ function click(el: Element | null | undefined, what: string): void {
   })
 }
 
-function byTitle(container: Element, title: string): Element | undefined {
-  return Array.from(container.querySelectorAll('button')).find(
-    (b) => b.getAttribute('aria-label') === title || b.getAttribute('title') === title
-  )
-}
-
 function openComposer(container: Element): void {
-  click(byTitle(container, 'New pane'), 'a pane header’s "+" button')
-  click(
-    container.querySelector('[data-testid="add-pane-new-session"]'),
-    'the Add-pane popover’s "New session…" row'
-  )
+  click(container.querySelector('[aria-label^="New session in "]'), 'the workspace row’s "New session" button')
 }
 
 describe('B6b — full-surface overlays hide the grid, never destroy it', () => {

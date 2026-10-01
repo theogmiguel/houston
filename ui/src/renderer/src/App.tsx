@@ -2208,11 +2208,6 @@ export function App(): React.JSX.Element {
     },
     [setActiveLeaf],
   );
-  const openFilesPane = useCallback(
-    (workspaceDir: string, anchor: PaneKey | null): void =>
-      openFilesPaneAt(workspaceDir, workspaceDir, anchor),
-    [openFilesPaneAt],
-  );
   const closeFiles = useCallback(
     (id: string): void => {
       mutateTree((t) => removeLeaf(t, id));
@@ -4014,12 +4009,6 @@ export function App(): React.JSX.Element {
               hasWorkspace={selectedWs !== "all"}
               keymapOverrides={keymapOverrides}
               onClose={() => setAddPanePopover(null)}
-              onInsertPane={(kind) => {
-                if (selectedWs === "all") return;
-                const anchor = addPanePopover.anchor;
-                if (kind === "browser") openBrowserPane(selectedWs, anchor);
-                else openFilesPane(selectedWs, anchor);
-              }}
               onNewTerminal={newTerminal}
               onSpawnAgent={spawnAgentPane}
               agentProfiles={agentProfiles}
@@ -4033,7 +4022,6 @@ export function App(): React.JSX.Element {
                   : undefined
               }
               onNewGrid={() => handleAddGrid(selectedWs)}
-              onNewSession={() => setComposer("current-grid")}
             />
           )}
 
