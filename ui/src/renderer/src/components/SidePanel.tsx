@@ -5,7 +5,7 @@ import { loadSideState, saveSideState, selectOverviewChild, moveBrowserToGrid, t
 import { requestReveal } from '../editor/bufferStore'
 import { SourceControlPanel, ScmResizeHandle, type SourceControlPanelProps } from './SourceControlPanel'
 import { Icon } from './Icon'
-import { IconClose, IconFolder, IconGitBranch, IconGrid, IconGlobe, IconPlus } from './icons'
+import { IconClose, IconFolder, IconGitBranch, IconGrid, IconGlobe, IconPlus, IconExpand, IconCollapse } from './icons'
 import { Tooltip } from './Tooltip'
 import './sidePanel.css'
 
@@ -15,6 +15,8 @@ const OverviewTab = lazy(() => import('./OverviewTab').then((module) => ({ defau
 
 export function SidePanel(props: SourceControlPanelProps & {
   workspace: string
+  expanded?: boolean
+  onExpanded?: (expanded: boolean) => void
   focused?: boolean
   closed?: boolean
   onSendToTerminal?: (text: string) => void
@@ -68,10 +70,10 @@ export function SidePanel(props: SourceControlPanelProps & {
   const active = state.tabs[state.active]
   const close = (index: number): void => setState((current) => ({ tabs: current.tabs.filter((_, i) => i !== index), active: current.active === index ? 0 : current.active > index ? current.active - 1 : current.active }))
   const filesRoot = state.tabs.find((tab) => tab.kind === 'files')?.root ?? props.workspace
-  return <aside ref={root} aria-label="Side panel" data-testid="side-panel" data-dir={props.dir ?? undefined} className={`side-panel ${props.hiddenByOverlay ? 'invisible' : ''}`} style={{ width: rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={(event) => {
-    if (event.key === 'Escape' && !(event.target as HTMLElement).closest('[role="dialog"], .ctx-menu')) { event.stopPropagation(); props.onFocusGrid() }
+  return <aside ref={root} aria-label="Side panel" data-testid="side-panel" data-dir={props.dir ?? undefined} className={`side-panel ${props.expanded ? 'expanded' : ''} ${props.hiddenByOverlay ? 'invisible' : ''}`} style={{ width: props.expanded ? '100%' : rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={(event) => {
+    if (event.key === 'Escape' && !(event.target as HTMLElement).closest('[role="dialog"], .ctx-menu')) { event.stopPropagation(); if (props.expanded) props.onExpanded?.(false); else props.onFocusGrid() }
   }}>
-    <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />
+    {!props.expanded && <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />}
     <div className="side-tabs" role="tablist" aria-label="Side panel tabs">
       {state.tabs.map((tab, index) => {
         const label = tab.kind === 'scm' ? 'Source control' : tab.kind === 'files' ? 'Files' : tab.kind === 'overview' ? props.sessions.get(tab.orchestrator)?.title ?? `Orchestrator ${tab.orchestrator}` : tab.url
@@ -86,7 +88,8 @@ export function SidePanel(props: SourceControlPanelProps & {
           {index >= 2 && <button aria-label={`Close ${label}`} onClick={() => close(index)}><Icon glyph={IconClose} role="label" /></button>}
         </div></Tooltip>
       })}
-      <Tooltip label="New browser tab"><button aria-label="New browser tab" onClick={() => setState((current) => ({ tabs: [...current.tabs, { kind: 'browser', id: `b${Date.now()}-${crypto.randomUUID()}`, url: '' }], active: current.tabs.length }))}><Icon glyph={IconPlus} role="label" /></button></Tooltip>
+      <span className="side-tab-spacer" /><Tooltip className="side-tab-action" label="New browser tab"><button aria-label="New browser tab" onClick={() => setState((current) => ({ tabs: [...current.tabs, { kind: 'browser', id: `b${Date.now()}-${crypto.randomUUID()}`, url: '' }], active: current.tabs.length }))}><Icon glyph={IconPlus} role="label" /></button></Tooltip>
+      <Tooltip className="side-tab-action" label={props.expanded ? 'Restore side panel (Esc)' : 'Expand side panel'}><button aria-label="Expand side panel" aria-pressed={!!props.expanded} onClick={() => props.onExpanded?.(!props.expanded)}><Icon glyph={props.expanded ? IconCollapse : IconExpand} role="label" /></button></Tooltip>
     </div>
     <div className="side-card">
       <div className={`flex-1 min-h-0 flex-col ${active.kind === 'scm' ? 'flex' : 'hidden'}`}><SourceControlPanel {...props} embedded onChangedCount={setChangedCount} /></div>
@@ -99,6 +102,8 @@ export function SidePanel(props: SourceControlPanelProps & {
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: SourceControlPanelProps & {
   selectedWorkspace: string
+  expanded?: boolean
+  onExpanded?: (expanded: boolean) => void
   focused?: boolean
   closed?: boolean
   onSendToTerminal?: (text: string) => void

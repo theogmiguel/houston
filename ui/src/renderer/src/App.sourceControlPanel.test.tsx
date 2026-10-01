@@ -349,6 +349,22 @@ describe('source control panel — shell integration', () => {
     expect(JSON.stringify(storedTree('all'))).not.toContain('"editor"')
   })
 
+  it('expands the side panel without destroying the grid and restores it with Escape', async () => {
+    await boot([1])
+    press('g')
+    await settlePanel()
+    const grid = harness!.container.querySelector<HTMLElement>('.grid-slot')!
+    const before = engineCounts()
+    act(() => { panel()!.querySelector<HTMLButtonElement>('[aria-label="Expand side panel"]')!.click() })
+    expect(panel()!.classList.contains('expanded')).toBe(true)
+    expect(grid.getAttribute('aria-hidden')).toBe('true')
+    expect(engineCounts()).toEqual(before)
+    act(() => { panel()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(panel()!.classList.contains('expanded')).toBe(false)
+    expect(grid.getAttribute('aria-hidden')).toBeNull()
+    expect(engineCounts()).toEqual(before)
+  })
+
   it('the palette row still toggles the panel through the old command id', async () => {
     await boot([1])
     runPaletteRow('side panel')

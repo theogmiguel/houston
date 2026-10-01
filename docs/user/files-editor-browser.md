@@ -10,6 +10,7 @@ Files tabs, plus closable orchestration overviews and browser tabs. Source contr
 and Pull request views. The pull request summary shows checks, reviews and the merge
 gate. Open pull request details to browse files, leave a review, edit metadata or choose
 additional actions. Drag the panel divider to resize it; double-click resets its width.
+The panel can expand over the grid; Escape restores its previous width.
 
 Ctrl-click a file path in a terminal to open it in Files at the linked line and column.
 Files uses that session's workspace, including when the session belongs to a different
@@ -51,7 +52,7 @@ and requested browser; close a browser tab before retrying.
 
 When an agent asks to open its first page, Houston opens a browser tab in the side panel.
 Navigation to an existing hidden browser reveals that exact tab before loading the page.
-The agent's other browser actions need a visible page first.
+Agent browser requests reveal a hidden browser automatically before operating on it.
 
 Desktop fits the available browser area. Phone previews use a 393 × 852 viewport and
 Tablet previews use 820 × 1180, scaled to fit with the current zoom shown. On hosts

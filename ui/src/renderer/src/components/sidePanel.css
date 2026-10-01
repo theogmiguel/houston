@@ -63,8 +63,10 @@
 
 .side-browser { flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .side-browser .pane.browser { border: 0; border-radius: 0; }
-.side-tabs > span:last-child { flex: none; margin-left: auto; }
-.side-tabs > span:last-child > button { height: var(--h-ctl); width: var(--h-ctl); color: var(--text-muted); }
+.side-tab-spacer { flex: 1; }
+.side-tab-action { flex: none; }
+.side-panel.expanded { position: absolute; inset: 0; z-index: var(--z-sticky); }
+.side-tab-action > button { height: var(--h-ctl); width: var(--h-ctl); color: var(--text-muted); }
 
 .overview-child-head .font-mono{font-size:11px}
 .overview-state{margin-left:auto;font-size:11.5px;font-weight:600;white-space:nowrap}
@@ -129,3 +131,6 @@
 .changes-pane[data-compact="true"] .changes-diff>div{overflow-x:hidden}
 .changes-pane[data-compact="true"] .changes-diff [role="presentation"]{width:100%;min-width:0}
 .changes-pane[data-compact="true"] .changes-diff [data-kind],.changes-pane[data-compact="true"] .changes-diff pre{white-space:pre-wrap;overflow-wrap:anywhere}
+
+.overview-grouping{flex:none;height:24px;padding:1px}
+.overview-grouping button{height:20px;min-width:0;padding:0 8px;font-size:11.5px}

@@ -4,7 +4,7 @@ import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import { HeaderDelegationBadge, stateWord, type PaneRoster } from './DelegationCard'
 import { StatusDot } from './SessionPane'
-import { IconAgent, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo } from './icons'
+import { IconAgent, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { BTN_GHOST, BTN_ICO } from './buttonChrome'
@@ -89,7 +89,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
   </aside>
   return <>
     {!collapsed && <aside aria-label="Children roster" className={`children-column ${MATERIAL_CLS.shell}`}>
-      <div className="children-head"><span>Children</span><span className="children-count">{children.length}</span><span className="flex-1" />
+      <div className="children-head"><span className="text-[var(--accent)]">Children</span><span className="children-count">{children.length}</span><span className="flex-1" />
         <Tooltip label="Filter to needs you"><button className={ROSTER_ICON} aria-label="Filter children" aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="ui" /></button></Tooltip>
         <Tooltip label="Collapse children"><button className={ROSTER_ICON} aria-label="Collapse children" onClick={onCollapse}><Icon glyph={IconChevronLeft} role="ui" /></button></Tooltip>
       </div>
@@ -118,7 +118,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
       </div>
       <footer className="children-footer">
         {pending.length > 0 ? <><span className="truncate">Closing {pending.length}</span><button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={undoClose}>Undo</button></> : <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} disabled={!settled.length} onClick={closeSettled}>Close settled ({settled.length})</button>}
-        <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={() => openSideOverview(parent.id)}>Overview</button>
+        <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={() => openSideOverview(parent.id)}><Icon glyph={IconGrid} role="label" />Overview</button>
       </footer>
     </aside>}
     {strip}

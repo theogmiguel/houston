@@ -8,9 +8,9 @@ vi.mock('./SourceControlPanel', () => ({ SourceControlPanel: () => <div>Changes 
 vi.mock('./FilesPane', () => ({ FilesPane: ({ workspaceDir, openFile }: { workspaceDir: string; openFile: { path: string } }) => <div>Files root: {workspaceDir}; file: {openFile?.path}</div> }))
 vi.mock('./OverviewTab', () => ({ OverviewTab: ({ parentId }: { parentId: number }) => <div>Overview {parentId}</div> }))
 const browserMount = vi.fn(), browserDestroy = vi.fn()
-vi.mock('./BrowserPane', () => ({ BrowserPane: ({ node, hiddenByExpand, onMoveToGrid, onClose }: { node: { id: string; url: string }; hiddenByExpand: boolean; onMoveToGrid: (url: string) => void; onClose: () => void }) => {
+vi.mock('./BrowserPane', () => ({ BrowserPane: ({ node, hiddenByExpand, onMoveToGrid, onClose, loadRequest }: { loadRequest?: unknown; node: { id: string; url: string }; hiddenByExpand: boolean; onMoveToGrid: (url: string) => void; onClose: () => void }) => {
   useEffect(() => { browserMount(node.id); return () => { browserDestroy(node.id) } }, [node.id])
-  return <div data-testid={node.id} data-hidden={hiddenByExpand}><button onClick={() => onMoveToGrid(node.url)}>Move to grid</button><button onClick={onClose}>Close browser content</button></div>
+  return <div data-testid={node.id} data-hidden={hiddenByExpand} data-load={JSON.stringify(loadRequest)}><button onClick={() => onMoveToGrid(node.url)}>Move to grid</button><button onClick={onClose}>Close browser content</button></div>
 } }))
 const props = (): SourceControlPanelProps => ({ dir: '/work', client: {} as SourceControlPanelProps['client'], width: 432, onWidth: vi.fn(), onResetWidth: vi.fn(), tab: 'changes', onTab: vi.fn() })
 afterEach(cleanup)
@@ -58,4 +58,30 @@ describe('side panel host', () => {
     expect(screen.getAllByRole('tab')).toHaveLength(2)
     expect(screen.getByText('Changes | Pull request')).toBeTruthy()
   })
+})
+
+it('expands over the grid and restores by the same control or Escape', () => {
+  const onExpanded = vi.fn(), onFocusGrid = vi.fn()
+  const base = { ...props(), workspace: '/work', sessions: new Map(), request: null, onReviewChild: vi.fn(), onMoveFile: vi.fn(), onFocusSide: vi.fn(), onFocusGrid, onExpanded }
+  const view = render(<SidePanel {...base} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Expand side panel' }))
+  expect(onExpanded).toHaveBeenLastCalledWith(true)
+  view.rerender(<SidePanel {...base} expanded />)
+  expect(screen.getByTestId('side-panel').classList.contains('expanded')).toBe(true)
+  expect(screen.getByTestId('side-panel').style.width).toBe('100%')
+  fireEvent.click(screen.getByRole('button', { name: 'Expand side panel' }))
+  expect(onExpanded).toHaveBeenLastCalledWith(false)
+  onExpanded.mockClear()
+  fireEvent.keyDown(screen.getByTestId('side-panel'), { key: 'Escape' })
+  expect(onExpanded).toHaveBeenCalledExactlyOnceWith(false)
+  expect(onFocusGrid).not.toHaveBeenCalled()
+})
+
+it('selects an explicit browser surface without dispatching a load request', async () => {
+  localStorage.setItem('tr-side:/work', JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'browser', id: 'target', url: 'https://current.test' }], active: 0 }))
+  render(<SidePanel {...props()} workspace="/work" sessions={new Map()} request={{ kind: 'browser', id: 'target', url: 'https://next.test', workspace: '/work', revealOnly: true }} onReviewChild={vi.fn()} onMoveFile={vi.fn()} onFocusSide={vi.fn()} onFocusGrid={vi.fn()} />)
+  await waitFor(() => expect(screen.getByTestId('target')).toBeTruthy())
+  expect(screen.getByTestId('target').getAttribute('data-load')).toBeNull()
+  expect(screen.getByTestId('target').getAttribute('data-hidden')).not.toBe('true')
+  expect(screen.getByRole('tab', { name: 'https://current.test' }).getAttribute('aria-selected')).toBe('true')
 })

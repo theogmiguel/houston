@@ -58,7 +58,7 @@ export function useBrowserPaneLoad(paneId: string, onLoad: (url: string) => void
 
 export function reuseSideBrowser(workspace: string, url: string, surfaceId?: string): boolean {
   const tab = loadSideState(workspace).tabs.find((tab) => tab.kind === 'browser' && (surfaceId === undefined || tab.id === surfaceId))
-  if (tab?.kind !== 'browser') return surfaceId !== undefined
+  if (tab?.kind !== 'browser') return false
   if (surfaceId !== undefined) {
     // The native caller navigates only after this surface acknowledges visibility.
     openSideBrowser(tab.id, tab.url, workspace, true)
@@ -67,4 +67,11 @@ export function reuseSideBrowser(workspace: string, url: string, surfaceId?: str
     requestBrowserPaneLoad(tab.id, url)
   }
   return true
+}
+
+export function routeBrowserOpenRequest(workspace: string, url: string, surfaceId: string | undefined, revealGrid: (workspace: string, surfaceId: string) => boolean, open: (workspace: string, url: string) => void): void {
+  if (surfaceId !== undefined && revealGrid(workspace, surfaceId)) return
+  if (reuseSideBrowser(workspace, url, surfaceId)) return
+  if (surfaceId !== undefined) return
+  open(workspace, url)
 }

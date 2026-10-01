@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }))
 const { isTauriMock } = vi.hoisted(() => ({ isTauriMock: vi.fn(() => true) }))
 vi.mock('./host', () => ({ isTauri: () => isTauriMock() }))
 
-const { useBrowserOpenRequest, useBrowserPaneLoad, reuseSideBrowser } = await import('./browserOpenRequest')
+const { useBrowserOpenRequest, useBrowserPaneLoad, reuseSideBrowser, routeBrowserOpenRequest } = await import('./browserOpenRequest')
 
 function captureHandler(): {
   fire: (payload: { workspaceId: string; url: string }) => void
@@ -111,7 +111,7 @@ describe('native browser reveal routing', () => {
     expect(reuseSideBrowser('/work', 'https://next.test/', 'target')).toBe(true)
     expect(opens).toEqual([{ kind: 'browser', id: 'target', url: 'https://current.test/', workspace: '/work', revealOnly: true }])
     expect(load).not.toHaveBeenCalled()
-    expect(reuseSideBrowser('/work', 'https://next.test/', 'missing')).toBe(true)
+    expect(reuseSideBrowser('/work', 'https://next.test/', 'missing')).toBe(false)
     expect(opens).toHaveLength(1)
     window.removeEventListener('houston:side-open', listener)
   })
@@ -125,4 +125,22 @@ describe('native browser reveal routing', () => {
     expect(load).toHaveBeenCalledWith('https://next.test/')
     expect(reuseSideBrowser('/empty', 'https://next.test/')).toBe(false)
   })
+})
+
+it('routes explicit grid, side and unknown surfaces without dispatching navigation or loads', () => {
+  const open = vi.fn(), reveal = vi.fn(() => true), load = vi.fn()
+  function Loader(): null { useBrowserPaneLoad('target', load); return null }
+  act(() => root.render(<Loader />))
+  routeBrowserOpenRequest('/work', 'https://next.test/', 'target', reveal, open)
+  expect(reveal).toHaveBeenCalledWith('/work', 'target')
+  expect(open).not.toHaveBeenCalled()
+  expect(load).not.toHaveBeenCalled()
+  reveal.mockReturnValue(false)
+  localStorage.setItem('tr-side:/work', JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'browser', id: 'target', url: 'https://current.test/' }], active: 0 }))
+  routeBrowserOpenRequest('/work', 'https://next.test/', 'target', reveal, open)
+  routeBrowserOpenRequest('/work', 'https://next.test/', 'unknown', reveal, open)
+  expect(open).not.toHaveBeenCalled()
+  expect(load).not.toHaveBeenCalled()
+  routeBrowserOpenRequest('/empty', 'https://next.test/', undefined, reveal, open)
+  expect(open).toHaveBeenCalledExactlyOnceWith('/empty', 'https://next.test/')
 })

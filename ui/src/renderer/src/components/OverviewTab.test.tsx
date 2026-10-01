@@ -81,3 +81,14 @@ describe('overview checkout metadata and durable results', () => {
     expect(screen.getByText(result.excerpt)).toBeTruthy()
   })
 })
+
+it('emphasizes the child count when attention is needed and groups using a segmented track', () => {
+  const child = session(2, 1)
+  child.status = 'needs-input'
+  const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+  render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
+  expect(screen.getByText('1').className).toContain('text-[var(--warn)]')
+  expect(screen.getByRole('radiogroup', { name: 'Group children' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('radio', { name: 'Worktree' }))
+  expect(screen.getByRole('radio', { name: 'Worktree' }).getAttribute('aria-checked')).toBe('true')
+})

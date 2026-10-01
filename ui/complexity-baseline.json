@@ -25,13 +25,13 @@
   "max": 20,
   "files": {
     "src/renderer/src/App.tsx": {
-      "total": 859,
-      "worst": 88,
+      "total": 959,
+      "worst": 87,
       "over": 3
     },
     "src/renderer/src/components/BrowserPane.tsx": {
-      "total": 83,
-      "worst": 42,
+      "total": 125,
+      "worst": 37,
       "over": 1
     },
     "src/renderer/src/components/ChangesPane.tsx": {

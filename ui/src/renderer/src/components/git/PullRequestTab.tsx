@@ -82,7 +82,7 @@ const DRAFT_PILL = 'bg-[color-mix(in_srgb,var(--warn)_18%,transparent)] text-[va
 
 const CHECK_DOT: Record<PrCheckState, string> = {
   passing: 'bg-[var(--ok)]',
-  running: 'bg-[var(--warn)]',
+  running: 'bg-[var(--info)]',
   queued: 'bg-[var(--warn)]',
   failing: 'bg-[var(--danger)]',
   skipped: 'bg-[var(--text-faint)]',
@@ -681,6 +681,15 @@ function PrNotices({
   )
 }
 
+export function pendingMergeReason(detail: PrDetail): string | null {
+  const reason = detail.merge_disabled_reason ?? null
+  const pending = detail.checks.filter((check) => ['running', 'queued', 'unknown'].includes(check.state))
+  if ((reason === 'Checks are still running' || /^PR #\d+ is waiting on \d+ checks?: /.test(reason ?? '')) && pending.length > 0) {
+    return `Merge waits for ${pending[0].name}${pending.length > 1 ? ` +${pending.length - 1}` : ''}`
+  }
+  return reason
+}
+
 function PrCompactSummary({ link, detail, pr, method, onOpenUrlInPane, onDetails, linkMessage, actionBar }: {
   link: PullRequestLink
   detail: PrDetail
@@ -693,15 +702,15 @@ function PrCompactSummary({ link, detail, pr, method, onOpenUrlInPane, onDetails
 }): React.JSX.Element {
   const number = link.number
   const busy = pr.write.busy !== null
-  const mergeReason = detail.merge_disabled_reason ?? null
+  const mergeReason = pendingMergeReason(detail)
   return <div className="pr-compact" data-testid="pr-tab">
     <PrNotices pr={pr} linkMessage={linkMessage} />
     <div className="pr-compact-content">
       <div className="pr-compact-title"><strong data-testid="pr-title">{link.title ?? `Pull request #${number}`}</strong><Tooltip label="Pull request details and actions"><button className="pr-compact-details" aria-label="Pull request details and actions" onClick={() => onDetails()}><Icon glyph={IconEllipsis} role="ui" /></button></Tooltip></div>
       <div className="pr-compact-sub" data-testid="pr-sub"><span className={`pr-compact-state ${STATE_PILL[link.state]}`}>{stateLabel(link)}</span><span>#{number}</span><span>{detail.head_ref} → {detail.base_ref}</span><span>· {detail.commit_count} {detail.commit_count === 1 ? 'commit' : 'commits'}</span></div>
-      <h3 className="pr-compact-group">Checks <span>{detail.checks.filter((check) => check.state === 'passing').length}/{detail.checks.length}</span></h3>
+      <h3 className="pr-compact-group">Checks <span className={detail.checks.some((check) => check.state !== 'passing') ? 'text-[var(--warn)]' : undefined}>{detail.checks.filter((check) => check.state === 'passing').length}/{detail.checks.length}</span></h3>
       {detail.checks.map((check, index) => <div className="pr-compact-check" data-testid="pr-check-row" key={`${check.name}-${index}`}><span className={check.state === 'passing' ? 'text-[var(--ok)]' : `pr-compact-check-dot ${CHECK_DOT[check.state]}`}>{check.state === 'passing' && <Icon glyph={IconCheck} role="label" />}</span><span className="truncate">{check.name}</span><span className="pr-compact-duration">{checkMeta(check)}</span></div>)}
-      <h3 className="pr-compact-group">Reviews <span>{detail.reviews_total}</span></h3>
+      <h3 className="pr-compact-group">Reviews <span className={link.review_decision !== 'APPROVED' ? 'text-[var(--warn)]' : undefined}>{detail.reviews_total}</span></h3>
       {detail.reviews_total > 0 ? <PrReviews detail={detail} /> : <div className="pr-compact-check text-[var(--text-muted)]">No reviews yet</div>}
     </div>
     {link.state === 'open' && !link.is_draft ? <footer className="pr-compact-footer"><span className="truncate" data-testid="pr-merge-reason">{mergeReason}</span><button className={`btn ${BTN_GHOST}`} disabled={!onOpenUrlInPane} onClick={() => onOpenUrlInPane?.(link.url)}>Open on GitHub</button><Tooltip label={mergeReason ?? undefined}><button className={`btn ${BTN_PRIMARY}`} data-testid="pr-merge" disabled={mergeReason !== null || busy || pr.mergeBusy} onClick={() => pr.merge(number, method, detail.head_sha)}>Merge</button></Tooltip></footer> : actionBar}
@@ -738,7 +747,7 @@ function PrDetailView({
   const [reviewBody, setReviewBody] = useState('')
   const [reviewDraftsOpen, setReviewDraftsOpen] = useState(false)
   const [openPicker, setOpenPicker] = useState<'reviewers' | 'labels' | 'stack' | null>(null)
-  const mergeReason = detail.merge_disabled_reason ?? null
+  const mergeReason = pendingMergeReason(detail)
   const busy = pr.write.busy !== null
   const number = link.number
 
