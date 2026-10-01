@@ -721,6 +721,11 @@ async fn gateway_tools_call(
                         .into(),
                 )));
             };
+            if target == "pane_wait" {
+                return Err(GatewayCallError::Tool(ToolError(
+                    "call_tool refuses pane_wait: call pane_wait directly for streaming delivery and acknowledgement".into(),
+                )));
+            }
             let call_args = args.get("args").cloned().unwrap_or_else(|| json!({}));
             let Some(provider) = host.tools().provider_for(target) else {
                 let known: Vec<String> = host.tools().all().into_iter().map(|s| s.name).collect();

@@ -373,11 +373,6 @@ pub fn run_hook_client(args: &[String]) {
         .unwrap_or(proto::AgentKind::Claude);
     let input = read_stdin_payload(&mut std::io::stdin(), std::io::stdin().is_terminal());
     let payload = parse_hook_payload(&input, provider);
-    if event == "PostToolUse"
-        && matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
-    {
-        tool_boundary_context();
-    }
 
     let carries_prompt = crate::agent_events::AgentEvent::from_provider(provider, event)
         == Some(crate::agent_events::AgentEvent::PromptSubmitted)
@@ -459,7 +454,16 @@ pub fn run_hook_client(args: &[String]) {
             );
         }
     }
+    if event == "PostToolUse"
+        && matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
+        && std::env::var_os(TOOL_BOUNDARY_CONTEXT_ENV)
+            .is_some_and(|path| Path::new(&path).is_file())
+    {
+        tool_boundary_context();
+    }
 }
+
+pub(crate) const TOOL_BOUNDARY_CONTEXT_ENV: &str = "HOUSTON_TOOL_BOUNDARY_CONTEXT";
 
 fn tool_boundary_context() {
     let Some(base) = std::env::var(crate::mcp_launch::URL_ENV)

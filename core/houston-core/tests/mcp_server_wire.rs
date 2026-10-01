@@ -40,13 +40,13 @@ mod gateway {
 
     impl EchoTool {
         fn specs() -> Vec<ToolSpec> {
-            vec![ToolSpec {
-                name: "echo_workspace".into(),
+            ["echo_workspace", "pane_wait"].into_iter().map(|name| ToolSpec {
+                name: name.into(),
                 title: "Echo the caller's workspace".into(),
                 description: "Test-only tool.".into(),
                 input_schema: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
                 annotations: Annotations::readonly(),
-            }]
+            }).collect()
         }
     }
 
@@ -210,6 +210,29 @@ mod gateway {
         let text = res["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("push_button"), "{text}");
         assert!(text.contains("call_tool"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn gateway_wait_requires_direct_streaming_delivery() {
+        let h = host(&[(1, "tok", Some(AgentKind::Codex))]);
+        let res = call(
+            &h,
+            "tok",
+            rpc(
+                1,
+                "tools/call",
+                json!({"name":"call_tool", "arguments":{"name":"pane_wait","args":{}}}),
+            ),
+        )
+        .await;
+        assert_eq!(res["result"]["isError"], true, "{res}");
+        assert!(
+            res["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("call pane_wait directly"),
+            "{res}"
+        );
     }
 
     #[tokio::test]

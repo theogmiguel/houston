@@ -3319,7 +3319,7 @@ impl Db {
     ) -> Result<()> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        tx.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'unknown', ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
+        tx.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'working', stop_reason = NULL, ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
         tx.execute(
             "UPDATE delegations SET parent_session = ?2 WHERE parent_session = ?1",
             rusqlite::params![old, new],

@@ -383,51 +383,6 @@ pub async fn fs_write_file_checked(
 }
 
 #[tauri::command]
-pub async fn native_notify(title: String, body: String) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let connection = zbus::Connection::session()
-            .await
-            .map_err(|e| format!("Linux notification session bus: {e}"))?;
-        let proxy = zbus::Proxy::new(
-            &connection,
-            "org.freedesktop.Notifications",
-            "/org/freedesktop/Notifications",
-            "org.freedesktop.Notifications",
-        )
-        .await
-        .map_err(|e| format!("Linux notification service: {e}"))?;
-        let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
-            std::collections::HashMap::new();
-        let _: u32 = proxy
-            .call(
-                "Notify",
-                &(
-                    "Houston",
-                    0u32,
-                    "",
-                    title,
-                    body,
-                    Vec::<String>::new(),
-                    hints,
-                    -1i32,
-                ),
-            )
-            .await
-            .map_err(|e| format!("Linux notification delivery: {e}"))?;
-        Ok(())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (title, body);
-        Err(format!(
-            "native notifications unsupported on {}; supported platform: Linux",
-            std::env::consts::OS
-        ))
-    }
-}
-
-#[tauri::command]
 pub async fn fs_stat(
     target_path: String,
     state: State<'_, AllowedRoots>,

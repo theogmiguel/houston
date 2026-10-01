@@ -878,9 +878,12 @@ one of those.
   connection refusal or a 404, and must treat that the same as
   `handoff.supported: false`, never infer a live session count from it.
 
-The `restored` inbox body's JSON array lists `{role, child, provider, resumed}` for each
+The `restored` inbox body's JSON array lists `{role, child, provider, resumed, reason}` for each
 restored parent's open direct children. Unsupported providers remain ended and report
-`resumed: false`. Settled children do not reopen automatically.
+`resumed: false` with `reason: "provider without resume"`. Other reasons include
+`"no resume handle"`, `"resumed"`, or the resume/retention error. Settled children do not
+reopen automatically. Children of deferred parents inherit the visible restore deferral;
+manually respawning their parent runs the same child restore and notice delivery.
 
 `workspace_info.routing` exposes role-pattern model and effort choices. `pane_spawn`
 accepts `state_doc` only with `handoff: true`: text, `{text}`, or `{path}` inside the

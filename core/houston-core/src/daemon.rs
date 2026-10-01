@@ -1042,7 +1042,9 @@ pub struct Daemon {
     inbox_wake: Mutex<HashMap<u32, Arc<tokio::sync::Notify>>>,
     background_holds: Mutex<HashMap<u32, (u32, u64)>>,
     inbox_waiting: Mutex<HashMap<u32, Arc<InboxWaitState>>>,
+    inbox_delivering: Mutex<HashMap<String, u32>>,
     temporary_cleanup_lock: Mutex<()>,
+    pending_cleanup_cancellations: Mutex<HashSet<u32>>,
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
@@ -1667,6 +1669,7 @@ struct SpawnParams {
     /// The conversation the new row carries: resumed now, or kept for a later Restart.
     resume_handle: Option<ResumeHandle>,
     resume_notice: Option<String>,
+    scrollback_seed: Option<Scrollback>,
 }
 
 /// A conversation id and the transcript path the CLI reported with it.
@@ -2301,7 +2304,9 @@ impl Daemon {
             inbox_wake: Mutex::new(HashMap::new()),
             background_holds: Mutex::new(HashMap::new()),
             inbox_waiting: Mutex::new(HashMap::new()),
+            inbox_delivering: Mutex::new(HashMap::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            pending_cleanup_cancellations: Mutex::new(HashSet::new()),
             spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
@@ -2452,11 +2457,25 @@ impl Daemon {
             ok
         });
 
-        let children: Vec<_> = candidates
-            .iter()
+        let children: Vec<_> = self
+            .dead
+            .lock()
+            .expect("dead lock")
+            .values()
             .filter(|c| c.spawned_by.is_some())
             .cloned()
             .collect();
+        let deferred_parents: Vec<_> = self
+            .dead
+            .lock()
+            .expect("dead lock")
+            .values()
+            .filter(|parent| parent.spawned_by.is_none())
+            .filter_map(|parent| parent.restore_deferred.map(|reason| (parent.id, reason)))
+            .collect();
+        for (parent, reason) in deferred_parents {
+            self.defer_children(parent, &children, reason);
+        }
         candidates.retain(|c| c.spawned_by.is_none());
         candidates.sort_by_key(|c| (restore_priority(c.agent), std::cmp::Reverse(c.id)));
 
@@ -2466,39 +2485,17 @@ impl Daemon {
         for (i, c) in candidates.iter().enumerate() {
             if broke {
                 defer(c.id, R::CircuitBreaker);
+                self.defer_children(c.id, &children, R::CircuitBreaker);
                 continue;
             }
             if i >= budget {
                 defer(c.id, R::Budget);
+                self.defer_children(c.id, &children, R::Budget);
                 continue;
             }
             match self.respawn_with(c.id, true, None, None, false, RespawnConversation::Restore) {
-                Ok(parent) => {
-                    respawned += 1;
-                    let mut notices = Vec::new();
-                    self.restore_children(c.id, parent.id, &children, &mut notices, &mut respawned);
-                    if !notices.is_empty() {
-                        let body = serde_json::to_string(&notices).unwrap_or_default();
-                        if let Err(e) = self.inbox_write(
-                            parent.id,
-                            &parent.project_dir,
-                            None,
-                            None,
-                            orchestrate::InboxKind::Restored,
-                            "Children restored after daemon restart",
-                            &body,
-                            Vec::new(),
-                            None,
-                            None,
-                            false,
-                            true,
-                        ) {
-                            tracing::warn!(
-                                "recording restored children for parent {}: {e}",
-                                parent.id
-                            );
-                        }
-                    }
+                Ok(_) => {
+                    respawned = self.sessions.lock().expect("sessions lock").len() as u32;
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -2506,6 +2503,7 @@ impl Daemon {
                         c.id
                     );
                     defer(c.id, R::SpawnFailed);
+                    self.defer_children(c.id, &children, R::SpawnFailed);
                     broke = true;
                 }
             }
@@ -2517,6 +2515,65 @@ impl Daemon {
             crashed,
         });
         tracing::info!("boot restore: respawned {respawned}, deferred {deferred}");
+    }
+
+    fn record_restored_children(
+        self: &Arc<Self>,
+        parent: &proto::SessionInfo,
+        notices: &[serde_json::Value],
+    ) {
+        if notices.is_empty() {
+            return;
+        }
+        if let Err(e) = self.inbox_write(
+            parent.id,
+            &parent.project_dir,
+            None,
+            None,
+            orchestrate::InboxKind::Restored,
+            "Children restored after daemon restart",
+            &serde_json::to_string(notices).expect("JSON notice serialization"),
+            Vec::new(),
+            None,
+            None,
+            false,
+            true,
+        ) {
+            tracing::warn!("recording restored children for parent {}: {e}", parent.id);
+        }
+    }
+
+    fn defer_children(
+        &self,
+        parent: u32,
+        children: &[proto::SessionInfo],
+        reason: proto::RestoreReason,
+    ) {
+        for child in children
+            .iter()
+            .filter(|child| child.spawned_by == Some(parent))
+        {
+            if self
+                .delegation_of(child.id)
+                .is_some_and(|row| row.settled_at.is_some())
+            {
+                continue;
+            }
+            if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
+                info.restore_deferred = Some(reason);
+            }
+            let why = format!("parent {parent} restore deferred: {reason:?}");
+            if let Err(e) = self
+                .db
+                .delegation_finish(child.id, "unknown", Some(&why), now_ms())
+            {
+                tracing::warn!(
+                    "deferring child {}: {why}; recording delegation: {e}",
+                    child.id
+                );
+            }
+            self.defer_children(child.id, children, reason);
+        }
     }
 
     fn restore_children(
@@ -2539,94 +2596,109 @@ impl Daemon {
                 }
                 continue;
             }
-            let supported = matches!(
+            let result = if !matches!(
                 child.agent,
                 proto::AgentKind::Claude | proto::AgentKind::Codex
-            );
-            let restored = supported
-                .then(|| {
-                    self.respawn_with(
+            ) {
+                Err(anyhow!("provider without resume"))
+            } else {
+                match self.db.session_resume_handle(child.id) {
+                    Ok(None) => Err(anyhow!("no resume handle")),
+                    Err(e) => Err(e.context("reading resume handle")),
+                    Ok(Some(_)) => self.respawn_session_with(
                         child.id,
                         true,
                         None,
                         None,
                         false,
                         RespawnConversation::Resume,
-                    )
-                })
-                .and_then(Result::ok);
+                    ),
+                }
+            };
+            let (restored, reason) = match result {
+                Ok(info) => (Some(info), "resumed".to_string()),
+                Err(e) => {
+                    let reason = format!("{e:#}");
+                    tracing::warn!("restoring child {} of parent {parent}: {reason}", child.id);
+                    (None, reason)
+                }
+            };
             let new_id = restored.as_ref().map_or(child.id, |s| s.id);
             let resumed = restored
                 .as_ref()
                 .is_some_and(|s| s.resume_notice.is_none() && s.resumable);
-            if restored.is_some() {
+            let reason = if restored.is_none() {
+                self.retain_unresumed_child(child.id, &reason)
+            } else {
                 *respawned += 1;
-            }
-            if restored.is_none() {
-                let _ = self
-                    .db
-                    .update_session_state(child.id, proto::SessionState::Exited, None);
-                let now = now_ms();
-                let _ = self.db.delegation_set_state(child.id, "unknown", now);
-                let _ = self.db.delegation_retain(
-                    child.id,
-                    now,
-                    now.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
-                );
-                if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
-                    info.state = proto::SessionState::Exited;
-                }
-            }
-            notices.push(serde_json::json!({ "role": row.and_then(|r| r.role), "child": new_id, "provider": child.agent, "resumed": resumed }));
+                reason
+            };
+            notices.push(serde_json::json!({ "role": row.and_then(|r| r.role), "child": new_id, "provider": child.agent, "resumed": resumed, "reason": reason }));
             if let Some(restored) = restored {
                 let mut nested = Vec::new();
                 self.restore_children(child.id, new_id, children, &mut nested, respawned);
-                if !nested.is_empty() {
-                    let body = serde_json::to_string(&nested).unwrap_or_default();
-                    if let Err(e) = self.inbox_write(
-                        new_id,
-                        &restored.project_dir,
-                        None,
-                        None,
-                        orchestrate::InboxKind::Restored,
-                        "Children restored after daemon restart",
-                        &body,
-                        Vec::new(),
-                        None,
-                        None,
-                        false,
-                        true,
-                    ) {
-                        tracing::warn!("recording restored children for parent {new_id}: {e}");
-                    }
-                }
+                self.record_restored_children(&restored, &nested);
             } else {
                 self.retain_unresumed_descendants(child.id, children);
             }
         }
     }
 
+    fn retain_unresumed_child(&self, child: u32, reason: &str) -> String {
+        let now = now_ms();
+        let mut errors = Vec::new();
+        for (operation, result) in [
+            (
+                "session state",
+                self.db
+                    .update_session_state(child, proto::SessionState::Exited, None),
+            ),
+            (
+                "delegation state",
+                self.db
+                    .delegation_finish(child, "unknown", Some(reason), now),
+            ),
+            (
+                "retention",
+                self.db.delegation_retain(
+                    child,
+                    now,
+                    now.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
+                ),
+            ),
+        ] {
+            if let Err(e) = result {
+                tracing::warn!("retaining unresumed child {child}: {reason}; {operation}: {e}");
+                errors.push(format!("{operation}: {e}"));
+            }
+        }
+        if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child) {
+            info.state = proto::SessionState::Exited;
+        }
+        if errors.is_empty() {
+            reason.to_string()
+        } else {
+            format!("{reason}; {}", errors.join("; "))
+        }
+    }
+
     fn retain_unresumed_descendants(&self, parent: u32, children: &[proto::SessionInfo]) {
         for child in children.iter().filter(|c| c.spawned_by == Some(parent)) {
-            let now = now_ms();
-            let _ = self
-                .db
-                .update_session_state(child.id, proto::SessionState::Exited, None);
-            let _ = self.db.delegation_set_state(child.id, "unknown", now);
-            let _ = self.db.delegation_retain(
-                child.id,
-                now,
-                now.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
-            );
-            if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
-                info.state = proto::SessionState::Exited;
-            }
+            self.retain_unresumed_child(child.id, &format!("parent {parent} was not resumed"));
             self.retain_unresumed_descendants(child.id, children);
         }
     }
 
     pub fn recovery_summary(&self) -> Option<proto::RecoverySummary> {
         *self.recovery.lock().expect("recovery lock")
+    }
+
+    fn tool_boundary_signal_path(&self, id: u32) -> PathBuf {
+        self.scrollback_dir
+            .parent()
+            .expect("state directory")
+            .join("hooks/orchestrators")
+            .join(id.to_string())
     }
 
     fn scrollback_path(&self, id: u32) -> PathBuf {
@@ -3651,6 +3723,15 @@ impl Daemon {
     }
 
     fn remove_persisted_scrollback(&self, id: u32) {
+        let signal = self.tool_boundary_signal_path(id);
+        if let Err(e) = std::fs::remove_file(&signal) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    "removing child context signal for pane {id} at {}: {e}",
+                    signal.display()
+                );
+            }
+        }
         let path = self.scrollback_path(id);
         if path.exists() {
             if let Err(e) = std::fs::remove_file(&path) {
@@ -6527,6 +6608,7 @@ impl Daemon {
             session_origin: None,
             resume_handle: None,
             resume_notice: None,
+            scrollback_seed: None,
         })?;
         self.record_approval_mode(info.id, approval);
         Ok(info)
@@ -6758,6 +6840,38 @@ impl Daemon {
         force: bool,
         conversation: RespawnConversation,
     ) -> Result<proto::SessionInfo> {
+        let children: Vec<_> = self
+            .dead
+            .lock()
+            .expect("dead lock")
+            .values()
+            .filter(|child| child.spawned_by.is_some())
+            .cloned()
+            .collect();
+        let parent = self.respawn_session_with(
+            old_id,
+            shell_integration,
+            cwd_override,
+            shell_override,
+            force,
+            conversation,
+        )?;
+        let mut notices = Vec::new();
+        let mut count = 0;
+        self.restore_children(old_id, parent.id, &children, &mut notices, &mut count);
+        self.record_restored_children(&parent, &notices);
+        Ok(parent)
+    }
+
+    fn respawn_session_with(
+        self: &Arc<Self>,
+        old_id: u32,
+        shell_integration: bool,
+        cwd_override: Option<PathBuf>,
+        shell_override: Option<String>,
+        force: bool,
+        conversation: RespawnConversation,
+    ) -> Result<proto::SessionInfo> {
         if let Some(dir) = &cwd_override {
             if !dir.is_dir() {
                 bail!(
@@ -6840,7 +6954,7 @@ impl Daemon {
             profile_label,
             old_tags,
             was_dead,
-        ) = if let Some(old) = from_live {
+        ) = if let Some(old) = from_live.as_ref() {
             let state = *old.state.lock().expect("state lock");
             if state.is_live() {
                 if shell_override.is_some() {
@@ -6972,6 +7086,14 @@ impl Daemon {
         let resume_handle = resume_handle.filter(|_| {
             missing_profile.is_none() && !profile_changed && cwd == Path::new(&recorded_cwd)
         });
+        let scrollback_seed = if spawned_by.is_some() {
+            from_live
+                .as_ref()
+                .map(|session| session.scrollback.lock().expect("scrollback lock").clone())
+                .or_else(|| Scrollback::load(&self.scrollback_path(old_id)).ok())
+        } else {
+            None
+        };
         let spawned = self.spawn_session(SpawnParams {
             id,
             agent,
@@ -6997,6 +7119,7 @@ impl Daemon {
             session_origin: Some(self.db.session_origin(old_id)?),
             resume_handle,
             resume_notice,
+            scrollback_seed,
         })?;
 
         self.db
@@ -7515,6 +7638,7 @@ impl Daemon {
             session_origin,
             resume_handle,
             resume_notice,
+            scrollback_seed,
         } = p;
         let pty = native_pty_system();
         let pair = pty
@@ -7708,6 +7832,10 @@ impl Daemon {
             }
         }
         cmd.env("HOUSTON_SESSION", id.to_string());
+        cmd.env(
+            crate::claude_hooks::TOOL_BOUNDARY_CONTEXT_ENV,
+            self.tool_boundary_signal_path(id).display().to_string(),
+        );
         if let Some(channel) = &self.channel {
             cmd.env(crate::paths::CHANNEL_ENV, channel);
         }
@@ -7801,7 +7929,7 @@ impl Daemon {
             acp: acp
                 .as_ref()
                 .map(|_| Mutex::new(crate::acp::AcpDecoder::new())),
-            scrollback: Mutex::new(Scrollback::new()),
+            scrollback: Mutex::new(scrollback_seed.unwrap_or_default()),
             ws_attaches: AtomicU32::new(0),
             vt: Mutex::new(None),
             vt_refused: AtomicBool::new(false),
@@ -7838,6 +7966,17 @@ impl Daemon {
             self.broadcast_control(&proto::ServerMsg::SessionCreated { info: info.clone() });
         }
 
+        if let Some(parent) = spawned_by {
+            let signal = self.tool_boundary_signal_path(parent);
+            let result = std::fs::create_dir_all(signal.parent().expect("signal parent"))
+                .and_then(|()| std::fs::write(&signal, b""));
+            if let Err(e) = result {
+                tracing::warn!(
+                    "enabling child context hints for pane {parent} at {}: {e}",
+                    signal.display()
+                );
+            }
+        }
         self.spawn_pty_reader_thread(id, &session, reader);
 
         let daemon = Arc::clone(self);
@@ -9471,6 +9610,7 @@ impl Daemon {
             session_origin: None,
             resume_handle: None,
             resume_notice: None,
+            scrollback_seed: None,
         });
         if let Err(e) = spawned {
             self.handoff_jobs
@@ -12246,7 +12386,10 @@ impl Daemon {
         if held.is_some() {
             self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string()))?;
         } else {
-            self.paste_text(session_id, text)?;
+            if !self.paste_text(session_id, text)? {
+                self.swarm_wake_enqueue(session_id, WakeItem::Text(text.to_string()))?;
+                return Ok(Some("pane became held before paste".to_string()));
+            }
         }
         Ok(held)
     }
@@ -12331,11 +12474,26 @@ impl Daemon {
                 take_wake_item(&mut lanes, session_id, generation)
             };
             match next {
-                Some(WakeItem::Text(text)) => {
-                    if let Err(e) = this.paste_text(session_id, &text) {
-                        tracing::warn!("delivering held prompt to pane {session_id}: {e}");
+                Some(WakeItem::Text(text)) => match this.paste_text(session_id, &text) {
+                    Ok(false) => {
+                        let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
+                        if let Some(lane) = lanes
+                            .get_mut(&session_id)
+                            .filter(|lane| lane.generation == generation)
+                        {
+                            lane.queue.push_front(WakeItem::Text(text));
+                        }
                     }
-                }
+                    Ok(true) => {}
+                    Err(e) => {
+                        tracing::warn!("delivering held prompt to pane {session_id}: {e}");
+                        this.note_to_operator(
+                            session_id,
+                            "prompt_failed",
+                            &format!("prompt for pane {session_id} was not delivered: {e}"),
+                        );
+                    }
+                },
                 Some(WakeItem::Inbox) => this.paste_inbox(session_id),
                 None => {
                     this.delegation_wake.notify_one();
@@ -12345,15 +12503,32 @@ impl Daemon {
         }
     }
 
-    fn paste_text(&self, session_id: u32, text: &str) -> Result<()> {
-        self.write_stdin(session_id, &bracketed_paste(text))
-            .with_context(|| format!("pasting prompt into pane {session_id}"))?;
-        std::thread::sleep(SWARM_WAKE_SETTLE);
-        if let Some(reason) = self.paste_hold_reason(session_id) {
-            bail!("pane {session_id} prompt was pasted but not submitted: {reason}");
+    fn paste_text(self: &Arc<Self>, session_id: u32, text: &str) -> Result<bool> {
+        if self.paste_hold_reason(session_id).is_some() {
+            return Ok(false);
         }
-        self.write_stdin(session_id, b"\r")
-            .with_context(|| format!("submitting prompt in pane {session_id}"))
+        match self.write_stdin_counting(session_id, &bracketed_paste(text)) {
+            Ok(()) => {}
+            Err(e) if e.nothing_written() => {
+                return Err(anyhow!("pasting prompt into pane {session_id}: {e}"))
+            }
+            Err(e) => {
+                self.note_to_operator(session_id, "partial", &format!("partial prompt in pane {session_id}: {e}; inspect its composer before retrying. Pending prompt:\n{text}"));
+                return Ok(true);
+            }
+        }
+        std::thread::sleep(SWARM_WAKE_SETTLE);
+        let partial = if let Some(reason) = self.paste_hold_reason(session_id) {
+            Some(format!("prompt was pasted but not submitted: {reason}"))
+        } else {
+            self.write_stdin_counting(session_id, b"\r")
+                .err()
+                .map(|e| format!("submitting Enter failed: {e}"))
+        };
+        if let Some(reason) = partial {
+            self.note_to_operator(session_id, "partial", &format!("partial prompt in pane {session_id}: {reason}; the text remains in its composer, inspect it before retrying. Pending prompt:\n{text}"));
+        }
+        Ok(true)
     }
 }
 
@@ -12690,6 +12865,12 @@ impl Daemon {
             })?;
             if !real.starts_with(&root) {
                 bail!("state_doc path {path:?} resolves outside workspace {}; expected a file inside it", root.display());
+            }
+            if !std::fs::metadata(&real)?.is_file() {
+                bail!(
+                    "state_doc path {path:?} must name a regular file inside {}",
+                    root.display()
+                );
             }
             let mut bytes = Vec::new();
             std::fs::File::open(&real)?
@@ -13239,6 +13420,7 @@ impl Daemon {
             session_origin: None,
             resume_handle: None,
             resume_notice: None,
+            scrollback_seed: None,
         });
         let info = match spawned {
             Ok(info) => info,
@@ -13577,7 +13759,14 @@ impl Daemon {
                 .expect("wait reservation lock")
                 .take()
             {
-                self.release_reservation(&id);
+                if !self
+                    .inbox_delivering
+                    .lock()
+                    .expect("inbox delivering lock")
+                    .contains_key(&id)
+                {
+                    self.release_reservation(&id);
+                }
             }
         }
         drop(waiting);
@@ -13598,29 +13787,51 @@ impl Daemon {
 
     pub fn finish_wait_delivery(&self, caller: u32, delivery_id: &str, sent: bool) {
         let mut waiting = self.inbox_waiting.lock().expect("inbox waiting lock");
-        let Some(state) = waiting.get(&caller) else {
-            return;
-        };
-        let mut reservation = state.reservation.lock().expect("wait reservation lock");
-        if reservation.as_deref() != Some(delivery_id) {
+        let mut delivering = self.inbox_delivering.lock().expect("inbox delivering lock");
+        if delivering.get(delivery_id) != Some(&caller) {
             return;
         }
-        if sent {
-            if let Err(e) = self.db.inbox_mark_delivered(delivery_id, "wait", now_ms()) {
-                tracing::warn!("confirming wait delivery {delivery_id}: {e}");
-                self.release_reservation(delivery_id);
+        delivering.remove(delivery_id);
+        drop(delivering);
+        let current = waiting.get(&caller).is_some_and(|state| {
+            state
+                .reservation
+                .lock()
+                .expect("wait reservation lock")
+                .as_deref()
+                == Some(delivery_id)
+        });
+        let released = if sent {
+            match self.db.inbox_mark_delivered(delivery_id, "wait", now_ms()) {
+                Ok(_) => false,
+                Err(e) => {
+                    tracing::warn!("confirming wait delivery {delivery_id}: {e}");
+                    self.release_reservation(delivery_id);
+                    true
+                }
             }
         } else {
             self.release_reservation(delivery_id);
+            true
+        };
+        if current {
+            waiting.remove(&caller);
+            self.inbox_wake
+                .lock()
+                .expect("inbox wake lock")
+                .remove(&caller);
         }
-        reservation.take();
-        drop(reservation);
-        waiting.remove(&caller);
-        self.inbox_wake
-            .lock()
-            .expect("inbox wake lock")
-            .remove(&caller);
         drop(waiting);
+        if released {
+            if let Some(notify) = self
+                .inbox_wake
+                .lock()
+                .expect("inbox wake lock")
+                .get(&caller)
+            {
+                notify.notify_one();
+            }
+        }
         if sent {
             if let Ok(rows) = self.db.inbox_rows_by_delivery(delivery_id) {
                 for row in rows {
@@ -13705,6 +13916,10 @@ impl Daemon {
                 .lock()
                 .expect("wait reservation lock") = Some(delivery_id.clone());
             let has_more = this.db.inbox_count_matching(caller, now, child, kind_str)? > 0;
+            this.inbox_delivering
+                .lock()
+                .expect("inbox delivering lock")
+                .insert(delivery_id.clone(), caller);
             Ok(Some(orchestrate::InboxWaitOutcome::Delivered {
                 rows,
                 delivery_id,
@@ -14600,6 +14815,15 @@ impl Daemon {
         row: &crate::db::DelegationRow,
         now: u64,
     ) -> Option<u32> {
+        if self
+            .pending_cleanup_cancellations
+            .lock()
+            .expect("pending cleanup lock")
+            .remove(&row.child_session)
+        {
+            self.cancel_temporary_cleanup_locked(row.child_session);
+            return None;
+        }
         if row.reusable
             || orchestrate::DelegationState::parse(&row.state)
                 != Some(orchestrate::DelegationState::Done)
@@ -15385,6 +15609,17 @@ impl Daemon {
         if self.refusing_mutations() {
             return;
         }
+        if let Ok(_guard) = self.temporary_cleanup_lock.try_lock() {
+            let pending: Vec<_> = self
+                .pending_cleanup_cancellations
+                .lock()
+                .expect("pending cleanup lock")
+                .drain()
+                .collect();
+            for child in pending {
+                self.cancel_temporary_cleanup_locked(child);
+            }
+        }
         let open = match self.db.delegations_open() {
             Ok(rows) => rows,
             Err(e) => {
@@ -15794,11 +16029,6 @@ impl Daemon {
     }
 
     pub fn note_operator_keystroke(&self, session: u32, payload: &[u8]) {
-        let _cleanup_guard = self
-            .temporary_cleanup_lock
-            .lock()
-            .expect("temporary cleanup lock");
-        self.cancel_temporary_cleanup_locked(session);
         self.composer_occupied
             .lock()
             .expect("composer lock")
@@ -15809,6 +16039,17 @@ impl Daemon {
                     submitting_enter: is_submitting_enter(payload),
                 },
             );
+        match self.temporary_cleanup_lock.try_lock() {
+            Ok(_guard) => self.cancel_temporary_cleanup_locked(session),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                self.pending_cleanup_cancellations
+                    .lock()
+                    .expect("pending cleanup lock")
+                    .insert(session);
+                self.delegation_wake.notify_one();
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => panic!("temporary cleanup lock poisoned"),
+        }
     }
 
     pub fn clear_composer_occupied(&self, session: u32) -> bool {

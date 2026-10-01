@@ -11,6 +11,7 @@ mod dialog;
 mod fs;
 mod fs_allowlist;
 mod host;
+mod notifications;
 mod shell;
 mod shells;
 mod skills;
@@ -481,7 +482,7 @@ fn main() {
             fs::fs_read_media,
             fs::fs_write_file,
             fs::fs_write_file_checked,
-            fs::native_notify,
+            notifications::native_notify,
             fs::fs_stat,
             fs::fs_exists,
             fs::fs_delete,

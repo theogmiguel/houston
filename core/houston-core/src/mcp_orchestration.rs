@@ -302,15 +302,6 @@ impl ToolProvider for OrchestrationTools {
                         output_format: opt_str(args, "output_format"),
                         boundaries: opt_str(args, "boundaries"),
                     };
-                    let brief = daemon
-                        .handoff_state_brief(
-                            caller,
-                            target_workspace.as_deref(),
-                            handoff,
-                            brief,
-                            args.get("state_doc"),
-                        )
-                        .map_err(|e| ToolError(format!("{e:#}")))?;
                     // Not `opt_str`: an empty slug must reach the slug rule and be refused,
                     // not read as "no worktree" and spawn in the workspace instead.
                     let worktree = crate::worktrees::spawn_ask(
@@ -320,7 +311,15 @@ impl ToolProvider for OrchestrationTools {
                         opt_str(args, "branch"),
                     )
                     .map_err(|e| ToolError(format!("{e:#}")))?;
+                    let state_doc = args.get("state_doc").cloned();
                     let info = tokio::task::spawn_blocking(move || {
+                        let brief = daemon.handoff_state_brief(
+                            caller,
+                            target_workspace.as_deref(),
+                            handoff,
+                            brief,
+                            state_doc.as_ref(),
+                        )?;
                         if handoff {
                             daemon.orchestrate_handoff(
                                 caller,

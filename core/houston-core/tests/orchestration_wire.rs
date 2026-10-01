@@ -128,6 +128,17 @@ async fn rig(name: &str) -> Rig {
     }
 }
 
+struct SessionCleanup(Arc<Daemon>);
+
+impl Drop for SessionCleanup {
+    fn drop(&mut self) {
+        for session in self.0.list() {
+            let _ = self.0.kill(session.id);
+            let _ = self.0.close(session.id);
+        }
+    }
+}
+
 impl Rig {
     fn pane(&self) -> proto::SessionInfo {
         self.daemon
@@ -8852,9 +8863,10 @@ async fn k1_a_connected_sse_wait_returns_superseded_to_the_previous_caller() {
 }
 
 #[tokio::test]
-async fn k1_superseding_a_reserved_wait_reoffers_rows_and_ignores_stale_confirmation() {
+async fn k3_superseding_wait_keeps_inflight_delivery_reserved() {
     let _guard = serial().await;
     let r = rig("superseded-reservation").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
     let (_, spawned) = r
@@ -8887,23 +8899,13 @@ async fn k1_superseding_a_reserved_wait_reoffers_rows_and_ignores_stale_confirma
     else {
         panic!("first reservation")
     };
-    let Delivered {
-        delivery_id: second_id,
-        rows: second_rows,
-        ..
-    } = second
-    else {
-        panic!("replacement reservation")
-    };
-    assert_eq!(first_rows[0].id, second_rows[0].id);
+    assert!(!matches!(second, Delivered { .. }), "{second:?}");
+    assert!(!first_rows.is_empty());
     r.daemon.finish_wait_delivery(parent.id, &first_id, true);
     assert!(r.daemon.inbox_rows_for_test(parent.id)[0]
         .delivered_at
-        .is_none());
-    r.daemon.finish_wait_delivery(parent.id, &second_id, true);
-    assert!(r.daemon.inbox_rows_for_test(parent.id)[0]
-        .delivered_at
         .is_some());
+    r.daemon.close(parent.id).unwrap();
 }
 
 #[tokio::test]
@@ -9237,6 +9239,7 @@ async fn k2_queued_prompt_drains_into_idle_codex_after_composer_hold_clears() {
 async fn k2_continue_ended_child_resumes_handle_and_rebinds_delegation() {
     let _guard = serial().await;
     let r = rig("continue-child").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
     let parent = r.pane();
     r.daemon.orchestration_set(true).unwrap();
     let (_, spawned) = r
@@ -9268,6 +9271,10 @@ async fn k2_continue_ended_child_resumes_handle_and_rebinds_delegation() {
     )
     .await;
     r.daemon
+        .write_stdin(child, b"BEFORE-CONTINUE-TRANSCRIPT\n")
+        .unwrap();
+    await_child_echo(&r.daemon, child, "BEFORE-CONTINUE-TRANSCRIPT").await;
+    r.daemon
         .orchestrate_submit(child, "done".to_string().into())
         .unwrap();
     apply_drop(
@@ -9293,7 +9300,11 @@ async fn k2_continue_ended_child_resumes_handle_and_rebinds_delegation() {
     assert_ne!(resumed.id, child);
     assert_eq!(resumed.spawned_by, Some(parent.id));
     assert!(resumed.resumable);
-    assert_eq!(r.daemon.delegation_of(resumed.id).unwrap().state, "unknown");
+    assert_eq!(r.daemon.delegation_of(resumed.id).unwrap().state, "working");
+    assert!(
+        String::from_utf8_lossy(&r.daemon.scrollback(resumed.id, None).unwrap().data)
+            .contains("BEFORE-CONTINUE-TRANSCRIPT")
+    );
     assert!(r.daemon.delegation_of(child).is_none());
     await_child_echo(&r.daemon, resumed.id, "resume").await;
     r.daemon.close(parent.id).unwrap();
@@ -9301,8 +9312,13 @@ async fn k2_continue_ended_child_resumes_handle_and_rebinds_delegation() {
 
 #[tokio::test]
 async fn k2_restart_restores_parent_children_and_one_notice() {
+    assert_restart_restores_children(false, false).await;
+}
+
+async fn assert_restart_restores_children(manual: bool, fail_writes: bool) {
     let _guard = serial().await;
     let r = rig("restart-children").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
     let parent = r.bypass_pane();
     r.daemon.orchestration_set(true).unwrap();
     r.daemon.set_orchestration_caps(4, 2).unwrap();
@@ -9323,6 +9339,20 @@ async fn k2_restart_restores_parent_children_and_one_notice() {
     let unsupported = second["session_id"].as_u64().unwrap() as u32;
     let (_, nested) = r.post_spawn(&r.token_for(child), serde_json::json!({"kind":"claude","prompt":"nested work","role":"nested","reusable":true})).await;
     let nested = nested["session_id"].as_u64().unwrap() as u32;
+    let (_, missing) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","role":"missing","reusable":true}),
+        )
+        .await;
+    let missing = missing["session_id"].as_u64().unwrap() as u32;
+    let (_, invalid) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"claude","prompt":"work","role":"invalid","reusable":true}),
+        )
+        .await;
+    let invalid = invalid["session_id"].as_u64().unwrap() as u32;
     let path = r._state.path().join("restart.db");
     r.daemon.checkpoint_scrollback().unwrap();
     let source = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
@@ -9341,17 +9371,54 @@ async fn k2_restart_restores_parent_children_and_one_notice() {
         db.set_session_resume_handle(id, Some((conversation, Some(transcript.to_str().unwrap()))))
             .unwrap();
     }
+    db.set_session_resume_handle(
+        invalid,
+        Some((
+            "00000000-0000-4000-8000-000000000005",
+            Some("/missing/invalid-transcript.jsonl"),
+        )),
+    )
+    .unwrap();
+    if manual {
+        db.set_setting("restore_budget", "0").unwrap();
+    }
+    if fail_writes {
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch(&format!("CREATE TRIGGER reject_retained_session BEFORE UPDATE OF state ON sessions WHEN OLD.id = {missing} AND NEW.state = 'exited' BEGIN SELECT RAISE(FAIL, 'session write refused'); END;
+        CREATE TRIGGER reject_retained_delegation BEFORE UPDATE OF state ON delegations WHEN OLD.child_session = {missing} BEGIN SELECT RAISE(FAIL, 'delegation write refused'); END;
+        CREATE TRIGGER reject_retention BEFORE UPDATE OF retained_until ON delegations WHEN OLD.child_session = {missing} BEGIN SELECT RAISE(FAIL, 'retention write refused'); END;")).unwrap();
+    }
     drop(db);
     // A crash snapshot retains running rows and no clean-shutdown marker. The original
     // harness remains isolated from the restart database and its new PTYs.
     let restarted = Daemon::new_with_safe_mode_flags_for_test(
         DaemonConfig {
             token: TOKEN.into(),
-            db_path: path,
+            db_path: path.clone(),
         },
         houston_core::daemon::SafeModeFlags::default(),
     )
     .unwrap();
+    if manual {
+        let before = restarted.list();
+        assert!(
+            before
+                .iter()
+                .filter(|session| session.spawned_by.is_some())
+                .all(|session| session.restore_deferred == Some(proto::RestoreReason::Budget)),
+            "{before:?}"
+        );
+        assert!(restarted
+            .delegation_of(child)
+            .unwrap()
+            .stop_reason
+            .unwrap()
+            .contains("deferred"));
+        restarted
+            .respawn(parent.id, false, None, None, false)
+            .unwrap();
+    }
+    let _restart_cleanup = SessionCleanup(Arc::clone(&restarted));
     let sessions = restarted.list();
     let restored_parent = sessions
         .iter()
@@ -9360,14 +9427,14 @@ async fn k2_restart_restores_parent_children_and_one_notice() {
     assert_ne!(restored_parent.id, parent.id);
     let restored_child = sessions
         .iter()
-        .find(|s| s.agent == proto::AgentKind::Codex)
+        .find(|s| s.session_origin == Some(child))
         .unwrap();
     assert_ne!(restored_child.id, child);
     assert_eq!(restored_child.spawned_by, Some(restored_parent.id));
     assert!(restored_child.resumable);
     assert_eq!(
         restored_child.delegation.as_ref().unwrap().state,
-        proto::DelegationState::Unknown
+        proto::DelegationState::Working
     );
     let ended = sessions.iter().find(|s| s.id == unsupported).unwrap();
     assert_eq!(ended.state, proto::SessionState::Exited);
@@ -9378,13 +9445,49 @@ async fn k2_restart_restores_parent_children_and_one_notice() {
         .collect();
     assert_eq!(notices.len(), 1);
     let entries: serde_json::Value = serde_json::from_str(&notices[0].body).unwrap();
-    assert_eq!(entries.as_array().unwrap().len(), 2);
+    assert_eq!(entries.as_array().unwrap().len(), 4);
     let entries = entries.as_array().unwrap();
     let resumed = entries.iter().find(|e| e["role"] == "resumable").unwrap();
     let ended = entries.iter().find(|e| e["role"] == "unsupported").unwrap();
     assert_eq!(resumed["resumed"], true);
     assert_eq!(ended["provider"], "grok");
     assert_eq!(ended["resumed"], false);
+    assert_eq!(ended["reason"], "provider without resume");
+    assert_eq!(resumed["reason"], "resumed");
+    let no_handle = entries
+        .iter()
+        .find(|entry| entry["role"] == "missing")
+        .unwrap();
+    if fail_writes {
+        let reason = no_handle["reason"].as_str().unwrap();
+        for message in [
+            "no resume handle",
+            "session state:",
+            "delegation state:",
+            "retention:",
+        ] {
+            assert!(reason.contains(message), "{reason}");
+        }
+    } else {
+        assert_eq!(no_handle["reason"], "no resume handle");
+    }
+    let failed = entries
+        .iter()
+        .find(|entry| entry["role"] == "invalid")
+        .unwrap();
+    assert!(failed["reason"].as_str().unwrap().contains("transcript"));
+    for id in [missing, invalid, unsupported] {
+        if fail_writes && id == missing {
+            continue;
+        }
+        let info = sessions.iter().find(|session| session.id == id).unwrap();
+        assert_eq!(info.state, proto::SessionState::Exited);
+        let row = restarted.delegation_of(id).unwrap();
+        assert!(row.ended_at.is_some());
+        assert!(row.settled_at.is_some());
+        assert!(row.retained_until.is_some());
+        assert!(row.stop_reason.is_some());
+    }
     let nested_notices: Vec<_> = restarted
         .inbox_rows_for_test(restored_child.id)
         .into_iter()
@@ -9394,6 +9497,254 @@ async fn k2_restart_restores_parent_children_and_one_notice() {
     let entries: serde_json::Value = serde_json::from_str(&nested_notices[0].body).unwrap();
     assert_eq!(entries[0]["role"], "nested");
     assert_eq!(entries[0]["resumed"], true);
+    if fail_writes {
+        rusqlite::Connection::open(&path).unwrap().execute_batch("DROP TRIGGER reject_retained_session; DROP TRIGGER reject_retained_delegation; DROP TRIGGER reject_retention;").unwrap();
+    }
     restarted.close(restored_parent.id).unwrap();
+    r.daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn k3_keystrokes_do_not_wait_for_slow_spawn_lock() {
+    let _guard = serial().await;
+    let r = rig("keystroke-lock").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let daemon = Arc::clone(&r.daemon);
+    let holder = std::thread::spawn(move || {
+        daemon.with_temporary_cleanup_lock_for_test(|| {
+            locked_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        })
+    });
+    locked_rx.recv().unwrap();
+    let (typed_tx, typed_rx) = std::sync::mpsc::channel();
+    let daemon = Arc::clone(&r.daemon);
+    let typer = std::thread::spawn(move || {
+        daemon.note_operator_keystroke(parent.id, b"draft");
+        typed_tx.send(()).unwrap();
+    });
+    let delivered = typed_rx.recv_timeout(Duration::from_secs(1));
+    release_tx.send(()).unwrap();
+    holder.join().unwrap();
+    typer.join().unwrap();
+    assert!(delivered.is_ok(), "keystroke blocked behind the spawn lock");
+    assert!(r.daemon.clear_composer_occupied(parent.id));
+    r.daemon.close(parent.id).unwrap();
+}
+#[tokio::test]
+async fn k3_deferred_parent_manual_respawn_restores_children() {
+    assert_restart_restores_children(true, false).await;
+}
+
+#[tokio::test]
+async fn k3_state_doc_refuses_fifo_without_waiting_for_writer() {
+    use std::os::unix::fs::OpenOptionsExt;
+    let _guard = serial().await;
+    let r = rig("state-fifo").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let fifo = r.ws_dir.join("state.pipe");
+    assert!(houston_core::spawn::command("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap()
+        .success());
+    let (tx, rx) = std::sync::mpsc::channel();
+    let daemon = Arc::clone(&r.daemon);
+    let reader = std::thread::spawn(move || {
+        let result = daemon.handoff_state_brief(
+            parent.id,
+            None,
+            true,
+            "continue".to_string().into(),
+            Some(&serde_json::json!({"path":"state.pipe"})),
+        );
+        tx.send(result).unwrap();
+    });
+    let timely = rx.recv_timeout(Duration::from_secs(1));
+    if timely.is_err() {
+        let mut writer = std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&fifo)
+            .unwrap();
+        writer.write_all(b"state").unwrap();
+    }
+    reader.join().unwrap();
+    assert!(timely.is_ok(), "state_doc blocked on a FIFO");
+    let error = timely.unwrap().unwrap_err();
+    assert!(error.to_string().contains("regular file"), "{error}");
+    r.daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn k3_partial_raw_prompt_is_visible_to_operator() {
+    let _guard = serial().await;
+    let r = rig("partial-raw-prompt").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    r.daemon.note_operator_keystroke(child, b"draft");
+    let (_, _, held) = r
+        .daemon
+        .orchestrate_prompt_with_hold(parent.id, child, "PARTIAL-RAW-PROMPT")
+        .unwrap();
+    assert!(held.is_some());
+    r.daemon.fail_next_stdin_write_after_for_test(child, 12);
+    r.daemon.clear_composer_occupied(child);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let rows = r.daemon.inbox_rows_for_test(0);
+        if rows.iter().any(|row| {
+            row.reason.as_deref() == Some("partial") && row.body.contains("PARTIAL-RAW-PROMPT")
+        }) {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "partial held prompt was lost: {rows:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    r.daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn k3_tool_boundary_writes_drop_before_query_and_skips_leaf_query() {
+    let _guard = serial().await;
+    for flag in ["0", "1"] {
+        let home = tempfile::tempdir().unwrap();
+        let signal = home.path().join("orchestrator");
+        if flag == "1" {
+            std::fs::write(&signal, "").unwrap();
+        }
+        let drop_dir = home.path().join(".houston-k3hook/hooks/drop");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let drop_exists = std::fs::read_dir(&drop_dir)
+                            .is_ok_and(|mut entries| entries.next().is_some());
+                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+                        tx.send(Some(drop_exists)).unwrap();
+                        return;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if std::time::Instant::now() >= deadline {
+                            tx.send(None).unwrap();
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("fixture listener: {error}"),
+                }
+            }
+        });
+        let output = houston_core::spawn::command(env!("CARGO_BIN_EXE_houston-core"))
+            .args(["hook", "PostToolUse"])
+            .env("HOME", home.path())
+            .env("HOUSTON_CHANNEL", "k3hook")
+            .env("TR_SESSION", "99")
+            .env_remove("GROK_SESSION_ID")
+            .env("HOUSTON_TOOL_BOUNDARY_CONTEXT", &signal)
+            .env("HOUSTON_MCP_URL", format!("http://{addr}/mcp"))
+            .env("HOUSTON_MCP_TOKEN", "fixture")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let queried = rx.recv().unwrap();
+        server.join().unwrap();
+        assert_eq!(
+            queried,
+            if flag == "1" { Some(true) } else { None },
+            "flag {flag}"
+        );
+        assert!(home
+            .path()
+            .join(".houston-k3hook/hooks/drop")
+            .read_dir()
+            .unwrap()
+            .next()
+            .is_some());
+    }
+}
+
+#[tokio::test]
+async fn k3_restore_surfaces_each_retention_write_failure() {
+    assert_restart_restores_children(false, true).await;
+}
+
+#[tokio::test]
+async fn k3_failed_inflight_delivery_wakes_replacement_wait() {
+    use std::future::Future;
+    let _guard = serial().await;
+    let r = rig("inflight-retry-wake").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"claude","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(child, "retry after disconnect".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    let first = r
+        .daemon
+        .orchestrate_wait_reserved(parent.id, None, None, 100, false)
+        .await
+        .unwrap();
+    let houston_core::orchestrate::InboxWaitOutcome::Delivered {
+        delivery_id, rows, ..
+    } = first
+    else {
+        panic!("first delivery")
+    };
+    let mut replacement = Box::pin(
+        r.daemon
+            .orchestrate_wait_reserved(parent.id, None, None, 10000, false),
+    );
+    std::future::poll_fn(|context| {
+        assert!(replacement.as_mut().poll(context).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    r.daemon
+        .finish_wait_delivery(parent.id, &delivery_id, false);
+    let retry = tokio::time::timeout(Duration::from_secs(2), replacement)
+        .await
+        .expect("released delivery did not wake its replacement wait")
+        .unwrap();
+    let houston_core::orchestrate::InboxWaitOutcome::Delivered {
+        delivery_id,
+        rows: retry_rows,
+        ..
+    } = retry
+    else {
+        panic!("retry delivery")
+    };
+    assert_eq!(retry_rows[0].id, rows[0].id);
+    r.daemon.finish_wait_delivery(parent.id, &delivery_id, true);
     r.daemon.close(parent.id).unwrap();
 }
