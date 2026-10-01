@@ -48,6 +48,7 @@ export function GitToolsDialogs({
         <WorktreesDialog
           dir={dir}
           worktrees={tools.worktrees}
+          cleanup={tools.cleanup}
           branches={tools.branches}
           defaultBranch={tools.defaultBranch ?? fallbackBase}
           busy={busy}
@@ -60,6 +61,8 @@ export function GitToolsDialogs({
           onCreate={(name, base) => tools.createWorktree(name, base)}
           onRemove={(path, force) => tools.removeWorktree(path, force)}
           onPrune={tools.pruneWorktrees}
+          onCheckCleanup={tools.checkCleanup}
+          onCleanNow={tools.cleanNow}
           onAddWorkspace={onAddWorkspace}
         />
       )}

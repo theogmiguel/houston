@@ -1,4 +1,4 @@
-# Wire protocol v119
+# Wire protocol v120
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -162,6 +162,8 @@ failure not given a typed refusal comes back as `error`.
 | `git_worktree_create` | `dir`, `name`, `base?` | `git_worktrees` carrying a `message` naming the new path and branch |
 | `git_worktree_remove` | `dir`, `path`, `force` (a dirty worktree without it is refused) | `git_worktrees` carrying a `message` |
 | `git_worktree_prune` | `dir` | `git_worktrees` carrying a `message` (the summary, or "Nothing to prune.") |
+| `worktree_cleanup_status` | `dir` (a registered workspace) | `worktree_cleanup` (direct) from the last pass's cache; nothing is measured and `gh` is not called |
+| `worktree_cleanup_run` | `dir` (a registered workspace), `paths?: string[]` | `worktree_cleanup` (bcast) after one pass, whatever the setting. It removes only those `paths` that the pass still finds nothing keeping; with `paths` empty or absent it only checks and measures. A second run while one is going is refused: "a worktree cleanup pass is already running for <dir>" |
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
@@ -300,6 +302,7 @@ failure not given a typed refusal comes back as `error`.
 | `restore_budget_set` | `budget` (`0..=RESTORE_BUDGET_MAX`) | `host_info` (bcast); out of range is an `error` naming ceiling and value |
 | `restore_resume_set` | `enabled` (v119: whether boot restore resumes each pane's conversation; on by default) | `host_info` (bcast) |
 | `mailbox_retention_set` | `hours` (`1..=MAILBOX_RETENTION_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
+| `worktree_cleanup_set` | `enabled`, `grace_hours` (`1..=WORKTREE_CLEANUP_GRACE_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
 | `usage_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `refresh_pricing?` | `usage_summary` (direct), never a broadcast. A half-open instant range: the daemon has no time zone, so the client converts local days to instants and back. Refused when `until_ms <= since_ms` or the span exceeds `USAGE_MAX_WINDOW_DAYS` |
 | `browser_tool_result` | `request_id`, `ok`, `output?: JSON`, `error?` | reply to a `browser_tool_call` this connection received — the browser-tool relay's app-to-daemon half (v93, Detach). Ignored if the daemon is no longer waiting on `request_id` |
 
@@ -347,6 +350,7 @@ failure not given a typed refusal comes back as `error`.
 | `git_review_diffs` | `dir`, `branch?`, `upstream?`, `ahead`, `behind`, `head?`, `files: GitFileStatus[]`, `sections: GitReviewSection[]`, `blocked_paths`, `warnings`, `truncated`, `redacted` | direct reply to `git_review_diffs`; one entry per non-empty scope |
 | `git_branches` | `dir`, `branches: GitBranchInfo[]`, `remotes: GitBranchInfo[]`, `default_branch?`, `truncated` | direct reply to `git_branches` and every branch mutation |
 | `git_worktrees` | `dir`, `worktrees: GitWorktreeInfo[]`, `message?` | direct reply to `git_worktrees` and every worktree mutation; `message` is the mutation's note |
+| `worktree_cleanup` | `dir`, `entries: ManagedWorktreeInfo[]`, `removed: RemovedWorktree[]` | direct reply to `worktree_cleanup_status` (`removed` empty); bcast after every pass over `dir`, by `worktree_cleanup_run` or the 6-hourly loop (which runs only while `worktree_cleanup_enabled` is on) |
 | `git_checkpoints` | `dir`, `checkpoints: GitCheckpointInfo[]` | direct reply to `git_checkpoints` and every checkpoint mutation |
 | `git_checkpoint_diff` | `dir`, `ref`, `patch`, `truncated`, `redacted` | direct reply to `git_checkpoint_diff` |
 | `git_pull` | `dir`, `status: GitPullStatus` | direct reply to `git_pull` |
@@ -579,7 +583,17 @@ ChatPermissionMode accept_edits | bypass_permissions
 HostInfo           channel, state_dir, pid, port, protocol_version, app_version, build_commit, uptime_ms,
                    live_sessions, restore_budget, restore_resume, restore_deferred, orchestration_depth_in_use,
                    orchestration_max_depth, mailbox_files_on_disk, mailbox_retention_hours,
+                   worktree_cleanup_enabled, worktree_cleanup_grace_hours,
                    command_history_ignore_glob_count, session_db_bytes
+
+ManagedWorktreeInfo path, branch, pr?, keep: WorktreeKeep | null, bytes?, measured_at_ms?,
+                   checked_at_ms? (null until a pass evaluated it; only then does keep: null mean
+                   nothing keeps it)
+RemovedWorktree    path, branch, pr?, bytes?
+WorktreeKeep       branch_changed{current?} | dirty{files} | ignored_files{files} |
+                   commits_outside_pr{count, pr} | pr_head_unavailable{pr} | in_use{session} |
+                   grace{until_ms} | not_merged{state} | no_pr | gh_unavailable{gh} |
+                   probably_integrated | remove_failed{message}
 
 UsageProvider      claude | codex
 UsageTokenTotals   uncached_input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens
@@ -880,6 +894,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 120 | **A worktree whose PR has merged is removed with its build output.** New `worktree_cleanup_set` (reply: `host_info` bcast, which gains `worktree_cleanup_enabled` and `worktree_cleanup_grace_hours`), `worktree_cleanup_status` and `worktree_cleanup_run` (which removes only the confirmed `paths`, or only checks), and the `worktree_cleanup` reply/bcast carrying `ManagedWorktreeInfo` with a typed `WorktreeKeep` reason. Only worktrees Houston recorded (`pane_spawn`'s `worktree`, the Changes pane) are ever removed |
 | 119 | **Restored or restarted Claude and Codex panes resume their conversations.** `SessionInfo` gains `resumable` and `resume_notice?`; `session_respawn` gains `fresh?`; new `restore_resume_set` (reply: `host_info` bcast, which gains `restore_resume`) and `session_resumable` bcast. Boot restore after shutdown or crash and `session_respawn` relaunch a Claude session with `--resume <id>` or Codex with `resume <id>` when it holds a resume handle that passes validation, and start fresh with a one-line `resume_notice` otherwise |
 | 118 | **A restarted session keeps its original pane.** `SessionInfo` gains `session_origin`, the original session id persisted across successive restarts and boot restores. Clients retain the pane in any grid or stack even when they missed intermediate replacements. No message is added or removed |
 | 117 | **Harness review results have their own view.** New `harness_state`, `harness_routine_create`, `harness_report` and `harness_decide` client messages and `harness_state`, `harness_report` and `harness_changed` replies, with `HarnessReview`, `HarnessReviewStatus`, `HarnessFinding` and `HarnessFindingState`. A review run publishes with the `harness_publish` MCP tool or `hs-harness publish`, offered only to its own pane, instead of `pane_submit` to the operator's inbox; the daemon stores the run, its findings and the operator's decisions per workspace. The state includes native Claude and Codex model options from the shared local catalog, which describes metadata rather than account availability. No existing message changes |

@@ -13,6 +13,8 @@ import {
   worktreeTitle
 } from './worktrees'
 import { ConfirmModal } from '../ConfirmModal'
+import { WorktreeCleanupSection } from './WorktreeCleanupSection'
+import type { WorktreeCleanupView } from './worktreeCleanup'
 import { Select } from '../Select'
 import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
 import { FIELD_INPUT, FIELD_LABEL } from '../nav/navChrome'
@@ -23,6 +25,7 @@ import { Tooltip } from '../Tooltip'
 export interface WorktreesDialogProps {
   dir: string | null
   worktrees: GitWorktreeInfo[]
+  cleanup: WorktreeCleanupView
   branches: GitBranchInfo[]
   defaultBranch: string | null
   busy: boolean
@@ -32,12 +35,16 @@ export interface WorktreesDialogProps {
   onCreate: (name: string, base: string | null) => void
   onRemove: (path: string, force: boolean) => void
   onPrune: () => void
+  onCheckCleanup: () => void
+  onCleanNow: (paths: string[]) => void
   onAddWorkspace: (path: string) => void
+  nowMs?: number
 }
 
 export function WorktreesDialog({
   dir,
   worktrees,
+  cleanup,
   branches,
   defaultBranch,
   busy,
@@ -47,7 +54,10 @@ export function WorktreesDialog({
   onCreate,
   onRemove,
   onPrune,
-  onAddWorkspace
+  onCheckCleanup,
+  onCleanNow,
+  onAddWorkspace,
+  nowMs
 }: WorktreesDialogProps): React.JSX.Element {
   const [name, setName] = useState('')
   const [base, setBase] = useState('')
@@ -138,6 +148,17 @@ export function WorktreesDialog({
             branch. Add it as a workspace to spawn agents there.
           </p>
         </div>
+
+        {dir && (
+          <WorktreeCleanupSection
+            view={cleanup}
+            busy={busy}
+            nowMs={nowMs ?? Date.now()}
+            onCheck={onCheckCleanup}
+            onCleanNow={onCleanNow}
+            onRemove={(path) => onRemove(path, false)}
+          />
+        )}
 
         <div role="list" data-testid="worktrees-list" className="flex flex-col gap-1">
           {worktrees.length === 0 ? (

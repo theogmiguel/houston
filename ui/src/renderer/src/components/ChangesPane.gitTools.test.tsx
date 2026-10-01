@@ -138,6 +138,7 @@ describe('Changes pane — git tools', () => {
     click(q('[data-testid="git-tools-menu"]'))
     click(q('[data-testid="git-tools-worktrees"]'))
     expect(h.client.gitWorktreesCalls).toEqual(['/repo'])
+    expect(h.client.worktreeCleanupStatusCalls).toEqual(['/repo'])
     act(() => {
       h.client.emit({
         type: 'git_worktrees',

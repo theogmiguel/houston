@@ -70,6 +70,7 @@ export function baseSettingsViewProps(): React.ComponentProps<typeof SettingsVie
     onOpenLicense: () => {},
     onRestoreBudgetSet: () => {},
     onRestoreResumeSet: () => {},
+    onWorktreeCleanupSet: () => {},
     sessionPolicy: null,
     onSessionPolicy: () => {},
     orchestrationEnabled: true,
@@ -106,6 +107,8 @@ export function hostInfoFixture(overrides: Partial<HostInfo> = {}): HostInfo {
     orchestration_max_depth: 4,
     mailbox_files_on_disk: 31,
     mailbox_retention_hours: 24,
+    worktree_cleanup_enabled: false,
+    worktree_cleanup_grace_hours: 24,
     command_history_ignore_glob_count: 6,
     session_db_bytes: 3_984_588,
     ...overrides

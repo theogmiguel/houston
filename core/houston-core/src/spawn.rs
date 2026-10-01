@@ -29,9 +29,73 @@ pub fn tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::C
     cmd
 }
 
+/// `Command::output` with a deadline, for a background job that must finish: past
+/// `timeout` the child is killed and `Ok(None)` returned. Stdin is closed, so a child
+/// that would prompt reads EOF instead of waiting for an answer nobody can give.
+pub fn output_within(
+    mut cmd: std::process::Command,
+    timeout: std::time::Duration,
+) -> std::io::Result<Option<std::process::Output>> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as _));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as _));
+    let start = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            // A grandchild may still hold the pipes; the readers end when it does.
+            return Ok(None);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    };
+    Ok(Some(std::process::Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn output_within_kills_a_child_past_its_deadline() {
+        let start = std::time::Instant::now();
+        let mut cmd = command("sleep");
+        cmd.arg("30");
+        let out = output_within(cmd, std::time::Duration::from_millis(200)).unwrap();
+        assert!(out.is_none());
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+
+        let mut cmd = command("sh");
+        cmd.args(["-c", "read x; echo out; echo err >&2"]);
+        let out = output_within(cmd, std::time::Duration::from_secs(10))
+            .unwrap()
+            .expect("a closed stdin ends the read at once");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "out\n");
+        assert_eq!(String::from_utf8_lossy(&out.stderr), "err\n");
+    }
 
     #[cfg(windows)]
     #[test]

@@ -12,6 +12,7 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     tokio::spawn(async move { routines.routine_fire_loop().await });
     let updates = daemon.clone();
     tokio::spawn(async move { updates.update_check_loop().await });
+    tokio::spawn(daemon.clone().worktree_cleanup_loop());
 }
 
 /// Runs off the async runtime via `spawn_blocking` so the window can paint

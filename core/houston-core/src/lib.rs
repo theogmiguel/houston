@@ -69,6 +69,7 @@ pub mod updates;
 pub mod usage;
 pub mod voice;
 pub mod vt;
+pub mod worktree_cleanup;
 pub mod worktrees;
 
 #[cfg(test)]

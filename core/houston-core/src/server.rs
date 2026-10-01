@@ -588,6 +588,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitReviewDiffs { .. }
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
+            | proto::ClientMsg::WorktreeCleanupStatus { .. }
             | proto::ClientMsg::GitCheckpoints { .. }
             | proto::ClientMsg::GitCheckpointDiff { .. }
             | proto::ClientMsg::SshProfileList
@@ -828,6 +829,32 @@ async fn dispatch(
         proto::ClientMsg::MailboxRetentionSet { hours } => daemon
             .set_mailbox_retention_hours(hours)
             .map(|_| daemon.broadcast_control(&daemon.host_info())),
+        proto::ClientMsg::WorktreeCleanupSet {
+            enabled,
+            grace_hours,
+        } => daemon
+            .set_worktree_cleanup(enabled, grace_hours)
+            .map(|()| daemon.broadcast_control(&daemon.host_info())),
+        proto::ClientMsg::WorktreeCleanupStatus { dir } => {
+            let d = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || d.worktree_cleanup_status(&dir))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("worktree cleanup status panicked: {e}")));
+            match result {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+        // The pass's own broadcast is the reply, so every open dialog sees the result.
+        proto::ClientMsg::WorktreeCleanupRun { dir, paths } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.worktree_cleanup_run(&dir, paths))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("worktree cleanup pass panicked: {e}")))
+        }
         proto::ClientMsg::OrchestrationCapsSet {
             max_live_children,
             max_spawn_depth,

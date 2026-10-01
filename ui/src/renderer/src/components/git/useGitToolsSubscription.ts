@@ -4,6 +4,7 @@ import type { GitBranchInfo } from '../../houston/generated/GitBranchInfo'
 import type { GitCheckpointInfo } from '../../houston/generated/GitCheckpointInfo'
 import type { GitWorktreeInfo } from '../../houston/generated/GitWorktreeInfo'
 import { defaultCheckpointLabel } from './checkpoints'
+import type { WorktreeCleanupView } from './worktreeCleanup'
 import type { CheckpointInspect } from './CheckpointsDialog'
 
 export type GitToolKind = 'branches' | 'worktrees' | 'checkpoints'
@@ -25,6 +26,7 @@ export interface GitTools {
   branchesTruncated: boolean
   defaultBranch: string | null
   worktrees: GitWorktreeInfo[]
+  cleanup: WorktreeCleanupView
   checkpoints: GitCheckpointInfo[]
   inspecting: CheckpointInspect | null
   ensure: (kind: GitToolKind) => void
@@ -40,6 +42,8 @@ export interface GitTools {
   createWorktree: (name: string, base: string | null) => void
   removeWorktree: (path: string, force: boolean) => void
   pruneWorktrees: () => void
+  checkCleanup: () => void
+  cleanNow: (paths: string[]) => void
   createCheckpoint: (label: string | null) => void
   inspectCheckpoint: (ref: string) => void
   restoreCheckpoint: (ref: string) => void
@@ -63,6 +67,7 @@ export function useGitToolsSubscription({
   const [branchesTruncated, setBranchesTruncated] = useState(false)
   const [defaultBranch, setDefaultBranch] = useState<string | null>(null)
   const [worktrees, setWorktrees] = useState<GitWorktreeInfo[]>([])
+  const [cleanup, setCleanup] = useState<WorktreeCleanupView>({ status: 'pending' })
   const [checkpoints, setCheckpoints] = useState<GitCheckpointInfo[]>([])
   const [inspecting, setInspecting] = useState<CheckpointInspect | null>(null)
 
@@ -97,6 +102,16 @@ export function useGitToolsSubscription({
       setToolsError(null)
       setWorktrees(msg.worktrees)
       if (msg.message) setToolsNotice(msg.message)
+    })
+    // Broadcast after every daemon pass as well as in reply, so an open dialog
+    // follows the automatic cleanup without asking.
+    const unsubCleanup = client.subscribe('worktree_cleanup', (msg) => {
+      if (msg.dir !== repoDir) return
+      if (pendingTools.current === repoDir) {
+        pendingTools.current = null
+        setToolsBusy(false)
+      }
+      setCleanup({ status: 'ready', entries: msg.entries })
     })
     const unsubCheckpoints = client.subscribe('git_checkpoints', (msg) => {
       if (msg.dir !== repoDir) return
@@ -135,6 +150,7 @@ export function useGitToolsSubscription({
     return () => {
       unsubBranches()
       unsubWorktrees()
+      unsubCleanup()
       unsubCheckpoints()
       unsubDiff()
       unsubPull()
@@ -149,11 +165,19 @@ export function useGitToolsSubscription({
     if (toolsError !== null) setInspecting(null)
   }, [toolsError])
 
+  // A refused cleanup arrives as the connection-wide error the pane routes here.
+  useEffect(() => {
+    if (toolsError !== null) {
+      setCleanup((c) => (c.status === 'pending' ? { status: 'refused', message: toolsError } : c))
+    }
+  }, [toolsError])
+
   useEffect(() => {
     asked.current.clear()
     setBranches([])
     setRemotes([])
     setWorktrees([])
+    setCleanup({ status: 'pending' })
     setCheckpoints([])
     setInspecting(null)
   }, [repoDir])
@@ -163,7 +187,10 @@ export function useGitToolsSubscription({
       if (!client || !repoDir || asked.current.has(kind)) return
       asked.current.add(kind)
       if (kind === 'branches') client.gitBranches(repoDir)
-      else if (kind === 'worktrees') client.gitWorktrees(repoDir)
+      else if (kind === 'worktrees') {
+        client.gitWorktrees(repoDir)
+        client.worktreeCleanupStatus(repoDir)
+      }
       else client.gitCheckpoints(repoDir)
     },
     [client, repoDir]
@@ -181,6 +208,8 @@ export function useGitToolsSubscription({
     asked.current.add('worktrees')
     begin(repoDir)
     client.gitWorktrees(repoDir)
+    setCleanup({ status: 'pending' })
+    client.worktreeCleanupStatus(repoDir)
   }, [client, repoDir, begin])
 
   const refreshCheckpoints = useCallback((): void => {
@@ -205,6 +234,7 @@ export function useGitToolsSubscription({
     branchesTruncated,
     defaultBranch,
     worktrees,
+    cleanup,
     checkpoints,
     inspecting,
     ensure,
@@ -221,6 +251,16 @@ export function useGitToolsSubscription({
     createWorktree: (name, base) => withDir((dir) => client?.gitWorktreeCreate(dir, name, base)),
     removeWorktree: (path, force) => withDir((dir) => client?.gitWorktreeRemove(dir, path, force)),
     pruneWorktrees: () => withDir((dir) => client?.gitWorktreePrune(dir)),
+    checkCleanup: () =>
+      withDir((dir) => {
+        setCleanup({ status: 'pending' })
+        client?.worktreeCleanupRun(dir, [])
+      }),
+    cleanNow: (paths) =>
+      withDir((dir) => {
+        setCleanup({ status: 'pending' })
+        client?.worktreeCleanupRun(dir, paths)
+      }),
     createCheckpoint: (label) =>
       withDir((dir) =>
         client?.gitCheckpointCreate(dir, label ?? defaultCheckpointLabel(Date.now()))

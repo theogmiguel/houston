@@ -132,6 +132,7 @@ interface Props {
 
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
+  onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
   sessionPolicy: SessionPolicy | null
   onSessionPolicy: (next: SessionPolicy) => void
 
@@ -222,6 +223,7 @@ function SectionDispatch({
   liveSessionCount,
   onRestoreBudgetSet,
   onRestoreResumeSet,
+  onWorktreeCleanupSet,
   sessionPolicy,
   onSessionPolicy,
   orchestrationEnabled,
@@ -363,6 +365,7 @@ function SectionDispatch({
           <WorkspaceDefaultsSection
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
+            onWorktreeCleanupSet={onWorktreeCleanupSet}
             openLinksInPane={openLinksInPane}
             onOpenLinksInPane={onOpenLinksInPane}
             historyWorkspace={historyWorkspace}

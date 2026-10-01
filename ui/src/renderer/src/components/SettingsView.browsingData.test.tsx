@@ -85,6 +85,7 @@ const props = (): React.ComponentProps<typeof SettingsView> => ({
     onOpenLicense: () => {},
     onRestoreBudgetSet: () => {},
     onRestoreResumeSet: () => {},
+    onWorktreeCleanupSet: () => {},
     sessionPolicy: null,
     onSessionPolicy: () => {},
     orchestrationEnabled: true,

@@ -361,7 +361,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
-| bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes` |
+| bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove) |
 | legacy tasks | `tasks`, `task_events` — retained for database compatibility |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
 
@@ -380,8 +380,19 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns three tasks:
-`swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`.
+`boot::spawn_background_loops` is called only by the daemon host and spawns five tasks:
+`swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop` and
+`worktree_cleanup_loop`. While `worktree_cleanup_enabled` is on, the last runs one pass at
+boot and every 6 h over each workspace with rows in `managed_worktrees`: it works out why
+each recorded worktree stays (`WorktreeKeep`), measures it, removes the ones nothing keeps
+and broadcasts `worktree_cleanup` per workspace. While the setting is off the loop does no
+work, since a pass calls `gh` and may fetch. `worktree_cleanup_run` is the same pass on
+demand: it removes only the confirmed `paths`, so a tree that became removable after the
+dialog was drawn is not removed unseen. A workspace mid-pass refuses a second one, and the
+claim is released on drop so a panicking pass cannot block later ones. Removal deletes the
+recorded branch, so a tree whose checkout moved to another branch is kept: its PR lookup
+and ancestry check would describe a different branch. Each `git` and `gh` call in a pass is
+bounded by a timeout and runs without a terminal prompt.
 `swarm_mail_loop` carries two jobs per round — `hook_drop_tick` first, then
 a `plan/events/` GC sweep gated to `SWARM_MAIL_GC_SWEEP_INTERVAL_MS`. Mail delivery uses
 `pane_inbox` `Mail` rows and the shared inbox delivery paths. The loop lists the legacy
@@ -433,7 +444,9 @@ pane is observed through its `RoutineRun` row and can be opened from the routine
 The `settings` table is a plain string KV store. Live keys: `session_idle_reap_enabled` and
 `session_idle_reap_minutes` (≤ 40 000), `keymap_overrides`, `skill_sync_auto_push`,
 `command_history_ignore_globs`, `voice_settings`, `restore_budget`, `restore_resume`,
-`mailbox_retention_hours`, `orchestration_max_live_children` and
+`mailbox_retention_hours`, `worktree_cleanup_enabled` (`0`/`1`, off by default) and
+`worktree_cleanup_grace_hours` (1..=`proto::WORKTREE_CLEANUP_GRACE_HOURS_MAX`, default 24),
+`orchestration_max_live_children` and
 `orchestration_max_spawn_depth` (both ≤ `proto::ORCHESTRATION_CAP_MAX`).
 
 `EnvFilter::try_from_default_env()` reads `RUST_LOG`, defaulting to `houston_core=info`. Two

@@ -923,6 +923,7 @@ impl DelegationSettleSample {
 }
 
 mod harness_review;
+mod worktree_pass;
 
 type TranscriptLink = (Option<String>, Option<String>);
 
@@ -1043,6 +1044,7 @@ pub struct Daemon {
     inbox_wake: Mutex<HashMap<u32, Arc<tokio::sync::Notify>>>,
     inbox_waiting: Mutex<HashSet<u32>>,
     temporary_cleanup_lock: Mutex<()>,
+    worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
@@ -2292,6 +2294,7 @@ impl Daemon {
             inbox_wake: Mutex::new(HashMap::new()),
             inbox_waiting: Mutex::new(HashSet::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             paste_confirmations: Mutex::new(HashMap::new()),
@@ -10812,6 +10815,8 @@ impl Daemon {
             orchestration_max_depth: self.orchestration_max_spawn_depth(),
             mailbox_files_on_disk: self.mailbox_file_count(),
             mailbox_retention_hours: self.mailbox_retention_hours(),
+            worktree_cleanup_enabled: self.worktree_cleanup_enabled(),
+            worktree_cleanup_grace_hours: self.worktree_cleanup_grace_hours(),
             command_history_ignore_glob_count: self.command_history_ignore_globs().len() as u32,
             session_db_bytes,
         }

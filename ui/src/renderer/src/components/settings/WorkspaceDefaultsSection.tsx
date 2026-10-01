@@ -1,4 +1,4 @@
-import { RESTORE_BUDGET_MAX } from '../../houston/generated/DEFAULTS'
+import { RESTORE_BUDGET_MAX, WORKTREE_CLEANUP_GRACE_HOURS_MAX } from '../../houston/generated/DEFAULTS'
 import { SettingsList, Toggle } from '../settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
@@ -7,6 +7,7 @@ import { NumberSetting, Row, SectionHead, SubHead } from './shared'
 export interface WorkspaceDefaultsSectionProps {
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
+  onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
   openLinksInPane: boolean
   onOpenLinksInPane: (on: boolean) => void
   historyWorkspace: string | null
@@ -19,6 +20,7 @@ export interface WorkspaceDefaultsSectionProps {
 export function WorkspaceDefaultsSection({
   onRestoreBudgetSet,
   onRestoreResumeSet,
+  onWorktreeCleanupSet,
   openLinksInPane,
   onOpenLinksInPane,
   historyWorkspace,
@@ -61,6 +63,39 @@ export function WorkspaceDefaultsSection({
             onChange={onRestoreResumeSet}
             data-testid="restore-resume-switch"
           />
+        </Row>
+      </SettingsList>
+      <SubHead>Worktrees</SubHead>
+      <SettingsList>
+        <Row
+          title="Remove merged worktrees automatically"
+          desc="Every 6 h, remove a worktree Houston created once its PR has merged, with its branch. A worktree with uncommitted changes, commits outside the PR or a pane inside it stays. Off by default, because it deletes files."
+        >
+          <Toggle
+            on={hostInfo?.worktree_cleanup_enabled ?? false}
+            disabled={hostInfo === null}
+            onChange={(on) =>
+              hostInfo && onWorktreeCleanupSet(on, hostInfo.worktree_cleanup_grace_hours)
+            }
+            data-testid="worktree-cleanup-switch"
+          />
+        </Row>
+        <Row
+          title="Grace after merge"
+          desc={`How long a merged worktree is kept before it can be removed. 1 to ${WORKTREE_CLEANUP_GRACE_HOURS_MAX} h.`}
+        >
+          {!hostInfo ? (
+            <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">Asking the daemon…</span>
+          ) : (
+            <NumberSetting
+              value={hostInfo.worktree_cleanup_grace_hours}
+              max={WORKTREE_CLEANUP_GRACE_HOURS_MAX}
+              min={1}
+              unit="hours"
+              testId="settings-worktree-cleanup-grace"
+              onCommit={(hours) => onWorktreeCleanupSet(hostInfo.worktree_cleanup_enabled, hours)}
+            />
+          )}
         </Row>
       </SettingsList>
       <SubHead>Background sessions</SubHead>

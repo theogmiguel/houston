@@ -78,6 +78,7 @@ function baseProps(overrides: {
     onOpenLicense: () => {},
     onRestoreBudgetSet: () => {},
     onRestoreResumeSet: () => {},
+    onWorktreeCleanupSet: () => {},
     sessionPolicy: null,
     onSessionPolicy: () => {},
     orchestrationEnabled: true,

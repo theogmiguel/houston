@@ -40,6 +40,8 @@ export class FakeClient {
   gitWorktreeCreateCalls: Array<{ dir: string; name: string; base: string | null }> = []
   gitWorktreeRemoveCalls: Array<{ dir: string; path: string; force: boolean }> = []
   gitWorktreePruneCalls: string[] = []
+  worktreeCleanupStatusCalls: string[] = []
+  worktreeCleanupRunCalls: Array<{ dir: string; paths: string[] }> = []
   gitCheckpointsCalls: string[] = []
   gitCheckpointCreateCalls: Array<{ dir: string; label: string }> = []
   gitCheckpointDiffCalls: Array<{ dir: string; ref: string; against: string }> = []
@@ -112,6 +114,12 @@ export class FakeClient {
   }
   gitWorktreePrune(dir: string): void {
     this.gitWorktreePruneCalls.push(dir)
+  }
+  worktreeCleanupStatus(dir: string): void {
+    this.worktreeCleanupStatusCalls.push(dir)
+  }
+  worktreeCleanupRun(dir: string, paths: string[]): void {
+    this.worktreeCleanupRunCalls.push({ dir, paths })
   }
   gitCheckpoints(dir: string): void {
     this.gitCheckpointsCalls.push(dir)

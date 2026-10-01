@@ -207,6 +207,7 @@ describe('WorktreesDialog', () => {
           worktree({ path: '/repo', branch: 'main', is_main: true }),
           worktree({ dirty: true })
         ]}
+        cleanup={{ status: 'ready', entries: [] }}
         branches={[branch()]}
         defaultBranch="main"
         busy={false}
@@ -216,6 +217,8 @@ describe('WorktreesDialog', () => {
         onCreate={onCreate}
         onRemove={onRemove}
         onPrune={noop}
+        onCheckCleanup={noop}
+        onCleanNow={noop}
         onAddWorkspace={onAddWorkspace}
       />
     )

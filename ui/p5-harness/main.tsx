@@ -283,6 +283,7 @@ const settingsProps: Parameters<typeof SettingsView>[0] = {
   onOpenLicense: () => {},
   onRestoreBudgetSet: () => {},
   onRestoreResumeSet: () => {},
+  onWorktreeCleanupSet: () => {},
   sessionPolicy: null,
   onSessionPolicy: () => {},
   orchestrationEnabled: true,

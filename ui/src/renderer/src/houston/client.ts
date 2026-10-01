@@ -753,6 +753,15 @@ export class HoustonClient {
     this.send({ type: 'git_worktree_prune', dir })
   }
 
+  worktreeCleanupStatus(dir: string): void {
+    this.send({ type: 'worktree_cleanup_status', dir })
+  }
+
+  /** Removes only the confirmed `paths`; an empty list only checks. */
+  worktreeCleanupRun(dir: string, paths: string[]): void {
+    this.send({ type: 'worktree_cleanup_run', dir, paths })
+  }
+
   gitCheckpointCreate(dir: string, label: string): void {
     this.send({ type: 'git_checkpoint_create', dir, label })
   }
@@ -1242,6 +1251,10 @@ export class HoustonClient {
 
   mailboxRetentionSet(hours: number): void {
     this.send({ type: 'mailbox_retention_set', hours })
+  }
+
+  worktreeCleanupSet(enabled: boolean, graceHours: number): void {
+    this.send({ type: 'worktree_cleanup_set', enabled, grace_hours: graceHours })
   }
 
   commandHistoryIgnoreGlobsGet(): void {

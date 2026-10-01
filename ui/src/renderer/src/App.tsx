@@ -3738,6 +3738,10 @@ export function App(): React.JSX.Element {
                         if (conn.kind === "ready")
                           conn.client.restoreResumeSet(on);
                       }}
+                      onWorktreeCleanupSet={(enabled, graceHours) => {
+                        if (conn.kind === "ready")
+                          conn.client.worktreeCleanupSet(enabled, graceHours);
+                      }}
                       onMailboxRetentionSet={(hours) => {
                         if (conn.kind === "ready")
                           conn.client.mailboxRetentionSet(hours);
