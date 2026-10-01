@@ -163,6 +163,7 @@ struct ChildEntry {
     window_label: String,
     workspace_id: Option<String>,
     last_rect: Rect,
+    device_zoom: Option<f64>,
     suppressed: suppress::SuppressionSet,
     closing: bool,
     #[allow(dead_code)]
@@ -628,6 +629,7 @@ pub fn browser_mount(
             workspace_id,
             last_state: None,
             last_rect: committed,
+            device_zoom: None,
             suppressed: suppress::SuppressionSet::new(),
             closing: false,
             sticky: state::Sticky::default(),
@@ -861,19 +863,99 @@ pub fn browser_resize(
     rect: RectSpec,
 ) -> Result<Rect, String> {
     id::validate_surface_id(&id)?;
-    let (window_label, label) = {
+    let (window_label, label, device_zoom) = {
         let state = lock_registry(&registry)?;
         let entry = state.children.get(&id).ok_or_else(|| {
             format!("browser: no live browser surface with id {id:?}; mount it before resizing")
         })?;
-        (entry.window_label.clone(), entry.label.clone())
+        (
+            entry.window_label.clone(),
+            entry.label.clone(),
+            entry.device_zoom,
+        )
     };
     let committed = gtk_host::commit_rect(&app, &window_label, &label, rect)?;
+    if let Some(device_zoom) = device_zoom {
+        let webview = live_webview(&app, &registry, &id, "resizing")?;
+        set_device_zoom(&app, &webview, &id, &window_label, device_zoom)?;
+    }
     let mut state = lock_registry(&registry)?;
     if let Some(entry) = state.children.get_mut(&id) {
         entry.last_rect = committed;
     }
     Ok(committed)
+}
+
+fn validate_device(width: Option<u32>, height: Option<u32>, zoom: f64) -> Result<f64, String> {
+    if !zoom.is_finite() || zoom <= 0.0 {
+        return Err(format!(
+            "browser_set_device: zoom {zoom:?}; expected a finite positive number"
+        ));
+    }
+    match (width, height) {
+        (None, None) => Ok(1.0),
+        (Some(393), Some(852)) | (Some(820), Some(1180)) => Ok(zoom),
+        _ => Err(format!(
+            "browser_set_device: width {width:?}, height {height:?}; expected paired 393×852 (Phone), 820×1180 (Tablet), or null/null (Desktop)"
+        )),
+    }
+}
+
+#[tauri::command]
+pub fn browser_set_device(
+    app: AppHandle,
+    registry: State<'_, BrowserRegistry>,
+    id: String,
+    width: Option<u32>,
+    height: Option<u32>,
+    zoom: f64,
+) -> Result<(), String> {
+    let zoom = validate_device(width, height, zoom)?;
+    if !cfg!(any(target_os = "linux", target_os = "windows")) {
+        return Err(format!(
+            "browser_set_device: id {id:?}, width {width:?}, height {height:?}, zoom {zoom}; guest device zoom is unsupported on {}",
+            std::env::consts::OS
+        ));
+    }
+    let webview = live_webview(&app, &registry, &id, "setting the device of")?;
+    let window_label = lock_registry(&registry)?
+        .children
+        .get(&id)
+        .ok_or_else(|| {
+            format!(
+                "browser_set_device: surface {id:?} disappeared; expected a live mounted surface"
+            )
+        })?
+        .window_label
+        .clone();
+    set_device_zoom(&app, &webview, &id, &window_label, zoom)?;
+    if let Some(entry) = lock_registry(&registry)?.children.get_mut(&id) {
+        entry.device_zoom = Some(zoom);
+    }
+    Ok(())
+}
+
+fn set_device_zoom(
+    app: &AppHandle,
+    webview: &tauri::Webview,
+    id: &str,
+    window_label: &str,
+    zoom: f64,
+) -> Result<(), String> {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        // Rect specs use host CSS pixels; guest zoom must account for the same host scale.
+        let host_zoom = gtk_host::read_host_zoom(app, window_label)?;
+        webkit::set_guest_zoom(webview, id, zoom * host_zoom)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = (app, webview, window_label);
+        Err(format!(
+            "browser_set_device: id {id:?}, zoom {zoom}; guest device zoom is unsupported on {}",
+            std::env::consts::OS
+        ))
+    }
 }
 
 #[tauri::command]
@@ -1210,6 +1292,42 @@ mod workspace_scope_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn device_presets_validate_pairs_and_restore_desktop_zoom() {
+        assert_eq!(validate_device(Some(393), Some(852), 0.5), Ok(0.5));
+        assert_eq!(validate_device(Some(820), Some(1180), 0.34), Ok(0.34));
+        assert_eq!(validate_device(None, None, 0.5), Ok(1.0));
+        for (width, height) in [
+            (Some(393), None),
+            (None, Some(852)),
+            (Some(393), Some(1180)),
+            (Some(0), Some(0)),
+        ] {
+            let err = validate_device(width, height, 1.0).unwrap_err();
+            assert!(
+                err.contains(&format!("{width:?}")) && err.contains(&format!("{height:?}")),
+                "{err}"
+            );
+            assert!(
+                err.contains("393×852") && err.contains("820×1180") && err.contains("null/null"),
+                "{err}"
+            );
+        }
+    }
+
+    #[test]
+    fn device_zoom_refuses_non_finite_and_non_positive_values() {
+        for zoom in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for (width, height) in [(None, None), (Some(393), Some(852))] {
+                let err = validate_device(width, height, zoom).unwrap_err();
+                assert!(
+                    err.contains(&format!("{zoom:?}")) && err.contains("finite positive"),
+                    "{err}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_popup_is_always_addressed_to_the_host_window() {
         assert_eq!(popup_event_target(), HOST_WINDOW);

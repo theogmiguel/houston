@@ -555,6 +555,7 @@ fn main() {
             browser::browser_reattach,
             browser::browser_resize,
             browser::browser_set_visible,
+            browser::browser_set_device,
             browser::browser_navigate,
             browser::browser_reload,
             browser::browser_go_back,
