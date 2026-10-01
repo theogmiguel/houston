@@ -1106,7 +1106,7 @@ export function IconPin(p: IconProps): React.JSX.Element {
   )
 }
 
-const BRAND_TONE: Record<string, string> = {
+export const AGENT_DOT_COLOR: Partial<Record<string, string>> = {
   claude: 'var(--claude)',
   codex: 'var(--codex)',
   antigravity: 'var(--antigravity)',
@@ -1121,7 +1121,7 @@ export function IconAgent({
   ...rest
 }: IconProps & { agent: string; brand?: boolean }): React.JSX.Element {
   const mark = agentMark(agent, rest)
-  const tone = brand ? BRAND_TONE[agent] : undefined
+  const tone = brand ? AGENT_DOT_COLOR[agent] : undefined
   return tone ? (
     <span className="inline-flex" style={{ color: tone }}>
       {mark}

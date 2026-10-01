@@ -1,6 +1,6 @@
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useEffect, useContext, useRef, useState } from 'react'
-import { ChildrenRoster, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
+import { ChildrenRoster, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
 import { RING_ACCENT_ICON } from './shadowChrome'
@@ -29,6 +29,7 @@ import { clampConversation } from './handoffPacket'
 import { RenameTitle } from './RenameTitle'
 import { Tooltip } from './Tooltip'
 import {
+  AGENT_DOT_COLOR,
   IconAgent,
   IconArrowUpRight,
   IconClose,
@@ -49,7 +50,7 @@ import {
   IconTextSmaller,
   type IconComponent
 } from './icons'
-import { BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_GHOST, BTN_ICO_STRUCTURE } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
@@ -158,16 +159,8 @@ const ICO_HEAD_INFO =
 
 const ICO_HEAD_HIDE_150 = '[@container_(max-width:150px)]:hidden'
 
-const ENGINE_GLYPH_COLOR: Partial<Record<AgentKind, string>> = {
-  claude: 'var(--claude)',
-  codex: 'var(--codex)',
-  antigravity: 'var(--antigravity)',
-  opencode: 'var(--opencode)',
-  cursor: 'var(--cursor)',
-  grok: 'var(--grok)'
-}
 export function engineGlyphColor(agent: AgentKind): string {
-  return ENGINE_GLYPH_COLOR[agent] ?? 'var(--text-muted)'
+  return AGENT_DOT_COLOR[agent] ?? 'var(--text-muted)'
 }
 
 function statusLabel(s: AgentStatus): string {
@@ -794,7 +787,27 @@ function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveC
           <div className="relative flex-1 min-h-0 min-w-0">
             {terminals}
           </div>
+          {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
         </div>
       </div>
       <DictationIndicator session={info.id} /></>)
+}
+
+function SettledChildBar({ info, client, onMove }: { info: SessionInfo; client: HoustonClient; onMove: (id: number) => void }): React.JSX.Element {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    // Settlement ages share the roster's second resolution.
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const ended = info.delegation?.ended_at ?? info.delegation?.settled_at
+  const retained = info.delegation?.retained_until
+  const time = (value: number): string => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const button = `${BTN_GHOST} btn min-h-[var(--h-ctl)] shrink-0`
+  return <footer aria-label="Settled child" className="flex items-center flex-wrap gap-1 px-2 py-1 border-t border-[var(--divider)] bg-[var(--card-bg)] text-[length:var(--tr-text-sm)] text-[var(--text-muted)]">
+    <span className="flex-1 min-w-0">Settled · ended {ended == null ? 'unknown' : `${time(ended)} (${delegationAge(ended, now)} ago)`} · kept until {retained == null ? 'unknown' : new Date(retained).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+    <button className={button} disabled={!info.resumable} onClick={() => client.respawnSession(info.id, undefined, null, undefined, undefined, false)}>Continue</button>
+    <button className={button} onClick={() => client.closeSession(info.id)}>Close</button>
+    <button className={button} onClick={() => onMove(info.id)}>Move to grid</button>
+  </footer>
 }

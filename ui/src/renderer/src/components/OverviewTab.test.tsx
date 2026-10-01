@@ -8,6 +8,12 @@ import { OverviewTab } from './OverviewTab'
 const session = (id: number, parent: number | null, ended = false): SessionInfo => ({ id, spawned_by: parent, project_dir: '/work', cwd: '/work', codename: `code-${id}`, title: `task ${id}`, agent: 'claude', state: ended ? 'exited' : 'running', status: 'working', children_waiting: 0, live_children: 0, tags: [], hidden: false, inbox_unread: 0, resumable: true, delegation: parent == null ? null : { parent, started_at: 1000, settled_at: ended ? 61000 : null, state: ended ? 'done' : 'working', stalled: false, result_staged: false, superseded: 0, turn_end_source: 'unknown', inbox_owed: 0, inbox_provisional: 0, reusable: true } } as SessionInfo)
 afterEach(cleanup)
 describe('orchestrator overview', () => {
+  it.each(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const)('tints %s provider glyphs in child cards', (agent) => {
+    const child = { ...session(2, 1, true), agent }
+    const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+    const { container } = render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
+    expect(container.querySelector('.overview-child-head svg')?.parentElement?.style.color).toBe(`var(--${agent})`)
+  })
   it('counts resumed live unknown children as working and offers Stop instead of Continue', () => {
     const child = session(2, 1)
     child.delegation!.state = 'unknown'

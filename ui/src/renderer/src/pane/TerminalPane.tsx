@@ -215,6 +215,9 @@ export function TerminalPane({
   onOpenFile,
   onOpenDir
 }: Props): React.JSX.Element {
+  const live = isLive(info.state)
+  const liveRef = useRef(live)
+  liveRef.current = live
   const expandedId = useContext(ExpandedContext)
   const gridHidden = useContext(GridHiddenContext)
   const hiddenByExpand = gridHidden || (expandedId != null && expandedId !== info.id)
@@ -311,7 +314,8 @@ export function TerminalPane({
       lineHeight: tuning.lineHeight,
       cursorBlink: tuning.cursorBlink,
       maxScrollbackLines: tuning.scrollbackLines,
-      disableStdin: !(activeRef.current && connectedRef.current),
+      disableStdin: !(liveRef.current && activeRef.current && connectedRef.current),
+      readOnly: !liveRef.current,
       sessionId: info.id,
       load: async (mountEl, options) => {
         const mod = await ghosttySurfaceModule()
@@ -465,6 +469,7 @@ export function TerminalPane({
     const linkProviderDisposable = term.registerLinkProvider(linkProvider)
 
     const sendSize = (cols: number, rows: number): void => {
+      if (!liveRef.current) return
       const reasserted = lastReassertedSizeRef.current
       if (reasserted && (reasserted.cols !== cols || reasserted.rows !== rows)) {
         lastReassertedSizeRef.current = null
@@ -510,6 +515,7 @@ export function TerminalPane({
     }
     const selectionChangeDisposable = term.onSelectionChange(onTermSelectionChange)
     const pastePath = (path: string): boolean => {
+      if (!liveRef.current) return false
       onActivateRef.current()
       if (!connectedRef.current) {
         pushToast('Paste failed', 'daemon connection lost', 'danger')
@@ -527,6 +533,7 @@ export function TerminalPane({
       pastePath(await saveImage(bytes, ext))
     }
     const pasteFromClipboard = async (): Promise<void> => {
+      if (!liveRef.current) return
       let imagePath: string | null = null
       try {
         imagePath = await readClipboardImagePath()
@@ -550,7 +557,7 @@ export function TerminalPane({
       term.paste(text)
     }
 
-    term.attachCustomKeyEventHandler((e) => {
+    const handleKey = (e: KeyboardEvent): boolean => {
       if (e.type === 'keyup') {
         if (endsDictationHold(e, keymapOverridesRef.current)) voiceChordUp(info.id)
         return true
@@ -585,20 +592,22 @@ export function TerminalPane({
       }
       const ctrl = e.ctrlKey && !e.altKey && !e.metaKey
       if (!ctrl) return true
-      if (!e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+      if (!e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         setFind(true)
         return false
       }
-      if (e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+      if (e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault()
         copySelection()
         return false
       }
       return true
-    })
+    }
+    term.attachCustomKeyEventHandler((event) => liveRef.current ? handleKey(event) : false)
 
     const onPaste = (e: ClipboardEvent): void => {
+      if (!liveRef.current) return
       const items = e.clipboardData?.items
       if (!items) return
       for (const it of items) {
@@ -730,6 +739,7 @@ export function TerminalPane({
     }
 
     const onDrop = (e: DragEvent): void => {
+      if (!liveRef.current) return
       dragCounterRef.current = 0
       const reference = e.dataTransfer?.getData(FILE_REFERENCE_MIME)
       if (reference) {
@@ -840,6 +850,7 @@ export function TerminalPane({
     window.addEventListener('blur', onWindowBlur)
 
     const unregisterVoice = registerVoiceInsert(info.id, (text) => {
+      if (!liveRef.current) return false
       onActivateRef.current()
       if (!connectedRef.current) return false
       term.options.disableStdin = false
@@ -863,6 +874,7 @@ export function TerminalPane({
       actions.current = {
         copy: copySelection,
         paste: () => {
+          if (!liveRef.current) return
           onActivateRef.current()
           term.options.disableStdin = false
           void pasteFromClipboard()
@@ -936,7 +948,7 @@ export function TerminalPane({
           taLen: textareaLen()
         })
       }
-      if (deliver && !seqRef.current.awaitingSnapshot) {
+      if (liveRef.current && deliver && !seqRef.current.awaitingSnapshot) {
         clientRef.current.sendStdin(info.id, d)
       }
     })
@@ -1135,7 +1147,7 @@ export function TerminalPane({
 
   useEffect(() => {
     const focus = (event: Event): void => {
-      if ((event as CustomEvent<{ session: number }>).detail.session === info.id) termRef.current?.focus()
+      if (liveRef.current && (event as CustomEvent<{ session: number }>).detail.session === info.id) termRef.current?.focus()
     }
     window.addEventListener(TERMINAL_FOCUS_EVENT, focus)
     return () => window.removeEventListener(TERMINAL_FOCUS_EVENT, focus)
@@ -1144,18 +1156,19 @@ export function TerminalPane({
   useEffect(() => {
     const term = termRef.current
     if (!term) return
-    if (active && surfaceAttached) {
+    if (live && active && surfaceAttached) {
       term.focus()
-    } else if (!active) {
+    } else {
       term.blur()
     }
-  }, [active, surfaceAttached])
+  }, [active, surfaceAttached, live])
 
   useEffect(() => {
     const term = termRef.current
     if (!term) return
-    term.options.disableStdin = !(active && connected)
-  }, [active, connected])
+    term.options.disableStdin = !(live && active && connected)
+    term.options.readOnly = !live
+  }, [active, connected, live])
 
   useEffect(() => {
     const term = termRef.current
@@ -1342,10 +1355,10 @@ export function TerminalPane({
     setFindTerm('')
     searchRef.current?.clearDecorations()
     termRef.current?.clearSelection()
-    if (activeRef.current) termRef.current?.focus()
+    if (liveRef.current && activeRef.current) termRef.current?.focus()
   }
 
-  const typeable = surfaceAttached && active && connected
+  const typeable = live && surfaceAttached && active && connected
 
   return (
     <div

@@ -7,7 +7,7 @@ import { isLive } from '../houston/client'
 import type { DelegationResult } from '../houston/generated/DelegationResult'
 import type { InboxRow } from '../houston/generated/InboxRow'
 import { selectOverviewChild } from '../sidePanel'
-import { childGroup, childStateWord, delegationAge } from './ChildrenRoster'
+import { ChildStatusDot, childGroup, childStateWord, delegationAge } from './ChildrenRoster'
 import { sessionIdentity } from './DelegationCard'
 import { IconAgent, IconEye, IconGitBranch, IconStopCircle, IconRespawn, IconCornerDownRight } from './icons'
 import { StatusDot } from './SessionPane'
@@ -66,7 +66,7 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
   const action = (label: string, onClick: () => void): React.JSX.Element => <button className={`btn ${BTN_GHOST}`} onClick={onClick}>{label}</button>
   return <div className="overview">
-    <header className="overview-head"><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <IconAgent agent={parent.detected_agent ?? parent.agent} className="w-3.5 h-3.5 flex-none" />}<strong>{parent?.title ?? `Orchestrator ${parentId}`}</strong><span className="font-mono text-[var(--text-faint)]">pane {parentId}</span>{action('Show terminal', () => selectOverviewChild(parentId, null))}</header>
+    <header className="overview-head"><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <IconAgent brand agent={parent.detected_agent ?? parent.agent} className="w-3.5 h-3.5 flex-none" />}<strong>{parent?.title ?? `Orchestrator ${parentId}`}</strong><span className="font-mono text-[var(--text-faint)]">pane {parentId}</span>{action('Show terminal', () => selectOverviewChild(parentId, null))}</header>
     {(!parent || !isLive(parent.state)) && <div className="overview-summary">Orchestrator ended.{action('Close', onClose)}</div>}
     <div className="overview-summary"><strong className={children.some((child) => childGroup(child) === 'Needs you') ? 'text-[var(--warn)]' : undefined}>{children.length}</strong><span className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</span><span className="flex-1" /><Segmented aria-label="Group children" className="overview-grouping" value={groupBy} onChange={setGroupBy} options={[{ value: 'status', label: 'Status' }, { value: 'worktree', label: 'Worktree' }]} /></div>
     <div className="overview-bar">{(['Needs you', 'Working', 'Done', 'Failed'] as const).map((group) => <i key={group} data-group={group} style={{ flex: group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length }} />)}</div>
@@ -112,5 +112,5 @@ function childResultExcerpt(child: SessionInfo, result: DelegationResult | undef
 
 
 function OverviewChildHead({ child, needs, settled, now }: { child: SessionInfo; needs: boolean; settled: boolean; now: number }): React.JSX.Element {
-  return <div className="overview-child-head"><span className="overview-dot" data-state={settled ? child.delegation?.state : undefined}><StatusDot live status={needs ? 'needs-input' : settled ? 'idle' : child.status} /></span><IconAgent agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state" data-state={needs ? 'needs_input' : childStateWord(child)}>{needs ? 'Needs you' : childStateWord(child).replace(/^./, (letter) => letter.toUpperCase())}</span><span className="age">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span></div>
+  return <div className="overview-child-head"><span className="overview-dot" data-state={settled ? child.delegation?.state : undefined}><ChildStatusDot info={child} /></span><IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state" data-state={needs ? 'needs_input' : childStateWord(child)}>{needs ? 'Needs you' : childStateWord(child).replace(/^./, (letter) => letter.toUpperCase())}</span><span className="age">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span></div>
 }

@@ -4,7 +4,7 @@ import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import { HeaderDelegationBadge, stateWord, type PaneRoster } from './DelegationCard'
 import { StatusDot } from './SessionPane'
-import { IconAgent, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
+import { IconAgent, IconClose, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { BTN_GHOST, BTN_ICO } from './buttonChrome'
@@ -32,6 +32,11 @@ export function childStateWord(info: SessionInfo): string {
 export function delegationAge(start: number, now: number): string {
   const seconds = Math.max(0, Math.floor((now - start) / 1000))
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`
+}
+
+export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
+  if (!isLive(info.state)) return <Tooltip label="Ended"><span className="w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
+  return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
 }
 
 export function ChildrenRoster({ parent, children, roster, client, selected, onSelect, onMove, collapsed, onCollapse }: {
@@ -78,8 +83,8 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
   }
   const grouped = ['Needs you', 'Working', 'Settled'] as const
   const ordered = grouped.flatMap((group) => children.filter((child) => childGroup(child) === group).sort((a, b) => group === 'Settled' ? Number(a.delegation?.state === 'failed') - Number(b.delegation?.state === 'failed') : 0))
-  const dot = (child: SessionInfo): React.JSX.Element => <StatusDot live status={child.children_waiting > 0 || childGroup(child) === 'Needs you' ? 'needs-input' : childGroup(child) === 'Settled' ? 'idle' : child.status ?? 'working'} />
-  const glyph = (child: SessionInfo): React.JSX.Element => <IconAgent agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" />
+  const dot = (child: SessionInfo): React.JSX.Element => <ChildStatusDot info={child} />
+  const glyph = (child: SessionInfo): React.JSX.Element => <IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" />
   const strip = <aside aria-label="Children strip" className={`children-strip ${MATERIAL_CLS.shell}`}>
     <Tooltip label="Orchestrator"><button className={`${ROSTER_ICON} children-glyph`} aria-label="Orchestrator" aria-pressed={selected == null} onClick={() => onSelect(null)}>{glyph(parent)}{dot(parent)}</button></Tooltip>
     <span className="children-rule" />
@@ -108,7 +113,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
                   {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><button className={ROSTER_ICON} aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>}
                   <Tooltip label="Open"><button className={ROSTER_ICON} aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>
                   <Tooltip label="Move to grid"><button className={ROSTER_ICON} aria-label={`Move ${child.id} to grid`} onClick={() => onMove(child.id)}><Icon glyph={IconArrowUpRight} role="ui" /></button></Tooltip>
-                  <Tooltip label="Stop"><button className={ROSTER_ICON} aria-label={`Stop ${child.id}`} onClick={() => client.closeSession(child.id)}><Icon glyph={IconStopCircle} role="ui" /></button></Tooltip>
+                  <Tooltip label={isLive(child.state) ? "Stop" : "Close"}><button className={ROSTER_ICON} aria-label={`${isLive(child.state) ? "Stop" : "Close"} ${child.id}`} onClick={() => client.closeSession(child.id)}><Icon glyph={isLive(child.state) ? IconStopCircle : IconClose} role="ui" /></button></Tooltip>
                 </span>
               </span>
               <div className="children-detail"><span className="truncate">{child.title}</span></div>

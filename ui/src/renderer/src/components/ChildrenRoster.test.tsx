@@ -18,6 +18,21 @@ beforeEach(() => { vi.useFakeTimers(); closeSession.mockClear(); host = document
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers() })
 
 describe('settled children', () => {
+  it.each(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const)('tints %s provider glyphs in children and orchestrator rows', (agent) => {
+    children = [{ ...child(2), agent }]
+    act(() => root.render(<ChildrenRoster {...props()} parent={{ ...child(1), agent }} />))
+    for (const row of host.querySelectorAll('.children-row')) {
+      expect(row.querySelector('svg')?.parentElement?.style.color).toBe(`var(--${agent})`)
+    }
+  })
+  it('uses an ended dot and Close instead of Stop for settled children', () => {
+    render()
+    const row = host.querySelector('.children-row.settled')!
+    expect(row.querySelector('[aria-label="Ended"]')).not.toBeNull()
+    expect(row.querySelector('[aria-label="Stop 2"]')).toBeNull()
+    act(() => row.querySelector<HTMLButtonElement>('[aria-label="Close 2"]')!.click())
+    expect(closeSession).toHaveBeenCalledWith(2)
+  })
   it.each(['done', 'failed', 'unknown'] as const)('never settles or closes a live %s delegation', (state) => {
     children = [child(2, 'exited'), { ...child(3), delegation: { state } as SessionInfo['delegation'] }]
     expect(childGroup(children[1])).toBe('Working')

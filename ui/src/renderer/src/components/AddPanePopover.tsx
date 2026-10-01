@@ -5,6 +5,7 @@ import type { KeymapOverrides } from '../houston/client'
 import type { AgentProfileState } from './SettingsView'
 import type { ProfileChoice } from '../houston/generated/ProfileChoice'
 import {
+  AGENT_DOT_COLOR,
   IconAgent,
   IconChevronRight,
   IconGrid,
@@ -18,15 +19,6 @@ import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle 
 // Only the agents spawnable via `hs-pane`/handoff today, not the full
 // `AgentKind` union (shell/custom/ssh/the ACP long tail are not offered here).
 const POPOVER_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok']
-
-const AGENT_DOT_COLOR: Partial<Record<AgentKind, string>> = {
-  claude: 'var(--claude)',
-  codex: 'var(--codex)',
-  antigravity: 'var(--antigravity)',
-  opencode: 'var(--opencode)',
-  cursor: 'var(--cursor)',
-  grok: 'var(--grok)'
-}
 
 // Tooltip's wrapper shrink-wraps when given no class, so a wrapped disabled
 // row needs this to fill the popover width like its enabled siblings.
