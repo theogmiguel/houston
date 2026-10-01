@@ -175,9 +175,9 @@ describe('the group header filter badge', () => {
     expect(toggle().getAttribute('aria-label')).toBe('Filter by tag')
   })
 
-  it('the filter and SSH controls are at rest — no hover needed to reach either', () => {
+  it('the filter and Add workspace controls are visible at rest', () => {
     render()
-    for (const sel of ['[data-testid="tree-filter-toggle"]', '[data-testid="rail-ssh-connect"]']) {
+    for (const sel of ['[data-testid="tree-filter-toggle"]', '[aria-label="Add workspace"]']) {
       const el = q(sel)
       expect(el, `${sel} is missing`).not.toBeNull()
       expect(el?.closest('span')?.className ?? '').not.toContain('opacity-0')

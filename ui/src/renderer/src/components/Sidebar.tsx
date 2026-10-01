@@ -188,24 +188,19 @@ const FILTER_BADGE_CLS =
 
 function GroupHeader({
   label,
-  variant = "trio",
   filterOpen,
   activeFilterCount,
   filterLabel,
   onToggleFilter,
-  onSshConnect,
   leadingAction,
 }: {
   label: string;
-  variant?: "trio" | "plus-only";
   filterOpen: boolean;
   activeFilterCount: number;
   filterLabel: string;
   onToggleFilter: (e: React.MouseEvent) => void;
-  onSshConnect: () => void;
   leadingAction?: React.ReactNode;
 }): React.JSX.Element {
-  const plusOnly = variant === "plus-only";
   return (
     <div
       data-testid="tree-group-header"
@@ -233,19 +228,6 @@ function GroupHeader({
             )}
           </button>
         </Tooltip>
-        {plusOnly ? null : (
-          <Tooltip label="Connect over SSH">
-            <button
-              type="button"
-              aria-label="Connect over SSH"
-              data-testid="rail-ssh-connect"
-              onClick={onSshConnect}
-              className={GROUP_ACTION_CLS}
-            >
-              <Icon glyph={IconServer} role="ui" />
-            </button>
-          </Tooltip>
-        )}
       </span>
       <span className="flex flex-none">{leadingAction}</span>
     </div>
@@ -1943,6 +1925,51 @@ function SettingsTree({
   );
 }
 
+function AddWorkspaceMenu({ onAddWorkspace, onSshConnect }: {
+  onAddWorkspace: () => void;
+  onSshConnect: () => void;
+}): React.JSX.Element {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!position) return;
+    const close = (): void => setPosition(null);
+    const onDown = (event: MouseEvent): void => {
+      if (!menuRef.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) close();
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") { event.stopPropagation(); close(); trigger.current?.focus(); }
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("blur", close);
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("blur", close);
+    };
+  }, [position]);
+  const dispatch = (action: () => void): void => { setPosition(null); trigger.current?.focus(); action(); };
+  return <>
+    <Tooltip label="Add workspace">
+      <button ref={trigger} type="button" aria-label="Add workspace" aria-haspopup="menu" aria-expanded={position !== null} className={GROUP_ADD_CLS}
+        onClick={() => {
+          const rect = trigger.current!.getBoundingClientRect();
+          setPosition(position ? null : { x: Math.max(8, Math.min(rect.right - 244, window.innerWidth - 252)), y: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 88)) });
+        }}><Icon glyph={IconPlus} role="ui" /></button>
+    </Tooltip>
+    {position && portalOrNull(<div ref={menuRef} role="menu" aria-label="Add workspace" className={CTXMENU_CLS} style={{ left: position.x, top: position.y }}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) setPosition(null); }}>
+      <div className={CTX_ITEMS_CLS}>
+        <button type="button" role="menuitem" className="ctx-item" onClick={() => dispatch(onAddWorkspace)}><Icon glyph={IconFolder} role="ui" /><span>Local folder…</span></button>
+        <button type="button" role="menuitem" className="ctx-item" data-testid="rail-ssh-connect" onClick={() => dispatch(onSshConnect)}><Icon glyph={IconServer} role="ui" /><span>Connect via SSH…</span></button>
+      </div>
+    </div>)}
+  </>;
+}
+
 const RAIL_SLIDE_FROM_RIGHT =
   "motion-safe:animate-[rail-slide-in-right_var(--animate-t-panel)_var(--animate-ease-panel)]";
 
@@ -2037,23 +2064,12 @@ function RailTree({
     >
       <GroupHeader
         label={treeLabel}
-        variant="trio"
         filterOpen={filterOpen}
         activeFilterCount={activeFilterCount}
         filterLabel={filterLabel}
         onToggleFilter={onToggleFilter}
-        onSshConnect={onSshConnect}
         leadingAction={
-          <Tooltip label="Add workspace (folder)">
-            <button
-              type="button"
-              aria-label="Add workspace (folder)"
-              className={GROUP_ADD_CLS}
-              onClick={onAddWorkspace}
-            >
-              <Icon glyph={IconPlus} role="ui" />
-            </button>
-          </Tooltip>
+          <AddWorkspaceMenu onAddWorkspace={onAddWorkspace} onSshConnect={onSshConnect} />
         }
       />
 

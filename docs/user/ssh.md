@@ -10,18 +10,15 @@ whole workspace at a remote machine.
 
 ## Connecting
 
-Save a profile with a host, user and authentication method, and Houston can reconnect to
-it later. A profile can also carry a default remote directory and a startup command,
-which the pane runs right after connecting — the command is never quoted or altered, so
-whatever you save is exactly what runs.
+Open **Workspaces → + → Connect via SSH…** and enter a machine hostname, IP address,
+or SSH configuration name. Username is optional when your SSH configuration supplies it.
+Houston reads HostName, User, Port and IdentityFile; ProxyJump, Match and Include are not
+supported. Without a configured user, enter Username explicitly.
 
-Authentication supports:
-
-- your local SSH agent,
-- a specific identity (private key) file, with its passphrase optionally saved,
-- a saved password,
-- or, for a host read from your `~/.ssh/config`, the identity that file already names
-  for it, falling back to your agent if it doesn't name one.
+Expand **Advanced** to change the port or enable **Choose an SSH key when connecting**.
+Connect then opens the native private-key picker; cancelling it leaves the connection
+unopened. Otherwise Houston uses the identity named in your SSH configuration or your
+local SSH agent.
 
 The first time you connect to a host, Houston shows you its key fingerprint to accept —
 trust-on-first-use, recorded in a known_hosts file of its own. If the host's key ever

@@ -75,7 +75,7 @@ describe('overlays-04: elevation painted on --raised, named shadow', () => {
     expect(panel?.className).toContain(`shadow-[${SHADOW_2}]`)
   })
 
-  it('SshConnectModal panel uses --raised + shadow-2', () => {
+  it('SshConnectModal panel uses the card surface + shadow-2', () => {
     const profiles: SshProfile[] = []
     act(() => {
       root.render(
@@ -89,8 +89,8 @@ describe('overlays-04: elevation painted on --raised, named shadow', () => {
       )
     })
     const panel = container.querySelector('.pop')
-    expect(panel?.className).toContain('bg-[var(--raised)]')
-    expect(panel?.className).toContain(`shadow-[${SHADOW_2}]`)
+    expect(panel?.className).toContain('bg-[var(--card-bg)]')
+    expect(panel?.className).toContain('shadow-[var(--shadow-2)]')
   })
 
   it("HandoffOverlay's modal variant panel uses --raised + shadow-2", () => {

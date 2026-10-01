@@ -54,6 +54,39 @@ describe('Sidebar rail head — state matrix', () => {
     })
   }
 
+  it('Add workspace opens both actions without a separate SSH button', () => {
+    const onAddWorkspace = vi.fn()
+    const onSshConnect = vi.fn()
+    render({ onAddWorkspace, onSshConnect })
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Add workspace"]')!
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
+    expect(container.querySelector('[data-testid="rail-ssh-connect"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Connect over SSH"]')).toBeNull()
+    act(() => trigger.click())
+    const items = document.querySelectorAll<HTMLButtonElement>('[role="menu"] [role="menuitem"]')
+    expect(Array.from(items, (item) => item.textContent)).toEqual(['Local folder…', 'Connect via SSH…'])
+    act(() => items[0].click())
+    expect(onAddWorkspace).toHaveBeenCalledOnce()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    act(() => trigger.click())
+    act(() => document.querySelector<HTMLButtonElement>('[data-testid="rail-ssh-connect"]')!.click())
+    expect(onSshConnect).toHaveBeenCalledOnce()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+  })
+
+  it.each(['outside', 'escape', 'blur'])('closes Add workspace on %s', (reason) => {
+    render()
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Add workspace"]')!
+    act(() => trigger.click())
+    act(() => {
+      if (reason === 'outside') document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      else if (reason === 'escape') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      else window.dispatchEvent(new Event('blur'))
+    })
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
   it('Empty — N/A: the brand mark/name are static chrome, not a data-driven surface, so there is no "not yet loaded" state to occupy.', () => {
     expect(true).toBe(true)
   })
