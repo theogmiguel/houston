@@ -108,3 +108,41 @@ describe('browserSurfaceRegistry — the reason->id fan-out', () => {
     expect(healthy).toHaveBeenCalledWith(false, 'modal')
   })
 })
+
+it('does not hide a surface outside the overlay rectangle', () => {
+  const visible = vi.fn(noop)
+  registerBrowserSurface('left', visible, () => false, () => ({ x: 0, y: 0, width: 100, height: 100 }))
+  const scope = { key: 'menu', rect: () => ({ x: 200, y: 0, width: 20, height: 20 }) }
+  assertNativeSuppression('popover', scope)
+  expect(visible).not.toHaveBeenCalled()
+  releaseNativeSuppression('popover', scope)
+  expect(visible).not.toHaveBeenCalled()
+})
+
+it('keeps overlapping menus independent and releases the original reason after a move', () => {
+  const visible = vi.fn(noop)
+  registerBrowserSurface('guest', visible, () => false, () => ({ x: 0, y: 0, width: 100, height: 100 }))
+  let x = 10
+  const a = { key: 'tabs', rect: () => ({ x, y: 10, width: 20, height: 20 }) }
+  const b = { key: 'select', rect: () => ({ x: 20, y: 10, width: 20, height: 20 }) }
+  assertNativeSuppression('popover', a)
+  assertNativeSuppression('popover', b)
+  expect(visible.mock.calls).toEqual([[false, 'popover:tabs'], [false, 'popover:select']])
+  x = 200
+  assertNativeSuppression('popover', a)
+  expect(visible).toHaveBeenLastCalledWith(true, 'popover:tabs')
+  releaseNativeSuppression('popover', a)
+  expect(visible).toHaveBeenCalledTimes(3)
+  releaseNativeSuppression('popover', b)
+  expect(visible).toHaveBeenLastCalledWith(true, 'popover:select')
+})
+
+it('replays intersecting overlays for a surface mounted later', () => {
+  const scope = { key: 'tabs', rect: () => ({ x: 10, y: 10, width: 20, height: 20 }) }
+  assertNativeSuppression('popover', scope)
+  const visible = vi.fn(noop)
+  registerBrowserSurface('late', visible, () => false, () => ({ x: 0, y: 0, width: 100, height: 100 }))
+  expect(visible).toHaveBeenCalledWith(false, 'popover:tabs')
+  releaseNativeSuppression('popover', scope)
+  expect(visible).toHaveBeenLastCalledWith(true, 'popover:tabs')
+})

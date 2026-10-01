@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { useNativeSuppression } from '../layout/nativeSuppression'
+import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
 import { IconCheck, IconChevronDown } from './icons'
 import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
 import { SELECT_CLS } from './selectChrome'
@@ -58,12 +58,12 @@ export function Select({
   chrome = SELECT_CLS
 }: SelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  useNativeSuppression('popover', open)
   const [pos, setPos] = useState<MenuPos | null>(null)
   const [active, setActive] = useState(0)
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  useNativeOverlaySuppression('popover', open && pos !== null, menuRef)
   const typeahead = useRef<{ buf: string; at: number }>({ buf: '', at: 0 })
   const listboxId = useId()
 

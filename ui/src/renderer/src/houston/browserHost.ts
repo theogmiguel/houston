@@ -10,11 +10,12 @@ import {
 
 const DETACHED_CLOSED_EVENT = 'browser://detached-closed'
 
-async function invoker(): Promise<
-  <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
-> {
-  const { invoke } = await import('@tauri-apps/api/core')
-  return invoke
+type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
+let invokeReady: Promise<Invoke> | null = null
+
+function invoker(): Promise<Invoke> {
+  invokeReady ??= import('@tauri-apps/api/core').then(({ invoke }) => invoke)
+  return invokeReady
 }
 
 const pendingDestruction = new Map<string, Promise<void>>()
@@ -287,4 +288,90 @@ export function nativeCommandErrorMessage(
 ): string {
   const detail = err instanceof Error ? err.message : String(err)
   return `browser ${context} failed for surface ${id}: ${detail}`
+}
+
+// Keep overlay input responsive if native capture or image decoding stalls.
+export const FREEZE_FRAME_TIMEOUT_MS = 250
+
+export function useBrowserFreezeFrame(
+  id: string,
+  containerRef: React.RefObject<HTMLElement | null>,
+  nativeSetVisible: (visible: boolean, reason: string) => Promise<void>
+): (visible: boolean, reason: string) => Promise<void> {
+  const freezeRef = useRef<HTMLImageElement | null>(null)
+  const freezeQueue = useRef<Promise<void>>(Promise.resolve())
+  const reasons = useRef(new Set<string>())
+  const generation = useRef(0)
+  useEffect(() => () => {
+    generation.current++
+    reasons.current.clear()
+    freezeRef.current?.remove()
+    freezeRef.current = null
+  }, [id])
+  const nativeVisibleRef = useRef(nativeSetVisible)
+  nativeVisibleRef.current = nativeSetVisible
+  const setVisible = useCallback((visible: boolean, reason: string): Promise<void> => {
+    const container = containerRef.current
+    const epoch = generation.current
+    const command = freezeQueue.current.then(async () => {
+      if (!container || containerRef.current !== container || epoch !== generation.current) return
+      if (!visible && reasons.current.size === 0) {
+        let expired = false
+        let imageReady = false
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const capture = (async () => {
+          try {
+            const invoke = await invoker()
+            const url = await invoke<string>('browser_capture_placeholder', { id })
+            if (expired || epoch !== generation.current || containerRef.current !== container ||
+                typeof url !== 'string' || !url.startsWith('data:image/png;base64,')) return
+            const image = document.createElement('img')
+            image.alt = ''
+            image.setAttribute('aria-hidden', 'true')
+            Object.assign(image.style, {
+              position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none'
+            })
+            freezeRef.current = image
+            const loaded = new Promise<void>((resolve) => {
+              image.onload = () => {
+                imageReady = true
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+              }
+              image.onerror = () => {
+                image.remove()
+                resolve()
+              }
+            })
+            image.src = url
+            container.prepend(image)
+            await loaded
+          } catch {
+            // The themed viewport remains visible when capture is unavailable.
+          }
+        })()
+        await Promise.race([capture, new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, FREEZE_FRAME_TIMEOUT_MS)
+        })])
+        expired = true
+        clearTimeout(timer)
+        if (epoch !== generation.current) return
+        if (!imageReady) {
+          freezeRef.current?.remove()
+          freezeRef.current = null
+        }
+      }
+      if (containerRef.current !== container || epoch !== generation.current) return
+      await nativeVisibleRef.current(visible, reason)
+      if (epoch !== generation.current) return
+      if (visible) reasons.current.delete(reason)
+      else reasons.current.add(reason)
+      if (reasons.current.size === 0) {
+        freezeRef.current?.remove()
+        freezeRef.current = null
+      }
+    })
+    freezeQueue.current = command.catch(() => undefined)
+    return command
+  }, [id])
+  return setVisible
 }

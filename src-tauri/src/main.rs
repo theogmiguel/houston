@@ -561,6 +561,7 @@ fn main() {
             browser::browser_go_back,
             browser::browser_go_forward,
             browser::browser_capture,
+            browser::browser_capture_placeholder,
             browser::browser_set_workspace,
             browser::browser_confirm_respond,
             browser::browser_confirm_screenshot,

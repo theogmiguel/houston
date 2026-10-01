@@ -1248,12 +1248,31 @@ pub async fn browser_capture(
     registry: State<'_, BrowserRegistry>,
     id: String,
 ) -> Result<String, String> {
-    let webview = live_webview(&app, &registry, &id, "capturing")?;
-    refuse_if_hidden(&registry, &id, "before")?;
-    let capture = webkit::capture_rgba(&webview, &id).await?;
-    refuse_if_hidden(&registry, &id, "during")?;
+    let capture = capture_guest(&app, &registry, &id).await?;
     let png = state::rgba_to_png(&capture.rgba, capture.width, capture.height)?;
     crate::fs::save_bytes_under("pastes", "png", &png).await
+}
+
+async fn capture_guest(
+    app: &AppHandle,
+    registry: &State<'_, BrowserRegistry>,
+    id: &str,
+) -> Result<webkit::Capture, String> {
+    let webview = live_webview(app, registry, id, "capturing")?;
+    refuse_if_hidden(registry, id, "before")?;
+    let capture = webkit::capture_rgba(&webview, id).await?;
+    refuse_if_hidden(registry, id, "during")?;
+    Ok(capture)
+}
+
+#[tauri::command]
+pub async fn browser_capture_placeholder(
+    app: AppHandle,
+    registry: State<'_, BrowserRegistry>,
+    id: String,
+) -> Result<String, String> {
+    let capture = capture_guest(&app, &registry, &id).await?;
+    state::placeholder_data_url(&capture.rgba, capture.width, capture.height)
 }
 
 #[cfg(test)]

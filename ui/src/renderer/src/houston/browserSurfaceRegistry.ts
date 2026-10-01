@@ -1,6 +1,8 @@
 import {
   setSuppressionSink,
   suppressedReasons,
+  suppressedScopes,
+  type SuppressionScope,
   type NativeSuppressionReason
 } from '../layout/nativeSuppression'
 
@@ -9,6 +11,8 @@ type SetVisible = (visible: boolean, reason: string) => Promise<void>
 interface RegisteredSurface {
   setVisible: SetVisible
   isDetached: () => boolean
+  rect: SuppressionScope['rect']
+  reasons: Set<string>
 }
 
 const surfaces = new Map<string, RegisteredSurface>()
@@ -17,25 +21,44 @@ let installed = false
 function ensureInstalled(): void {
   if (installed) return
   installed = true
-  setSuppressionSink((reason: NativeSuppressionReason, visible: boolean) => {
+  setSuppressionSink((reason: NativeSuppressionReason, visible: boolean, scope?: SuppressionScope) => {
     for (const surface of surfaces.values()) {
-      if (surface.isDetached()) continue
-      void surface.setVisible(visible, reason).catch(() => undefined)
+      apply(surface, reason, visible, scope)
+      if (!scope) {
+        for (const active of suppressedScopes()) apply(surface, active.reason, false, active.scope)
+      }
     }
   })
+}
+
+function apply(surface: RegisteredSurface, reason: string, visible: boolean, scope?: SuppressionScope): void {
+  if (surface.isDetached()) return
+  const key = scope ? `${reason}:${scope.key}` : reason
+  const a = surface.rect()
+  const b = scope?.rect()
+  const intersects = !scope || (a && b && a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0 &&
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height)
+  const hide = !visible && !!intersects
+  if (hide === surface.reasons.has(key)) return
+  if (hide) surface.reasons.add(key)
+  else surface.reasons.delete(key)
+  void surface.setVisible(!hide, key).catch(() => undefined)
 }
 
 export function registerBrowserSurface(
   id: string,
   setVisible: SetVisible,
-  isDetached: () => boolean = () => false
+  isDetached: () => boolean = () => false,
+  rect: SuppressionScope['rect'] = () => null
 ): void {
   ensureInstalled()
-  surfaces.set(id, { setVisible, isDetached })
+  const surface = { setVisible, isDetached, rect, reasons: new Set<string>() }
+  surfaces.set(id, surface)
   if (isDetached()) return
   for (const reason of suppressedReasons()) {
-    void setVisible(false, reason).catch(() => undefined)
+    apply(surface, reason, false)
   }
+  for (const { reason, scope } of suppressedScopes()) apply(surface, reason, false, scope)
 }
 
 export function unregisterBrowserSurface(id: string): void {
