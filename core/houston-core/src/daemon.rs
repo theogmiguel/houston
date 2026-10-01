@@ -3598,6 +3598,8 @@ impl Daemon {
             inbox_unread: 0,
             tags: m.tags.clone(),
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         };
@@ -6343,6 +6345,28 @@ impl Daemon {
         }
     }
 
+    fn session_checkout_metadata(&self, info: &mut proto::SessionInfo) {
+        if info.ssh_host.is_some() {
+            return;
+        }
+        let facts = crate::git::checkout_facts(Path::new(&info.cwd));
+        info.checkout_root = facts.toplevel;
+        info.worktree = match self.db.managed_worktrees() {
+            Ok(rows) => rows
+                .into_iter()
+                .find(|row| Some(&row.path) == info.checkout_root.as_ref())
+                .map(|row| proto::SessionWorktree {
+                    path: row.path,
+                    branch: row.branch,
+                    repo_common_dir: row.repo_common_dir,
+                }),
+            Err(e) => {
+                tracing::warn!("reading worktree metadata for session {}: {e}", info.id);
+                None
+            }
+        };
+    }
+
     pub fn list(&self) -> Vec<proto::SessionInfo> {
         let mut out: Vec<proto::SessionInfo> = self
             .sessions
@@ -6354,6 +6378,7 @@ impl Daemon {
             .collect();
         out.extend(self.dead.lock().expect("dead lock").values().cloned());
         for info in out.iter_mut() {
+            self.session_checkout_metadata(info);
             if info.session_origin.is_none() {
                 info.session_origin = Some(self.db.session_origin(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading session origin for {}: {e}", info.id);
@@ -7871,7 +7896,7 @@ impl Daemon {
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
         let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
-        let info = proto::SessionInfo {
+        let mut info = proto::SessionInfo {
             id,
             agent,
             project_dir: project_dir.display().to_string(),
@@ -7895,10 +7920,13 @@ impl Daemon {
             inbox_unread: 0,
             tags: p_tags.clone(),
             session_origin: Some(session_origin.unwrap_or(id)),
+            checkout_root: None,
+            worktree: None,
             resumable: resume_handle.is_some(),
             resume_notice,
         };
 
+        self.session_checkout_metadata(&mut info);
         let session = Arc::new(Session {
             info: info.clone(),
             pid,
@@ -8276,6 +8304,8 @@ impl Daemon {
             inbox_unread: 0,
             tags: Vec::new(),
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         };
@@ -14488,6 +14518,20 @@ impl Daemon {
             format!("child {role} ({}) needs input: {summary}; answer with pane_read + pane_send_keys or leave it to the operator", row.from_session.unwrap_or(0))
         }).collect();
         Ok((!lines.is_empty()).then(|| lines.join("\n")))
+    }
+
+    pub fn delegation_results_list(&self, parent: u32) -> Result<proto::ServerMsg> {
+        if parent == 0 {
+            bail!("parent 0 is the operator inbox; expected a nonzero parent session id");
+        }
+        let mut results = self.db.delegation_latest_results(parent)?;
+        let truncated = results.len() > proto::DELEGATION_RESULTS_MAX_ROWS;
+        results.truncate(proto::DELEGATION_RESULTS_MAX_ROWS);
+        Ok(proto::ServerMsg::DelegationResults {
+            parent,
+            results,
+            truncated,
+        })
     }
 
     pub fn inbox_list(&self, workspace: &str) -> Result<proto::ServerMsg> {

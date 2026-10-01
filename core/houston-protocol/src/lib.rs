@@ -1244,6 +1244,31 @@ pub struct InboxRow {
     pub from_role: Option<String>,
 }
 
+// Keep overview replies compact while preserving a useful Unicode result preview.
+pub const DELEGATION_RESULT_EXCERPT_MAX_CHARS: usize = 400;
+// Bound reconnect snapshots even when a parent has accumulated many historical children.
+pub const DELEGATION_RESULTS_MAX_ROWS: usize = 256;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionWorktree {
+    pub path: String,
+    pub branch: String,
+    pub repo_common_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct DelegationResult {
+    pub child: u32,
+    pub role: Option<String>,
+    pub summary: String,
+    pub excerpt: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at: u64,
+    pub delivered_via: Option<InboxDeliveredVia>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionInfo {
@@ -1251,6 +1276,12 @@ pub struct SessionInfo {
     pub agent: AgentKind,
     pub project_dir: String,
     pub cwd: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub checkout_root: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub worktree: Option<SessionWorktree>,
     pub state: SessionState,
     pub title: String,
     #[serde(default)]
@@ -2173,6 +2204,9 @@ pub enum ClientMsg {
     OrchestrationSet {
         enabled: bool,
     },
+    DelegationResultsList {
+        parent: u32,
+    },
     InboxList {
         workspace: String,
     },
@@ -3022,6 +3056,11 @@ pub enum ServerMsg {
     WorkspaceRouting {
         workspace: String,
         routes: Vec<RoleRoute>,
+    },
+    DelegationResults {
+        parent: u32,
+        results: Vec<DelegationResult>,
+        truncated: bool,
     },
     InboxRows {
         workspace: String,

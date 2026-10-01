@@ -1910,6 +1910,8 @@ impl Db {
                             Vec::new()
                         }),
                     session_origin: Some(session_origin),
+                    checkout_root: None,
+                    worktree: None,
                     resumable: false,
                     resume_notice: None,
                 }),
@@ -4007,6 +4009,63 @@ impl Db {
         )?)
     }
 
+    pub fn delegation_latest_results(&self, parent: u32) -> Result<Vec<proto::DelegationResult>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "WITH recipients AS (
+                SELECT id FROM sessions WHERE COALESCE(session_origin, id) =
+                    COALESCE((SELECT session_origin FROM sessions WHERE id = ?1), ?1)
+                UNION SELECT ?1
+             ), scoped AS (
+                SELECT i.id, COALESCE((
+                    SELECT s.id FROM sessions s WHERE s.state != 'closed'
+                        AND COALESCE(s.session_origin, s.id) =
+                            COALESCE(sender.session_origin, i.from_session)
+                    ORDER BY s.id DESC LIMIT 1
+                ), i.from_session) AS child
+                FROM pane_inbox i LEFT JOIN sessions sender ON sender.id = i.from_session
+                WHERE i.kind = 'result' AND i.from_session IS NOT NULL
+                    AND (i.to_session IN recipients OR i.original_to IN recipients)
+             ), latest AS (
+                SELECT MAX(id) AS id, child FROM scoped GROUP BY child
+             )
+             SELECT latest.child, i.from_role, i.summary, substr(i.body, 1, ?2),
+                    i.created_at, i.delivered_via
+             FROM pane_inbox i JOIN latest ON i.id = latest.id
+             ORDER BY i.created_at DESC, i.id DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![
+                parent,
+                proto::DELEGATION_RESULT_EXCERPT_MAX_CHARS,
+                proto::DELEGATION_RESULTS_MAX_ROWS + 1
+            ],
+            |r| {
+                let via: Option<String> = r.get(5)?;
+                let delivered_via = via
+                    .map(|value| {
+                        serde_json::from_value(serde_json::Value::String(value)).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                5,
+                                rusqlite::types::Type::Text,
+                                Box::new(e),
+                            )
+                        })
+                    })
+                    .transpose()?;
+                Ok(proto::DelegationResult {
+                    child: r.get(0)?,
+                    role: r.get(1)?,
+                    summary: r.get(2)?,
+                    excerpt: r.get(3)?,
+                    created_at: r.get::<_, i64>(4)? as u64,
+                    delivered_via,
+                })
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn inbox_child_summary(
         &self,
         to_parent: u32,
@@ -5053,6 +5112,8 @@ mod tests {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         }

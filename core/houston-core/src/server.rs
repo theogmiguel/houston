@@ -600,6 +600,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::WaitForIdle { .. }
             | proto::ClientMsg::BrowserToolResult { .. }
             | proto::ClientMsg::InboxList { .. }
+            | proto::ClientMsg::DelegationResultsList { .. }
     )
 }
 
@@ -1361,6 +1362,14 @@ async fn dispatch(
         proto::ClientMsg::WorkspaceList => {
             let workspaces = daemon.workspace_list().unwrap_or_default();
             let _ = send_msg(sink, &proto::ServerMsg::WorkspaceList { workspaces }).await;
+            Ok(())
+        }
+        proto::ClientMsg::DelegationResultsList { parent } => {
+            let daemon = Arc::clone(daemon);
+            let msg = tokio::task::spawn_blocking(move || daemon.delegation_results_list(parent))
+                .await
+                .map_err(|e| anyhow::anyhow!("result lookup task panicked: {e}"))??;
+            let _ = send_msg(sink, &msg).await;
             Ok(())
         }
         proto::ClientMsg::InboxList { workspace } => match daemon.inbox_list(&workspace) {

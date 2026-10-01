@@ -327,9 +327,11 @@ Codex's tool timeout. A whole-inbox wait with no live children or pending rows r
 
 Rows come ordered by `created_at, id`, capped at `INBOX_BATCH_MAX_ROWS` /
 `INBOX_BATCH_MAX_BYTES` with `has_more: true` when cut. A `kind` filter never hides urgent
-rows for a waited child. A new wait supersedes the caller's previous wait and releases
-its reservation; the previous call returns `superseded`. Cancellation guards remove only
-their own registration so an older call cannot remove a replacement wait.
+rows for a waited child. A new wait supersedes an active wait, which returns `superseded`.
+A batch already returned for transport delivery remains reserved until that sender confirms
+or releases it; its confirmation cannot remove a replacement wait. Releasing an in-flight
+batch wakes the replacement waiter to retry. Gateway `call_tool` refuses `pane_wait`: the
+agent must call it directly so the streaming path can acknowledge delivery.
 
 A result staged during a working turn is released when the round closes, including an
 intentional cancellation. `pane_get` exposes `result_staged_age_ms` for a result that
@@ -343,11 +345,15 @@ releases a stored result or emits one `no_handback` naming the bound and elapsed
 Delegation registration precedes PTY creation, and a failed spawn removes its spawning
 record. The cleanup lock still protects the parent throughout spawn: releasing it during
 worktree creation or PTY startup would let cleanup remove a completed temporary parent
-before the child is registered in the live roster.
+before the child is registered in the live roster. Operator keystrokes record composer
+occupancy immediately and defer cleanup cancellation to the watcher when that lock is
+busy, so unrelated terminal input does not wait for a spawn.
 
 `pane_prompt` applies the same status and operator-composer hold as inbox pastes. A held
 prompt remains on the bounded wake lane and reports `held`; an immediately writable
-prompt returns PTY write errors synchronously. The hold is rechecked before Enter.
+prompt returns PTY write errors synchronously. The hold is rechecked before paste and
+before Enter. A hold detected before writing requeues the prompt; a partial or unsubmitted
+paste creates an operator note containing the prompt and is never retried automatically.
 
 ### Door 2: the synchronous `Stop` hook
 
@@ -510,6 +516,11 @@ return `hookSpecificOutput.additionalContext`. The hook queries the authenticate
 for bounded, once-per-row needs-input hints. This does not consume the durable row, block
 the parent's turn or paste into a Working terminal. Antigravity, OpenCode, Cursor and Grok
 rely on the operator channel for immediate attention and their existing idle delivery.
+Post-tool context queries run after the lifecycle drop is written. Each pane receives a
+local signal path at spawn; the signal is created when it first hosts a child, including
+children spawned after orchestration is enabled. Panes that have never hosted children
+skip the daemon round trip. The signal carries no prompt or result content.
+
 Verified output contracts: [Claude hooks](https://code.claude.com/docs/en/hooks#posttooluse)
 and [Codex hooks](https://learn.chatgpt.com/docs/hooks), also present in the installed binaries.
 
@@ -597,7 +608,11 @@ restarts produce one state, and it runs **after** restore:
 2. The restore policy brings parents and their open children back through valid Claude
    and Codex resume handles, rebinds session IDs and inbox recipients, and writes exactly
    one `restored` notice per parent. Its JSON array names role, child, provider and whether
-   the conversation resumed. Unsupported children remain ended; settled children remain
+   the conversation resumed, with a reason for each outcome. Successfully resumed children
+   enter `working`: their mission is live again, while `unknown` describes an interrupted
+   mission whose process has not resumed. Children of deferred parents inherit the visible
+   deferral and resume through the same policy when the parent is manually respawned.
+   Unsupported children remain ended; settled children remain
    archived. A child without a valid resume handle never starts a bare replacement CLI.
 3. `db::inbox_recover_after_restart` runs against the live set restore actually brought
    back, not the empty roster boot started with — a respawned husk keeps its own rows
@@ -636,7 +651,9 @@ a child slot. Both carry settled and retained-until timestamps. The existing del
 watch loop removes expired settled children after `SETTLED_RETENTION` (24 hours by default,
 configured through daemon settings). Ordinary idle reaping skips retained delegations.
 Explicit close and parent close remove the retained sessions.
-Continue uses the existing resume machinery for Claude and Codex; other providers are
+Continue carries the retained scrollback into the replacement PTY before its reader starts,
+so stream offsets and the earlier transcript survive. It uses the existing resume machinery
+for Claude and Codex; other providers are
 refused by name. A new request clears the previous settlement and retention timestamps.
 
 Role routing is stored per registered workspace and exposed through `workspace_info`.
@@ -716,7 +733,7 @@ composition folds the two into one story. A quiet-settle release names itself on
 (`reason = 'quiet_settle'`), because that is the one release a parent may need to
 second-guess.
 
-**Quiet-settle** is the fifth named exception to "PTY content is not a status machine"
+**Quiet-settle** is the third named exception to "PTY content is not a status machine"
 (`docs/internals/invariants.md`). `Daemon::delegation_watch_tick` samples every open
 delegation; for a child whose source is `quiet-settle`, a tail fingerprint unchanged for
 `DELEGATION_SETTLE_QUIET_MS` with no process running under the pane is a turn end nothing
@@ -1108,3 +1125,24 @@ operator-addressed rows (`reason = "migrated"`).
 `ScopeLayout`/`scope_dir`/`init_scope` maintain the directories used by the `plan/events/`
 GC sweep. Hook drops use the channel's `hooks/drop/` directory, and `hs-pane` wrappers
 live under each workspace's `.houston/orchestration/bin/`.
+
+## Renderer placement and operator inspection
+
+A headless child has a real daemon-owned PTY but no separate grid cell. The renderer's
+roster selects it inside its orchestrator pane; moving it to the grid changes placement,
+not delegation ancestry. Roster and overview grouping use session liveness before
+mission state: an ended child is Settled, a live blocked child Needs you, and other live
+children Working. A resumed child must never be included in Close settled, including
+when it resumes during the Undo interval.
+
+Each orchestrator can have one overview tab in the workspace's side panel. It exposes
+results and the operator queue without intercepting terminal input. Queue acknowledgement
+and resolution use durable inbox receipts. Source control reviews use the child's own
+checkout and can return a review prompt to that child.
+
+The side panel stores tab placement per workspace in localStorage. Browser surfaces
+remain mounted while their tabs or panel are hidden, with id-scoped native suppression;
+closing a browser tab destroys its surface and frees a native-webview slot. Popovers,
+menus, tooltips and resize drags assert shared suppression reasons because native children
+paint above the renderer DOM. Moving a browser between panel and grid preserves its
+surface identity and saved tab state, while remounting the surface at its new placement.

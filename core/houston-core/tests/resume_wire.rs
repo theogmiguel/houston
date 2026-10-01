@@ -364,6 +364,8 @@ fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str,
         inbox_unread: 0,
         tags: vec![],
         session_origin: None,
+        checkout_root: None,
+        worktree: None,
         resumable: false,
         resume_notice: None,
     })

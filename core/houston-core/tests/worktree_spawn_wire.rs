@@ -782,3 +782,96 @@ async fn a_rollback_that_cannot_remove_the_tree_keeps_its_row() {
         "a tree the rollback could not remove stays known to Houston"
     );
 }
+
+#[tokio::test]
+async fn k4_session_worktree_metadata_groups_nested_shared_checkouts_and_survives_reopen() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("metadata", true).await;
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    let mut ws = connect_and_hello(r.addr, TOKEN).await;
+    assert!(matches!(
+        next_control(&mut ws).await,
+        proto::ServerMsg::HelloOk { .. }
+    ));
+    let child = spawned_session(
+        &r.spawn(
+            &token,
+            serde_json::json!({
+                "kind": "grok", "prompt": "go", "worktree": "metadata", "branch": "feat/metadata"
+            }),
+        )
+        .await,
+    );
+    let created = loop {
+        if let proto::ServerMsg::SessionCreated { info } = next_control(&mut ws).await {
+            if info.id == child {
+                break info;
+            }
+        }
+    };
+    let tree = r.worktrees_dir().join("metadata").canonicalize().unwrap();
+    let root = tree.display().to_string();
+    assert_eq!(created.checkout_root.as_deref(), Some(root.as_str()));
+    let metadata = created.worktree.unwrap();
+    assert_eq!(metadata.path, root);
+    assert_eq!(metadata.branch, "feat/metadata");
+    assert_eq!(
+        metadata.repo_common_dir,
+        git(
+            &r.ws_dir,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"]
+        )
+        .trim()
+    );
+    let nested = tree.join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    let sibling = spawned_session(
+        &r.spawn(
+            &token,
+            serde_json::json!({
+                "kind": "grok", "prompt": "read", "cwd": nested
+            }),
+        )
+        .await,
+    );
+    let infos = r.daemon.list();
+    let shared = infos.iter().find(|info| info.id == sibling).unwrap();
+    assert_eq!(shared.checkout_root.as_deref(), Some(root.as_str()));
+    assert_eq!(shared.worktree.as_ref().unwrap().path, root);
+    assert!(infos
+        .iter()
+        .find(|info| info.id == parent.id)
+        .unwrap()
+        .worktree
+        .is_none());
+    assert_eq!(
+        parent.checkout_root.as_deref(),
+        Some(r.ws_dir.to_str().unwrap())
+    );
+    let snapshot = r.state.path().join("metadata-reopen.db");
+    rusqlite::Connection::open(r.db_path())
+        .unwrap()
+        .execute("VACUUM INTO ?1", [snapshot.to_str().unwrap()])
+        .unwrap();
+    r.daemon.kill(child).unwrap();
+    r.daemon.kill(sibling).unwrap();
+    r.daemon.kill(parent.id).unwrap();
+    let reopened = Daemon::new_with_safe_mode_flags_for_test(
+        houston_core::daemon::DaemonConfig {
+            token: TOKEN.into(),
+            db_path: snapshot,
+        },
+        houston_core::daemon::SafeModeFlags {
+            disable_auto_restore: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let infos = reopened.list();
+    for id in [child, sibling] {
+        let info = infos.iter().find(|info| info.id == id).unwrap();
+        assert_eq!(info.checkout_root.as_deref(), Some(root.as_str()));
+        assert_eq!(info.worktree.as_ref().unwrap().branch, "feat/metadata");
+    }
+}

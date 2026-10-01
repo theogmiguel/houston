@@ -42,6 +42,8 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         })
@@ -85,6 +87,8 @@ fn seed_one(
         inbox_unread: 0,
         tags: vec![],
         session_origin,
+        checkout_root: None,
+        worktree: None,
         resumable: false,
         resume_notice: None,
     })
@@ -195,6 +199,8 @@ fn invalid_cwd_is_deferred_not_respawned() {
         inbox_unread: 0,
         tags: vec![],
         session_origin: None,
+        checkout_root: None,
+        worktree: None,
         resumable: false,
         resume_notice: None,
     })
@@ -365,6 +371,8 @@ fn no_flags_set_runs_normal_restore_policy() {
         inbox_unread: 0,
         tags: vec![],
         session_origin: None,
+        checkout_root: None,
+        worktree: None,
         resumable: false,
         resume_notice: None,
     })

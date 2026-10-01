@@ -134,6 +134,7 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_routing_get` | `workspace` | `workspace_routing` with current `routes` |
 | `workspace_routing_set` | registered `workspace`, `routes: RoleRoute[]` (max 64) | `workspace_routing` (bcast) |
 | `orchestration_caps_set` | `max_live_children`, `max_spawn_depth` (both `1..=ORCHESTRATION_CAP_MAX`) | `orchestration_state` (bcast); out of range is an `error` naming cap and value |
+| `delegation_results_list` | `parent: u32` (nonzero) | `delegation_results` (direct); latest durable result per child for this parent, including delivered, staged and operator-routed rows; authenticated `/ws` clients only |
 | `inbox_list` | `workspace` | `inbox_rows` (direct) — every row addressed to the operator for that workspace |
 | `inbox_ack` | `id` | `inbox_changed` (bcast); `error` naming the id if no operator row matched. Opening a row is delivery, not resolution |
 | `inbox_resolve` | `id` | `inbox_changed` (bcast); `error` naming the id if no row matched. Writes `reason: "operator"` |
@@ -332,6 +333,7 @@ failure not given a typed refusal comes back as `error`.
 | `session_running_procs` | `entries: SessionProcsEntry[]` | direct reply to `session_running_procs` |
 | `live_children_changed` | `session`, `live_children`, `children_waiting` | bcast after any transition that can change either of a parent's child counts — a child spawning, dying or respawning moves the first; a child blocking, stalling or being released moves the second |
 | `delegation_changed` | `session` (the CHILD), `delegation: DelegationInfo` | bcast after every write to a delegation record — spawn, state transition, stall flag, staging, flush, close. The whole record, so a client replaces rather than patches |
+| `delegation_results` | `parent`, `results: DelegationResult[]`, `truncated: bool` | direct; newest first (timestamp then inbox id), at most 256 children; `truncated` reports omitted older children |
 | `inbox_rows` | `workspace`, `rows: InboxRow[]` | v96: direct reply to `inbox_list` — every row addressed to the operator for that workspace, oldest first |
 | `inbox_changed` | `workspace`, `row: InboxRow` | v96: bcast on every write to a row — produced, released, delivered, confirmed, re-addressed, acked, resolved. The whole row, so a client replaces rather than patches |
 | `idle` | `request`, `session`, `idle` | bcast — a `wait_for_idle` resolved (`true` = quiet window elapsed or not running; `false` = timeout while output flowed) |
@@ -417,7 +419,18 @@ SessionContext     used_tokens, window_tokens?, used_percent? (0-100, floored),
                    state: ContextState, source: ContextSource, as_of_ms
 RestoreReason      kebab: circuit-breaker | invalid-cwd | ssh | budget | previous-crash | safe-mode | spawn-failed
 
-SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), state: SessionState, title,
+SessionWorktree    path (checkout root), branch (Houston-recorded branch), repo_common_dir.
+                   Only Houston-recorded worktrees are exposed; base_branch is not recorded.
+DelegationResult   child, role: string | null (sender snapshot), summary, excerpt (at most
+                   DELEGATION_RESULT_EXCERPT_MAX_CHARS = 400 Unicode characters), created_at
+                   (epoch milliseconds), delivered_via: InboxDeliveredVia | null.
+                   DELEGATION_RESULTS_MAX_ROWS = 256; reads never acknowledge or consume rows.
+                   Parent and child ids follow session_origin across respawn. Rows remain
+                   subject to the existing inbox retention policy.
+SessionInfo        checkout_root?: string | null (Git root, including ordinary shared checkouts),
+                   worktree?: SessionWorktree | null; absent for SSH/non-repository sessions.
+                   Group live sibling children by checkout_root to identify shared checkouts.
+                   id, agent: AgentKind, project_dir, cwd (the actual run dir), state: SessionState, title,
                    codename (v98: the spawn-time codename, kept when the first prompt renames
                    `title`; parent-facing labels read this. Empty from an older daemon —
                    read `title` instead),

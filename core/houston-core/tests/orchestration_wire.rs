@@ -9748,3 +9748,298 @@ async fn k3_failed_inflight_delivery_wakes_replacement_wait() {
     r.daemon.finish_wait_delivery(parent.id, &delivery_id, true);
     r.daemon.close(parent.id).unwrap();
 }
+
+async fn k4_results_over_ws(addr: SocketAddr, parent: u32) -> (Vec<proto::DelegationResult>, bool) {
+    use futures_util::SinkExt;
+    let mut ws = common::connect_and_hello(addr, TOKEN).await;
+    assert!(matches!(
+        common::next_control(&mut ws).await,
+        proto::ServerMsg::HelloOk { .. }
+    ));
+    ws.send(tokio_tungstenite::tungstenite::Message::text(
+        serde_json::to_string(&proto::ClientMsg::DelegationResultsList { parent }).unwrap(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        if let proto::ServerMsg::DelegationResults {
+            parent: returned,
+            results,
+            truncated,
+        } = common::next_control(&mut ws).await
+        {
+            assert_eq!(returned, parent);
+            return (results, truncated);
+        }
+    }
+}
+
+#[tokio::test]
+async fn k4_latest_results_are_parent_scoped_bounded_read_only_and_durable() {
+    let _guard = serial().await;
+    let r = rig("result-metadata").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let other = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, body) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({
+                "kind": "grok", "prompt": "review", "role": "reviewer", "reusable": true
+            }),
+        )
+        .await;
+    let child = body["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(
+            child,
+            houston_core::orchestrate::Submission {
+                body: "old result".into(),
+                summary: Some("old".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let row = houston_core::db::NewInboxRow {
+        to_session: parent.id,
+        workspace: r.ws_dir.display().to_string(),
+        from_session: Some(child),
+        request_id: None,
+        kind: "result".into(),
+        urgent: false,
+        summary: "latest".into(),
+        body: "界".repeat(600),
+        artifacts: Vec::new(),
+        provisional: false,
+        corrects: None,
+        reason: None,
+        ready: true,
+    };
+    let latest = db
+        .inbox_insert(&row, houston_core::daemon::now_ms() + 1)
+        .unwrap();
+    db.inbox_readdress_to_operator(latest, "parent unavailable")
+        .unwrap();
+    let (results, truncated) = k4_results_over_ws(r.addr, parent.id).await;
+    assert!(!truncated);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].child, child);
+    assert_eq!(results[0].role.as_deref(), Some("reviewer"));
+    assert_eq!(results[0].summary, "latest");
+    assert_eq!(
+        results[0].excerpt,
+        "界".repeat(proto::DELEGATION_RESULT_EXCERPT_MAX_CHARS)
+    );
+    assert!(results[0].delivered_via.is_none());
+    assert!(k4_results_over_ws(r.addr, other.id).await.0.is_empty());
+    assert!(db
+        .inbox_get(latest)
+        .unwrap()
+        .unwrap()
+        .delivered_at
+        .is_none());
+    assert!(r.daemon.delegation_results_list(0).is_err());
+    for info in r.daemon.list() {
+        r.daemon.kill(info.id).unwrap();
+    }
+    let reopened = Arc::new(
+        Daemon::new(DaemonConfig {
+            token: TOKEN.into(),
+            db_path: r._state.path().join("test.db"),
+        })
+        .unwrap(),
+    );
+    let (addr, _server) =
+        houston_core::server::start(Arc::clone(&reopened), "127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+    let (restored, _) = k4_results_over_ws(addr, parent.id).await;
+    assert_eq!(restored[0].excerpt, results[0].excerpt);
+    assert_eq!(restored[0].role, results[0].role);
+    use futures_util::{SinkExt, StreamExt};
+    let mut denied = common::connect_and_hello(addr, "invalid-token").await;
+    let first = denied.next().await.unwrap().unwrap();
+    assert!(!first.to_text().unwrap_or("").contains("latest"));
+    let send = denied
+        .send(tokio_tungstenite::tungstenite::Message::text(
+            serde_json::to_string(&proto::ClientMsg::DelegationResultsList { parent: parent.id })
+                .unwrap(),
+        ))
+        .await;
+    if send.is_ok() {
+        while let Some(Ok(message)) = denied.next().await {
+            assert!(!message
+                .to_text()
+                .unwrap_or("")
+                .contains("delegation_results"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn k4_result_snapshot_follows_respawn_identity_and_reports_row_cap() {
+    let _guard = serial().await;
+    let r = rig("result-snapshot-limit").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, spawned) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({
+                "kind": "codex", "prompt": "work", "role": "worker"
+            }),
+        )
+        .await;
+    let child_id = spawned["session_id"].as_u64().unwrap() as u32;
+    let child = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == child_id)
+        .unwrap();
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let row = houston_core::db::NewInboxRow {
+        to_session: parent.id,
+        workspace: r.ws_dir.display().to_string(),
+        from_session: Some(child.id),
+        request_id: None,
+        kind: "result".into(),
+        urgent: false,
+        summary: "delivered".into(),
+        body: "durable result".into(),
+        artifacts: Vec::new(),
+        provisional: false,
+        corrects: None,
+        reason: None,
+        ready: true,
+    };
+    let transcript = r.ws_dir.join("snapshot-conversation.jsonl");
+    std::fs::write(&transcript, "conversation metadata\n").unwrap();
+    db.set_session_resume_handle(
+        child.id,
+        Some((
+            "00000000-0000-4000-8000-000000000001",
+            Some(transcript.to_str().unwrap()),
+        )),
+    )
+    .unwrap();
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "UserPromptSubmit".into(),
+            session: child.id,
+            agent: Some("codex".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    r.daemon
+        .orchestrate_submit(
+            child.id,
+            houston_core::orchestrate::Submission {
+                body: row.body.clone(),
+                summary: Some(row.summary.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            event: "Stop".into(),
+            session: child.id,
+            agent: Some("codex".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let id = r
+        .daemon
+        .inbox_rows_for_test(parent.id)
+        .into_iter()
+        .find(|entry| entry.kind == "result")
+        .unwrap()
+        .id;
+    db.inbox_readdress_to_operator(id, "parent unavailable")
+        .unwrap();
+    assert!(db
+        .inbox_ack_operator(id, houston_core::daemon::now_ms())
+        .unwrap());
+    let resumed_child = r
+        .daemon
+        .respawn(child.id, false, None, None, false)
+        .unwrap();
+    r.daemon.kill(parent.id).unwrap();
+    let resumed_parent = r
+        .daemon
+        .respawn(parent.id, false, None, None, false)
+        .unwrap();
+    let (results, _) = k4_results_over_ws(r.addr, resumed_parent.id).await;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].child, resumed_child.id);
+    assert_eq!(
+        results[0].delivered_via,
+        Some(proto::InboxDeliveredVia::Operator)
+    );
+    let latest = houston_core::db::NewInboxRow {
+        from_session: Some(resumed_child.id),
+        to_session: resumed_parent.id,
+        summary: "after-respawn".into(),
+        workspace: row.workspace.clone(),
+        body: row.body.clone(),
+        request_id: None,
+        kind: "result".into(),
+        urgent: false,
+        artifacts: Vec::new(),
+        provisional: false,
+        corrects: None,
+        reason: None,
+        ready: true,
+    };
+    db.inbox_insert(&latest, houston_core::daemon::now_ms() + 1)
+        .unwrap();
+    let (results, _) = k4_results_over_ws(r.addr, resumed_parent.id).await;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].child, resumed_child.id);
+    assert_eq!(results[0].summary, "after-respawn");
+    for offset in 0..proto::DELEGATION_RESULTS_MAX_ROWS {
+        let mut historical = child.clone();
+        historical.id = 10_000 + offset as u32;
+        historical.session_origin = Some(historical.id);
+        historical.state = proto::SessionState::Exited;
+        historical.spawned_by = Some(resumed_parent.id);
+        db.insert_session(&historical).unwrap();
+        let historical_result = houston_core::db::NewInboxRow {
+            from_session: Some(historical.id),
+            to_session: resumed_parent.id,
+            workspace: row.workspace.clone(),
+            request_id: None,
+            kind: "result".into(),
+            urgent: false,
+            summary: row.summary.clone(),
+            body: row.body.clone(),
+            artifacts: Vec::new(),
+            provisional: false,
+            corrects: None,
+            reason: None,
+            ready: true,
+        };
+        db.inbox_insert(
+            &historical_result,
+            houston_core::daemon::now_ms() + offset as u64 + 10,
+        )
+        .unwrap();
+    }
+    let (results, truncated) = k4_results_over_ws(r.addr, resumed_parent.id).await;
+    assert!(truncated);
+    assert_eq!(results.len(), proto::DELEGATION_RESULTS_MAX_ROWS);
+    assert!(results
+        .windows(2)
+        .all(|pair| pair[0].created_at >= pair[1].created_at));
+    assert!(!results
+        .iter()
+        .any(|result| result.child == resumed_child.id));
+}

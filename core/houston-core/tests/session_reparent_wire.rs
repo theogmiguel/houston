@@ -96,6 +96,8 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         })
@@ -166,6 +168,8 @@ fn reparent_refuses_a_swarm_tied_session() {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         })
