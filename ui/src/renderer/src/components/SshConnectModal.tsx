@@ -99,8 +99,8 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
       setBusy(false)
     }
   }
-  const textInput = 'w-full min-w-0 h-[30px] px-2.5 bg-background border border-border rounded-[6px] text-text-primary text-[13px]'
-  const labelClass = 'text-right text-[13px] text-text-primary'
+  const textInput = 'w-full min-w-0 h-[30px] px-2.5 bg-background border border-border rounded-[6px] text-text-primary text-[length:var(--tr-text-base)]'
+  const labelClass = 'text-right text-[length:var(--tr-text-base)] text-text-primary'
   return (
     <div className={MODAL_SCRIM_CLS} onMouseDown={() => { if (!busyRef.current) onClose() }}>
       <form
@@ -119,8 +119,8 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
         }}
       >
         <header className="flex flex-col gap-2">
-          <h2 id="ssh-connect-title" className="m-0 text-[18px] font-semibold text-text-primary">Connect via SSH</h2>
-          <p id="ssh-connect-description" className="m-0 text-[13px] text-text-primary">Open a terminal on a Linux or Mac machine over SSH.</p>
+          <h2 id="ssh-connect-title" className="m-0 text-[length:var(--tr-text-xl)] font-semibold text-text-primary">Connect via SSH</h2>
+          <p id="ssh-connect-description" className="m-0 text-[length:var(--tr-text-base)] text-text-primary">Open a terminal on a Linux or Mac machine over SSH.</p>
         </header>
         <div className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
           <label className={labelClass} htmlFor="ssh-machine">Machine</label>
@@ -131,19 +131,19 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
           <input id="ssh-user" className={textInput} value={user} onChange={(event) => edit(setUser, event.target.value)} placeholder="Use SSH configuration" autoComplete="off" spellCheck={false} disabled={busy} />
           <label className={labelClass} htmlFor="ssh-folder">Folder</label>
           <input id="ssh-folder" className={textInput} value={folder} onChange={(event) => edit(setFolder, event.target.value)} placeholder="~/projects/app" spellCheck={false} disabled={busy} />
-          <button type="button" className={`btn ${BTN_GHOST} col-start-2 justify-self-start -ml-2.5 flex items-center gap-1 text-[13px]`} aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
+          <button type="button" className={`btn ${BTN_GHOST} col-start-2 justify-self-start -ml-2.5 flex items-center gap-1 text-[length:var(--tr-text-base)]`} aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
             <span className={advanced ? 'rotate-90' : ''}><Icon glyph={IconChevronRight} role="ui" /></span>Advanced
           </button>
           {advanced && <div id="ssh-advanced" className="contents">
             <label className={labelClass} htmlFor="ssh-port">Port</label>
             <input id="ssh-port" className={`${textInput} w-[88px] tabular-nums`} value={port} onChange={(event) => edit(setPort, event.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric" maxLength={5} disabled={busy} />
-            <label className="col-start-2 flex items-center gap-2 text-[13px] text-text-primary">
+            <label className="col-start-2 flex items-center gap-2 text-[length:var(--tr-text-base)] text-text-primary">
               <Toggle on={chooseKey} disabled={busy} onChange={(value) => { setChooseKey(value); setError(null) }} />
               <span id="ssh-key-label">Choose an SSH key when connecting</span>
             </label>
-            <p className="col-start-2 m-0 text-[12px] text-text-secondary">Otherwise, use your SSH agent or existing SSH configuration.</p>
+            <p className="col-start-2 m-0 text-[length:var(--tr-text-sm)] text-text-secondary">Otherwise, use your SSH agent or existing SSH configuration.</p>
           </div>}
-          {error && <p role="alert" className="col-span-2 m-0 text-[12px] text-danger">{error}</p>}
+          {error && <p role="alert" className="col-span-2 m-0 text-[length:var(--tr-text-sm)] text-danger">{error}</p>}
         </div>
         <footer className="flex items-center gap-2">
           <button type="button" className={BTN_SECONDARY} disabled={busy} onClick={onClose}>Cancel</button>
