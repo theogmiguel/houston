@@ -5,8 +5,8 @@ import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import type { InboxRow } from '../houston/generated/InboxRow'
 import { selectOverviewChild } from '../sidePanel'
-import { childGroup, delegationAge } from './ChildrenRoster'
-import { stateWord, sessionIdentity } from './DelegationCard'
+import { childGroup, childStateWord, delegationAge } from './ChildrenRoster'
+import { sessionIdentity } from './DelegationCard'
 import { IconAgent, IconEye, IconGitBranch, IconStopCircle, IconRespawn } from './icons'
 import { StatusDot } from './SessionPane'
 import { BTN_GHOST, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
@@ -83,7 +83,7 @@ function OverviewChildCard({ child, parent, parentId, children, result, now, cou
 
       const shared = children.find((other) => other.id !== child.id && other.project_dir === child.project_dir)
       return <article key={child.id} className={`overview-child ${needs ? 'needs' : ''}`}>
-        <div className="overview-child-head"><StatusDot live status={needs ? 'needs-input' : settled ? 'idle' : child.status} /><IconAgent agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state">{child.delegation ? stateWord(child.delegation) : childGroup(child)}</span><span className="age">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span></div>
+        <div className="overview-child-head"><StatusDot live status={needs ? 'needs-input' : settled ? 'idle' : child.status} /><IconAgent agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state">{childStateWord(child)}</span><span className="age">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span></div>
         <div className="overview-task">{child.title}</div>
         <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.project_dir)} />
         <div className="overview-actions">{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</div>

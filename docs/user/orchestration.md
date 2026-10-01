@@ -90,7 +90,7 @@ workspace, and unrelated panes remain inaccessible.
 
 Children are temporary by default. After a durable completed result, Houston ends the
 process and keeps the session and transcript under Settled. Done-and-idle reusable
-children also leave the live-child quota. Closing a settled child or its parent removes
+children also leave the live-child quota, but remain in Working until their process ends. Closing a settled child or its parent removes
 it; retention expires after 24 hours by default. Claude and Codex conversations can be
 continued when a valid resume handle is available. Other providers cannot continue an
 ended conversation. A reusable child remains available for follow-up prompts until close
@@ -144,3 +144,27 @@ yourself. Delegation changes who briefed the pane, not who is allowed to use it.
 Handoff requests may include `state_doc` as text or `{path: "state.txt"}` inside the
 target workspace. The handoff state is limited to 64 KiB and included in the new pane's
 brief. It is refused on ordinary child spawns.
+
+## Following delegated work
+
+The orchestrator's roster groups children into Needs you, Working and Settled. Select a
+child to inspect its terminal inside the orchestrator pane; return to Orchestrator to
+see the parent. Move to grid gives a child its own cell, and Return to roster reverses
+that placement. A headless child stays in the roster without consuming a grid cell.
+Needs you includes blocked and stalled children; Answer focuses their terminal prompt.
+Houston never answers a child's question for you.
+
+Overview opens a closable side-panel tab for that orchestrator. Group its children by
+status or worktree, select a terminal, or review changes in the child's checkout.
+Review comments can be sent back to that child. Closing the overview only closes the view.
+
+Settled contains ended sessions. A live resumed child stays in Working or Needs you even
+if its previous delegation was marked unknown. Close settled counts only ended children
+and offers five seconds to Undo; a child that resumes during that interval is preserved.
+Continue resumes a retained Claude or Codex conversation with its earlier transcript.
+Set **Settled retention** in Settings ▸ Orchestration to change the default 24-hour horizon.
+
+When a parent ends, pending messages appear under **Addressed to you** in its overview.
+Acknowledge marks a message delivered; Resolve marks it handled. Restart notices list
+which child conversations resumed and why others remained ended. Successfully resumed
+children are Working; an interrupted mission is not reported as successful.

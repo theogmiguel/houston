@@ -19,9 +19,14 @@ export const CLOSE_SETTLED_UNDO_MS = 5000
 const ROSTER_ICON = `${BTN_ICO} ${CONTROL_SIZE_SQUARE_CLS.regular}`
 
 export function childGroup(info: SessionInfo): 'Needs you' | 'Working' | 'Settled' {
-  if (!isLive(info.state) || ['done', 'failed', 'unknown'].includes(info.delegation?.state ?? '')) return 'Settled'
+  if (!isLive(info.state)) return 'Settled'
   if (info.status === 'needs-input' || info.delegation?.stalled || info.delegation?.state === 'needs_input') return 'Needs you'
   return 'Working'
+}
+
+export function childStateWord(info: SessionInfo): string {
+  if (isLive(info.state) && ['done', 'failed', 'unknown'].includes(info.delegation?.state ?? '')) return info.status ?? 'working'
+  return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'working'
 }
 
 export function delegationAge(start: number, now: number): string {
@@ -98,7 +103,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
             <div className="children-group"><span>{group}</span><span>{items.length}</span></div>
             {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
               <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}>{dot(child)}{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong></HeaderDelegationBadge>
-              <span className="children-slot"><span className="children-state">{child.delegation ? stateWord(child.delegation) : childGroup(child) === 'Settled' ? 'done' : child.status ?? 'working'} · {delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span>
+              <span className="children-slot"><span className="children-state">{childStateWord(child)} · {delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span>
                 <span className="children-actions">
                   {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><button className={ROSTER_ICON} aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>}
                   <Tooltip label="Open"><button className={ROSTER_ICON} aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>

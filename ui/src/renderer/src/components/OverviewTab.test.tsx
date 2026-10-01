@@ -8,6 +8,16 @@ import { OverviewTab } from './OverviewTab'
 const session = (id: number, parent: number | null, ended = false): SessionInfo => ({ id, spawned_by: parent, project_dir: '/work', cwd: '/work', codename: `code-${id}`, title: `task ${id}`, agent: 'claude', state: ended ? 'exited' : 'running', status: 'working', children_waiting: 0, live_children: 0, tags: [], hidden: false, inbox_unread: 0, resumable: true, delegation: parent == null ? null : { parent, started_at: 1000, settled_at: ended ? 61000 : null, state: ended ? 'done' : 'working', stalled: false, result_staged: false, superseded: 0, turn_end_source: 'unknown', inbox_owed: 0, inbox_provisional: 0, reusable: true } } as SessionInfo)
 afterEach(cleanup)
 describe('orchestrator overview', () => {
+  it('counts resumed live unknown children as working and offers Stop instead of Continue', () => {
+    const child = session(2, 1)
+    child.delegation!.state = 'unknown'
+    const client = { subscribe: () => () => {}, inboxList: vi.fn(), gitStatus: vi.fn(), closeSession: vi.fn() } as unknown as HoustonClient
+    render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
+    expect(screen.getByText('children · 0 needs you · 1 working · 0 settled')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(client.closeSession).toHaveBeenCalledWith(2)
+  })
   it('shows protocol ages, targets review and resumes a settled child without fresh', () => {
     const sessions = new Map([[1, session(1, null)], [2, session(2, 1, true)]])
     const respawnSession = vi.fn()

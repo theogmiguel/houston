@@ -146,7 +146,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
 
     if (!isTauri())
       return (
-        <div style={{ position: 'relative' }}>
+        <div className={className} style={{ position: 'relative', ...style }}>
           {children}
           {overlay}
         </div>

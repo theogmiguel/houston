@@ -3,7 +3,7 @@ import { isTauri } from './host'
 
 const OPEN_REQUEST_EVENT = 'browser://open-request'
 
-export function useBrowserOpenRequest(onRequest: (workspaceId: string, url: string) => void): void {
+export function useBrowserOpenRequest(onRequest: (workspaceId: string, url: string, surfaceId?: string) => void): void {
   const cb = useRef(onRequest)
   cb.current = onRequest
 
@@ -14,8 +14,8 @@ export function useBrowserOpenRequest(onRequest: (workspaceId: string, url: stri
 
     void (async () => {
       const { listen } = await import('@tauri-apps/api/event')
-      const dispose = await listen<{ workspaceId: string; url: string }>(OPEN_REQUEST_EVENT, (event) => {
-        cb.current(event.payload.workspaceId, event.payload.url)
+      const dispose = await listen<{ workspaceId: string; url: string; surfaceId?: string }>(OPEN_REQUEST_EVENT, (event) => {
+        cb.current(event.payload.workspaceId, event.payload.url, event.payload.surfaceId)
       })
       if (disposed) {
         dispose()

@@ -18,6 +18,20 @@ beforeEach(() => { vi.useFakeTimers(); closeSession.mockClear(); host = document
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers() })
 
 describe('settled children', () => {
+  it.each(['done', 'failed', 'unknown'] as const)('never settles or closes a live %s delegation', (state) => {
+    children = [child(2, 'exited'), { ...child(3), delegation: { state } as SessionInfo['delegation'] }]
+    expect(childGroup(children[1])).toBe('Working')
+    render(); click('Close settled (1)')
+    act(() => vi.advanceTimersByTime(5000))
+    expect(closeSession).toHaveBeenCalledExactlyOnceWith(2)
+  })
+  it('does not close a child resumed with an unknown delegation during Undo', () => {
+    render(); click('Close settled (2)')
+    children = [{ ...child(2), delegation: { state: 'unknown' } as SessionInfo['delegation'] }, child(3, 'killed')]
+    render()
+    act(() => vi.advanceTimersByTime(5000))
+    expect(closeSession).toHaveBeenCalledExactlyOnceWith(3)
+  })
   it('includes ended sessions even when there is no delegation record', () => {
     expect(childGroup(child(2, 'exited'))).toBe('Settled')
     expect(childGroup(child(2, 'interrupted'))).toBe('Settled')

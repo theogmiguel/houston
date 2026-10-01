@@ -60,3 +60,8 @@
 @container (max-width:440px){.side-tab-wrap.pinned .side-count{display:none}}
 .overview-summary>button{display:flex;align-items:center;justify-content:center;height:20px;padding:0 8px;border-radius:var(--tr-radius-sm);font-size:11.5px;background:transparent;color:var(--text-secondary)}
 .overview-summary>button[aria-pressed="true"]{background:var(--selected-fill);color:var(--text-primary)}
+
+.side-browser { flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.side-browser .pane.browser { border: 0; border-radius: 0; }
+.side-tabs > span:last-child { flex: none; margin-left: auto; }
+.side-tabs > span:last-child > button { height: var(--h-ctl); width: var(--h-ctl); color: var(--text-muted); }

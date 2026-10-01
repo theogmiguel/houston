@@ -1222,3 +1222,15 @@ export const TIGHT_ICON_MAP: ReadonlyMap<IconComponent, IconComponent> = new Map
   [IconGitFork, IconGitForkTight],
   [IconCornerDownRight, IconCornerDownRightTight]
 ])
+
+export function IconMonitor(p: IconProps): React.JSX.Element {
+  return <Svg {...p}><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></Svg>
+}
+
+export function IconPhone(p: IconProps): React.JSX.Element {
+  return <Svg {...p}><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M11 18h2" /></Svg>
+}
+
+export function IconTablet(p: IconProps): React.JSX.Element {
+  return <Svg {...p}><rect x="3" y="2" width="18" height="20" rx="2" /><path d="M11 18h2" /></Svg>
+}

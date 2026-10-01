@@ -6,7 +6,7 @@ editor, and browser.
 ## Side panel
 
 Press `g` to toggle the side panel. Each workspace keeps its own Source control and
-Files tabs, plus closable orchestration overviews. Source control retains its Changes
+Files tabs, plus closable orchestration overviews and browser tabs. Source control retains its Changes
 and Pull request views. Drag the panel divider to resize it; double-click resets its width.
 
 Ctrl-click a file path in a terminal to open it in Files at the linked line and column.
@@ -37,13 +37,28 @@ pane's editor half, so a file open in both places never drifts out of sync.
 
 ## Browser pane
 
-A browser pane is a real browser surface embedded in the grid, and an agent can drive
+A browser tab is a real browser surface in the side panel or the grid, and an agent can drive
 it: click, type, hover, press a key, or select an option, the same way it can type into
 a terminal pane.
 
-When an agent asks to open a page and its workspace has no browser pane showing one,
-Houston opens a browser pane at that page. The agent's other browser actions need a page
-open first.
+Press `b` to open a browser tab in the side panel. Move to grid and Move to side panel
+change its placement in either direction. Switching tabs or closing the side panel hides
+its browser surfaces without closing them; closing a browser tab releases its webview.
+Up to eight native webviews can be open at once. A refusal names the limit, current count
+and requested browser; close a browser tab before retrying.
+
+When an agent asks to open its first page, Houston opens a browser tab in the side panel.
+If its browser is already in a hidden tab, show that tab before further agent interaction.
+The agent's other browser actions need a visible page first.
+
+Desktop fits the available browser area. Phone previews use a 393 × 852 viewport and
+Tablet previews use 820 × 1180, scaled to fit with the current zoom shown. On hosts
+without device zoom, Phone and Tablet are disabled with an explanatory tooltip.
+
+The address bar labels HTTPS pages secure, loopback pages local, and other pages not
+secure. This label describes the connection, not whether the page content is trustworthy.
+Select element hands the page selection and your instruction to the focused live agent.
+Without an agent target, selection is disabled and its tooltip explains how to enable it.
 
 ### Why this needs a consent gate
 

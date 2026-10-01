@@ -17,9 +17,12 @@ async function invoker(): Promise<
   return invoke
 }
 
+const pendingDestruction = new Map<string, Promise<void>>()
+
 function tauriBrowserCommands(): BrowserCommands {
   return {
     async mount(id, url, fullscreen, rect, workspaceId) {
+      await pendingDestruction.get(id)
       const invoke = await invoker()
       return invoke<Rect>('browser_mount', { id, url, fullscreen, rect, workspaceId })
     },
@@ -31,9 +34,13 @@ function tauriBrowserCommands(): BrowserCommands {
       const invoke = await invoker()
       return invoke<void>('browser_set_visible', { id, visible, reason })
     },
-    async destroy(id) {
-      const invoke = await invoker()
-      return invoke<void>('browser_destroy', { id })
+    destroy(id) {
+      const destruction = invoker().then((invoke) => invoke<void>('browser_destroy', { id }))
+      pendingDestruction.set(id, destruction)
+      void destruction.finally(() => {
+        if (pendingDestruction.get(id) === destruction) pendingDestruction.delete(id)
+      }).catch(() => {})
+      return destruction
     }
   }
 }

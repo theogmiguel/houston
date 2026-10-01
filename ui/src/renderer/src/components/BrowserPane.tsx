@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
 import type { BrowserNode } from '../layout/tree'
+import { openSideBrowser } from '../sidePanel'
 import { openExternal } from '../houston/bridge'
 import { isTauri } from '../houston/host'
 import { nativeCommandErrorMessage } from '../houston/browserHost'
@@ -20,7 +21,10 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
-  IconTarget
+  IconTarget,
+  IconMonitor,
+  IconPhone,
+  IconTablet
 } from './icons'
 import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './panelChrome'
 
@@ -48,6 +52,7 @@ import {
 import { useBrowserNav } from './browserNav'
 import { tabsStorageKey } from './browserTabsKey'
 import { Icon } from './Icon'
+import { BROWSER_DEVICES, browserSecurity, fitBrowserDevice, type BrowserDevice } from './browserDevices'
 
 interface Props {
   node: BrowserNode
@@ -60,6 +65,9 @@ interface Props {
   dropzoneActive?: boolean
   onSendToTerminal?: (text: string) => void
   onNativeError?: (text: string) => void
+  loadRequest?: { url: string }
+  panel?: boolean
+  onMoveToGrid?: (url: string) => void
   focusUrlRequest?: number
 }
 
@@ -95,10 +103,31 @@ export function BrowserPane({
   hiddenByExpand,
   dropzoneActive,
   onSendToTerminal,
+  loadRequest,
+  panel = false,
+  onMoveToGrid,
   focusUrlRequest = 0
 }: Props): React.JSX.Element {
+  const [device, setDevice] = useState<BrowserDevice>('desktop')
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stage, setStage] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const element = stageRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const measure = (): void => setStage({ width: Math.max(0, element.clientWidth - 32), height: Math.max(0, element.clientHeight - 60) })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  const size = BROWSER_DEVICES[device]
+  const zoom = fitBrowserDevice(device, stage.width, stage.height)
   const tabsKey = tabsStorageKey(node.id)
-  const [restored] = useState(() => seedTabs(tabsKey, node.url))
+  const [restored] = useState(() => {
+    const saved = seedTabs(tabsKey, node.url)
+    if (!loadRequest?.url.trim()) return saved
+    return { ...saved, tabs: saved.tabs.map((tab) => tab.id === saved.activeTabId ? { ...tab, url: toNavUrl(loadRequest.url) } : tab) }
+  })
   const [urlInput, setUrlInput] = useState(
     () => restored.tabs.find((t) => t.id === restored.activeTabId)?.url ?? ''
   )
@@ -151,6 +180,10 @@ export function BrowserPane({
     setRecents
   )
   useBrowserPaneLoad(node.id, openUrl)
+  useEffect(() => {
+    if (loadRequest?.url.trim() && loadRequest.url !== active.url) openUrl(loadRequest.url)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadRequest])
 
   const [surfaceMountFailed, setSurfaceMountFailed] = useState(false)
   useEffect(() => {
@@ -166,7 +199,10 @@ export function BrowserPane({
 
   const fresh = active.url === null
 
-  const picker = usePickerController(node.id, fresh, onSendToTerminal)
+  useEffect(() => {
+    if (hiddenByExpand) { setPopover(false); setFullscreen(false) }
+  }, [hiddenByExpand])
+  const picker = usePickerController(node.id, fresh || !onSendToTerminal || !!hiddenByExpand, onSendToTerminal)
 
   return (
     <section
@@ -206,17 +242,19 @@ export function BrowserPane({
             </span>
           </button>
         </Tooltip>
-        <div className="relative flex-1 min-w-0 flex items-center">
+        <div className="browser-url relative flex-1 min-w-0 flex items-center">
           <span
             className={`absolute left-1.5 top-1/2 -translate-y-1/2 inline-flex pointer-events-none [transition:color_0.16s_ease] ${urlFocused ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
             aria-hidden
+            hidden={!fresh}
           >
             <Icon glyph={IconSearch} role="label" />
           </span>
+          {!fresh && <span className={`browser-security ${browserSecurity(active.url) === 'not secure' ? 'insecure' : ''}`}>{browserSecurity(active.url)}</span>}
           <input
             ref={urlRef}
             aria-label="Address and search bar"
-            className={`${URL_INPUT_CLS} pl-[22px]`}
+            className={`${URL_INPUT_CLS} ${fresh ? 'pl-[22px]' : 'browser-address'}`}
             placeholder={fresh ? 'enter a url to open a new tab' : 'search or enter url'}
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
@@ -315,13 +353,13 @@ export function BrowserPane({
           )}
           {isTauri() && (
             <Tooltip
-              label={picker.enabled ? 'Stop selecting elements (Esc)' : 'Select an element to describe a change'}
+              label={!onSendToTerminal ? 'Select element unavailable: focus a live agent pane first' : picker.enabled ? 'Stop selecting elements (Esc)' : 'Select element · click to hand it to the focused agent'}
             >
               <button
                 className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${picker.enabled ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
                 aria-label={picker.enabled ? 'Stop selecting elements' : 'Select a page element'}
                 aria-pressed={picker.enabled}
-                disabled={fresh}
+                disabled={fresh || !onSendToTerminal}
                 data-testid={`browser-picker-toggle-${node.id}`}
                 onClick={picker.toggle}
               >
@@ -329,6 +367,7 @@ export function BrowserPane({
               </button>
             </Tooltip>
           )}
+          <Tooltip label={panel ? 'Move to grid' : 'Move to side panel'}><button className={`${NAV_BTN_CLS}`} aria-label={panel ? 'Move to grid' : 'Move to side panel'} onClick={() => { if (panel) onMoveToGrid?.(active.url ?? ''); else { openSideBrowser(node.id, active.url ?? '', workspaceDir); onClose() } }}><Icon glyph={IconExternal} role="ui" /></button></Tooltip>
           <Tooltip label="Close">
             <button
               className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
@@ -418,12 +457,18 @@ export function BrowserPane({
           </button>
         </div>
       )}
+      <div className="browser-devrow">
+        <div className="browser-device-buttons" role="group" aria-label="Device preset">{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={isTauri() && value !== 'desktop' ? `${label} unavailable: native viewport zoom is not supported` : label}><button className={NAV_BTN_CLS} aria-label={label} aria-pressed={device === value} disabled={isTauri() && value !== 'desktop'} onClick={() => setDevice(value)}><Icon glyph={glyph} role="label" /></button></Tooltip>)}</div>
+        <span className="browser-caption">{size ? `${size.width} × ${size.height} · ${Math.round(zoom * 100)}%` : 'fit · 100%'}</span>
+      </div>
       <PickerStrip id={node.id} controller={picker} />
+      <div ref={stageRef} className="browser-stage">
       {tabs.some((t) => t.url !== null) && !surfaceMountFailed && (
         <BrowserFullscreen
           active={fullscreen}
           onExit={() => setFullscreen(false)}
-          hostClassName={WEBVIEW_HOST_CLS}
+          hostClassName={`browser-device ${device}`}
+          hostStyle={size ? { width: size.width * zoom, height: size.height * zoom, flex: 'none' } : undefined}
           urlLabel={active.url ?? ''}
           canGoBack={Boolean(active.canGoBack)}
           canGoForward={Boolean(active.canGoForward)}
@@ -438,6 +483,7 @@ export function BrowserPane({
             workspaceDir={workspaceDir}
             url={(active.url ?? tabs.find((t) => t.url !== null)?.url) as string}
             className={fullscreen ? WEBVIEW_HOST_CLS : `${WEBVIEW_HOST_CLS} ${SURFACE_RADIUS_CLS}`}
+            style={!fullscreen && size ? { width: size.width, height: size.height, flex: 'none', transform: `scale(${zoom})`, transformOrigin: 'top left' } : undefined}
             hidden={hiddenByExpand}
             dropzoneActive={dropzoneActive || confirmingHere}
 
@@ -456,6 +502,7 @@ export function BrowserPane({
             onError={(context, surfaceId, err) => {
               const text = nativeCommandErrorMessage(context, surfaceId, err)
               console.error(text)
+              setFailMsg(text)
               onNativeError?.(text)
             }}
             onDetachedChange={setDetached}
@@ -482,6 +529,7 @@ export function BrowserPane({
           </BrowserViewport>
         </BrowserFullscreen>
       )}
+      {!fresh && <span className="browser-caption">Select element · click to hand it to the focused agent</span>}
       {fresh && (
         <div className="h-full w-full flex items-center justify-center py-6 px-4 overflow-y-auto">
           <div className="w-full max-w-[300px] flex flex-col items-start gap-3">
@@ -556,6 +604,7 @@ export function BrowserPane({
           </div>
         </div>
       )}
+      </div>
     </section>
   )
 }

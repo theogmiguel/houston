@@ -215,8 +215,9 @@ import {
   useScmWidth,
   type ScmTab,
 } from "./scmPanel";
+import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
-import { SIDE_OPEN_EVENT, SIDE_SELECT_EVENT, type SideOpen } from "./sidePanel";
+import { SIDE_OPEN_EVENT, SIDE_SELECT_EVENT, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, loadSideState, type SideOpen } from "./sidePanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
@@ -814,17 +815,26 @@ export function App(): React.JSX.Element {
   const scmWidth = useScmWidth();
   const [sideRequest, setSideRequest] = useState<SideOpen | null>(null);
   const [activeSurface, setActiveSurface] = useState<"grid" | "side">("grid");
+  const sideWorkspaceRef = useRef<string>("all");
+  if (activeId !== null && sessions.get(activeId)?.project_dir) sideWorkspaceRef.current = sessions.get(activeId)!.project_dir;
+  const sideWorkspace = selectedWs === "all" ? sideWorkspaceRef.current : selectedWs;
+  const pickerTarget = useRef<number | null>(null);
+  if (activeId !== null && isLive(sessions.get(activeId)?.state ?? "exited") && sessions.get(activeId)?.agent !== "shell") pickerTarget.current = activeId;
   const [sideReview, setSideReview] = useState<SessionInfo | null>(null);
   useEffect(() => {
     const open = (event: Event): void => {
-      setSideRequest((event as CustomEvent<SideOpen>).detail);
+      const request = (event as CustomEvent<SideOpen>).detail;
+      setSideRequest(request);
+      if (request.kind === "browser") { sideWorkspaceRef.current = request.workspace; revealWorkspace(request.workspace); }
       setScmOpen(true);
+      setActiveSurface("side");
     };
     const select = (): void => setActiveSurface("grid");
     window.addEventListener(SIDE_OPEN_EVENT, open);
     window.addEventListener(SIDE_SELECT_EVENT, select);
     return () => { window.removeEventListener(SIDE_OPEN_EVENT, open); window.removeEventListener(SIDE_SELECT_EVENT, select); };
   }, []);
+  useEffect(() => { if (!scmOpen) setActiveSurface("grid"); }, [scmOpen]);
   const [wsRenaming, setWsRenaming] = useState<string | null>(null);
   // Keyed by `gridStorageKey(path, gridId)` for a real workspace, never the
   // bare path — 'all' is the one exception, bypassing grids entirely.
@@ -2158,6 +2168,10 @@ export function App(): React.JSX.Element {
   const openBrowserPane = useCallback(
     (workspaceDir: string, anchor: PaneKey | null, url = ""): void => {
       setExpandedId(null);
+      if (anchor === null) {
+        openSideBrowser(`b${Date.now()}-${++browserLeafSeq.current}`, url, workspaceDir);
+        return;
+      }
       const key = keyForRef(workspaceDir);
       setLayouts((prev) => {
         const cur = prev.get(key) ?? loadLayout(key);
@@ -2174,6 +2188,28 @@ export function App(): React.JSX.Element {
     },
     [],
   );
+  useEffect(() => {
+    const move = (event: Event): void => {
+      const { id, url, workspace } = (event as CustomEvent<{ id: string; url: string; workspace: string }>).detail;
+      const key = keyForRef(workspace);
+      setLayouts((prev) => {
+        const cur = prev.get(key) ?? loadLayout(key);
+        return new Map(prev).set(key, { ...cur, tree: insertPaneAt(cur.tree, { kind: "browser", id, url }, null) });
+      });
+      setActiveSurface("grid");
+      setActiveLeaf(id);
+    };
+    window.addEventListener(SIDE_BROWSER_MOVE_EVENT, move);
+    return () => window.removeEventListener(SIDE_BROWSER_MOVE_EVENT, move);
+  }, [setActiveLeaf]);
+  const sendPickerToAgent = useCallback((text: string): void => {
+    const target = pickerTarget.current;
+    const cur = connForSkillRef.current;
+    if (target === null || cur.kind !== "ready" || !isLive(sessionsRef.current.get(target)?.state ?? "exited")) return;
+    if (!cur.client.sendStdin(target, text)) pushError("connection lost — selected element was not delivered");
+  }, [pushError]);
+  const pickerAvailable = pickerTarget.current !== null && isLive(sessions.get(pickerTarget.current)?.state ?? "exited");
+
   const openFilesPaneAt = useCallback(
     (workspaceDir: string, root: string, anchor: PaneKey | null): void => {
       setExpandedId(null);
@@ -2708,6 +2744,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onDown = (e: PointerEvent): void => {
       const t = e.target as HTMLElement;
+      if (!t.closest(".side-panel")) setActiveSurface("grid");
       const paneEl = t.closest(".pane");
       const paneKeyAttr = paneEl?.getAttribute("data-panekey") ?? null;
       const sessionPane = paneKeyAttr !== null && /^\d+$/.test(paneKeyAttr);
@@ -2720,16 +2757,21 @@ export function App(): React.JSX.Element {
   }, []);
 
   useBrowserFocus((id) => {
+    const tab = loadSideState(sideWorkspace).tabs.find((tab) => tab.kind === "browser" && tab.id === id);
+    if (tab?.kind === "browser") { setActiveSurface("side"); setActiveId(null); return; }
+    setActiveSurface("grid");
     setActiveId(null);
     const tree = currentTreeRef.current;
     setActiveLeaf(tree && findPane(tree, id) ? id : null);
   });
-  useBrowserOpenRequest((workspaceDir, url) => {
+  useBrowserOpenRequest((workspaceDir, url, surfaceId) => {
     if (!workspacesRef.current.some((w) => w.path === workspaceDir)) return;
-    const key = keyForRef(workspaceDir);
-    const tree = (layoutsRef.current.get(key) ?? loadLayout(key)).tree;
-    const pane = preorderNonSessionPanes(tree).find((p) => p.kind === "browser");
-    if (pane && requestBrowserPaneLoad(pane.id, url)) return;
+    const tab = loadSideState(workspaceDir).tabs.find((tab) => tab.kind === "browser" && (surfaceId === undefined || tab.id === surfaceId));
+    if (tab?.kind === "browser") {
+      openSideBrowser(tab.id, url, workspaceDir);
+      if (!requestBrowserPaneLoad(tab.id, url)) setSideRequest({ kind: "browser", id: tab.id, url, workspace: workspaceDir });
+      return;
+    }
     openBrowserPane(workspaceDir, null, url);
   });
 
@@ -2857,6 +2899,11 @@ export function App(): React.JSX.Element {
         e.preventDefault();
         toggleTitlebarAddPane();
       } else if (resolveGlobalMatch(browserFocusUrl, keymapOverrides)(e)) {
+        if (activeSurface === "side") {
+          const input = document.querySelector<HTMLInputElement>('.side-browser.flex input[aria-label="Address and search bar"]');
+          if (input) { e.preventDefault(); input.focus(); input.select(); }
+          return;
+        }
         const tree = currentTreeRef.current;
         const active =
           activeLeaf !== null && tree ? findPane(tree, activeLeaf) : null;
@@ -3406,7 +3453,7 @@ export function App(): React.JSX.Element {
                     }
                     onOpenFile={openTerminalFile}
                     onOpenDir={openTerminalDir}
-                    onSendToTerminal={runSkill}
+                    onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
                     onNativeError={pushError}
                     onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3512,7 +3559,7 @@ export function App(): React.JSX.Element {
                               }
                               onOpenFile={openTerminalFile}
                               onOpenDir={openTerminalDir}
-                              onSendToTerminal={runSkill}
+                              onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
                               onNativeError={pushError}
                               onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3536,9 +3583,12 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </div>
-              {scmOpen && (
+              {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
                 <SidePanelIntegration
-                  selectedWorkspace={selectedWs}
+                  focused={activeSurface === "side"}
+                  closed={!scmOpen}
+                  onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                  selectedWorkspace={sideWorkspace}
                   activeId={activeId}
                   sessions={sessions}
                   request={sideRequest}

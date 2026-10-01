@@ -1,3 +1,4 @@
+import { useNativeSuppression } from '../layout/nativeSuppression'
 import { saveReview } from '../houston/bridge'
 import { buildStructuredReviewPrompt, structuredReviewPrompt } from '../git/review'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
@@ -138,6 +139,7 @@ export function ScmResizeHandle({
   onReset: () => void
 }): React.JSX.Element {
   const [dragging, setDragging] = useState(false)
+  useNativeSuppression('animating', dragging)
   // `requested` is the stored preference a cancel falls back to; `base` is
   // what the divider actually shows, so a clamp-shortened panel still tracks
   // the pointer instead of waiting for the delta to exceed the clamp gap.
