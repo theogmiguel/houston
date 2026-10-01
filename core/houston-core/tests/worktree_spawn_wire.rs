@@ -25,11 +25,11 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "cursor-agent"] {
+        for name in ["grok", "codex", "claude", "agy", "opencode", "cursor-agent"] {
             let path = dir.join(name);
             std::fs::write(
                 &path,
-                "#!/bin/sh\nstty -echo 2>/dev/null\nprintf 'CWD:%s\\n' \"$PWD\"\necho FIXTURE-READY\nexec cat\n",
+                "#!/bin/sh\nstty -echo 2>/dev/null\nprintf 'CWD:%s\\n' \"$PWD\"\nprintf 'ARG:%s\\n' \"$@\"\necho FIXTURE-READY\nexec cat\n",
             )
             .unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -452,7 +452,7 @@ async fn worktree_and_cwd_together_are_refused() {
 }
 
 #[tokio::test]
-async fn an_invalid_slug_is_refused_naming_the_rule() {
+async fn k6_invalid_slug_is_refused_naming_the_rule() {
     let _guard = SERIAL.lock().await;
     let r = rig("spawn-slug", true).await;
     let parent = r.pane();
@@ -464,6 +464,10 @@ async fn an_invalid_slug_is_refused_naming_the_rule() {
         ("a/b", "path separator"),
         ("..", "`..`"),
         ("a b", "whitespace"),
+        (".", "`.`"),
+        ("nul\0slug", "control character"),
+        ("escape\x1b", "control character"),
+        (&"x".repeat(256), "255 bytes"),
     ] {
         let text = refusal_text(
             &r.spawn(
@@ -874,4 +878,273 @@ async fn k4_session_worktree_metadata_groups_nested_shared_checkouts_and_survive
         assert_eq!(info.checkout_root.as_deref(), Some(root.as_str()));
         assert_eq!(info.worktree.as_ref().unwrap().branch, "feat/metadata");
     }
+}
+
+#[tokio::test]
+async fn k6_colliding_slug_refusal_names_both_slugs() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("collision", true).await;
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    let first = r
+        .spawn(
+            &token,
+            serde_json::json!({"kind":"grok","prompt":"go","worktree":"Upper"}),
+        )
+        .await;
+    assert!(!first["isError"].as_bool().unwrap_or(false), "{first}");
+    let error = refusal_text(
+        &r.spawn(
+            &token,
+            serde_json::json!({"kind":"grok","prompt":"go","worktree":"upper"}),
+        )
+        .await,
+    );
+    assert!(
+        error.contains("Upper") && error.contains("upper") && error.contains("collision"),
+        "{error}"
+    );
+    r.daemon.close(spawned_session(&first)).unwrap();
+    r.daemon.close(parent.id).unwrap();
+}
+
+async fn k6_provider_worktree_trust(kind: &str, supported: bool, flag: &str) {
+    let _guard = SERIAL.lock().await;
+    let r = rig(kind, true).await;
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    let response = r
+        .spawn(
+            &token,
+            serde_json::json!({"kind":kind,"prompt":"go","worktree":"trust"}),
+        )
+        .await;
+    if !supported {
+        let error = refusal_text(&response);
+        assert!(
+            error.to_lowercase().contains(kind) && error.contains("folder-trust"),
+            "{error}"
+        );
+        assert!(r.rows().is_empty());
+        assert!(!r.worktrees_dir().join("trust").exists());
+    } else {
+        let id = spawned_session(&response);
+        if kind == "grok" {
+            let store = shim_dir().join("home/.grok/trusted_folders.toml");
+            let text = std::fs::read_to_string(store).unwrap();
+            assert!(text.contains("# >>> houston managed worktree trust >>>"));
+            let parsed: toml::Value = text.parse().unwrap();
+            assert_eq!(
+                parsed["folders"][r.worktrees_dir().join("trust").display().to_string()]["trusted"]
+                    .as_bool(),
+                Some(true)
+            );
+        }
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let replay = r.daemon.scrollback(id, None).unwrap();
+            let text = String::from_utf8_lossy(&replay.data);
+            if text.contains(flag) {
+                if kind == "codex" {
+                    let config = text
+                        .lines()
+                        .find_map(|line| line.strip_prefix("ARG:projects="))
+                        .unwrap();
+                    let parsed: toml::Value =
+                        format!("projects={}", config.trim()).parse().unwrap();
+                    for path in [&r.ws_dir, &r.worktrees_dir().join("trust")] {
+                        assert_eq!(
+                            parsed["projects"][path.display().to_string()]["trust_level"].as_str(),
+                            Some("trusted")
+                        );
+                    }
+                }
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "missing {flag}: {text}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        r.daemon.close(id).unwrap();
+    }
+    r.daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn k6_claude_worktree_trust() {
+    k6_provider_worktree_trust("claude", false, "").await;
+}
+#[tokio::test]
+async fn k6_codex_worktree_trust() {
+    k6_provider_worktree_trust("codex", true, "trust_level").await;
+}
+#[tokio::test]
+async fn k6_antigravity_worktree_trust() {
+    k6_provider_worktree_trust("antigravity", false, "").await;
+}
+#[tokio::test]
+async fn k6_opencode_worktree_trust() {
+    k6_provider_worktree_trust("opencode", false, "").await;
+}
+#[tokio::test]
+async fn k6_cursor_worktree_trust() {
+    k6_provider_worktree_trust("cursor", true, "--trust").await;
+}
+#[tokio::test]
+async fn k6_grok_worktree_trust() {
+    k6_provider_worktree_trust("grok", true, "FIXTURE-READY").await;
+}
+
+#[tokio::test]
+async fn k6_worktree_reservation_protects_caps_and_rolls_back() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("reservation", true).await;
+    let parent = r.pane();
+    r.daemon.set_orchestration_caps(1, 2).unwrap();
+    let daemon = Arc::downgrade(&r.daemon);
+    r.daemon
+        .set_worktree_spawn_observer_for_test(Arc::new(move |_| {
+            let daemon = daemon.upgrade().unwrap();
+            let (tx, rx) = std::sync::mpsc::channel();
+            let probe = Arc::clone(&daemon);
+            let thread = std::thread::spawn(move || {
+                probe.with_temporary_cleanup_lock_for_test(|| tx.send(()).unwrap())
+            });
+            assert!(
+                rx.recv_timeout(Duration::from_secs(2)).is_ok(),
+                "git worktree checkout must run outside cleanup lock"
+            );
+            thread.join().unwrap();
+            let error = daemon
+                .orchestrate_spawn(
+                    parent.id,
+                    proto::AgentKind::Grok,
+                    None,
+                    None,
+                    "second".to_string().into(),
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("cap 1"),
+                "reservation must count against child cap: {error}"
+            );
+        }));
+    git(&r.ws_dir, &["branch", "houston/failure"]);
+    let token = r.token_for(parent.id);
+    let error = refusal_text(
+        &r.spawn(
+            &token,
+            serde_json::json!({"kind":"grok","prompt":"go","worktree":"failure"}),
+        )
+        .await,
+    );
+    assert!(error.contains("houston/failure"), "{error}");
+    let response = r
+        .spawn(
+            &token,
+            serde_json::json!({"kind":"grok","prompt":"after failure"}),
+        )
+        .await;
+    let child = spawned_session(&response);
+    r.daemon.close(child).unwrap();
+    r.daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn k6_panel_worktree_refuses_unresolvable_common_directory() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("missing-common", true).await;
+    git(&r.ws_dir, &["checkout", "-b", "identity-probe"]);
+    let shim = shim_dir().join("git");
+    std::fs::write(&shim, "#!/bin/sh\nif [ -n \"$K6_FAIL_COMMON\" ]; then\n  for arg in \"$@\"; do\n    if [ \"$arg\" = --git-common-dir ]; then exit 1; fi\n  done\nfi\nexec /usr/bin/git \"$@\"\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::env::set_var("K6_FAIL_COMMON", "1");
+    let result = r.daemon.git_worktree_create(&r.ws_dir, "missing", None);
+    std::env::remove_var("K6_FAIL_COMMON");
+    let error = result.unwrap_err().to_string();
+    assert!(
+        error.contains("repo_common_dir")
+            && error.contains("non-empty")
+            && error.contains(&r.ws_dir.display().to_string()),
+        "{error}"
+    );
+    assert!(r.rows().is_empty());
+}
+
+#[tokio::test]
+async fn k6_inflight_colliding_slugs_are_refused_by_both_names() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("inflight-collision", true).await;
+    let parent = r.pane();
+    let daemon = Arc::downgrade(&r.daemon);
+    r.daemon
+        .set_worktree_spawn_observer_for_test(Arc::new(move |_| {
+            let daemon = daemon.upgrade().unwrap();
+            let error = daemon
+                .orchestrate_spawn_with_options(
+                    parent.id,
+                    proto::AgentKind::Grok,
+                    None,
+                    None,
+                    "second".to_string().into(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    Some(houston_core::worktrees::SpawnWorktree {
+                        slug: "upper".into(),
+                        branch: None,
+                    }),
+                )
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("Upper") && error.contains("upper") && error.contains("collision"),
+                "{error}"
+            );
+        }));
+    let response = r
+        .spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"grok","prompt":"go","worktree":"Upper"}),
+        )
+        .await;
+    let child = spawned_session(&response);
+    r.daemon.close(child).unwrap();
+    r.daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn k6_codex_trust_failure_rolls_back_worktree_and_branch() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("trust-rollback", true).await;
+    let parent = r.pane();
+    let path = r.worktrees_dir().join("rollback");
+    let shim = shim_dir().join("git");
+    std::fs::write(&shim, "#!/bin/sh\nif [ -n \"$K6_FAIL_LIST_PATH\" ] && [ -d \"$K6_FAIL_LIST_PATH\" ]; then\n  for arg in \"$@\"; do\n    if [ \"$arg\" = --porcelain ]; then exit 1; fi\n  done\nfi\nexec /usr/bin/git \"$@\"\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::env::set_var("K6_FAIL_LIST_PATH", &path);
+    let response = r
+        .spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"codex","prompt":"go","worktree":"rollback"}),
+        )
+        .await;
+    std::env::remove_var("K6_FAIL_LIST_PATH");
+    let error = refusal_text(&response);
+    assert!(error.contains("worktree spawn refused"), "{error}");
+    assert!(!path.exists());
+    assert!(!branch_exists(&r.ws_dir, "houston/rollback"));
+    assert!(r.rows().is_empty());
+    r.daemon.close(parent.id).unwrap();
 }

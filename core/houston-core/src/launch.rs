@@ -9,6 +9,78 @@ pub const PROMPT_FILE_THRESHOLD: usize = 12_000;
 
 pub type LaunchArgs = (Vec<String>, Option<(PathBuf, String)>);
 
+pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<String>> {
+    use proto::AgentKind::*;
+    match agent {
+        Codex => {
+            let directory = cwd.display().to_string();
+            let path = toml::Value::String(directory.clone()).to_string();
+            let mut projects = format!("{path}={{trust_level=\"trusted\"}}");
+            if cwd.is_dir() {
+                if let Some(main) = crate::worktrees::list(cwd)?.into_iter().find(|tree| tree.is_main && !tree.is_bare) {
+                    let main = main.path.display().to_string();
+                    if main != directory {
+                        let main = toml::Value::String(main).to_string();
+                        projects.push_str(&format!(",{main}={{trust_level=\"trusted\"}}"));
+                    }
+                }
+            }
+            Ok(vec!["-c".into(), format!("projects={{{projects}}}")])
+        }
+        Cursor => Ok(vec!["--trust".into()]),
+        Grok => Ok(Vec::new()),
+        Claude | Antigravity | Opencode => bail!("worktree spawn refused for provider {agent:?}: no verified folder-trust mechanism; expected a CLI-supported trust setting or flag"),
+        other => bail!("worktree spawn refused for provider {other:?}: expected a spawnable provider"),
+    }
+}
+
+pub fn prepare_worktree_trust(agent: proto::AgentKind, cwd: &Path) -> Result<()> {
+    if agent != proto::AgentKind::Grok {
+        return Ok(());
+    }
+    let home = crate::agent_hooks::ConfigHome::from_env()?;
+    let path = home.home.join(".grok/trusted_folders.toml");
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = LOCK.lock().expect("worktree trust lock");
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.into()),
+    };
+    let parsed: toml::Value = contents.parse().map_err(|e| {
+        anyhow::anyhow!(
+            "Grok worktree trust refused: {} must be valid TOML: {e}",
+            path.display()
+        )
+    })?;
+    let directory = cwd.display().to_string();
+    if let Some(entry) = parsed
+        .get("folders")
+        .and_then(|folders| folders.get(&directory))
+    {
+        if entry.get("trusted").and_then(toml::Value::as_bool) == Some(true) {
+            return Ok(());
+        }
+        bail!("Grok worktree trust refused: directory {directory:?} already has an unmanaged trust entry; expected trusted = true");
+    }
+    let quoted = toml::Value::String(directory).to_string();
+    let block = format!("\n# >>> houston managed worktree trust >>>\n[folders.{quoted}]\ntrusted = true\ndecided_at = {}\n# <<< houston managed worktree trust <<<\n", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs());
+    let updated = format!("{contents}{block}");
+    updated.parse::<toml::Value>().map_err(|e| {
+        anyhow::anyhow!(
+            "Grok worktree trust refused: {} must remain valid TOML: {e}",
+            path.display()
+        )
+    })?;
+    let parent = path.parent().expect("trust store has a parent");
+    std::fs::create_dir_all(parent)?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    use std::io::Write;
+    temporary.write_all(updated.as_bytes())?;
+    temporary.persist(&path).map_err(|e| e.error)?;
+    Ok(())
+}
+
 fn executable(agent: proto::AgentKind) -> Result<&'static str> {
     match agent {
         proto::AgentKind::Claude => Ok("claude"),
@@ -887,5 +959,26 @@ mod tests {
         .unwrap();
         assert!(args.is_empty());
         assert!(file.is_none());
+    }
+}
+
+#[cfg(test)]
+mod worktree_trust_tests {
+    use super::*;
+
+    #[test]
+    fn k6_codex_trust_uses_inline_projects_for_dotted_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("project.with.dots/.houston/worktrees/child");
+        let args = worktree_trust_args(proto::AgentKind::Codex, &path).unwrap();
+        assert_eq!(args[0], "-c");
+        assert!(args[1].starts_with("projects={"));
+        let parsed: toml::Value = args[1].parse().unwrap();
+        assert_eq!(
+            parsed["projects"][path.display().to_string()]["trust_level"].as_str(),
+            Some("trusted")
+        );
     }
 }

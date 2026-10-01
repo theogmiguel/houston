@@ -2,6 +2,9 @@ use anyhow::Context as _;
 use houston_protocol as proto;
 use serde_json::json;
 
+// Five idle minutes allow a late handback without holding child capacity indefinitely.
+pub const NO_HANDBACK_SETTLE_MS: u64 = 5 * 60 * 1000;
+
 // long enough to cover a real agent turn, short enough that pane_wait gives the
 // caller control back instead of hanging on a child that never reports a status
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
@@ -267,7 +270,7 @@ impl From<String> for Brief {
 
 pub const HANDBACK_PROTOCOL: &str = "\n\n## Handing back\nCall `pane_submit` with your result \
                                     when you are done — that, not this pane, is what reaches \
-                                    whoever asked. Answering only here reaches nobody.\nIf background jobs are still running, wait for them before handing back.";
+                                    whoever asked. Answering only here reaches nobody.\nUse `run_in_background` and Monitor to wait until every required background job finishes; never end the turn while one is running. Finish with `pane_submit` and a non-empty body.";
 
 pub fn request_header(round: u32) -> String {
     format!(
@@ -3020,6 +3023,10 @@ mod tests {
         ] {
             let composed = brief.compose(1).unwrap();
             assert!(composed.contains("`pane_submit`"), "{composed}");
+            assert!(
+                composed.contains("run_in_background") && composed.contains("Monitor"),
+                "{composed}"
+            );
             assert!(composed.ends_with(HANDBACK_PROTOCOL), "{composed}");
             assert!(
                 composed.find("## Handing back") > composed.find("## Boundaries"),

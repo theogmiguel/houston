@@ -968,6 +968,29 @@ pub struct RoutinePatch {
 
 type SpawnObserver = Arc<dyn Fn(u32) + Send + Sync>;
 
+struct SpawnReservation<'a> {
+    daemon: &'a Daemon,
+    child: u32,
+    worktree_branch: Option<(String, String)>,
+}
+
+impl Drop for SpawnReservation<'_> {
+    fn drop(&mut self) {
+        self.daemon
+            .spawn_reservations
+            .lock()
+            .expect("spawn reservations lock")
+            .remove(&self.child);
+        if let Some(key) = &self.worktree_branch {
+            self.daemon
+                .worktree_branch_reservations
+                .lock()
+                .expect("worktree branch reservations lock")
+                .remove(key);
+        }
+    }
+}
+
 pub struct Daemon {
     pub token: String,
     pub mcp_creds: crate::mcp_creds::Registry,
@@ -1041,11 +1064,15 @@ pub struct Daemon {
     inbox_pending_max: AtomicU32,
     inbox_wake: Mutex<HashMap<u32, Arc<tokio::sync::Notify>>>,
     background_holds: Mutex<HashMap<u32, (u32, u64)>>,
+    no_handback_idle: Mutex<HashMap<u32, u64>>,
     inbox_waiting: Mutex<HashMap<u32, Arc<InboxWaitState>>>,
     inbox_delivering: Mutex<HashMap<String, u32>>,
     temporary_cleanup_lock: Mutex<()>,
+    spawn_reservations: Mutex<HashMap<u32, (u32, Option<String>)>>,
+    worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
+    worktree_spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
@@ -2303,11 +2330,15 @@ impl Daemon {
             inbox_pending_max: AtomicU32::new(orchestrate::INBOX_PENDING_PER_PANE_MAX),
             inbox_wake: Mutex::new(HashMap::new()),
             background_holds: Mutex::new(HashMap::new()),
+            no_handback_idle: Mutex::new(HashMap::new()),
             inbox_waiting: Mutex::new(HashMap::new()),
             inbox_delivering: Mutex::new(HashMap::new()),
             temporary_cleanup_lock: Mutex::new(()),
+            spawn_reservations: Mutex::new(HashMap::new()),
+            worktree_branch_reservations: Mutex::new(HashMap::new()),
             pending_cleanup_cancellations: Mutex::new(HashSet::new()),
             spawn_observer_for_test: Mutex::new(None),
+            worktree_spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
@@ -3876,13 +3907,12 @@ impl Daemon {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "repo".to_string());
         let dest = crate::worktrees::default_path(&self.state_dir, &project, name);
+        let common_dir = crate::git::checkout_facts(repo).common_dir.filter(|dir| !dir.is_empty()).ok_or_else(|| anyhow!("repo_common_dir for {} is unavailable; expected a non-empty git common directory", repo.display()))?;
         let wt = crate::worktrees::create_named(repo, name, base, &dest)?;
         let path = wt.path.canonicalize().unwrap_or_else(|_| wt.path.clone());
         let row = crate::db::ManagedWorktreeRow {
             path: path.display().to_string(),
-            repo_common_dir: crate::git::checkout_facts(&path)
-                .common_dir
-                .unwrap_or_default(),
+            repo_common_dir: common_dir,
             branch: wt.branch.clone().unwrap_or_default(),
             provenance: crate::db::WorktreeProvenance::ChangesPane,
             created_by_session: None,
@@ -12720,7 +12750,9 @@ impl Daemon {
         self.live_children_of(parent)
             .into_iter()
             .filter(|id| {
-                !(self.delegation_of(*id).is_some_and(|r| r.state == "done")
+                !(self
+                    .delegation_of(*id)
+                    .is_some_and(|r| r.state == "done" || r.settled_at.is_some())
                     && self.session_status(*id).ok().flatten() == Some(proto::AgentStatus::Idle))
             })
             .collect()
@@ -12744,7 +12776,15 @@ impl Daemon {
             })
             .map(|s| s.info.id)
             .collect();
+        kids.extend(
+            self.spawn_reservations
+                .lock()
+                .expect("spawn reservations lock")
+                .iter()
+                .filter_map(|(&child, (owner, _))| (*owner == parent).then_some(child)),
+        );
         kids.sort_unstable();
+        kids.dedup();
         kids
     }
 
@@ -13206,6 +13246,13 @@ impl Daemon {
                      in the worktree Houston creates; drop `cwd`"
                 );
             }
+            crate::launch::worktree_trust_args(
+                kind,
+                &crate::worktrees::spawn_path(
+                    &self.resolve_spawn_workspace(caller, target_workspace.as_deref())?,
+                    &ask.slug,
+                ),
+            )?;
             crate::worktrees::validate_slug(&ask.slug)
                 .map_err(|e| anyhow!("spawn refused: {e}"))?;
             if let Some(branch) = &ask.branch {
@@ -13384,12 +13431,69 @@ impl Daemon {
                 .resolve_named_profile(kind, label)
                 .context("spawn refused")?,
         };
+        let worktree_branch = worktree.as_ref().and_then(|ask| {
+            crate::git::checkout_facts(&project_dir)
+                .common_dir
+                .map(|common| {
+                    (
+                        common,
+                        ask.branch.clone().unwrap_or_else(|| {
+                            format!("houston/{}", crate::git::ref_slug(&ask.slug))
+                        }),
+                    )
+                })
+        });
+        if let (Some(key), Some(ask)) = (&worktree_branch, &worktree) {
+            let mut reservations = self
+                .worktree_branch_reservations
+                .lock()
+                .expect("worktree branch reservations lock");
+            if let Some(other) = reservations.get(key) {
+                bail!("spawn refused: worktree slug collision: {:?} and {other:?} reserve branch {:?}; use a distinct explicit branch", ask.slug, key.1);
+            }
+            reservations.insert(key.clone(), ask.slug.clone());
+        }
+        let sid = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.spawn_reservations
+            .lock()
+            .expect("spawn reservations lock")
+            .insert(sid, (caller, role.clone()));
+        let _reservation = SpawnReservation {
+            daemon: self,
+            child: sid,
+            worktree_branch,
+        };
+        drop(_cleanup_guard);
         let created = match &worktree {
-            Some(ask) => Some(self.create_spawn_worktree(&project_dir, ask, caller)?),
+            Some(ask) => {
+                let observer = self
+                    .worktree_spawn_observer_for_test
+                    .lock()
+                    .expect("worktree spawn observer lock")
+                    .clone();
+                if let Some(observer) = observer {
+                    observer(sid);
+                }
+                Some(self.create_spawn_worktree(&project_dir, ask, caller)?)
+            }
             None => None,
         };
+        let _cleanup_guard = self
+            .temporary_cleanup_lock
+            .lock()
+            .expect("temporary cleanup lock");
         let cwd = created.as_ref().map(|c| c.path.clone()).unwrap_or(cwd);
-        let sid = self.next_id.fetch_add(1, Ordering::Relaxed);
+        if let Some(created) = &created {
+            match crate::launch::prepare_worktree_trust(kind, &cwd)
+                .and_then(|()| crate::launch::worktree_trust_args(kind, &cwd))
+            {
+                Ok(args) => extra_args.extend(args),
+                Err(error) => {
+                    self.discard_spawn_worktree(created);
+                    return Err(error).context("worktree spawn refused");
+                }
+            }
+        }
         let (title, title_source, codename) = match &role {
             Some(role) => {
                 let codename = self.next_codename();
@@ -13492,10 +13596,35 @@ impl Daemon {
                 )),
             };
         }
+        if worktree.is_none() {
+            if let Some(warning) = self.spawn_checkout_warning(sid) {
+                self.note_to_operator(sid, "shared_checkout", &warning);
+            }
+        }
         self.delegation_wake.notify_one();
         self.broadcast_delegation(sid);
         self.broadcast_live_children(caller);
         Ok(info)
+    }
+
+    pub fn spawn_checkout_warning(&self, child: u32) -> Option<String> {
+        let info = self.get(child).ok()?.info.clone();
+        let parent = info.spawned_by?;
+        let root = crate::git::checkout_facts(Path::new(&info.cwd)).toplevel?;
+        let siblings: Vec<_> = self
+            .live_children_of(parent)
+            .into_iter()
+            .filter(|id| *id != child)
+            .filter(|id| {
+                self.get(*id).ok().is_some_and(|session| {
+                    crate::git::checkout_facts(Path::new(&session.info.cwd))
+                        .toplevel
+                        .as_deref()
+                        == Some(root.as_str())
+                })
+            })
+            .collect();
+        (!siblings.is_empty()).then(|| format!("shared checkout_root {root:?}: child {child} shares the checkout with live sibling panes {siblings:?}; parallel writes may conflict; use worktree for isolation"))
     }
 
     fn create_spawn_worktree(
@@ -13510,11 +13639,27 @@ impl Daemon {
                 project_dir.display()
             );
         }
+        let common_dir = crate::git::checkout_facts(project_dir).common_dir.filter(|dir| !dir.is_empty()).ok_or_else(|| anyhow!("spawn refused: repo_common_dir for {} is unavailable; expected a non-empty git common directory", project_dir.display()))?;
         let dest = crate::worktrees::spawn_path(project_dir, &ask.slug);
         let branch = ask
             .branch
             .clone()
             .unwrap_or_else(|| format!("houston/{}", crate::git::ref_slug(&ask.slug)));
+        if ask.branch.is_none() {
+            if let Some(existing) = crate::worktrees::list(project_dir)?
+                .iter()
+                .find(|tree| tree.branch.as_deref() == Some(branch.as_str()))
+            {
+                let other = existing
+                    .path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                if other != ask.slug {
+                    bail!("spawn refused: worktree slug collision: {:?} and {other:?} derive branch {branch:?}; use a distinct explicit branch", ask.slug);
+                }
+            }
+        }
         if let Some(dir) = dest.parent() {
             crate::worktrees::ensure_ignored(dir).context("spawn refused")?;
         }
@@ -13528,9 +13673,7 @@ impl Daemon {
         };
         let row = crate::db::ManagedWorktreeRow {
             path: created.path.display().to_string(),
-            repo_common_dir: crate::git::checkout_facts(&created.path)
-                .common_dir
-                .unwrap_or_default(),
+            repo_common_dir: common_dir,
             branch: created.branch.clone(),
             provenance: crate::db::WorktreeProvenance::PaneSpawn,
             created_by_session: Some(caller),
@@ -13760,6 +13903,13 @@ impl Daemon {
     }
 
     #[doc(hidden)]
+    pub fn set_worktree_spawn_observer_for_test(&self, observer: Arc<dyn Fn(u32) + Send + Sync>) {
+        *self
+            .worktree_spawn_observer_for_test
+            .lock()
+            .expect("worktree spawn observer lock") = Some(observer);
+    }
+
     pub fn set_spawn_observer_for_test(&self, observer: Arc<dyn Fn(u32) + Send + Sync>) {
         *self
             .spawn_observer_for_test
@@ -14401,32 +14551,12 @@ impl Daemon {
                 Some(current),
                 Some("late"),
                 format!(
-                    "stored as a late answer to request {current}, which had already closed. It \
+                    "request_id omitted; defaulted to current request {current} reported by workspace_info; stored as a late answer to request {current}, which had already closed. It \
                      reaches your parent as its own entry and replaces nothing."
                 ),
             ));
         }
-        let started_in = self
-            .turn_start_round
-            .lock()
-            .expect("turn start round lock")
-            .get(&child)
-            .copied();
-        match orchestrate::stamp_unstamped_submit(current, started_in) {
-            Some(stamped) => Ok((
-                Some(stamped),
-                None,
-                format!("delivered to your parent's inbox as the answer to request {stamped}"),
-            )),
-            None => Ok((
-                None,
-                Some("unstamped"),
-                orchestrate::unstamped_submit_note(
-                    current,
-                    started_in.expect("a differing round was just read"),
-                ),
-            )),
-        }
+        Ok((Some(current), None, format!("request_id omitted; defaulted to current request {current} reported by workspace_info; delivered to your parent's inbox")))
     }
 
     fn close_delegations_lost_to_the_restart(&self) {
@@ -14872,6 +15002,14 @@ impl Daemon {
             || orchestrate::DelegationState::parse(&row.state)
                 != Some(orchestrate::DelegationState::Done)
             || row.cleanup_after.is_none_or(|at| at > now)
+        {
+            return None;
+        }
+        if row.settled_at.is_some()
+            || !self
+                .db
+                .inbox_round_result_read(row.parent_session, row.child_session, row.round)
+                .unwrap_or(false)
         {
             return None;
         }
@@ -15582,6 +15720,17 @@ impl Daemon {
     }
 
     fn assert_role_free(&self, caller: u32, role: &str) -> Result<()> {
+        if self
+            .spawn_reservations
+            .lock()
+            .expect("spawn reservations lock")
+            .values()
+            .any(|(parent, reserved_role)| {
+                *parent == caller && reserved_role.as_deref() == Some(role)
+            })
+        {
+            bail!("spawn refused: role {role:?} is reserved by an in-flight child of pane {caller}; roles must be unique among live and spawning children");
+        }
         let live = self.active_children_of(caller);
         for row in self.delegations_of_parent(caller) {
             if row.role.as_deref() == Some(role) && live.contains(&row.child_session) {
@@ -15636,6 +15785,11 @@ impl Daemon {
             .delegations_open()
             .map(|rows| !rows.is_empty())
             .unwrap_or(true)
+            || self
+                .db
+                .delegations_no_handback()
+                .map(|rows| !rows.is_empty())
+                .unwrap_or(true)
             || self.db.delegations_cleanup_pending().unwrap_or(true)
             || self
                 .db
@@ -15671,8 +15825,57 @@ impl Daemon {
                 return;
             }
         };
-        for row in &open {
+        let additional: Vec<_> = self
+            .db
+            .delegations_no_handback()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|row| {
+                !open
+                    .iter()
+                    .any(|existing| existing.child_session == row.child_session)
+            })
+            .collect();
+        let mut watched = open;
+        watched.extend(additional);
+        for row in &watched {
             let child = row.child_session;
+            let idle = row.settled_at.is_none()
+                && row.no_handback_reported
+                && self.session_status(child).ok().flatten() == Some(proto::AgentStatus::Idle)
+                && self.background_hold_reason(child).is_none()
+                && self.temporary_cleanup_safe(child, now);
+            let since = {
+                let mut samples = self.no_handback_idle.lock().expect("no handback idle lock");
+                if idle {
+                    Some(*samples.entry(child).or_insert(now))
+                } else {
+                    samples.remove(&child);
+                    None
+                }
+            };
+            if since.is_some_and(|since| {
+                now.saturating_sub(since) >= orchestrate::NO_HANDBACK_SETTLE_MS
+            }) {
+                let timestamp = now_ms();
+                if let Err(e) = self.db.delegation_finish(
+                    child,
+                    "failed",
+                    Some("settled without handback after NO_HANDBACK_SETTLE_MS of idleness"),
+                    timestamp,
+                ) {
+                    tracing::warn!("settling no-handback child {child}: {e}");
+                } else if let Err(e) = self.db.delegation_retain(
+                    child,
+                    timestamp,
+                    timestamp.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
+                ) {
+                    tracing::warn!("retaining no-handback child {child}: {e}");
+                }
+                self.broadcast_delegation(child);
+                self.broadcast_live_children(row.parent_session);
+                continue;
+            }
             if self.background_hold_reason(child).as_deref() == Some("auto-review in progress") {
                 continue;
             }
@@ -15779,7 +15982,15 @@ impl Daemon {
             .delegation_settle
             .lock()
             .expect("delegation settle lock");
-        samples.retain(|child, _| open.iter().any(|r| r.child_session == *child));
+        samples.retain(|child, _| watched.iter().any(|r| r.child_session == *child));
+        self.no_handback_idle
+            .lock()
+            .expect("no handback idle lock")
+            .retain(|child, _| {
+                watched
+                    .iter()
+                    .any(|row| row.child_session == *child && row.settled_at.is_none())
+            });
     }
 
     #[doc(hidden)]

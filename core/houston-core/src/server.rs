@@ -3703,6 +3703,9 @@ async fn orch_spawn(
     };
     let reusable = body.reusable;
     let handoff = body.handoff;
+    let effort = body.effort;
+    let isolated = body.worktree.is_some();
+    let reply_daemon = Arc::clone(&daemon);
     if handoff && reusable {
         return orch_err_response(anyhow::anyhow!(
             crate::orchestrate::HANDOFF_REUSABLE_REFUSED
@@ -3765,6 +3768,8 @@ async fn orch_spawn(
                 "workspace": info.project_dir,
                 "reusable": reusable,
                 "handoff": handoff,
+                "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
+                "warning": if isolated { None } else { reply_daemon.spawn_checkout_warning(info.id) },
                 "next_action": if handoff {
                     crate::orchestrate::HANDOFF_NEXT_ACTION
                 } else {

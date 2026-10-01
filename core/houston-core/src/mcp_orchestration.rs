@@ -34,9 +34,10 @@ fn u32_arg(args: &Value, key: &str) -> Result<u32, ToolError> {
     args.get(key)
         .and_then(Value::as_u64)
         .and_then(|n| u32::try_from(n).ok())
+        .filter(|n| *n > 0)
         .ok_or_else(|| {
             ToolError(format!(
-                "{key} is required and must be a session id (a positive integer); got {}",
+                "{key} is required and must be a session id (a positive integer); got {}; example: {{\"{key}\": 123}}",
                 args.get(key).unwrap_or(&Value::Null)
             ))
         })
@@ -48,7 +49,7 @@ fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, ToolError> {
         .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| {
             ToolError(format!(
-                "{key} is required and must be a non-empty string; got {}",
+                "{key} is required and must be a non-empty string; got {}; example: {{\"{key}\": \"result text\"}}",
                 args.get(key).unwrap_or(&Value::Null)
             ))
         })
@@ -312,6 +313,8 @@ impl ToolProvider for OrchestrationTools {
                     )
                     .map_err(|e| ToolError(format!("{e:#}")))?;
                     let state_doc = args.get("state_doc").cloned();
+                    let reply_daemon = Arc::clone(&daemon);
+                    let isolated = worktree.is_some();
                     let info = tokio::task::spawn_blocking(move || {
                         let brief = daemon.handoff_state_brief(
                             caller,
@@ -363,6 +366,8 @@ impl ToolProvider for OrchestrationTools {
                         "workspace": info.project_dir,
                         "reusable": reusable,
                         "handoff": handoff,
+                        "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
+                        "warning": if isolated { None } else { reply_daemon.spawn_checkout_warning(info.id) },
                         "next_action": if handoff {
                             orchestrate::HANDOFF_NEXT_ACTION
                         } else {
@@ -397,7 +402,7 @@ impl ToolProvider for OrchestrationTools {
                         })
                         .ok_or_else(|| {
                             ToolError(format!(
-                                "keys is required and must be an array of key names; got {}",
+                                "keys is required and must be an array of key names; got {}; example: {{\"session\": 123, \"keys\": [\"enter\"]}}",
                                 args.get("keys").unwrap_or(&Value::Null)
                             ))
                         })?;
@@ -642,7 +647,7 @@ impl OrchestrationTools {
                         "worktree": {
                             "type": "string",
                             "description":
-                                "New git worktree at .houston/worktrees/<worktree>, branch houston/<worktree> or `branch`. One directory name, without /, .. or spaces. Refuses cwd; tracked for post-merge cleanup.",
+                                "New worktree at .houston/worktrees/<slug>; new branch houston/<slug> or `branch`. Base: origin/HEAD, main, master, HEAD (not caller branch); no base override. Refuses cwd; tracked for cleanup.",
                         },
                         "branch": {
                             "type": "string",
@@ -1150,5 +1155,47 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod argument_example_tests {
+    use super::*;
+
+    #[test]
+    fn k6_worktree_schema_names_base_order_and_no_override() {
+        let provider = OrchestrationTools {
+            daemon: Weak::new(),
+        };
+        let tools = provider.all_tools();
+        let spawn = tools.iter().find(|tool| tool.name == "pane_spawn").unwrap();
+        let description = spawn.input_schema["properties"]["worktree"]["description"]
+            .as_str()
+            .unwrap();
+        assert!(
+            description.contains("origin/HEAD, main, master, HEAD")
+                && description.contains("no base override"),
+            "{description}"
+        );
+    }
+
+    #[test]
+    fn k6_required_arguments_name_shape_value_and_example() {
+        for value in [json!({}), json!({"session": null}), json!({"session": 0})] {
+            let error = u32_arg(&value, "session").unwrap_err().0;
+            assert!(
+                error.contains("positive integer")
+                    && error.contains("got")
+                    && error.contains("example: {\"session\": 123}"),
+                "{error}"
+            );
+        }
+        let error = str_arg(&json!({"body":null}), "body").unwrap_err().0;
+        assert!(
+            error.contains("non-empty string")
+                && error.contains("got null")
+                && error.contains("example: {\"body\": \"result text\"}"),
+            "{error}"
+        );
     }
 }

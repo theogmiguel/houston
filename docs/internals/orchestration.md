@@ -14,7 +14,9 @@ isolating it. The one
 exception is asked for, never implied: `pane_spawn { worktree: "<slug>" }` (`hs-pane spawn
 --worktree SLUG`) first creates a git worktree at `<workspace>/.houston/worktrees/<slug>` on
 branch `houston/<slug>` (or `branch`), records it in `managed_worktrees`, and starts the
-child there. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
+child there. The base resolves in order: `origin/HEAD`, `main`, `master`, then `HEAD`;
+it does not follow the caller's feature branch. `branch` names the new branch, not its
+base; `pane_spawn` has no base override. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
 rejects. A child that fails to start takes its new worktree and branch with it; a worktree
 that cannot be removed keeps its branch and record. Removing a worktree from the Changes
 pane drops its record, and a new worktree at a recorded path replaces the stale record, so
@@ -343,9 +345,9 @@ with zero jobs removes the hold. After `BACKGROUND_HOLD_MAX_MS` (45 minutes), th
 releases a stored result or emits one `no_handback` naming the bound and elapsed time.
 
 Delegation registration precedes PTY creation, and a failed spawn removes its spawning
-record. The cleanup lock still protects the parent throughout spawn: releasing it during
-worktree creation or PTY startup would let cleanup remove a completed temporary parent
-before the child is registered in the live roster. Operator keystrokes record composer
+record. An in-flight reservation protects the parent and counts against child caps and
+role uniqueness while worktree creation runs outside the cleanup lock. Failure rolls
+back the reservation. PTY startup and registration remain under the cleanup lock. Operator keystrokes record composer
 occupancy immediately and defer cleanup cancellation to the watcher when that lock is
 busy, so unrelated terminal input does not wait for a spawn.
 
@@ -1146,3 +1148,25 @@ closing a browser tab destroys its surface and frees a native-webview slot. Popo
 menus, tooltips and resize drags assert shared suppression reasons because native children
 paint above the renderer DOM. Moving a browser between panel and grid preserves its
 surface identity and saved tab state, while remounting the surface at its new placement.
+
+Worktree spawning passes Codex a session-local inline `projects` trust table for the
+child checkout and the repository's main checkout,
+passes Cursor its supported `--trust` flag, and appends a reversible managed-marker
+block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved. Claude, Antigravity and
+OpenCode are refused by provider name until a safe folder-trust mechanism is verified.
+Houston never rewrites Claude's global project state. Trust flags do not change the
+requested tool approval mode.
+
+A second live child in the same checkout emits an operator note and a `warning` field
+in the spawn reply. The `effort` reply names the requested effort or `CLI default` when
+none was supplied. Omitted `pane_submit.request_id` uses the current request reported by
+`workspace_info` and the reply states that default.
+
+Temporary children end their PTY after their accepted result is delivered to the parent;
+settled records and transcripts remain through retention. A child with `no_handback`
+settles as failed after five minutes of authoritative Idle status, with no background,
+composer or descendant hold. Its stop reason names `NO_HANDBACK_SETTLE_MS`.
+
+Worktree cleanup claims are shared by repository common directory, rechecks live session
+use immediately before removal, and measures only trees with no keep reason. Kept rows
+retain their last byte count and measurement timestamp, or null for not measured.

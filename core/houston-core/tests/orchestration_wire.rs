@@ -370,13 +370,22 @@ async fn spawn_registration_waits_for_temporary_cleanup_serialization() {
         "done"
     );
 
+    let (status, result) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/wait",
+        &root_token,
+        Some(serde_json::json!({"session":completed_parent,"timeout_ms":5000})),
+    )
+    .await;
+    assert_eq!(status, 200, "{result}");
     let (started_tx, started_rx) = std::sync::mpsc::channel();
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut spawn_thread = None;
     r.daemon.with_temporary_cleanup_lock_for_test(|| {
         let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
         conn.execute(
-            "UPDATE delegations SET reusable = 0, cleanup_after = 0 WHERE child_session = ?1",
+            "UPDATE delegations SET reusable = 0, cleanup_after = 0, settled_at = NULL, retained_until = NULL WHERE child_session = ?1",
             rusqlite::params![completed_parent],
         )
         .unwrap();
@@ -3182,6 +3191,31 @@ async fn k2_temporary_child_is_ended_and_kept_with_durable_result_after_restart(
         )
         .unwrap();
     apply_hook_event(r._state.path(), child, "Stop").await;
+    assert!(
+        r.daemon
+            .list()
+            .iter()
+            .any(|info| info.id == child && info.state.is_live()),
+        "accepted but unread handback must keep the temporary PTY"
+    );
+    let (status, read) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/wait",
+        &token,
+        Some(serde_json::json!({"session":child,"timeout_ms":5000})),
+    )
+    .await;
+    assert_eq!(status, 200, "{read}");
+    assert!(read["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["body"]
+            .as_str()
+            .unwrap_or("")
+            .contains("ARCHIVED-RESULT")));
+    r.daemon.delegation_watch_tick_at(0);
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     while r
@@ -3206,15 +3240,7 @@ async fn k2_temporary_child_is_ended_and_kept_with_durable_result_after_restart(
     assert_eq!(delegation.state, "done");
     assert!(!delegation.reusable);
 
-    let (status, waited) = http_json(
-        r.addr,
-        "POST",
-        "/orchestrate/wait",
-        &token,
-        Some(serde_json::json!({"session": child, "timeout_ms": 5_000})),
-    )
-    .await;
-    assert_eq!(status, 200, "historical child wait: {waited}");
+    let waited = read;
     assert_eq!(waited["rows"][0]["from_session"], child);
     assert_eq!(waited["rows"][0]["from_codename"], codename);
     assert_eq!(waited["rows"][0]["from_role"], "temporary-review");
@@ -3344,6 +3370,7 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
         )
         .await;
     let child = body["session_id"].as_u64().unwrap() as u32;
+    let token = r.token_for(parent.id);
     let child_token = r.token_for(child);
     let (_, body) = r
         .post_spawn(
@@ -3375,6 +3402,18 @@ async fn temporary_cleanup_waits_for_live_descendants_and_rechecks_after_they_fi
         .orchestrate_submit(grandchild, "NESTED-RESULT".to_string().into())
         .unwrap();
     apply_hook_event(r._state.path(), grandchild, "Stop").await;
+    for (recipient, sender) in [(&child_token, grandchild), (&token, child)] {
+        let (status, rows) = http_json(
+            r.addr,
+            "POST",
+            "/orchestrate/wait",
+            recipient,
+            Some(serde_json::json!({"session":sender,"timeout_ms":5000})),
+        )
+        .await;
+        assert_eq!(status, 200, "{rows}");
+    }
+    r.daemon.delegation_watch_tick_at(0);
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     while r
         .daemon
@@ -3423,6 +3462,20 @@ async fn archived_inbox_rows_keep_codename_first_sender_labels() {
         .orchestrate_submit(child, "LABEL-RESULT".to_string().into())
         .unwrap();
     apply_hook_event(r._state.path(), child, "Stop").await;
+    r.daemon.write_stdin(child, b"\x04").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while r
+        .daemon
+        .list()
+        .iter()
+        .any(|info| info.id == child && info.state.is_live())
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the fixture CLI did not exit on EOF"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert!(
         r.daemon
             .list()
@@ -5862,7 +5915,7 @@ async fn a_round_closed_on_empty_sets_survives_the_expiry_pass_and_reopens() {
 }
 
 #[tokio::test]
-async fn an_unstamped_late_submit_never_replaces_another_rounds_answer() {
+async fn k6_omitted_submit_defaults_to_current_request_without_replacing_older_answer() {
     let _guard = serial().await;
     let r = rig("unstamped-late-submit").await;
     let pane = r.pane();
@@ -5916,10 +5969,11 @@ async fn an_unstamped_late_submit_never_replaces_another_rounds_answer() {
         .find(|row| row.body.contains("ANSWER-LATE"))
         .unwrap_or_else(|| panic!("the unstamped body is stored, not dropped: {rows:?}"));
     assert_eq!(
-        late.request_id, None,
-        "unassociated: the daemon does not know which request this answers"
+        late.request_id,
+        Some(2),
+        "omitted request_id defaults to the current workspace_info request"
     );
-    assert_eq!(late.reason.as_deref(), Some("unstamped"));
+    assert_eq!(late.reason.as_deref(), None);
     assert_eq!(rows.len(), 2, "two bodies, two rows: {rows:?}");
 }
 
@@ -9287,6 +9341,16 @@ async fn k2_continue_ended_child_resumes_handle_and_rebinds_delegation() {
         },
     )
     .await;
+    let (status, result) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/wait",
+        &r.token_for(parent.id),
+        Some(serde_json::json!({"session":child,"timeout_ms":5000})),
+    )
+    .await;
+    assert_eq!(status, 200, "{result}");
+    r.daemon.delegation_watch_tick_at(0);
     assert_eq!(
         r.daemon
             .list()
@@ -9968,6 +10032,17 @@ async fn k4_result_snapshot_follows_respawn_identity_and_reports_row_cap() {
     assert!(db
         .inbox_ack_operator(id, houston_core::daemon::now_ms())
         .unwrap());
+    r.daemon.write_stdin(child.id, b"\x04").unwrap();
+    let exit_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while r
+        .daemon
+        .list()
+        .iter()
+        .any(|info| info.id == child.id && info.state != proto::SessionState::Exited)
+    {
+        assert!(tokio::time::Instant::now() < exit_deadline);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let resumed_child = r
         .daemon
         .respawn(child.id, false, None, None, false)
@@ -10042,4 +10117,125 @@ async fn k4_result_snapshot_follows_respawn_identity_and_reports_row_cap() {
     assert!(!results
         .iter()
         .any(|result| result.child == resumed_child.id));
+}
+
+#[tokio::test]
+async fn k6_spawn_warns_shared_checkout_and_names_cli_default_effort() {
+    let _guard = serial().await;
+    let r = rig("shared-checkout").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let init = houston_core::spawn::command("git")
+        .args(["init", "-b", "main"])
+        .current_dir(&r.ws_dir)
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+    let (_, first) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"grok","prompt":"one","reusable":true}),
+        )
+        .await;
+    assert_eq!(first["effort"], "CLI default");
+    assert!(first["warning"].is_null());
+    let (_, second) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"grok","prompt":"two","reusable":true,"effort":"medium"}),
+        )
+        .await;
+    assert_eq!(second["effort"], "medium");
+    assert!(second["warning"]
+        .as_str()
+        .unwrap()
+        .contains("checkout_root"));
+    assert!(r
+        .daemon
+        .inbox_rows_for_test(0)
+        .iter()
+        .any(|row| row.kind == "operator_note" && row.body.contains("shared checkout_root")));
+}
+
+#[tokio::test]
+async fn k6_no_handback_settles_after_authoritative_idle_bound() {
+    let _guard = serial().await;
+    let r = rig("no-handback-settled").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let (_, result) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind":"claude","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = result["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), child, "UserPromptSubmit").await;
+    apply_hook_event(r._state.path(), child, "Stop").await;
+    assert!(r.daemon.delegation_of(child).unwrap().no_handback_reported);
+    let t = 0;
+    r.daemon.delegation_watch_tick_at(t);
+    r.daemon
+        .delegation_watch_tick_at(t + houston_core::orchestrate::NO_HANDBACK_SETTLE_MS - 1);
+    assert!(r.daemon.delegation_of(child).unwrap().settled_at.is_none());
+    r.daemon
+        .delegation_watch_tick_at(t + houston_core::orchestrate::NO_HANDBACK_SETTLE_MS + 60_000);
+    let row = r.daemon.delegation_of(child).unwrap();
+    assert_eq!(row.state, "failed");
+    assert!(row.settled_at.is_some());
+    assert!(row
+        .stop_reason
+        .as_deref()
+        .unwrap()
+        .contains("NO_HANDBACK_SETTLE_MS"));
+}
+
+#[tokio::test]
+async fn k6_mcp_spawn_warning_and_submit_default_are_visible() {
+    let _guard = serial().await;
+    let r = rig("mcp-spawn-reply").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    let token = r.token_for(parent.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let output = houston_core::spawn::command("git")
+        .args(["init", "-b", "main"])
+        .current_dir(&r.ws_dir)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let first = mcp_call(
+        r.addr,
+        &token,
+        "pane_spawn",
+        serde_json::json!({"kind":"grok","prompt":"one","reusable":true}),
+    )
+    .await;
+    let child = first["structuredContent"]["session"].as_u64().unwrap() as u32;
+    let second = mcp_call(
+        r.addr,
+        &token,
+        "pane_spawn",
+        serde_json::json!({"kind":"grok","prompt":"two","reusable":true}),
+    )
+    .await;
+    assert!(second["structuredContent"]["warning"]
+        .as_str()
+        .unwrap()
+        .contains("shared checkout_root"));
+    let submitted = mcp_call(
+        r.addr,
+        &r.token_for(child),
+        "pane_submit",
+        serde_json::json!({"body":"finished"}),
+    )
+    .await;
+    assert_eq!(submitted["structuredContent"]["request_id"], 1);
+    assert!(submitted["structuredContent"]["note"]
+        .as_str()
+        .unwrap()
+        .contains("defaulted to current request 1"));
 }

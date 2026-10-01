@@ -3357,6 +3357,17 @@ impl Db {
         Ok(rows)
     }
 
+    pub fn delegations_no_handback(&self) -> Result<Vec<DelegationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{DELEGATION_SELECT} WHERE no_handback_reported = 1 AND settled_at IS NULL"
+        ))?;
+        let rows = stmt
+            .query_map([], map_delegation_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn delegations_retained(&self) -> Result<Vec<DelegationRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(&format!(
@@ -3954,6 +3965,12 @@ impl Db {
             rusqlite::params![to_session, from_session, request_id],
             |r| r.get(0),
         )?;
+        Ok(count > 0)
+    }
+
+    pub fn inbox_round_result_read(&self, parent: u32, child: u32, round: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM pane_inbox WHERE to_session = ?1 AND from_session = ?2 AND request_id = ?3 AND kind = 'result' AND ready_at IS NOT NULL AND delivered_at IS NOT NULL AND (delivered_via IN ('wait', 'stop_hook') OR confirmed_at IS NOT NULL)", rusqlite::params![parent, child, round], |r| r.get(0))?;
         Ok(count > 0)
     }
 
