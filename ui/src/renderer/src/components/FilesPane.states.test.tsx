@@ -46,6 +46,7 @@ describe('Files pane — state matrix (§14)', () => {
 
   beforeEach(() => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: invokeMock }
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
     localStorage.clear()
     readDir = vi.fn<(dir: string) => Promise<DirEntry[]>>().mockResolvedValue([])
     readFile = vi.fn<(path: string) => Promise<string>>().mockResolvedValue('line one\nline two\n')
@@ -74,6 +75,7 @@ describe('Files pane — state matrix (§14)', () => {
 
   afterEach(() => {
     act(() => root.unmount())
+    vi.unstubAllGlobals()
     container.remove()
   })
 

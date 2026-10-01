@@ -5,6 +5,7 @@ import {
   commandPaletteShortcut,
   dictationShortcut,
   effectiveLabel,
+  filesTreeToggleMatches,
   endsDictationHold,
   findConflict,
   GLOBAL_SHORTCUTS,
@@ -95,6 +96,7 @@ describe('KEYMAP', () => {
         'term-find',
         'term-paste',
         'split-editor-down',
+        'toggle-files-tree',
         'voice-dictate'
       ].sort()
     )
@@ -322,5 +324,19 @@ describe('prefix layer entries', () => {
     expect(resolveMatch(prefixShortcut, ov)(fakeChord({ code: 'KeyA', ctrl: true }))).toBe(true)
     expect(resolveMatch(prefixShortcut, ov)(fakeChord({ code: 'Space', ctrl: true }))).toBe(false)
     expect(effectiveLabel(prefixShortcut, ov)).toBe('Ctrl+A')
+  })
+})
+
+describe('filesTreeToggleMatches', () => {
+  it('requires the scoped Ctrl+Alt+T chord', () => {
+    expect(filesTreeToggleMatches(fakeChord({ code: 'KeyT', ctrl: true, alt: true }), noOverrides)).toBe(true)
+    expect(filesTreeToggleMatches(fakeChord({ code: 'KeyB', ctrl: true }), noOverrides)).toBe(false)
+    expect(filesTreeToggleMatches(fakeChord({ code: 'KeyT', ctrl: true }), noOverrides)).toBe(false)
+  })
+  it('respects the shortcut switch and a custom binding', () => {
+    expect(filesTreeToggleMatches(fakeChord({ code: 'KeyT', ctrl: true, alt: true }), { bindings: {}, shortcuts_enabled: false })).toBe(false)
+    const overrides: KeymapOverrides = { bindings: { 'toggle-files-tree': { code: 'Backslash', ctrl: true, alt: false, shift: false, meta: false } }, shortcuts_enabled: true }
+    expect(filesTreeToggleMatches(fakeChord({ code: 'KeyT', ctrl: true, alt: true }), overrides)).toBe(false)
+    expect(filesTreeToggleMatches(fakeChord({ code: 'Backslash', ctrl: true }), overrides)).toBe(true)
   })
 })

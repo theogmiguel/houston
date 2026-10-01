@@ -491,7 +491,15 @@ export const splitEditorDown: ShortcutEntry = {
   chord: { code: 'KeyD', ctrl: true, alt: false, shift: true, meta: false }
 }
 
-const EDITOR_SHORTCUTS: ShortcutEntry[] = [splitEditorDown]
+export const toggleFilesTree: ShortcutEntry = {
+  id: 'toggle-files-tree',
+  keyLabel: 'Ctrl+Alt+T',
+  description: 'toggle the tree in the focused Files tab',
+  category: 'editor',
+  chord: { code: 'KeyT', ctrl: true, alt: true, shift: false, meta: false }
+}
+
+const EDITOR_SHORTCUTS: ShortcutEntry[] = [splitEditorDown, toggleFilesTree]
 
 const GESTURE_SHORTCUTS: ShortcutEntry[] = [
   {
@@ -683,4 +691,10 @@ export function findConflict(
     if (chord && chordMatchesEvent(chord, e)) return { kind: 'editor', entry: ed }
   }
   return null
+}
+
+export function filesTreeToggleMatches(event: KeyboardEvent, overrides: KeymapOverrides): boolean {
+  if (!overrides.shortcuts_enabled) return false
+  const chord = overrides.bindings[toggleFilesTree.id] ?? toggleFilesTree.chord!
+  return chordMatchesEvent(chord, event)
 }

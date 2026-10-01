@@ -16,6 +16,20 @@ Ctrl-click a file path in a terminal to open it in Files at the linked line and 
 Files uses that session's workspace, including when the session belongs to a different
 checkout. Choose **Open in editor pane** to move the file into the grid.
 
+When the Files area is at least 720 pixels wide, the tree and editor sit side by side.
+Drag their divider to resize the tree, or double-click it to reset. Tree width and
+collapse state are remembered per workspace. Collapse the tree for more editing room;
+**Show tree** restores it. `Ctrl+Alt+T` toggles the tree while Files is focused.
+Narrower panels keep the tree above a single viewer.
+
+Filter files by name without case sensitivity; matching rows retain their visible
+ancestors. Escape clears the filter. Breadcrumb folders reveal their location in the tree.
+Click a file to preview it; another click replaces that preview. Double-click or edit to
+keep the file in its own tab. Tabs show Git status and unsaved changes. Close with the
+tab button or middle-click; unsaved changes require confirmation. Files keeps up to
+12 tabs, replacing the oldest clean preview at the limit. If every tab is pinned or
+unsaved, close a tab before opening another. Terminal file links open pinned tabs.
+
 ## Files pane
 
 A Files pane is a directory tree next to a tabbed editor, in one grid cell. Opening a

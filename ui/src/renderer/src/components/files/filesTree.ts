@@ -75,3 +75,21 @@ export function treeKeyAction(rows: readonly TreeRow[], index: number, key: stri
       return { kind: 'none' }
   }
 }
+
+export function filterTreeRows(rows: readonly TreeRow[], query: string): TreeRow[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return [...rows]
+  const included = new Set<string>()
+  rows.forEach((row, index) => {
+    if (!row.name.toLowerCase().includes(needle)) return
+    included.add(row.path)
+    let depth = row.depth
+    for (let i = index - 1; i >= 0 && depth > 0; i--) {
+      if (rows[i].depth < depth) {
+        included.add(rows[i].path)
+        depth = rows[i].depth
+      }
+    }
+  })
+  return rows.filter((row) => included.has(row.path))
+}
