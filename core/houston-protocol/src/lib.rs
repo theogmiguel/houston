@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 120;
+pub const PROTOCOL_VERSION: u32 = 121;
 
 pub const VOICE_LEVEL_INTERVAL_MS: u64 = 50;
 
@@ -897,6 +897,16 @@ impl SessionContext {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct RoleRoute {
+    pub pattern: String,
+    pub model: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub effort: Option<ChatEffort>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct OrchestrationCaps {
@@ -1116,6 +1126,15 @@ pub enum TurnEndSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct DelegationInfo {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub started_at: u64,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub settled_at: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub retained_until: Option<u64>,
     pub parent: u32,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
@@ -1152,6 +1171,7 @@ pub struct DelegationInfo {
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum InboxKind {
+    Restored,
     Result,
     NoHandback,
     NeedsInput,
@@ -2871,6 +2891,16 @@ pub enum ClientMsg {
     MailboxRetentionSet {
         hours: u32,
     },
+    SettledRetentionSet {
+        hours: u32,
+    },
+    WorkspaceRoutingGet {
+        workspace: String,
+    },
+    WorkspaceRoutingSet {
+        workspace: String,
+        routes: Vec<RoleRoute>,
+    },
     OrchestrationCapsSet {
         max_live_children: u32,
         max_spawn_depth: u32,
@@ -2988,6 +3018,10 @@ pub enum ServerMsg {
     DelegationChanged {
         session: u32,
         delegation: DelegationInfo,
+    },
+    WorkspaceRouting {
+        workspace: String,
+        routes: Vec<RoleRoute>,
     },
     InboxRows {
         workspace: String,
@@ -3422,6 +3456,7 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         mailbox_files_on_disk: u64,
         mailbox_retention_hours: u32,
+        settled_retention_hours: u32,
         worktree_cleanup_enabled: bool,
         worktree_cleanup_grace_hours: u32,
         command_history_ignore_glob_count: u32,

@@ -13,6 +13,14 @@ named.
 | **dogfooding** | Running Houston's own development inside Houston panes. `env_hygiene.rs` scrubs inherited agent markers so a dogfooded daemon does not leak its identity into what it spawns. |
 | **orchestrator** | A session role: decomposes work, briefs sub-agents, runs gates, commits. Never implements directly. |
 
+## Orchestration lifecycle
+
+| Term | Meaning |
+|---|---|
+| **settled child** | An ended child or a reusable Done-and-idle child. Retained for inspection, outside the live-child cap, until explicit close, parent close or retention expiry. |
+| **operator queue** | Durable inbox rows addressed to session zero, visible to the human operator and updated by push. Acknowledgement records delivery; resolution records handling. |
+| **restored** | A restart notice listing a restored parent's children, their providers and whether each conversation resumed. It does not claim the interrupted work succeeded. |
+
 ## Product nouns
 
 | Term | Meaning | Code |

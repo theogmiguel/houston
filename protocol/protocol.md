@@ -1,4 +1,4 @@
-# Wire protocol v120
+# Wire protocol v121
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -130,6 +130,9 @@ failure not given a typed refusal comes back as `error`.
 |---|---|---|
 | `orchestration_settings_get` | — | `orchestration_state` (direct) |
 | `orchestration_set` | `enabled` | `orchestration_state` (bcast) — the one app-wide spawning switch; off by default |
+| `settled_retention_set` | `hours` (1..=8760, default 24) | `host_info` (bcast); named `SETTLED_RETENTION` refusal outside the range |
+| `workspace_routing_get` | `workspace` | `workspace_routing` with current `routes` |
+| `workspace_routing_set` | registered `workspace`, `routes: RoleRoute[]` (max 64) | `workspace_routing` (bcast) |
 | `orchestration_caps_set` | `max_live_children`, `max_spawn_depth` (both `1..=ORCHESTRATION_CAP_MAX`) | `orchestration_state` (bcast); out of range is an `error` naming cap and value |
 | `inbox_list` | `workspace` | `inbox_rows` (direct) — every row addressed to the operator for that workspace |
 | `inbox_ack` | `id` | `inbox_changed` (bcast); `error` naming the id if no operator row matched. Opening a row is delivery, not resolution |
@@ -431,7 +434,7 @@ SessionInfo        id, agent: AgentKind, project_dir, cwd (the actual run dir), 
                    resumable (v119: the session holds a resume handle, so a Restart without `fresh`
                    resumes its conversation), resume_notice? (v119: why this session started fresh
                    instead of resuming; held in memory for the session's life)
-DelegationInfo     parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
+DelegationInfo     started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
                    still owes its parent, the correction link, what its CLI cannot report, and
@@ -448,8 +451,9 @@ InboxRow           v96: id, to_session, original_to?, workspace, from_session?, 
                    InboxDeliveredVia, confirmed_at?, attempts (delivery attempts by any door),
                    from_codename?, from_role? (bounded sender identity snapshots). The renderer's copy of a `pane_inbox` row —
                    drops `reserved_at`/`delivery_id` (door internals)
-InboxKind          snake: result | no_handback | needs_input | exited | stalled | operator_note | mail
+InboxKind          snake: restored | result | no_handback | needs_input | exited | stalled | operator_note | mail
 InboxDeliveredVia  snake: wait | stop_hook | paste | operator
+RoleRoute          pattern (1..128 bytes), model (1..128 bytes), effort?: ChatEffort
 Workspace          path, name
 TagInfo            v100: id, name (trimmed, non-empty, ≤ MAX_TAG_NAME_LEN (32) chars, unique
                    case-insensitively), color (#rrggbb, one of TAG_PALETTE's eleven fills —
@@ -582,7 +586,7 @@ ChatPermissionMode accept_edits | bypass_permissions
 
 HostInfo           channel, state_dir, pid, port, protocol_version, app_version, build_commit, uptime_ms,
                    live_sessions, restore_budget, restore_resume, restore_deferred, orchestration_depth_in_use,
-                   orchestration_max_depth, mailbox_files_on_disk, mailbox_retention_hours,
+                   orchestration_max_depth, mailbox_files_on_disk, mailbox_retention_hours, settled_retention_hours,
                    worktree_cleanup_enabled, worktree_cleanup_grace_hours,
                    command_history_ignore_glob_count, session_db_bytes
 
@@ -874,6 +878,18 @@ one of those.
   connection refusal or a 404, and must treat that the same as
   `handoff.supported: false`, never infer a live session count from it.
 
+The `restored` inbox body's JSON array lists `{role, child, provider, resumed}` for each
+restored parent's open direct children. Unsupported providers remain ended and report
+`resumed: false`. Settled children do not reopen automatically.
+
+`workspace_info.routing` exposes role-pattern model and effort choices. `pane_spawn`
+accepts `state_doc` only with `handoff: true`: text, `{text}`, or `{path}` inside the
+target workspace, bounded by `STATE_DOC_MAX_BYTES` (65536 bytes).
+
+`POST /inbox/tool-boundary`, authenticated with a pane token, returns `{text: string | null}`
+for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,
+resolve or consume the durable inbox rows.
+
 ## Versioning rules
 
 - `PROTOCOL_VERSION` is bumped **once per wire-touching batch**, not once per
@@ -894,6 +910,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 121 | **Settled children retain their transcripts and conversations.** Delegation timestamps, `restored` inbox kind, configurable settled retention and per-workspace role routing. Existing operator inbox list/ack/resolve and row pushes cover the operator queue |
 | 120 | **A worktree whose PR has merged is removed with its build output.** New `worktree_cleanup_set` (reply: `host_info` bcast, which gains `worktree_cleanup_enabled` and `worktree_cleanup_grace_hours`), `worktree_cleanup_status` and `worktree_cleanup_run` (which removes only the confirmed `paths`, or only checks), and the `worktree_cleanup` reply/bcast carrying `ManagedWorktreeInfo` with a typed `WorktreeKeep` reason. Only worktrees Houston recorded (`pane_spawn`'s `worktree`, the Changes pane) are ever removed |
 | 119 | **Restored or restarted Claude and Codex panes resume their conversations.** `SessionInfo` gains `resumable` and `resume_notice?`; `session_respawn` gains `fresh?`; new `restore_resume_set` (reply: `host_info` bcast, which gains `restore_resume`) and `session_resumable` bcast. Boot restore after shutdown or crash and `session_respawn` relaunch a Claude session with `--resume <id>` or Codex with `resume <id>` when it holds a resume handle that passes validation, and start fresh with a one-line `resume_notice` otherwise |
 | 118 | **A restarted session keeps its original pane.** `SessionInfo` gains `session_origin`, the original session id persisted across successive restarts and boot restores. Clients retain the pane in any grid or stack even when they missed intermediate replacements. No message is added or removed |

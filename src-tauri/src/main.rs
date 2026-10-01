@@ -480,6 +480,8 @@ fn main() {
             fs::fs_read_file,
             fs::fs_read_media,
             fs::fs_write_file,
+            fs::fs_write_file_checked,
+            fs::native_notify,
             fs::fs_stat,
             fs::fs_exists,
             fs::fs_delete,

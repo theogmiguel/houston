@@ -30,10 +30,6 @@ const SPAWN_GRACE: Duration = Duration::from_secs(20);
 /// id exits 1 at once); the pane is relaunched fresh rather than left exited.
 const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 
-// observed Codex Auto-mode approval reviews took 4-6s; covers the worst observed
-// with margin so a review that resolves on its own never reaches the parent as a block
-pub const CODEX_AUTO_BLOCK_GRACE_MS: u64 = 8_000;
-
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 const SWARM_WAKE_LANE_MAX: usize = 16;
 
@@ -1368,6 +1364,13 @@ const RESTORE_RESUME_KEY: &str = "restore_resume";
 
 const MAILBOX_RETENTION_HOURS_KEY: &str = "mailbox_retention_hours";
 
+// One day retains results for review while bounding forgotten fleets.
+const SETTLED_RETENTION_DEFAULT_HOURS: u32 = 24;
+// One year is a finite upper bound for explicitly extended archival retention.
+const SETTLED_RETENTION_MAX_HOURS: u32 = 8760;
+// Limits settings payloads while covering broad workspace role taxonomies.
+const WORKSPACE_ROUTING_MAX: usize = 64;
+
 const ORCHESTRATION_MAX_LIVE_CHILDREN_KEY: &str = "orchestration_max_live_children";
 
 const ORCHESTRATION_MAX_SPAWN_DEPTH_KEY: &str = "orchestration_max_spawn_depth";
@@ -2449,21 +2452,12 @@ impl Daemon {
             ok
         });
 
-        candidates.retain(|c| {
-            if c.spawned_by.is_none() {
-                return true;
-            }
-            if let Err(e) = self.close(c.id) {
-                tracing::warn!(
-                    "boot restore: closing orchestrated child {} (parent {:?}), whose mission \
-                     cannot survive a restart: {e}",
-                    c.id,
-                    c.spawned_by,
-                );
-            }
-            false
-        });
-
+        let children: Vec<_> = candidates
+            .iter()
+            .filter(|c| c.spawned_by.is_some())
+            .cloned()
+            .collect();
+        candidates.retain(|c| c.spawned_by.is_none());
         candidates.sort_by_key(|c| (restore_priority(c.agent), std::cmp::Reverse(c.id)));
 
         let budget = self.restore_budget() as usize;
@@ -2479,7 +2473,33 @@ impl Daemon {
                 continue;
             }
             match self.respawn_with(c.id, true, None, None, false, RespawnConversation::Restore) {
-                Ok(_) => respawned += 1,
+                Ok(parent) => {
+                    respawned += 1;
+                    let mut notices = Vec::new();
+                    self.restore_children(c.id, parent.id, &children, &mut notices, &mut respawned);
+                    if !notices.is_empty() {
+                        let body = serde_json::to_string(&notices).unwrap_or_default();
+                        if let Err(e) = self.inbox_write(
+                            parent.id,
+                            &parent.project_dir,
+                            None,
+                            None,
+                            orchestrate::InboxKind::Restored,
+                            "Children restored after daemon restart",
+                            &body,
+                            Vec::new(),
+                            None,
+                            None,
+                            false,
+                            true,
+                        ) {
+                            tracing::warn!(
+                                "recording restored children for parent {}: {e}",
+                                parent.id
+                            );
+                        }
+                    }
+                }
                 Err(e) => {
                     tracing::warn!(
                         "boot restore: respawning session {} failed, halting auto-restore: {e}",
@@ -2490,13 +2510,119 @@ impl Daemon {
                 }
             }
         }
-        let deferred = total - respawned;
+        let deferred = total.saturating_sub(respawned);
         *self.recovery.lock().expect("recovery lock") = Some(proto::RecoverySummary {
             respawned,
             deferred,
             crashed,
         });
         tracing::info!("boot restore: respawned {respawned}, deferred {deferred}");
+    }
+
+    fn restore_children(
+        self: &Arc<Self>,
+        old_parent: u32,
+        parent: u32,
+        children: &[proto::SessionInfo],
+        notices: &mut Vec<serde_json::Value>,
+        respawned: &mut u32,
+    ) {
+        for child in children.iter().filter(|c| c.spawned_by == Some(old_parent)) {
+            let row = self.delegation_of(child.id);
+            let settled = row.as_ref().is_some_and(|r| r.settled_at.is_some());
+            if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
+                info.spawned_by = Some(parent);
+            }
+            if settled {
+                if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
+                    info.state = proto::SessionState::Exited;
+                }
+                continue;
+            }
+            let supported = matches!(
+                child.agent,
+                proto::AgentKind::Claude | proto::AgentKind::Codex
+            );
+            let restored = supported
+                .then(|| {
+                    self.respawn_with(
+                        child.id,
+                        true,
+                        None,
+                        None,
+                        false,
+                        RespawnConversation::Resume,
+                    )
+                })
+                .and_then(Result::ok);
+            let new_id = restored.as_ref().map_or(child.id, |s| s.id);
+            let resumed = restored
+                .as_ref()
+                .is_some_and(|s| s.resume_notice.is_none() && s.resumable);
+            if restored.is_some() {
+                *respawned += 1;
+            }
+            if restored.is_none() {
+                let _ = self
+                    .db
+                    .update_session_state(child.id, proto::SessionState::Exited, None);
+                let now = now_ms();
+                let _ = self.db.delegation_set_state(child.id, "unknown", now);
+                let _ = self.db.delegation_retain(
+                    child.id,
+                    now,
+                    now.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
+                );
+                if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
+                    info.state = proto::SessionState::Exited;
+                }
+            }
+            notices.push(serde_json::json!({ "role": row.and_then(|r| r.role), "child": new_id, "provider": child.agent, "resumed": resumed }));
+            if let Some(restored) = restored {
+                let mut nested = Vec::new();
+                self.restore_children(child.id, new_id, children, &mut nested, respawned);
+                if !nested.is_empty() {
+                    let body = serde_json::to_string(&nested).unwrap_or_default();
+                    if let Err(e) = self.inbox_write(
+                        new_id,
+                        &restored.project_dir,
+                        None,
+                        None,
+                        orchestrate::InboxKind::Restored,
+                        "Children restored after daemon restart",
+                        &body,
+                        Vec::new(),
+                        None,
+                        None,
+                        false,
+                        true,
+                    ) {
+                        tracing::warn!("recording restored children for parent {new_id}: {e}");
+                    }
+                }
+            } else {
+                self.retain_unresumed_descendants(child.id, children);
+            }
+        }
+    }
+
+    fn retain_unresumed_descendants(&self, parent: u32, children: &[proto::SessionInfo]) {
+        for child in children.iter().filter(|c| c.spawned_by == Some(parent)) {
+            let now = now_ms();
+            let _ = self
+                .db
+                .update_session_state(child.id, proto::SessionState::Exited, None);
+            let _ = self.db.delegation_set_state(child.id, "unknown", now);
+            let _ = self.db.delegation_retain(
+                child.id,
+                now,
+                now.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
+            );
+            if let Some(info) = self.dead.lock().expect("dead lock").get_mut(&child.id) {
+                info.state = proto::SessionState::Exited;
+            }
+            self.retain_unresumed_descendants(child.id, children);
+        }
     }
 
     pub fn recovery_summary(&self) -> Option<proto::RecoverySummary> {
@@ -3725,7 +3851,7 @@ impl Daemon {
     }
 
     fn child_counts_of(&self, parent: u32) -> (u32, u32) {
-        let live = self.live_children_of(parent);
+        let live = self.active_children_of(parent);
         let waiting = live
             .iter()
             .filter(|child| {
@@ -6075,6 +6201,22 @@ impl Daemon {
         if deliver_delegation {
             self.advance_delegation(id, ev);
         }
+        if ev.status() == proto::AgentStatus::Idle {
+            if let Some(row) = self
+                .delegation_of(id)
+                .filter(|r| r.state == "done" && r.reusable)
+            {
+                let now = now_ms();
+                let _ = self.db.delegation_retain(
+                    id,
+                    now,
+                    now.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
+                );
+                self.delegation_wake.notify_one();
+                self.broadcast_delegation(id);
+                self.broadcast_live_children(row.parent_session);
+            }
+        }
         if changed {
             self.advance_routine_pane_run(id, ev);
         }
@@ -6771,14 +6913,13 @@ impl Daemon {
         }
 
         if let Some(parent) = spawned_by {
-            bail!(
-                "refused: session {old_id} was spawned by session {parent} with a mission that \
-                 does not survive its process (nothing resumes) — \
-                 respawning it would silently start a bare CLI with no mission; spawn a \
-                 fresh child instead"
-            );
+            if !matches!(agent, proto::AgentKind::Claude | proto::AgentKind::Codex) {
+                bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, cannot resume its mission; expected Claude or Codex");
+            }
+            if handle.is_none() {
+                bail!("continue refused: child {old_id} of parent {parent}, provider {agent:?}, has no resume handle for its mission");
+            }
         }
-
         let had_profile = profile_label.is_some();
         let (extra_env, profile_label, missing_profile) =
             self.respawn_profile(old_id, agent, profile_label);
@@ -6813,6 +6954,9 @@ impl Daemon {
                 } {
                     Ok(args) => (args, handle, None),
                     Err(reason) => {
+                        if spawned_by.is_some() {
+                            bail!("continue refused: child {old_id} provider {agent:?}: {reason}");
+                        }
                         tracing::info!("session {old_id} starts fresh: {reason}");
                         (
                             Vec::new(),
@@ -6855,6 +6999,13 @@ impl Daemon {
             resume_notice,
         })?;
 
+        self.db
+            .delegation_rebind(old_id, spawned.id, spawned_by, now_ms())?;
+        for info in self.dead.lock().expect("dead lock").values_mut() {
+            if info.spawned_by == Some(old_id) {
+                info.spawned_by = Some(spawned.id);
+            }
+        }
         if was_dead {
             self.dead.lock().expect("dead lock").remove(&old_id);
             if let Err(e) = self.db.mark_closed(old_id) {
@@ -8803,12 +8954,25 @@ impl Daemon {
     }
 
     pub fn close(&self, id: u32) -> Result<()> {
+        for row in self.db.delegations_for_parent(id)? {
+            if row.child_session != id
+                && (self.get(row.child_session).is_ok()
+                    || self
+                        .dead
+                        .lock()
+                        .expect("dead lock")
+                        .contains_key(&row.child_session))
+            {
+                self.close(row.child_session)?;
+            }
+        }
         self.operator_ended
             .lock()
             .expect("operator_ended lock")
             .insert(id);
         self.forget_resume_handle(id);
         self.cancel_delegation(id);
+        self.db.delegation_forget_retention(id)?;
         let removed = self.sessions.lock().expect("sessions lock").remove(&id);
         if let Some(session) = removed {
             session.remove_shell_token_file();
@@ -10085,10 +10249,21 @@ impl Daemon {
             self.apply_agent_event(
                 d.session,
                 &d.event,
-                crate::agent_events::AgentEvent::NeedsInput,
+                if provider == proto::AgentKind::Codex
+                    && self.approval_mode_of(d.session) == crate::launch::ApprovalMode::Auto
+                {
+                    crate::agent_events::AgentEvent::Activity
+                } else {
+                    crate::agent_events::AgentEvent::NeedsInput
+                },
                 false,
                 true,
             );
+            if provider == proto::AgentKind::Codex
+                && self.approval_mode_of(d.session) == crate::launch::ApprovalMode::Auto
+            {
+                self.broadcast_delegation(d.session);
+            }
             return Some(crate::hook_drop::DropVerdict::Applied);
         }
 
@@ -10755,6 +10930,68 @@ impl Daemon {
         Ok(hours)
     }
 
+    pub fn settled_retention_hours(&self) -> u32 {
+        self.db
+            .get_setting("settled_retention_hours")
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(SETTLED_RETENTION_DEFAULT_HOURS)
+    }
+
+    pub fn set_settled_retention_hours(&self, hours: u32) -> Result<()> {
+        if !(1..=SETTLED_RETENTION_MAX_HOURS).contains(&hours) {
+            bail!("SETTLED_RETENTION: requested {hours} hours; expected 1..={SETTLED_RETENTION_MAX_HOURS} hours");
+        }
+        self.db
+            .set_setting("settled_retention_hours", &hours.to_string())?;
+        Ok(())
+    }
+
+    pub fn workspace_routing(&self, workspace: &str) -> Result<Vec<proto::RoleRoute>> {
+        let key = format!("workspace_routing:{workspace}");
+        Ok(self
+            .db
+            .get_setting(&key)?
+            .map(|v| serde_json::from_str(&v))
+            .transpose()?
+            .unwrap_or_default())
+    }
+
+    pub fn set_workspace_routing(
+        &self,
+        workspace: &str,
+        routes: &[proto::RoleRoute],
+    ) -> Result<()> {
+        if !self.workspace_list()?.iter().any(|w| w.path == workspace) {
+            bail!("workspace routing: {workspace:?} must be a registered workspace");
+        }
+        if routes.len() > WORKSPACE_ROUTING_MAX {
+            bail!(
+                "WORKSPACE_ROUTING_MAX: requested {} routes; limit {WORKSPACE_ROUTING_MAX}",
+                routes.len()
+            );
+        }
+        for route in routes {
+            if route.pattern.is_empty()
+                || route.pattern.len() > 128
+                || route.model.is_empty()
+                || route.model.len() > 128
+            {
+                bail!(
+                    "invalid route {:?} -> {:?}: expected pattern and model of 1..=128 bytes",
+                    route.pattern,
+                    route.model
+                );
+            }
+        }
+        self.db.set_setting(
+            &format!("workspace_routing:{workspace}"),
+            &serde_json::to_string(routes)?,
+        )?;
+        Ok(())
+    }
+
     pub fn orchestration_max_live_children(&self) -> u32 {
         match self.db.get_setting(ORCHESTRATION_MAX_LIVE_CHILDREN_KEY) {
             Ok(Some(v)) => v.parse().unwrap_or(orchestrate::MAX_LIVE_CHILDREN),
@@ -10842,6 +11079,7 @@ impl Daemon {
             orchestration_max_depth: self.orchestration_max_spawn_depth(),
             mailbox_files_on_disk: self.mailbox_file_count(),
             mailbox_retention_hours: self.mailbox_retention_hours(),
+            settled_retention_hours: self.settled_retention_hours(),
             worktree_cleanup_enabled: self.worktree_cleanup_enabled(),
             worktree_cleanup_grace_hours: self.worktree_cleanup_grace_hours(),
             command_history_ignore_glob_count: self.command_history_ignore_globs().len() as u32,
@@ -11061,6 +11299,12 @@ impl Daemon {
                 continue;
             }
             if !session.state.lock().expect("state lock").is_live() {
+                continue;
+            }
+            if self
+                .delegation_of(id)
+                .is_some_and(|row| row.retained_until.is_some())
+            {
                 continue;
             }
             let last = session.last_output.load(Ordering::Relaxed);
@@ -12267,6 +12511,25 @@ impl Daemon {
         Ok(self.orchestration_state())
     }
 
+    pub(crate) fn active_children_of(&self, parent: u32) -> Vec<u32> {
+        self.live_children_of(parent)
+            .into_iter()
+            .filter(|id| {
+                !(self.delegation_of(*id).is_some_and(|r| r.state == "done")
+                    && self.session_status(*id).ok().flatten() == Some(proto::AgentStatus::Idle))
+            })
+            .collect()
+    }
+
+    fn settled_children_count(&self, parent: u32) -> usize {
+        self.db
+            .delegations_for_parent(parent)
+            .unwrap_or_default()
+            .iter()
+            .filter(|r| r.settled_at.is_some())
+            .count()
+    }
+
     pub(crate) fn live_children_of(&self, parent: u32) -> Vec<u32> {
         let sessions = self.sessions.lock().expect("sessions lock");
         let mut kids: Vec<u32> = sessions
@@ -12393,6 +12656,68 @@ impl Daemon {
             .ok_or_else(|| anyhow!("unknown session id {caller} (expected an active session)"))
     }
 
+    pub fn handoff_state_brief(
+        &self,
+        caller: u32,
+        target: Option<&str>,
+        handoff: bool,
+        mut brief: orchestrate::Brief,
+        state: Option<&serde_json::Value>,
+    ) -> Result<orchestrate::Brief> {
+        // Enough for a focused handoff while bounding file reads and launch context.
+        const STATE_DOC_MAX_BYTES: usize = 64 * 1024;
+        let Some(state) = state else {
+            return Ok(brief);
+        };
+        if !handoff {
+            bail!("state_doc requires handoff: true; got handoff: false");
+        }
+        let text = if let Some(text) = state
+            .as_str()
+            .or_else(|| state.get("text").and_then(serde_json::Value::as_str))
+        {
+            text.to_string()
+        } else if let Some(path) = state.get("path").and_then(serde_json::Value::as_str) {
+            use std::io::Read;
+            let root = self
+                .resolve_spawn_workspace(caller, target)?
+                .canonicalize()?;
+            let real = root.join(path).canonicalize().with_context(|| {
+                format!(
+                    "state_doc path {path:?} must name an existing file inside {}",
+                    root.display()
+                )
+            })?;
+            if !real.starts_with(&root) {
+                bail!("state_doc path {path:?} resolves outside workspace {}; expected a file inside it", root.display());
+            }
+            let mut bytes = Vec::new();
+            std::fs::File::open(&real)?
+                .take((STATE_DOC_MAX_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() > STATE_DOC_MAX_BYTES {
+                bail!(
+                    "STATE_DOC_MAX_BYTES: path {path:?} exceeds limit {STATE_DOC_MAX_BYTES} bytes"
+                );
+            }
+            String::from_utf8(bytes)
+                .with_context(|| format!("state_doc path {path:?} must contain UTF-8 text"))?
+        } else {
+            bail!(
+                "invalid state_doc {state}: expected text or {{text: string}} or {{path: string}}"
+            );
+        };
+        if text.len() > STATE_DOC_MAX_BYTES {
+            bail!(
+                "STATE_DOC_MAX_BYTES: requested {} bytes; limit {STATE_DOC_MAX_BYTES}",
+                text.len()
+            );
+        }
+        brief.prompt.push_str("\n\n## Handoff state\n");
+        brief.prompt.push_str(&text);
+        Ok(brief)
+    }
+
     pub fn orchestrate_whoami_json(&self, caller: u32) -> Result<serde_json::Value> {
         let info = self.orchestrate_whoami(caller)?;
         let registered_workspaces = self
@@ -12414,6 +12739,7 @@ impl Daemon {
             "cwd": info.cwd,
             "channel": self.channel(),
             "registered_workspaces": registered_workspaces,
+            "routing": self.workspace_routing(&info.project_dir)?,
         }))
     }
 
@@ -12776,13 +13102,16 @@ impl Daemon {
             if let Some(role) = &role {
                 self.assert_role_free(caller, role)?;
             }
-            let direct = self.live_children_of(caller).len() as u32;
+            let direct = self.active_children_of(caller).len() as u32;
             if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::children_cap_verdict(
                 caller,
                 direct,
                 self.orchestration_max_live_children(),
             ) {
-                bail!("{msg}");
+                bail!(
+                    "{msg}; {} settled children do not count against the cap",
+                    self.settled_children_count(caller)
+                );
             }
             if let orchestrate::SpawnVerdict::Refused(msg) = orchestrate::depth_cap_verdict(
                 self.spawn_depth_of(caller) + 1,
@@ -13194,7 +13523,7 @@ impl Daemon {
             return false;
         }
         let max = self.orchestration_max_live_children();
-        let free = max.saturating_sub(self.live_children_of(id).len() as u32);
+        let free = max.saturating_sub(self.active_children_of(id).len() as u32);
         if free == 0 {
             return false;
         }
@@ -13930,6 +14259,22 @@ impl Daemon {
         (!spawning).then_some(current + 1)
     }
 
+    pub fn inbox_tool_boundary(&self, caller: u32) -> Result<Option<String>> {
+        let provider = self.agent_kind_of(caller);
+        if !matches!(
+            provider,
+            Some(proto::AgentKind::Claude | proto::AgentKind::Codex)
+        ) {
+            bail!("tool-boundary context unsupported for provider {provider:?}; expected Claude or Codex, use the operator channel");
+        }
+        let lines: Vec<_> = self.db.inbox_tool_hints(caller, now_ms())?.into_iter().map(|row| {
+            let role = row.from_role.or(row.from_codename).unwrap_or_else(|| "unnamed child".into());
+            let summary: String = row.summary.chars().take(200).collect();
+            format!("child {role} ({}) needs input: {summary}; answer with pane_read + pane_send_keys or leave it to the operator", row.from_session.unwrap_or(0))
+        }).collect();
+        Ok((!lines.is_empty()).then(|| lines.join("\n")))
+    }
+
     pub fn inbox_list(&self, workspace: &str) -> Result<proto::ServerMsg> {
         let rows = self
             .db
@@ -14265,76 +14610,42 @@ impl Daemon {
         if !self.temporary_cleanup_safe(row.child_session, now) {
             return None;
         }
-        let live_session = self
-            .sessions
-            .lock()
-            .expect("sessions lock")
-            .get(&row.child_session)
-            .cloned();
-        if let Some(session) = &live_session {
-            // Prevent a completion callback from overwriting the durable closed state while the
-            // cleanup lock bridges the database update and live-map removal.
+        let child = row.child_session;
+        if let Ok(session) = self.get(child) {
+            if let Err(e) = self.persist_scrollback_result(child) {
+                tracing::warn!("persisting settled child {child}: {e}");
+                return None;
+            }
             session.removed.store(true, Ordering::Release);
-        }
-        if let Err(e) = self.db.mark_closed(row.child_session) {
-            tracing::warn!(
-                "marking live temporary child {} closed before removal: {e}",
-                row.child_session
-            );
-            if let Some(session) = live_session {
+            if let Err(e) = self
+                .db
+                .update_session_state(child, proto::SessionState::Exited, None)
+            {
                 session.removed.store(false, Ordering::Release);
+                tracing::warn!("ending settled child {child}: {e}");
+                return None;
             }
-            return None;
-        }
-        let removed = self
-            .sessions
-            .lock()
-            .expect("sessions lock")
-            .remove(&row.child_session);
-        if let Some(session) = removed {
+            let was_live = session.state.lock().expect("state lock").is_live();
+            *session.state.lock().expect("state lock") = proto::SessionState::Exited;
+            if was_live {
+                let _ = session.backend.kill(child, session.pid);
+            }
             session.remove_shell_token_file();
-            session.removed.store(true, Ordering::Release);
-            if session.state.lock().expect("state lock").is_live() {
-                let _ = session.backend.kill(row.child_session, session.pid);
-            }
-            self.mcp_creds.revoke_session(row.child_session);
-            self.mcp_notify.close_session(row.child_session);
-            self.remove_persisted_scrollback(row.child_session);
-            self.frame_taps.forget_session(row.child_session);
-            self.write_run_state();
-            self.broadcast_control(&proto::ServerMsg::SessionRemoved {
-                session: row.child_session,
+            self.mcp_creds.revoke_session(child);
+            self.mcp_notify.close_session(child);
+            self.broadcast_control(&proto::ServerMsg::SessionState {
+                session: child,
+                state: proto::SessionState::Exited,
+                exit_code: None,
             });
-            self.broadcast_live_children(row.parent_session);
-        } else if self
-            .dead
-            .lock()
-            .expect("dead lock")
-            .remove(&row.child_session)
-            .is_some()
-        {
-            if let Err(e) = self.db.mark_closed(row.child_session) {
-                tracing::warn!(
-                    "marking restored temporary child {} closed: {e}",
-                    row.child_session
-                );
-            }
-            self.remove_persisted_scrollback(row.child_session);
-            self.broadcast_control(&proto::ServerMsg::SessionRemoved {
-                session: row.child_session,
-            });
-        } else {
+        }
+        let until = now.saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000);
+        if let Err(e) = self.db.delegation_retain(child, now, until) {
+            tracing::warn!("retaining settled child {child}: {e}");
             return None;
         }
-        if let Err(e) = self
-            .db
-            .delegation_set_cleanup_after(row.child_session, None, now)
-        {
-            tracing::warn!(
-                "clearing temporary cleanup marker for child {}: {e}",
-                row.child_session
-            );
-        }
+        self.broadcast_delegation(child);
+        self.broadcast_live_children(row.parent_session);
         Some(row.parent_session)
     }
 
@@ -14547,66 +14858,16 @@ impl Daemon {
         match event {
             orchestrate::DelegationEvent::Blocked => {
                 let label = self.child_label_of(child);
-                let (reason, newest_key) = {
-                    let episodes = self.permission_episodes.lock().expect("episodes lock");
-                    let eps = episodes.get(&child);
-                    (
-                        eps.and_then(|e| e.newest_reason()).map(str::to_string),
-                        eps.and_then(|e| e.newest_key()),
-                    )
-                };
+                let reason = self
+                    .permission_episodes
+                    .lock()
+                    .expect("episodes lock")
+                    .get(&child)
+                    .and_then(|e| e.newest_reason())
+                    .map(str::to_string);
                 let body = orchestrate::needs_input_body(reason.as_deref());
                 let summary = format!("{label} is blocked");
-                let is_codex_auto = self.agent_kind_of(child) == Some(proto::AgentKind::Codex)
-                    && self.approval_mode_of(child) == crate::launch::ApprovalMode::Auto;
-                match (is_codex_auto, newest_key) {
-                    (true, Some(key)) => {
-                        // Most Codex Auto reviews resolve within seconds; wait and only
-                        // tell the parent if still open past that. A plain OS thread
-                        // stands in for tokio::spawn: this is also reached off-runtime.
-                        let daemon = Arc::clone(self);
-                        let round = row.round;
-                        let (thread_workspace, thread_summary, thread_body) =
-                            (workspace.clone(), summary.clone(), body.clone());
-                        let spawned = std::thread::Builder::new()
-                            .name(format!("block-grace-{child}"))
-                            .spawn(move || {
-                                std::thread::sleep(Duration::from_millis(
-                                    CODEX_AUTO_BLOCK_GRACE_MS,
-                                ));
-                                let still_open = daemon
-                                    .permission_episodes
-                                    .lock()
-                                    .expect("episodes lock")
-                                    .get(&child)
-                                    .is_some_and(|eps| eps.contains(&key));
-                                if still_open {
-                                    daemon.refresh_or_write_block(
-                                        parent,
-                                        child,
-                                        &thread_workspace,
-                                        round,
-                                        &thread_summary,
-                                        &thread_body,
-                                    );
-                                }
-                            });
-                        if let Err(e) = spawned {
-                            tracing::warn!(
-                                "spawning child {child}'s block-grace thread: {e}; writing \
-                                 the block row immediately instead"
-                            );
-                            self.refresh_or_write_block(
-                                parent, child, &workspace, round, &summary, &body,
-                            );
-                        }
-                    }
-                    _ => {
-                        self.refresh_or_write_block(
-                            parent, child, &workspace, row.round, &summary, &body,
-                        );
-                    }
-                }
+                self.refresh_or_write_block(parent, child, &workspace, row.round, &summary, &body);
             }
             orchestrate::DelegationEvent::TurnStarted | orchestrate::DelegationEvent::TurnEnded
                 if from == orchestrate::DelegationState::NeedsInput =>
@@ -14887,6 +15148,18 @@ impl Daemon {
     }
 
     fn background_hold_reason(&self, child: u32) -> Option<String> {
+        if self.agent_kind_of(child) == Some(proto::AgentKind::Codex)
+            && self.approval_mode_of(child) == crate::launch::ApprovalMode::Auto
+            && self.session_status(child).ok().flatten() == Some(proto::AgentStatus::Working)
+            && self
+                .permission_episodes
+                .lock()
+                .expect("episodes lock")
+                .get(&child)
+                .is_some_and(|e| e.open_count() > 0)
+        {
+            return Some("auto-review in progress".to_string());
+        }
         self.background_holds
             .lock()
             .expect("background holds lock")
@@ -15041,7 +15314,7 @@ impl Daemon {
     }
 
     fn assert_role_free(&self, caller: u32, role: &str) -> Result<()> {
-        let live = self.live_children_of(caller);
+        let live = self.active_children_of(caller);
         for row in self.delegations_of_parent(caller) {
             if row.role.as_deref() == Some(role) && live.contains(&row.child_session) {
                 bail!(
@@ -15096,6 +15369,11 @@ impl Daemon {
             .map(|rows| !rows.is_empty())
             .unwrap_or(true)
             || self.db.delegations_cleanup_pending().unwrap_or(true)
+            || self
+                .db
+                .delegations_retained()
+                .map(|r| !r.is_empty())
+                .unwrap_or(true)
     }
 
     pub fn delegation_watch_tick(self: &Arc<Self>) {
@@ -15116,6 +15394,9 @@ impl Daemon {
         };
         for row in &open {
             let child = row.child_session;
+            if self.background_hold_reason(child).as_deref() == Some("auto-review in progress") {
+                continue;
+            }
             let hold = self
                 .background_holds
                 .lock()
@@ -15175,6 +15456,36 @@ impl Daemon {
             self.delegation_settle_pass(row, &s, busy, now);
         }
         let cleanup_now = now_ms();
+        for row in self.db.delegations_retained().unwrap_or_default() {
+            let _guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            let Some(row) = self.delegation_of(row.child_session) else {
+                continue;
+            };
+            if row.retained_until.is_some_and(|at| at <= cleanup_now)
+                && self.temporary_cleanup_safe(row.child_session, cleanup_now)
+            {
+                if let Err(e) = self.close(row.child_session) {
+                    tracing::warn!("closing expired settled child {}: {e}", row.child_session);
+                }
+            }
+        }
+        for row in self.db.delegations_done().unwrap_or_default() {
+            if row.reusable
+                && row.state == "done"
+                && self.session_status(row.child_session).ok().flatten()
+                    == Some(proto::AgentStatus::Idle)
+            {
+                let _ = self.db.delegation_retain(
+                    row.child_session,
+                    cleanup_now,
+                    cleanup_now
+                        .saturating_add(u64::from(self.settled_retention_hours()) * 3_600_000),
+                );
+            }
+        }
         let due = match self.db.delegations_cleanup_due(cleanup_now) {
             Ok(rows) => rows,
             Err(e) => {

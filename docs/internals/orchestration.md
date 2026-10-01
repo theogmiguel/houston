@@ -242,7 +242,7 @@ eligible.
 (or the daemon, for a notice) that produced it; `workspace` is the workspace identity every
 other table already keys on; `request_id` is the `delegations.round` the row answers.
 `from_codename` and `from_role` are bounded snapshots of the sender identity, so a renderer
-can keep naming a result after temporary cleanup removes the live session.
+can keep naming a result after temporary settlement ends the process.
 `kind` is one of `InboxKind`: `result` (a `pane_submit` body), `no_handback` (a turn ended
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
 gone), `stalled`, `operator_note` (the operator ended or interrupted the child), and `mail`
@@ -498,13 +498,20 @@ requests for the same command and tool in the same turn cannot be distinguished 
 duplicate delivery; they share one episode. Raw commands are not persisted for this
 correlation.
 
-**Codex Auto's block grace window.** A Codex hook carries no field distinguishing an
-Auto-mode reviewer's self-resolving approval from one waiting on a human, and most
-resolve within seconds (observed: 4-6 s). For a session recorded with `ApprovalMode::Auto`,
-the urgent `needs_input` row to the parent is delayed by `CODEX_AUTO_BLOCK_GRACE_MS`
-(`daemon.rs`) and dropped instead of written if the episode has already resolved by then;
-the child's own delegation state still moves to `needs_input` immediately. Every other
-approval mode, and every other agent kind, writes the row synchronously as before.
+**Codex automatic approval reviews.** `PermissionRequest` in Auto mode precedes
+approval processing, so an unresolved request is not evidence of a human prompt. The
+session stays Working with `hold_reason: auto-review in progress` until matching tool
+completion resolves the episode. `request_user_input` remains an urgent needs-input
+event. A native approval prompt after reviewer denial has no distinct verified hook in
+the installed CLI; it cannot be inferred from elapsed time or terminal text.
+
+**Tool-boundary context (door 2b).** Claude and Codex `PostToolUse` command hooks can
+return `hookSpecificOutput.additionalContext`. The hook queries the authenticated daemon
+for bounded, once-per-row needs-input hints. This does not consume the durable row, block
+the parent's turn or paste into a Working terminal. Antigravity, OpenCode, Cursor and Grok
+rely on the operator channel for immediate attention and their existing idle delivery.
+Verified output contracts: [Claude hooks](https://code.claude.com/docs/en/hooks#posttooluse)
+and [Codex hooks](https://learn.chatgpt.com/docs/hooks), also present in the installed binaries.
 
 ### Which request a body answers
 
@@ -586,9 +593,12 @@ with `ready_at = now` and `reason = 'migrated'`, then removes the columns in the
 transaction. An already-migrated database is unchanged. Recovery at boot is idempotent, so two
 restarts produce one state, and it runs **after** restore:
 
-1. `close_delegations_lost_to_the_restart` closes every open delegation as `unknown`, as
-   before — a restored husk is a new process and nothing can reopen its mission.
-2. The restore policy brings sessions back.
+1. Open delegations become `unknown`; a restart alone does not prove success or failure.
+2. The restore policy brings parents and their open children back through valid Claude
+   and Codex resume handles, rebinds session IDs and inbox recipients, and writes exactly
+   one `restored` notice per parent. Its JSON array names role, child, provider and whether
+   the conversation resumed. Unsupported children remain ended; settled children remain
+   archived. A child without a valid resume handle never starts a bare replacement CLI.
 3. `db::inbox_recover_after_restart` runs against the live set restore actually brought
    back, not the empty roster boot started with — a respawned husk keeps its own rows
    addressed to it instead of re-addressing them to the operator on the strength of an
@@ -620,11 +630,19 @@ round's in-memory hold is released so completed ordinary panes do not remain for
 The wake-lane map owns both queued and in-flight delivery, and the cleanup marker is
 rechecked under a shared lock with prompts, key input and submits so a follow-up cannot
 remove a reopened round.
-Removal emits `SessionRemoved` but leaves the delegation and inbox rows durable. The
-historical parent chain continues to authorize the parent's `pane_wait` for that child;
-it does not authorize unrelated panes or resurrect terminal controls. Descendant removal
-rechecks deferred cleanup up the recorded ancestor chain. Explicit operator close remains
-separate and retains its cancellation semantics.
+Settlement persists scrollback and ends a temporary child's PTY while retaining its
+session and resume handle. Done-and-idle reusable children stay live but no longer consume
+a child slot. Both carry settled and retained-until timestamps. The existing delegation
+watch loop removes expired settled children after `SETTLED_RETENTION` (24 hours by default,
+configured through daemon settings). Ordinary idle reaping skips retained delegations.
+Explicit close and parent close remove the retained sessions.
+Continue uses the existing resume machinery for Claude and Codex; other providers are
+refused by name. A new request clears the previous settlement and retention timestamps.
+
+Role routing is stored per registered workspace and exposed through `workspace_info`.
+The seeded skill consults ordered role-pattern routes for model and effort selection;
+explicit operator choices take precedence. Handoff state is bounded UTF-8 text or a
+workspace-contained file and becomes part of the independent pane's brief.
 
 **Closed is not the same as terminal**, and the two predicates on
 `DelegationState` are not interchangeable. All four closing states are CLOSED:
@@ -784,7 +802,8 @@ the same way ("child of oak", id in the tooltip).
 parent (`inbox_owed`, `inbox_provisional`, both fed from the table at the same roster
 seam), the correction link (`last_result_corrected_by`), the capability sentence
 (`capability_note` — what the child's CLI cannot report, said by provider name), and the
-composer-hold reason (`hold_reason`, set only while something is actually owed). The card
+hold reason (`hold_reason`, covering pending delivery, background work or automatic
+approval review). The card
 renders an "owed" row, the last result's state (a corrected result struck
 through with its correction, a provisional one marked), the capability
 sentence, and a "waiting" row with the hold reason in the daemon's words —

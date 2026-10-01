@@ -94,7 +94,7 @@ const PANE_ROUTING: &str = concat!(
      question, or an exit. Use diagnostics only after a wait timeout, for help, or when the \
      operator asks; do not sit in a diagnostic loop. ",
     "Its signature: `pane_spawn{kind: claude|codex|antigravity|opencode|cursor|grok, prompt, model?, cwd?, ",
-    "auto_approve?, profile?, role?, target_workspace?, reusable?, handoff?, effort?, \
+    "auto_approve?, profile?, role?, target_workspace?, reusable?, handoff?, state_doc?, effort?, \
      output_format?, boundaries?}` — `role` is your own short name ",
     "for that child, unique among your live children, and it is how every wake from it identifies ",
     "itself; `output_format` and `boundaries` are the other two thirds of a brief, composed into ",
@@ -180,7 +180,7 @@ impl ToolProvider for OrchestrationTools {
             return Vec::new();
         }
         let max = daemon.orchestration_max_live_children();
-        let free = max.saturating_sub(daemon.live_children_of(scope.session_id).len() as u32);
+        let free = max.saturating_sub(daemon.active_children_of(scope.session_id).len() as u32);
         let depth_cap = daemon.orchestration_max_spawn_depth();
         let would_be = daemon.spawn_depth_of(scope.session_id) + 1;
         let spawnable = daemon.spawnable_by(scope.session_id);
@@ -231,7 +231,7 @@ impl ToolProvider for OrchestrationTools {
         let daemon = self.daemon.upgrade()?;
         Some(format!(
             "waiting for {} children; {elapsed}s elapsed",
-            daemon.live_children_of(scope.session_id).len()
+            daemon.active_children_of(scope.session_id).len()
         ))
     }
 
@@ -302,6 +302,15 @@ impl ToolProvider for OrchestrationTools {
                         output_format: opt_str(args, "output_format"),
                         boundaries: opt_str(args, "boundaries"),
                     };
+                    let brief = daemon
+                        .handoff_state_brief(
+                            caller,
+                            target_workspace.as_deref(),
+                            handoff,
+                            brief,
+                            args.get("state_doc"),
+                        )
+                        .map_err(|e| ToolError(format!("{e:#}")))?;
                     // Not `opt_str`: an empty slug must reach the slug rule and be refused,
                     // not read as "no worktree" and spawn in the workspace instead.
                     let worktree = crate::worktrees::spawn_ask(
@@ -600,10 +609,7 @@ impl OrchestrationTools {
             ..a
         };
         let spawn_description = String::from(
-            "Spawn an agent with a self-contained `prompt`. Returns its session id. Children \
-             obey slot/depth caps; top-level `handoff: true` creates an independent pane using \
-             no child slot. Delegate separable work; size `model` to it (`sonnet` for mechanical \
-             work). Brief: `prompt`, `output_format`, `boundaries`.",
+            "Spawn a child with prompt, output_format and boundaries; returns session id. Child slot/depth caps apply. Top-level handoff creates an independent pane without a child slot. Size model to separable work.",
         );
         let mut out = vec![
             ToolSpec {
@@ -637,11 +643,7 @@ impl OrchestrationTools {
                         "worktree": {
                             "type": "string",
                             "description":
-                                "Start the child in a new git worktree of the target workspace, \
-                                 created at .houston/worktrees/<worktree> on branch \
-                                 houston/<worktree> (or `branch`). One directory name: no \
-                                 `/`, `..` or spaces. Refused together with cwd. Houston \
-                                 records it and can remove it once its PR has merged.",
+                                "New git worktree at .houston/worktrees/<worktree>, branch houston/<worktree> or `branch`. One directory name, without /, .. or spaces. Refuses cwd; tracked for post-merge cleanup.",
                         },
                         "branch": {
                             "type": "string",
@@ -659,17 +661,17 @@ impl OrchestrationTools {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Keep the pane after a completed handback for follow-up prompts. \
-                                 Omit or set false for automatic cleanup after the final round.",
+                                "Keep the process for follow-up prompts after handback. Default: end the process and retain session/transcript until close or retention expiry.",
+                        },
+                        "state_doc": {
+                            "description": "Handoff state, at most STATE_DOC_MAX_BYTES (65536 bytes), as text or a path inside the target workspace. Requires handoff: true.",
+                            "oneOf": [ {"type": "string"}, {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"], "additionalProperties": false}, {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": false} ]
                         },
                         "handoff": {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Open an independent pane instead of a child: no handback, no \
-                                 cleanup, and your pane may close without killing it. For when \
-                                 the user hands the work off and no longer needs this pane. \
-                                 Refused from a child pane and with reusable or output_format.",
+                                "Independent pane: no handback or child cleanup; this pane may close. Top-level only; refuses reusable and output_format.",
                         },
                         "effort": {
                             "type": "string",
@@ -688,10 +690,7 @@ impl OrchestrationTools {
                         "profile": {
                             "type": "string",
                             "description":
-                                "A saved account-profile label (Settings → Agent accounts) \
-                                 to run this child under. Leave unset: the child spends the \
-                                 DEFAULT account. An unknown label is refused, naming the \
-                                 ones that exist.",
+                                "Saved account label from Settings → Agent accounts. Omit for default account. Unknown labels are refused with available names.",
                         },
                         "role": {
                             "type": "string",
@@ -739,10 +738,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_get".into(),
                 title: "Everything about one pane".into(),
-                description: "One pane in your subtree, in one call: its state, its children \
-                     and depth, what would end its turn, and — if you spawned it — its role, \
-                     brief, stall flag, and whether it is holding a result. Use after a wait timeout, for help, or when the operator asks."
-                    .into(),
+                description: "Subtree pane state, children, depth, pending turn conditions, role, brief, stall and staged result. Use after a wait timeout, for help, or when the operator asks.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -803,11 +799,7 @@ impl OrchestrationTools {
                             "type": "string",
                             "enum": orchestrate::READ_SOURCE_VALUES,
                             "description":
-                                "`screen` (default) is the pane's grid as a person sees \
-                                 it — the only readable answer from a CLI that repaints \
-                                 instead of printing lines. `tail` is the raw ring split \
-                                 on newlines: cheaper, and the only way back to text \
-                                 older than the screen.",
+                                "screen (default): visible grid, including repainting CLIs. tail: newline-split raw ring, including text older than the screen.",
                         },
                     },
                     "required": ["session"],
@@ -818,11 +810,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_prompt".into(),
                 title: "Send a prompt to a pane".into(),
-                description: "Type `text` into a pane you spawned and submit it. Queued on the \
-                     pane's own wake lane when held by its status or operator input; otherwise written synchronously. Write failures are returned. Refused when that pane is sitting at a \
-                     permission or question prompt — read it and answer what it is \
-                     actually asking instead of typing blind."
-                    .into(),
+                description: "Submit `text` to your child. Held status/operator input queues it on the pane's wake lane; otherwise writes synchronously and reports write errors. Refuses permission/question prompts: read them and answer with pane_send_keys.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -837,15 +825,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_wait".into(),
                 title: "Wait for your inbox".into(),
-                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. Block until your inbox has something for you — a child's \
-                     result, its turn ending with nothing submitted, it asking something, \
-                     or its pane ending — and return the rows inside this call, at zero \
-                     token cost while blocked. Without `session` this waits on your WHOLE \
-                     inbox; with it, on one child's rows (its urgent ones always break \
-                     through `kind`, so you cannot sit forever on a child that is blocked \
-                     or dead). A child with no Houston hook coverage is still waited on: \
-                     only a `pane_submit` or its own exit will ever produce a row for it."
-                    .into(),
+                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. Returns inbox result, no-handback, question or exit rows at zero token cost while blocked. Omit session for the whole inbox; specify a child to scope rows. Urgent child rows bypass kind. Without supported hooks, only submit or exit produces rows.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -884,12 +864,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_kill".into(),
                 title: "Kill a pane you spawned".into(),
-                description: "End a pane you spawned and dismiss it from the grid — its \
-                     terminal goes with it, so `pane_read` anything you still need BEFORE \
-                     killing. A pane with live children of its own is refused until you \
-                     repeat it with confirm_children; that refusal is telling you a subtree \
-                     exists."
-                    .into(),
+                description: "End and dismiss your child's terminal; read needed output first. Live descendants require confirm_children to end the subtree.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -908,13 +883,7 @@ impl OrchestrationTools {
                 name: "pane_submit".into(),
                 title: "Hand your result to the pane that spawned you".into(),
                 description: format!(
-                    "Only for a pane that was spawned by another: deliver `body` to your \
-                     parent's inbox — it reads it when it next waits or ends a turn. This \
-                     is your end-of-turn, not a progress ping — call it once, saying what \
-                     you did, what you did not, and anything the parent must decide. \
-                     `body` is clipped past {} characters, and a long result does not \
-                     belong in it at all: write the file, name it in `artifacts`, and let \
-                     `body` summarise it.",
+                    "Child panes only: deliver your final result to the parent's inbox, waking its wait or next turn. Call once at end-of-turn; report completed work, omissions and decisions. Body clips at {} characters; put long results in files named by artifacts.",
                     orchestrate::SUBMIT_BODY_MAX_CHARS
                 ),
                 input_schema: json!({
@@ -941,11 +910,7 @@ impl OrchestrationTools {
                             "type": "integer",
                             "minimum": 1,
                             "description":
-                                "Which request this answers — `workspace_info` reports the \
-                                 one you are on. Only needed when you are answering an \
-                                 older request after a newer one arrived; without it your \
-                                 body is filed against the current request, or stored \
-                                 unassociated if two are open.",
+                                "Request answered; workspace_info reports the current one. Needed for an older request; omit for current, or unassociated if two are open.",
                         },
                     },
                     "required": ["body"],

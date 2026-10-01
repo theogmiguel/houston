@@ -464,6 +464,7 @@ impl From<TurnEndSource> for proto::TurnEndSource {
 impl From<InboxKind> for proto::InboxKind {
     fn from(k: InboxKind) -> Self {
         match k {
+            InboxKind::Restored => proto::InboxKind::Restored,
             InboxKind::Result => proto::InboxKind::Result,
             InboxKind::NoHandback => proto::InboxKind::NoHandback,
             InboxKind::NeedsInput => proto::InboxKind::NeedsInput,
@@ -495,6 +496,9 @@ pub fn delegation_info(
     hold_reason: Option<String>,
 ) -> proto::DelegationInfo {
     proto::DelegationInfo {
+        started_at: row.created_at,
+        settled_at: row.settled_at,
+        retained_until: row.retained_until,
         parent: row.parent_session,
         role: row.role,
         state: DelegationState::parse(&row.state)
@@ -884,6 +888,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
             "branch",
             "reusable",
             "handoff",
+            "state_doc",
             "effort",
             "output_format",
             "boundaries",
@@ -1444,6 +1449,7 @@ pub fn cap_handoff_excerpt(s: &str) -> Option<String> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InboxKind {
+    Restored,
     Result,
     NoHandback,
     NeedsInput,
@@ -1460,6 +1466,7 @@ impl InboxKind {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Restored => "restored",
             Self::Result => "result",
             Self::NoHandback => "no_handback",
             Self::NeedsInput => "needs_input",
@@ -1472,6 +1479,7 @@ impl InboxKind {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
+            "restored" => Some(Self::Restored),
             "result" => Some(Self::Result),
             "no_handback" => Some(Self::NoHandback),
             "needs_input" => Some(Self::NeedsInput),
@@ -1484,7 +1492,8 @@ impl InboxKind {
     }
 }
 
-pub const INBOX_KIND_VALUES: [&str; 7] = [
+pub const INBOX_KIND_VALUES: [&str; 8] = [
+    "restored",
     "result",
     "no_handback",
     "needs_input",
@@ -2066,13 +2075,10 @@ largest one configured, and a grep does not need it.
 
 Use the provider's exact CLI model identifier: Houston forwards it unchanged.
 For example, use `gpt-5.6-luna` for Codex, not the shorthand `luna`.
-The model names in the following table apply to Claude.
-
-| the work | model |
-|---|---|
-| search, grep, read-and-report, a mechanical edit | `sonnet` |
-| ordinary implementation, a review with judgement in it | `sonnet` |
-| genuine architecture, a hard debug, a design call | the CLI default, or name `opus` |
+Read `workspace_info.routing` before choosing a model or effort. Each workspace stores
+role-pattern routes; choose the first matching pattern (`*` matches any role). Explicit
+operator model and effort choices take precedence. If no route matches, choose the
+smallest installed model that can complete the task and name it explicitly.
 
 `sonnet` is the floor, not `haiku`: Claude Code cannot run auto mode on
 `haiku`, so that pane would drop to manual and block on approvals nobody is
@@ -2107,9 +2113,9 @@ same call. Your next action is either independent work or this wait:
 not a stall. Call `wait` again with the default timeout — do not `read`,
 `get` or `prompt` a working child to chase it. Use diagnostics after a wait
 timeout when help is needed, when the operator asks, or when the child
-reports being blocked. A temporary child
-closes after its final durable handback; use `--reusable` for follow-up
-prompts or a live pane.
+reports being blocked. A temporary child ends its process after its final durable
+handback and retains its session and transcript until close or retention expiry.
+Use `--reusable` for follow-up prompts or a live pane.
 
 ## Handing off
 
@@ -2128,13 +2134,13 @@ may hand off.
    [--boundaries "…"]` — the brief, in the three parts described above. It
    returns the new pane's JSON, including its `id`. **Take the id from that
    output** — never guess or predict one.
-   - **Name a `--model`.** See the table above; the default is almost always
+   - **Name a `--model`.** Read workspace routing above; the default is almost always
      larger than the chunk needs.
    - **Give it a `--role`** when you will have more than one child running:
      a short name like `reviewer` or `schema-migration`. Every wake from that
      pane then says which one it was, instead of a codename you have to look
      up. It has to be unique among your own live children, and it is free
-     again once that pane is gone.
+     again once that child settles.
    - **Give it a `--worktree SLUG`** when the child should work on its own
      branch without touching this checkout: Houston creates
      `.houston/worktrees/SLUG` on branch `houston/SLUG` (or `--branch B`),
@@ -2145,7 +2151,7 @@ may hand off.
    - For a clean-context review, name the exact target and base/head (or a
      snapshot), list the requirements, and request focused evidence such as
      `file:line` and tests. Do not paste the parent's full transcript; the
-     temporary review pane is cleaned up after its durable handback.
+     temporary review process ends after its durable handback; its transcript remains.
    - The child starts in its CLI's **auto mode** — it will not stop for
      routine approvals, because nobody is at its keyboard. It can still stop
      for something genuinely dangerous; that shows up as `NeedsInput` and
@@ -2159,8 +2165,9 @@ may hand off.
    to diagnose a reported blocker or a timeout; use `hs-pane read <id>` for
    the current terminal screen when the blocker needs terminal interaction.
    Neither call is a prerequisite to waiting or a routine progress check.
-4. Temporary children close automatically after their final durable handback
-   and authoritative completion. Use `hs-pane kill <id>` to dismiss a reusable
+4. Temporary processes end after their final durable handback and authoritative
+   completion; sessions and transcripts remain until close or retention expiry.
+   Use `hs-pane kill <id>` to dismiss a reusable
    child once its work is done. Its terminal goes with it, so preserve any
    needed output first. If it has live children, inspect their purpose before
    confirming the subtree kill with `--yes`.
@@ -2391,7 +2398,8 @@ hs-pane — a Houston pane controlling sibling agent panes
                                        (start in a new worktree at
                                         .houston/worktrees/SLUG, branch
                                         houston/SLUG or B; not with --cwd)
-                [--handoff]            (an independent pane, not a child:
+                [--handoff] [--state-doc TEXT | --state-doc-path FILE]
+                                       (an independent pane, not a child:
                                         no handback, and this pane may close)
                 [--effort low|medium|high|xhigh|max]
                 [--output-format \"…\"] [--boundaries \"…\"]
@@ -2592,6 +2600,15 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             }
             if flags.contains_key("handoff") {
                 body["handoff"] = json!(true);
+            }
+            if flags.contains_key("state-doc") && flags.contains_key("state-doc-path") {
+                anyhow::bail!("state_doc: expected either --state-doc text or --state-doc-path path, got both");
+            }
+            if let Some(text) = flags.get("state-doc") {
+                body["state_doc"] = json!(text);
+            }
+            if let Some(path) = flags.get("state-doc-path") {
+                body["state_doc"] = json!({"path": path});
             }
             if let Some(effort) = flags.get("effort") {
                 body["effort"] = json!(effort);
@@ -4111,6 +4128,8 @@ mod tests {
             round: 1,
             reusable: true,
             cleanup_after: None,
+            settled_at: None,
+            retained_until: None,
         };
         let info = delegation_info(
             row,
@@ -4172,6 +4191,8 @@ mod tests {
             round: 1,
             reusable: true,
             cleanup_after: None,
+            settled_at: None,
+            retained_until: None,
         };
         let info = delegation_info(
             row,
@@ -4619,6 +4640,9 @@ mod tests {
             "demo".to_string(),
             "--branch".to_string(),
             "b".to_string(),
+            "--handoff".to_string(),
+            "--state-doc-path".to_string(),
+            "state.txt".to_string(),
         ])
         .expect("a 200 spawn succeeds");
 
@@ -4628,6 +4652,8 @@ mod tests {
         assert!(request.starts_with("POST /orchestrate/spawn"), "{request}");
         assert_eq!(v["worktree"], json!("demo"));
         assert_eq!(v["branch"], json!("b"));
+        assert_eq!(v["handoff"], json!(true));
+        assert_eq!(v["state_doc"], json!({"path":"state.txt"}));
     }
 
     #[test]

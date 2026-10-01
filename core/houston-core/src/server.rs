@@ -56,6 +56,7 @@ pub async fn start_with_listener(
         .route("/orchestrate/kill", post(orch_kill))
         .route("/orchestrate/submit", post(orch_submit))
         .route("/harness/publish", post(harness_publish))
+        .route("/inbox/tool-boundary", post(inbox_tool_boundary))
         .route("/inbox/reserve", post(inbox_reserve))
         .route("/inbox/delivered", post(inbox_delivered))
         .route(
@@ -854,6 +855,25 @@ async fn dispatch(
             tokio::task::spawn_blocking(move || d.worktree_cleanup_run(&dir, paths))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("worktree cleanup pass panicked: {e}")))
+        }
+        proto::ClientMsg::SettledRetentionSet { hours } => {
+            daemon.set_settled_retention_hours(hours)?;
+            daemon.broadcast_control(&daemon.host_info());
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceRoutingGet { workspace } => {
+            let routes = daemon.workspace_routing(&workspace)?;
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::WorkspaceRouting { workspace, routes },
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceRoutingSet { workspace, routes } => {
+            daemon.set_workspace_routing(&workspace, &routes)?;
+            daemon.broadcast_control(&proto::ServerMsg::WorkspaceRouting { workspace, routes });
+            Ok(())
         }
         proto::ClientMsg::OrchestrationCapsSet {
             max_live_children,
@@ -3650,6 +3670,8 @@ struct SpawnBody {
     #[serde(default)]
     handoff: bool,
     #[serde(default)]
+    state_doc: Option<serde_json::Value>,
+    #[serde(default)]
     effort: Option<proto::ChatEffort>,
     #[serde(default)]
     output_format: Option<String>,
@@ -3683,6 +3705,13 @@ async fn orch_spawn(
             output_format: body.output_format,
             boundaries: body.boundaries,
         };
+        let brief = daemon.handoff_state_brief(
+            scope.session_id,
+            body.target_workspace.as_deref(),
+            handoff,
+            brief,
+            body.state_doc.as_ref(),
+        )?;
         let worktree = crate::worktrees::spawn_ask(body.worktree, body.branch)?;
         if handoff {
             daemon.orchestrate_handoff(
@@ -4029,6 +4058,17 @@ async fn orch_submit(
             })),
         )
             .into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
+async fn inbox_tool_boundary(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    match daemon.inbox_tool_boundary(scope.session_id) {
+        Ok(text) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
         Err(e) => orch_err_response(e),
     }
 }

@@ -88,12 +88,17 @@ target workspace. The parent may still address the child because delegation ance
 not workspace equality, controls access. A child token remains scoped to its own
 workspace, and unrelated panes remain inaccessible.
 
-Children are temporary by default. Houston keeps the result and artifact paths durable,
-then removes the completed pane after its authoritative round is accounted for. A
-submitted draft, an idle or blocked child, a missing handback, a stall, or a provisional
-result does not by itself close the pane. Set `reusable: true` in MCP/HTTP, or pass
-`--reusable` to `hs-pane spawn`, when the child must remain available for follow-up
-prompts or terminal inspection. A reusable child is never closed by this cleanup.
+Children are temporary by default. After a durable completed result, Houston ends the
+process and keeps the session and transcript under Settled. Done-and-idle reusable
+children also leave the live-child quota. Closing a settled child or its parent removes
+it; retention expires after 24 hours by default. Claude and Codex conversations can be
+continued when a valid resume handle is available. Other providers cannot continue an
+ended conversation. A reusable child remains available for follow-up prompts until close
+or retention expiry.
+
+After a daemon restart, open Claude and Codex children resume with their parent when
+valid conversation handles are available. The parent receives one restored notice naming
+which children resumed. Other children remain ended and are named in that notice.
 
 ## Handing work off to a new pane
 
@@ -106,8 +111,9 @@ closing the new one. Only a pane without a parent can hand off, and `reusable` a
 Settings → Orchestration.
 
 Spawn may also request `effort` (`low`, `medium`, `high`, `xhigh` or `max`) through MCP,
-HTTP or `hs-pane spawn --effort`; omitting it keeps the CLI default, and providers without a
-per-run effort setting refuse that request.
+HTTP or `hs-pane spawn --effort`. Workspace routing can supply model and effort choices;
+without a matching route, the agent chooses them. Providers without a per-run effort
+setting refuse that request.
 
 `model` must be an identifier accepted by the selected agent CLI. Houston forwards it
 unchanged; it does not expand display names or shorthand. For example, Codex uses
@@ -134,3 +140,7 @@ Orchestration does not lock you out of a pane an agent opened. Any pane in the g
 including one spawned by another agent, is a real terminal you can click into and read,
 and you can type into it directly at any time — the same as any pane you opened
 yourself. Delegation changes who briefed the pane, not who is allowed to use it.
+
+Handoff requests may include `state_doc` as text or `{path: "state.txt"}` inside the
+target workspace. The handoff state is limited to 64 KiB and included in the new pane's
+brief. It is refused on ordinary child spawns.

@@ -796,6 +796,8 @@ pub struct DelegationRow {
     pub round: u32,
     pub reusable: bool,
     pub cleanup_after: Option<u64>,
+    pub settled_at: Option<u64>,
+    pub retained_until: Option<u64>,
 }
 
 pub struct RoutineRunRow {
@@ -827,7 +829,7 @@ pub struct RoutineWrite<'a> {
 
 const DELEGATION_SELECT: &str = "SELECT id, parent_session, child_session, role, state, stalled, \
     brief, created_at, updated_at, ended_at, stop_reason, \
-    no_handback_reported, no_handback_suppressed, round, reusable, cleanup_after FROM delegations";
+    no_handback_reported, no_handback_suppressed, round, reusable, cleanup_after, settled_at, retained_until FROM delegations";
 
 fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
     Ok(DelegationRow {
@@ -847,6 +849,8 @@ fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
         round: r.get(13)?,
         reusable: r.get::<_, i64>(14)? != 0,
         cleanup_after: r.get::<_, Option<i64>>(15)?.map(|t| t as u64),
+        settled_at: r.get::<_, Option<i64>>(16)?.map(|t| t as u64),
+        retained_until: r.get::<_, Option<i64>>(17)?.map(|t| t as u64),
     })
 }
 
@@ -1714,6 +1718,13 @@ impl Db {
             "cleanup_after",
             "cleanup_after INTEGER",
         )?;
+        add_column_if_missing(&conn, "delegations", "settled_at", "settled_at INTEGER")?;
+        add_column_if_missing(
+            &conn,
+            "delegations",
+            "retained_until",
+            "retained_until INTEGER",
+        )?;
         // Three timestamps, three meanings: created_at is persisted, delivered_at is sent,
         // confirmed_at is proven — and what "sent" is worth depends on delivered_via, since
         // only paste/operator can prove landing while wait/stop_hook are final on send.
@@ -1774,6 +1785,7 @@ impl Db {
                AND (from_codename IS NULL OR from_role IS NULL)",
             [],
         )?;
+        add_column_if_missing(&conn, "pane_inbox", "tool_hint_at", "tool_hint_at INTEGER")?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -1796,7 +1808,7 @@ impl Db {
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id)
              FROM sessions
-             WHERE state = 'interrupted' AND agent != 'custom'
+             WHERE (state = 'interrupted' OR (state = 'exited' AND spawned_by IS NOT NULL)) AND agent != 'custom'
                    AND NOT EXISTS (SELECT 1 FROM swarm_agents sa WHERE sa.session_id = sessions.id)
              ORDER BY id",
         )?;
@@ -1871,7 +1883,7 @@ impl Db {
                     agent: kind,
                     project_dir,
                     cwd,
-                    state: proto::SessionState::Interrupted,
+                    state: if conn.query_row("SELECT state FROM sessions WHERE id = ?1", [id], |r| r.get::<_, String>(0))? == "exited" { proto::SessionState::Exited } else { proto::SessionState::Interrupted },
                     title,
                     codename,
                     detected_agent: detected.and_then(|d| {
@@ -3298,6 +3310,62 @@ impl Db {
         Ok(created.map(|created| now.saturating_sub(created as u64)))
     }
 
+    pub fn delegation_rebind(
+        &self,
+        old: u32,
+        new: u32,
+        parent: Option<u32>,
+        now: u64,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'unknown', ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
+        tx.execute(
+            "UPDATE delegations SET parent_session = ?2 WHERE parent_session = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.execute(
+            "UPDATE sessions SET spawned_by = ?2 WHERE spawned_by = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.execute(
+            "UPDATE pane_inbox SET to_session = ?2 WHERE to_session = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delegation_forget_retention(&self, child: u32) -> Result<()> {
+        self.conn.lock().expect("db lock").execute("UPDATE delegations SET settled_at = NULL, retained_until = NULL, cleanup_after = NULL WHERE child_session = ?1", [child])?;
+        Ok(())
+    }
+
+    pub fn delegation_retain(&self, child: u32, settled: u64, until: u64) -> Result<()> {
+        self.conn.lock().expect("db lock").execute("UPDATE delegations SET settled_at = COALESCE(settled_at, ?2), retained_until = COALESCE(retained_until, ?3), cleanup_after = NULL WHERE child_session = ?1", rusqlite::params![child, settled as i64, until as i64])?;
+        Ok(())
+    }
+
+    pub fn delegations_done(&self) -> Result<Vec<DelegationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!("{DELEGATION_SELECT} WHERE state = 'done'"))?;
+        let rows = stmt
+            .query_map([], map_delegation_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delegations_retained(&self) -> Result<Vec<DelegationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{DELEGATION_SELECT} WHERE retained_until IS NOT NULL"
+        ))?;
+        let rows = stmt
+            .query_map([], map_delegation_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn delegation_for_child(&self, child: u32) -> Result<Option<DelegationRow>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn
@@ -3347,7 +3415,7 @@ impl Db {
             "UPDATE delegations SET
                 state = ?2, stop_reason = NULL, ended_at = NULL,
                 no_handback_reported = 0, no_handback_suppressed = 0, updated_at = ?3,
-                round = round + 1, cleanup_after = NULL
+                round = round + 1, cleanup_after = NULL, settled_at = NULL, retained_until = NULL
              WHERE child_session = ?1",
             rusqlite::params![child, state, now as i64],
         )?;
@@ -3736,6 +3804,29 @@ impl Db {
         })
     }
 
+    pub fn inbox_tool_hints(&self, parent: u32, now: u64) -> Result<Vec<InboxRow>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let ids: Vec<i64> = {
+            let mut stmt = tx.prepare("SELECT id FROM pane_inbox WHERE to_session = ?1 AND kind = 'needs_input' AND ready_at IS NOT NULL AND confirmed_at IS NULL AND resolved_at IS NULL AND tool_hint_at IS NULL ORDER BY id LIMIT 8")?;
+            let ids = stmt
+                .query_map([parent], |r| r.get(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            ids
+        };
+        for id in &ids {
+            tx.execute(
+                "UPDATE pane_inbox SET tool_hint_at = ?2 WHERE id = ?1",
+                rusqlite::params![id, now as i64],
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
+        ids.into_iter()
+            .filter_map(|id| self.inbox_get(id).transpose())
+            .collect()
+    }
+
     pub fn inbox_list_operator(&self, workspace: &str) -> Result<Vec<InboxRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(&format!(
@@ -4077,7 +4168,7 @@ impl Db {
     pub fn delegation_bump_round(&self, child: u32, now: u64) -> Result<Option<u32>> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE delegations SET round = round + 1, cleanup_after = NULL, updated_at = ?2
+            "UPDATE delegations SET round = round + 1, cleanup_after = NULL, settled_at = NULL, retained_until = NULL, updated_at = ?2
              WHERE child_session = ?1",
             rusqlite::params![child, now as i64],
         )?;

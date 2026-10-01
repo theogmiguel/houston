@@ -373,6 +373,11 @@ pub fn run_hook_client(args: &[String]) {
         .unwrap_or(proto::AgentKind::Claude);
     let input = read_stdin_payload(&mut std::io::stdin(), std::io::stdin().is_terminal());
     let payload = parse_hook_payload(&input, provider);
+    if event == "PostToolUse"
+        && matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
+    {
+        tool_boundary_context();
+    }
 
     let carries_prompt = crate::agent_events::AgentEvent::from_provider(provider, event)
         == Some(crate::agent_events::AgentEvent::PromptSubmitted)
@@ -454,6 +459,40 @@ pub fn run_hook_client(args: &[String]) {
             );
         }
     }
+}
+
+fn tool_boundary_context() {
+    let Some(base) = std::env::var(crate::mcp_launch::URL_ENV)
+        .ok()
+        .and_then(|url| crate::orchestrate::cli_base_url(Some(&url)).ok())
+    else {
+        return;
+    };
+    let Ok(token) = std::env::var(crate::mcp_launch::CODEX_TOKEN_ENV) else {
+        return;
+    };
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(crate::orchestrate::STOP_INBOX_QUERY_MS);
+    let Ok((200, body)) = crate::orchestrate::http_json_deadline(
+        &base,
+        "POST",
+        "/inbox/tool-boundary",
+        &token,
+        Some(&serde_json::json!({})),
+        deadline,
+    ) else {
+        return;
+    };
+    let Some(text) = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(str::to_string))
+    else {
+        return;
+    };
+    println!(
+        "{}",
+        serde_json::json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}})
+    );
 }
 
 fn stop_hook_try_continue(session: u32, provider: proto::AgentKind) -> bool {

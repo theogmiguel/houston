@@ -29,6 +29,9 @@ afterEach(() => {
 
 function delegation(over: Partial<DelegationInfo> = {}): DelegationInfo {
   return {
+    started_at: 0,
+    settled_at: null,
+    retained_until: null,
     parent: 41,
     role: 'docs-sweep',
     state: 'working' as DelegationState,

@@ -197,6 +197,18 @@ export async function writeFile(path: string, content: string): Promise<void> {
   return window.houston.writeFile(path, content)
 }
 
+export async function writeFileChecked(path: string, content: string, expectedSha256: string): Promise<string> {
+  if (!isTauri()) throw new Error('Checked file saves require the native desktop bridge')
+  const invoke = await invoker()
+  return invoke<string>('fs_write_file_checked', { filePath: path, content, expectedSha256 })
+}
+
+export async function notifyNative(title: string, body: string): Promise<void> {
+  if (!isTauri()) throw new Error('Native notifications require the native desktop bridge')
+  const invoke = await invoker()
+  return invoke<void>('native_notify', { title, body })
+}
+
 export async function statFile(path: string): Promise<{ mtimeMs: number } | null> {
   if (isTauri()) {
     const invoke = await invoker()

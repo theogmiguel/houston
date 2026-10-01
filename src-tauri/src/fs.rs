@@ -1,4 +1,5 @@
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tauri::State;
 
@@ -299,9 +300,131 @@ pub async fn fs_write_file(
         guard.clone()
     };
     let real = assert_within_allowed_roots(&file_path, &roots).await?;
-    tokio::fs::write(&real, content)
+    tokio::task::spawn_blocking(move || {
+        let _guard = SAVE_LOCK
+            .lock()
+            .map_err(|_| "file-save lock poisoned".to_string())?;
+        std::fs::write(&real, content)
+            .map_err(|e| format!("cannot write file {}: {e}", real.display()))
+    })
+    .await
+    .map_err(|e| format!("file-save operation failed: {e}"))?
+}
+
+// Serializes Houston saves, including the hash comparison, across editor views.
+static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn checked_atomic_save(
+    path: &Path,
+    content: &str,
+    expected_sha256: &str,
+) -> Result<String, String> {
+    use std::io::Write;
+    if expected_sha256.len() != 64 || !expected_sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!(
+            "invalid expected_sha256 {expected_sha256:?}: expected 64 hexadecimal characters"
+        ));
+    }
+    let _guard = SAVE_LOCK
+        .lock()
+        .map_err(|_| "file-save lock poisoned".to_string())?;
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("cannot stat {}: {e}", path.display()))?;
+    if metadata.len() > EDIT_MAX_BYTES || content.len() as u64 > EDIT_MAX_BYTES {
+        return Err(format!(
+            "EDIT_MAX_BYTES: {} has {} bytes, requested {} bytes; limit {EDIT_MAX_BYTES}",
+            path.display(),
+            metadata.len(),
+            content.len()
+        ));
+    }
+    let current =
+        std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let actual = format!("{:x}", Sha256::digest(&current));
+    if !actual.eq_ignore_ascii_case(expected_sha256) {
+        return Err(format!(
+            "FILE_SAVE_CONFLICT: {} expected_sha256={expected_sha256} actual_sha256={actual}",
+            path.display()
+        ));
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("cannot create save file in {}: {e}", parent.display()))?;
+    let permissions = metadata.permissions();
+    temp.as_file()
+        .set_permissions(permissions)
+        .map_err(|e| format!("cannot preserve permissions of {}: {e}", path.display()))?;
+    temp.write_all(content.as_bytes())
+        .and_then(|_| temp.as_file().sync_all())
+        .map_err(|e| format!("cannot save {}: {e}", path.display()))?;
+    temp.persist(path)
+        .map_err(|e| format!("cannot replace {}: {e}", path.display()))?;
+    Ok(format!("{:x}", Sha256::digest(content.as_bytes())))
+}
+
+#[tauri::command]
+pub async fn fs_write_file_checked(
+    file_path: String,
+    content: String,
+    expected_sha256: String,
+    state: State<'_, AllowedRoots>,
+) -> Result<String, String> {
+    let roots = state
+        .0
+        .lock()
+        .map_err(|_| "allowed-roots lock poisoned".to_string())?
+        .clone();
+    let real = assert_within_allowed_roots(&file_path, &roots).await?;
+    tokio::task::spawn_blocking(move || checked_atomic_save(&real, &content, &expected_sha256))
         .await
-        .map_err(|e| format!("cannot write file {path}: {e}", path = real.display()))
+        .map_err(|e| format!("file-save operation failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn native_notify(title: String, body: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(|e| format!("Linux notification session bus: {e}"))?;
+        let proxy = zbus::Proxy::new(
+            &connection,
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )
+        .await
+        .map_err(|e| format!("Linux notification service: {e}"))?;
+        let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
+            std::collections::HashMap::new();
+        let _: u32 = proxy
+            .call(
+                "Notify",
+                &(
+                    "Houston",
+                    0u32,
+                    "",
+                    title,
+                    body,
+                    Vec::<String>::new(),
+                    hints,
+                    -1i32,
+                ),
+            )
+            .await
+            .map_err(|e| format!("Linux notification delivery: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (title, body);
+        Err(format!(
+            "native notifications unsupported on {}; supported platform: Linux",
+            std::env::consts::OS
+        ))
+    }
 }
 
 #[tauri::command]
@@ -1142,6 +1265,62 @@ async fn set_file_mode_0600(_file: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn checked_save_rejects_stale_content_and_preserves_permissions() {
+        use sha2::{Digest, Sha256};
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.txt");
+        std::fs::write(&file, "before").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        let hash = format!("{:x}", Sha256::digest(b"before"));
+        let next = super::checked_atomic_save(&file, "after", &hash).unwrap();
+        assert_eq!(next, format!("{:x}", Sha256::digest(b"after")));
+        let err = super::checked_atomic_save(&file, "lost", &hash).unwrap_err();
+        assert!(err.contains("FILE_SAVE_CONFLICT") && err.contains(&hash) && err.contains(&next));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "after");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+                0o640
+            );
+        }
+    }
+
+    #[test]
+    fn concurrent_checked_saves_have_one_winner() {
+        use sha2::{Digest, Sha256};
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.txt");
+        std::fs::write(&file, "before").unwrap();
+        let hash = format!("{:x}", Sha256::digest(b"before"));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads: Vec<_> = ["one", "two"]
+            .into_iter()
+            .map(|text| {
+                let (file, hash, barrier) = (file.clone(), hash.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    super::checked_atomic_save(&file, text, &hash)
+                })
+            })
+            .collect();
+        assert_eq!(
+            threads
+                .into_iter()
+                .map(|t| t.join().unwrap())
+                .filter(Result::is_ok)
+                .count(),
+            1
+        );
+    }
+
     use super::*;
     use tauri::Manager;
     use tempfile::tempdir;
