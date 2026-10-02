@@ -7529,6 +7529,7 @@ impl Daemon {
         for (k, v) in &extra_env {
             cmd.env(k, v);
         }
+        cmd.env_remove(crate::supervisor::SUPERVISOR_FD_ENV);
         if !hidden && agent != proto::AgentKind::Ssh {
             match init_orchestration_scope(&project_dir) {
                 Ok((_, bin_dir)) => {
