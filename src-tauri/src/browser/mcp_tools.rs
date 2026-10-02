@@ -108,13 +108,13 @@ async fn reveal_when_hidden(
         "browser_reveal_failed: browser_navigate workspace {workspace:?}, surface {surface:?}, url {url:?}: {reason} (REVEAL_TIMEOUT={}ms)", timeout.as_millis()
     ))
     };
-    if visible().map_err(&failure)? {
+    if visible().map_err(failure)? {
         return Ok(());
     }
-    request().map_err(&failure)?;
+    request().map_err(failure)?;
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if visible().map_err(&failure)? {
+        if visible().map_err(failure)? {
             return Ok(());
         }
         if tokio::time::Instant::now() >= deadline {
