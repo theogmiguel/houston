@@ -25,6 +25,7 @@ fn git(dir: &Path, args: &[&str]) {
 
 fn init_repo(dir: &Path) {
     git(dir, &["init", "-b", "main"]);
+    git(dir, &["config", "core.autocrlf", "false"]);
     git(dir, &["config", "user.email", "t@t.local"]);
     git(dir, &["config", "user.name", "t"]);
     std::fs::write(dir.join("README.md"), "hello\n").unwrap();

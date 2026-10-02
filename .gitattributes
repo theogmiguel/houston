@@ -10,6 +10,10 @@
 # breaks the pre-paint theme guard on Windows checkouts.
 *.html text eol=lf
 
+# Embedded prompts must have the same bytes on every platform.
+core/houston-core/src/harness_review_prompt.txt text eol=lf
+src-tauri/resources/third-party-licenses.json text eol=lf
+
 # Captured PTY rings (`core/houston-core/fixtures/screen/`) are byte-exact
 # terminal output: a CRLF-normalising checkout would rewrite the carriage
 # returns a repainting CLI draws with, and every screen test would fail on

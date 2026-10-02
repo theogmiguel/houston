@@ -25,6 +25,7 @@ fn git(dir: &Path, args: &[&str]) {
 
 fn init_repo(dir: &Path) {
     git(dir, &["init", "-b", "main"]);
+    git(dir, &["config", "core.autocrlf", "false"]);
     git(dir, &["config", "user.email", "t@t.local"]);
     git(dir, &["config", "user.name", "t"]);
     std::fs::write(dir.join("README.md"), "hello\n").unwrap();
@@ -446,6 +447,7 @@ async fn pull_and_fetch_over_the_wire() {
     let repo = root.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
     git(&repo, &["init", "-b", "main"]);
+    git(&repo, &["config", "core.autocrlf", "false"]);
     git(&repo, &["config", "user.email", "t@t.local"]);
     git(&repo, &["config", "user.name", "t"]);
     std::fs::write(repo.join("seed.txt"), "seed\n").unwrap();

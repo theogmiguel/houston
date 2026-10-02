@@ -1,3 +1,4 @@
+#[cfg(target_os = "linux")]
 pub const STATUS_NOTIFIER_WATCHER: &str = "org.kde.StatusNotifierWatcher";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

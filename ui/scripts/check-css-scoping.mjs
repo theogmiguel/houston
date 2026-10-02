@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const rendererSrcDir = join(__dirname, '..', 'src', 'renderer', 'src')
 const outAssetsDir = join(__dirname, '..', 'out', 'renderer', 'assets')
-const EXPECTED_CHROME_PATH = '/usr/bin/google-chrome'
 
 function fail(message) {
   console.error(message)
@@ -49,7 +48,7 @@ function readColorTokenMappings() {
 
 function readMaterialRecipes() {
   const path = join(rendererSrcDir, 'components', 'material.ts')
-  const src = readFileSync(path, 'utf8')
+  const src = readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
   const block = src.match(/export const MATERIAL_CLS[^=]*=\s*Object\.freeze\(\{([\s\S]*?)\n\}\)/)
   if (!block) {
     fail(`Could not find "export const MATERIAL_CLS … = Object.freeze({ … })" in ${path} — update the regex in check-css-scoping.mjs if its shape changed.`)
@@ -187,8 +186,8 @@ async function main() {
     browser = await chromium.launch({ channel: 'chrome' })
   } catch (err) {
     fail(
-      `Could not launch system Chrome via Playwright's channel: 'chrome' (expected at ${EXPECTED_CHROME_PATH}): ${err.message}\n` +
-        `Do not fall back to a downloaded browser — install/verify Chrome at that path instead.`
+      `Could not launch installed Chrome via Playwright's channel: 'chrome': ${err.message}\n` +
+        `Install Google Chrome for this operating system before running this gate.`
     )
     return
   }
