@@ -682,7 +682,7 @@ impl OrchestrationTools {
                         "worktree": {
                             "type": "string",
                             "description":
-                                "New worktree at .houston/worktrees/<slug>; new branch houston/<slug> or `branch`. Base: origin/HEAD, main, master, HEAD (not caller branch); no base override. Refuses cwd; tracked for cleanup.",
+                                "New worktree .houston/worktrees/<slug>, branch houston/<slug> or `branch`. Base: origin/HEAD, main, master, HEAD; no base override. Refuses cwd.",
                         },
                         "branch": {
                             "type": "string",
@@ -700,17 +700,17 @@ impl OrchestrationTools {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Keep the process for follow-up prompts after handback. Default: end the process and retain session/transcript until close or retention expiry.",
+                                "Keep the process for follow-ups after handback. Default: end it, keeping the transcript until close or expiry.",
                         },
                         "state_doc": {
-                            "description": "Handoff state, at most STATE_DOC_MAX_BYTES (65536 bytes), as text or a path inside the target workspace. Requires handoff: true.",
+                            "description": "Handoff state, at most 65536 bytes: text or a path in the target workspace. Requires handoff.",
                             "oneOf": [ {"type": "string"}, {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"], "additionalProperties": false}, {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": false} ]
                         },
                         "handoff": {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Independent pane: no handback or child cleanup; this pane may close. Top-level only; refuses reusable and output_format.",
+                                "Independent pane: no handback or cleanup; this pane may close. Top-level only; refuses reusable, output_format.",
                         },
                         "effort": {
                             "type": "string",
@@ -728,7 +728,7 @@ impl OrchestrationTools {
                         "profile": {
                             "type": "string",
                             "description":
-                                "Saved account label from Settings → Agent accounts. Omit for default account. Unknown labels are refused with available names.",
+                                "Saved account label (Settings → Agent accounts); omitted uses the default. Unknown labels list valid ones.",
                         },
                         "role": {
                             "type": "string",
@@ -881,7 +881,7 @@ impl OrchestrationTools {
                         "timeout_ms": {
                             "type": "integer",
                             "minimum": 1,
-                            "description": "Defaults to 600000 ms; clamped to the calling parent provider cap (Claude 90000, Cursor/Antigravity 30000, Codex/OpenCode 600000; Grok checks its effective tool timeout).",
+                            "description": "Defaults to 600000 ms; clamped to the calling parent's provider cap, named in the response.",
                         },
                         "stall_guard": {
                             "type": "boolean",
