@@ -44,7 +44,7 @@ fn shim_dir() -> PathBuf {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
-                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
+                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
                 )
                 .unwrap();
                 use std::os::unix::fs::PermissionsExt;
@@ -10913,6 +10913,228 @@ async fn concurrent_spawn_retries_act_once_and_keys_are_scoped_to_the_caller() {
     }
 }
 
+#[tokio::test]
+async fn prompt_modes_deliver_steer_now_and_queue_at_turn_end() {
+    let _guard = serial().await;
+    let r = rig("prompt-modes").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    for (provider, kind, start, end) in [
+        (
+            "claude",
+            proto::AgentKind::Claude,
+            "UserPromptSubmit",
+            "Stop",
+        ),
+        ("codex", proto::AgentKind::Codex, "UserPromptSubmit", "Stop"),
+        (
+            "antigravity",
+            proto::AgentKind::Antigravity,
+            "PreInvocation",
+            "Stop",
+        ),
+        (
+            "opencode",
+            proto::AgentKind::Opencode,
+            "message.updated",
+            "session.idle",
+        ),
+        (
+            "cursor",
+            proto::AgentKind::Cursor,
+            "beforeSubmitPrompt",
+            "stop",
+        ),
+        ("grok", proto::AgentKind::Grok, "UserPromptSubmit", "Stop"),
+    ] {
+        let (status, spawned) = r
+            .post_spawn(
+                &token,
+                serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        r.daemon.handle_hook_from(child, kind, start, None);
+        assert_eq!(
+            r.daemon.session_status(child).unwrap(),
+            Some(proto::AgentStatus::Working)
+        );
+        let steer = mcp_call(
+            r.addr,
+            &token,
+            "pane_prompt",
+            serde_json::json!({"session":child,"text":"STEER-NOW-MARKER","mode":"steer"}),
+        )
+        .await;
+        assert_eq!(steer["isError"], false, "{steer}");
+        assert!(steer["structuredContent"]["held"].is_null());
+        await_child_echo(&r.daemon, child, "STEER-NOW-MARKER").await;
+        assert_eq!(
+            r.daemon.session_status(child).unwrap(),
+            Some(proto::AgentStatus::Working)
+        );
+        let (status, queued) = http_json(
+            r.addr,
+            "POST",
+            "/orchestrate/prompt",
+            &token,
+            Some(serde_json::json!({"session":child,"text":"QUEUE-LATER-MARKER"})),
+        )
+        .await;
+        assert_eq!(status, 200, "{queued}");
+        assert!(queued["held"].is_string());
+        assert!(
+            !String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+                .contains("QUEUE-LATER-MARKER")
+        );
+        r.daemon.handle_hook_from(child, kind, end, None);
+        await_child_echo(&r.daemon, child, "QUEUE-LATER-MARKER").await;
+        r.daemon.kill(child).unwrap();
+        r.daemon.close(child).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn immediate_prompt_modes_preserve_operator_drafts_and_name_refusals() {
+    let _guard = serial().await;
+    let r = rig("prompt-mode-refusals").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "UserPromptSubmit", None);
+    r.daemon.note_operator_keystroke(child, b"operator draft");
+    for mode in ["steer", "restart"] {
+        let refusal = mcp_call(
+            r.addr,
+            &token,
+            "pane_prompt",
+            serde_json::json!({"session":child,"text":"MUST-NOT-PASTE","mode":mode}),
+        )
+        .await;
+        assert_eq!(refusal["isError"], true, "{refusal}");
+        assert!(refusal.to_string().contains("operator"));
+        assert!(
+            !String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+                .contains("MUST-NOT-PASTE")
+        );
+    }
+    r.daemon.clear_composer_occupied(child);
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "PermissionRequest", None);
+    let refusal = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"MUST-NOT-PASTE","mode":"steer"}),
+    )
+    .await;
+    assert_eq!(refusal["isError"], true, "{refusal}");
+    assert!(refusal.to_string().contains("needs input"));
+    let refusal = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"work","mode":"invalid"}),
+    )
+    .await;
+    assert_eq!(refusal["isError"], true);
+    assert!(refusal.to_string().contains("invalid"));
+    assert!(refusal.to_string().contains("queue, steer or restart"));
+    for provider in ["claude", "opencode", "cursor", "antigravity"] {
+        let (status, spawned) = r
+            .post_spawn(
+                &token,
+                serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let refusal = mcp_call(
+            r.addr,
+            &token,
+            "pane_prompt",
+            serde_json::json!({"session":spawned["session_id"],"text":"work","mode":"restart"}),
+        )
+        .await;
+        assert_eq!(refusal["isError"], true, "{refusal}");
+        assert!(refusal.to_string().to_lowercase().contains(provider));
+        assert!(refusal.to_string().contains("accepted modes: queue, steer"));
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        r.daemon.kill(child).unwrap();
+        r.daemon.close(child).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn restart_interrupts_before_delivery_and_waits_for_authoritative_idle() {
+    let _guard = serial().await;
+    let r = rig("restart-prompts").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    for (provider, kind, end, interrupt) in [
+        ("codex", proto::AgentKind::Codex, "Interrupt", 0x1b),
+        ("grok", proto::AgentKind::Grok, "StopCancelled", 0x03),
+    ] {
+        std::env::set_var("HOUSTON_TEST_RAW_PTY", "1");
+        let (status, spawned) = r
+            .post_spawn(
+                &token,
+                serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
+            )
+            .await;
+        std::env::remove_var("HOUSTON_TEST_RAW_PTY");
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        let start = if provider == "opencode" {
+            "message.updated"
+        } else {
+            "UserPromptSubmit"
+        };
+        r.daemon.handle_hook_from(child, kind, start, None);
+        let before = r.daemon.scrollback(child, None).unwrap().data.len();
+        let (status, result) = http_json(r.addr, "POST", "/orchestrate/prompt", &token,
+            Some(serde_json::json!({"session":child,"text":"RESTART-PROMPT-MARKER","mode":"restart"}))).await;
+        assert_eq!(status, 200, "{result}");
+        assert!(result["held"].is_string());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let bytes = r.daemon.scrollback(child, None).unwrap().data;
+            if bytes
+                .get(before..)
+                .is_some_and(|bytes| bytes.contains(&interrupt))
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "interrupt key was not written for {provider}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            !String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+                .contains("RESTART-PROMPT-MARKER")
+        );
+        r.daemon.handle_hook_from(child, kind, end, None);
+        await_child_echo(&r.daemon, child, "RESTART-PROMPT-MARKER").await;
+        r.daemon.kill(child).unwrap();
+        r.daemon.close(child).unwrap();
+    }
+}
+
 #[test]
 fn retry_receipts_bound_retention_and_refuse_uncertain_outcomes() {
     use houston_core::db::{
@@ -11128,4 +11350,57 @@ async fn keyed_worktree_refusal_before_checkout_releases_the_receipt() {
     let (status, retry) = r.post_spawn(&token, request).await;
     assert_eq!(status, 200, "{retry}");
     assert_eq!(r.daemon.delegations_of_parent(parent.id).len(), 1);
+}
+
+#[tokio::test]
+async fn keyed_prompt_defaults_and_operator_draft_retry_share_normalized_intent() {
+    let _guard = serial().await;
+    let r = rig("retry-prompt-defaults").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "UserPromptSubmit", None);
+    let request = serde_json::json!({"session":child,"text":"  DEFAULT-QUEUE-ONCE  ","client_request_id":"default-prompt"});
+    let first = mcp_call(r.addr, &token, "pane_prompt", request.clone()).await;
+    assert_eq!(first["isError"], false, "{first}");
+    let mut explicit = request;
+    explicit["mode"] = serde_json::json!("queue");
+    explicit["text"] = serde_json::json!("DEFAULT-QUEUE-ONCE");
+    let (status, retry) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/prompt",
+        &token,
+        Some(explicit),
+    )
+    .await;
+    assert_eq!(status, 200, "{retry}");
+    assert_eq!(retry["held"], first["structuredContent"]["held"]);
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "Stop", None);
+    await_child_echo(&r.daemon, child, "DEFAULT-QUEUE-ONCE").await;
+    assert_eq!(
+        String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+            .matches("DEFAULT-QUEUE-ONCE")
+            .count(),
+        1
+    );
+    r.daemon.note_operator_keystroke(child, b"operator draft");
+    let request = serde_json::json!({"session":child,"text":"AFTER-DRAFT-CLEARS","mode":"steer","client_request_id":"draft-clears"});
+    let refusal = mcp_call(r.addr, &token, "pane_prompt", request.clone()).await;
+    assert_eq!(refusal["isError"], true, "{refusal}");
+    assert!(refusal.to_string().contains("operator"));
+    r.daemon.clear_composer_occupied(child);
+    let retry = mcp_call(r.addr, &token, "pane_prompt", request).await;
+    assert_eq!(retry["isError"], false, "{retry}");
+    await_child_echo(&r.daemon, child, "AFTER-DRAFT-CLEARS").await;
 }

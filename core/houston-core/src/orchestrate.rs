@@ -307,6 +307,49 @@ pub fn cap_read_tail(lines: Vec<String>, asked: usize) -> Vec<String> {
     kept
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptMode {
+    Queue,
+    Steer,
+    Restart,
+}
+
+impl PromptMode {
+    pub fn parse(value: Option<&str>) -> anyhow::Result<Self> {
+        match value.unwrap_or("queue") {
+            "queue" => Ok(Self::Queue),
+            "steer" => Ok(Self::Steer),
+            "restart" => Ok(Self::Restart),
+            other => anyhow::bail!("mode {other:?}: expected queue, steer or restart"),
+        }
+    }
+}
+
+pub fn prompt_interrupt_key(provider: proto::AgentKind) -> anyhow::Result<&'static [u8]> {
+    use proto::AgentKind::*;
+    match provider {
+        Codex => Ok(b"\x1b"),
+        Grok => Ok(b"\x03"),
+        Claude => anyhow::bail!("mode restart refused for provider Claude: Stop does not run after user interrupts; no verified post-interrupt idle signal; accepted modes: queue, steer"),
+        Opencode => anyhow::bail!("mode restart refused for provider OpenCode: no captured or documented post-interrupt idle contract for its interrupt sequence; accepted modes: queue, steer"),
+        other => anyhow::bail!("mode restart refused for provider {other:?}: no verified interrupt key; accepted modes: queue, steer"),
+    }
+}
+
+pub fn prompt_mode_supported(provider: proto::AgentKind, mode: PromptMode) -> anyhow::Result<()> {
+    use proto::AgentKind::*;
+    if mode == PromptMode::Queue {
+        return Ok(());
+    }
+    anyhow::ensure!(matches!(provider, Claude | Codex | Antigravity | Opencode | Cursor | Grok),
+        "mode {mode:?} refused for provider {provider:?}: expected Claude, Codex, Antigravity, OpenCode, Cursor or Grok");
+    if mode == PromptMode::Restart {
+        prompt_interrupt_key(provider)?;
+    }
+    Ok(())
+}
+
 // A short ASCII key is enough for UUIDs while bounding schema and receipt storage.
 pub const CLIENT_REQUEST_ID_MAX_BYTES: usize = 64;
 
@@ -1062,7 +1105,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
     VerbSpec {
         cli: "prompt",
         tool: Some("pane_prompt"),
-        args: &["session", "text", "client_request_id"],
+        args: &["session", "text", "client_request_id", "mode"],
     },
     VerbSpec {
         cli: "keys",
@@ -2593,7 +2636,7 @@ hs-pane — a Houston pane controlling sibling agent panes
                                        (the brief: shape of the answer, and
                                         what the child must not do)
   hs-pane list
-  hs-pane prompt <id> <text…> [--client-request-id KEY] [--wait] [--timeout MS]
+  hs-pane prompt <id> <text…> [--mode queue|steer|restart] [--client-request-id KEY] [--wait] [--timeout MS]
   hs-pane wait [--session ID] [--kind KIND] [--timeout-ms MS] [--stall-guard]
                                          (blocks for a pane_inbox row; without
                                           --session waits on your whole inbox.
@@ -2838,6 +2881,9 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             let mut body = json!({ "session": id, "text": text });
             if let Some(key) = flags.get("client-request-id") {
                 body["client_request_id"] = json!(key);
+            }
+            if let Some(mode) = flags.get("mode") {
+                body["mode"] = json!(mode);
             }
             let v = call("POST", "/orchestrate/prompt", Some(body))?;
             let source = v
@@ -6460,6 +6506,45 @@ mod provider_wait_tests {
                 .resolve_on(&EpisodeEnd::NextPermissionRequest)
                 .is_empty());
             assert_eq!(episodes.resolve_on(&EpisodeEnd::TurnEnded).len(), 1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod prompt_delivery_tests {
+    use super::*;
+
+    #[test]
+    fn delivery_modes_name_the_accepted_values_and_provider_keys() {
+        assert_eq!(PromptMode::parse(None).unwrap(), PromptMode::Queue);
+        assert_eq!(PromptMode::parse(Some("steer")).unwrap(), PromptMode::Steer);
+        assert_eq!(
+            PromptMode::parse(Some("restart")).unwrap(),
+            PromptMode::Restart
+        );
+        let error = PromptMode::parse(Some("immediate"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("immediate") && error.contains("queue, steer or restart"));
+        assert_eq!(
+            prompt_interrupt_key(proto::AgentKind::Codex).unwrap(),
+            b"\x1b"
+        );
+        assert_eq!(
+            prompt_interrupt_key(proto::AgentKind::Grok).unwrap(),
+            b"\x03"
+        );
+        for (provider, name) in [
+            (proto::AgentKind::Claude, "Claude"),
+            (proto::AgentKind::Opencode, "OpenCode"),
+            (proto::AgentKind::Antigravity, "Antigravity"),
+            (proto::AgentKind::Cursor, "Cursor"),
+        ] {
+            assert!(prompt_mode_supported(provider, PromptMode::Steer).is_ok());
+            let error = prompt_mode_supported(provider, PromptMode::Restart)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(name) && error.contains("accepted modes: queue, steer"));
         }
     }
 }

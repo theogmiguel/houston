@@ -172,7 +172,20 @@ For a clean-context review, provide the exact target and base/head (or a snapsho
 requirements, and focused evidence such as `file:line` and test results. Do not paste a
 parent transcript; temporary review panes clean up after their final handback.
 
-## Idempotent retries
+## Follow-up delivery and retries
+
+`pane_prompt` accepts `mode: "queue" | "steer" | "restart"`; `hs-pane prompt` uses
+`--mode`. Queue is the default and waits until the child can accept a prompt.
+Steer writes into the PTY immediately, including during a working turn; the CLI
+controls how it uses that input. Restart interrupts a working turn and delivers
+the prompt after the child reports idle. It supports Codex with its default Escape
+binding and Grok with Ctrl+C. Claude, OpenCode, Cursor and Antigravity are refused
+by name because a reliable interrupt-to-idle path is not verified. Keep the
+supported provider's default interrupt binding.
+
+Steer and restart refuse an operator draft, a question or permission prompt, or
+another queued prompt. Inspect a blocked child and answer with `pane_send_keys`;
+use queue to wait for a busy composer. These modes never paste over operator text.
 
 To retry a spawn or prompt after a timeout, choose `client_request_id` before the
 first call (`--client-request-id` in `hs-pane`) and repeat the same key and arguments.

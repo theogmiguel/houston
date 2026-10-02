@@ -377,14 +377,31 @@ impl ToolProvider for OrchestrationTools {
                             ToolError(format!("client_request_id: expected a string; {e}"))
                         })?
                         .flatten();
+                    let mode: Option<String> = args
+                        .get("mode")
+                        .cloned()
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|e| {
+                            ToolError(format!("mode: expected queue, steer or restart; {e}"))
+                        })?
+                        .flatten();
+                    let response_mode = mode.clone().unwrap_or_else(|| "queue".into());
                     let text = text.to_string();
                     let (source, status, held) = tokio::task::spawn_blocking(move || {
-                        daemon.orchestrate_prompt_request(caller, session, &text, key.as_deref())
+                        daemon.orchestrate_prompt_request(
+                            caller,
+                            session,
+                            &text,
+                            key.as_deref(),
+                            mode.as_deref(),
+                        )
                     })
                     .await
                     .map_err(|e| ToolError(format!("prompt task panicked: {e}")))?
                     .map_err(refused)?;
                     Ok(ToolOutput::structured(json!({
+                        "mode": response_mode,
                         "queued": true,
                         "held": held,
                         "note": if held.is_some() { "held on the bounded wake lane until the pane can accept a prompt" } else { "written to the pane and submitted" },
@@ -707,7 +724,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_get".into(),
                 title: "Everything about one pane".into(),
-                description: "Subtree state, children, depth, role, brief, stall and staged result. Inspect after wait timeout, for help or when asked. result_id retrieves your stored body after closure.".into(),
+                description: "Subtree state, children, depth, role, brief, stall and staged result. Inspect after a wait timeout, for help or when asked. result_id retrieves your stored body after closure.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -777,12 +794,13 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_prompt".into(),
                 title: "Send a prompt to a pane".into(),
-                description: "Prompt your child; busy status/operator input queues it. Answer permission/question prompts with pane_send_keys. client_request_id deduplicates retries.".into(),
+                description: "Prompt child: queue waits; steer writes now; restart interrupts, then waits. Drafts/permissions/questions block immediate modes. client_request_id deduplicates.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "session": { "type": "integer", "description": "The pane's session id." },
                         "client_request_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$" },
+                        "mode": { "type": "string", "enum": ["queue", "steer", "restart"], "default": "queue" },
                         "text": { "type": "string", "description": "What to send." },
                     },
                     "required": ["session", "text"],

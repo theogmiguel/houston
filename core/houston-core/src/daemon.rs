@@ -13082,7 +13082,24 @@ impl Daemon {
     }
 
     fn paste_text(self: &Arc<Self>, session_id: u32, text: &str, sender: u32) -> Result<bool> {
-        if self.paste_hold_reason(session_id).is_some() {
+        self.paste_text_with_activity(session_id, text, sender, false)
+    }
+
+    fn paste_text_with_activity(
+        self: &Arc<Self>,
+        session_id: u32,
+        text: &str,
+        sender: u32,
+        allow_working: bool,
+    ) -> Result<bool> {
+        let hold = || {
+            if allow_working {
+                self.immediate_paste_hold_reason(session_id)
+            } else {
+                self.paste_hold_reason(session_id)
+            }
+        };
+        if hold().is_some() {
             return Ok(false);
         }
         match self.write_stdin_counting(session_id, &bracketed_paste(text)) {
@@ -13096,7 +13113,7 @@ impl Daemon {
             }
         }
         std::thread::sleep(SWARM_WAKE_SETTLE);
-        let partial = if let Some(reason) = self.paste_hold_reason(session_id) {
+        let partial = if let Some(reason) = hold() {
             Some(format!("prompt was pasted but not submitted: {reason}"))
         } else {
             self.write_stdin_counting(session_id, b"\r")
@@ -13794,15 +13811,18 @@ impl Daemon {
         target: u32,
         text: &str,
         key: Option<&str>,
+        mode: Option<&str>,
     ) -> Result<(String, Option<proto::AgentStatus>, Option<String>)> {
+        let mode = orchestrate::PromptMode::parse(mode)?;
+        let text = text.trim();
         self.orchestration_retry(
             caller,
             key,
             "pane_prompt",
-            &serde_json::json!({"session":target,"text":text}),
+            &serde_json::json!({"session":target,"text":text,"mode":mode}),
             || {
                 let (source, status, held) =
-                    self.orchestrate_prompt_with_hold(caller, target, text)?;
+                    self.orchestrate_prompt_with_mode(caller, target, text, mode)?;
                 Ok((source.to_string(), status, held))
             },
         )
@@ -14527,6 +14547,16 @@ impl Daemon {
         target: u32,
         text: &str,
     ) -> Result<(&'static str, Option<proto::AgentStatus>, Option<String>)> {
+        self.orchestrate_prompt_with_mode(caller, target, text, orchestrate::PromptMode::Queue)
+    }
+
+    fn orchestrate_prompt_with_mode(
+        self: &Arc<Self>,
+        caller: u32,
+        target: u32,
+        text: &str,
+        mode: orchestrate::PromptMode,
+    ) -> Result<(&'static str, Option<proto::AgentStatus>, Option<String>)> {
         let text = text.trim();
         anyhow::ensure!(!text.is_empty(), "prompt text must not be empty");
         let _cleanup_guard = self
@@ -14549,6 +14579,17 @@ impl Daemon {
             }
         }
         self.assert_orchestration_target(caller, target)?;
+        let provider = self
+            .agent_kind_of(target)
+            .ok_or_else(|| anyhow!("pane {target} has no provider"))?;
+        orchestrate::prompt_mode_supported(provider, mode)?;
+        if mode != orchestrate::PromptMode::Queue {
+            if let Some(reason) = self.immediate_paste_hold_reason(target) {
+                bail!("mode {mode:?} refused for pane {target}: {reason}; use mode queue");
+            }
+            anyhow::ensure!(!self.swarm_wake_lanes.lock().expect("wake lanes lock").contains_key(&target),
+                "mode {mode:?} refused for pane {target}: a prompt is already queued; use mode queue");
+        }
         self.cancel_temporary_cleanup_locked(target);
         let source = {
             let s = self.get(target)?;
@@ -14567,7 +14608,33 @@ impl Daemon {
             Some(round) => format!("{}\n\n{text}", orchestrate::request_header(round)),
             None => text.to_string(),
         };
-        let held = self.swarm_wake_write(target, &framed, caller)?;
+        let held = match mode {
+            orchestrate::PromptMode::Queue => self.swarm_wake_write(target, &framed, caller)?,
+            orchestrate::PromptMode::Steer => {
+                anyhow::ensure!(self.paste_text_with_activity(target, &framed, caller, true)?,
+                    "mode steer refused for pane {target}: operator input or a permission request appeared before paste; use mode queue");
+                None
+            }
+            orchestrate::PromptMode::Restart => {
+                if self.session_status(target)? == Some(proto::AgentStatus::Working) {
+                    if let Err(error) = self
+                        .write_stdin_counting(target, orchestrate::prompt_interrupt_key(provider)?)
+                    {
+                        let nothing_written = error.nothing_written();
+                        let error = anyhow!("interrupting pane {target}: {error}");
+                        return Err(if nothing_written {
+                            error
+                        } else {
+                            error.context(orchestrate::MutationMayHaveActed)
+                        });
+                    }
+                    self.swarm_wake_write(target, &framed, caller)
+                        .context(orchestrate::MutationMayHaveActed)?
+                } else {
+                    self.swarm_wake_write(target, &framed, caller)?
+                }
+            }
+        };
         if source == orchestrate::StatusSource::ProcessOnly {
             match self.db.delegation_bump_round(target, now_ms()) {
                 Ok(Some(round)) => {
@@ -14593,7 +14660,12 @@ impl Daemon {
         } else {
             self.broadcast_delegation(target);
         }
-        Ok((source_label, self.session_status(target)?, held))
+        Ok((
+            source_label,
+            self.session_status(target)
+                .context(orchestrate::MutationMayHaveActed)?,
+            held,
+        ))
     }
 
     pub fn session_status(&self, id: u32) -> Result<Option<proto::AgentStatus>> {
@@ -17157,6 +17229,20 @@ impl Daemon {
             }
             Err(e) => return Some(format!("this pane cannot be read: {e}")),
         }
+        self.operator_composer_hold_reason(parent)
+    }
+
+    fn immediate_paste_hold_reason(&self, target: u32) -> Option<String> {
+        match self.session_status(target) {
+            Ok(Some(proto::AgentStatus::NeedsInput)) => {
+                Some("pane needs input; inspect it and use pane_send_keys".into())
+            }
+            Err(error) => Some(format!("pane cannot be read: {error}")),
+            _ => self.operator_composer_hold_reason(target),
+        }
+    }
+
+    fn operator_composer_hold_reason(&self, parent: u32) -> Option<String> {
         let typed = self
             .composer_occupied
             .lock()

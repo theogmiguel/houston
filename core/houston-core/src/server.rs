@@ -3718,6 +3718,7 @@ struct PromptBody {
     session: u32,
     text: String,
     client_request_id: Option<String>,
+    mode: Option<String>,
 }
 
 async fn orch_prompt(
@@ -3729,12 +3730,14 @@ async fn orch_prompt(
         Ok(s) => s,
         Err(r) => return *r,
     };
+    let mode = body.mode.clone().unwrap_or_else(|| "queue".into());
     let result = tokio::task::spawn_blocking(move || {
         daemon.orchestrate_prompt_request(
             scope.session_id,
             body.session,
             &body.text,
             body.client_request_id.as_deref(),
+            body.mode.as_deref(),
         )
     })
     .await
@@ -3747,6 +3750,7 @@ async fn orch_prompt(
     (
         StatusCode::OK,
         axum::Json(json!({
+            "mode": mode,
             "queued": true,
             "held": held,
             "status_source": source,

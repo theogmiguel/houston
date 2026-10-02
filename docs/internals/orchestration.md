@@ -91,14 +91,14 @@ tool registry, per-session agent kind, the progress tick and the notifier regist
 These are Houston's installed hook contracts, not proof that every provider version emits
 all supported events. Every PTY additionally reports process exit independently.
 
-| Provider | Turn start | Tool use | Turn end | Needs-input | Session end | Parent wait cap | API failure |
-|---|---|---|---|---|---|---|---|
-| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop; StopFailure is failure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s | StopFailure; error and details |
-| Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s | Unsupported in hooks |
-| Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional | Unsupported in hooks |
-| OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error |
-| Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s | Unsupported in hooks |
-| Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout | StopFailure |
+| Provider | Turn start | Tool use | Turn end | Needs-input | Session end | Parent wait cap | API failure | Restart |
+|---|---|---|---|---|---|---|---|---|
+| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop; StopFailure is failure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s | StopFailure; error and details | Unsupported: no idle hook after user interrupt |
+| Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s | Unsupported in hooks | Escape |
+| Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional | Unsupported in hooks | Refused: no verified key |
+| OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error | Unsupported: interrupt-to-idle contract unverified |
+| Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s | Unsupported in hooks | Refused: no verified key |
+| Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout | StopFailure | Ctrl+C with empty composer |
 
 Wait budgets belong to the calling parent, regardless of its children's providers. Requests
 above the cap are clamped and report the provider, requested value and cap. Claude's cap
@@ -430,11 +430,28 @@ back the reservation. PTY startup and registration remain under the cleanup lock
 occupancy immediately and defer cleanup cancellation to the watcher when that lock is
 busy, so unrelated terminal input does not wait for a spawn.
 
-`pane_prompt` applies the same status and operator-composer hold as inbox pastes. A held
-prompt remains on the bounded wake lane and reports `held`; an immediately writable
-prompt returns PTY write errors synchronously. The hold is rechecked before paste and
-before Enter. A hold detected before writing requeues the prompt; a partial or unsubmitted
-paste creates a note for the prompt sender containing the prompt and is never retried automatically. A queued prompt retains its sender until delivery. If that sender has died, its nearest live ancestor inherits the note; the operator receives it only when no ancestor is live.
+`pane_prompt` defaults to `mode: "queue"`: it applies the same status and
+operator-composer hold as inbox pastes. A held prompt remains on the bounded wake
+lane and reports `held`. `steer` permits a paste while the provider is working;
+`restart` sends the provider's interrupt key while working and queues delivery
+until authoritative idle. Both immediate modes refuse an operator draft,
+needs-input, or an occupied wake lane before writing. The composer and
+needs-input guards are rechecked before paste and before Enter. A partial or
+unsubmitted paste creates a note for the sender and is never retried automatically.
+Queued prompts retain their sender; a dead sender's nearest live ancestor inherits
+the note, or the operator receives it when no ancestor is live.
+
+Restart supports Codex's default Escape binding and its documented
+[Interrupt hook](https://learn.chatgpt.com/docs/hooks#interrupt), mapped to idle.
+Grok 1.0.13's bundled hook documentation specifies `StopCancelled` for user
+interrupts, including Ctrl+C with an empty composer; that event maps to idle.
+Claude is refused: its [Stop hook](https://code.claude.com/docs/en/hooks#stop)
+explicitly excludes user interrupts. OpenCode is refused: the root `session.idle`
+fixture proves normal idle, not interruption; its installed TUI uses an Escape
+counter before abort, without a captured or documented interrupt-to-idle contract.
+Cursor and Antigravity have no verified interrupt/idle pair and are also refused.
+Custom remapped interrupt bindings are not detected; supported providers must
+retain their default binding for restart delivery.
 
 Optional `client_request_id` keys for spawn and prompt are shared by HTTP, MCP and
 `hs-pane`. Keys are scoped to the calling pane and admit 1–64 ASCII letters,
