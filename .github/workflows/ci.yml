@@ -1,13 +1,13 @@
 name: CI
 
 # Public and fork-gated: a PR runs the renderer and core suites too, not just the
-# safety scripts. The integration suites and load-sensitive gates still stay local
-# only (docs/operations/development.md) — no real PTY, keyring or idle machine here.
+# safety scripts. Remaining integration suites and load-sensitive gates stay local
+# (docs/operations/development.md); Windows also runs portable ConPTY regressions.
 on:
   pull_request: {}
   push:
     branches: [main]
-    # Push only, not pull_request: once these four jobs are required checks, a
+    # Push only, not pull_request: once these jobs are required checks, a
     # docs-only PR that skipped them via paths-ignore could never satisfy a
     # required check and would never merge.
     paths-ignore:
@@ -208,6 +208,91 @@ jobs:
             echo "|---|---|"
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  windows-checks:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      HOUSTON_CHANNEL: dev
+      CARGO_BUILD_JOBS: 3
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Record job start time
+        run: '"JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+            src-tauri
+          key: windows-checks
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+      - name: Install renderer dependencies
+        run: bun install --frozen-lockfile
+        working-directory: ui
+      - name: Typecheck renderer
+        working-directory: ui
+        run: bun run typecheck
+      - name: Test renderer
+        working-directory: ui
+        run: bun run test
+      - name: Build renderer
+        working-directory: ui
+        run: bun run build
+      - name: Check renderer output
+        working-directory: ui
+        run: |
+          bun run check:complexity
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run check:css
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run check:bundle
+          exit $LASTEXITCODE
+      - name: Check core formatting and Clippy
+        working-directory: core
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --all-targets -- -D warnings
+          exit $LASTEXITCODE
+      - name: Test core
+        working-directory: core
+        run: |
+          cargo test --locked -p houston-core --lib -- --test-threads=3
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p houston-core --test env_hygiene_wire --test nonascii_longpath_wire --test checkpoints_wire --test git_discard_wire --test git_tools_wire --test git_wire --test manage_wire --test shutdown_drain_wire -- --test-threads=3
+          exit $LASTEXITCODE
+      - name: Stage debug sidecars
+        run: |
+          cargo build --locked --manifest-path core/Cargo.toml --bin houston-core --bin tr-helper
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
+          foreach ($name in @('houston-core', 'tr-helper')) {
+            Copy-Item "core/target/debug/$name.exe" "src-tauri/binaries/$name-x86_64-pc-windows-msvc.exe"
+          }
+      - name: Check native application
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --all-targets -- -D warnings
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -- --test-threads=3
+          exit $LASTEXITCODE
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
+          "| Job | Elapsed (s) |`n|---|---|`n| windows-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
 
   # The committed third-party inventory is generated from both dependency graphs
   # at once, so this needs the Rust toolchain (cargo metadata, no build) and the

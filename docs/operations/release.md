@@ -13,23 +13,25 @@ through them:
 | `release-windows.yml` | the NSIS installer | `workflow_call` |
 | `release-publish.yml` | the one job that files a draft release and writes `latest.json` | `workflow_call` |
 | `publish-draft.yml` | promotes a smoke-tested draft to public | manual, reviewed |
-| `build-installers.yml` | builds both OSes and files nothing | manual |
+| `build-installers.yml` | builds selected OSes (both by default) and files nothing | manual |
 
 Only **`publish-draft.yml`** makes a release visible. A merge to `main` ships
 nothing, and pushing a `v*` tag by hand now does nothing at all.
 
-**`ci.yml`** runs four jobs — `safety-checks` (the hermetic text-search
+**`ci.yml`** runs five jobs — `safety-checks` (the hermetic text-search
 scripts), `renderer-checks` (`ui`'s `bun run typecheck` and `bun run test`),
 `core-checks` (`cargo fmt`, `cargo clippy`, `cargo test --lib`, against
-`core/Cargo.toml`) and `licence-inventory` (the committed third-party inventory
-still matches both dependency graphs) — on every pull request, and on every
-push to `main` except a docs-only change. The integration suites, the
-`src-tauri` gates and the load-sensitive gates still run locally by whoever
+`core/Cargo.toml`), `windows-checks` (renderer and native gates plus portable
+core integrations on Windows) and `licence-inventory` (the committed third-party
+inventory still matches both dependency graphs) — on every pull request, and on
+every push to `main` except a docs-only change. Remaining integration suites,
+Linux `src-tauri` gates and load-sensitive gates still run locally by whoever
 lands the work, per [`docs/operations/development.md`](development.md).
 
-**`build-installers.yml`** is the manual dry run: it builds both Linux
-architectures and the Windows NSIS installer from any ref you name, and files
-nothing. Since `ci.yml` never builds an installer, it is the only way to
+**`build-installers.yml`** is the manual dry run: by default it builds both Linux
+architectures and the Windows NSIS installer from any ref you name. Set `platform`
+to `windows` or `linux` to validate that platform alone. It files nothing.
+Since `ci.yml` never builds an installer, it is the only way to
 exercise the bundle pipeline without cutting a version.
 
 **`release-publish.yml`** refuses a bundle set that is missing an artifact or
