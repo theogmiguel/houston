@@ -1,7 +1,7 @@
 export type SideTab =
   | { kind: 'scm' }
   | { kind: 'files'; root?: string }
-  | { kind: 'tasks'; compose?: boolean }
+  | { kind: 'tasks'; compose?: boolean; openId?: number }
   | { kind: 'overview'; orchestrator: number }
   | { kind: 'browser'; id: string; url: string }
 
@@ -10,16 +10,17 @@ export const SIDE_OPEN_EVENT = 'houston:side-open'
 export const TERMINAL_FOCUS_EVENT = 'houston:terminal-focus'
 export const SIDE_BROWSER_MOVE_EVENT = 'houston:side-browser-move'
 export const SIDE_SELECT_EVENT = 'houston:side-select'
-export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'tasks'; compose?: boolean } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string; revealOnly?: boolean }
+export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'tasks'; compose?: boolean; openId?: number } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string; revealOnly?: boolean }
 
 export function openSideBrowser(id: string, url: string, workspace: string, revealOnly = false): void {
   window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'browser', id, url, workspace, ...(revealOnly ? { revealOnly: true } : {}) } }))
 }
 
 // `compose` opens the tab with the create-task editor already up, which is
-// what the palette's "New task" wants and a plain tab click does not.
-export function openSideTasks(compose = false): void {
-  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'tasks', ...(compose ? { compose: true } : {}) } }))
+// what the palette's "New task" wants and a plain tab click does not; `openId`
+// is a terminal `HOU-n` link asking for one task's detail.
+export function openSideTasks(compose = false, openId?: number): void {
+  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'tasks', ...(compose ? { compose: true } : {}), ...(openId !== undefined ? { openId } : {}) } }))
 }
 
 export function moveBrowserToGrid(id: string, url: string, workspace: string): void {

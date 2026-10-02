@@ -104,6 +104,7 @@ named.
 | **orchestration** | Agent-spawns-agent. An agent in a pane opens, prompts, reads, waits on and kills child panes. | `orchestrate.rs`, `mcp_orchestration.rs` |
 | **`pane_*`** | The MCP verbs: `pane_spawn`, `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, `pane_send_keys`, `pane_kill`, `pane_submit`, plus `workspace_info`. | `mcp_orchestration.rs` |
 | **`hs-pane`** | The same verbs as a CLI, for agents without MCP. A shell wrapper the daemon writes at spawn. | `orchestrate.rs::run_pane_cli` |
+| **`hs-task`** | The Tasks backlog as a CLI for agents whose provider cannot use MCP: `next`, `ls`, `show`, `add`, `claim`, `comment`, `check`, `handback`. The key defaults to `$HOUSTON_TASK`; there is no `done`. Its wrapper sits beside `hs-pane`. | `tasks_cli.rs` |
 | **inbox** | One row per signal a pane owes another pane (or the operator), in the `pane_inbox` table. Producers write rows; the three doors read them. | `pane_inbox`, `InboxKind` |
 | **inbox row** | One signal: `kind` (`result` \| `no_handback` \| `needs_input` \| `exited` \| `stalled` \| `operator_note` \| `mail`), a redacted `summary`/`body`, optional `artifacts`, and three timestamps — `created_at` (persisted), `delivered_at` (sent), `confirmed_at` (proven). | `db::InboxRow` |
 | **door** | One of the three delivery mechanisms: door 1 returns rows inside a live `pane_wait`; door 2 prints them from a Working parent's own `Stop` hook; door 3 pastes them into an idle parent. Ordered by the parent's state. | `orchestrate.rs` |

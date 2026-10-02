@@ -187,7 +187,8 @@ pub struct TaskWrite<'a> {
 }
 
 /// The full new state of an updated task; `changes` is the JSON diff recorded
-/// in history. `acceptance` of `Some` replaces the whole item list.
+/// in history. `acceptance` of `Some` replaces the whole item list. `action`
+/// names the history verb: an edit is `update`, a claim is `claim`.
 pub struct TaskUpdate<'a> {
     pub id: i64,
     pub expected_revision: i64,
@@ -199,9 +200,50 @@ pub struct TaskUpdate<'a> {
     pub ref_url: Option<&'a str>,
     pub acceptance: Option<&'a [String]>,
     pub actor: &'a str,
+    pub action: &'a str,
     pub changes: &'a str,
     pub now_ms: i64,
 }
+
+/// Filters for an agent-facing task list. `mine` is the actor that either
+/// created the task or claimed it and is still working on it; `query` is a
+/// case-insensitive substring over title and description.
+pub struct TaskQuery<'a> {
+    pub status: Option<proto::TaskStatus>,
+    pub ready: bool,
+    pub mine: Option<&'a str>,
+    pub query: Option<&'a str>,
+    pub limit: u32,
+}
+
+/// `LIKE` with `\` as the escape, so a `%` or `_` in a search box is a literal.
+fn like_pattern(q: &str) -> String {
+    let mut out = String::with_capacity(q.len() + 2);
+    out.push('%');
+    for ch in q.chars() {
+        if matches!(ch, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out.push('%');
+    out
+}
+
+const TASK_SUMMARY_SELECT: &str = "SELECT t.id, t.workspace, t.number, t.title, t.status, \
+    t.priority, t.parent_id, t.ref_url, t.revision, t.created_by, t.created_at, t.updated_at, \
+    t.archived_at,
+    (SELECT COUNT(*) FROM backlog_task_acceptance a WHERE a.task_id = t.id),
+    (SELECT COUNT(*) FROM backlog_task_acceptance a
+       WHERE a.task_id = t.id AND a.checked_at IS NOT NULL)
+    FROM backlog_tasks t";
+
+/// The SQL fragment every filtered query shares: `?1` is the workspace. A
+/// task is ready when it is to-do and no blocker of it is still unfinished.
+const READY_CLAUSE: &str = "t.status = 'todo' AND NOT EXISTS (
+        SELECT 1 FROM backlog_task_blocks b
+        JOIN backlog_tasks dep ON dep.id = b.blocked_by_id
+        WHERE b.task_id = t.id AND dep.status NOT IN ('done', 'canceled'))";
 
 const TASK_SELECT: &str = "SELECT id, workspace, number, title, description, status, priority, \
     parent_id, ref_url, revision, created_by, created_at, updated_at, archived_at \
@@ -344,6 +386,75 @@ impl Db {
             .query_map(rusqlite::params![workspace, limit], map_summary)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// The workspace's active tasks, newest number first, with the agent
+    /// filters applied. Archived rows never appear; the cap is the caller's.
+    pub fn query_tasks(&self, workspace: &str, q: &TaskQuery<'_>) -> Result<Vec<TaskSummaryRow>> {
+        let mut sql =
+            format!("{TASK_SUMMARY_SELECT} WHERE t.workspace = ?1 AND t.archived_at IS NULL");
+        let mut values: Vec<rusqlite::types::Value> = vec![workspace.to_string().into()];
+        if let Some(status) = q.status {
+            values.push(wire_name(&status)?.into());
+            sql.push_str(&format!(" AND t.status = ?{}", values.len()));
+        }
+        if q.ready {
+            sql.push_str(&format!(" AND ({READY_CLAUSE})"));
+        }
+        if let Some(actor) = q.mine {
+            values.push(actor.to_string().into());
+            let n = values.len();
+            sql.push_str(&format!(
+                " AND (t.created_by = ?{n} OR (t.status = 'in_progress' AND EXISTS (
+                       SELECT 1 FROM backlog_task_history h
+                       WHERE h.task_id = t.id AND h.actor = ?{n} AND h.action = 'claim')))"
+            ));
+        }
+        if let Some(query) = q.query {
+            values.push(like_pattern(query).into());
+            let n = values.len();
+            sql.push_str(&format!(
+                " AND (t.title LIKE ?{n} ESCAPE '\\' OR t.description LIKE ?{n} ESCAPE '\\')"
+            ));
+        }
+        sql.push_str(" ORDER BY t.number DESC");
+        values.push(i64::from(q.limit).into());
+        sql.push_str(&format!(" LIMIT ?{}", values.len()));
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(values.iter()), map_summary)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// The workspace's ready tasks, highest priority first (`urgent .. low`,
+    /// no priority last), oldest number first within a priority.
+    pub fn ready_tasks(&self, workspace: &str, limit: u32) -> Result<Vec<TaskSummaryRow>> {
+        let sql = format!(
+            "{TASK_SUMMARY_SELECT} WHERE t.workspace = ?1 AND t.archived_at IS NULL
+             AND ({READY_CLAUSE})
+             ORDER BY CASE WHEN t.priority = 0 THEN 5 ELSE t.priority END ASC, t.number ASC
+             LIMIT ?2"
+        );
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params![workspace, limit], map_summary)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// One task of a workspace by its display number, for `HOU-<n>` keys.
+    pub fn task_by_number(&self, workspace: &str, number: u32) -> Result<Option<TaskRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                &format!("{TASK_SELECT} WHERE workspace = ?1 AND number = ?2"),
+                rusqlite::params![workspace, number],
+                map_task,
+            )
+            .optional()?)
     }
 
     /// Per-status counts of the workspace's non-archived tasks.
@@ -620,8 +731,8 @@ impl Db {
         }
         tx.execute(
             "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
-             VALUES (?1, ?2, 'update', ?3, ?4)",
-            rusqlite::params![u.id, u.actor, u.changes, u.now_ms],
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![u.id, u.actor, u.action, u.changes, u.now_ms],
         )?;
         tx.commit()?;
         Ok(true)

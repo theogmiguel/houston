@@ -1105,7 +1105,7 @@ impl DelegationSettleSample {
 }
 
 mod harness_review;
-mod tasks;
+pub(crate) mod tasks;
 mod worktree_pass;
 
 type TranscriptLink = (Option<String>, Option<String>);
@@ -2640,6 +2640,9 @@ impl Daemon {
         daemon
             .mcp_tools
             .register(Arc::new(crate::mcp_harness::HarnessTools::new(&daemon)));
+        daemon
+            .mcp_tools
+            .register(Arc::new(crate::mcp_tasks::TasksTools::new(&daemon)));
         if let Some(adopted) = adopted {
             for (session, reader) in adopted {
                 let id = session.info.id;
@@ -17405,6 +17408,7 @@ fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {
     std::fs::create_dir_all(&bin_dir).with_context(|| format!("creating {}", bin_dir.display()))?;
     write_helper_wrapper(&bin_dir, "hs-pane", "hs-pane")?;
     write_helper_wrapper(&bin_dir, "hs-harness", "hs-harness")?;
+    write_helper_wrapper(&bin_dir, "hs-task", "hs-task")?;
     Ok((prompts_dir, bin_dir))
 }
 
@@ -17441,12 +17445,51 @@ fn swarm_shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// The `.cmd` wrapper text. A literal `%` in the exe path must be doubled or
+/// cmd.exe expands it as a variable; spaces, `&` and `^` are literal inside
+/// the quoted path, and `%*` forwards the caller's arguments as parsed.
+#[cfg(any(windows, test))]
+fn windows_cmd_wrapper_script(exe: &Path, subcmd: &str) -> String {
+    let escaped_exe = exe.display().to_string().replace('%', "%%");
+    format!("@echo off\r\n\"{escaped_exe}\" {subcmd} %*\r\nexit /b %ERRORLEVEL%\r\n")
+}
+
 #[cfg(windows)]
 fn write_windows_cmd_wrapper(bin_dir: &Path, name: &str, exe: &Path, subcmd: &str) -> Result<()> {
     let path = bin_dir.join(format!("{name}.cmd"));
-    let escaped_exe = exe.display().to_string().replace('%', "%%");
-    let script = format!("@echo off\r\n\"{escaped_exe}\" {subcmd} %*\r\nexit /b %ERRORLEVEL%\r\n");
+    let script = windows_cmd_wrapper_script(exe, subcmd);
     std::fs::write(&path, &script).with_context(|| format!("writing {}", path.display()))
+}
+
+#[cfg(test)]
+mod windows_cmd_wrapper_script_tests {
+    use super::*;
+
+    /// The `hs-task` twin's text is exercised on every platform, not only where
+    /// the writer compiles, so the quoting is verified on the Linux gate too.
+    #[test]
+    fn hs_task_cmd_wrapper_quotes_the_exe_and_forwards_every_argument() {
+        let script = windows_cmd_wrapper_script(
+            Path::new(r"C:\Program Files\Houston\houston.exe"),
+            "hs-task",
+        );
+        assert_eq!(
+            script,
+            "@echo off\r\n\"C:\\Program Files\\Houston\\houston.exe\" hs-task %*\r\nexit /b \
+             %ERRORLEVEL%\r\n"
+        );
+    }
+
+    #[test]
+    fn a_cmd_wrapper_doubles_percents_and_leaves_quoted_specials_literal() {
+        let script =
+            windows_cmd_wrapper_script(Path::new(r"C:\100%\Houston & Co^2\houston.exe"), "hs-task");
+        assert!(
+            script.contains(r#""C:\100%%\Houston & Co^2\houston.exe" hs-task %*"#),
+            "inside the quoted exe path the ampersand and caret are literal (quoting is the \
+             escape), while a literal percent is doubled: {script:?}"
+        );
+    }
 }
 
 #[cfg(all(test, windows))]

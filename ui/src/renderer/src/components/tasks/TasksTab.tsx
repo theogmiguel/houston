@@ -21,12 +21,16 @@ export function TasksTab({
   client,
   workspace,
   compose = false,
-  onComposeHandled
+  onComposeHandled,
+  openTaskId,
+  onOpenTaskHandled
 }: {
   client: HoustonClient | null
   workspace: string
   compose?: boolean
   onComposeHandled?: () => void
+  openTaskId?: number
+  onOpenTaskHandled?: () => void
 }): React.JSX.Element {
   const tasks = useTasks(client, workspace)
   const [view, setView] = useState<TasksView>('list')
@@ -44,6 +48,13 @@ export function TasksTab({
     setView('create')
     onComposeHandled?.()
   }, [compose, onComposeHandled])
+
+  useEffect(() => {
+    if (openTaskId === undefined) return
+    tasks.openTask(openTaskId)
+    setView('task')
+    onOpenTaskHandled?.()
+  }, [openTaskId, onOpenTaskHandled, tasks.openTask])
 
   const parentOptions = useMemo<SelectOption[]>(() => {
     const openId = tasks.detail?.task.id

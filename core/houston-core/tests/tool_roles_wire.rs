@@ -194,6 +194,10 @@ async fn a_leaf_child_sees_exactly_two_tools_with_every_provider_registered() {
         vec!["pane_submit".to_string(), "workspace_info".to_string()],
         "a leaf child must see exactly its handback and its identity: {names:?}"
     );
+    assert!(
+        names.iter().all(|name| !name.starts_with("task_")),
+        "a leaf child's scope is the brief: it must see no task tool: {names:?}"
+    );
 
     let leaf_bytes = response_bytes(&tools);
     let parent_tools = r.tools_list(&parent_token).await;
@@ -248,6 +252,24 @@ async fn a_hidden_tool_is_a_refused_tool() {
     assert!(message.contains("pane_read"), "{message}");
     assert!(message.contains("pane_submit"), "{message}");
     assert!(message.contains("workspace_info"), "{message}");
+
+    let task = r
+        .mcp(
+            &child_token,
+            "tools/call",
+            serde_json::json!({ "name": "task_list", "arguments": {} }),
+        )
+        .await;
+    assert_eq!(
+        task["result"]["isError"], true,
+        "a leaf child must not reach the task tools: {task}"
+    );
+    let message = task["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(message.contains("leaf"), "{message}");
+    assert!(message.contains("task_list"), "{message}");
 
     let info = r
         .mcp(

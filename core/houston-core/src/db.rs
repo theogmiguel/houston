@@ -13,8 +13,8 @@ pub use harness::{
 };
 mod tasks;
 pub use tasks::{
-    TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskRow, TaskRunRow, TaskSummaryRow,
-    TaskUpdate, TaskWrite,
+    TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow, TaskRunRow,
+    TaskSummaryRow, TaskUpdate, TaskWrite,
 };
 
 #[derive(Debug, Clone)]

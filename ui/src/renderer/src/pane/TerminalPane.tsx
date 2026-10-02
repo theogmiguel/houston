@@ -1,4 +1,4 @@
-import { TERMINAL_FOCUS_EVENT } from '../sidePanel'
+import { TERMINAL_FOCUS_EVENT, openSideTasks } from '../sidePanel'
 import { FILE_REFERENCE_MIME, fileReference } from '../components/files/fileActions'
 import { claimVisibility } from './registration'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
@@ -60,6 +60,7 @@ import { PaneWriteQueue } from './writeQueue'
 import { useNotices } from '../notices'
 import { NoticeStack } from '../components/NoticeStack'
 import { findUrls, rangesOverlap, joinWrappedLine, mapJoinedOffset } from './webLinks'
+import { matchTaskKeys, taskIdForKey } from '../houston/taskLinks'
 import { passKeysToTerminal } from '../paneCaps'
 import { ICON_ROLE_CLS, Icon, resolveTightGlyph } from '../components/Icon'
 import { Tooltip } from '../components/Tooltip'
@@ -467,6 +468,39 @@ export function TerminalPane({
       }
     }
     const linkProviderDisposable = term.registerLinkProvider(linkProvider)
+
+    const taskLinkProvider: PaneLinkProvider = {
+      provideLinks(bufferLineNumber: number, callback) {
+        const buffer = term.buffer.active
+        const queriedRow = bufferLineNumber - 1
+        const line = buffer.getLine(queriedRow)
+        if (!line) {
+          callback(undefined)
+          return
+        }
+        const joined = joinWrappedLine(buffer, queriedRow)
+        const links: PaneLink[] = []
+        for (const match of matchTaskKeys(joined.text)) {
+          // Only keys the loaded Tasks snapshot knows are links; anything else
+          // is prose that happens to look like a key.
+          const id = taskIdForKey(info.project_dir, match.key)
+          if (id === null) continue
+          const startPos = mapJoinedOffset(joined, match.index)
+          const endPos = mapJoinedOffset(joined, match.index + match.length - 1)
+          if (queriedRow < startPos.row || queriedRow > endPos.row) continue
+          links.push({
+            text: match.key,
+            range: {
+              start: { x: startPos.col + 1, y: startPos.row + 1 },
+              end: { x: endPos.col + 1, y: endPos.row + 1 }
+            },
+            activate: () => openSideTasks(false, id)
+          })
+        }
+        callback(links.length > 0 ? links : undefined)
+      }
+    }
+    const taskLinkProviderDisposable = term.registerLinkProvider(taskLinkProvider)
 
     const sendSize = (cols: number, rows: number): void => {
       if (!liveRef.current) return
@@ -1126,6 +1160,7 @@ export function TerminalPane({
       disposeData.dispose()
       linkProviderDisposable.dispose()
       webLinkProviderDisposable.dispose()
+      taskLinkProviderDisposable.dispose()
       writeQueue.dispose()
       term.dispose()
       termRef.current = null

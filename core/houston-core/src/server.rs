@@ -56,6 +56,15 @@ pub async fn start_with_listener(
         .route("/orchestrate/kill", post(orch_kill))
         .route("/orchestrate/submit", post(orch_submit))
         .route("/harness/publish", post(harness_publish))
+        .route("/task/next", get(task_next))
+        .route("/task/list", get(task_list))
+        .route("/task/get", get(task_get))
+        .route("/task/create", post(task_create))
+        .route("/task/update", post(task_update))
+        .route("/task/comment", post(task_comment))
+        .route("/task/check", post(task_check))
+        .route("/task/claim", post(task_claim))
+        .route("/task/handback", post(task_handback))
         .route("/inbox/tool-boundary", post(inbox_tool_boundary))
         .route("/inbox/reserve", post(inbox_reserve))
         .route("/inbox/delivered", post(inbox_delivered))
@@ -4158,6 +4167,381 @@ async fn harness_publish(
             .into_response(),
         Err(e) => orch_err_response(e),
     }
+}
+
+#[derive(Deserialize)]
+struct TaskGetQuery {
+    key: Option<String>,
+    id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct TaskListParams {
+    #[serde(default)]
+    mine: bool,
+    #[serde(default)]
+    ready: bool,
+    status: Option<String>,
+    query: Option<String>,
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct TaskIdBody {
+    key: Option<String>,
+    id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct TaskCreateBody {
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    status: Option<proto::TaskStatus>,
+    #[serde(default)]
+    priority: Option<proto::TaskPriority>,
+    #[serde(default)]
+    parent: Option<String>,
+    #[serde(default)]
+    acceptance: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct TaskUpdateBody {
+    key: Option<String>,
+    id: Option<i64>,
+    expected_revision: i64,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    status: Option<proto::TaskStatus>,
+    #[serde(default)]
+    priority: Option<proto::TaskPriority>,
+    #[serde(default)]
+    parent: Option<String>,
+    #[serde(default)]
+    acceptance: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct TaskCommentBody {
+    key: Option<String>,
+    id: Option<i64>,
+    body: String,
+}
+
+#[derive(Deserialize)]
+struct TaskCheckBody {
+    key: Option<String>,
+    id: Option<i64>,
+    item: u32,
+}
+
+#[derive(Deserialize)]
+struct TaskHandbackBody {
+    key: Option<String>,
+    id: Option<i64>,
+    summary: String,
+}
+
+/// Resolves a routing key or id against the caller's workspace; an unknown key
+/// is refused naming the value and the expected shape.
+fn task_id_from(
+    daemon: &Daemon,
+    workspace: &str,
+    key: Option<&str>,
+    id: Option<i64>,
+    operation: &str,
+) -> anyhow::Result<i64> {
+    match (key, id) {
+        (Some(key), _) => daemon.task_id_for_key(workspace, key)?.ok_or_else(|| {
+            anyhow::anyhow!(
+                "{operation} refused: no task with key {key:?} in workspace {workspace:?} \
+                 (expected an existing HOU-<number>)"
+            )
+        }),
+        (None, Some(id)) => Ok(id),
+        (None, None) => anyhow::bail!(
+            "{operation} refused: a task key or id is required (expected \
+             {{\"key\":\"HOU-1\"}} or {{\"id\":1}})"
+        ),
+    }
+}
+
+/// One `/task/*` call: the pane's scope is the workspace, a child is refused by
+/// the shared task-tool check, and the reply is broadcast so the Tasks tab sees
+/// an agent's write.
+async fn task_request<F>(daemon: Arc<Daemon>, headers: HeaderMap, call: F) -> Response
+where
+    F: FnOnce(&Daemon, &crate::mcp_creds::McpScope, &str) -> anyhow::Result<proto::ServerMsg>
+        + Send
+        + 'static,
+{
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let actor = match daemon.task_actor(scope.session_id) {
+        Ok(actor) => actor,
+        Err(e) => return orch_error(StatusCode::CONFLICT, e),
+    };
+    let worker = Arc::clone(&daemon);
+    let result = tokio::task::spawn_blocking(move || call(&worker, &scope, &actor))
+        .await
+        .unwrap_or_else(|e| Err(anyhow::anyhow!("task request panicked: {e}")));
+    match result {
+        Ok(proto::ServerMsg::TaskRefused { message, .. }) => {
+            orch_error(StatusCode::CONFLICT, anyhow::anyhow!("{message}"))
+        }
+        Ok(msg) => {
+            daemon.broadcast_control(&msg);
+            match serde_json::to_value(&msg) {
+                Ok(value) => (StatusCode::OK, axum::Json(value)).into_response(),
+                Err(e) => orch_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    anyhow::anyhow!("serializing the task reply: {e}"),
+                ),
+            }
+        }
+        Err(e) => orch_err_response(e),
+    }
+}
+
+async fn task_next(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
+    task_request(daemon, headers, |d, scope, _actor| {
+        d.task_next(&scope.workspace_id)
+    })
+    .await
+}
+
+async fn task_list(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    Query(params): Query<TaskListParams>,
+) -> Response {
+    let status = match params.status.as_deref() {
+        Some(raw) => match crate::db::from_wire::<proto::TaskStatus>(raw) {
+            Some(status) => Some(status),
+            None => {
+                return orch_error(
+                    StatusCode::BAD_REQUEST,
+                    anyhow::anyhow!(
+                        "status {raw:?} is not a task status; expected one of backlog, todo, \
+                         in_progress, in_review, done, canceled"
+                    ),
+                )
+            }
+        },
+        None => None,
+    };
+    task_request(daemon, headers, move |d, scope, _actor| {
+        d.task_list(
+            &scope.workspace_id,
+            scope.session_id,
+            &crate::daemon::tasks::TaskListQuery {
+                status,
+                ready: params.ready,
+                mine: params.mine,
+                query: params.query.as_deref(),
+                limit: params.limit,
+            },
+        )
+    })
+    .await
+}
+
+async fn task_get(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    Query(params): Query<TaskGetQuery>,
+) -> Response {
+    task_request(daemon, headers, move |d, scope, _actor| {
+        let id = task_id_from(
+            d,
+            &scope.workspace_id,
+            params.key.as_deref(),
+            params.id,
+            "task_get",
+        )?;
+        d.task_get_in(&scope.workspace_id, id)
+    })
+    .await
+}
+
+async fn task_create(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<TaskCreateBody>,
+) -> Response {
+    task_request(daemon, headers, move |d, scope, actor| {
+        let parent_id = match body.parent.as_deref() {
+            Some(key) => Some(
+                d.task_id_for_key(&scope.workspace_id, key)?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "parent key {key:?} does not exist in workspace {:?} (expected an \
+                             existing HOU-<number>)",
+                            scope.workspace_id
+                        )
+                    })?,
+            ),
+            None => None,
+        };
+        d.task_save_as(
+            &scope.workspace_id,
+            None,
+            None,
+            proto::TaskPatch {
+                title: Some(body.title),
+                description: body.description,
+                status: body.status,
+                priority: body.priority,
+                parent_id: parent_id.map(Some),
+                ref_url: None,
+                acceptance: body.acceptance,
+            },
+            actor,
+            "task_create",
+        )
+    })
+    .await
+}
+
+async fn task_update(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<TaskUpdateBody>,
+) -> Response {
+    task_request(daemon, headers, move |d, scope, actor| {
+        let id = task_id_from(d, &scope.workspace_id, body.key.as_deref(), body.id, "task")?;
+        let parent_id = body
+            .parent
+            .as_deref()
+            .map(|key| {
+                d.task_id_for_key(&scope.workspace_id, key)?.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "parent key {key:?} does not exist in workspace {:?} (expected an \
+                         existing HOU-<number>)",
+                        scope.workspace_id
+                    )
+                })
+            })
+            .transpose()?;
+        d.task_save_as(
+            &scope.workspace_id,
+            Some(id),
+            Some(body.expected_revision),
+            proto::TaskPatch {
+                title: body.title,
+                description: body.description,
+                status: body.status,
+                priority: body.priority,
+                parent_id: parent_id.map(Some),
+                ref_url: None,
+                acceptance: body.acceptance,
+            },
+            actor,
+            "task_update",
+        )
+    })
+    .await
+}
+
+async fn task_comment(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<TaskCommentBody>,
+) -> Response {
+    task_request(daemon, headers, move |d, scope, actor| {
+        let id = task_id_from(d, &scope.workspace_id, body.key.as_deref(), body.id, "task")?;
+        d.task_comment_as(
+            Some(&scope.workspace_id),
+            id,
+            &body.body,
+            actor,
+            "task_comment",
+        )
+    })
+    .await
+}
+
+async fn task_check(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<TaskCheckBody>,
+) -> Response {
+    task_request(daemon, headers, move |d, scope, actor| {
+        let id = task_id_from(d, &scope.workspace_id, body.key.as_deref(), body.id, "task")?;
+        let items = match d.task_get_in(&scope.workspace_id, id)? {
+            proto::ServerMsg::TaskDetail { acceptance, .. } => acceptance,
+            refreshed @ proto::ServerMsg::TaskRefused { .. } => return Ok(refreshed),
+            _ => unreachable!("task_get answers a detail or a refusal"),
+        };
+        if body.item == 0 {
+            anyhow::bail!(
+                "acceptance item {item} is not a position; expected 1..={count}",
+                item = body.item,
+                count = items.len()
+            );
+        }
+        let Some(item) = items.get((body.item - 1) as usize) else {
+            anyhow::bail!(
+                "acceptance item {item} is out of range; task {id} has {count} item(s) (expected \
+                 1..={count})",
+                item = body.item,
+                count = items.len()
+            );
+        };
+        d.task_check_as(
+            Some(&scope.workspace_id),
+            id,
+            item.id,
+            true,
+            actor,
+            "task_check",
+        )
+    })
+    .await
+}
+
+async fn task_claim(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<TaskIdBody>,
+) -> Response {
+    task_request(daemon, headers, move |d, scope, actor| {
+        let id = task_id_from(d, &scope.workspace_id, body.key.as_deref(), body.id, "task")?;
+        d.task_claim(
+            &scope.workspace_id,
+            id,
+            scope.session_id,
+            actor,
+            "task_claim",
+        )
+    })
+    .await
+}
+
+async fn task_handback(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<TaskHandbackBody>,
+) -> Response {
+    task_request(daemon, headers, move |d, scope, actor| {
+        let id = task_id_from(d, &scope.workspace_id, body.key.as_deref(), body.id, "task")?;
+        d.task_handback(
+            &scope.workspace_id,
+            id,
+            &body.summary,
+            scope.session_id,
+            actor,
+            "task_handback",
+        )
+    })
+    .await
 }
 
 async fn orch_submit(

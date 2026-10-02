@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { rememberTaskKeys } from './taskLinks'
 import type { HoustonClient } from './client'
 import type { Task } from './generated/Task'
 import type { TaskAcceptanceItem } from './generated/TaskAcceptanceItem'
@@ -101,6 +102,7 @@ export function useTasks(client: HoustonClient | null, workspace: string | null)
     if (!client || !workspace) return
     const offSnapshot = client.subscribe('task_snapshot', (msg) => {
       if (msg.workspace !== workspace) return
+      rememberTaskKeys(msg.workspace, msg.tasks)
       setSnapshot({ workspace: msg.workspace, tasks: msg.tasks, counts: msg.counts })
     })
     const offDetail = client.subscribe('task_detail', (msg) => {

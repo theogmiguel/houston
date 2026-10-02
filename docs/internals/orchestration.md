@@ -140,6 +140,14 @@ spelling, or a verb that is CLI-only).
 | `pane_send_keys` | `mcp_orchestration.rs` | — | press a small set of keys in a pane (see the tool's own description for the list) |
 | `harness_publish` | `mcp_harness.rs` | `hs-harness publish` | not a pane verb: a harness review run hands its `report.md` and `findings.json` to the Harness view. Offered only to that run's pane while it is in flight, whatever the orchestration setting |
 | — | — | `hs-harness` | the extractor a harness review run calls (`inventory`, `digest`, `publish`); its wrapper sits beside `hs-pane`, and `digest` refuses outside a routine run (carve-out #6 in `invariants.md`) |
+| `task_list` | `mcp_tasks.rs` | `hs-task ls` | list the workspace's active tasks, filtered by `status`, `ready`, `mine`, `query` and a capped `limit`; ready is a todo task with no unfinished blocker |
+| `task_get` | `mcp_tasks.rs` | `hs-task show` | one task's full text, acceptance items and recent comments |
+| `task_next` | `mcp_tasks.rs` | `hs-task next` | the highest-priority ready task (urgent, high, medium, low, then none) |
+| `task_create` | `mcp_tasks.rs` | `hs-task add` | create a task, attributed to the calling pane |
+| `task_update` | `mcp_tasks.rs` | — | edit a task's fields; requires the `expected_revision` the last read showed, so a stale edit is refused naming expected and actual |
+| `task_comment`, `task_check` | `mcp_tasks.rs` | `hs-task comment`, `hs-task check` | append a comment, or tick one acceptance item by its id (the CLI's `ITEM` is the 1-based position) |
+| `task_claim`, `task_handback` | `mcp_tasks.rs` | `hs-task claim`, `hs-task handback` | claim moves backlog/todo to in progress and records the session; handback writes the summary as a comment and moves to in review. Neither sets Done |
+| — | — | `hs-task` | the Tasks helper, a shell wrapper beside `hs-pane`; the key defaults to `$HOUSTON_TASK` and there is no `done` verb |
 | `browser_current_page` | `src-tauri/src/browser/mcp_tools.rs` | — | URL, title, favicon, loading state |
 | `browser_capture` | `mcp_tools.rs` | — | PNG screenshot of the browser pane |
 | `browser_navigate` | `mcp_tools.rs` | — | load an http(s) URL, opening a pane at it when the workspace has none |
@@ -167,6 +175,15 @@ and the approval ceiling still applies.
 `pane_submit` takes `body` and optional `summary`, `artifacts`, `request_id`. A pane nobody
 spawned has nobody to submit to and is refused; a harness review run's refusal names
 `harness_publish` instead.
+
+The `task_*` tools are the one non-pane family: they reach every top-level pane and no
+child, whatever the orchestration switch, and the workspace's Settings ▸ Tasks access
+decides advertisement and enforcement together (`off` withholds every task tool, `read`
+withholds the writes). An agent's write is attributed `agent:<codename> (<role>)` in the
+task's history, comments and `created_by`, so the provenance outlives the pane. A change to
+the access setting pushes `tools/list_changed` at that workspace's open tool lists. Task
+text in a tool result is wrapped as labelled untrusted data and each text field is capped by
+`mcp_tasks::TASK_TOOL_TEXT_MAX`.
 
 `orchestrate.rs` is the pure layer under all of it — no DB, no PTY: scope and cap
 verdicts, wait and stall decisions, inbox composition and the sub-agent and permission
@@ -297,7 +314,10 @@ Subcommands: `whoami`, `spawn`, `list`, `get`, `prompt`, `keys`, `wait`, `read`,
 client. Every MCP `pane_*` tool has a CLI twin here (the verb table above names both doors),
 and the two sides share one implementation per verb, so a refusal and an argument set cannot
 differ between them. `submit --artifacts` is comma-separated because `parse_flags` keeps one
-value per flag name, so a repeated flag would silently keep only the last.
+value per flag name, so a repeated flag would silently keep only the last. `hs-task` follows
+the same shape for the backlog: its wrapper sits beside `hs-pane`, the `/task/*` routes carry
+the `task_*` verbs over plain HTTP, and each command lands on the daemon path the MCP tool
+uses.
 
 Three preconditions, all refusals rather than fallbacks: `HOUSTON_MCP_URL` and
 `HOUSTON_MCP_TOKEN` must be set, the URL must name the local loopback, and
@@ -928,7 +948,9 @@ without which the hold would be a one-way door the operator cannot see.
 A pane's tool list is its role. A leaf child —
 spawned by another pane, unable to spawn, with no live children of its own —
 sees exactly `pane_submit` and `workspace_info`: its handback and its
-identity. An orchestrator — one that may spawn, or has live children — sees
+identity. The `task_*` tools are withheld from every child, not only a leaf:
+a child's scope is the brief, so its provider checks parentage before access
+and its direct calls are refused the same way. An orchestrator — one that may spawn, or has live children — sees
 the management verbs, with `pane_spawn` only while actually spawnable (out of
 slots keeps the rest; only the spawn verb drops) and `pane_submit` only with
 a parent to hand back to. An operator-opened pane with the switch off sees
