@@ -44,6 +44,12 @@ function addButton(harness: AppHarness): HTMLButtonElement {
 async function clickAdd(harness: AppHarness): Promise<void> {
   act(() => addButton(harness).dispatchEvent(new MouseEvent('click', { bubbles: true })))
   await flush()
+  const localFolder = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+    (item) => item.textContent === 'Local folder…'
+  )
+  expect(localFolder).toBeDefined()
+  act(() => localFolder!.click())
+  await flush()
 }
 
 let harness: AppHarness | null = null
@@ -60,7 +66,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('step 1 — "Add Workspace" is the folder picker, no screen in between', () => {
+describe('Add workspace — Local folder opens the folder picker', () => {
   it('Cancel — nothing is added, nothing is said', async () => {
     harness = await renderReadyApp()
     const client = currentClient()

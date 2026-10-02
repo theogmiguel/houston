@@ -38,6 +38,7 @@ const HOST: HostInfo = {
   orchestration_max_depth: 0,
   mailbox_files_on_disk: 0,
   mailbox_retention_hours: 0,
+  settled_retention_hours: 24,
   worktree_cleanup_enabled: false,
   worktree_cleanup_grace_hours: 24,
   command_history_ignore_glob_count: 0,

@@ -3,12 +3,49 @@
 Besides terminal sessions, a workspace can hold three other kinds of pane: Files,
 editor, and browser.
 
+## Side panel
+
+Press `g` to toggle the side panel. Each workspace keeps its own Source control and
+Files tabs, plus closable orchestration overviews and browser tabs. Source control retains its Changes
+and Pull request views. The pull request summary shows checks, reviews and the merge
+gate. Open pull request details to browse files, leave a review, edit metadata or choose
+additional actions. Drag the panel divider to resize it; double-click resets its width.
+The panel can expand over the grid; Escape restores its previous width.
+
+Ctrl-click a file path in a terminal to open it in Files at the linked line and column.
+Files uses that session's workspace, including when the session belongs to a different
+checkout. Choose **Open in editor pane** to move the file into the grid.
+
+When the Files area is at least 720 pixels wide, the tree and editor sit side by side.
+Drag their divider to resize the tree, or double-click it to reset. Tree width and
+collapse state are remembered per workspace. Collapse the tree for more editing room;
+**Show tree** restores it. `Ctrl+Alt+T` toggles the tree while Files is focused.
+Narrower panels keep the tree above a single viewer.
+
+Filter files by name without case sensitivity; matching rows retain their visible
+ancestors. Escape clears the filter. Breadcrumb folders reveal their location in the tree.
+Click a file to preview it; another click replaces that preview. Double-click or edit to
+keep the file in its own tab. Tabs show Git status and unsaved changes. Close with the
+tab button or middle-click; unsaved changes require confirmation. Files keeps up to
+12 tabs, replacing the oldest clean preview at the limit. If every tab is pinned or
+unsaved, close a tab before opening another. Terminal file links open pinned tabs.
+
 ## Files pane
 
 A Files pane is a directory tree next to a tabbed editor, in one grid cell. Opening a
 file from the tree adds a tab and shows it in the editor half of the pane. The file's
 contents are shared with any plain editor pane open on the same path — editing it in one
 place shows the change in the other, live.
+
+The tree shows Git status, with folders carrying their most severe descendant status.
+Use its context menu to create a file or folder, rename an entry, or move it to the OS
+trash. `F2` renames the focused entry; `Delete` moves it to the trash. Drag an entry onto
+a terminal to paste an `@path` reference; directories keep a trailing slash and paths
+with spaces are quoted.
+
+Saves check the file's content revision atomically. When another process changes an
+unsaved file, Houston keeps your edits and offers Reload or Overwrite. Returning focus
+to the window also checks for external changes.
 
 ## Editor pane
 
@@ -17,18 +54,34 @@ pane's editor half, so a file open in both places never drifts out of sync.
 
 ## Browser pane
 
-A browser pane is a real browser surface embedded in the grid, and an agent can drive
+A browser tab is a real browser surface in the side panel or the grid, and an agent can drive
 it: click, type, hover, press a key, or select an option, the same way it can type into
 a terminal pane.
+
+Press `b` to open a browser tab in the side panel. Move to grid and Move to side panel
+change its placement in either direction. Switching tabs or closing the side panel hides
+its browser surfaces without closing them; closing a browser tab releases its webview.
+Up to eight native webviews can be open at once. A refusal names the limit, current count
+and requested browser; close a browser tab before retrying.
+
+When an agent asks to open its first page, Houston opens a browser tab in the side panel.
+Navigation to an existing hidden browser reveals that exact tab before loading the page.
+Agent browser requests reveal a hidden browser automatically before operating on it.
+
+Desktop fits the available browser area. Phone previews use a 393 × 852 viewport and
+Tablet previews use 820 × 1180, scaled to fit with the current zoom shown. On hosts
+without device zoom, including older binaries, Phone and Tablet are disabled and their
+tooltips show the host refusal. Device zoom affects the page only.
+
+The address bar labels HTTPS pages secure, loopback pages local, and other pages not
+secure. This label describes the connection, not whether the page content is trustworthy.
+Select element hands the page selection and your instruction to the focused live agent.
+Without an agent target, selection is disabled and its tooltip explains how to enable it.
 
 On Windows, browser panes use WebView2. Manual navigation, back, forward and
 reload are available. The element picker and agent DOM actions currently return
 an unsupported-platform error because isolated script worlds are unavailable in
 the Windows implementation. Reloading without cache is also unsupported.
-
-When an agent asks to open a page and its workspace has no browser pane showing one,
-Houston opens a browser pane at that page. The agent's other browser actions need a page
-open first.
 
 ### Why this needs a consent gate
 

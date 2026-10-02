@@ -8,7 +8,7 @@ import { indentWithTab } from '@codemirror/commands'
 import { HighlightStyle, LanguageDescription, syntaxHighlighting } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 import { tags } from '@lezer/highlight'
-import { readFile, statFile, writeFile } from '../houston/bridge'
+import { readFile, statFile, writeFileChecked } from '../houston/bridge'
 import {
   basename,
   bufferKey,
@@ -162,7 +162,10 @@ export async function ensureBuffer(
       wrap,
       lineEnding: detectLineEnding(content)
     }
-    store.set(key, { buf, extensions })
+    const revision = contentHash(content)
+    const entry = { buf, extensions, revision }
+    store.set(key, entry)
+    void entry.revision.then((sha256) => { if (store.get(key) === entry && entry.revision === revision) entry.buf = { ...entry.buf, sha256 } })
     loadLanguage(workspaceDir, path)
     return buf
   })()
@@ -178,15 +181,17 @@ export async function saveBuffer(workspaceDir: string, path: string): Promise<'s
   const key = bufferKey(workspaceDir, path)
   const e = store.get(key)
   if (!e) throw new Error(`saveBuffer: no buffer loaded for ${path}`)
-  const disk = await statFile(path)
-  if (e.buf.mtimeMs !== null && disk !== null && disk.mtimeMs !== e.buf.mtimeMs) {
+  const content = e.buf.state.doc.toString()
+  try {
+    const sha256 = await writeFileChecked(path, content, e.buf.sha256 ?? await e.revision!)
+    e.revision = Promise.resolve(sha256)
+    e.buf = { ...e.buf, sha256, dirty: e.buf.state.doc.toString() !== content, conflict: false, lineEnding: 'LF' }
+  } catch (error) {
+    if (!String(error).includes('FILE_SAVE_CONFLICT')) throw error
     e.buf = { ...e.buf, conflict: true }
     notify(key)
     return 'conflict'
   }
-  await writeFile(path, e.buf.state.doc.toString())
-  const after = await statFile(path)
-  e.buf = { ...e.buf, dirty: false, conflict: false, mtimeMs: after?.mtimeMs ?? null, lineEnding: 'LF' }
   notify(key)
   return 'saved'
 }
@@ -195,9 +200,10 @@ export async function overwriteBuffer(workspaceDir: string, path: string): Promi
   const key = bufferKey(workspaceDir, path)
   const e = store.get(key)
   if (!e) throw new Error(`overwriteBuffer: no buffer loaded for ${path}`)
-  await writeFile(path, e.buf.state.doc.toString())
-  const after = await statFile(path)
-  e.buf = { ...e.buf, dirty: false, conflict: false, mtimeMs: after?.mtimeMs ?? null, lineEnding: 'LF' }
+  const sha256 = await contentHash(await readFile(path))
+  e.revision = Promise.resolve(sha256)
+  e.buf = { ...e.buf, sha256 }
+  await saveBuffer(workspaceDir, path)
   notify(key)
 }
 
@@ -209,6 +215,8 @@ export async function reloadBuffer(workspaceDir: string, path: string): Promise<
     readFile(path),
     statFile(path)
   ])
+  const sha256 = await contentHash(content)
+  e.revision = Promise.resolve(sha256)
   const wrap = e.buf.wrap
   const fresh = EditorState.create({ doc: content, extensions: e.extensions })
   e.buf = {
@@ -218,6 +226,7 @@ export async function reloadBuffer(workspaceDir: string, path: string): Promise<
     dirty: false,
     conflict: false,
     mtimeMs: stat?.mtimeMs ?? null,
+    sha256,
     wrap,
     lineEnding: detectLineEnding(content)
   }
@@ -237,4 +246,35 @@ export function setBufferWrap(workspaceDir: string, path: string, wrap: boolean)
     }).state
   }
   notify(key)
+}
+
+export async function contentHash(content: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export async function checkBufferRevision(workspaceDir: string, path: string): Promise<void> {
+  const key = bufferKey(workspaceDir, path)
+  const entry = store.get(key)
+  if (!entry) return
+  const revision = entry.revision
+  const content = await readFile(path)
+  const sha256 = await contentHash(content)
+  if (store.get(key) !== entry || entry.revision !== revision || sha256 === entry.buf.sha256) return
+  if (entry.buf.dirty) {
+    entry.buf = { ...entry.buf, conflict: true }
+    notify(key)
+  } else {
+    const fresh = EditorState.create({ doc: content, extensions: entry.extensions })
+    entry.revision = Promise.resolve(sha256)
+    entry.buf = {
+      ...entry.buf,
+      state: fresh.update({ effects: wrapCompartment.reconfigure(entry.buf.wrap ? CmView.lineWrapping : []) }).state,
+      sha256,
+      conflict: false,
+      lineEnding: detectLineEnding(content)
+    }
+    notify(key)
+    loadLanguage(workspaceDir, path)
+  }
 }

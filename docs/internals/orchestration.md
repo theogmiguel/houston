@@ -7,18 +7,59 @@ them. It does that over MCP, against the daemon that owns its own PTY, with a cr
 minted for its pane alone. Every signal one pane owes another is one row in `pane_inbox`, the
 single table the three delivery doors read — see "The inbox" below.
 
-Every child runs directly in its own project directory, with its CLI's own bypass/auto flag —
-there is no merge gate or sandbox isolating it (`spawn_session` opens the PTY in the
-session's `project_dir` itself, the same path an operator-opened pane gets). The one
+Every child runs with its CLI's own bypass/auto flag. Unless `cwd` is supplied, it inherits
+the parent's reported working directory when that directory exists inside the target
+workspace; otherwise it starts at the workspace root. There is no merge gate or sandbox
+isolating it. The one
 exception is asked for, never implied: `pane_spawn { worktree: "<slug>" }` (`hs-pane spawn
 --worktree SLUG`) first creates a git worktree at `<workspace>/.houston/worktrees/<slug>` on
 branch `houston/<slug>` (or `branch`), records it in `managed_worktrees`, and starts the
-child there. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
+child there. The base resolves in order: `origin/HEAD`, `main`, `master`, then `HEAD`;
+it does not follow the caller's feature branch. `branch` names the new branch, not its
+base; `pane_spawn` has no base override. `worktree` with `cwd` is refused, as is a `branch` that `git check-ref-format`
 rejects. A child that fails to start takes its new worktree and branch with it; a worktree
 that cannot be removed keeps its branch and record. Removing a worktree from the Changes
 pane drops its record, and a new worktree at a recorded path replaces the stale record, so
 a slug is reusable once its worktree and branch are gone. Houston does not commit changes
 on an agent's behalf.
+
+## Guarantees
+
+These are the properties orchestration promises, and the only ones. Each is enforced by the
+invariant checker in `tests/orchestration_chaos_wire.rs`, which drives every spawnable
+provider through `fake_agent` with randomized seeds, daemon kills and slow writers. A change
+that weakens one of them changes this list in the same PR.
+
+- **No lost signal.** A row is persisted before any door reads it. A crash between a child's
+  `pane_submit` and the end of its round cannot leave a result that is neither stored nor
+  eligible (`ready_at` is set in the transaction that closes the round). Restart recovery
+  releases reservations and returns unconfirmed pastes to pending.
+- **At-least-once, recognisably.** Delivery is never claimed exactly-once. A redelivered row
+  keeps its `pane_inbox.id`, carries a new `delivery_id` and says "possibly delivered before";
+  a stale confirmation cannot mark a later attempt.
+- **One door per attempt.** Doors claim disjoint rows through a conditional reservation, and
+  an active HTTP body or PTY write pins its reservation until it completes or is cancelled.
+- **No paste into the wrong process.** A row is pasted only into the process generation it
+  was addressed to. A restored pane receives pending rows on its first prompt or through
+  `pane_wait`.
+- **Every row has a live owner.** A row addressed to an ended pane moves to the nearest live
+  ancestor orchestrator, keeping `original_to`; it reaches the operator only when no
+  ancestor is live. Delegated children never address the operator directly.
+- **Status comes from the provider.** Lifecycle state comes from hooks or supported streams,
+  never from terminal text. Where a provider has no signal for a state, the provider table
+  says so, and Houston does not guess.
+- **Limits refuse visibly.** Every cap names the limit, the actual value and the refused
+  operation, and is returned to the caller that hit it. A producer is refused only when the
+  insert itself fails.
+- **Untrusted text is bounded and redacted.** Every agent- or hook-written field passes
+  `orchestrate::inbox_row_new`, which caps it and runs secret redaction, before it is stored.
+
+Known limits:
+- A server body completing is not an application acknowledgement.
+- Codex has no authoritative human-escalation event; an unresolved Auto review shows the
+  `stalled?` diagnostic described below, which can be a false positive.
+- Cursor has no needs-input signal.
+- Windows writer cancellation has no automated test yet.
 
 ## The MCP endpoint
 
@@ -45,6 +86,39 @@ change under it.
 The daemon implements `McpHost` for itself (`server.rs`), wiring credential resolution, the
 tool registry, per-session agent kind, the progress tick and the notifier registry.
 
+## Provider lifecycle capabilities
+
+These are Houston's installed hook contracts, not proof that every provider version emits
+all supported events. Every PTY additionally reports process exit independently.
+
+| Provider | Turn start | Tool use | Turn end | Needs-input | Session end | Parent wait cap |
+|---|---|---|---|---|---|---|
+| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop/StopFailure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s |
+| Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s |
+| Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional |
+| OpenCode | User messages; busy status is activity | Permission/question events | session.idle/error | Permission/question requests | PTY exit | 600 s with managed launch timeout |
+| Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s |
+| Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout |
+
+Wait budgets belong to the calling parent, regardless of its children's providers. Requests
+above the cap are clamped and report the provider, requested value and cap. Claude's cap
+stays below foreground auto-backgrounding; Cursor keeps a margin under its inspected
+60-second timeout. Codex's launch timeout is 630 seconds. OpenCode's Houston registration
+uses a process-scoped inline timeout of 630000 ms, reversed automatically on exit. Grok's
+`tool_timeouts.pane_wait` overrides the server timeout; unknown or invalid configuration
+uses a provisional 30-second cap. Antigravity's numeric client limit is still unknown.
+A timeout returns one line asking the parent to call `pane_wait` again.
+
+Codex Auto PermissionRequest is approval-flow evidence, not human-wait evidence. An
+unresolved episode after five minutes raises a deduplicated `stalled?` marker with its
+episode, elapsed time and `approval_outcome_unobserved`. The threshold is a conservative
+heuristic: hermetic fake-agent timing is only a latency lower bound, and does not measure
+real reviewers. Slow review, long tools and missing hooks can produce false positives.
+The marker leaves the agent Working, produces no desktop notification and reaches parents
+only through an explicit wait. Matching PostToolUse, Stop or Interrupt clears it. Without a
+call id, matching requires turn, tool and canonical input digest; incomplete evidence waits
+for authoritative end/interruption. A fresh prompt alone cannot clear such an episode.
+
 ## Tools
 
 Every verb below has two doors: the `pane_*` MCP tools and the `hs-pane` CLI. Same daemon
@@ -58,8 +132,8 @@ spelling, or a verb that is CLI-only).
 | `pane_list` | `mcp_orchestration.rs` | `hs-pane list` | list the caller's live children, each with its full delegation record (state, stall, `pending_handback`, `inbox_owed`, the capability note) |
 | `pane_get` | `mcp_orchestration.rs` | `hs-pane get` | one pane in the caller's own subtree, in one call: its state, its children and depth, what would end its turn, and its role/brief/stall/staged-result if it is a child of the caller |
 | `pane_read` | `mcp_orchestration.rs` | `hs-pane read` | a child's terminal, ANSI-stripped, capped: `source=screen` (default) reads the session's emulator (`vt.rs`), `source=tail` splits the byte ring on newlines. Anything else is refused by name |
-| `pane_prompt` | `mcp_orchestration.rs` | `hs-pane prompt` | send follow-up text into a child, queued on the child's own wake lane |
-| `pane_wait` | `mcp_orchestration.rs` | `hs-pane wait` | door 1: block on the caller's own `pane_inbox` until an eligible row exists (or the timeout runs out), reserve it, mark it `delivered_via = 'wait'`, and return the rows in this same call. `session` (optional) scopes to one child; `kind` (optional) filters to one row kind but never hides an urgent one for a waited child. `until` is removed and refused by name, naming `kind` as its replacement |
+| `pane_prompt` | `mcp_orchestration.rs` | `hs-pane prompt` | send follow-up text into a child; return immediate write failures and queue held prompts on the bounded wake lane |
+| `pane_wait` | `mcp_orchestration.rs` | `hs-pane wait` | door 1: block on the caller's own `pane_inbox` until an eligible row exists (or the timeout runs out), reserve it, return the rows in this same call, and mark `delivered_via = 'wait'` after the response body completes. `session` (optional) scopes to one child; `kind` (optional) filters to one row kind but never hides an urgent one for a waited child. `until` is removed and refused by name, naming `kind` as its replacement |
 | `pane_kill` | `mcp_orchestration.rs` | `hs-pane kill` | end a child pane |
 | `pane_submit` | `mcp_orchestration.rs` | `hs-pane submit` | worker→parent result handoff, with an optional summary and artifact paths; wakes the parent |
 | — | — | `hs-pane keys` | press a small set of keys in a pane (the CLI-only spelling of `pane_send_keys`) |
@@ -125,7 +199,8 @@ The inbox has its own limits, all in `orchestrate.rs` beside the doors that spen
 `INBOX_BATCH_MAX_ROWS` (20) and `INBOX_BATCH_MAX_BYTES` (64 000) cap one reservation,
 `INBOX_RESERVATION_MS` (30 000) expires a door that died mid-delivery, `PASTE_ATTEMPTS_MAX`
 (3) and `PASTE_CONFIRM_MS` (60 000) bound door 3's proof, `OPERATOR_TYPING_GUARD_MS` (3 000)
-debounces the composer hold, `STOP_INBOX_QUERY_MS` (250) is door 2's whole budget,
+debounces the composer hold, `STOP_INBOX_QUERY_MS` (250) bounds door 2's reserve query and
+`STOP_INBOX_CONFIRM_MS` (250) gives its post-stdout confirmation a separate budget,
 `STOP_BLOCKS_PER_TURN_MAX` (3) caps its blocks, `INBOX_PENDING_PER_PANE_MAX` (200) and
 `INBOX_OPERATOR_MAX_ROWS` (1 000) bound the queues, and `SUBAGENT_INFLIGHT_MAX_MS`
 (45 min) / `OWED_NOTIFICATION_MAX_MS` (2 min) expire the sub-agent round's withheld turn
@@ -241,13 +316,15 @@ eligible.
 (or the daemon, for a notice) that produced it; `workspace` is the workspace identity every
 other table already keys on; `request_id` is the `delegations.round` the row answers.
 `from_codename` and `from_role` are bounded snapshots of the sender identity, so a renderer
-can keep naming a result after temporary cleanup removes the live session.
+can keep naming a result after temporary settlement ends the process.
 `kind` is one of `InboxKind`: `result` (a `pane_submit` body), `no_handback` (a turn ended
 with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's process is
 gone), `stalled`, `operator_note` (the operator ended or interrupted the child), and `mail`
 (a swarm-scope message addressed to a pane's label). `needs_input` and `exited` are the
 urgent kinds,
-and they bypass every batch window.
+and they bypass every batch window. Swarm mail between siblings remains agent-to-agent
+traffic. A top-level pane may address the operator; delegated children hand results to their
+orchestrator and its live ancestors.
 
 Three timestamps, three words: `created_at` is **persisted**, `delivered_at` is **sent**,
 `confirmed_at` is **proven**. What "sent" is worth depends on the door:
@@ -256,7 +333,7 @@ Three timestamps, three words: `created_at` is **persisted**, `delivered_at` is 
 |---|---|---|---|
 | `wait` | returned inside the tool result of a live turn | no mechanism; final | `delivered_at` |
 | `stop_hook` | the helper printed it and the CLI accepted the hook's stdout | no mechanism; final | `delivered_at` |
-| `paste` | bytes reached the PTY | yes, the parent's own prompt hook | `confirmed_at` |
+| `paste` | bytes reached the PTY | yes, the parent's own prompt hook | `confirmed_at`, or the seven-day unconfirmed cap |
 | `operator` | opened in the renderer | yes, the ack | `confirmed_at` |
 
 `confirmed_at IS NULL` is therefore never read as "failed" on its own; the door says.
@@ -266,9 +343,12 @@ changes on every reservation. `attempts` counts delivery attempts by any door �
 reservation, not only door-3 pastes — which is what lets door 2's "possibly delivered
 before" note and door 3's re-address threshold share one counter. A duplicate after a retry
 is recognisably the same message under a second delivery id, and a stale confirmation from
-an earlier attempt cannot mark a later body. A reservation a door fails to complete expires
-after `INBOX_RESERVATION_MS` and the row is eligible again; on boot every reservation is
-released.
+an earlier attempt cannot mark a later body. Stop-hook reservations expire after
+`INBOX_RESERVATION_MS`. Active HTTP bodies and PTY
+writes pin their reservations until completion or cancellation, so a slow writer cannot
+lose its row to another door. Boot releases all reservations. Unconfirmed paste attempts
+expire after `UNCONFIRMED_PASTE_MAX_MS` (seven days), counted from the first attempt across
+restarts; this also bounds providers whose prompt fixture carries no receipt text.
 
 Every `summary`, `body`, `reason` and the hook helper's `last_message` pass
 `orchestrate::inbox_row_new` first, which caps them at the same limits `pane_submit`
@@ -311,22 +391,50 @@ A parent already sitting inside a `pane_wait` call gets there first: every produ
 writes a row calls `Daemon::inbox_notify`, which fires a per-session `tokio::sync::Notify`
 (`Daemon::inbox_wake`) before anything else, whether or not the row is urgent. The wait
 loop reserves-then-awaits (never the other order), so a write racing the check is never
-lost — the DB is the truth, the notify is only ever a hint to re-check it sooner. Because
-the reservation happens the instant the row exists, a row door 1 already claimed is
-`delivered_at`-stamped by the time door 3's own batch timer fires, and door 3's own
-eligibility query simply does not see it — no second mechanism keeps the two doors from
-carrying one message twice.
+lost — the DB is the truth, the notify is only a hint to re-check it sooner. Reserved
+rows remain undelivered until the response body consumer completes the final frame.
+Dropping a queued frame or an incomplete body releases its reservation. Disconnects cancel
+through the response sender's closed signal; `notifications/cancelled` cancels the matching
+request in the caller's scope. This applies to SSE progress responses and plain JSON waits.
+Body completion is a server-side transport boundary; it cannot prove that the client
+application or model read the bytes. MCP returns each body once in textual content;
+structured rows carry metadata and omit `body`.
 
-Zero tokens are spent while blocked; the result lands as a tool result in the same turn,
-exactly like the CLI's own sub-agent tool. Rows come ordered by `created_at, id`, capped at
-`INBOX_BATCH_MAX_ROWS` / `INBOX_BATCH_MAX_BYTES` with `has_more: true` when cut. A `kind`
-filter scopes to one row kind but never hides an urgent row: `needs_input`, `exited` and
-`stalled` for a waited child return through any filter, so a parent waiting for a `result`
-cannot sit forever on a child that is blocked or dead. `Daemon::inbox_waiting` enforces one
-`pane_wait` per pane: a second concurrent call from the same caller is refused by name
-rather than sharing the first one's reservation. The guard that holds a caller's slot in
-both `inbox_waiting` and `inbox_wake` is released on every exit path — return, `?`, or
-panic — through `Drop`.
+Zero tokens are spent while blocked. After spawn, agents must wait instead of polling
+`pane_get`, `pane_read` or `pane_list`; those are diagnostics after a timeout, for help,
+or at the operator's request. Timeouts are bounded by `DEFAULT_WAIT_TIMEOUT_MS`, below
+Codex's tool timeout. A whole-inbox wait with no live children or pending rows returns
+`nothing_to_wait_on` immediately.
+
+Rows come ordered by `created_at, id`, capped at `INBOX_BATCH_MAX_ROWS` /
+`INBOX_BATCH_MAX_BYTES` with `has_more: true` when cut. A `kind` filter never hides urgent
+rows for a waited child. A new wait supersedes an active wait, which returns `superseded`.
+A batch already returned for transport delivery remains reserved until that sender confirms
+or releases it; its confirmation cannot remove a replacement wait. Releasing an in-flight
+batch wakes the replacement waiter to retry. Gateway `call_tool` refuses `pane_wait`: the
+agent must call it directly so the streaming path can acknowledge delivery.
+
+A result staged during a working turn is released when the round closes, including an
+intentional cancellation. `pane_get` exposes `result_staged_age_ms` for a result that
+has not become eligible; no age-based automatic release is applied.
+
+Claude's Stop reports with running background tasks hold an unstaged round open and
+prevent stall notices. `pane_get` names the hold as `background job running (N)`. A Stop
+with zero jobs removes the hold. After `BACKGROUND_HOLD_MAX_MS` (45 minutes), the daemon
+releases a stored result or emits one `no_handback` naming the bound and elapsed time.
+
+Delegation registration precedes PTY creation, and a failed spawn removes its spawning
+record. An in-flight reservation protects the parent and counts against child caps and
+role uniqueness while worktree creation runs outside the cleanup lock. Failure rolls
+back the reservation. PTY startup and registration remain under the cleanup lock. Operator keystrokes record composer
+occupancy immediately and defer cleanup cancellation to the watcher when that lock is
+busy, so unrelated terminal input does not wait for a spawn.
+
+`pane_prompt` applies the same status and operator-composer hold as inbox pastes. A held
+prompt remains on the bounded wake lane and reports `held`; an immediately writable
+prompt returns PTY write errors synchronously. The hold is rechecked before paste and
+before Enter. A hold detected before writing requeues the prompt; a partial or unsubmitted
+paste creates a note for the prompt sender containing the prompt and is never retried automatically. A queued prompt retains its sender until delivery. If that sender has died, its nearest live ancestor inherits the note; the operator receives it only when no ancestor is live.
 
 ### Door 2: the synchronous `Stop` hook
 
@@ -401,12 +509,26 @@ window. Three refusals hold it back, and the rows stay pending through all of th
 - **never twice.** `Backend::write_stdin` uses `write_all`, which can fail AFTER part of
   the payload landed, so `write_stdin_counting` drives `write` itself and reports how far
   it got. Only a proven zero retries, at the next settle, with the attempt counted;
-  anything else — including a backend that cannot say — is `reason = 'partial'` and goes to
-  the operator at once. `PASTE_ATTEMPTS_MAX` proven-zero attempts also go to the operator.
+  anything else — including a backend that cannot say — is `reason = 'partial: …'` and remains with
+  its live parent through `pane_wait`, without further automatic delivery. The same
+  rule applies after `PASTE_ATTEMPTS_MAX` proven-zero attempts. A dead parent's nearest
+  live ancestor inherits the row; only the absence of a live ancestor reaches the operator.
 
-The framing's first line carries the `delivery_id`, and the parent's next `UserPromptSubmit`
-whose prompt HEAD carries that exact id sets `confirmed_at`. `PASTE_CONFIRM_MS` counts from
-the submitting `\r`, not from enqueue.
+The framing's first line carries the `delivery_id`. For providers whose prompt hooks
+include text, the next prompt hook whose prompt head carries that exact id sets
+`confirmed_at`; payloads without prompt text cannot provide this confirmation.
+A partial paste keeps a durable receipt associated with its row. If the operator submits
+that complete receipt header from the composer, the prompt hook resolves the wait-only row
+before a later wait can deliver it again. An incomplete header provides no such proof.
+A database failure after submitting Enter makes the row wait-only with the failure reason;
+automatic delivery cannot blindly repeat the submitted paste.
+Held wake lanes back off to 640 ms between checks and stop after a 30-second hold, reporting
+undelivered text to its sender. Durable inbox rows remain available through wait. Ended
+sessions stop their lanes immediately. Session state is never held while writing to a PTY;
+Unix teardown interrupts its active counted writer before releasing the handle.
+`PASTE_CONFIRM_MS` counts from the submitting `\r`, not from enqueue. Delivery ids use
+compact lowercase hexadecimal so prompt redaction preserves the receipt while still
+removing bearer UUIDs.
 
 ### The sub-agent round
 
@@ -477,13 +599,26 @@ requests for the same command and tool in the same turn cannot be distinguished 
 duplicate delivery; they share one episode. Raw commands are not persisted for this
 correlation.
 
-**Codex Auto's block grace window.** A Codex hook carries no field distinguishing an
-Auto-mode reviewer's self-resolving approval from one waiting on a human, and most
-resolve within seconds (observed: 4-6 s). For a session recorded with `ApprovalMode::Auto`,
-the urgent `needs_input` row to the parent is delayed by `CODEX_AUTO_BLOCK_GRACE_MS`
-(`daemon.rs`) and dropped instead of written if the episode has already resolved by then;
-the child's own delegation state still moves to `needs_input` immediately. Every other
-approval mode, and every other agent kind, writes the row synchronously as before.
+**Codex automatic approval reviews.** `PermissionRequest` in Auto mode precedes
+approval processing, so an unresolved request is not evidence of a human prompt. The
+session stays Working with `hold_reason: auto-review in progress` until matching tool
+completion resolves the episode. After five minutes the hold reads
+`stalled? approval_outcome_unobserved`; this is an uncertain diagnostic, not a human prompt. `request_user_input` remains an urgent needs-input
+event. A native approval prompt after reviewer denial has no distinct verified hook in
+the installed CLI; it cannot be inferred from elapsed time or terminal text.
+
+**Tool-boundary context (door 2b).** Claude and Codex `PostToolUse` command hooks can
+return `hookSpecificOutput.additionalContext`. The hook queries the authenticated daemon
+for bounded, once-per-row needs-input hints. This does not consume the durable row, block
+the parent's turn or paste into a Working terminal. Antigravity, OpenCode, Cursor and Grok
+rely on the operator channel for immediate attention and their existing idle delivery.
+Post-tool context queries run after the lifecycle drop is written. Each pane receives a
+local signal path at spawn; the signal is created when it first hosts a child, including
+children spawned after orchestration is enabled. Panes that have never hosted children
+skip the daemon round trip. The signal carries no prompt or result content.
+
+Verified output contracts: [Claude hooks](https://code.claude.com/docs/en/hooks#posttooluse)
+and [Codex hooks](https://learn.chatgpt.com/docs/hooks), also present in the installed binaries.
 
 ### Which request a body answers
 
@@ -536,18 +671,18 @@ is resolved instead — skipped by the doors, kept for the operator as history.
 
 ### Limits are visible, and a producer is refused only by the disk
 
-Over `INBOX_PENDING_PER_PANE_MAX` a row is still written, then re-addressed to the operator
-naming the limit, the count and the row. The operator queue is bounded by
-`INBOX_OPERATOR_MAX_ROWS`, pruning the oldest CONFIRMED rows first and never an unread one.
-A full wake lane is a row to the operator rather than a `warn!` nobody reads. A failed
-insert is what `pane_submit` returns, with the body's size and the caps — never success on
-a failed commit.
+Over `INBOX_PENDING_PER_PANE_MAX` a row remains addressed to its live parent, naming
+the limit, count and row in its reason. Backlog, exhausted paste attempts and partial
+paste disable automatic Stop-hook and paste delivery for that row; `pane_wait` can
+still deliver it with the reason. A full prompt wake lane reports to the prompt sender.
+A failed insert is returned to the producer with the body's size and caps.
 
 ### The operator inbox
 
-Rows addressed to a pane that is dead or restored-dead re-address to `to_session = 0` (the
-operator), keeping `original_to`, `workspace` and a `reason` (`parent_dead`, `partial`,
-`attempts`, `late`, `lane_full`, `backlog`). The operator inbox is a **workspace** surface,
+Rows addressed to a dead pane go to its nearest live ancestor orchestrator, keeping
+`original_to`, `workspace` and `reason = 'parent_dead'`. Only when no ancestor is live
+do they reach `to_session = 0` (the operator). Restart recovery uses the same rule.
+The operator inbox is a **workspace** surface,
 not a pane surface: the pane may be gone, so `inbox_list{workspace}` answers rows by the
 workspace they came from. The wire carries `InboxList { workspace }` → `inbox_rows`,
 `InboxAck { id }`, `InboxResolve { id }` and `SessionInfo.inbox_unread`; clients can
@@ -555,8 +690,7 @@ request the list after reconnecting. **Read is not resolved**: `inbox_ack` sets
 `delivered_via = 'operator'` and `confirmed_at`; only an explicit resolve (or the block
 ending) sets `resolved_at`, because reading about a blocked child does not unblock it. Children keep
 running. Retention is `INBOX_OPERATOR_MAX_ROWS` for confirmed rows, never for unconfirmed
-ones. The app has no surface for this queue: the wire messages remain, but nothing in
-the renderer requests, acks or resolves operator rows.
+ones. The overview shows genuine operator rows in "Addressed to you" and hides that group when empty. Child warnings and delivery failures with a live ancestor remain in the orchestrator inbox.
 
 ### Restart and migration
 
@@ -565,17 +699,26 @@ with `ready_at = now` and `reason = 'migrated'`, then removes the columns in the
 transaction. An already-migrated database is unchanged. Recovery at boot is idempotent, so two
 restarts produce one state, and it runs **after** restore:
 
-1. `close_delegations_lost_to_the_restart` closes every open delegation as `unknown`, as
-   before — a restored husk is a new process and nothing can reopen its mission.
-2. The restore policy brings sessions back.
+1. Open delegations become `unknown`; a restart alone does not prove success or failure.
+2. The restore policy brings parents and their open children back through valid Claude
+   and Codex resume handles, rebinds session IDs and inbox recipients, and writes exactly
+   one `restored` notice per parent. Its JSON array names role, child, provider and whether
+   the conversation resumed, with a reason for each outcome. Successfully resumed children
+   enter `working`: their mission is live again, while `unknown` describes an interrupted
+   mission whose process has not resumed. Children of deferred parents inherit the visible
+   deferral and resume through the same policy when the parent is manually respawned.
+   Rebinding updates every inbox reference to the current session generation in one
+   transaction, so a later ancestor reroute still closes the original delegation round.
+   Unsupported children remain ended; settled children remain
+   archived. A child without a valid resume handle never starts a bare replacement CLI.
 3. `db::inbox_recover_after_restart` runs against the live set restore actually brought
    back, not the empty roster boot started with — a respawned husk keeps its own rows
    addressed to it instead of re-addressing them to the operator on the strength of an
    empty live set. It releases every reservation; puts `paste` rows sent and unconfirmed
    back to pending (the paste may or may not have landed; the row keeps its attempt count);
    puts unacked `operator` rows back to unread; leaves `wait` and `stop_hook` rows final and
-   untouched; and re-addresses rows whose `to_session` did not survive with
-   `reason = 'parent_dead'`. A row is never auto-pasted into a process that is not the one
+   untouched; and re-addresses rows whose `to_session` did not survive to the nearest
+   live ancestor, or the operator if none remains, with `reason = 'parent_dead'`. A row is never auto-pasted into a process that is not the one
    it was addressed to: a restored pane's pending rows wait for its first
    `UserPromptSubmit` (the operator is there) or go through door 1 when it asks.
 
@@ -599,11 +742,21 @@ round's in-memory hold is released so completed ordinary panes do not remain for
 The wake-lane map owns both queued and in-flight delivery, and the cleanup marker is
 rechecked under a shared lock with prompts, key input and submits so a follow-up cannot
 remove a reopened round.
-Removal emits `SessionRemoved` but leaves the delegation and inbox rows durable. The
-historical parent chain continues to authorize the parent's `pane_wait` for that child;
-it does not authorize unrelated panes or resurrect terminal controls. Descendant removal
-rechecks deferred cleanup up the recorded ancestor chain. Explicit operator close remains
-separate and retains its cancellation semantics.
+Settlement persists scrollback and ends a temporary child's PTY while retaining its
+session and resume handle. Done-and-idle reusable children stay live but no longer consume
+a child slot. Both carry settled and retained-until timestamps. The existing delegation
+watch loop removes expired settled children after `SETTLED_RETENTION` (24 hours by default,
+configured through daemon settings). Ordinary idle reaping skips retained delegations.
+Explicit close and parent close remove the retained sessions.
+Continue carries the retained scrollback into the replacement PTY before its reader starts,
+so stream offsets and the earlier transcript survive. It uses the existing resume machinery
+for Claude and Codex; other providers are
+refused by name. A new request clears the previous settlement and retention timestamps.
+
+Role routing is stored per registered workspace and exposed through `workspace_info`.
+The seeded skill consults ordered role-pattern routes for model and effort selection;
+explicit operator choices take precedence. Handoff state is bounded UTF-8 text or a
+workspace-contained file and becomes part of the independent pane's brief.
 
 **Closed is not the same as terminal**, and the two predicates on
 `DelegationState` are not interchangeable. All four closing states are CLOSED:
@@ -677,7 +830,7 @@ composition folds the two into one story. A quiet-settle release names itself on
 (`reason = 'quiet_settle'`), because that is the one release a parent may need to
 second-guess.
 
-**Quiet-settle** is the fifth named exception to "PTY content is not a status machine"
+**Quiet-settle** is the third named exception to "PTY content is not a status machine"
 (`docs/internals/invariants.md`). `Daemon::delegation_watch_tick` samples every open
 delegation; for a child whose source is `quiet-settle`, a tail fingerprint unchanged for
 `DELEGATION_SETTLE_QUIET_MS` with no process running under the pane is a turn end nothing
@@ -763,7 +916,8 @@ the same way ("child of oak", id in the tooltip).
 parent (`inbox_owed`, `inbox_provisional`, both fed from the table at the same roster
 seam), the correction link (`last_result_corrected_by`), the capability sentence
 (`capability_note` — what the child's CLI cannot report, said by provider name), and the
-composer-hold reason (`hold_reason`, set only while something is actually owed). The card
+hold reason (`hold_reason`, covering pending delivery, background work or automatic
+approval review). The card
 renders an "owed" row, the last result's state (a corrected result struck
 through with its correction, a provisional one marked), the capability
 sentence, and a "waiting" row with the hold reason in the daemon's words —
@@ -887,7 +1041,7 @@ ourselves is deferred: the algorithm is source, not contract.
   last-said text lives, `{"text": "..."}` — lifted into `last_message` but still never a
   status, since it fires after every assistant message) and `subagentStart`/`subagentStop`
   (correlation-only). No needs-input event exists in Cursor's contract; the stall row
-  covers it and `pane_list` says "cursor cannot report a block; a stall stands in".
+  covers it and `pane_list` says "cursor: needs-input not reported by this provider".
 - **Antigravity.** Binary is `agy`. The installer adds `SessionStart` and
   `PreToolUse`/`PostToolUse`, which fire **only in the matcher-wrapped dialect**
   (`{"matcher": ".*", "hooks": [...]}`); the plain entry the installer writes for the other
@@ -910,7 +1064,7 @@ ourselves is deferred: the algorithm is source, not contract.
 `ProviderCapabilities` has one consumer beyond the tests: `capability_note` turns a missing
 axis into one sentence per provider, joined with `"; "`, and `pane_list` carries it per
 child — "grok reports no last message; the exit or the submit is what the parent gets",
-"cursor cannot report a block; a stall stands in", "opencode has no turn-end continuation;
+"cursor: needs-input not reported by this provider", "opencode has no turn-end continuation;
 results wait for its next idle". A `ProcessOnly` CLI gets exactly its own sentence — "this
 pane reports no turn end; only a submit or its exit reaches its parent" — because the other
 three axes are moot when there is no turn end to hang them off. The renderer's delegation
@@ -983,7 +1137,7 @@ the session row flattened in (so this is `pane_list`'s element shape plus
 extras, not a second vocabulary), the live-children and depth numbers its own
 spawn caps are measured against, its `TurnEndSource`, and its `DelegationView`
 if it has one. The view deliberately reports `result_staged: bool` — read off the
-parent's inbox, since that is where the body lives — rather than the body itself, which
+parent's inbox while `ready_at` is absent, with `result_staged_age_ms` showing its age — rather than the body itself, which
 is the parent's next wake and not a field a caller can drain early. This is the one verb a caller may point at ITSELF: the scope gate's
 self-refusal exists for the verbs that act on a pane, and this one only reads.
 
@@ -1061,10 +1215,62 @@ tables, `SwarmMessage`/`SwarmAgent` wire events and the hook-delivery loop `swar
 It does not identify a separate user-facing workflow.
 
 `Daemon::swarm_send` writes a `pane_inbox` row addressed to the recipient's live session;
-a recipient with no live session is re-addressed to the operator (`reason = "parent_dead"`).
-`Db::open` imports legacy message files under `<root>/.houston/swarm/<id>` into
-operator-addressed rows (`reason = "migrated"`).
+a recipient with no live session is re-addressed to its nearest live ancestor. If the recipient has no session identity, the sender's parent inherits the failed delivery. Only the absence of a live ancestor reaches the operator (`reason = "parent_dead"`).
+`Db::open` imports legacy message files under `<root>/.houston/swarm/<id>` with
+`reason = "migrated"`. A known recipient keeps the row until restart recovery determines
+its live ancestor. Without a recipient, a known sender's parent inherits it; only mail
+without a known owner starts in the operator inbox.
 
 `ScopeLayout`/`scope_dir`/`init_scope` maintain the directories used by the `plan/events/`
 GC sweep. Hook drops use the channel's `hooks/drop/` directory, and `hs-pane` wrappers
 live under each workspace's `.houston/orchestration/bin/`.
+
+## Renderer placement and operator inspection
+
+A headless child has a real daemon-owned PTY but no separate grid cell. The renderer's
+roster selects it inside its orchestrator pane; moving it to the grid changes placement,
+not delegation ancestry. Roster and overview grouping use session liveness before
+mission state: an ended child is Settled, a live blocked child Needs you, and other live
+children Working. A resumed child must never be included in Close settled, including
+when it resumes during the Undo interval.
+
+Each orchestrator can have one overview tab in the workspace's side panel. It exposes
+results and the operator queue without intercepting terminal input. Queue acknowledgement
+and resolution use durable inbox receipts. Source control reviews use the child's own
+checkout and can return a review prompt to that child.
+
+The side panel stores tab placement per workspace in localStorage. Browser surfaces
+remain mounted while their tabs or panel are hidden, with id-scoped native suppression;
+closing a browser tab destroys its surface and frees a native-webview slot. Popovers,
+menus, modals and resize drags assert shared suppression reasons because native children
+paint above the renderer DOM. Tooltips never suppress: they sit over chrome rows, and a
+global hide on every hover blanks the page. Moving a browser between panel and grid preserves its
+surface identity and saved tab state, while remounting the surface at its new placement.
+
+Worktree spawning passes Codex a session-local inline `projects` trust table for the
+child checkout and the repository's main checkout,
+passes Cursor its supported `--trust` flag, and appends a reversible managed-marker
+block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved.
+Claude, Antigravity and OpenCode worktree spawns return a `worktree_trust` warning to the caller: the provider may ask to trust the new folder before starting. The parent inspects and answers with `pane_send_keys`, or escalates to the user. A child without CLI progress remains `spawning`; the ordinary
+stall notice still reaches its parent through `pane_wait`. Claude's parent-folder trust
+walk stops at the linked worktree's git root, so workspace trust does not carry over.
+Houston never rewrites Claude's global project state or uses undocumented environment
+variables to bypass folder trust. Trust flags do not change the requested tool approval mode.
+
+A second live child in the same checkout returns a `shared_checkout` warning to the caller. Spawn replies carry typed `warnings: [{code, message}]` and retain the legacy nullable `warning` string; neither creates an operator inbox row. The `effort` reply names the requested effort or `CLI default` when
+none was supplied. Omitted `pane_submit.request_id` uses the current request reported by
+`workspace_info` and the reply states that default.
+
+Temporary children end their PTY after their accepted result is delivered to the parent;
+settled records and transcripts remain through retention. A child with `no_handback`
+settles as failed after five minutes of authoritative Idle status, with no background,
+composer or descendant hold. Its stop reason names `NO_HANDBACK_SETTLE_MS`.
+
+Worktree cleanup claims are shared by repository common directory, rechecks live session
+use immediately before removal, and measures only trees with no keep reason. Kept rows
+retain their last byte count and measurement timestamp, or null for not measured.
+
+Child `needs_input` writes an urgent row to the parent. The parent inspects the prompt
+and answers through `pane_send_keys`, or asks the user for a decision. Child status and
+roll-up badges do not trigger native desktop notifications. Only a top-level pane's
+own `needs-input` status triggers one.

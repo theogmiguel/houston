@@ -121,6 +121,12 @@ pub fn validate_slug(slug: &str) -> Result<()> {
         Some("it is empty")
     } else if slug.contains('/') || slug.contains('\\') {
         Some("it contains a path separator")
+    } else if slug == "." {
+        Some("it is `.`")
+    } else if slug.chars().any(char::is_control) {
+        Some("it contains a control character (including NUL)")
+    } else if slug.len() > 255 {
+        Some("it exceeds the limit of 255 bytes")
     } else if slug.contains("..") {
         Some("it contains `..`")
     } else if slug.chars().any(char::is_whitespace) {

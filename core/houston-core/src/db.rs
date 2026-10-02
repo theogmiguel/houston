@@ -286,6 +286,15 @@ fn migrate_pending_swarm_mail_into_the_inbox(conn: &Connection) -> Result<()> {
         };
         for label_entry in inbox_labels.flatten() {
             let label_dir = label_entry.path();
+            let label = label_entry.file_name().to_string_lossy().into_owned();
+            let recipient: Option<u32> = conn
+                .query_row(
+                    "SELECT session_id FROM swarm_agents WHERE swarm_id = ?1 AND label = ?2",
+                    rusqlite::params![swarm_id as i64, label],
+                    |row| row.get::<_, Option<u32>>(0),
+                )
+                .optional()?
+                .flatten();
             let files = match std::fs::read_dir(&label_dir) {
                 Ok(rd) => rd,
                 Err(_) => continue,
@@ -315,10 +324,30 @@ fn migrate_pending_swarm_mail_into_the_inbox(conn: &Connection) -> Result<()> {
                         continue;
                     }
                 };
+                let from_session: Option<u32> = conn
+                    .query_row(
+                        "SELECT session_id FROM swarm_agents WHERE swarm_id = ?1 AND label = ?2",
+                        rusqlite::params![swarm_id as i64, mail.from],
+                        |row| row.get::<_, Option<u32>>(0),
+                    )
+                    .optional()?
+                    .flatten();
+                // Boot recovery resolves liveness after parent and child sessions restore.
+                let to_session = if let Some(recipient) = recipient {
+                    recipient
+                } else if let Some(sender) = from_session {
+                    conn.query_row(
+                        "SELECT parent_session FROM delegations WHERE child_session = ?1
+                         UNION ALL SELECT spawned_by FROM sessions WHERE id = ?1 AND spawned_by IS NOT NULL LIMIT 1",
+                        [sender], |row| row.get::<_, u32>(0),
+                    ).optional()?.unwrap_or(0)
+                } else {
+                    0
+                };
                 let row = match crate::orchestrate::inbox_row_new(
-                    0,
+                    to_session,
                     &root_dir,
-                    None,
+                    from_session,
                     None,
                     crate::orchestrate::InboxKind::Mail,
                     &format!("Mail from {}", mail.from),
@@ -796,6 +825,8 @@ pub struct DelegationRow {
     pub round: u32,
     pub reusable: bool,
     pub cleanup_after: Option<u64>,
+    pub settled_at: Option<u64>,
+    pub retained_until: Option<u64>,
 }
 
 pub struct RoutineRunRow {
@@ -825,9 +856,24 @@ pub struct RoutineWrite<'a> {
     pub revision: &'a str,
 }
 
+fn inbox_live_recipient(conn: &rusqlite::Connection, mut to: u32, live: &[u32]) -> Result<u32> {
+    let mut visited = std::collections::HashSet::new();
+    while to != 0 && visited.insert(to) {
+        if live.contains(&to) {
+            return Ok(to);
+        }
+        to = conn.query_row(
+            "SELECT parent_session FROM delegations WHERE child_session = ?1
+             UNION ALL SELECT spawned_by FROM sessions WHERE id = ?1 AND spawned_by IS NOT NULL LIMIT 1",
+            [to], |row| row.get(0),
+        ).optional()?.unwrap_or(0);
+    }
+    Ok(0)
+}
+
 const DELEGATION_SELECT: &str = "SELECT id, parent_session, child_session, role, state, stalled, \
     brief, created_at, updated_at, ended_at, stop_reason, \
-    no_handback_reported, no_handback_suppressed, round, reusable, cleanup_after FROM delegations";
+    no_handback_reported, no_handback_suppressed, round, reusable, cleanup_after, settled_at, retained_until FROM delegations";
 
 fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
     Ok(DelegationRow {
@@ -847,6 +893,8 @@ fn map_delegation_row(r: &rusqlite::Row) -> rusqlite::Result<DelegationRow> {
         round: r.get(13)?,
         reusable: r.get::<_, i64>(14)? != 0,
         cleanup_after: r.get::<_, Option<i64>>(15)?.map(|t| t as u64),
+        settled_at: r.get::<_, Option<i64>>(16)?.map(|t| t as u64),
+        retained_until: r.get::<_, Option<i64>>(17)?.map(|t| t as u64),
     })
 }
 
@@ -1714,6 +1762,13 @@ impl Db {
             "cleanup_after",
             "cleanup_after INTEGER",
         )?;
+        add_column_if_missing(&conn, "delegations", "settled_at", "settled_at INTEGER")?;
+        add_column_if_missing(
+            &conn,
+            "delegations",
+            "retained_until",
+            "retained_until INTEGER",
+        )?;
         // Three timestamps, three meanings: created_at is persisted, delivered_at is sent,
         // confirmed_at is proven — and what "sent" is worth depends on delivered_via, since
         // only paste/operator can prove landing while wait/stop_hook are final on send.
@@ -1756,6 +1811,19 @@ impl Db {
         add_column_if_missing(&conn, "pane_inbox", "from_codename", "from_codename TEXT")?;
         add_column_if_missing(&conn, "pane_inbox", "from_role", "from_role TEXT")?;
         add_column_if_missing(&conn, "pane_inbox", "excerpt", "excerpt TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "pane_inbox",
+            "paste_started_at",
+            "paste_started_at INTEGER",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "pane_inbox",
+            "partial_delivery_id",
+            "partial_delivery_id TEXT",
+        )?;
+        conn.execute("UPDATE pane_inbox SET paste_started_at = delivered_at WHERE delivered_via = 'paste' AND paste_started_at IS NULL", [])?;
         migrate_staged_results_into_the_inbox(&conn)?;
         migrate_pending_swarm_mail_into_the_inbox(&conn)?;
         conn.execute(
@@ -1774,9 +1842,15 @@ impl Db {
                AND (from_codename IS NULL OR from_role IS NULL)",
             [],
         )?;
+        add_column_if_missing(&conn, "pane_inbox", "tool_hint_at", "tool_hint_at INTEGER")?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    #[cfg(all(test, unix))]
+    pub(crate) fn query_in_progress_for_test(&self) -> bool {
+        self.conn.try_lock().is_err()
     }
 
     pub fn mark_live_as_interrupted(&self) -> Result<usize> {
@@ -1796,7 +1870,7 @@ impl Db {
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
                     spawned_by, acp, profile_label, tags, COALESCE(session_origin, id)
              FROM sessions
-             WHERE state = 'interrupted' AND agent != 'custom'
+             WHERE (state = 'interrupted' OR (state = 'exited' AND spawned_by IS NOT NULL)) AND agent != 'custom'
                    AND NOT EXISTS (SELECT 1 FROM swarm_agents sa WHERE sa.session_id = sessions.id)
              ORDER BY id",
         )?;
@@ -1871,7 +1945,7 @@ impl Db {
                     agent: kind,
                     project_dir,
                     cwd,
-                    state: proto::SessionState::Interrupted,
+                    state: if conn.query_row("SELECT state FROM sessions WHERE id = ?1", [id], |r| r.get::<_, String>(0))? == "exited" { proto::SessionState::Exited } else { proto::SessionState::Interrupted },
                     title,
                     codename,
                     detected_agent: detected.and_then(|d| {
@@ -1898,6 +1972,8 @@ impl Db {
                             Vec::new()
                         }),
                     session_origin: Some(session_origin),
+                    checkout_root: None,
+                    worktree: None,
                     resumable: false,
                     resume_notice: None,
                 }),
@@ -1916,6 +1992,15 @@ impl Db {
             rusqlite::params![id],
         )?;
         Ok(())
+    }
+
+    pub fn session_orchestration_identity(&self, id: u32) -> Result<(Option<u32>, Option<String>)> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT spawned_by, profile_label FROM sessions WHERE id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?)
     }
 
     pub fn session_origin(&self, id: u32) -> Result<u32> {
@@ -3276,6 +3361,103 @@ impl Db {
         )?)
     }
 
+    pub fn delegation_discard_spawn(&self, child: u32) -> Result<()> {
+        self.conn.lock().expect("db lock").execute(
+            "DELETE FROM delegations WHERE child_session = ?1",
+            rusqlite::params![child],
+        )?;
+        Ok(())
+    }
+
+    pub fn inbox_staged_result_age(
+        &self,
+        parent: u32,
+        child: u32,
+        now: u64,
+    ) -> Result<Option<u64>> {
+        let created: Option<i64> = self.conn.lock().expect("db lock").query_row(
+            "SELECT MIN(created_at) FROM pane_inbox WHERE (to_session = ?1 OR original_to = ?1) AND from_session = ?2
+             AND kind = 'result' AND ready_at IS NULL AND resolved_at IS NULL AND delivered_at IS NULL",
+            rusqlite::params![parent, child], |row| row.get(0),
+        )?;
+        Ok(created.map(|created| now.saturating_sub(created as u64)))
+    }
+
+    pub fn delegation_rebind(
+        &self,
+        old: u32,
+        new: u32,
+        parent: Option<u32>,
+        now: u64,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE delegations SET child_session = ?2, parent_session = COALESCE(?3, parent_session), state = 'working', stop_reason = NULL, ended_at = NULL, settled_at = NULL, retained_until = NULL, cleanup_after = NULL, updated_at = ?4 WHERE child_session = ?1", rusqlite::params![old, new, parent, now as i64])?;
+        tx.execute(
+            "UPDATE delegations SET parent_session = ?2 WHERE parent_session = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.execute(
+            "UPDATE sessions SET spawned_by = ?2 WHERE spawned_by = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.execute(
+            "UPDATE pane_inbox SET to_session = ?2 WHERE to_session = ?1 OR (to_session = 0 AND original_to = ?1)",
+            rusqlite::params![old, new],
+        )?;
+        tx.execute(
+            "UPDATE pane_inbox SET from_session = ?2 WHERE from_session = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.execute(
+            "UPDATE pane_inbox SET original_to = ?2 WHERE original_to = ?1",
+            rusqlite::params![old, new],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delegation_forget_retention(&self, child: u32) -> Result<()> {
+        self.conn.lock().expect("db lock").execute("UPDATE delegations SET settled_at = NULL, retained_until = NULL, cleanup_after = NULL WHERE child_session = ?1", [child])?;
+        Ok(())
+    }
+
+    pub fn delegation_retain(&self, child: u32, settled: u64, until: u64) -> Result<()> {
+        self.conn.lock().expect("db lock").execute("UPDATE delegations SET settled_at = COALESCE(settled_at, ?2), retained_until = COALESCE(retained_until, ?3), cleanup_after = NULL WHERE child_session = ?1", rusqlite::params![child, settled as i64, until as i64])?;
+        Ok(())
+    }
+
+    pub fn delegations_done(&self) -> Result<Vec<DelegationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!("{DELEGATION_SELECT} WHERE state = 'done'"))?;
+        let rows = stmt
+            .query_map([], map_delegation_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delegations_no_handback(&self) -> Result<Vec<DelegationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{DELEGATION_SELECT} WHERE no_handback_reported = 1 AND settled_at IS NULL"
+        ))?;
+        let rows = stmt
+            .query_map([], map_delegation_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delegations_retained(&self) -> Result<Vec<DelegationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "{DELEGATION_SELECT} WHERE retained_until IS NOT NULL"
+        ))?;
+        let rows = stmt
+            .query_map([], map_delegation_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn delegation_for_child(&self, child: u32) -> Result<Option<DelegationRow>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn
@@ -3325,7 +3507,7 @@ impl Db {
             "UPDATE delegations SET
                 state = ?2, stop_reason = NULL, ended_at = NULL,
                 no_handback_reported = 0, no_handback_suppressed = 0, updated_at = ?3,
-                round = round + 1, cleanup_after = NULL
+                round = round + 1, cleanup_after = NULL, settled_at = NULL, retained_until = NULL
              WHERE child_session = ?1",
             rusqlite::params![child, state, now as i64],
         )?;
@@ -3377,13 +3559,21 @@ impl Db {
         stop_reason: Option<&str>,
         now: u64,
     ) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE delegations SET state = ?2, stop_reason = ?3, ended_at = ?4, updated_at = ?4,
                 no_handback_reported = 0, no_handback_suppressed = 0, cleanup_after = NULL
              WHERE child_session = ?1",
             rusqlite::params![child, state, stop_reason, now as i64],
         )?;
+        tx.execute(
+            "UPDATE pane_inbox SET ready_at = ?2
+             WHERE from_session = ?1 AND kind = 'result' AND ready_at IS NULL
+             AND request_id = (SELECT round FROM delegations WHERE child_session = ?1)",
+            rusqlite::params![child, now as i64],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -3449,6 +3639,16 @@ impl Db {
         self.inbox_reserve_matching(to_session, now, max_rows, max_bytes, None, None)
     }
 
+    pub fn inbox_reserve_automatic(
+        &self,
+        to_session: u32,
+        now: u64,
+        max_rows: u32,
+        max_bytes: usize,
+    ) -> Result<Option<(String, Vec<InboxRow>)>> {
+        self.inbox_reserve_impl(to_session, now, max_rows, max_bytes, None, None, true)
+    }
+
     pub fn inbox_reserve_matching(
         &self,
         to_session: u32,
@@ -3457,6 +3657,28 @@ impl Db {
         max_bytes: usize,
         from_session: Option<u32>,
         kind: Option<&str>,
+    ) -> Result<Option<(String, Vec<InboxRow>)>> {
+        self.inbox_reserve_impl(
+            to_session,
+            now,
+            max_rows,
+            max_bytes,
+            from_session,
+            kind,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn inbox_reserve_impl(
+        &self,
+        to_session: u32,
+        now: u64,
+        max_rows: u32,
+        max_bytes: usize,
+        from_session: Option<u32>,
+        kind: Option<&str>,
+        automatic: bool,
     ) -> Result<Option<(String, Vec<InboxRow>)>> {
         let conn = self.conn.lock().expect("db lock");
         let now_i = now as i64;
@@ -3481,6 +3703,9 @@ impl Db {
                 params.len() + 1
             ));
             params.push(rusqlite::types::Value::Text(k.to_string()));
+        }
+        if automatic {
+            sql.push_str(" AND (reason IS NULL OR (reason NOT LIKE 'partial:%' AND reason NOT LIKE 'attempts:%' AND reason NOT LIKE 'backlog:%' AND reason != 'approval_outcome_unobserved'))");
         }
         sql.push_str(" ORDER BY created_at, id");
         let candidates = {
@@ -3510,7 +3735,8 @@ impl Db {
             }
             chosen.push(row);
         }
-        let delivery_id = uuid::Uuid::new_v4().to_string();
+        // Compact hex keeps this opaque receipt out of bearer-UUID prompt redaction.
+        let delivery_id = uuid::Uuid::new_v4().simple().to_string();
         let ids: Vec<i64> = chosen.iter().map(|r| r.id).collect();
         let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
@@ -3574,10 +3800,38 @@ impl Db {
         )
     }
 
+    pub fn inbox_record_partial(
+        &self,
+        id: i64,
+        parent: u32,
+        delivery_id: &str,
+        now: u64,
+    ) -> Result<usize> {
+        Ok(self.conn.lock().expect("db lock").execute(
+            "UPDATE pane_inbox SET partial_delivery_id = ?3, paste_started_at = COALESCE(paste_started_at, ?4)
+             WHERE id = ?1 AND to_session = ?2 AND reason LIKE 'partial:%' AND delivered_at IS NULL AND resolved_at IS NULL",
+            rusqlite::params![id, parent, delivery_id, now as i64])?)
+    }
+
+    pub fn inbox_confirm_partial(&self, parent: u32, delivery_id: &str, now: u64) -> Result<usize> {
+        Ok(self.conn.lock().expect("db lock").execute(
+            "UPDATE pane_inbox SET resolved_at = ?3, confirmed_at = ?3, reason = 'partial_confirmed', partial_delivery_id = NULL
+             WHERE to_session = ?1 AND partial_delivery_id = ?2 AND reason LIKE 'partial:%'
+               AND delivered_at IS NULL AND resolved_at IS NULL AND reserved_at IS NULL",
+            rusqlite::params![parent, delivery_id, now as i64])?)
+    }
+
+    pub fn inbox_pin_reservation(&self, delivery_id: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        // An active writer owns its lease until its transport guard releases it; boot releases all.
+        Ok(conn.execute("UPDATE pane_inbox SET reserved_at = ?2 WHERE delivery_id = ?1 AND delivered_at IS NULL AND resolved_at IS NULL", rusqlite::params![delivery_id, i64::MAX])? > 0)
+    }
+
     pub fn inbox_mark_delivered(&self, delivery_id: &str, via: &str, now: u64) -> Result<usize> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.execute(
-            "UPDATE pane_inbox SET delivered_at = ?2, delivered_via = ?3
+            "UPDATE pane_inbox SET delivered_at = ?2, delivered_via = ?3,
+                 paste_started_at = CASE WHEN ?3 = 'paste' THEN COALESCE(paste_started_at, ?2) ELSE paste_started_at END
              WHERE delivery_id = ?1 AND delivered_at IS NULL",
             rusqlite::params![delivery_id, now as i64, via],
         )?)
@@ -3638,13 +3892,28 @@ impl Db {
         )?)
     }
 
-    pub fn inbox_readdress_to_operator(&self, id: i64, reason: &str) -> Result<()> {
+    pub fn inbox_pending_recipients(&self) -> Result<Vec<u32>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare("SELECT DISTINCT to_session FROM pane_inbox WHERE to_session != 0 AND delivered_at IS NULL AND resolved_at IS NULL")?;
+        let rows = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn inbox_live_recipient(&self, to: u32, live_sessions: &[u32]) -> Result<u32> {
+        let conn = self.conn.lock().expect("db lock");
+        inbox_live_recipient(&conn, to, live_sessions)
+    }
+
+    pub fn inbox_route_after_failure(&self, id: i64, recipient: u32, reason: &str) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE pane_inbox SET original_to = to_session, to_session = 0, reason = ?2,
+            "UPDATE pane_inbox SET original_to = CASE WHEN to_session != ?2 THEN COALESCE(original_to, to_session) ELSE original_to END,
+                to_session = ?2, reason = CASE WHEN reason = 'approval_outcome_unobserved' THEN reason ELSE ?3 END,
                 reserved_at = NULL, delivery_id = NULL
              WHERE id = ?1",
-            rusqlite::params![id, reason],
+            rusqlite::params![id, recipient, reason],
         )?;
         Ok(())
     }
@@ -3653,7 +3922,19 @@ impl Db {
     // only unconfirmed paste/operator rows, whose landing the daemon cannot prove — while
     // wait/stop_hook are final the moment they were sent and stay untouched.
     pub fn inbox_recover_after_restart(&self, live_sessions: &[u32]) -> Result<InboxRecovery> {
+        self.inbox_recover_after_restart_at(live_sessions, crate::hook_drop::now_ms())
+    }
+
+    fn inbox_recover_after_restart_at(
+        &self,
+        live_sessions: &[u32],
+        now: u64,
+    ) -> Result<InboxRecovery> {
         let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "DELETE FROM pane_inbox WHERE confirmed_at IS NULL AND paste_started_at < ?1",
+            [now.saturating_sub(crate::orchestrate::UNCONFIRMED_PASTE_MAX_MS) as i64],
+        )?;
         let reservations_released = conn.execute(
             "UPDATE pane_inbox SET reserved_at = NULL, delivery_id = NULL WHERE reserved_at IS NOT NULL",
             [],
@@ -3691,11 +3972,17 @@ impl Db {
         };
         let readdressed = dead_parent_ids.len() as u32;
         for id in dead_parent_ids {
+            let to: u32 = conn.query_row(
+                "SELECT to_session FROM pane_inbox WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )?;
+            let recipient = inbox_live_recipient(&conn, to, live_sessions)?;
             conn.execute(
-                "UPDATE pane_inbox SET original_to = to_session, to_session = 0, reason = 'parent_dead',
+                "UPDATE pane_inbox SET original_to = COALESCE(original_to, to_session), to_session = ?2, reason = CASE WHEN reason = 'approval_outcome_unobserved' THEN reason ELSE 'parent_dead' END,
                     reserved_at = NULL, delivery_id = NULL
                  WHERE id = ?1",
-                rusqlite::params![id],
+                rusqlite::params![id, recipient],
             )?;
         }
         Ok(InboxRecovery {
@@ -3704,6 +3991,29 @@ impl Db {
             operator_requeued,
             readdressed,
         })
+    }
+
+    pub fn inbox_tool_hints(&self, parent: u32, now: u64) -> Result<Vec<InboxRow>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let ids: Vec<i64> = {
+            let mut stmt = tx.prepare("SELECT id FROM pane_inbox WHERE to_session = ?1 AND kind = 'needs_input' AND ready_at IS NOT NULL AND confirmed_at IS NULL AND resolved_at IS NULL AND tool_hint_at IS NULL ORDER BY id LIMIT 8")?;
+            let ids = stmt
+                .query_map([parent], |r| r.get(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            ids
+        };
+        for id in &ids {
+            tx.execute(
+                "UPDATE pane_inbox SET tool_hint_at = ?2 WHERE id = ?1",
+                rusqlite::params![id, now as i64],
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
+        ids.into_iter()
+            .filter_map(|id| self.inbox_get(id).transpose())
+            .collect()
     }
 
     pub fn inbox_list_operator(&self, workspace: &str) -> Result<Vec<InboxRow>> {
@@ -3792,8 +4102,13 @@ impl Db {
         Ok(conn.execute(
             "DELETE FROM pane_inbox
              WHERE (delivered_via IN ('wait', 'stop_hook') AND delivered_at < ?1)
-                OR (confirmed_at IS NOT NULL AND confirmed_at < ?1)",
-            rusqlite::params![cutoff],
+                OR (confirmed_at IS NOT NULL AND confirmed_at < ?1)
+                OR (confirmed_at IS NULL AND paste_started_at < ?2)",
+            rusqlite::params![
+                cutoff,
+                now.saturating_sub(retention_ms.min(crate::orchestrate::UNCONFIRMED_PASTE_MAX_MS))
+                    as i64
+            ],
         )?)
     }
 
@@ -3807,7 +4122,7 @@ impl Db {
         Ok(conn
             .query_row(
                 "SELECT id FROM pane_inbox
-                 WHERE to_session = ?1 AND from_session = ?2 AND request_id = ?3
+                 WHERE (to_session = ?1 OR original_to = ?1) AND from_session = ?2 AND request_id = ?3
                        AND kind = 'result' AND ready_at IS NULL
                        AND delivered_at IS NULL AND resolved_at IS NULL
                  ORDER BY id DESC LIMIT 1",
@@ -3827,10 +4142,16 @@ impl Db {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pane_inbox
              WHERE from_session = ?2 AND request_id = ?3 AND kind = 'result'
-               AND (to_session = ?1 OR (to_session = 0 AND original_to = ?1))",
+               AND (to_session = ?1 OR original_to = ?1)",
             rusqlite::params![to_session, from_session, request_id],
             |r| r.get(0),
         )?;
+        Ok(count > 0)
+    }
+
+    pub fn inbox_round_result_read(&self, parent: u32, child: u32, round: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM pane_inbox WHERE (to_session = ?1 OR original_to = ?1) AND from_session = ?2 AND request_id = ?3 AND kind = 'result' AND ready_at IS NOT NULL AND delivered_at IS NOT NULL AND (delivered_via IN ('wait', 'stop_hook') OR confirmed_at IS NOT NULL)", rusqlite::params![parent, child, round], |r| r.get(0))?;
         Ok(count > 0)
     }
 
@@ -3843,7 +4164,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pane_inbox
-             WHERE to_session = ?1 AND from_session = ?2 AND request_id = ?3
+             WHERE (to_session = ?1 OR original_to = ?1) AND from_session = ?2 AND request_id = ?3
                    AND kind = 'result'",
             rusqlite::params![to_session, from_session, request_id],
             |r| r.get(0),
@@ -3860,7 +4181,7 @@ impl Db {
         Ok(conn
             .query_row(
                 "SELECT superseded FROM pane_inbox
-                 WHERE to_session = ?1 AND from_session = ?2 AND kind = 'result'
+                 WHERE (to_session = ?1 OR original_to = ?1) AND from_session = ?2 AND kind = 'result'
                        AND delivered_at IS NULL AND resolved_at IS NULL
                  ORDER BY id DESC LIMIT 1",
                 rusqlite::params![to_session, from_session],
@@ -3884,6 +4205,63 @@ impl Db {
             rusqlite::params![to_session, from_session, kind],
             |r| r.get::<_, i64>(0).map(|c| c > 0),
         )?)
+    }
+
+    pub fn delegation_latest_results(&self, parent: u32) -> Result<Vec<proto::DelegationResult>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "WITH recipients AS (
+                SELECT id FROM sessions WHERE COALESCE(session_origin, id) =
+                    COALESCE((SELECT session_origin FROM sessions WHERE id = ?1), ?1)
+                UNION SELECT ?1
+             ), scoped AS (
+                SELECT i.id, COALESCE((
+                    SELECT s.id FROM sessions s WHERE s.state != 'closed'
+                        AND COALESCE(s.session_origin, s.id) =
+                            COALESCE(sender.session_origin, i.from_session)
+                    ORDER BY s.id DESC LIMIT 1
+                ), i.from_session) AS child
+                FROM pane_inbox i LEFT JOIN sessions sender ON sender.id = i.from_session
+                WHERE i.kind = 'result' AND i.from_session IS NOT NULL
+                    AND (i.to_session IN recipients OR i.original_to IN recipients)
+             ), latest AS (
+                SELECT MAX(id) AS id, child FROM scoped GROUP BY child
+             )
+             SELECT latest.child, i.from_role, i.summary, substr(i.body, 1, ?2),
+                    i.created_at, i.delivered_via
+             FROM pane_inbox i JOIN latest ON i.id = latest.id
+             ORDER BY i.created_at DESC, i.id DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![
+                parent,
+                proto::DELEGATION_RESULT_EXCERPT_MAX_CHARS,
+                proto::DELEGATION_RESULTS_MAX_ROWS + 1
+            ],
+            |r| {
+                let via: Option<String> = r.get(5)?;
+                let delivered_via = via
+                    .map(|value| {
+                        serde_json::from_value(serde_json::Value::String(value)).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                5,
+                                rusqlite::types::Type::Text,
+                                Box::new(e),
+                            )
+                        })
+                    })
+                    .transpose()?;
+                Ok(proto::DelegationResult {
+                    child: r.get(0)?,
+                    role: r.get(1)?,
+                    summary: r.get(2)?,
+                    excerpt: r.get(3)?,
+                    created_at: r.get::<_, i64>(4)? as u64,
+                    delivered_via,
+                })
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     pub fn inbox_child_summary(
@@ -3995,6 +4373,16 @@ impl Db {
         )?)
     }
 
+    pub fn inbox_resolve_approval_stalls(&self, from: u32, now: u64) -> Result<usize> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute(
+            "UPDATE pane_inbox SET resolved_at = ?2 WHERE from_session = ?1
+             AND kind = 'stalled' AND reason = 'approval_outcome_unobserved'
+             AND delivered_at IS NULL AND resolved_at IS NULL",
+            rusqlite::params![from, now as i64],
+        )?)
+    }
+
     // The row flip and the delegation update share one transaction: "stored" and
     // "eligible" are kept apart so a result cannot reach the parent while the delegation
     // still reads working, and a crash between two writes is how that happens.
@@ -4040,6 +4428,8 @@ impl Db {
                 rusqlite::params![child, state, now as i64],
             )?;
         }
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("completion", child);
         tx.commit()?;
         Ok(row_id)
     }
@@ -4047,7 +4437,7 @@ impl Db {
     pub fn delegation_bump_round(&self, child: u32, now: u64) -> Result<Option<u32>> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE delegations SET round = round + 1, cleanup_after = NULL, updated_at = ?2
+            "UPDATE delegations SET round = round + 1, cleanup_after = NULL, settled_at = NULL, retained_until = NULL, updated_at = ?2
              WHERE child_session = ?1",
             rusqlite::params![child, now as i64],
         )?;
@@ -4932,6 +5322,8 @@ mod tests {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         }
@@ -6292,6 +6684,55 @@ mod tests {
     }
 
     #[test]
+    fn k8_stranded_mail_keeps_known_recipient_for_ancestor_recovery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("t.db");
+        let root = tmp.path().join("repo");
+        std::fs::create_dir_all(&root).unwrap();
+        let swarm_id = {
+            let db = Db::open(&path).unwrap();
+            let (swarm, agents) = db
+                .swarm_create("Stranded", root.to_str().unwrap(), "g", &roster(), 0)
+                .unwrap();
+            let recipient = agents
+                .iter()
+                .find(|agent| agent.label == "Builder-1")
+                .unwrap();
+            db.swarm_agent_bind_session(recipient.id, None, Some(2))
+                .unwrap();
+            db.delegation_create(1, 2, None, "recipient", 100).unwrap();
+            swarm.id
+        };
+        let layout = crate::scope::ScopeLayout::new(&root, swarm_id);
+        let inbox = layout.inbox_for("Builder-1").unwrap();
+        std::fs::create_dir_all(&inbox).unwrap();
+        let mail = MailMessage {
+            id: crate::scope::gen_mailbox_id(),
+            from: "Coordinator".into(),
+            to: "Builder-1".into(),
+            body: "recover to ancestor".into(),
+            kind: proto::SwarmMsgKind::Message,
+            timestamp_ms: 100,
+        };
+        crate::hook_drop::write_atomic(
+            &inbox,
+            &crate::scope::mail_filename(&mail.id),
+            &mail.to_bytes().unwrap(),
+        )
+        .unwrap();
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.inbox_list_for_session(2).unwrap().len(), 1);
+        db.inbox_recover_after_restart(&[1]).unwrap();
+        let rows = db.inbox_list_for_session(1).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].original_to, Some(2));
+        assert!(db
+            .inbox_list_operator(root.to_str().unwrap())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn a_second_open_survives_a_writer_committing_under_it() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("t.db");
@@ -6890,6 +7331,120 @@ mod tests {
     }
 
     #[test]
+    fn r1_rerouting_preserves_a_staged_result() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let id = db
+            .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), false), 100)
+            .unwrap();
+        db.inbox_route_after_failure(id, 3, "parent_dead").unwrap();
+        assert_eq!(db.inbox_get(id).unwrap().unwrap().ready_at, None);
+        assert!(db.inbox_reserve(3, 200, 10, 1000000).unwrap().is_none());
+        assert_eq!(db.inbox_pending_result(1, 2, 1).unwrap(), Some(id));
+        assert!(db.inbox_round_handed_back(1, 2, 1).unwrap());
+        assert!(db.inbox_round_has_result(1, 2, 1).unwrap());
+        assert_eq!(db.inbox_staged_result_age(1, 2, 200).unwrap(), Some(100));
+    }
+
+    #[test]
+    fn r1_rebind_rewrites_the_sender_for_resubmit_and_summary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let id = db
+            .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), false), 100)
+            .unwrap();
+        db.delegation_rebind(2, 3, Some(1), 150).unwrap();
+        assert_eq!(db.inbox_get(id).unwrap().unwrap().from_session, Some(3));
+        assert_eq!(db.inbox_pending_result(1, 3, 1).unwrap(), Some(id));
+        assert_eq!(
+            db.inbox_insert(&new_inbox_row(1, "/ws", Some(3), Some(1), false), 200)
+                .unwrap(),
+            id
+        );
+        assert_eq!(db.inbox_child_summary(1, 2).unwrap().0, 0);
+        assert_eq!(db.inbox_child_summary(1, 3).unwrap().0, 1);
+    }
+
+    #[test]
+    fn r1_rebind_recovers_operator_fallback_for_its_original_parent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let id = db
+            .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), true), 100)
+            .unwrap();
+        db.inbox_route_after_failure(id, 0, "parent_dead").unwrap();
+        db.delegation_rebind(1, 3, None, 200).unwrap();
+        assert_eq!(db.inbox_get(id).unwrap().unwrap().to_session, 3);
+    }
+
+    #[test]
+    fn r1_rebound_parent_round_survives_another_ancestor_reroute() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let id = db
+            .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), false), 100)
+            .unwrap();
+        db.inbox_route_after_failure(id, 0, "parent_dead").unwrap();
+        db.delegation_rebind(1, 3, None, 200).unwrap();
+        db.inbox_route_after_failure(id, 4, "parent_dead").unwrap();
+        assert_eq!(db.inbox_pending_result(3, 2, 1).unwrap(), Some(id));
+        assert!(db.inbox_round_handed_back(3, 2, 1).unwrap());
+        assert!(db.inbox_round_has_result(3, 2, 1).unwrap());
+    }
+
+    #[test]
+    fn r1_restart_does_not_requeue_ancient_pastes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let old = crate::hook_drop::now_ms() - 10 * 24 * 60 * 60 * 1000;
+        let id = db
+            .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), true), old)
+            .unwrap();
+        let (delivery, _) = db.inbox_reserve(1, old, 10, 1000000).unwrap().unwrap();
+        db.inbox_mark_delivered(&delivery, "paste", old).unwrap();
+        db.inbox_recover_after_restart(&[1]).unwrap();
+        assert!(db.inbox_get(id).unwrap().is_none());
+    }
+
+    #[test]
+    fn r1_unconfirmed_pastes_have_a_retention_bound() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let id = db
+            .inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), true), 100)
+            .unwrap();
+        let (delivery, _) = db.inbox_reserve(1, 200, 10, 1000000).unwrap().unwrap();
+        db.inbox_mark_delivered(&delivery, "paste", 200).unwrap();
+        db.inbox_prune_expired(2000, 1000).unwrap();
+        assert!(db.inbox_get(id).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_paste_receipt_survives_hook_redaction_without_preserving_bearer_uuids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        db.inbox_insert(&new_inbox_row(1, "/ws", Some(2), Some(1), true), 100)
+            .unwrap();
+        let (delivery_id, rows) = db.inbox_reserve(1, 1000, 2, 1000000).unwrap().unwrap();
+        let text = crate::orchestrate::compose_inbox(
+            &[crate::orchestrate::InboxEntry {
+                from_label: "child".into(),
+                excerpt: None,
+                row: rows[0].clone(),
+            }],
+            &delivery_id,
+        );
+        let bearer = uuid::Uuid::new_v4().to_string();
+        let input =
+            serde_json::json!({"prompt":format!("{text}\ncredential={bearer}")}).to_string();
+        let payload = crate::claude_hooks::parse_hook_payload(&input, proto::AgentKind::Claude);
+        let prompt = payload.prompt.unwrap();
+        assert!(prompt.lines().next().unwrap().contains(&delivery_id));
+        assert!(!prompt.contains(&bearer));
+        assert!(prompt.contains("[redacted:uuid]"));
+    }
+
+    #[test]
     fn two_consecutive_reserves_for_one_session_pick_disjoint_rows() {
         let tmp = tempfile::tempdir().unwrap();
         let db = Db::open(&tmp.path().join("t.db")).unwrap();
@@ -7039,7 +7594,7 @@ mod tests {
         db.inbox_insert(&new_inbox_row(3, "/ws", None, Some(1), true), 100)
             .unwrap();
 
-        let recovery = db.inbox_recover_after_restart(&[1, 2]).unwrap();
+        let recovery = db.inbox_recover_after_restart_at(&[1, 2], 200).unwrap();
         assert_eq!(recovery.pastes_requeued, 1);
         assert_eq!(recovery.operator_requeued, 0);
         assert_eq!(recovery.readdressed, 1);
@@ -7059,6 +7614,23 @@ mod tests {
         assert_eq!(operator_rows.len(), 1);
         assert_eq!(operator_rows[0].original_to, Some(3));
         assert_eq!(operator_rows[0].reason.as_deref(), Some("parent_dead"));
+    }
+
+    #[test]
+    fn k8_restart_routes_dead_parent_to_nearest_live_ancestor() {
+        for live in [vec![1], vec![]] {
+            let tmp = tempfile::tempdir().unwrap();
+            let db = Db::open(&tmp.path().join("t.db")).unwrap();
+            db.delegation_create(1, 2, None, "parent", 100).unwrap();
+            db.delegation_create(2, 3, None, "child", 100).unwrap();
+            let id = db
+                .inbox_insert(&new_inbox_row(2, "/ws", Some(3), Some(1), true), 100)
+                .unwrap();
+            db.inbox_recover_after_restart(&live).unwrap();
+            let row = db.inbox_get(id).unwrap().unwrap();
+            assert_eq!(row.to_session, live.first().copied().unwrap_or(0));
+            assert_eq!(row.original_to, Some(2));
+        }
     }
 
     #[test]
@@ -7139,14 +7711,18 @@ mod tests {
         let pruned = db
             .inbox_prune_expired(FRESH_AT + RETENTION_MS, RETENTION_MS)
             .unwrap();
-        assert_eq!(pruned, 2, "the old wait and the old confirmed paste go");
+        assert_eq!(
+            pruned, 3,
+            "old finished rows and pastes beyond the confirmation cap go"
+        );
 
         let rows = db.inbox_list_for_session(1).unwrap();
-        assert_eq!(rows.len(), 3, "{rows:?}");
+        assert_eq!(rows.len(), 2, "{rows:?}");
         assert!(
-            rows.iter()
+            !rows
+                .iter()
                 .any(|r| r.delivered_via.as_deref() == Some("paste") && r.confirmed_at.is_none()),
-            "the unconfirmed paste stays: {rows:?}"
+            "expired unconfirmed pastes are bounded: {rows:?}"
         );
         assert!(
             rows.iter()

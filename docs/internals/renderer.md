@@ -357,6 +357,18 @@ no `process.env` anywhere under `ui/src`. Port and token come from `host_config`
 constants come from the generated `PROTOCOL_VERSION.ts` and `DEFAULTS.ts`, and the only
 state it keeps for itself is the `localStorage` set above.
 
+## Native file saves and notifications
+
+Checked file saves compare `expected_sha256` while holding the same process-wide lock
+as other Houston saves, preserve file permissions, write a same-directory temporary
+file and rename it over the target. Conflicts return `FILE_SAVE_CONFLICT` with expected
+and actual hashes. Rename is atomic for readers; the save lock does not exclude writes
+by external processes, and the filesystem allowlist retains its resolve/syscall race.
+
+Native notifications use the Linux desktop notification service over the existing session
+bus. Unsupported platforms return an explicit refusal. The renderer owns aggregation and
+calls the bridge once when an orchestrator newly requires operator input.
+
 ## Testing
 
 `vitest run` from `ui/`, always through **`bun run test`** — bare `bun test` runs Bun's own

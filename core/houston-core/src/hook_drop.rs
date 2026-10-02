@@ -78,6 +78,8 @@ pub struct HookDrop {
     // round. Absent for every other provider's Stop.
     #[serde(default)]
     pub fully_idle: Option<bool>,
+    #[serde(default)]
+    pub subagent_type: Option<String>,
     // Antigravity PreToolUse/PostToolUse's toolCall.name. Only three names
     // open a block (ask_question, ask_permission, ask_custom_permission);
     // every other tool call is the agent working, not a human being asked.
@@ -115,6 +117,7 @@ impl Default for HookDrop {
             stop_continued: false,
             session_id: None,
             fully_idle: None,
+            subagent_type: None,
             tool_name: None,
             tool_input_fingerprint: None,
         }

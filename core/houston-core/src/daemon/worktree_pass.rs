@@ -183,13 +183,11 @@ impl Daemon {
 
     fn claim_pass(&self, ws: &CleanupWorkspace) -> Result<PassClaim<'_>> {
         let mut state = self.worktree_cleanup.lock().expect("worktree cleanup lock");
-        if !state.running.insert(ws.key.clone()) {
+        let key = ws.common_dir.clone().unwrap_or_else(|| ws.key.clone());
+        if !state.running.insert(key.clone()) {
             bail!("a worktree cleanup pass is already running for {}", ws.key);
         }
-        Ok(PassClaim {
-            daemon: self,
-            key: ws.key.clone(),
-        })
+        Ok(PassClaim { daemon: self, key })
     }
 
     fn rows_of(&self, ws: &CleanupWorkspace) -> Vec<ManagedWorktreeRow> {
@@ -258,12 +256,36 @@ impl Daemon {
             }
             let now = now_ms() as i64;
             let (pr, keep) = keep_reason(ws, &row, &path, gh, grace_ms, now, &live);
-            let bytes = wc::tree_bytes(&path);
-            let _ = self
-                .db
-                .managed_worktree_set_size(&row.path, bytes as i64, now);
+            let bytes = if keep.is_none() {
+                let bytes = wc::tree_bytes(&path);
+                let _ = self
+                    .db
+                    .managed_worktree_set_size(&row.path, bytes as i64, now);
+                bytes
+            } else {
+                row.bytes.unwrap_or(0) as u64
+            };
             let keep = match keep {
                 None if removal.covers(&row.path) => {
+                    if let Some((session, _)) = self
+                        .live_session_cwds()
+                        .iter()
+                        .find(|(_, cwd)| cwd.starts_with(&path))
+                    {
+                        self.worktree_cleanup
+                            .lock()
+                            .expect("worktree cleanup lock")
+                            .checked
+                            .insert(
+                                row.path,
+                                Checked {
+                                    at_ms: now,
+                                    pr,
+                                    keep: Some(WorktreeKeep::InUse { session: *session }),
+                                },
+                            );
+                        continue;
+                    }
                     match remove_managed(ws, &row, &path, &self.db) {
                         Ok(()) => {
                             tracing::info!(

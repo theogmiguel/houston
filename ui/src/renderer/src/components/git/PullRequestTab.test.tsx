@@ -14,6 +14,7 @@ import type {
 import { BTN_PRIMARY } from '../buttonChrome'
 import {
   checkMeta,
+  pendingMergeReason,
   parsePrNumber,
   PR_NUMBER_MAX,
   PullRequestTab,
@@ -292,6 +293,7 @@ function render(client: FakeClient | null, opts: Record<string, unknown> = {}): 
         client={client as unknown as HoustonClient | null}
         dir={(opts.dir as string | null | undefined) ?? '/repo'}
         active={(opts.active as boolean | undefined) ?? true}
+        compact={opts.compact as boolean | undefined}
         refreshSignal={(opts.refreshSignal as number | undefined) ?? 0}
         onOpenUrlInPane={opts.onOpenUrlInPane as ((url: string) => void) | undefined}
         onShowChanges={opts.onShowChanges as (() => void) | undefined}
@@ -306,6 +308,7 @@ function mount(
     client?: FakeClient | null
     dir?: string | null
     active?: boolean
+    compact?: boolean
     refreshSignal?: number
     onOpenUrlInPane?: (url: string) => void
     onShowChanges?: () => void
@@ -381,7 +384,7 @@ describe('PullRequestTab — reading a pull request', () => {
     expect(qa('[data-testid="pr-check-row"]').some((row) => row.textContent?.includes('1m 12s'))).toBe(true)
     expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
     expect(q('[data-testid="pr-merge-reason"]')!.textContent).toContain(
-      'waiting on 1 check: core-checks'
+      'Merge waits for core-checks'
     )
     expect(presence).toEqual([false, true])
   })
@@ -1135,4 +1138,46 @@ describe('PullRequestTab — stacks', () => {
     expect(client.prStackMergeCalls).toHaveLength(0)
     expect(q('[data-testid="pr-stack-merge"]')!.getAttribute('disabled')).not.toBeNull()
   })
+})
+
+
+describe('compact side panel pull request', () => {
+  it('shows checks and the merge gate, with the complete workflow available through details', () => {
+    const client = mount({ compact: true })
+    emit(client, detailMsg())
+    expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
+    expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
+    expect(q('[data-testid="pr-pane-files"]')).toBeNull()
+    click(q('[aria-label="Pull request details and actions"]'))
+    expect(q('[data-testid="pr-pane-files"]')).not.toBeNull()
+    expect(q('[data-testid="pr-actions-menu"]')).not.toBeNull()
+    click(qa('button').find((button) => button.textContent === 'Back to summary')!)
+    expect(q('[data-testid="pr-pane-files"]')).toBeNull()
+  })
+})
+
+describe('pending merge check names', () => {
+  it('names the first pending check and counts the rest without hiding other merge gates', () => {
+    const detail = { merge_disabled_reason: 'Checks are still running', checks: [{ name: 'renderer-checks', state: 'passing' }, { name: 'core-checks', state: 'running' }] } as PrDetail
+    expect(pendingMergeReason(detail)).toBe('Merge waits for core-checks')
+    detail.merge_disabled_reason = 'PR #61 is waiting on 1 check: core-checks'
+    expect(pendingMergeReason(detail)).toBe('Merge waits for core-checks')
+    detail.checks.push({ name: 'licence-inventory', state: 'queued' } as PrDetail['checks'][number])
+    expect(pendingMergeReason(detail)).toBe('Merge waits for core-checks +1')
+    detail.merge_disabled_reason = 'Changes requested'
+    expect(pendingMergeReason(detail)).toBe('Changes requested')
+    detail.merge_disabled_reason = null
+    expect(pendingMergeReason(detail)).toBeNull()
+  })
+})
+
+it('uses emphasis for incomplete counters and clears it for approved reviews', () => {
+  const client = mount({ compact: true })
+  emit(client, detailMsg())
+  const counters = (): Element[] => qa('.pr-compact-group span')
+  expect(counters()[0].className).toContain('text-[var(--warn)]')
+  expect(counters()[1].className).toContain('text-[var(--warn)]')
+  expect(q('.pr-compact-check-dot')!.className).toContain('bg-[var(--info)]')
+  emit(client, detailMsg({ link: link({ review_decision: 'APPROVED' }) }))
+  expect(counters()[1].className).not.toContain('text-[var(--warn)]')
 })

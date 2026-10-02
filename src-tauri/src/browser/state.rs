@@ -209,9 +209,36 @@ pub fn rgba_to_png_data_url(rgba: &[u8], width: u32, height: u32) -> Result<Stri
     ))
 }
 
+// Bound transient overlay images to one 4K RGBA frame before encoding.
+const MAX_PLACEHOLDER_RGBA_BYTES: usize = 3840 * 2160 * 4;
+
+pub fn placeholder_data_url(rgba: &[u8], width: u32, height: u32) -> Result<String, String> {
+    let bytes = u64::from(width)
+        .saturating_mul(u64::from(height))
+        .saturating_mul(4);
+    if bytes > MAX_PLACEHOLDER_RGBA_BYTES as u64 {
+        return Err(format!(
+            "browser: placeholder capture {width}x{height} requires {bytes} RGBA bytes; expected at most {MAX_PLACEHOLDER_RGBA_BYTES}"
+        ));
+    }
+    rgba_to_png_data_url(rgba, width, height)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn placeholder_capture_is_a_bounded_inline_png() {
+        let url = placeholder_data_url(&[255, 0, 0, 255], 1, 1).unwrap();
+        assert!(url.starts_with("data:image/png;base64,"));
+        assert!(placeholder_data_url(&[], u32::MAX, u32::MAX).is_err());
+        let err = placeholder_data_url(&[], 3841, 2160).unwrap_err();
+        assert!(
+            err.contains(&MAX_PLACEHOLDER_RGBA_BYTES.to_string()),
+            "{err}"
+        );
+    }
 
     #[test]
     fn merge_takes_live_properties_and_sticky_events() {

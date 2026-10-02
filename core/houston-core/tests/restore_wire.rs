@@ -42,6 +42,8 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         })
@@ -85,6 +87,8 @@ fn seed_one(
         inbox_unread: 0,
         tags: vec![],
         session_origin,
+        checkout_root: None,
+        worktree: None,
         resumable: false,
         resume_notice: None,
     })
@@ -195,6 +199,8 @@ fn invalid_cwd_is_deferred_not_respawned() {
         inbox_unread: 0,
         tags: vec![],
         session_origin: None,
+        checkout_root: None,
+        worktree: None,
         resumable: false,
         resume_notice: None,
     })
@@ -365,6 +371,8 @@ fn no_flags_set_runs_normal_restore_policy() {
         inbox_unread: 0,
         tags: vec![],
         session_origin: None,
+        checkout_root: None,
+        worktree: None,
         resumable: false,
         resume_notice: None,
     })
@@ -523,7 +531,7 @@ fn a_restored_session_keeps_its_original_identity() {
 }
 
 #[test]
-fn boot_closes_an_orchestrated_child_rather_than_leaving_a_husk() {
+fn boot_keeps_an_unresumable_child_ended_under_its_restored_parent() {
     let _env = env_lock();
     std::env::set_var("SHELL", "/bin/sh");
     std::env::remove_var("HOUSTON_RESTORE_BUDGET");
@@ -550,10 +558,11 @@ fn boot_closes_an_orchestrated_child_rather_than_leaving_a_husk() {
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
     let (sessions, _) = boot_and_list(state.path());
-    assert!(
-        sessions.iter().all(|s| s.title != "Husk-2"),
-        "the orchestrated child leaves the roster entirely: {sessions:?}"
-    );
+    let child = sessions
+        .iter()
+        .find(|s| s.title == "Husk-2")
+        .expect("unresumable child kept");
+    assert_eq!(child.state, proto::SessionState::Exited);
     let parent = sessions
         .iter()
         .find(|s| s.title == "Husk-1")
@@ -562,5 +571,10 @@ fn boot_closes_an_orchestrated_child_rather_than_leaving_a_husk() {
         parent.state,
         proto::SessionState::Running,
         "and its parent still comes back live: {parent:?}"
+    );
+    assert_eq!(child.spawned_by, Some(parent.id));
+    assert!(
+        parent.inbox_unread > 0,
+        "the restored parent receives the notice"
     );
 }

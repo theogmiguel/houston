@@ -242,6 +242,12 @@ impl NotifierRegistry {
 }
 
 pub trait ToolProvider: Send + Sync {
+    fn finish_delivery(&self, _scope: &McpScope, _output: &ToolOutput, _sent: bool) {}
+
+    fn progress_message(&self, _scope: &McpScope, _name: &str, _elapsed: u64) -> Option<String> {
+        None
+    }
+
     fn tools(&self, scope: &McpScope) -> Vec<ToolSpec>;
 
     fn all_tools(&self) -> Vec<ToolSpec> {
@@ -263,6 +269,7 @@ pub trait ToolProvider: Send + Sync {
 
 #[derive(Default)]
 pub struct ToolRegistry {
+    active_calls: ActiveCalls,
     providers: RwLock<Vec<Arc<dyn ToolProvider>>>,
     builtins: Option<Arc<BuiltinTools>>,
     daemon: std::sync::OnceLock<Weak<crate::daemon::Daemon>>,
@@ -714,6 +721,11 @@ async fn gateway_tools_call(
                         .into(),
                 )));
             };
+            if target == "pane_wait" {
+                return Err(GatewayCallError::Tool(ToolError(
+                    "call_tool refuses pane_wait: call pane_wait directly for streaming delivery and acknowledgement".into(),
+                )));
+            }
             let call_args = args.get("args").cloned().unwrap_or_else(|| json!({}));
             let Some(provider) = host.tools().provider_for(target) else {
                 let known: Vec<String> = host.tools().all().into_iter().map(|s| s.name).collect();
@@ -758,6 +770,19 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
     let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
 
     if is_notification {
+        if method == "notifications/cancelled" {
+            if let Some(request_id) = params.get("requestId") {
+                if let Some(cancel) = host
+                    .tools()
+                    .active_calls
+                    .lock()
+                    .expect("active calls lock")
+                    .get(&(scope.session_id, request_id.to_string()))
+                {
+                    cancel.send_replace(true);
+                }
+            }
+        }
         tracing::debug!(method, "/mcp notification");
         return StatusCode::ACCEPTED.into_response();
     }
@@ -904,28 +929,43 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
                     );
                 }
             }
-            let progress_token = params.get("_meta").and_then(|m| m.get("progressToken"));
-            match progress_token {
-                Some(token) => stream_tools_call(
-                    provider,
-                    scope.clone(),
-                    name.to_string(),
-                    args,
-                    id,
-                    token.clone(),
-                    host.progress_tick(),
-                ),
-                None => match provider.call(scope, name, &args).await {
+            let progress_token = params
+                .get("_meta")
+                .and_then(|m| m.get("progressToken"))
+                .cloned();
+            if progress_token.is_none() && name != "pane_wait" {
+                return match provider.call(scope, name, &args).await {
                     Ok(output) => json_rpc_result(id, output.to_json()),
                     Err(ToolError(message)) => json_rpc_result(
                         id,
                         json!({
-                            "content": [{ "type": "text", "text": message }],
-                            "isError": true,
-                        }),
+                        "content":[{"type":"text","text":message}], "isError":true}),
                     ),
-                },
+                };
             }
+            let (cancel, cancelled) = tokio::sync::watch::channel(false);
+            let key = (scope.session_id, id.to_string());
+            let active_calls = Arc::clone(&host.tools().active_calls);
+            active_calls
+                .lock()
+                .expect("active calls lock")
+                .insert(key.clone(), cancel.clone());
+            let registration = CallRegistration {
+                active_calls,
+                key,
+                cancel,
+            };
+            stream_tools_call(
+                provider,
+                scope.clone(),
+                name.to_string(),
+                args,
+                id,
+                progress_token,
+                host.progress_tick(),
+                cancelled,
+                registration,
+            )
         }
         other => json_rpc_error_response(
             StatusCode::BAD_REQUEST,
@@ -939,17 +979,69 @@ async fn dispatch(host: &dyn McpHost, scope: &McpScope, request: &Value) -> Resp
     }
 }
 
+type ActiveCalls = Arc<std::sync::Mutex<BTreeMap<(u32, String), tokio::sync::watch::Sender<bool>>>>;
+
+struct CallRegistration {
+    active_calls: ActiveCalls,
+    key: (u32, String),
+    cancel: tokio::sync::watch::Sender<bool>,
+}
+
+impl Drop for CallRegistration {
+    fn drop(&mut self) {
+        let mut calls = self.active_calls.lock().expect("active calls lock");
+        if calls
+            .get(&self.key)
+            .is_some_and(|cancel| cancel.same_channel(&self.cancel))
+        {
+            calls.remove(&self.key);
+        }
+    }
+}
+
+struct ResponseDelivery {
+    provider: Arc<dyn ToolProvider>,
+    scope: McpScope,
+    output: Option<ToolOutput>,
+}
+
+impl ResponseDelivery {
+    fn complete(mut self) {
+        if let Some(output) = self.output.take() {
+            self.provider.finish_delivery(&self.scope, &output, true);
+        }
+    }
+}
+
+struct QueuedFrame {
+    bytes: Bytes,
+    delivery: Option<ResponseDelivery>,
+}
+
+impl Drop for ResponseDelivery {
+    fn drop(&mut self) {
+        if let Some(output) = &self.output {
+            self.provider.finish_delivery(&self.scope, output, false);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn stream_tools_call(
     provider: Arc<dyn ToolProvider>,
     scope: McpScope,
     name: String,
     args: Value,
     id: Value,
-    token: Value,
+    token: Option<Value>,
     tick: Duration,
+    mut cancelled: tokio::sync::watch::Receiver<bool>,
+    registration: CallRegistration,
 ) -> Response {
-    let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(4);
+    let is_sse = token.is_some();
+    let (tx, rx) = tokio::sync::mpsc::channel::<QueuedFrame>(4);
     tokio::spawn(async move {
+        let _registration = registration;
         let start = Instant::now();
         let call = provider.call(&scope, &name, &args);
         tokio::pin!(call);
@@ -957,52 +1049,89 @@ fn stream_tools_call(
         interval.tick().await;
         let result = loop {
             tokio::select! {
+                biased;
                 res = &mut call => break res,
-                _ = interval.tick() => {
+                _ = tx.closed() => return,
+                _ = cancelled.changed() => {
+                    if *cancelled.borrow() { return; }
+                },
+                _ = interval.tick(), if is_sse => {
                     let elapsed = start.elapsed().as_secs();
-                    let note = json!({
-                        "jsonrpc": "2.0",
-                        "method": "notifications/progress",
-                        "params": {
-                            "progressToken": token,
-                            "progress": elapsed,
-                            "message": format!(
-                                "tool still running ({elapsed}s elapsed); a browser act may be \
-                                 awaiting the user's confirmation on screen (up to 120 s)"
-                            ),
-                        }
-                    });
-                    if tx.send(sse_event(&note)).await.is_err() {
-                        return;
+                    let message = if let Some(message) = provider.progress_message(&scope, &name, elapsed) {
+                        message
+                    } else if name == "pane_wait" {
+                        format!("waiting for child results; {elapsed}s elapsed")
+                    } else if name.starts_with("browser_") {
+                        format!("{name} still running ({elapsed}s elapsed); awaiting the user's confirmation on screen (up to 120 s)")
+                    } else {
+                        format!("{name} still running ({elapsed}s elapsed)")
+                    };
+                    let note = json!({"jsonrpc":"2.0", "method":"notifications/progress",
+                        "params":{"progressToken":token, "progress":elapsed,"message":message}});
+                    tokio::select! {
+                        _ = cancelled.changed() => return,
+                        sent = tx.send(QueuedFrame { bytes: sse_event(&note), delivery: None }) => if sent.is_err() { return; },
                     }
                 }
             }
         };
-        let response = match result {
-            Ok(output) => json!({ "jsonrpc": "2.0", "id": id, "result": output.to_json() }),
-            Err(ToolError(message)) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "content": [{ "type": "text", "text": message }],
-                    "isError": true,
-                },
-            }),
+        let mut delivery = ResponseDelivery {
+            provider: Arc::clone(&provider),
+            scope: scope.clone(),
+            output: None,
         };
-        let _ = tx.send(sse_event(&response)).await;
+        let response = match result {
+            Ok(output) => {
+                let response = json!({"jsonrpc":"2.0", "id":id, "result":output.to_json()});
+                delivery.output = Some(output);
+                response
+            }
+            Err(ToolError(message)) => json!({"jsonrpc":"2.0", "id":id,
+                "result":{"content":[{"type":"text","text":message}],"isError":true}}),
+        };
+        let frame = if is_sse {
+            sse_event(&response)
+        } else {
+            Bytes::from(response.to_string())
+        };
+        let frame = QueuedFrame {
+            bytes: frame,
+            delivery: Some(delivery),
+        };
+        tokio::select! {
+            biased;
+            _ = cancelled.changed() => {},
+            _ = tx.send(frame) => {},
+        }
     });
-
-    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
-        rx.recv()
-            .await
-            .map(|frame| (Ok::<_, std::convert::Infallible>(frame), rx))
-    });
+    let stream = futures_util::stream::unfold(
+        (rx, None::<ResponseDelivery>),
+        |(mut rx, pending)| async move {
+            // A subsequent poll proves the body consumer accepted the previous final frame.
+            if let Some(delivery) = pending {
+                delivery.complete();
+            }
+            rx.recv().await.map(|frame| {
+                (
+                    Ok::<_, std::convert::Infallible>(frame.bytes),
+                    (rx, frame.delivery),
+                )
+            })
+        },
+    );
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "text/event-stream")
+        .header(
+            header::CONTENT_TYPE,
+            if is_sse {
+                "text/event-stream"
+            } else {
+                "application/json"
+            },
+        )
         .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from_stream(stream))
-        .expect("static headers plus a streaming body always build a valid response")
+        .expect("static response headers")
 }
 
 fn sse_event(value: &Value) -> Bytes {
@@ -1061,5 +1190,87 @@ fn summarize(value: &Value) -> String {
         Value::Bool(_) => "a boolean".into(),
         Value::Number(_) => "a number".into(),
         Value::String(_) => "a string".into(),
+    }
+}
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct Provider {
+        finishes: Mutex<Vec<bool>>,
+    }
+    impl ToolProvider for Provider {
+        fn tools(&self, _: &McpScope) -> Vec<ToolSpec> {
+            Vec::new()
+        }
+        fn call<'a>(
+            &'a self,
+            _: &'a McpScope,
+            _: &'a str,
+            _: &'a Value,
+        ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
+            Box::pin(async { Ok(ToolOutput::text("result")) })
+        }
+        fn finish_delivery(&self, _: &McpScope, _: &ToolOutput, sent: bool) {
+            self.finishes.lock().unwrap().push(sent);
+        }
+    }
+
+    fn response(provider: Arc<Provider>) -> Response {
+        let (cancel, cancelled) = tokio::sync::watch::channel(false);
+        stream_tools_call(
+            provider,
+            McpScope {
+                session_id: 1,
+                workspace_id: "workspace".into(),
+            },
+            "pane_wait".into(),
+            json!({}),
+            json!(1),
+            None,
+            Duration::from_secs(10),
+            cancelled,
+            CallRegistration {
+                active_calls: Arc::default(),
+                key: (1, "1".into()),
+                cancel,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn r1_a_queued_frame_is_not_a_completed_body_delivery() {
+        let provider = Arc::new(Provider::default());
+        let response = response(provider.clone());
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let before = provider.finishes.lock().unwrap().clone();
+        drop(response);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(
+            before.is_empty(),
+            "queueing the frame must not finalize a wait: {before:?}"
+        );
+        assert_eq!(*provider.finishes.lock().unwrap(), vec![false]);
+    }
+
+    #[tokio::test]
+    async fn r1_disconnect_with_an_immediately_ready_result_releases_delivery() {
+        let provider = Arc::new(Provider::default());
+        drop(response(provider.clone()));
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(*provider.finishes.lock().unwrap(), vec![false]);
+    }
+
+    #[tokio::test]
+    async fn r1_a_completed_body_confirms_once() {
+        let provider = Arc::new(Provider::default());
+        let bytes = axum::body::to_bytes(response(provider.clone()).into_body(), 10000)
+            .await
+            .unwrap();
+        assert!(!bytes.is_empty());
+        assert_eq!(*provider.finishes.lock().unwrap(), vec![true]);
     }
 }

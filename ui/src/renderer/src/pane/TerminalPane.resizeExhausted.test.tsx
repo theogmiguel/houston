@@ -70,7 +70,7 @@ describe('TerminalPane resize-exhaustion recovery', () => {
     vi.useRealTimers()
   })
 
-  const render = async (fontSize: number): Promise<void> => {
+  const render = async (fontSize: number, state: SessionInfo['state'] = 'running'): Promise<void> => {
     const registerOutput: RegisterOutput = (_id, sink) => {
       capturedSink = sink
       return () => {
@@ -81,9 +81,9 @@ describe('TerminalPane resize-exhaustion recovery', () => {
       root.render(
         <TerminalPane
           client={fakeClient}
-          info={makeSession()}
+          info={{ ...makeSession(), state }}
           theme="warm-espresso"
-          active={false}
+          active={true}
           connected={true}
           fontSize={fontSize}
           copyOnSelect={false}
@@ -101,6 +101,30 @@ describe('TerminalPane resize-exhaustion recovery', () => {
       await flushGhosttyAttach()
     })
   }
+
+  it.each(['exited', 'killed', 'interrupted'] as const)('renders %s scrollback without stdin, resize, focus or notices', async (state) => {
+    await render(13, state)
+    expect(fakeClient.attachSession).toHaveBeenCalled()
+    expect(resizeSession).not.toHaveBeenCalled()
+    act(() => {
+      ghosttyMock.emitData('hello')
+      ghosttyMock.emitKey(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true }))
+      ghosttyMock.emitResize(90, 30)
+    })
+    expect(fakeClient.sendStdin).not.toHaveBeenCalled()
+    expect(ghosttyMock.focusSpy).not.toHaveBeenCalled()
+    expect(ghosttyMock.createOptions?.readOnly).toBe(true)
+    expect(container.querySelector('[data-typeable]')).toBeNull()
+    expect(container.textContent).not.toContain('failed')
+  })
+  it('stops delivery when a mounted live child settles', async () => {
+    await render(13)
+    resizeSession.mockClear()
+    await render(14, 'exited')
+    act(() => { ghosttyMock.emitData('x'); ghosttyMock.emitResize(100, 40) })
+    expect(fakeClient.sendStdin).not.toHaveBeenCalled()
+    expect(resizeSession).not.toHaveBeenCalled()
+  })
 
   it('without the exhaustion signal, a re-triggered syncSize landing on the same size stays deduped (baseline)', async () => {
     await render(13)

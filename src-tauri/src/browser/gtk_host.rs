@@ -474,7 +474,7 @@ mod linux {
             .and_then(|widget| widget.downcast::<webkit2gtk::WebView>().ok())
     }
 
-    pub fn host_zoom_for_selftest(app: &AppHandle, window_label: &str) -> Result<f64, String> {
+    pub fn read_host_zoom(app: &AppHandle, window_label: &str) -> Result<f64, String> {
         let (tx, rx) = channel();
         let app_for_main = app.clone();
         let window_owned = window_label.to_string();
@@ -738,16 +738,16 @@ mod linux {
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize,
-    host_zoom_for_selftest, is_widget_visible, move_child, read_allocation,
-    set_host_zoom_for_selftest, toplevel_window_signatures,
+    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize, is_widget_visible,
+    move_child, read_allocation, read_host_zoom, set_host_zoom_for_selftest,
+    toplevel_window_signatures,
 };
 
 #[cfg(target_os = "windows")]
 pub(crate) use crate::browser::webview2_host::{
-    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize,
-    host_zoom_for_selftest, is_widget_visible, move_child, read_allocation,
-    set_host_zoom_for_selftest, toplevel_window_signatures,
+    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize, is_widget_visible,
+    move_child, read_allocation, read_host_zoom, set_host_zoom_for_selftest,
+    toplevel_window_signatures,
 };
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -816,7 +816,7 @@ mod fallback {
         Err(NOT_LINUX_MSG.to_string())
     }
 
-    pub fn host_zoom_for_selftest(_app: &AppHandle, _window_label: &str) -> Result<f64, String> {
+    pub fn read_host_zoom(_app: &AppHandle, _window_label: &str) -> Result<f64, String> {
         Err(NOT_LINUX_MSG.to_string())
     }
 
@@ -833,7 +833,7 @@ mod fallback {
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use fallback::{
-    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize,
-    host_zoom_for_selftest, is_widget_visible, move_child, read_allocation,
-    set_host_zoom_for_selftest, toplevel_window_signatures,
+    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize, is_widget_visible,
+    move_child, read_allocation, read_host_zoom, set_host_zoom_for_selftest,
+    toplevel_window_signatures,
 };

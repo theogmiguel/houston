@@ -72,7 +72,7 @@ async function flush(): Promise<void> {
   })
 }
 
-function render(onSendToTerminal?: (text: string) => void): void {
+function render(onSendToTerminal: ((text: string) => void) | undefined = vi.fn()): void {
   act(() => {
     root.render(
       <BrowserPane
@@ -117,6 +117,16 @@ function elementSelectedPayload(overrides: Record<string, unknown> = {}): Record
 }
 
 describe('BrowserPane element picker (C11)', () => {
+  it('disables selection without a focused agent target and explains the reason', async () => {
+    act(() => root.render(<BrowserPane node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }} workspaceDir="/tmp/tr-test-ws" onNavigate={() => {}} onClose={() => {}} onHeaderPointerDown={() => {}} />))
+    await flush()
+    expect(toggleButton().disabled).toBe(true)
+    const wrap = toggleButton().parentElement!
+    act(() => wrap.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })))
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)))
+    expect(document.body.textContent).toContain('focus a live agent pane first')
+    expect(invokeMock.mock.calls.some(([cmd]) => cmd === 'browser_set_picker_mode')).toBe(false)
+  })
   it('enabling issues browser_set_picker_mode with the {agents, preferredAgent} config shape', async () => {
     await enablePicker()
 

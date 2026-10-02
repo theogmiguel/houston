@@ -361,6 +361,7 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
         pending_task_ids: vec!["task-1".into(), "task-2".into()],
         task_id: Some("task-1".into()),
         agent_id: Some("agent-9".into()),
+        subagent_type: Some("worker".into()),
         tool_use_id: Some("toolu_1".into()),
         request_id: Some("request-1".into()),
         stop_continued: true,
@@ -391,6 +392,7 @@ fn a_drop_file_from_before_these_fields_still_parses() {
     assert_eq!(back.prompt_id, None);
     assert!(back.pending_task_ids.is_empty());
     assert_eq!(back.task_id, None);
+    assert_eq!(back.subagent_type, None);
     assert_eq!(back.agent_id, None);
     assert_eq!(back.tool_use_id, None);
     assert!(!back.stop_continued);

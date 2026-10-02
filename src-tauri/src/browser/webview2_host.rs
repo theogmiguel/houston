@@ -370,10 +370,7 @@ pub(crate) mod geometry {
         )
     }
 
-    pub(crate) fn host_zoom_for_selftest(
-        app: &AppHandle,
-        window_label: &str,
-    ) -> Result<f64, String> {
+    pub(crate) fn read_host_zoom(app: &AppHandle, window_label: &str) -> Result<f64, String> {
         host_zoom_factor_checked(app, window_label)
     }
 
@@ -410,7 +407,7 @@ pub(crate) mod geometry {
 
 #[cfg(windows)]
 pub(crate) use geometry::{
-    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize,
-    host_zoom_for_selftest, is_widget_visible, move_child, read_allocation,
-    set_host_zoom_for_selftest, toplevel_window_signatures,
+    adopt_child, commit_rect, corner_report, focus_host, follow_window_resize, is_widget_visible,
+    move_child, read_allocation, read_host_zoom, set_host_zoom_for_selftest,
+    toplevel_window_signatures,
 };

@@ -973,3 +973,20 @@ describe('tab stacks (step 05, second half)', () => {
     expect(loadLayout('/ws/stack-corrupt')).toEqual({ tree: null, cols: 2 })
   })
 })
+
+describe('headless children', () => {
+  it('syncTree retains an existing child but never appends an unplaced child', () => {
+    expect(preorderSessions(syncTree(leaf(2), [1, 2, 3], 2, [1]))).toEqual([2, 1])
+    expect(preorderSessions(syncTree(null, [1, 2], 2, [1]))).toEqual([1])
+  })
+  it('syncSessionLayout keeps saved children without auto-placing new ones', () => {
+    expect(preorderSessions(syncSessionLayout(leaf(2), [1, 2, 3], 2, new Map(), [1]))).toEqual([2, 1])
+  })
+  it('workspace sync retains a guest child and never places headless children', () => {
+    const path = '/tmp/headless'
+    const key = gridStorageKey(path, 'g')
+    const current = new Map([[key, { tree: leaf(2), cols: 2 }]])
+    const next = syncWorkspaceGrids(path, [{ id: 'g', name: 'Grid' }], 'g', [1, 2, 3], current, new Map(), [1])
+    expect(preorderSessions(next.get(key)!.tree)).toEqual([2, 1])
+  })
+})

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { useNativeSuppression, type NativeSuppressionReason } from '../layout/nativeSuppression'
+import { useNativeSuppression, useNativeOverlaySuppression, type NativeSuppressionReason } from '../layout/nativeSuppression'
 
 const EXIT_MS = 170
 
@@ -19,14 +19,18 @@ export function useExitAnimation(open: boolean): { mounted: boolean; closing: bo
 export function AnimOut({
   open,
   suppress,
+  scopeRef,
   children
 }: {
   open: boolean
   suppress?: NativeSuppressionReason
+  scopeRef?: RefObject<HTMLElement | null>
   children: React.ReactNode
 }): React.JSX.Element | null {
   const { mounted, closing } = useExitAnimation(open)
-  useNativeSuppression(suppress ?? 'popover', suppress != null && mounted)
+  const emptyRef = useRef<HTMLElement>(null)
+  useNativeSuppression(suppress ?? 'popover', suppress != null && mounted && !scopeRef)
+  useNativeOverlaySuppression(suppress ?? 'popover', suppress != null && mounted && !!scopeRef, scopeRef ?? emptyRef)
   const last = useRef<React.ReactNode>(null)
   if (open) last.current = children
   if (!open && !mounted) return null
@@ -68,7 +72,7 @@ export function MenuLayer({
   }, [open])
 
   return (
-    <AnimOut open={open} suppress={suppress}>
+    <AnimOut open={open} suppress={suppress} scopeRef={suppress === 'popover' ? menuRef : undefined}>
       <div
         data-testid="menu-dismiss-layer"
         className="fixed inset-0 z-[var(--z-overlay)]"

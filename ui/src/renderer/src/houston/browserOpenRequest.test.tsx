@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }))
 const { isTauriMock } = vi.hoisted(() => ({ isTauriMock: vi.fn(() => true) }))
 vi.mock('./host', () => ({ isTauri: () => isTauriMock() }))
 
-const { useBrowserOpenRequest } = await import('./browserOpenRequest')
+const { useBrowserOpenRequest, useBrowserPaneLoad, reuseSideBrowser, routeBrowserOpenRequest } = await import('./browserOpenRequest')
 
 function captureHandler(): {
   fire: (payload: { workspaceId: string; url: string }) => void
@@ -96,4 +96,51 @@ describe('useBrowserOpenRequest', () => {
     root = createRoot(container)
     expect(dispose).toHaveBeenCalledTimes(1)
   })
+})
+
+
+describe('native browser reveal routing', () => {
+  it('reveals the exact stored surface without navigating before native acknowledgement', () => {
+    localStorage.setItem('tr-side:/work', JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'browser', id: 'other', url: 'https://other.test/' }, { kind: 'browser', id: 'target', url: 'https://current.test/' }], active: 0 }))
+    const load = vi.fn()
+    function Loader(): null { useBrowserPaneLoad('target', load); return null }
+    act(() => root.render(<Loader />))
+    const opens: unknown[] = []
+    const listener = (event: Event): void => { opens.push((event as CustomEvent).detail) }
+    window.addEventListener('houston:side-open', listener)
+    expect(reuseSideBrowser('/work', 'https://next.test/', 'target')).toBe(true)
+    expect(opens).toEqual([{ kind: 'browser', id: 'target', url: 'https://current.test/', workspace: '/work', revealOnly: true }])
+    expect(load).not.toHaveBeenCalled()
+    expect(reuseSideBrowser('/work', 'https://next.test/', 'missing')).toBe(false)
+    expect(opens).toHaveLength(1)
+    window.removeEventListener('houston:side-open', listener)
+  })
+
+  it('retains URL-seeded loading when the request does not name a native surface', () => {
+    localStorage.setItem('tr-side:/work', JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'browser', id: 'target', url: 'https://current.test/' }], active: 0 }))
+    const load = vi.fn()
+    function Loader(): null { useBrowserPaneLoad('target', load); return null }
+    act(() => root.render(<Loader />))
+    expect(reuseSideBrowser('/work', 'https://next.test/')).toBe(true)
+    expect(load).toHaveBeenCalledWith('https://next.test/')
+    expect(reuseSideBrowser('/empty', 'https://next.test/')).toBe(false)
+  })
+})
+
+it('routes explicit grid, side and unknown surfaces without dispatching navigation or loads', () => {
+  const open = vi.fn(), reveal = vi.fn(() => true), load = vi.fn()
+  function Loader(): null { useBrowserPaneLoad('target', load); return null }
+  act(() => root.render(<Loader />))
+  routeBrowserOpenRequest('/work', 'https://next.test/', 'target', reveal, open)
+  expect(reveal).toHaveBeenCalledWith('/work', 'target')
+  expect(open).not.toHaveBeenCalled()
+  expect(load).not.toHaveBeenCalled()
+  reveal.mockReturnValue(false)
+  localStorage.setItem('tr-side:/work', JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'browser', id: 'target', url: 'https://current.test/' }], active: 0 }))
+  routeBrowserOpenRequest('/work', 'https://next.test/', 'target', reveal, open)
+  routeBrowserOpenRequest('/work', 'https://next.test/', 'unknown', reveal, open)
+  expect(open).not.toHaveBeenCalled()
+  expect(load).not.toHaveBeenCalled()
+  routeBrowserOpenRequest('/empty', 'https://next.test/', undefined, reveal, open)
+  expect(open).toHaveBeenCalledExactlyOnceWith('/empty', 'https://next.test/')
 })

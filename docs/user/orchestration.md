@@ -67,21 +67,66 @@ Completion also reaches the parent's inbox through its next supported delivery p
 Routine status checks and terminal reads are unnecessary; reserve them for a reported
 blocker, a timeout, or an explicit request to inspect the child.
 
+Waits are capped by the parent provider: Claude uses 90 seconds; Cursor and Antigravity
+use 30 seconds; Codex and Houston-configured OpenCode use ten minutes. Grok uses up to
+ten minutes, shortened by its effective per-tool timeout. Requests above the cap are
+clamped and the response names the requested value and cap. A timeout asks the parent
+to wait again. Starting another wait replaces the previous one;
+interrupted waits leave results available for delivery. If there are no live children or
+pending messages, a whole-inbox wait returns immediately. A result submitted before the
+child finishes its turn remains staged; `pane_get` exposes its age when you need to
+diagnose a missing completion. Claude background jobs hold a turn open for at most
+45 minutes before a missing-handback notice reaches the parent.
+
+Result bodies up to 4096 characters arrive whole; larger bodies arrive as a bounded
+excerpt. Use `pane_get` with the child's `session` and the excerpt's `result_id` to
+read the full stored body, including after the child closes. The CLI equivalent is
+`hs-pane get SESSION --result-id ID`. Only the result's recipient can retrieve it;
+the submit storage limit still applies.
+
+A follow-up prompt waits when the child is busy or you have unsubmitted text in its
+terminal. The reply names that hold. If Houston can write immediately, a write failure
+is returned directly instead of reporting the prompt as queued.
+
+Cursor does not report needs-input. Its capability note and spawn warning say
+“needs-input not reported by this provider”; an absent badge cannot prove it is working.
+
+Codex Auto review can show `stalled?` after an observed approval episode remains unresolved
+for five minutes. This is a diagnostic heuristic, not a request for human input. It clears
+when a matching tool completion or authoritative turn end/interruption arrives. Houston
+does not send keys or a desktop notification in response to it.
+
 ## Workspaces and child lifetime
 
-By default, a child starts in the parent's registered workspace. `target_workspace` may
+By default, a child starts in the parent's current directory when it is inside the
+registered workspace, including a worktree. Otherwise it starts at the workspace root. `target_workspace` may
 select another workspace already registered in Settings; Houston does not treat an
 arbitrary filesystem path as authority. If `cwd` is supplied, it must be inside that
 target workspace. The parent may still address the child because delegation ancestry,
 not workspace equality, controls access. A child token remains scoped to its own
 workspace, and unrelated panes remain inaccessible.
 
-Children are temporary by default. Houston keeps the result and artifact paths durable,
-then removes the completed pane after its authoritative round is accounted for. A
-submitted draft, an idle or blocked child, a missing handback, a stall, or a provisional
-result does not by itself close the pane. Set `reusable: true` in MCP/HTTP, or pass
-`--reusable` to `hs-pane spawn`, when the child must remain available for follow-up
-prompts or terminal inspection. A reusable child is never closed by this cleanup.
+Children are temporary by default. After a durable completed result, Houston ends the
+process and keeps the session and transcript under Settled. Done-and-idle reusable
+children also leave the live-child quota, but remain in Working until their process ends. Closing a settled child or its parent removes
+it; retention expires after 24 hours by default. Claude and Codex conversations can be
+continued when a valid resume handle is available. Other providers cannot continue an
+ended conversation. A reusable child remains available for follow-up prompts until close
+or retention expiry.
+
+After a daemon restart, open Claude and Codex children resume with their parent when
+valid conversation handles are available. The parent receives one restored notice naming
+which children resumed. Other children remain ended and are named in that notice.
+
+A live daemon handoff preserves parent links, delegation roles and scoped credentials.
+An open wait returns a retryable timeout marked `restarting`; call `pane_wait` again
+on the new generation. Pending results remain available for that wait.
+
+Claude and Grok children receive a launch-only permission rule for Houston's
+`pane_submit` tool, including when automatic approval is disabled. Other tools keep
+the selected approval mode. No handback-only launch rule is
+configured for Codex, Antigravity, OpenCode or Cursor; their capability note names
+this limitation, and their selected approval mode still applies to handback.
 
 ## Handing work off to a new pane
 
@@ -94,8 +139,9 @@ closing the new one. Only a pane without a parent can hand off, and `reusable` a
 Settings → Orchestration.
 
 Spawn may also request `effort` (`low`, `medium`, `high`, `xhigh` or `max`) through MCP,
-HTTP or `hs-pane spawn --effort`; omitting it keeps the CLI default, and providers without a
-per-run effort setting refuse that request.
+HTTP or `hs-pane spawn --effort`. Workspace routing can supply model and effort choices;
+without a matching route, the agent chooses them. Providers without a per-run effort
+setting refuse that request.
 
 `model` must be an identifier accepted by the selected agent CLI. Houston forwards it
 unchanged; it does not expand display names or shorthand. For example, Codex uses
@@ -122,3 +168,41 @@ Orchestration does not lock you out of a pane an agent opened. Any pane in the g
 including one spawned by another agent, is a real terminal you can click into and read,
 and you can type into it directly at any time — the same as any pane you opened
 yourself. Delegation changes who briefed the pane, not who is allowed to use it.
+
+Handoff requests may include `state_doc` as text or `{path: "state.txt"}` inside the
+target workspace. The handoff state is limited to 64 KiB and included in the new pane's
+brief. It is refused on ordinary child spawns.
+
+## Following delegated work
+
+The orchestrator's roster groups children into Needs you, Working and Settled. Select a
+child to inspect its terminal inside the orchestrator pane; return to Orchestrator to
+see the parent. Move to grid gives a child its own cell, and Return to roster reverses
+that placement. A headless child stays in the roster without consuming a grid cell.
+Needs you includes blocked and stalled children; Answer focuses their terminal prompt.
+Houston never answers a child's question for you.
+
+Overview opens a closable side-panel tab for that orchestrator. Group its children by
+status or worktree, select a terminal, or review changes in the child's checkout.
+Managed worktrees show their branch and changed-file count. Live siblings sharing a
+checkout are identified by role. The latest result excerpt remains available after reopening
+the overview, subject to inbox retention. Review comments can be sent back to that child. Closing the overview only closes the view.
+
+Settled contains ended sessions. A settled child's process has exited; selecting it shows
+its saved transcript read-only, with when it ended and how long it is kept. Continue and
+Close sit under the transcript. A live resumed child stays in Working or Needs you even
+if its previous delegation was marked unknown. Close settled counts only ended children
+and offers five seconds to Undo; a child that resumes during that interval is preserved.
+Continue resumes a retained Claude or Codex conversation with its earlier transcript.
+Set **Settled retention** in Settings ▸ Orchestration to change the default 24-hour horizon.
+
+When a parent ends, pending messages go to its nearest running ancestor. If none remains, they appear under **Addressed to you** in the overview.
+Acknowledge marks a message delivered; Resolve marks it handled. Restart notices list
+which child conversations resumed and why others remained ended. Successfully resumed
+children are Working; an interrupted mission is not reported as successful.
+
+Children report results, requests for input and delivery problems to their parent
+orchestrator. The orchestrator answers the child or asks you for a decision. Spawn
+warnings return to the orchestrator; they do not appear in "Addressed to you".
+Only a top-level pane waiting for your input triggers a desktop notification.
+The "Addressed to you" group is hidden when empty.

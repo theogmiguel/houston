@@ -61,6 +61,17 @@ function openTabsPopover(): void {
 }
 
 describe('BrowserPane persisted tabs use a DISTINCT key per leaf (C9 item 2)', () => {
+  it('keeps an empty side-panel request on the browser start screen', () => {
+    act(() => root.render(<BrowserPane node={node('empty-side', '')} workspaceDir="/tmp/tr-test-ws" panel loadRequest={{ url: '' }} onNavigate={() => {}} onClose={() => {}} onHeaderPointerDown={() => {}} />))
+    expect(urlInput().value).toBe('')
+    expect(container.querySelector('[data-testid="browser-pane-open-cta"]')).not.toBeNull()
+  })
+  it('loads a requested page when a restored side tab first mounts', () => {
+    localStorage.setItem('tr-browser-tabs.leaf.restored-side', JSON.stringify({ tabs: [{ id: 5, url: 'https://old.example/' }], activeTabId: 5 }))
+    act(() => root.render(<BrowserPane node={node('restored-side', 'https://old.example/')} workspaceDir="/tmp/tr-test-ws" panel loadRequest={{ url: 'https://requested.example/' }} onNavigate={() => {}} onClose={() => {}} onHeaderPointerDown={() => {}} />))
+    expect(urlInput().value).toBe('https://requested.example/')
+    expect(JSON.parse(localStorage.getItem('tr-browser-tabs.leaf.restored-side')!).tabs).toEqual([{ id: 5, url: 'https://requested.example/' }])
+  })
   it('writes each leaf to its own storage key, not one shared set', () => {
     const containerA = document.createElement('div')
     document.body.appendChild(containerA)

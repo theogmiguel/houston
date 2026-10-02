@@ -1,3 +1,5 @@
+import type { HoustonClient } from '../../houston/client'
+import { RoutingSettings } from './RoutingSettings'
 import { useEffect, useState } from 'react'
 import { BTN_GHOST } from '../buttonChrome'
 import { MAILBOX_RETENTION_HOURS_MAX, ORCHESTRATION_CAP_MAX } from '../../houston/generated/DEFAULTS'
@@ -198,6 +200,8 @@ function AcpRoster({
 }
 
 export interface OrchestrationSectionProps {
+  client?: HoustonClient | null
+
   orchestrationState: OrchestrationStateView | null
   orchestrationEnabled: boolean
   onOrchestrationEnabled: (v: boolean) => void
@@ -210,6 +214,7 @@ export interface OrchestrationSectionProps {
 }
 
 export function OrchestrationSection({
+  client = null,
   orchestrationState,
   orchestrationEnabled,
   onOrchestrationEnabled,
@@ -245,6 +250,10 @@ export function OrchestrationSection({
         hostInfo={hostInfo}
         onMailboxRetentionSet={onMailboxRetentionSet}
       />
+
+      <SettingsList><Row title="Settled child retention" desc="Keep ended children for 1–8760 hours before closing them.">{hostInfo && <NumberSetting value={hostInfo.settled_retention_hours} min={1} max={8760} unit="hours" testId="settings-settled-retention" onCommit={(hours) => client?.settledRetentionSet(hours)} />}</Row></SettingsList>
+      <SubHead>Workspace routing</SubHead>
+      <RoutingSettings client={client} workspace={historyWorkspace} />
 
       <div className="mt-[22px] mb-[14px]">
         <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">

@@ -43,6 +43,9 @@ interface Props {
   branches?: Map<number, string>
   /** Consultative checkout note per session id, for the chip's tooltip. */
   branchNotes?: Map<number, string>
+  gridSessionIds?: ReadonlySet<number>
+  onMoveChildToGrid?: (parent: number, child: number) => void
+  onReturnChildToRoster?: (child: number) => void
   roster?: PaneRoster
   onFocusPane?: (id: number) => void
   viewAll: boolean
@@ -89,7 +92,7 @@ interface Props {
   onHandoff: (source: HandoffSource) => void
   onSwapAdjacent?: (session: number, offset: 1 | -1) => void
   onOpenFile: (session: number, path: string, line?: number, col?: number) => void
-  onOpenDir: (path: string) => void
+  onOpenDir: (path: string, session?: number) => void
   onSendToTerminal?: (text: string) => void
   onNativeError?: (text: string) => void
   onDetach?: (payload: DetachPayload) => void
@@ -375,6 +378,9 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
         onOpenFile={props.onOpenFile}
         onOpenDir={props.onOpenDir}
         roster={props.roster}
+        gridSessionIds={props.gridSessionIds}
+        onMoveChildToGrid={props.onMoveChildToGrid}
+        onReturnChildToRoster={props.onReturnChildToRoster}
         onFocusPane={props.onFocusPane}
       />
     </SurfaceBoundary>

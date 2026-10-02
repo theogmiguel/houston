@@ -166,17 +166,17 @@ describe('SourceControlPanel', () => {
     expect(handle().getAttribute('aria-orientation')).toBe('vertical')
     expect(handle().getAttribute('aria-valuemin')).toBe('340')
     expect(handle().getAttribute('aria-valuemax')).toBe('840')
-    expect(handle().getAttribute('aria-valuenow')).toBe('480')
+    expect(handle().getAttribute('aria-valuenow')).toBe(String(SCM_WIDTH_DEFAULT))
     expect(handle().tabIndex).toBe(0)
 
     act(() => {
       handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
     })
-    expect(widths.at(-1)).toBe(480 + Math.round(1200 * 0.04))
+    expect(widths.at(-1)).toBe(SCM_WIDTH_DEFAULT + Math.round(1200 * 0.04))
     act(() => {
       handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
-    expect(widths.at(-1)).toBe(480)
+    expect(widths.at(-1)).toBe(SCM_WIDTH_DEFAULT)
   })
 
   it('commits the pointerup position even when no animation frame ran', () => {
@@ -190,9 +190,9 @@ describe('SourceControlPanel', () => {
         new MouseEvent('pointerup', { bubbles: true, cancelable: true, clientX: 900 })
       )
     })
-    expect(widths.at(-1)).toBe(580)
-    expect(rendered()).toBe(580)
-    expect(localStorage.getItem('tr-scm-width')).toBe('580')
+    expect(widths.at(-1)).toBe(SCM_WIDTH_DEFAULT + 100)
+    expect(rendered()).toBe(SCM_WIDTH_DEFAULT + 100)
+    expect(localStorage.getItem('tr-scm-width')).toBe(String(SCM_WIDTH_DEFAULT + 100))
   })
 
   it('a cancelled drag restores the width it began at, not the last frame', () => {
@@ -211,10 +211,10 @@ describe('SourceControlPanel', () => {
         new MouseEvent('pointercancel', { bubbles: true, cancelable: true, clientX: 900 })
       )
     })
-    expect(widths.at(-1)).toBe(480)
+    expect(widths.at(-1)).toBe(SCM_WIDTH_DEFAULT)
   })
 
-  it('double-click and Home both return to the 480 default', () => {
+  it('double-click and Home both return to the default width', () => {
     const dragTo = (x: number): void => {
       act(() => {
         handle().dispatchEvent(
@@ -228,16 +228,16 @@ describe('SourceControlPanel', () => {
       })
     }
     dragTo(800)
-    expect(rendered()).toBe(680)
+    expect(rendered()).toBe(SCM_WIDTH_DEFAULT + 200)
     act(() => {
       handle().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     })
-    expect(rendered()).toBe(480)
+    expect(rendered()).toBe(SCM_WIDTH_DEFAULT)
     dragTo(800)
     act(() => {
       handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
     })
-    expect(rendered()).toBe(480)
+    expect(rendered()).toBe(SCM_WIDTH_DEFAULT)
   })
 
   it('a clamped panel still tracks the pointer from the width it shows', () => {
@@ -403,6 +403,6 @@ describe('SourceControlPanel', () => {
     expect(panel().getAttribute('aria-hidden')).toBe('true')
     expect(panel().className).toContain('invisible')
     expect(panel().hasAttribute('inert')).toBe(true)
-    expect(rendered()).toBe(480)
+    expect(rendered()).toBe(SCM_WIDTH_DEFAULT)
   })
 })

@@ -25,13 +25,13 @@
   "max": 20,
   "files": {
     "src/renderer/src/App.tsx": {
-      "total": 859,
-      "worst": 88,
+      "total": 959,
+      "worst": 87,
       "over": 3
     },
     "src/renderer/src/components/BrowserPane.tsx": {
-      "total": 83,
-      "worst": 42,
+      "total": 125,
+      "worst": 37,
       "over": 1
     },
     "src/renderer/src/components/ChangesPane.tsx": {
@@ -55,8 +55,8 @@
       "over": 1
     },
     "src/renderer/src/components/FilesPane.tsx": {
-      "total": 133,
-      "worst": 25,
+      "total": 257,
+      "worst": 24,
       "over": 1
     },
     "src/renderer/src/components/IconTile.tsx": {
@@ -75,13 +75,8 @@
       "over": 1
     },
     "src/renderer/src/components/SessionPane.tsx": {
-      "total": 82,
-      "worst": 26,
-      "over": 1
-    },
-    "src/renderer/src/components/SshConnectModal.tsx": {
-      "total": 102,
-      "worst": 39,
+      "total": 124,
+      "worst": 21,
       "over": 1
     },
     "src/renderer/src/pane/TerminalPane.tsx": {

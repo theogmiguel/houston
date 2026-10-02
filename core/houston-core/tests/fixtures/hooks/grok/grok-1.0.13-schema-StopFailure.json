@@ -1,0 +1,10 @@
+{
+  "_note": "Schema-derived from Grok 1.0.13 bundled hook documentation (common fields and terminal event table); not captured live.",
+  "hookEventName": "stop_failure",
+  "sessionId": "grok-schema-session",
+  "cwd": "/tmp/example",
+  "workspaceRoot": "/tmp/example",
+  "timestamp": "2026-04-14T12:00:00Z",
+  "permissionMode": "auto",
+  "promptId": "grok-schema-turn"
+}

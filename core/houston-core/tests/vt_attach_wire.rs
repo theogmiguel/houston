@@ -243,12 +243,17 @@ async fn a_finished_pane_still_answers_with_the_screen_it_died_on() {
 
     let project = tempfile::tempdir_in(tmp.path()).unwrap();
     ws.send(Message::text(create_custom_msg(
-        vec!["sh", "-c", "printf 'LASTWORDS\\n'"],
+        vec!["sh", "-c", "read trigger; printf 'LASTWORDS\\n'"],
         project.path(),
     )))
     .await
     .unwrap();
     let session = expect_created(&mut ws).await.id;
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(session, b"finish\n").into(),
+    ))
+    .await
+    .unwrap();
     output_and_exit(&mut ws, session, "LASTWORDS").await;
 
     ws.send(attach_msg(session, true)).await.unwrap();

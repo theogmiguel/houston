@@ -16,6 +16,7 @@ export interface PaneBuffer {
 }
 
 export interface PaneTerminalOptions {
+  readOnly?: boolean
   disableStdin?: boolean
   theme?: { background?: string; foreground?: string; cursor?: string }
   fontSize?: number
@@ -78,6 +79,7 @@ export interface GhosttyTerminalInit {
   readonly fontFamily: string
   readonly fontSize: number
   readonly lineHeight?: number
+  readonly readOnly?: boolean
   readonly cursorBlink?: boolean
   readonly maxScrollbackLines?: number
   readonly disableStdin: boolean
@@ -117,6 +119,7 @@ export interface GhosttySurfaceCreateOptions {
     rowIndex: number,
     column: number
   ) => TerminalLinkWithRange | null
+  readonly readOnly?: boolean
   readonly cursorBlink?: boolean
   readonly maxScrollbackLines?: number
 }
@@ -189,6 +192,7 @@ export class GhosttyPaneTerminal implements PaneTerminal {
   }
 
   private makeOptions(init: GhosttyTerminalInit): PaneTerminalOptions {
+    let readOnly = init.readOnly ?? false
     let disableStdin: boolean | undefined = init.disableStdin
     let theme: { background?: string; foreground?: string; cursor?: string } | undefined =
       init.theme
@@ -198,6 +202,13 @@ export class GhosttyPaneTerminal implements PaneTerminal {
     let cursorBlink: boolean | undefined = init.cursorBlink
     const self = this
     return {
+      get readOnly() {
+        return readOnly
+      },
+      set readOnly(value: boolean | undefined) {
+        readOnly = value ?? false
+        self.surface?.setReadOnly(readOnly)
+      },
       get disableStdin() {
         return disableStdin
       },
@@ -297,9 +308,10 @@ export class GhosttyPaneTerminal implements PaneTerminal {
           lineHeight: this.optionsValue.lineHeight ?? this.init.lineHeight
         },
         cursorBlink: this.optionsValue.cursorBlink ?? this.init.cursorBlink,
+        readOnly: this.optionsValue.readOnly,
         maxScrollbackLines: this.init.maxScrollbackLines,
         onData: (data) => {
-          if (this.optionsValue.disableStdin) return
+          if (this.optionsValue.readOnly || this.optionsValue.disableStdin) return
           for (const listener of this.dataListeners) listener(data)
         },
         onResize: (cols, rows) => {
@@ -319,6 +331,7 @@ export class GhosttyPaneTerminal implements PaneTerminal {
         return
       }
       this.surface = surface
+      surface.setReadOnly(this.optionsValue.readOnly ?? false)
       this.colsValue = surface.cols
       this.rowsValue = surface.rows
       if (this.pausedState) surface.setPaused(true)

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_GRID_ID, gridStorageKey, loadLayout, type LayoutNode } from './layout/tree'
 import { setScmWidth } from './scmPanel'
 import {
@@ -17,6 +17,11 @@ import {
 const WS = '/tmp/project'
 const WS_B = '/tmp/other'
 const GRID_KEY = gridStorageKey(WS, DEFAULT_GRID_ID)
+
+beforeAll(async () => {
+  // Panel routing assertions must not depend on cold module-transform latency.
+  await import('./components/ChangesPane')
+})
 
 beforeEach(() => {
   resetHarness()
@@ -87,7 +92,7 @@ describe('source control panel — shell integration', () => {
   }
 
   const panel = (): HTMLElement | null =>
-    harness!.container.querySelector('[data-testid="source-control-panel"]')
+    harness!.container.querySelector('[data-testid="side-panel"]')
 
   const slotFor = (key: number | string): HTMLElement => {
     const inner = harness!.container.querySelector<HTMLElement>(`[data-panekey="${key}"]`)
@@ -97,9 +102,6 @@ describe('source control panel — shell integration', () => {
   }
 
   async function settlePanel(): Promise<void> {
-    // The pane's lazy chunk loads on first open; a cold import under a
-    // full-suite run measured ~70 of these 5 ms ticks, so 240 is the margin,
-    // not a budget anyone should have to tune again.
     for (let i = 0; i < 240; i++) {
       if (harness!.container.querySelector('[data-testid="changes-pane"]')) return
       await act(async () => {
@@ -347,9 +349,25 @@ describe('source control panel — shell integration', () => {
     expect(JSON.stringify(storedTree('all'))).not.toContain('"editor"')
   })
 
+  it('expands the side panel without destroying the grid and restores it with Escape', async () => {
+    await boot([1])
+    press('g')
+    await settlePanel()
+    const grid = harness!.container.querySelector<HTMLElement>('.grid-slot')!
+    const before = engineCounts()
+    act(() => { panel()!.querySelector<HTMLButtonElement>('[aria-label="Expand side panel"]')!.click() })
+    expect(panel()!.classList.contains('expanded')).toBe(true)
+    expect(grid.getAttribute('aria-hidden')).toBe('true')
+    expect(engineCounts()).toEqual(before)
+    act(() => { panel()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(panel()!.classList.contains('expanded')).toBe(false)
+    expect(grid.getAttribute('aria-hidden')).toBeNull()
+    expect(engineCounts()).toEqual(before)
+  })
+
   it('the palette row still toggles the panel through the old command id', async () => {
     await boot([1])
-    runPaletteRow('source control')
+    runPaletteRow('side panel')
     await settlePanel()
     expect(panel()).not.toBeNull()
   })

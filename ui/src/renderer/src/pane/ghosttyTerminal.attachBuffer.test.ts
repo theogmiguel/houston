@@ -13,6 +13,7 @@ function chunk(byte: number): Uint8Array {
 function surfaceStub(): { surface: GhosttyTerminalSurface; written: (string | Uint8Array)[] } {
   const written: (string | Uint8Array)[] = []
   const surface = {
+    setReadOnly: vi.fn(),
     cols: 80,
     rows: 24,
     write: (data: string | Uint8Array) => {
@@ -55,6 +56,18 @@ function harness(): {
 }
 
 describe('GhosttyPaneTerminal attach buffer', () => {
+  it('applies the latest read-only state when settlement races asynchronous attachment', async () => {
+    const { term, attach } = harness()
+    term.options.readOnly = true
+    const { surface } = surfaceStub()
+    attach(surface)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(surface.setReadOnly).toHaveBeenCalledWith(true)
+    term.options.readOnly = false
+    expect(surface.setReadOnly).toHaveBeenLastCalledWith(false)
+    term.dispose()
+  })
   it('holds no more than the cap while the engine is still loading', async () => {
     const { term, attach, overflows } = harness()
     const done = vi.fn()

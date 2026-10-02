@@ -3,7 +3,6 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { KeymapOverrides } from '../houston/client'
-import { PANE_TYPES } from '../layout/paneTypes'
 import { AddPanePopover } from './AddPanePopover'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -39,11 +38,9 @@ function mount(overrides: Partial<Parameters<typeof AddPanePopover>[0]> = {}): H
         hasWorkspace
         keymapOverrides={KEYMAP}
         onClose={noop}
-        onInsertPane={noop}
         onNewTerminal={noop}
         onSpawnAgent={noop}
         onNewGrid={noop}
-        onNewSession={noop}
         agentProfiles={null}
         {...overrides}
       />
@@ -53,21 +50,14 @@ function mount(overrides: Partial<Parameters<typeof AddPanePopover>[0]> = {}): H
 }
 
 describe('AddPanePopover (step 13, reference shape)', () => {
-  it('lists Terminal plus every real insertable PANE_TYPES entry with real keybinding hints, and nothing non-insertable', () => {
+  it('lists Terminal but no Files, Browser or New session rows: those open from the side panel and the workspace row', () => {
     const el = mount()
     const rows = Array.from(el.querySelectorAll('button'))
     expect(rows[0]?.textContent).toContain('Terminal')
-    expect(rows[1]?.textContent).toContain('Files')
-    expect(rows[1]?.getAttribute('data-pane-kind')).toBe('files')
-    expect(rows[2]?.getAttribute('data-pane-kind')).toBe('browser')
-    expect(rows[rows.length - 1]?.textContent).toContain('New session')
-    expect(rows[rows.length - 1]?.getAttribute('data-testid')).toBe('add-pane-new-session')
     expect(el.textContent).toContain('t')
-    for (const t of PANE_TYPES) {
-      const el2 = el.querySelector(`[data-pane-kind="${t.kind}"]`)
-      if (t.insertable) expect(el2, `${t.kind} is insertable`).not.toBeNull()
-      else expect(el2, `${t.kind} is NOT insertable`).toBeNull()
-    }
+    expect(el.querySelector('[data-pane-kind]')).toBeNull()
+    expect(el.querySelector('[data-testid="add-pane-new-session"]')).toBeNull()
+    expect(rows[rows.length - 1]?.textContent).toContain('New tab')
   })
 
   it('lists the real agent CLIs Houston can spawn, every one brand-tinted', () => {
@@ -85,8 +75,6 @@ describe('AddPanePopover (step 13, reference shape)', () => {
 
   it('disables every workspace-gated row when no workspace is open, without hiding them', () => {
     const el = mount({ hasWorkspace: false })
-    const files = el.querySelector('[data-pane-kind="files"]') as HTMLButtonElement
-    expect(files.disabled).toBe(true)
     const buttons = Array.from(el.querySelectorAll('button'))
     const claude = buttons.find((b) => b.textContent?.includes('claude')) as HTMLButtonElement
     expect(claude.disabled).toBe(true)
@@ -126,7 +114,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('keeps every tooltip-wrapped row full width', () => {
     const el = mount({ hasWorkspace: false, onSplitDown: undefined })
     const rows = Array.from(el.querySelectorAll('button'))
-    const labels = ['Files', 'Browser', 'claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'Split down', 'New tab', 'New session']
+    const labels = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'Split down', 'New tab']
 
     for (const label of labels) {
       const row = rows.find((button) => button.textContent?.includes(label))

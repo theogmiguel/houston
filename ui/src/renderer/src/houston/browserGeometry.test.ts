@@ -499,3 +499,32 @@ describe('BrowserGeometryEngine — setVisible and destroy', () => {
     expect(commands.resize).not.toHaveBeenCalled()
   })
 })
+
+it('delivers a suppression release only after its hide has completed', async () => {
+  let finishHide!: () => void
+  const setVisible = vi.fn((_id: string, visible: boolean) => visible
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => { finishHide = resolve }))
+  const engine = new BrowserGeometryEngine({ id: 'right-panel', commands: fakeCommands({ setVisible }) })
+  const hide = engine.setVisible(false, 'popover')
+  const show = engine.setVisible(true, 'popover')
+  await tick()
+  expect(setVisible.mock.calls.map((call) => call[1])).toEqual([false])
+  finishHide()
+  await Promise.all([hide, show])
+  expect(setVisible.mock.calls.map((call) => call[1])).toEqual([false, true])
+})
+
+it('continues delivering releases after a failed visibility command', async () => {
+  const error = new Error('hide refused')
+  const setVisible = vi.fn().mockRejectedValueOnce(error).mockResolvedValue(undefined)
+  const engine = new BrowserGeometryEngine({ id: 'right-panel', commands: fakeCommands({ setVisible }) })
+  const hide = engine.setVisible(false, 'popover')
+  const show = engine.setVisible(true, 'popover')
+  await expect(hide).rejects.toBe(error)
+  await show
+  expect(setVisible.mock.calls).toEqual([
+    ['right-panel', false, 'popover'],
+    ['right-panel', true, 'popover']
+  ])
+})

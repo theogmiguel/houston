@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { isTauri } from '../houston/host'
-import { useBrowserHost } from '../houston/browserHost'
+import { useBrowserHost, useBrowserFreezeFrame } from '../houston/browserHost'
 import {
   registerBrowserSurface,
   unregisterBrowserSurface
@@ -33,6 +33,7 @@ export interface BrowserViewportProps {
   noActiveTab?: boolean
   exemptFromReason?: NativeSuppressionReason
   onDetachedChange?: (detached: boolean) => void
+  onReady?: () => void
   onMountFailure?: (id: string) => void
   onError?: (
     context: 'mount' | 'resize' | 'setVisible' | 'destroy',
@@ -83,6 +84,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
       noActiveTab,
       exemptFromReason,
       onDetachedChange,
+      onReady,
       onMountFailure,
       onError,
       children
@@ -90,15 +92,18 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
     handleRef
   ) {
     const containerRef = useRef<HTMLDivElement>(null)
-    const { setVisible, remeasure, detached, isDetached, detach, reattach } = useBrowserHost({
+    const { setVisible: nativeSetVisible, remeasure, detached, isDetached, detach, reattach } = useBrowserHost({
       id,
       url,
       fullscreen,
       containerRef,
       workspaceId: workspaceDir,
+      onReady,
       onMountFailure,
       onError
     })
+
+    const setVisible = useBrowserFreezeFrame(id, containerRef, nativeSetVisible)
 
     useImperativeHandle(handleRef, () => ({ remeasure, detach, reattach }), [
       remeasure,
@@ -123,7 +128,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
         }
         return setVisible(visible, reason)
       }
-      registerBrowserSurface(id, guarded, isDetached)
+      registerBrowserSurface(id, guarded, isDetached, () => containerRef.current?.getBoundingClientRect() ?? null)
       return () => unregisterBrowserSurface(id)
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, exemptFromReason])
@@ -146,7 +151,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
 
     if (!isTauri())
       return (
-        <div style={{ position: 'relative' }}>
+        <div className={className} style={{ position: 'relative', ...style }}>
           {children}
           {overlay}
         </div>
@@ -156,7 +161,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
       <div
         ref={containerRef}
         className={className}
-        style={{ position: 'relative', ...style }}
+        style={{ position: 'relative', background: 'var(--content-bg)', ...style }}
         data-browser-surface-id={id}
         data-browser-detached={detached || undefined}
       >

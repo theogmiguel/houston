@@ -58,6 +58,7 @@ fn opencode_config_content(endpoint: &str, token: &str) -> String {
                 "url": endpoint,
                 "headers": { "Authorization": format!("Bearer {token}") },
                 "enabled": true,
+                "timeout": CODEX_TOOL_TIMEOUT_SEC * 1_000,
             }
         }
     })
@@ -172,6 +173,7 @@ mod tests {
         assert_eq!(server["url"], ENDPOINT);
         assert_eq!(server["headers"]["Authorization"], "Bearer tok-abc");
         assert_eq!(server["enabled"], true);
+        assert_eq!(server["timeout"], 630_000);
     }
 
     #[test]

@@ -1,4 +1,8 @@
-import { memo, useContext, useRef, useState } from 'react'
+import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
+import { memo, useEffect, useContext, useRef, useState } from 'react'
+import { ChildrenRoster, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
+import { GridHiddenContext } from '../layout/gridHiddenContext'
+import { WarmContext } from '../layout/warmContext'
 import { RING_ACCENT_ICON } from './shadowChrome'
 import type {
   AgentKind,
@@ -25,6 +29,7 @@ import { clampConversation } from './handoffPacket'
 import { RenameTitle } from './RenameTitle'
 import { Tooltip } from './Tooltip'
 import {
+  AGENT_DOT_COLOR,
   IconAgent,
   IconArrowUpRight,
   IconClose,
@@ -45,7 +50,7 @@ import {
   IconTextSmaller,
   type IconComponent
 } from './icons'
-import { BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_GHOST, BTN_ICO_STRUCTURE } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
@@ -154,16 +159,8 @@ const ICO_HEAD_INFO =
 
 const ICO_HEAD_HIDE_150 = '[@container_(max-width:150px)]:hidden'
 
-const ENGINE_GLYPH_COLOR: Partial<Record<AgentKind, string>> = {
-  claude: 'var(--claude)',
-  codex: 'var(--codex)',
-  antigravity: 'var(--antigravity)',
-  opencode: 'var(--opencode)',
-  cursor: 'var(--cursor)',
-  grok: 'var(--grok)'
-}
 export function engineGlyphColor(agent: AgentKind): string {
-  return ENGINE_GLYPH_COLOR[agent] ?? 'var(--text-muted)'
+  return AGENT_DOT_COLOR[agent] ?? 'var(--text-muted)'
 }
 
 function statusLabel(s: AgentStatus): string {
@@ -344,7 +341,10 @@ interface Props {
   onHandoff: (source: HandoffSource) => void
   onSwapAdjacent?: (id: number, offset: 1 | -1) => void
   onOpenFile: (id: number, path: string, line?: number, col?: number) => void
-  onOpenDir: (path: string) => void
+  onOpenDir: (path: string, session?: number) => void
+  gridSessionIds?: ReadonlySet<number>
+  onMoveChildToGrid?: (parent: number, child: number) => void
+  onReturnChildToRoster?: (child: number) => void
   roster?: PaneRoster
   onFocusPane?: (id: number) => void
 }
@@ -381,8 +381,33 @@ function SessionPaneImpl({
   onOpenFile,
   onOpenDir,
   roster,
+  gridSessionIds,
+  onMoveChildToGrid,
+  onReturnChildToRoster,
   onFocusPane
 }: Props): React.JSX.Element {
+  const [peekId, setPeekId] = useState<number | null>(null)
+  const [recent, setRecent] = useState<number[]>([])
+  const [collapsed, setCollapsed] = useState(false)
+  const children = [...(roster?.sessions.values() ?? [])].filter((child) => child.spawned_by === info.id).sort((a, b) => a.id - b.id)
+  const peek = children.find((child) => child.id === peekId && !gridSessionIds?.has(child.id))
+  const selectChild = (id: number | null): void => {
+    if (id != null && gridSessionIds?.has(id)) {
+      onFocusPane?.(id)
+      return
+    }
+    setPeekId(id)
+    if (id != null) setRecent((prev) => [id, ...prev.filter((other) => other !== id)].slice(0, PEEK_KEEP_MOUNTED))
+  }
+  const moveChild = (id: number): void => {
+    if (gridSessionIds?.has(id)) {
+      onFocusPane?.(id)
+      return
+    }
+    setPeekId(null)
+    setRecent((prev) => prev.filter((other) => other !== id))
+    onMoveChildToGrid?.(info.id, id)
+  }
   const live = isLive(info.state)
   const ended = endedLabel(info.state)
 
@@ -394,6 +419,17 @@ function SessionPaneImpl({
   const [menuCwd, setMenuCwd] = useState<string | null>(null)
 
   const cwd = menuCwd ?? info.cwd
+  useEffect(() => {
+    const select = (event: Event): void => {
+      const { parent, child } = (event as CustomEvent<{ parent: number; child: number | null }>).detail
+      if (parent !== info.id) return
+      onActivate(info.id)
+      selectChild(child)
+    }
+    window.addEventListener(SIDE_SELECT_EVENT, select)
+    return () => window.removeEventListener(SIDE_SELECT_EVENT, select)
+  }, [info.id, onActivate, selectChild])
+
   const menuSideEffects = (): void => {
     setMenuCwd(null)
     client.sessionCwd(info.id).then(setMenuCwd, () => setMenuCwd(info.cwd))
@@ -424,7 +460,7 @@ function SessionPaneImpl({
           data-testid="head-identity"
           className="head-identity inline-flex items-center gap-2 min-w-0 overflow-hidden [flex:0_1_auto]"
         >
-          <StatusDot status={info.status} live={live} />
+          <StatusDot status={info.children_waiting > 0 ? 'needs-input' : info.status} live={live || info.children_waiting > 0} />
           <Tooltip label={`${glyphAgent} session`}>
             <span
               data-testid="engine-glyph"
@@ -441,17 +477,6 @@ function SessionPaneImpl({
           />
           <BranchChip branch={branch} note={branchNote} />
           <PaneHeaderTags tagIds={info.tags} />
-          {info.spawned_by != null && (
-            <OriginBadge
-              info={info}
-              roster={roster}
-              onFocusPane={onFocusPane}
-              onDeliverNow={(session) => client.inboxDeliverNow(session)}
-            />
-          )}
-          {info.live_children > 0 && (
-            <OrchestratorBadge info={info} roster={roster} onFocusPane={onFocusPane} />
-          )}
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
           {showProject && (
@@ -463,117 +488,13 @@ function SessionPaneImpl({
             </span>
           )}
         </span>
-        <span className="head-actions ml-auto flex items-center gap-px flex-none">
-          <ContextIndicator context={info.context} />
-          {ended && (
-            <span
-              data-testid="pane-state"
-              className={`[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] rounded-full py-px px-2 flex-none [@container_(max-width:490px)]:hidden ${info.state === 'exited' ? 'text-[var(--status-done-text)] bg-[var(--status-done-bg)]' : 'text-[var(--status-blocked-text)] bg-[var(--status-blocked-bg)]'}`}
-            >
-              {ended}
-            </span>
-          )}
-          {!live && (
-            <Tooltip
-              label={restartTooltip(info)}
-            >
-              <button
-                className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
-                aria-label={info.agent === 'ssh' ? 'Reconnect' : 'Restart'}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (info.agent === 'ssh') onReconnectSsh(info.id)
-                  else client.respawnSession(info.id, shellIntegration)
-                }}
-              >
-                <Icon glyph={IconRespawn} role="ui" />
-              </button>
-            </Tooltip>
-          )}
-          <Tooltip label="Terminal actions">
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
-              aria-label="Terminal actions"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (menu) {
-                  closeMenu()
-                } else {
-                  openMenuAtButton(e.currentTarget.getBoundingClientRect())
-                }
-              }}
-            >
-              <IconEllipsis className={HEAD_ICON_CLS} />
-            </button>
-          </Tooltip>
-          <Tooltip label={expanded ? 'Collapse (z)' : 'Expand (z)'}>
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${expanded ? ICO_HEAD_INFO : ICO_HEAD_REGULAR} ${ICO_HEAD_HIDE_150}`}
-              aria-label={expanded ? 'Collapse' : 'Expand'}
-              aria-pressed={expanded}
-              onClick={(e) => {
-                e.stopPropagation()
-                onExpand(info.id)
-              }}
-            >
-              {expanded ? <IconMinimize className={HEAD_ICON_CLS} /> : <IconMaximize className={HEAD_ICON_CLS} />}
-            </button>
-          </Tooltip>
-          {onAddPane && (
-            <Tooltip label="New pane">
-              <button
-                className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
-                aria-label="New pane"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onAddPane(info.id, e.currentTarget.getBoundingClientRect())
-                }}
-              >
-                <IconPlus className={HEAD_ICON_CLS} />
-              </button>
-            </Tooltip>
-          )}
-          <Tooltip label={live ? 'Close (stops the agent)' : 'Close'}>
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
-              aria-label="Close"
-              onClick={(e) => {
-                e.stopPropagation()
-                client.closeSession(info.id)
-              }}
-            >
-              <Icon glyph={IconClose} role="ui" />
-            </button>
-          </Tooltip>
-        </span>
+        <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </header>
       <ResumeNotice
         notice={info.resume_notice}
         buttonClassName={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
       />
-      <TerminalPane
-        client={client}
-        info={info}
-        theme={theme}
-        active={active}
-        connected={connected}
-        fontSize={fontSize}
-                fontFamily={fontFamily}
-                shiftEnterNewline={shiftEnterNewline}
-                openLinksInPane={openLinksInPane}
-                onOpenUrlInPane={onOpenUrlInPane}
-        copyOnSelect={copyOnSelect}
-        stripBoxGlyphs={stripBoxGlyphs}
-        registerOutput={registerOutput}
-        onActivate={() => onActivate(info.id)}
-        onZoom={onZoom}
-        onShellZoom={onShellZoom}
-        onOpenFile={(path, line, col) => onOpenFile(info.id, path, line, col)}
-        onOpenDir={onOpenDir}
-        actions={termActions}
-      />
-      <DictationIndicator session={info.id} />
+      <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
           <RestartConfirm
@@ -604,6 +525,8 @@ function SessionPaneImpl({
             </span>
           </div>
           <div className={CTX_SEP_CLS} />
+          {children.length > 0 && <CtxRow glyph={IconFolder} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
+          {info.spawned_by != null && onReturnChildToRoster && <CtxRow glyph={IconArrowUpRight} label="Return to roster" onClick={menuItem(() => onReturnChildToRoster(info.id))} />}
           <CtxRow
             glyph={IconSplitRight}
             label="Split Right"
@@ -727,3 +650,164 @@ function SessionPaneImpl({
 }
 
 export const SessionPane = memo(SessionPaneImpl)
+
+function RosterTerminals({ client, info, children, recent, gridSessionIds, peek, active, connected, theme, fontSize, fontFamily, shiftEnterNewline, openLinksInPane, onOpenUrlInPane, copyOnSelect, stripBoxGlyphs, registerOutput, onActivate, onZoom, onShellZoom, onOpenFile, onOpenDir, termActions }: Pick<Props, 'client' | 'info' | 'gridSessionIds' | 'active' | 'connected' | 'theme' | 'fontSize' | 'fontFamily' | 'shiftEnterNewline' | 'openLinksInPane' | 'onOpenUrlInPane' | 'copyOnSelect' | 'stripBoxGlyphs' | 'registerOutput' | 'onActivate' | 'onZoom' | 'onShellZoom' | 'onOpenFile' | 'onOpenDir'> & {
+  children: SessionInfo[]
+  recent: number[]
+  peek: SessionInfo | undefined
+  termActions: React.RefObject<TermActions | null>
+}): React.JSX.Element {
+  const gridHidden = useContext(GridHiddenContext)
+  const gridWarm = useContext(WarmContext)
+  return <>{[info, ...recent.flatMap((id) => {
+              const child = children.find((item) => item.id === id)
+              return child && !gridSessionIds?.has(id) ? [child] : []
+            })].map((shown) => {
+              const hidden = shown.id !== (peek?.id ?? info.id)
+              return <div key={shown.id} data-peek-session={shown.id} className="absolute inset-0 flex min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', contentVisibility: 'hidden', contain: 'strict', pointerEvents: 'none' } : undefined}>
+                <GridHiddenContext.Provider value={gridHidden || hidden}>
+                  <WarmContext.Provider value={gridWarm || hidden}>
+                    <TerminalPane client={client} info={shown} theme={theme} active={active && !hidden} connected={connected} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={() => onActivate(info.id)} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={(path, line, col) => onOpenFile(shown.id, path, line, col)} onOpenDir={(path) => onOpenDir(path, shown.id)} actions={shown.id === info.id ? termActions : undefined} />
+                  </WarmContext.Provider>
+                </GridHiddenContext.Provider>
+              </div>
+            })}</>
+}
+
+function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegration, onReconnectSsh, onExpand, onAddPane, menuOpen, closeMenu, openMenuAtButton }: Pick<Props, 'info' | 'client' | 'expanded' | 'shellIntegration' | 'onReconnectSsh' | 'onExpand' | 'onAddPane'> & {
+  ended: string | null
+  live: boolean
+  menuOpen: boolean
+  closeMenu: () => void
+  openMenuAtButton: (rect: DOMRect) => void
+}): React.JSX.Element {
+  return (<span className="head-actions ml-auto flex items-center gap-px flex-none">
+          <ContextIndicator context={info.context} />
+          {ended && (
+            <span
+              data-testid="pane-state"
+              className={`[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] rounded-full py-px px-2 flex-none [@container_(max-width:490px)]:hidden ${info.state === 'exited' ? 'text-[var(--status-done-text)] bg-[var(--status-done-bg)]' : 'text-[var(--status-blocked-text)] bg-[var(--status-blocked-bg)]'}`}
+            >
+              {ended}
+            </span>
+          )}
+          {!live && (
+            <Tooltip
+              label={restartTooltip(info)}
+            >
+              <button
+                className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
+                aria-label={info.agent === 'ssh' ? 'Reconnect' : 'Restart'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (info.agent === 'ssh') onReconnectSsh(info.id)
+                  else client.respawnSession(info.id, shellIntegration)
+                }}
+              >
+                <Icon glyph={IconRespawn} role="ui" />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip label="Terminal actions">
+            <button
+              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
+              aria-label="Terminal actions"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (menuOpen) {
+                  closeMenu()
+                } else {
+                  openMenuAtButton(e.currentTarget.getBoundingClientRect())
+                }
+              }}
+            >
+              <IconEllipsis className={HEAD_ICON_CLS} />
+            </button>
+          </Tooltip>
+          <Tooltip label={expanded ? 'Collapse (z)' : 'Expand (z)'}>
+            <button
+              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${expanded ? ICO_HEAD_INFO : ICO_HEAD_REGULAR} ${ICO_HEAD_HIDE_150}`}
+              aria-label={expanded ? 'Collapse' : 'Expand'}
+              aria-pressed={expanded}
+              onClick={(e) => {
+                e.stopPropagation()
+                onExpand(info.id)
+              }}
+            >
+              {expanded ? <IconMinimize className={HEAD_ICON_CLS} /> : <IconMaximize className={HEAD_ICON_CLS} />}
+            </button>
+          </Tooltip>
+          {onAddPane && (
+            <Tooltip label="New pane">
+              <button
+                className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
+                aria-label="New pane"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onAddPane(info.id, e.currentTarget.getBoundingClientRect())
+                }}
+              >
+                <IconPlus className={HEAD_ICON_CLS} />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip label={live ? 'Close (stops the agent)' : 'Close'}>
+            <button
+              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
+              aria-label="Close"
+              onClick={(e) => {
+                e.stopPropagation()
+                client.closeSession(info.id)
+              }}
+            >
+              <Icon glyph={IconClose} role="ui" />
+            </button>
+          </Tooltip>
+        </span>)
+}
+
+function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveChild, collapsed, onCollapse, terminals }: Pick<Props, 'info' | 'roster' | 'client'> & {
+  children: SessionInfo[]
+  peek: SessionInfo | undefined
+  selectChild: (id: number | null) => void
+  moveChild: (id: number) => void
+  collapsed: boolean
+  onCollapse: () => void
+  terminals: React.ReactNode
+}): React.JSX.Element {
+  return (<><div className={`children-split ${collapsed ? 'collapsed' : 'auto'}`}>
+        {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={collapsed} onCollapse={onCollapse} />}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {peek && <div className="children-peekbar">
+            <button className="btn border-none bg-transparent min-h-7 truncate" onClick={() => selectChild(null)}>Orchestrator</button><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
+            <span className="flex-1" /><button className="btn border-none bg-transparent min-h-7 shrink-0" onClick={() => moveChild(peek.id)}>Move to grid</button>
+            <Tooltip label="Return to orchestrator"><button className={BTN_ICO_STRUCTURE + ' min-w-7 min-h-7'} aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></button></Tooltip>
+          </div>}
+          <div className="relative flex-1 min-h-0 min-w-0">
+            {terminals}
+          </div>
+          {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
+        </div>
+      </div>
+      <DictationIndicator session={info.id} /></>)
+}
+
+function SettledChildBar({ info, client, onMove }: { info: SessionInfo; client: HoustonClient; onMove: (id: number) => void }): React.JSX.Element {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    // Settlement ages share the roster's second resolution.
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const ended = info.delegation?.ended_at ?? info.delegation?.settled_at
+  const retained = info.delegation?.retained_until
+  const time = (value: number): string => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const button = `${BTN_GHOST} btn min-h-[var(--h-ctl)] shrink-0`
+  return <footer aria-label="Settled child" className="flex items-center flex-wrap gap-1 px-2 py-1 border-t border-[var(--divider)] bg-[var(--card-bg)] text-[length:var(--tr-text-sm)] text-[var(--text-muted)]">
+    <span className="flex-1 min-w-0">Settled · ended {ended == null ? 'unknown' : `${time(ended)} (${delegationAge(ended, now)} ago)`} · kept until {retained == null ? 'unknown' : new Date(retained).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+    <button className={button} disabled={!info.resumable} onClick={() => client.respawnSession(info.id, undefined, null, undefined, undefined, false)}>Continue</button>
+    <button className={button} onClick={() => client.closeSession(info.id)}>Close</button>
+    <button className={button} onClick={() => onMove(info.id)}>Move to grid</button>
+  </footer>
+}

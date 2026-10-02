@@ -26,6 +26,10 @@ function savedTree(): Record<string, unknown> | null {
   return raw ? (JSON.parse(raw).tree as Record<string, unknown>) : null
 }
 
+function sideBrowsers(): Record<string, unknown>[] {
+  return (JSON.parse(localStorage.getItem('tr-side:/tmp/project') ?? 'null')?.tabs ?? []).filter((tab: { kind: string }) => tab.kind === 'browser')
+}
+
 function browserLeaves(node: unknown): Record<string, unknown>[] {
   if (!node || typeof node !== 'object') return []
   const n = node as Record<string, unknown>
@@ -34,7 +38,7 @@ function browserLeaves(node: unknown): Record<string, unknown>[] {
   return (n.children as unknown[]).flatMap(browserLeaves)
 }
 
-describe('the "new browser pane" shortcut (M8)', () => {
+describe('the new browser side-panel shortcut', () => {
   let harness: AppHarness | null = null
 
   afterEach(() => {
@@ -42,13 +46,13 @@ describe('the "new browser pane" shortcut (M8)', () => {
     harness = null
   })
 
-  it('inserts a browser leaf into the workspace layout and persists it', async () => {
+  it('opens a browser side tab without changing the workspace grid', async () => {
     harness = await renderReadyApp()
     expect(browserLeaves(savedTree())).toHaveLength(0)
 
     pressB()
 
-    const leaves = browserLeaves(savedTree())
+    const leaves = sideBrowsers()
     expect(leaves).toHaveLength(1)
     expect(leaves[0].url).toBe('')
     expect(typeof leaves[0].id).toBe('string')
@@ -65,7 +69,7 @@ describe('the "new browser pane" shortcut (M8)', () => {
     pressB()
     pressB()
 
-    const ids = browserLeaves(savedTree()).map((l) => l.id)
+    const ids = sideBrowsers().map((l) => l.id)
     expect(ids).toHaveLength(2)
     expect(new Set(ids).size).toBe(2)
   })
@@ -86,12 +90,13 @@ describe('the "new browser pane" shortcut (M8)', () => {
   it('clicking into a browser pane releases the selected terminal', async () => {
     harness = await renderReadyApp()
     pressB()
-    expect(browserLeaves(savedTree())).toHaveLength(1)
+    expect(sideBrowsers()).toHaveLength(1)
 
+    await settleLazySurface(() => harness!.container.querySelector('.pane.browser') !== null, 'BrowserPane')
     const terminal = harness.container.querySelector('.pane:not(.browser)')
     const browser = harness.container.querySelector('.pane.browser')
     if (!(terminal instanceof HTMLElement) || !(browser instanceof HTMLElement)) {
-      throw new Error('expected both a terminal pane and a browser pane in the grid')
+      throw new Error('expected a terminal and a side-panel browser')
     }
     act(() => {
       terminal.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
@@ -103,13 +108,14 @@ describe('the "new browser pane" shortcut (M8)', () => {
     })
 
     pressB()
-    expect(browserLeaves(savedTree())).toHaveLength(2)
+    expect(sideBrowsers()).toHaveLength(2)
   })
 
   it('a clicked browser pane takes the focus ring, and gives it back', async () => {
     harness = await renderReadyApp()
     pressB()
 
+    await settleLazySurface(() => harness!.container.querySelector('.pane.browser') !== null, 'BrowserPane')
     const terminal = (): HTMLElement => {
       const el = harness!.container.querySelector('.pane:not(.browser)')
       if (!(el instanceof HTMLElement)) throw new Error('no terminal pane rendered')

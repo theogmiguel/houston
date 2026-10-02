@@ -1027,6 +1027,7 @@ export class HoustonClient {
     cols?: number
     rows?: number
     profile?: string
+    default_dir?: string
   }): void {
     this.send({
       type: 'ssh_connect',
@@ -1037,7 +1038,8 @@ export class HoustonClient {
       auth: params.auth,
       cols: params.cols ?? null,
       rows: params.rows ?? null,
-      profile: params.profile ?? null
+      profile: params.profile ?? null,
+      default_dir: params.default_dir ?? null
     })
   }
 
@@ -1212,6 +1214,10 @@ export class HoustonClient {
     })
   }
 
+  delegationResultsList(parent: number): void {
+    this.send({ type: 'delegation_results_list', parent })
+  }
+
   inboxList(workspace: string): void {
     this.send({ type: 'inbox_list', workspace })
   }
@@ -1247,6 +1253,18 @@ export class HoustonClient {
       until_ms: untilMs,
       refresh_pricing: refreshPricing
     })
+  }
+
+  settledRetentionSet(hours: number): void {
+    this.send({ type: 'settled_retention_set', hours })
+  }
+
+  workspaceRoutingGet(workspace: string): void {
+    this.send({ type: 'workspace_routing_get', workspace })
+  }
+
+  workspaceRoutingSet(workspace: string, routes: Extract<ClientMsg, { type: 'workspace_routing_set' }>['routes']): void {
+    this.send({ type: 'workspace_routing_set', workspace, routes })
   }
 
   mailboxRetentionSet(hours: number): void {

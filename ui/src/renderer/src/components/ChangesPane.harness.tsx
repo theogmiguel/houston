@@ -185,6 +185,7 @@ export function mount(
     onReviewPacket?: (d: never) => void
     review?: ChangesReview | null
     onSummary?: (s: never) => void
+    compact?: boolean
     refreshSignal?: number
   } = {}
 ): Harness {
@@ -203,6 +204,7 @@ export function mount(
         onReviewPacket={opts.onReviewPacket as never}
         review={opts.review ?? null}
         onSummary={opts.onSummary as never}
+        compact={opts.compact}
         refreshSignal={opts.refreshSignal ?? 0}
       />
     )

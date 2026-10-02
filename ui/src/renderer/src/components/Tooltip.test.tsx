@@ -2,6 +2,8 @@
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+vi.mock('../houston/host', () => ({ isTauri: () => true }))
+import { assertNativeSuppression, releaseNativeSuppression, suppressedReasons, setSuppressionSink, __resetNativeSuppressionForTests } from '../layout/nativeSuppression'
 import { HOVER_DELAY_MS, Tooltip } from './Tooltip'
 
 function bubble(): HTMLElement | null {
@@ -13,6 +15,7 @@ describe('Tooltip (06-shell row 10)', () => {
   let root: Root
 
   beforeEach(() => {
+    __resetNativeSuppressionForTests()
     vi.useFakeTimers()
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -22,6 +25,8 @@ describe('Tooltip (06-shell row 10)', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    setSuppressionSink(null)
+    __resetNativeSuppressionForTests()
     vi.useRealTimers()
   })
 
@@ -42,6 +47,28 @@ describe('Tooltip (06-shell row 10)', () => {
       el.dispatchEvent(new MouseEvent('pointerenter', { bubbles: true }))
     })
   }
+
+  it.each(['blur', 'unmount', 'click'])('never changes native suppression across hover and %s', (dismiss) => {
+    const sink = vi.fn()
+    setSuppressionSink(sink)
+    assertNativeSuppression('popover')
+    sink.mockClear()
+    const btn = render()
+    enter(btn)
+    act(() => vi.advanceTimersByTime(HOVER_DELAY_MS))
+    expect(bubble()).not.toBeNull()
+    releaseNativeSuppression('popover')
+    expect(suppressedReasons()).toEqual([])
+    expect(sink.mock.calls).toEqual([['popover', true]])
+    act(() => {
+      if (dismiss === 'blur') window.dispatchEvent(new Event('blur'))
+      else if (dismiss === 'unmount') root.render(null)
+      else btn.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    expect(bubble()).toBeNull()
+    expect(suppressedReasons()).toEqual([])
+    expect(sink.mock.calls).toEqual([['popover', true]])
+  })
 
   it('says nothing until the pointer has rested — a sweep across the chrome shows no tooltip', () => {
     const btn = render()

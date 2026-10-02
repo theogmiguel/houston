@@ -31,11 +31,7 @@ describe('Ctrl+L focuses the browser address bar', () => {
 
   async function openBrowserPanel(h: AppHarness): Promise<HTMLInputElement> {
     press({ key: 'B', ctrlKey: true, shiftKey: true })
-    const browserEntry = h.container.querySelector('[data-pane-kind="browser"]')
-    if (!browserEntry) throw new Error('no Browser entry in the Add-pane menu')
-    act(() => {
-      browserEntry.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    })
+    press({ key: 'b' })
     await settleLazySurface(
       () => h.container.querySelector('input[aria-label="Address and search bar"]') !== null,
       'BrowserPane'

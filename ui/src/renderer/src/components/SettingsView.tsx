@@ -1,3 +1,4 @@
+import type { HoustonClient } from '../houston/client'
 import { useEffect, useRef } from 'react'
 import type { ChromeTheme, TerminalPaletteChoice } from '../theme'
 import type { KeymapOverrides } from '../houston/client'
@@ -61,6 +62,8 @@ export interface McpStateView {
 }
 
 interface Props {
+  daemonClient?: HoustonClient | null
+
   chromeTheme: ChromeTheme
   onChromeTheme: (t: ChromeTheme) => void
   theme: TerminalPaletteChoice
@@ -203,6 +206,7 @@ function SectionDispatch({
   onAgentProfileUpsert,
   onAgentProfileDelete,
   onAgentProfileSetActive,
+  daemonClient,
   orchestrationState,
   onOpenAcpPane,
   historyWorkspace,
@@ -325,6 +329,7 @@ function SectionDispatch({
 
         {section === 'orchestration' && (
           <OrchestrationSection
+            client={daemonClient ?? null}
             orchestrationState={orchestrationState}
             orchestrationEnabled={orchestrationEnabled}
             onOrchestrationEnabled={onOrchestrationEnabled}

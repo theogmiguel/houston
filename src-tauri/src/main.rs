@@ -13,6 +13,7 @@ mod dialog;
 mod fs;
 mod fs_allowlist;
 mod host;
+mod notifications;
 mod shell;
 mod shells;
 mod skills;
@@ -483,6 +484,8 @@ fn main() {
             fs::fs_read_file,
             fs::fs_read_media,
             fs::fs_write_file,
+            fs::fs_write_file_checked,
+            notifications::native_notify,
             fs::fs_stat,
             fs::fs_exists,
             fs::fs_delete,
@@ -555,11 +558,13 @@ fn main() {
             browser::browser_reattach,
             browser::browser_resize,
             browser::browser_set_visible,
+            browser::browser_set_device,
             browser::browser_navigate,
             browser::browser_reload,
             browser::browser_go_back,
             browser::browser_go_forward,
             browser::browser_capture,
+            browser::browser_capture_placeholder,
             browser::browser_set_workspace,
             browser::browser_confirm_respond,
             browser::browser_confirm_screenshot,

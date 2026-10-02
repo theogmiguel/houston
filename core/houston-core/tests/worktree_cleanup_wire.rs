@@ -739,7 +739,7 @@ async fn an_unrecorded_tree_is_never_touched() {
 }
 
 #[tokio::test]
-async fn a_second_clean_now_during_a_pass_is_refused() {
+async fn k6_cleanup_claim_is_shared_by_repository_common_directory() {
     let _guard = SERIAL.lock().await;
     let r = rig().await;
     let ws = r.workspace("ws");
@@ -767,21 +767,23 @@ async fn a_second_clean_now_during_a_pass_is_refused() {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+    r.daemon.workspace_add(&tree.display().to_string()).unwrap();
+    let second_dir = tree.display().to_string();
     let mut second = r.ws().await;
     send(
         &mut second,
         &proto::ClientMsg::WorktreeCleanupRun {
-            dir: dir.clone(),
+            dir: second_dir.clone(),
             paths: Vec::new(),
         },
     )
     .await;
-    let err = next_cleanup(&mut second, &ws.dir)
+    let err = next_cleanup(&mut second, &tree)
         .await
         .expect_err("the second run must be refused");
     assert_eq!(
         err,
-        format!("a worktree cleanup pass is already running for {dir}")
+        format!("a worktree cleanup pass is already running for {second_dir}")
     );
     next_cleanup(&mut first, &ws.dir).await.unwrap();
     std::env::remove_var("GH_FAKE_SLEEP_MS");
@@ -1012,7 +1014,7 @@ async fn host_info_defaults_to_off_and_24_hours() {
 }
 
 #[tokio::test]
-async fn a_pass_measures_and_broadcasts_each_workspace() {
+async fn a_pass_broadcasts_kept_rows_without_measuring_each_workspace() {
     let _guard = SERIAL.lock().await;
     let r = rig().await;
     let one = r.workspace("one");
@@ -1048,8 +1050,8 @@ async fn a_pass_measures_and_broadcasts_each_workspace() {
             .iter()
             .find(|e| e.path == tree.display().to_string())
             .unwrap();
-        assert_eq!(entry.bytes, Some(tree_bytes(tree)));
-        assert!(entry.measured_at_ms.is_some());
+        assert_eq!(entry.bytes, None);
+        assert_eq!(entry.measured_at_ms, None);
     }
 }
 
@@ -1335,4 +1337,77 @@ async fn the_pr_head_is_fetched_only_from_the_pr_repository() {
         git(&ws.dir, &["branch", "-r", "--list", "mirror/*"]).is_empty(),
         "nothing was fetched from the unrelated remote"
     );
+}
+
+#[tokio::test]
+async fn k6_kept_tree_preserves_last_measurement() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("kept");
+    let tree = r.tree(&ws, "kept", true);
+    pr_json("kept", "OPEN", None, &git(&tree, &["rev-parse", "HEAD"]));
+    let (entries, _) = pass(&r, &ws.dir, Vec::new()).await;
+    assert_eq!(entries[0].bytes, None);
+    assert_eq!(entries[0].measured_at_ms, None);
+    r.db()
+        .execute(
+            "UPDATE managed_worktrees SET bytes=123, measured_at_ms=456",
+            [],
+        )
+        .unwrap();
+    let (entries, _) = pass(&r, &ws.dir, Vec::new()).await;
+    assert_eq!(entries[0].bytes, Some(123));
+    assert_eq!(entries[0].measured_at_ms, Some(456));
+}
+
+#[tokio::test]
+async fn k6_cleanup_rechecks_pane_opened_during_network_lookup() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("racing");
+    r.set_cleanup(false, 1);
+    let tree = r.tree(&ws, "racing", true);
+    merged("racing", &tree, 2);
+    std::env::set_var("GH_FAKE_SLEEP_MS", "3000");
+    let daemon = Arc::clone(&r.daemon);
+    let dir = ws.dir.display().to_string();
+    let path = tree.display().to_string();
+    let pass = tokio::task::spawn_blocking(move || daemon.worktree_cleanup_run(&dir, vec![path]));
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !gh_log().contains("pr view") {
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let pane = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: tree.clone(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "exec cat".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+        })
+        .unwrap();
+    pass.await.unwrap().unwrap();
+    std::env::remove_var("GH_FAKE_SLEEP_MS");
+    assert!(tree.exists());
+    if let proto::ServerMsg::WorktreeCleanup { entries, .. } = r
+        .daemon
+        .worktree_cleanup_status(&ws.dir.display().to_string())
+        .unwrap()
+    {
+        assert_eq!(
+            keep_of(&entries, &tree),
+            Some(proto::WorktreeKeep::InUse { session: pane.id })
+        );
+    } else {
+        panic!("expected cleanup status");
+    }
+    r.daemon.close(pane.id).unwrap();
 }

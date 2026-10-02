@@ -114,12 +114,10 @@ function assertBareText(el: Element): void {
 }
 
 describe('pane header anatomy (step 13, reference shape)', () => {
-  it('shows a nested orchestrator identity once while keeping both navigation badges', () => {
+  it('keeps a nested orchestrator header free of delegation badges', () => {
     const el = mountPane({ codename: 'Elle', spawnedBy: 7, liveChildren: 2 })
-    expect(el.querySelector('[data-testid="origin-badge"]')?.textContent).toBe('Elle')
-    expect(el.querySelector('[data-testid="orchestrator-badge"]')?.textContent).toBe('2')
-    expect(el.querySelector('[data-testid="orchestrator-badge"]')?.getAttribute('aria-label'))
-      .toContain('Elle · orchestrating 2')
+    expect(el.querySelector('.pane-head [data-testid="origin-badge"]')).toBeNull()
+    expect(el.querySelector('.pane-head [data-testid="orchestrator-badge"]')).toBeNull()
   })
 
   const context: SessionContext = {
@@ -166,9 +164,9 @@ describe('pane header anatomy (step 13, reference shape)', () => {
     ).toBeTruthy()
   })
 
-  it('renders the origin/ACP/orchestrator badges as bare text, no pill chrome', () => {
+  it('renders the ACP badge as bare text without delegation chrome', () => {
     const el = mountPane({ spawnedBy: 42, acp: 'acp-grok', liveChildren: 2 })
-    for (const testid of ['origin-badge', 'acp-badge', 'orchestrator-badge']) {
+    for (const testid of ['acp-badge']) {
       const badge = el.querySelector(`[data-testid="${testid}"]`)
       expect(badge, testid).not.toBeNull()
       assertBareText(badge!)
@@ -208,24 +206,12 @@ describe('pane header anatomy (step 13, reference shape)', () => {
     expect(onHeaderPointerDown).not.toHaveBeenCalled()
   })
 
-  it('keeps the full sentence as the accessible name on both orchestration badges', () => {
-    const el = mountPane({ spawnedBy: 42, liveChildren: 2 })
-    expect(
-      el.querySelector('[data-testid="origin-badge"]')!.getAttribute('aria-label')
-    ).toBe('#1 · child of #42')
-    expect(
-      el.querySelector('[data-testid="orchestrator-badge"]')!.getAttribute('aria-label')
-    ).toBe('#1 · orchestrating 2 live child panes')
-  })
-
   it('renders head-identity in its hide order, with the two container-query cuts on the ends', () => {
     const el = mountPane({ spawnedBy: 42, acp: 'acp-grok', liveChildren: 2, profileLabel: 'personal' })
     const identity = el.querySelector('[data-testid="head-identity"]')!
     const order = [
       'engine-glyph',
       'pane-title-mock',
-      'origin-badge',
-      'orchestrator-badge',
       'acp-badge',
       'profile-badge'
     ]
@@ -237,7 +223,7 @@ describe('pane header anatomy (step 13, reference shape)', () => {
       '[@container_(max-width:360px)]:hidden'
     )
     expect(identity.querySelector('[data-testid="pane-title-mock"]')).not.toBeNull()
-    for (const testid of ['origin-badge', 'orchestrator-badge', 'acp-badge', 'profile-badge']) {
+    for (const testid of ['acp-badge', 'profile-badge']) {
       expect(
         identity.querySelector(`[data-testid="${testid}"]`)!.className,
         `${testid} must survive every width`

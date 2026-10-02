@@ -1,0 +1,23 @@
+.browser-devrow { display: flex; align-items: center; justify-content: space-between; height: 36px; min-height: 36px; padding: 0 8px 0 10px; border-bottom: 1px solid var(--divider); font-size: 11.5px; color: var(--text-faint); }
+.browser-device-buttons { display: flex; gap: 0; height:24px; padding: 1px; border:1px solid var(--border); border-radius: var(--tr-radius-button); background: color-mix(in srgb,var(--text-primary) 4%,transparent); }
+.browser-device-buttons button[aria-pressed="true"] { background: var(--card-bg); color: var(--text-primary); }
+.browser-stage { flex: 1; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--content-bg) 70%, var(--rail-bg)); padding: 16px; flex-direction: column; gap: 8px; overflow: hidden; }
+.browser-device { min-width: 0; min-height: 0; border: 1px solid var(--border-hover); background: white; overflow: hidden; box-shadow: var(--shadow-1); display: flex; flex-direction: column; }
+.browser-device.desktop { width: 100%; flex: 1; border-radius: var(--tr-radius-button); }
+.browser-device.phone { border-radius: calc(var(--tr-radius-panel) + var(--tr-radius-sm)); }
+.browser-device.tablet { border-radius: var(--tr-radius-panel); }
+.browser-caption { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; flex: none; }
+.browser-security { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--info); padding: 0 7px; flex: none; }
+.browser-security.insecure { color: var(--warn); }
+.browser-address { padding-left: 9px; }
+
+.side-browser .pane-head { height: 40px; min-height: 40px; padding: 0 6px; gap: 4px; }
+.side-browser .browser-url { height: 26px; border: 1px solid var(--border); border-radius: var(--tr-radius-button); background: var(--tool-code-bg); }
+.side-browser .browser-url input { height: 24px; padding-top: 0; padding-bottom: 0; border: 0; border-radius: 0; font-size: 12px; letter-spacing: normal; }
+.side-browser .pane-head button[aria-label="Open in external browser"],
+.side-browser .pane-head button[aria-label="Expand browser to full screen"],
+.side-browser .pane-head button[aria-label="Detach browser into its own window"],
+.side-browser .pane-head button[aria-label="Close"] { display: none; }
+
+.browser-device-buttons button { width:28px;height:20px;border-radius:var(--tr-radius-sm); }
+.browser-device-buttons button svg { width:12px;height:12px; }

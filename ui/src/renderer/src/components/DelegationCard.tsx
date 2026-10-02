@@ -49,7 +49,7 @@ function workspaceLabel(path: string): string {
 // `unknown` is ignorance, not a verdict: the daemon restarted mid-flight, so
 // nobody knows how the work ended. Saying "failed" would be a claim about the
 // child rather than about Houston.
-function stateWord(d: DelegationInfo): string {
+export function stateWord(d: DelegationInfo): string {
   if (d.stalled && d.state === 'working') return 'stalled'
   switch (d.state) {
     case 'needs_input':
@@ -599,8 +599,14 @@ export function HeaderDelegationBadge({
   info,
   roster,
   onFocusPane,
-  onDeliverNow
+  onDeliverNow,
+  children,
+  className,
+  onSelect
 }: {
+  children?: React.ReactNode
+  className?: string
+  onSelect?: () => void
   kind: BadgeKind
   info: SessionInfo
   roster?: PaneRoster
@@ -678,23 +684,30 @@ export function HeaderDelegationBadge({
       aria-label={label}
       aria-expanded={open}
       aria-controls={open ? id : undefined}
-      className={BADGE_CLS}
+      className={className ?? BADGE_CLS}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerEnter={openAfterDelay}
       onPointerLeave={leave}
       onFocus={() => setOpen(true)}
       onClick={(e) => {
         e.stopPropagation()
-        pinnedRef.current = !pinnedRef.current
-        setOpen(true)
+        if (onSelect) {
+          onSelect()
+          close()
+        } else {
+          pinnedRef.current = !pinnedRef.current
+          setOpen(true)
+        }
       }}
     >
+      {children ?? <>
       <Icon
         glyph={kind === 'origin' ? IconCornerDownRight : IconGitFork}
         role="label"
         className={glyphWarn ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}
       />
       <BadgeContent kind={kind} info={info} selfName={selfName} />
+      </>}
     </button>
   )
   return (

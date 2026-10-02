@@ -8,7 +8,7 @@ import {
   type OrchestrationStateView,
 } from "./SettingsView";
 import { setSettingsNavForTests } from "../settingsNav";
-import type { KeymapOverrides } from "../houston/client";
+import type { HoustonClient, KeymapOverrides } from "../houston/client";
 
 (globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ =
   "0.0.0-test";
@@ -121,6 +121,7 @@ function hostInfoFixture(overrides: Partial<HostInfo> = {}): HostInfo {
     orchestration_max_depth: 4,
     mailbox_files_on_disk: 0,
     mailbox_retention_hours: 24,
+    settled_retention_hours: 24,
     worktree_cleanup_enabled: false,
     worktree_cleanup_grace_hours: 24,
     command_history_ignore_glob_count: 0,
@@ -262,6 +263,18 @@ describe("Settings › Orchestration — the switch and the caps (v62 D3)", () =
       input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     });
     expect(committed).toEqual([48]);
+  });
+
+  it("settled retention shows the host value and commits through the K2 client", () => {
+    const committed: number[] = [];
+    const client = { settledRetentionSet: (hours: number) => committed.push(hours) } as unknown as HoustonClient;
+    act(() => root.render(<SettingsView {...baseProps()} daemonClient={client} hostInfo={hostInfoFixture({ settled_retention_hours: 72 })} />));
+    openOrchestration(container);
+    const input = container.querySelector<HTMLInputElement>('[data-testid="settings-settled-retention"]')!;
+    expect(input.value).toBe("72");
+    setInputValue(input, "96");
+    act(() => input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(committed).toEqual([96]);
   });
 
   it("the switch sends the clicked value and says what each state means", () => {

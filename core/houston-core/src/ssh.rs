@@ -84,21 +84,15 @@ pub struct SshParams {
     pub cols: u16,
     pub rows: u16,
     pub config_identity: Option<String>,
+    pub default_dir: Option<String>,
 }
 
-/// The directory is single-quoted so a path with spaces or `;`/`$(…)` can't
-/// turn into two lines; the startup command is deliberately NOT quoted — the
+/// The path is quoted while a leading ~/ expands through the remote HOME;
+/// the startup command is deliberately NOT quoted — the
 /// user typed it to run on their own machine, and quoting would break it.
 pub fn post_connect_lines(p: &proto::SshProfile) -> Vec<String> {
     let mut out = Vec::new();
-    if let Some(dir) = p
-        .default_dir
-        .as_deref()
-        .map(str::trim)
-        .filter(|d| !d.is_empty())
-    {
-        out.push(format!("cd '{}'\n", dir.replace('\'', "'\\''")));
-    }
+    out.extend(post_connect_directory(p.default_dir.as_deref()));
     if let Some(cmd) = p
         .startup_cmd
         .as_deref()
@@ -108,6 +102,25 @@ pub fn post_connect_lines(p: &proto::SshProfile) -> Vec<String> {
         out.push(format!("{cmd}\n"));
     }
     out
+}
+
+pub fn post_connect_directory(dir: Option<&str>) -> Vec<String> {
+    dir.map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .map(directory_line)
+        .into_iter()
+        .collect()
+}
+
+fn directory_line(dir: &str) -> String {
+    let quote = |s: &str| s.replace('\'', "'\\''");
+    if dir == "~" {
+        "cd -- \"$HOME\"\n".into()
+    } else if let Some(rest) = dir.strip_prefix("~/") {
+        format!("cd -- \"$HOME\"/'{}'\n", quote(rest))
+    } else {
+        format!("cd -- '{}'\n", quote(dir))
+    }
 }
 
 /// A patience bound, not a memory one (the transfer streams in
@@ -403,31 +416,74 @@ pub struct Connected {
 }
 
 pub fn apply_ssh_config(params: &mut SshParams) {
-    let Some(path) = crate::ssh_config::default_path() else {
-        return;
-    };
-    let blocks = match crate::ssh_config::load(&path) {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::warn!("reading {} for ssh_config auth: {e}", path.display());
-            return;
-        }
-    };
-    let resolved = crate::ssh_config::resolve(&blocks, &params.host);
-    if let Some(h) = resolved.hostname {
-        params.host = h;
+    let blocks = crate::ssh_config::default_path()
+        .and_then(|path| match crate::ssh_config::load(&path) {
+            Ok(blocks) => Some(blocks),
+            Err(e) => {
+                tracing::warn!("reading {} for SSH connection: {e}", path.display());
+                None
+            }
+        })
+        .unwrap_or_default();
+    apply_host_config(params, crate::ssh_config::resolve(&blocks, &params.host));
+}
+
+fn apply_host_config(params: &mut SshParams, resolved: crate::ssh_config::HostConfig) {
+    if let Some(host) = resolved.hostname {
+        params.host = host;
     }
     if params.user.trim().is_empty() {
-        if let Some(u) = resolved.user {
-            params.user = u;
-        }
+        params.user = resolved.user.or_else(local_username).unwrap_or_default();
     }
     if params.port == 22 {
-        if let Some(p) = resolved.port {
-            params.port = p;
-        }
+        params.port = resolved.port.unwrap_or(22);
     }
     params.config_identity = resolved.identity_file;
+}
+
+fn local_username() -> Option<String> {
+    #[cfg(unix)]
+    {
+        let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
+        let mut result = std::ptr::null_mut();
+        // NSS may need more than the POSIX suggested size; grow only on ERANGE.
+        let suggested = unsafe { libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) };
+        // Bound NSS scratch space without assuming a short local passwd record.
+        const MAX_NSS_BYTES: usize = 1024 * 1024;
+        let initial = usize::try_from(suggested)
+            .ok()
+            .filter(|size| (1..=MAX_NSS_BYTES).contains(size))
+            .unwrap_or(16 * 1024);
+        let mut buffer = vec![0u8; initial];
+        loop {
+            let status = unsafe {
+                libc::getpwuid_r(
+                    libc::getuid(),
+                    entry.as_mut_ptr(),
+                    buffer.as_mut_ptr().cast(),
+                    buffer.len(),
+                    &mut result,
+                )
+            };
+            if status == libc::ERANGE && buffer.len() <= MAX_NSS_BYTES / 2 {
+                buffer.resize(buffer.len() * 2, 0);
+                continue;
+            }
+            if status == 0 && !result.is_null() {
+                let entry = unsafe { entry.assume_init() };
+                return Some(
+                    unsafe { std::ffi::CStr::from_ptr(entry.pw_name) }
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+            break;
+        }
+    }
+    std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .ok()
+        .filter(|user| !user.trim().is_empty())
 }
 
 pub async fn connect(
@@ -712,9 +768,51 @@ mod tests {
             cols: 80,
             rows: 24,
             config_identity: None,
+            default_dir: None,
         };
         assert_eq!(p(22).display(), "u@host");
         assert_eq!(p(2200).display(), "u@host:2200");
+    }
+
+    #[test]
+    fn k8_remote_home_expands_without_evaluating_path_text() {
+        assert_eq!(post_connect_directory(Some("~")), vec!["cd -- \"$HOME\"\n"]);
+        assert_eq!(
+            post_connect_directory(Some("~/a $(touch bad)")),
+            vec!["cd -- \"$HOME\"/'a $(touch bad)'\n"]
+        );
+    }
+
+    #[test]
+    fn k8_selected_key_resolves_alias_and_empty_user_uses_local_account() {
+        let blocks = crate::ssh_config::parse(
+            "Host target\n HostName 127.0.0.1\n Port 2222\nHost *\n User deploy\n Port 3333\n",
+        );
+        let mut params = SshParams {
+            host: "target".into(),
+            port: 22,
+            user: String::new(),
+            auth: proto::SshAuth::IdentityFile {
+                path: "/chosen/key".into(),
+                passphrase_profile: None,
+            },
+            cols: 80,
+            rows: 24,
+            config_identity: None,
+            default_dir: None,
+        };
+        apply_host_config(&mut params, crate::ssh_config::resolve(&blocks, "target"));
+        assert_eq!(
+            (&*params.host, params.port, &*params.user),
+            ("127.0.0.1", 2222, "deploy")
+        );
+        assert!(
+            matches!(params.auth, proto::SshAuth::IdentityFile { ref path, .. } if path == "/chosen/key")
+        );
+        params.user.clear();
+        apply_host_config(&mut params, crate::ssh_config::HostConfig::default());
+        assert_eq!(Some(params.user.clone()), local_username());
+        assert!(!params.user.is_empty());
     }
 
     fn profile(default_dir: Option<&str>, startup_cmd: Option<&str>) -> proto::SshProfile {
@@ -740,16 +838,16 @@ mod tests {
     #[test]
     fn cds_then_runs_in_that_order() {
         let lines = post_connect_lines(&profile(Some("/srv/app"), Some("tmux attach")));
-        assert_eq!(lines, vec!["cd '/srv/app'\n", "tmux attach\n"]);
+        assert_eq!(lines, vec!["cd -- '/srv/app'\n", "tmux attach\n"]);
     }
 
     #[test]
     fn quotes_a_directory_so_it_cannot_become_a_second_command() {
         let lines = post_connect_lines(&profile(Some("/tmp/a b; touch marker"), None));
-        assert_eq!(lines, vec!["cd '/tmp/a b; touch marker'\n"]);
+        assert_eq!(lines, vec!["cd -- '/tmp/a b; touch marker'\n"]);
 
         let lines = post_connect_lines(&profile(Some("/tmp/it's"), None));
-        assert_eq!(lines, vec!["cd '/tmp/it'\\''s'\n"]);
+        assert_eq!(lines, vec!["cd -- '/tmp/it'\\''s'\n"]);
     }
 
     #[test]

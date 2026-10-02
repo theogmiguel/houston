@@ -230,12 +230,12 @@ function buildPaneCommands(actions: PaletteActions, hasWorkspace: boolean): Comm
     }
   ]
 
-  // Source control is a panel, not a grid leaf: 'g' toggles it, and a
+  // The side panel is separate from the grid: 'g' toggles it, and a
   // "New Changes pane" row would only compete with that. The id and the chord
   // stay `panes.toggle-git` so the habit and the palette both keep working.
   commands.push({
     id: 'panes.toggle-git',
-    title: 'Toggle source control panel',
+    title: 'Toggle side panel',
     group: 'Panes',
     keywords: [...(PANE_KEYWORDS.git ?? []), 'git', 'changes'],
     chord: toggleGitShortcut,

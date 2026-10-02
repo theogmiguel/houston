@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
 import type { BrowserNode } from '../layout/tree'
+import { openSideBrowser } from '../sidePanel'
 import { openExternal } from '../houston/bridge'
 import { isTauri } from '../houston/host'
 import { nativeCommandErrorMessage } from '../houston/browserHost'
@@ -20,7 +21,10 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
-  IconTarget
+  IconTarget,
+  IconMonitor,
+  IconPhone,
+  IconTablet
 } from './icons'
 import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './panelChrome'
 
@@ -48,6 +52,7 @@ import {
 import { useBrowserNav } from './browserNav'
 import { tabsStorageKey } from './browserTabsKey'
 import { Icon } from './Icon'
+import { browserSecurity, useBrowserDevice, type BrowserDevice } from './browserDevices'
 
 interface Props {
   node: BrowserNode
@@ -60,6 +65,9 @@ interface Props {
   dropzoneActive?: boolean
   onSendToTerminal?: (text: string) => void
   onNativeError?: (text: string) => void
+  loadRequest?: { url: string }
+  panel?: boolean
+  onMoveToGrid?: (url: string) => void
   focusUrlRequest?: number
 }
 
@@ -95,10 +103,29 @@ export function BrowserPane({
   hiddenByExpand,
   dropzoneActive,
   onSendToTerminal,
+  loadRequest,
+  panel = false,
+  onMoveToGrid,
   focusUrlRequest = 0
 }: Props): React.JSX.Element {
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stage, setStage] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const element = stageRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const measure = (): void => setStage({ width: Math.max(0, element.clientWidth - 32), height: Math.max(0, element.clientHeight - 60) })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  const { device, setDevice, size, zoom, deviceRefusal, nativeReady, onReady } = useBrowserDevice(node.id, stage)
   const tabsKey = tabsStorageKey(node.id)
-  const [restored] = useState(() => seedTabs(tabsKey, node.url))
+  const [restored] = useState(() => {
+    const saved = seedTabs(tabsKey, node.url)
+    if (!loadRequest?.url.trim()) return saved
+    return { ...saved, tabs: saved.tabs.map((tab) => tab.id === saved.activeTabId ? { ...tab, url: toNavUrl(loadRequest.url) } : tab) }
+  })
   const [urlInput, setUrlInput] = useState(
     () => restored.tabs.find((t) => t.id === restored.activeTabId)?.url ?? ''
   )
@@ -151,6 +178,10 @@ export function BrowserPane({
     setRecents
   )
   useBrowserPaneLoad(node.id, openUrl)
+  useEffect(() => {
+    if (loadRequest?.url.trim() && loadRequest.url !== active.url) openUrl(loadRequest.url)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadRequest])
 
   const [surfaceMountFailed, setSurfaceMountFailed] = useState(false)
   useEffect(() => {
@@ -166,7 +197,10 @@ export function BrowserPane({
 
   const fresh = active.url === null
 
-  const picker = usePickerController(node.id, fresh, onSendToTerminal)
+  useEffect(() => {
+    if (hiddenByExpand) { setPopover(false); setFullscreen(false) }
+  }, [hiddenByExpand])
+  const picker = usePickerController(node.id, fresh || !onSendToTerminal || !!hiddenByExpand, onSendToTerminal)
 
   return (
     <section
@@ -206,17 +240,19 @@ export function BrowserPane({
             </span>
           </button>
         </Tooltip>
-        <div className="relative flex-1 min-w-0 flex items-center">
+        <div className="browser-url relative flex-1 min-w-0 flex items-center">
           <span
             className={`absolute left-1.5 top-1/2 -translate-y-1/2 inline-flex pointer-events-none [transition:color_0.16s_ease] ${urlFocused ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
             aria-hidden
+            hidden={!fresh}
           >
             <Icon glyph={IconSearch} role="label" />
           </span>
+          {!fresh && <span className={`browser-security ${browserSecurity(active.url) === 'not secure' ? 'insecure' : ''}`}>{browserSecurity(active.url)}</span>}
           <input
             ref={urlRef}
             aria-label="Address and search bar"
-            className={`${URL_INPUT_CLS} pl-[22px]`}
+            className={`${URL_INPUT_CLS} ${fresh ? 'pl-[22px]' : 'browser-address'}`}
             placeholder={fresh ? 'enter a url to open a new tab' : 'search or enter url'}
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
@@ -236,109 +272,7 @@ export function BrowserPane({
             autoCorrect="off"
           />
         </div>
-        <span className="head-actions flex items-center gap-px flex-none">
-          <div className="relative flex-shrink-0">
-            <Tooltip label={`${tabs.length} tab${tabs.length === 1 ? '' : 's'}`}>
-              <button
-                type="button"
-                className="btn inline-flex items-center gap-[3px] h-[var(--h-ctl-mini)] py-0 px-[7px] rounded-[var(--tr-radius-sm)] bg-transparent border-0 text-[var(--text-muted)] font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [transition:color_0.14s_ease,background_0.14s_ease] hover:text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] data-[open]:text-[var(--text-primary)] data-[open]:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)]"
-                data-open={popover || undefined}
-                aria-haspopup="menu"
-                aria-expanded={popover}
-                aria-label={`${tabs.length} tab${tabs.length === 1 ? '' : 's'}`}
-                onClick={() => setPopover((cur) => !cur)}
-              >
-                <span className="min-w-[9px] text-center tracking-[0.01em] tabular-nums">{tabs.length}</span>
-                <Icon glyph={IconChevronDown} role="label" />
-              </button>
-            </Tooltip>
-            {popover && (
-              <TabsPopover
-                tabs={tabs}
-                activeId={active.id}
-                onSelect={selectTab}
-                onCloseTab={closeTab}
-                onNewTab={newTab}
-                onDismiss={() => setPopover(false)}
-              />
-            )}
-          </div>
-          <Tooltip label="Open in external browser">
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
-              aria-label="Open in external browser"
-              disabled={fresh}
-              onClick={() =>
-                void openExternal(toNavUrl(urlInput)).catch((err: unknown) => {
-                  console.warn('houston: openExternal failed', err)
-                })
-              }
-            >
-              <Icon glyph={IconExternal} role="ui" />
-            </button>
-          </Tooltip>
-          <Tooltip label={fullscreen ? 'Exit full screen (Esc)' : 'Expand to full screen'}>
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${fullscreen ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
-              aria-label={fullscreen ? 'Exit full screen' : 'Expand browser to full screen'}
-              aria-pressed={fullscreen}
-              disabled={fresh}
-              onClick={() => setFullscreen((cur) => !cur)}
-            >
-              {fullscreen ? <Icon glyph={IconCollapse} role="ui" /> : <Icon glyph={IconExpand} role="ui" />}
-            </button>
-          </Tooltip>
-          {isTauri() && (
-            <Tooltip label={detached ? 'Reattach into the grid' : 'Detach into its own window'}>
-              <button
-                className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${detached ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
-                aria-label={detached ? 'Reattach browser into the grid' : 'Detach browser into its own window'}
-                aria-pressed={detached}
-                disabled={fresh}
-                data-testid={`browser-detach-${node.id}`}
-                onClick={() => {
-                  setDetachError(null)
-                  const handle = viewportRef.current
-                  if (!handle) return
-                  const op = detached ? handle.reattach() : handle.detach()
-                  void op.catch((err: unknown) => {
-                    setDetachError(
-                      `${detached ? 'Reattaching' : 'Detaching'} ${JSON.stringify(node.id)} failed: ` +
-                        `${err instanceof Error ? err.message : String(err)}`
-                    )
-                  })
-                }}
-              >
-                <Icon glyph={IconExternal} role="ui" />
-              </button>
-            </Tooltip>
-          )}
-          {isTauri() && (
-            <Tooltip
-              label={picker.enabled ? 'Stop selecting elements (Esc)' : 'Select an element to describe a change'}
-            >
-              <button
-                className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${picker.enabled ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
-                aria-label={picker.enabled ? 'Stop selecting elements' : 'Select a page element'}
-                aria-pressed={picker.enabled}
-                disabled={fresh}
-                data-testid={`browser-picker-toggle-${node.id}`}
-                onClick={picker.toggle}
-              >
-                <Icon glyph={IconTarget} role="ui" />
-              </button>
-            </Tooltip>
-          )}
-          <Tooltip label="Close">
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
-              aria-label="Close"
-              onClick={onClose}
-            >
-              <Icon glyph={IconClose} role="ui" />
-            </button>
-          </Tooltip>
-        </span>
+        <BrowserHeadActions node={node} tabs={tabs} active={active} popover={popover} setPopover={setPopover} selectTab={selectTab} closeTab={closeTab} newTab={newTab} urlInput={urlInput} fullscreen={fullscreen} setFullscreen={setFullscreen} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} panel={panel} workspaceDir={workspaceDir} onSendToTerminal={onSendToTerminal} onMoveToGrid={onMoveToGrid} onClose={onClose} />
       </header>
       <div className="relative h-0.5 w-full overflow-hidden flex-none z-[var(--z-base)]" aria-hidden>
         {active.loading &&
@@ -418,12 +352,18 @@ export function BrowserPane({
           </button>
         </div>
       )}
+      <div className="browser-devrow">
+        <DevicePresetButtons device={device} onDevice={setDevice} refusal={deviceRefusal} ready={nativeReady} />
+        <span className="browser-caption">{size ? `${size.width} × ${size.height} · ${Math.round(zoom * 100)}%` : 'fit · 100%'}</span>
+      </div>
       <PickerStrip id={node.id} controller={picker} />
+      <div ref={stageRef} className="browser-stage">
       {tabs.some((t) => t.url !== null) && !surfaceMountFailed && (
         <BrowserFullscreen
           active={fullscreen}
           onExit={() => setFullscreen(false)}
-          hostClassName={WEBVIEW_HOST_CLS}
+          hostClassName={`browser-device ${device}`}
+          hostStyle={size ? { width: size.width * zoom, height: size.height * zoom, flex: 'none' } : undefined}
           urlLabel={active.url ?? ''}
           canGoBack={Boolean(active.canGoBack)}
           canGoForward={Boolean(active.canGoForward)}
@@ -434,10 +374,12 @@ export function BrowserPane({
           onNavigate={openUrl}
         >
           <BrowserViewport
+            onReady={onReady}
             id={node.id}
             workspaceDir={workspaceDir}
             url={(active.url ?? tabs.find((t) => t.url !== null)?.url) as string}
             className={fullscreen ? WEBVIEW_HOST_CLS : `${WEBVIEW_HOST_CLS} ${SURFACE_RADIUS_CLS}`}
+            style={!fullscreen && size ? { width: size.width, height: size.height, flex: 'none', transform: `scale(${zoom})`, transformOrigin: 'top left' } : undefined}
             hidden={hiddenByExpand}
             dropzoneActive={dropzoneActive || confirmingHere}
 
@@ -456,6 +398,7 @@ export function BrowserPane({
             onError={(context, surfaceId, err) => {
               const text = nativeCommandErrorMessage(context, surfaceId, err)
               console.error(text)
+              setFailMsg(text)
               onNativeError?.(text)
             }}
             onDetachedChange={setDetached}
@@ -482,6 +425,7 @@ export function BrowserPane({
           </BrowserViewport>
         </BrowserFullscreen>
       )}
+      {!fresh && <span className="browser-caption">Select element · click to hand it to the focused agent</span>}
       {fresh && (
         <div className="h-full w-full flex items-center justify-center py-6 px-4 overflow-y-auto">
           <div className="w-full max-w-[300px] flex flex-col items-start gap-3">
@@ -556,6 +500,157 @@ export function BrowserPane({
           </div>
         </div>
       )}
+      </div>
     </section>
   )
+}
+
+
+function DevicePresetButtons({ device, onDevice, refusal, ready }: { device: BrowserDevice; onDevice: (device: BrowserDevice) => void; refusal: string | null; ready: boolean }): React.JSX.Element {
+  return <div className="browser-device-buttons" role="group" aria-label="Device preset">{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={refusal && value !== 'desktop' ? `${label} unavailable: ${refusal}` : label}><button className={NAV_BTN_CLS} aria-label={label} aria-pressed={device === value} disabled={value !== 'desktop' && (refusal != null || (isTauri() && !ready))} onClick={() => onDevice(value)}><Icon glyph={glyph} role="label" /></button></Tooltip>)}</div>
+}
+
+function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab, closeTab, newTab, urlInput, fullscreen, setFullscreen, detached, viewportRef, setDetachError, picker, panel, workspaceDir, onSendToTerminal, onMoveToGrid, onClose }: {
+  node: BrowserNode
+  tabs: ReturnType<typeof useBrowserTabs>['tabs']
+  active: ReturnType<typeof useBrowserTabs>['active']
+  popover: boolean
+  setPopover: React.Dispatch<React.SetStateAction<boolean>>
+  selectTab: ReturnType<typeof useBrowserTabs>['selectTab']
+  closeTab: ReturnType<typeof useBrowserTabs>['closeTab']
+  newTab: ReturnType<typeof useBrowserTabs>['newTab']
+  urlInput: string
+  fullscreen: boolean
+  setFullscreen: React.Dispatch<React.SetStateAction<boolean>>
+  detached: boolean
+  viewportRef: React.RefObject<BrowserViewportHandle | null>
+  setDetachError: React.Dispatch<React.SetStateAction<string | null>>
+  picker: ReturnType<typeof usePickerController>
+  panel: boolean
+  workspaceDir: string
+  onSendToTerminal?: (text: string) => void
+  onMoveToGrid?: (url: string) => void
+  onClose: () => void
+}): React.JSX.Element {
+  const fresh = active.url === null
+  return (
+        <span className="head-actions flex items-center gap-px flex-none">
+          <div className="relative flex-shrink-0">
+            <Tooltip label={`${tabs.length} tab${tabs.length === 1 ? '' : 's'}`}>
+              <button
+                type="button"
+                className="btn inline-flex items-center gap-[3px] h-[var(--h-ctl-mini)] py-0 px-[7px] rounded-[var(--tr-radius-sm)] bg-transparent border-0 text-[var(--text-muted)] font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [transition:color_0.14s_ease,background_0.14s_ease] hover:text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] data-[open]:text-[var(--text-primary)] data-[open]:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)]"
+                data-open={popover || undefined}
+                aria-haspopup="menu"
+                aria-expanded={popover}
+                aria-label={`${tabs.length} tab${tabs.length === 1 ? '' : 's'}`}
+                onClick={() => setPopover((cur) => !cur)}
+              >
+                <span className="min-w-[9px] text-center tracking-[0.01em] tabular-nums">{tabs.length}</span>
+                <Icon glyph={IconChevronDown} role="label" />
+              </button>
+            </Tooltip>
+            {popover && (
+              <TabsPopover
+                tabs={tabs}
+                activeId={active.id}
+                onSelect={selectTab}
+                onCloseTab={closeTab}
+                onNewTab={newTab}
+                onDismiss={() => setPopover(false)}
+              />
+            )}
+          </div>
+          <Tooltip label="Open in external browser">
+            <button
+              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
+              aria-label="Open in external browser"
+              disabled={fresh}
+              onClick={() =>
+                void openExternal(toNavUrl(urlInput)).catch((err: unknown) => {
+                  console.warn('houston: openExternal failed', err)
+                })
+              }
+            >
+              <Icon glyph={IconExternal} role="ui" />
+            </button>
+          </Tooltip>
+          <Tooltip label={fullscreen ? 'Exit full screen (Esc)' : 'Expand to full screen'}>
+            <button
+              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${fullscreen ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
+              aria-label={fullscreen ? 'Exit full screen' : 'Expand browser to full screen'}
+              aria-pressed={fullscreen}
+              disabled={fresh}
+              onClick={() => setFullscreen((cur) => !cur)}
+            >
+              {fullscreen ? <Icon glyph={IconCollapse} role="ui" /> : <Icon glyph={IconExpand} role="ui" />}
+            </button>
+          </Tooltip>
+          <BrowserNativeActions nodeId={node.id} fresh={fresh} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} onSendToTerminal={onSendToTerminal} />
+          <Tooltip label={panel ? 'Move to grid' : 'Move to side panel'}><button className={`${NAV_BTN_CLS}`} aria-label={panel ? 'Move to grid' : 'Move to side panel'} onClick={() => { if (panel) onMoveToGrid?.(active.url ?? ''); else { openSideBrowser(node.id, active.url ?? '', workspaceDir); onClose() } }}><Icon glyph={IconExternal} role="ui" /></button></Tooltip>
+          <Tooltip label="Close">
+            <button
+              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <Icon glyph={IconClose} role="ui" />
+            </button>
+          </Tooltip>
+        </span>
+  )
+}
+
+function BrowserNativeActions({ nodeId, fresh, detached, viewportRef, setDetachError, picker, onSendToTerminal }: {
+  nodeId: string
+  fresh: boolean
+  detached: boolean
+  viewportRef: React.RefObject<BrowserViewportHandle | null>
+  setDetachError: React.Dispatch<React.SetStateAction<string | null>>
+  picker: ReturnType<typeof usePickerController>
+  onSendToTerminal?: (text: string) => void
+}): React.JSX.Element {
+  return <>
+          {isTauri() && (
+            <Tooltip label={detached ? 'Reattach into the grid' : 'Detach into its own window'}>
+              <button
+                className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${detached ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
+                aria-label={detached ? 'Reattach browser into the grid' : 'Detach browser into its own window'}
+                aria-pressed={detached}
+                disabled={fresh}
+                data-testid={`browser-detach-${nodeId}`}
+                onClick={() => {
+                  setDetachError(null)
+                  const handle = viewportRef.current
+                  if (!handle) return
+                  const op = detached ? handle.reattach() : handle.detach()
+                  void op.catch((err: unknown) => {
+                    setDetachError(
+                      `${detached ? 'Reattaching' : 'Detaching'} ${JSON.stringify(nodeId)} failed: ` +
+                        `${err instanceof Error ? err.message : String(err)}`
+                    )
+                  })
+                }}
+              >
+                <Icon glyph={IconExternal} role="ui" />
+              </button>
+            </Tooltip>
+          )}
+          {isTauri() && (
+            <Tooltip
+              label={!onSendToTerminal ? 'Select element unavailable: focus a live agent pane first' : picker.enabled ? 'Stop selecting elements (Esc)' : 'Select element · click to hand it to the focused agent'}
+            >
+              <button
+                className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${picker.enabled ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
+                aria-label={picker.enabled ? 'Stop selecting elements' : 'Select a page element'}
+                aria-pressed={picker.enabled}
+                disabled={fresh || !onSendToTerminal}
+                data-testid={`browser-picker-toggle-${nodeId}`}
+                onClick={picker.toggle}
+              >
+                <Icon glyph={IconTarget} role="ui" />
+              </button>
+            </Tooltip>
+          )}
+  </>
 }

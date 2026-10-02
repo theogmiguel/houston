@@ -30,6 +30,7 @@ vi.mock('../ghostty/surface', () => ({
         write: (data: string | Uint8Array) => surfaceWrites.push(data),
         resetAndWrite: () => {},
         paste: () => {},
+        setReadOnly: vi.fn(),
         setTheme: () => {},
         setFont: async () => {},
         focus: () => {},
@@ -203,7 +204,7 @@ describe('TerminalPane ghostty engine', () => {
       for (let i = 0; i < 5; i += 1) await Promise.resolve()
     })
 
-    expect(surfaceWrites.length).toBeGreaterThan(0)
+    expect(surfaceWrites).toContainEqual(payload)
     expect(
       logSpy.mock.calls.some(([e]) =>
         (e as { message: string }).message.includes('ghostty surface attached')

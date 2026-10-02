@@ -3,8 +3,12 @@ import { useSyncExternalStore } from "react";
 const WIDTH_KEY = "tr-scm-width";
 const OPEN_KEY = "tr-scm-open";
 
-// The approved opening width; a fresh install sees the panel at this size.
-export const SCM_WIDTH_DEFAULT = 480;
+// The server snapshot uses the compact floor until a viewport is available.
+export const SCM_WIDTH_DEFAULT = 340;
+
+export function defaultScmWidth(viewport: number): number {
+  return Math.max(SCM_WIDTH_MIN, Math.min(460, Math.round(viewport * 0.3)));
+}
 
 // The compact floor: below this the file list, the diff and the commit row
 // stop fitting the panel, so a drag cannot make it smaller.
@@ -47,9 +51,9 @@ function loadWidth(): number {
   try {
     const raw = localStorage.getItem(WIDTH_KEY);
     const parsed = raw === null ? NaN : Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : SCM_WIDTH_DEFAULT;
+    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : defaultScmWidth(window.innerWidth);
   } catch {
-    return SCM_WIDTH_DEFAULT;
+    return defaultScmWidth(window.innerWidth);
   }
 }
 

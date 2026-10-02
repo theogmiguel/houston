@@ -7,6 +7,10 @@ import type { EditorNode } from '../layout/tree'
 import { EditorLeaf } from './EditorLeaf'
 import { getBuffer } from '../editor/buffers'
 
+vi.mock('../houston/bridge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../houston/bridge')>()
+  return { ...actual, writeFileChecked: async (path: string, content: string) => { await window.houston.writeFile(path, content); return 'a'.repeat(64) } }
+})
 await import('./EditorSurface')
 
 interface Deferred<T> {
@@ -80,6 +84,7 @@ describe('EditorLeaf save-in-flight indicator (Q11)', () => {
       await flush()
       buf = getBuffer('/ws', path)
     }
+    await (await import("../editor/buffers")).contentHash("hello")
     if (!buf) throw new Error(`buffer never loaded for ${path}`)
     const parent = document.createElement('div')
     document.body.appendChild(parent)

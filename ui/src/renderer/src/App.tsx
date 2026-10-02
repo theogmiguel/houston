@@ -1,3 +1,5 @@
+import { useOrchestrationNotifications } from './orchestrationNotifications';
+import { registerOwned } from './pane/registration';
 import {
   lazy,
   Suspense,
@@ -67,7 +69,7 @@ import { stopConfirmCopy } from "./components/daemonStopConfirmCopy";
 import { QuitAndStopDaemonConfirm } from "./components/QuitAndStopDaemonConfirm";
 import { useBrowserFocus } from "./houston/browserFocus";
 import {
-  requestBrowserPaneLoad,
+  routeBrowserOpenRequest,
   useBrowserOpenRequest,
 } from "./houston/browserOpenRequest";
 import {
@@ -204,7 +206,7 @@ import {
 } from "./components/icons";
 import { setRailWidth, useRailWidth } from "./railWidth";
 import {
-  SCM_WIDTH_DEFAULT,
+  defaultScmWidth,
   focusedRepoDir,
   loadScmOpen,
   saveScmOpen,
@@ -213,7 +215,10 @@ import {
   useScmWidth,
   type ScmTab,
 } from "./scmPanel";
-import { SourceControlPanel } from "./components/SourceControlPanel";
+import "./components/browserPane.css";
+import { SidePanelIntegration } from "./components/SidePanel";
+import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
+import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, loadSideState } from "./sidePanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
@@ -377,7 +382,7 @@ function gridLifecycle(sessions: SessionInfo[]): {
 
   const count = (status: SessionInfo["status"]): number =>
     live.filter((session) => session.status === status).length;
-  const needsInput = count("needs-input");
+  const needsInput = live.filter((session) => session.status === "needs-input" || session.children_waiting > 0).length;
   const working = count("working");
   const starting = count("spawning");
   const idle = count("idle");
@@ -520,6 +525,12 @@ function mcpSurfaceLists(mcp: McpStateView | null) {
     loaded: mcp !== null,
     sourcePath: mcp?.sourcePath ?? null,
   };
+}
+
+function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, activeId: number | null, layerArmed: boolean): boolean {
+  if (activeId === null || layerArmed) return false;
+  if (surface === "side") return event.key === "Escape" || ((event.ctrlKey || event.metaKey) && ["s", "l"].includes(event.key.toLowerCase()));
+  return focusedPaneOwnsKey(event);
 }
 
 export function App(): React.JSX.Element {
@@ -804,6 +815,8 @@ export function App(): React.JSX.Element {
   );
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
   const scmWidth = useScmWidth();
+  const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview, sideExpanded, setSideExpanded } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
+  const gridSurfaceHidden = gridHidden || sideExpanded;
   const [wsRenaming, setWsRenaming] = useState<string | null>(null);
   // Keyed by `gridStorageKey(path, gridId)` for a real workspace, never the
   // bare path — 'all' is the one exception, bypassing grids entirely.
@@ -952,16 +965,28 @@ export function App(): React.JSX.Element {
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
 
-  const paneRoster = useRef<PaneRoster>({
+  useOrchestrationNotifications(sessions);
+
+  const paneRoster = useMemo<PaneRoster>(() => ({
     sessions,
-    maxLiveChildren: null,
-  }).current;
-  paneRoster.sessions = sessions;
-  paneRoster.maxLiveChildren = orchestration?.caps.max_live_children ?? null;
+    maxLiveChildren: orchestration?.caps.max_live_children ?? null,
+  }), [sessions, orchestration]);
 
   const focusPane = (session: number): void => {
     const target = sessionsRef.current.get(session);
     if (!target) return;
+    for (const w of workspacesRef.current) {
+      for (const g of gridsFor(w.path)) {
+        const key = gridStorageKey(w.path, g.id);
+        const tree = layouts.get(key)?.tree ?? loadLayout(key).tree;
+        if (preorderSessions(tree).includes(session)) {
+          setSelectedWs(w.path);
+          handleSelectGrid(w.path, g.id);
+          setActiveId(session);
+          return;
+        }
+      }
+    }
     setSelectedWs(target.project_dir);
     setActiveId(session);
   };
@@ -1072,7 +1097,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_created": {
             setSessions((prev) => new Map(prev).set(msg.info.id, msg.info));
-            setActiveId(msg.info.id);
+            if (msg.info.spawned_by == null) setActiveId(msg.info.id);
             checkout.requestForSession(client, msg.info);
             {
               const rv = reviewIntents.current;
@@ -1456,8 +1481,7 @@ export function App(): React.JSX.Element {
   }, [pushError, retryNonce, reconcileGridTags, dropDeletedTagFromGrids]);
 
   const registerOutput = useCallback((id: number, sink: OutputSink) => {
-    outputHandlers.current.set(id, sink);
-    return () => outputHandlers.current.delete(id);
+    return registerOwned(outputHandlers.current, id, sink);
   }, []);
 
   const addWorkspaceFromPicker = useCallback(async (): Promise<void> => {
@@ -1502,7 +1526,7 @@ export function App(): React.JSX.Element {
       const grids = gridsFor(w.path);
       const active = activeGridId(w.path);
       const wsSessionIds = [...sessions.values()]
-        .filter((sess) => sess.project_dir === w.path)
+        .filter((sess) => sess.project_dir === w.path || sessions.get(sess.spawned_by ?? -1)?.project_dir === w.path)
         .map((sess) => sess.id)
         .sort((a, b) => a - b);
       const synced = syncWorkspaceGrids(
@@ -1512,6 +1536,7 @@ export function App(): React.JSX.Element {
         wsSessionIds,
         layouts,
         replacedSessions,
+        wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
       );
       for (const [key, st] of synced) map.set(key, st);
     }
@@ -1583,7 +1608,7 @@ export function App(): React.JSX.Element {
   );
 
   const wsIds = [...sessions.values()]
-    .filter((s) => selectedWs === "all" || s.project_dir === selectedWs)
+    .filter((s) => selectedWs === "all" || s.project_dir === selectedWs || sessions.get(s.spawned_by ?? -1)?.project_dir === selectedWs)
     .map((s) => s.id)
     .sort((a, b) => a - b);
   const idsKey = wsIds.join(",");
@@ -1601,7 +1626,7 @@ export function App(): React.JSX.Element {
     const ids = idsKey ? idsKey.split(",").map(Number) : [];
     setLayouts((prev) => {
       const cur = prev.get("all") ?? loadLayout("all");
-      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions);
+      const tree = syncSessionLayout(cur.tree, ids, cur.cols, replacedSessions, ids.filter((id) => sessions.get(id)?.spawned_by == null));
       return new Map(prev).set("all", { ...cur, tree });
     });
   }, [selectedWs, idsKey, replacedSessions, conn.kind]);
@@ -1610,9 +1635,9 @@ export function App(): React.JSX.Element {
     const perWs = workspaces
       .map((w) => {
         const ids = [...sessions.values()]
-          .filter((s) => s.project_dir === w.path)
-          .map((s) => s.id)
-          .sort((a, b) => a - b)
+          .filter((s) => s.project_dir === w.path || sessions.get(s.spawned_by ?? -1)?.project_dir === w.path)
+          .sort((a, b) => a.id - b.id)
+          .map((s) => `${s.id}:${s.spawned_by ?? "root"}`)
           .join(",");
         const grids = gridsFor(w.path)
           .map((g) => g.id)
@@ -1635,7 +1660,7 @@ export function App(): React.JSX.Element {
         const grids = gridsFor(w.path);
         const active = activeGridId(w.path);
         const wsSessionIds = [...sessions.values()]
-          .filter((s) => s.project_dir === w.path)
+          .filter((s) => s.project_dir === w.path || sessions.get(s.spawned_by ?? -1)?.project_dir === w.path)
           .map((s) => s.id)
           .sort((a, b) => a - b);
         const synced = syncWorkspaceGrids(
@@ -1645,6 +1670,7 @@ export function App(): React.JSX.Element {
           wsSessionIds,
           prev,
           replacedSessions,
+          wsSessionIds.filter((id) => sessions.get(id)?.spawned_by == null),
         );
         for (const [key, st] of synced) {
           next.set(key, st);
@@ -1735,7 +1761,7 @@ export function App(): React.JSX.Element {
       const persisted = loadLayout("all");
       return {
         ...persisted,
-        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions),
+        tree: syncSessionLayout(persisted.tree, wsIds, persisted.cols, replacedSessions, wsIds.filter((id) => sessions.get(id)?.spawned_by == null)),
       };
     }
     const key = gridStorageKey(selectedWs, activeGridId(selectedWs));
@@ -1744,6 +1770,37 @@ export function App(): React.JSX.Element {
   }, [layouts, warmLayouts, selectedWs, idsKey, activeGridId, replacedSessions]);
   const currentTree = wsState.tree;
   currentTreeRef.current = currentTree;
+  const mountedGridSessionIds = new Set<number>();
+  for (const state of warmLayouts.values()) {
+    for (const id of preorderSessions(state.tree)) mountedGridSessionIds.add(id);
+  }
+  for (const id of preorderSessions(currentTree)) mountedGridSessionIds.add(id);
+  const moveChildToGrid = (parent: number, child: number): void => {
+    const path = sessions.get(parent)?.project_dir;
+    if (!path) return;
+    const key = gridStorageKey(path, activeGridId(path));
+    setLayouts((prev) => {
+      const cur = prev.get(key) ?? warmLayouts.get(key) ?? loadLayout(key);
+      const tree = cur.tree ? insertBeside(cur.tree, parent, leaf(child), "right") : leaf(child);
+      return new Map(prev).set(key, { ...cur, tree });
+    });
+    setSelectedWs(path);
+    setActiveId(child);
+  };
+  const returnChildToRoster = (child: number): void => {
+    setLayouts((prev) => {
+      const next = new Map(prev);
+      const allLayouts = new Map([...warmLayouts, ...prev]);
+      for (const [key, state] of allLayouts) {
+        if (preorderSessions(state.tree).includes(child) && state.tree) {
+          next.set(key, { ...state, tree: removeLeaf(state.tree, child) });
+        }
+      }
+      return next;
+    });
+    const parent = sessions.get(child)?.spawned_by;
+    if (parent != null) setActiveId(parent);
+  };
   const orderedIds = preorderSessions(currentTree);
 
   useEffect(() => {
@@ -1775,7 +1832,7 @@ export function App(): React.JSX.Element {
     setLayouts((prev) => {
       const cur = prev.get(key) ?? loadLayout(key);
       return new Map(prev).set(key, {
-        tree: regrid(cur.tree, wsIds, n),
+        tree: regrid(cur.tree, preorderSessions(cur.tree), n),
         cols: n,
       });
     });
@@ -2093,6 +2150,10 @@ export function App(): React.JSX.Element {
   const openBrowserPane = useCallback(
     (workspaceDir: string, anchor: PaneKey | null, url = ""): void => {
       setExpandedId(null);
+      if (anchor === null) {
+        openSideBrowser(`b${Date.now()}-${++browserLeafSeq.current}`, url, workspaceDir);
+        return;
+      }
       const key = keyForRef(workspaceDir);
       setLayouts((prev) => {
         const cur = prev.get(key) ?? loadLayout(key);
@@ -2109,6 +2170,28 @@ export function App(): React.JSX.Element {
     },
     [],
   );
+  useEffect(() => {
+    const move = (event: Event): void => {
+      const { id, url, workspace } = (event as CustomEvent<{ id: string; url: string; workspace: string }>).detail;
+      const key = keyForRef(workspace);
+      setLayouts((prev) => {
+        const cur = prev.get(key) ?? loadLayout(key);
+        return new Map(prev).set(key, { ...cur, tree: insertPaneAt(cur.tree, { kind: "browser", id, url }, null) });
+      });
+      setActiveSurface("grid");
+      setActiveLeaf(id);
+    };
+    window.addEventListener(SIDE_BROWSER_MOVE_EVENT, move);
+    return () => window.removeEventListener(SIDE_BROWSER_MOVE_EVENT, move);
+  }, [setActiveLeaf]);
+  const sendPickerToAgent = useCallback((text: string): void => {
+    const target = pickerTarget.current;
+    const cur = connForSkillRef.current;
+    if (target === null || cur.kind !== "ready" || !isLive(sessionsRef.current.get(target)?.state ?? "exited")) return;
+    if (!cur.client.sendStdin(target, text)) pushError("connection lost — selected element was not delivered");
+  }, [pushError]);
+  const pickerAvailable = pickerTarget.current !== null && isLive(sessions.get(pickerTarget.current)?.state ?? "exited");
+
   const openFilesPaneAt = useCallback(
     (workspaceDir: string, root: string, anchor: PaneKey | null): void => {
       setExpandedId(null);
@@ -2124,11 +2207,6 @@ export function App(): React.JSX.Element {
       setActiveLeaf(node.id);
     },
     [setActiveLeaf],
-  );
-  const openFilesPane = useCallback(
-    (workspaceDir: string, anchor: PaneKey | null): void =>
-      openFilesPaneAt(workspaceDir, workspaceDir, anchor),
-    [openFilesPaneAt],
   );
   const closeFiles = useCallback(
     (id: string): void => {
@@ -2195,19 +2273,22 @@ export function App(): React.JSX.Element {
     (session: number, path: string, line?: number, col?: number): void => {
       const info = sessionsRef.current.get(session);
       if (!info) return;
-      openEditorFile(info.project_dir, path, session, line, col);
+      setSideRequest({ kind: "files", root: info.project_dir, path, line, col });
+      setScmOpen(true);
+      setActiveSurface("side");
     },
     [openEditorFile],
   );
   const openTerminalDir = useCallback(
-    (path: string): void => {
-      if (selectedWs === "all") {
+    (path: string, session?: number): void => {
+      const root = session == null ? selectedWs : sessionsRef.current.get(session)?.project_dir ?? selectedWs;
+      if (root === "all") {
         void showItemInFolder(path).then((res) => {
           if (!res.ok) pushError(res.error);
         });
         return;
       }
-      openFilesPaneAt(selectedWs, path, null);
+      openFilesPaneAt(root, path, null);
     },
     [selectedWs],
   );
@@ -2222,7 +2303,7 @@ export function App(): React.JSX.Element {
   // The panel reviews the focused pane's workspace in All view, and the
   // selected workspace otherwise — never a session's dir left over from
   // another workspace, which would point the panel at the wrong repo.
-  const scmDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
+  const scmDir = reviewCheckoutDir(sideReview) ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
   // Editing or browsing from the panel must land where the user can see it:
   // in All view the focused pane's repo has no visible grid, so reveal it
   // first rather than inserting into a hidden tree.
@@ -2269,7 +2350,7 @@ export function App(): React.JSX.Element {
     setScmOpen((open) => !open);
   }, []);
   const resetScmWidth = useCallback((): void => {
-    setScmWidth(SCM_WIDTH_DEFAULT);
+    setScmWidth(defaultScmWidth(window.innerWidth));
   }, []);
 
   const scmProps = useMemo(() => {
@@ -2289,6 +2370,10 @@ export function App(): React.JSX.Element {
           }
         : undefined,
       onReviewPacket: (data: ReviewDiffsData) => {
+        if (sideReview) {
+          setReviewSessions((current) => new Map(current).set(data.dir, { session: sideReview.id, data }));
+          return;
+        }
         reviewIntents.current.push({
           projectDir: data.dir,
           data,
@@ -2304,7 +2389,7 @@ export function App(): React.JSX.Element {
             }
           : null,
     };
-  }, [conn, scmDir, openScmFile, revealWorkspace, openBrowserPane, reviewSessions, sessions]);
+  }, [conn, scmDir, openScmFile, revealWorkspace, openBrowserPane, reviewSessions, sessions, sideReview]);
 
   const removeWorkspace = useCallback(
     (path: string) => {
@@ -2636,6 +2721,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onDown = (e: PointerEvent): void => {
       const t = e.target as HTMLElement;
+      if (!t.closest(".side-panel")) setActiveSurface("grid");
       const paneEl = t.closest(".pane");
       const paneKeyAttr = paneEl?.getAttribute("data-panekey") ?? null;
       const sessionPane = paneKeyAttr !== null && /^\d+$/.test(paneKeyAttr);
@@ -2648,17 +2734,33 @@ export function App(): React.JSX.Element {
   }, []);
 
   useBrowserFocus((id) => {
+    const tab = loadSideState(sideWorkspace).tabs.find((tab) => tab.kind === "browser" && tab.id === id);
+    if (tab?.kind === "browser") { setActiveSurface("side"); setActiveId(null); return; }
+    setActiveSurface("grid");
     setActiveId(null);
     const tree = currentTreeRef.current;
     setActiveLeaf(tree && findPane(tree, id) ? id : null);
   });
-  useBrowserOpenRequest((workspaceDir, url) => {
+  const revealGridBrowser = (workspace: string, surfaceId: string): boolean => {
+    for (const grid of gridsByWsRef.current.get(workspace) ?? loadGrids(workspace)) {
+      const key = gridStorageKey(workspace, grid.id);
+      const layout = layoutsRef.current.get(key) ?? loadLayout(key);
+      const tree = layout.tree;
+      if (!tree || findPane(tree, surfaceId)?.kind !== "browser") continue;
+      handleSelectGrid(workspace, grid.id);
+      const stack = findStackContaining(tree, surfaceId);
+      if (stack) setLayouts((current) => new Map(current).set(key, { ...layout, tree: setActiveStackTab(tree, stack.id, surfaceId) }));
+      setSideExpanded(false);
+      setExpandedId(null);
+      setActiveLeaf(surfaceId);
+      setActiveSurface("grid");
+      return true;
+    }
+    return false;
+  };
+  useBrowserOpenRequest((workspaceDir, url, surfaceId) => {
     if (!workspacesRef.current.some((w) => w.path === workspaceDir)) return;
-    const key = keyForRef(workspaceDir);
-    const tree = (layoutsRef.current.get(key) ?? loadLayout(key)).tree;
-    const pane = preorderNonSessionPanes(tree).find((p) => p.kind === "browser");
-    if (pane && requestBrowserPaneLoad(pane.id, url)) return;
-    openBrowserPane(workspaceDir, null, url);
+    routeBrowserOpenRequest(workspaceDir, url, surfaceId, revealGridBrowser, (workspace, requestedUrl) => openBrowserPane(workspace, null, requestedUrl));
   });
 
   const voiceClient = conn.kind === "ready" ? conn.client : null;
@@ -2751,7 +2853,7 @@ export function App(): React.JSX.Element {
         changeFont(0);
         return;
       }
-      if (activeId !== null && !layerArmed && focusedPaneOwnsKey(e)) return;
+      if (focusedSurfaceOwnsKey(activeSurface, e, activeId, layerArmed)) return;
       if (resolveMatch(escapeShortcut, keymapOverrides)(e)) {
         if (shortcutSheet) setShortcutSheet(false);
         else if (settings) setSettings(false);
@@ -2785,6 +2887,7 @@ export function App(): React.JSX.Element {
         e.preventDefault();
         toggleTitlebarAddPane();
       } else if (resolveGlobalMatch(browserFocusUrl, keymapOverrides)(e)) {
+        if (focusSideBrowserUrl(activeSurface, e)) return;
         const tree = currentTreeRef.current;
         const active =
           activeLeaf !== null && tree ? findPane(tree, activeLeaf) : null;
@@ -2921,6 +3024,7 @@ export function App(): React.JSX.Element {
     paneCount,
     tidyPanes,
     equalizePanesNow,
+    activeSurface,
     focusAdjacentPane,
     movePaneBy,
     stepWorkspace,
@@ -3265,7 +3369,7 @@ export function App(): React.JSX.Element {
           {}
           <main
             data-custom={customChrome.dataCustom}
-            className="grid-region [grid-area:grid] min-w-0 min-h-0 flex flex-col relative overflow-hidden"
+            className={`grid-region ${scmOpen ? "with-side" : ""} [grid-area:grid] min-w-0 min-h-0 flex flex-col relative overflow-hidden`}
           >
             <NoticeStack
               anchor="workspace-top"
@@ -3273,11 +3377,13 @@ export function App(): React.JSX.Element {
               store={appNotices}
             />
 
-            <div className="flex-1 min-w-0 min-h-0 flex">
+            <div className="side-panel-row flex-1 min-w-0 min-h-0 flex">
               <div
-                aria-hidden={gridHidden || undefined}
-                inert={gridHidden}
-                className={`grid-slot contents ${gridHidden ? "grid-hidden invisible" : ""}`}
+                aria-hidden={gridSurfaceHidden || undefined}
+                inert={gridSurfaceHidden}
+                onPointerDownCapture={() => setActiveSurface("grid")}
+                onFocusCapture={() => setActiveSurface("grid")}
+                className={`grid-slot contents ${gridSurfaceHidden ? "grid-hidden invisible" : ""}`}
               >
               {selectedWs === "all" ? (
                 currentTree ? (
@@ -3287,6 +3393,9 @@ export function App(): React.JSX.Element {
                     branches={checkout.chips}
                     branchNotes={checkout.notes}
                     roster={paneRoster}
+                    gridSessionIds={mountedGridSessionIds}
+                    onMoveChildToGrid={moveChildToGrid}
+                    onReturnChildToRoster={returnChildToRoster}
                     onFocusPane={focusPane}
                     viewAll
                     client={client}
@@ -3302,7 +3411,7 @@ export function App(): React.JSX.Element {
                     activeLeafId={activeLeaf}
                     connected={connected}
                     expandedId={expandedIn(currentTree)}
-                    gridHidden={gridHidden}
+                    gridHidden={gridSurfaceHidden}
                     registerOutput={registerOutput}
                     shellIntegration={shellIntegration}
                     workspaceDir={selectedWs}
@@ -3328,7 +3437,7 @@ export function App(): React.JSX.Element {
                     }
                     onOpenFile={openTerminalFile}
                     onOpenDir={openTerminalDir}
-                    onSendToTerminal={runSkill}
+                    onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
                     onNativeError={pushError}
                     onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3377,6 +3486,9 @@ export function App(): React.JSX.Element {
                               branches={checkout.chips}
                     branchNotes={checkout.notes}
                               roster={paneRoster}
+                              gridSessionIds={mountedGridSessionIds}
+                              onMoveChildToGrid={moveChildToGrid}
+                              onReturnChildToRoster={returnChildToRoster}
                               onFocusPane={focusPane}
                               viewAll={false}
                               client={client}
@@ -3396,7 +3508,7 @@ export function App(): React.JSX.Element {
                               expandedId={
                                 gridSelected ? expandedIn(tree) : null
                               }
-                              gridHidden={gridHidden}
+                              gridHidden={gridSurfaceHidden}
                               registerOutput={registerOutput}
                               shellIntegration={shellIntegration}
                               workspaceDir={w.path}
@@ -3431,7 +3543,7 @@ export function App(): React.JSX.Element {
                               }
                               onOpenFile={openTerminalFile}
                               onOpenDir={openTerminalDir}
-                              onSendToTerminal={runSkill}
+                              onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
                               onNativeError={pushError}
                               onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3455,8 +3567,23 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </div>
-              {scmOpen && (
-                <SourceControlPanel
+              {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
+                <SidePanelIntegration
+                  expanded={sideExpanded}
+                  onExpanded={setSideExpanded}
+                  focused={activeSurface === "side"}
+                  closed={!scmOpen}
+                  onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                  selectedWorkspace={sideWorkspace}
+                  activeId={activeId}
+                  sessions={sessions}
+                  request={sideRequest}
+                  reviewChild={sideReview}
+                  onSurface={setActiveSurface}
+                  onFocusPane={focusPane}
+                  onRevealWorkspace={revealWorkspace}
+                  onOpenEditor={openEditorFile}
+                  onReviewChild={(child) => { setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
                   dir={scmProps.dir}
                   client={scmProps.client}
                   width={scmWidth}
@@ -3591,6 +3718,7 @@ export function App(): React.JSX.Element {
                   ) : (
                   <Suspense fallback={<div className="flex-1" />}>
                     <SettingsView
+                      daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
                       onChromeTheme={setChromeTheme}
                       theme={themeChoice}
@@ -3881,12 +4009,6 @@ export function App(): React.JSX.Element {
               hasWorkspace={selectedWs !== "all"}
               keymapOverrides={keymapOverrides}
               onClose={() => setAddPanePopover(null)}
-              onInsertPane={(kind) => {
-                if (selectedWs === "all") return;
-                const anchor = addPanePopover.anchor;
-                if (kind === "browser") openBrowserPane(selectedWs, anchor);
-                else openFilesPane(selectedWs, anchor);
-              }}
               onNewTerminal={newTerminal}
               onSpawnAgent={spawnAgentPane}
               agentProfiles={agentProfiles}
@@ -3900,7 +4022,6 @@ export function App(): React.JSX.Element {
                   : undefined
               }
               onNewGrid={() => handleAddGrid(selectedWs)}
-              onNewSession={() => setComposer("current-grid")}
             />
           )}
 

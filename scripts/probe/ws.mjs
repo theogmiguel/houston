@@ -61,8 +61,7 @@ ws.onopen = async () => {
           break;
         case "consent":
           send({
-            type: "orchestration_settings_set",
-            workspace: op.workspace,
+            type: "orchestration_set",
             enabled: op.enabled !== false,
           });
           await waitFor((m) => m.type === "orchestration_state");

@@ -152,6 +152,8 @@ async fn session_reparent_over_the_wire_refuses_a_swarm_tied_session() {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         })

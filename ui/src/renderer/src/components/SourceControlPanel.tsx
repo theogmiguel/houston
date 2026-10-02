@@ -1,3 +1,6 @@
+import { useNativeSuppression } from '../layout/nativeSuppression'
+import { saveReview } from '../houston/bridge'
+import { buildStructuredReviewPrompt, structuredReviewPrompt } from '../git/review'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { HoustonClient } from '../houston/client'
 import type { ReviewDiffsData } from '../git/review'
@@ -46,6 +49,9 @@ const PR_DOT_TONE: Record<PrPresenceTone, string> = {
 }
 
 export interface SourceControlPanelProps {
+  onChangedCount?: (count: number) => void
+  reviewTarget?: number
+  embedded?: boolean
   dir: string | null
   client: HoustonClient | null
   width: number
@@ -119,7 +125,7 @@ function PanelTab({
 // The divider between the grid and the panel, deliberately the terminal
 // splitter's own clothes: an 8px strip with a 1px line that only shows while
 // dragging or focused, arrow keys on the same 4% step, double-click resets.
-function ScmResizeHandle({
+export function ScmResizeHandle({
   requested,
   rendered,
   hostWidth,
@@ -133,6 +139,7 @@ function ScmResizeHandle({
   onReset: () => void
 }): React.JSX.Element {
   const [dragging, setDragging] = useState(false)
+  useNativeSuppression('animating', dragging)
   // `requested` is the stored preference a cancel falls back to; `base` is
   // what the divider actually shows, so a clamp-shortened panel still tracks
   // the pointer instead of waiting for the delta to exceed the clamp gap.
@@ -231,6 +238,9 @@ function ScmResizeHandle({
 }
 
 export function SourceControlPanel({
+  onChangedCount,
+  reviewTarget,
+  embedded = false,
   dir,
   client,
   width,
@@ -244,6 +254,27 @@ export function SourceControlPanel({
   review = null,
   hiddenByOverlay = false
 }: SourceControlPanelProps): React.JSX.Element {
+  const [comments, setComments] = useState('')
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const reviewPacketCallback = useRef(onReviewPacket)
+  reviewPacketCallback.current = onReviewPacket
+  const pendingChildReview = useRef<{ target: number; comments: string } | null>(null)
+  useEffect(() => {
+    setComments('')
+    pendingChildReview.current = null
+    if (!client || !dir || reviewTarget == null) return
+    const off = client.subscribe('git_review_diffs', (data) => {
+      const request = pendingChildReview.current
+      if (data.dir !== dir || !request) return
+      pendingChildReview.current = null
+      void saveReview(`${buildStructuredReviewPrompt(data)}\n\nOperator comments:\n${request.comments}`)
+        .then((file) => {
+          reviewPacketCallback.current?.(data)
+          if (!client.sendStdin(request.target, `\x1b[200~${structuredReviewPrompt(file)}\x1b[201~`)) throw new Error(`Cannot send review to session ${request.target}: expected an attached terminal transport`)
+        }).catch((error) => setReviewError(String(error)))
+    })
+    return off
+  }, [client, dir, reviewTarget])
   const rootRef = useRef<HTMLElement | null>(null)
   const [hostWidth, setHostWidth] = useState(0)
   const [summary, setSummary] = useState<ChangesSummary | null>(null)
@@ -277,9 +308,10 @@ export function SourceControlPanel({
 
   const onSummary = useCallback((next: ChangesSummary): void => {
     setSummary(next)
+    onChangedCount?.(next.changed)
     setHasPr(next.hasPr)
     setPrTone(next.prTone)
-  }, [])
+  }, [onChangedCount])
 
   const onPrPresenceChange = useCallback((exists: boolean, tone: PrPresenceTone = 'ok'): void => {
     setHasPr(exists)
@@ -309,19 +341,74 @@ export function SourceControlPanel({
       aria-label="Source control"
       aria-hidden={hiddenByOverlay || undefined}
       inert={hiddenByOverlay}
-      className={`relative flex-none h-full min-h-0 flex flex-col border-l border-l-[var(--border)] overflow-visible @container ${MATERIAL_CLS.shell} ${hiddenByOverlay ? 'invisible' : ''}`}
-      style={{ width: rendered, maxWidth: '100%' }}
+      className={`relative flex-none h-full min-h-0 flex flex-col overflow-visible @container ${MATERIAL_CLS.shell} ${hiddenByOverlay ? 'invisible' : ''}`}
+      style={{ width: embedded ? "100%" : rendered, maxWidth: '100%' }}
       {...materialAttrs('shell')}
     >
-      <ScmResizeHandle
+      {!embedded && <ScmResizeHandle
         requested={width}
         rendered={rendered}
         hostWidth={hostWidth}
         onWidth={onWidth}
         onReset={onResetWidth}
-      />
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <header className="flex-none flex items-center gap-2 h-[var(--h-pane-head)] px-2.5 border-b border-b-[var(--border)]">
+      />}
+      <div className="flex-1 min-h-0 flex flex-col gap-1 overflow-hidden">
+      <SourceControlHeader dir={dir} client={client} tab={tab} onTab={onTab} summary={summary} hasPr={hasPr} prTone={prTone} branchText={branchText} review={review} refresh={refresh} />
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div
+          className={`flex-1 min-h-0 flex-col ${tab === 'changes' ? 'flex' : 'hidden'}`}
+          data-testid="scm-changes-tab"
+        >
+          <Suspense fallback={<div className="flex-1" />}>
+            <ChangesPane
+              key={dir ?? 'none'}
+              client={client}
+              dir={dir}
+              onOpenFileInEditor={onOpenFileInEditor}
+              onOpenUrlInPane={onOpenUrlInPane}
+              onReviewPacket={onReviewPacket}
+              review={review}
+              compact={embedded}
+              onSummary={onSummary}
+              refreshSignal={changesRefresh}
+            />
+          </Suspense>
+        </div>
+        {prVisited && (
+          <div
+            className={`flex-1 min-h-0 flex-col ${tab === 'pull-request' ? 'flex' : 'hidden'}`}
+            data-testid="scm-pr-tab"
+          >
+            <Suspense fallback={<div className="flex-1" />}>
+              <PullRequestTab
+                key={dir ?? 'none'}
+                client={client}
+                dir={dir}
+                onOpenUrlInPane={onOpenUrlInPane}
+                onShowChanges={() => onTab('changes')}
+                compact={embedded}
+                active={tab === 'pull-request'}
+                refreshSignal={prRefresh}
+                onPrPresenceChange={onPrPresenceChange}
+              />
+            </Suspense>
+          </div>
+        )}
+      </div>
+      {reviewTarget != null && <form aria-label={`Review session ${reviewTarget}`} className="flex-none flex flex-col gap-2 p-2 border-t border-[var(--divider)]" onSubmit={(event) => { event.preventDefault(); if (!client || !dir || !comments.trim()) return; setReviewError(null); pendingChildReview.current = { target: reviewTarget, comments }; client.gitReviewDiffs(dir) }}><textarea aria-label="Diff comments" placeholder={`Comments for session ${reviewTarget}`} value={comments} onChange={(event) => setComments(event.target.value)} className="min-w-0 bg-[var(--tool-code-bg)] text-[var(--text-primary)]" /><button className="btn border-none" disabled={!client || !dir || !comments.trim()}>Send comments to child</button>{reviewError && <span role="alert">{reviewError}</span>}</form>}
+      </div>
+    </aside>
+  )
+}
+
+function SourceControlHeader({ dir, client, tab, onTab, summary, hasPr, prTone, branchText, review, refresh }: Pick<SourceControlPanelProps, 'dir' | 'client' | 'tab' | 'onTab' | 'review'> & {
+  summary: ChangesSummary | null
+  hasPr: boolean
+  prTone: PrPresenceTone
+  branchText: string
+  refresh: () => void
+}): React.JSX.Element {
+  return (<header className="scbar flex-none flex items-center gap-2 h-[var(--h-pane-head)] pl-2.5 pr-1.5 overflow-hidden">
         <span className="min-w-0 truncate text-[length:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
           {dir ? repoName(dir) : 'No workspace'}
         </span>
@@ -335,22 +422,10 @@ export function SourceControlPanel({
           {branchText}
         </span>
         <span className="flex-1" />
-        <Tooltip label="Refresh">
-          <button
-            className={`btn ${BTN_ICO_STRUCTURE} ${ICO_BASE}`}
-            aria-label="Refresh"
-            data-testid="scm-refresh"
-            disabled={!client || !dir}
-            onClick={refresh}
-          >
-            <Icon glyph={IconRefresh} role="ui" />
-          </button>
-        </Tooltip>
-      </header>
       <div
         role="tablist"
         aria-label="Source control"
-        className={`${SEG_TRACK_CLS} flex-none self-start mx-2 my-1.5`}
+        className={`${SEG_TRACK_CLS} flex-none`}
       >
         <PanelTab
           tab="changes"
@@ -371,7 +446,6 @@ export function SourceControlPanel({
         <PanelTab
           tab="pull-request"
           label="Pull request"
-          compactLabel="PR"
           active={tab === 'pull-request'}
           onSelect={onTab}
           badge={
@@ -385,46 +459,16 @@ export function SourceControlPanel({
           }
         />
       </div>
-      <div className="flex-1 min-h-0 flex flex-col">
-        <div
-          className={`flex-1 min-h-0 flex-col ${tab === 'changes' ? 'flex' : 'hidden'}`}
-          data-testid="scm-changes-tab"
-        >
-          <Suspense fallback={<div className="flex-1" />}>
-            <ChangesPane
-              key={dir ?? 'none'}
-              client={client}
-              dir={dir}
-              onOpenFileInEditor={onOpenFileInEditor}
-              onOpenUrlInPane={onOpenUrlInPane}
-              onReviewPacket={onReviewPacket}
-              review={review}
-              onSummary={onSummary}
-              refreshSignal={changesRefresh}
-            />
-          </Suspense>
-        </div>
-        {prVisited && (
-          <div
-            className={`flex-1 min-h-0 flex-col ${tab === 'pull-request' ? 'flex' : 'hidden'}`}
-            data-testid="scm-pr-tab"
+        <Tooltip label="Refresh">
+          <button
+            className={`btn ${BTN_ICO_STRUCTURE} ${ICO_BASE}`}
+            aria-label="Refresh"
+            data-testid="scm-refresh"
+            disabled={!client || !dir}
+            onClick={refresh}
           >
-            <Suspense fallback={<div className="flex-1" />}>
-              <PullRequestTab
-                key={dir ?? 'none'}
-                client={client}
-                dir={dir}
-                onOpenUrlInPane={onOpenUrlInPane}
-                onShowChanges={() => onTab('changes')}
-                active={tab === 'pull-request'}
-                refreshSignal={prRefresh}
-                onPrPresenceChange={onPrPresenceChange}
-              />
-            </Suspense>
-          </div>
-        )}
-      </div>
-      </div>
-    </aside>
-  )
+            <Icon glyph={IconRefresh} role="ui" />
+          </button>
+        </Tooltip>
+      </header>)
 }

@@ -154,7 +154,7 @@ fn body(app: &AppHandle) -> Result<(), String> {
         win_w, win_h
     );
 
-    let boot_zoom = gtk_host::host_zoom_for_selftest(app, gtk_host::HOST_WINDOW)?;
+    let boot_zoom = gtk_host::read_host_zoom(app, gtk_host::HOST_WINDOW)?;
     report(
         "host-zoom-is-neutral-at-probe-start",
         (boot_zoom - 1.0).abs() < f64::EPSILON,

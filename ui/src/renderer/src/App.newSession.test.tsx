@@ -20,11 +20,7 @@ function click(el: Element | null | undefined, what: string): void {
 }
 
 function openComposer(container: Element): void {
-  const plus = Array.from(container.querySelectorAll('button')).find(
-    (b) => b.getAttribute('aria-label') === 'New pane'
-  )
-  click(plus, 'a pane header’s "+" button')
-  click(container.querySelector('[data-testid="add-pane-new-session"]'), 'the "New session…" row')
+  click(container.querySelector('[aria-label^="New session in "]'), 'the workspace row’s "New session" button')
 }
 
 let harness: AppHarness | null = null
@@ -40,7 +36,7 @@ afterEach(() => {
 })
 
 describe('step 3 — the "New session" composer launches into the open workspace', () => {
-  it('the Add-pane popover offers it, and submitting spawns one session per slot', async () => {
+  it('the workspace row offers it, and submitting spawns one session per slot', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const client = currentClient()

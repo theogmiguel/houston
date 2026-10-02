@@ -59,6 +59,71 @@ async fn open_surface_at(
     )))
 }
 
+// Reveal must finish promptly even if the renderer never acknowledges the requested tab.
+const REVEAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn surface_visible(app: &AppHandle, surface: &str) -> Result<bool, String> {
+    let registry = app.state::<BrowserRegistry>();
+    let guard = super::lock_registry(&registry)?;
+    let entry = guard
+        .children
+        .get(surface)
+        .ok_or_else(|| format!("surface {surface:?} disappeared"))?;
+    Ok(!entry.closing && !entry.suppressed.is_hidden())
+}
+
+async fn reveal_surface(
+    app: &AppHandle,
+    scope: &McpScope,
+    surface: &str,
+    url: &str,
+) -> Result<(), ToolError> {
+    reveal_when_hidden(
+        &scope.workspace_id,
+        surface,
+        url,
+        REVEAL_TIMEOUT,
+        || surface_visible(app, surface),
+        || {
+            app.emit(
+                super::state::OPEN_REQUEST_EVENT,
+                &json!({"workspaceId": scope.workspace_id, "url": url, "surfaceId": surface}),
+            )
+            .map_err(|err| err.to_string())
+        },
+    )
+    .await
+}
+
+async fn reveal_when_hidden(
+    workspace: &str,
+    surface: &str,
+    url: &str,
+    timeout: std::time::Duration,
+    mut visible: impl FnMut() -> Result<bool, String>,
+    request: impl FnOnce() -> Result<(), String>,
+) -> Result<(), ToolError> {
+    let failure = |reason: String| {
+        ToolError(format!(
+        "browser_reveal_failed: browser_navigate workspace {workspace:?}, surface {surface:?}, url {url:?}: {reason} (REVEAL_TIMEOUT={}ms)", timeout.as_millis()
+    ))
+    };
+    if visible().map_err(failure)? {
+        return Ok(());
+    }
+    request().map_err(failure)?;
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if visible().map_err(failure)? {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(failure("exact surface did not become visible".into()));
+        }
+        tokio::time::sleep_until((tokio::time::Instant::now() + WAIT_POLL).min(deadline)).await;
+    }
+}
+
 fn no_pane_after_wait(workspace_id: &str, url: &str, waited: std::time::Duration) -> String {
     format!(
         "no browser pane in workspace {workspace_id:?} — asked the app to open one at {url:?} \
@@ -100,7 +165,10 @@ impl ToolProvider for BrowserTools {
             if name == "browser_navigate" {
                 let url = navigate_url(args)?;
                 return match existing_surface(&self.app, scope) {
-                    Some(surface) => navigate(&self.app, &surface, url),
+                    Some(surface) => {
+                        reveal_surface(&self.app, scope, &surface, url).await?;
+                        navigate(&self.app, &surface, url)
+                    }
                     None => {
                         let surface = open_surface_at(&self.app, scope, url).await?;
                         Ok(navigated(&surface, url))
@@ -957,5 +1025,140 @@ mod tests {
             gateway_bytes < 1_300,
             "codex gateway grew to {gateway_bytes} B (trimmed target ~1,164 B)"
         );
+    }
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[tokio::test]
+    async fn hidden_surface_requests_reveal_before_navigation_can_proceed() {
+        let requested = Cell::new(false);
+        let checks = Cell::new(0);
+        reveal_when_hidden(
+            "/workspace",
+            "side-1",
+            "https://example.test",
+            REVEAL_TIMEOUT,
+            || {
+                checks.set(checks.get() + 1);
+                Ok(requested.get())
+            },
+            || {
+                requested.set(true);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(requested.get());
+        assert!(checks.get() >= 2);
+    }
+
+    #[tokio::test]
+    async fn hidden_surface_waits_for_visibility_receipt() {
+        let requested = Cell::new(false);
+        let visible = Cell::new(false);
+        let (result, ()) = tokio::join!(
+            reveal_when_hidden(
+                "/workspace",
+                "side-1",
+                "https://example.test",
+                REVEAL_TIMEOUT,
+                || Ok(visible.get()),
+                || {
+                    requested.set(true);
+                    Ok(())
+                },
+            ),
+            async {
+                tokio::task::yield_now().await;
+                assert!(requested.get());
+                visible.set(true);
+            }
+        );
+        result.unwrap();
+        assert!(visible.get());
+    }
+
+    #[tokio::test]
+    async fn visible_surface_does_not_request_reveal() {
+        reveal_when_hidden(
+            "/workspace",
+            "side-1",
+            "https://example.test",
+            REVEAL_TIMEOUT,
+            || Ok(true),
+            || panic!("visible surface must navigate directly"),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn another_visible_surface_cannot_satisfy_exact_surface_reveal() {
+        let requested = Cell::new(false);
+        let surfaces = std::collections::BTreeMap::from([("hidden-1", false), ("visible-2", true)]);
+        let err = reveal_when_hidden(
+            "/workspace",
+            "hidden-1",
+            "https://example.test",
+            std::time::Duration::ZERO,
+            || Ok(surfaces["hidden-1"]),
+            || {
+                requested.set(true);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(requested.get());
+        for value in [
+            "browser_reveal_failed",
+            "/workspace",
+            "hidden-1",
+            "https://example.test",
+            "REVEAL_TIMEOUT=0ms",
+        ] {
+            assert!(err.0.contains(value), "{}", err.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn reveal_reports_emit_failure_and_surface_destruction() {
+        let err = reveal_when_hidden(
+            "/workspace",
+            "side-1",
+            "https://example.test",
+            REVEAL_TIMEOUT,
+            || Ok(false),
+            || Err("renderer unavailable".into()),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.0.contains("browser_reveal_failed") && err.0.contains("renderer unavailable"));
+        let requested = Cell::new(false);
+        let err = reveal_when_hidden(
+            "/workspace",
+            "side-1",
+            "https://example.test",
+            REVEAL_TIMEOUT,
+            || {
+                if requested.get() {
+                    Err("surface disappeared".into())
+                } else {
+                    Ok(false)
+                }
+            },
+            || {
+                requested.set(true);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.0.contains("browser_reveal_failed") && err.0.contains("surface disappeared"));
     }
 }

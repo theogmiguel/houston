@@ -91,11 +91,11 @@ describe('Sidebar — density floor on small rail actions', () => {
     expect(filter?.className).not.toContain(HIT_TARGET_28)
   })
 
-  it('the three group-header actions share one box — filter, SSH and the create +', () => {
+  it('the group-header actions share one box — filter and the create +', () => {
     act(() => {
       root.render(<Sidebar {...baseProps({ workspaces: [ws('/a', 'alpha')], selected: '/a' })} />)
     })
-    for (const label of ['Filter by tag', 'Connect over SSH', 'Add workspace (folder)']) {
+    for (const label of ['Filter by tag', 'Add workspace']) {
       const el = container.querySelector(`button[aria-label="${label}"]`)
       expect(el, `${label} is missing from the header`).not.toBeNull()
       expect(el?.className, `${label} is not on the 24px box`).toContain('w-6 h-6')

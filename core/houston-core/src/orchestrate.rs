@@ -2,9 +2,56 @@ use anyhow::Context as _;
 use houston_protocol as proto;
 use serde_json::json;
 
+// Five idle minutes allow a late handback without holding child capacity indefinitely.
+pub const NO_HANDBACK_SETTLE_MS: u64 = 5 * 60 * 1000;
+
 // long enough to cover a real agent turn, short enough that pane_wait gives the
 // caller control back instead of hanging on a child that never reports a status
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
+
+// Stay below Claude's 120-second foreground auto-background threshold.
+pub const CLAUDE_WAIT_CAP_MS: u64 = 90_000;
+// Leave thirty seconds under Cursor's inspected sixty-second MCP timeout.
+pub const CURSOR_WAIT_CAP_MS: u64 = 30_000;
+// Houston launches Codex with a 630-second tool timeout.
+pub const CODEX_WAIT_CAP_MS: u64 = 600_000;
+// Managed OpenCode launch configuration leaves thirty seconds for transport.
+pub const OPENCODE_WAIT_CAP_MS: u64 = 600_000;
+// Grok's effective per-tool timeout must also cover a transport margin.
+pub const GROK_WAIT_CAP_MS: u64 = 600_000;
+// Unknown client limits get a provisional thirty-second ceiling.
+pub const UNKNOWN_WAIT_CAP_MS: u64 = 30_000;
+// Five minutes allows ordinary reviewer delays before reporting a diagnostic heuristic.
+pub const CODEX_AUTO_REVIEW_STALL_MS: u64 = 300_000;
+// Leave room for client response handling even with a short Grok override.
+const GROK_WAIT_MARGIN_MS: u64 = 30_000;
+
+pub fn provider_wait_cap(provider: proto::AgentKind, grok_timeout_ms: Option<u64>) -> u64 {
+    match provider {
+        proto::AgentKind::Claude => CLAUDE_WAIT_CAP_MS,
+        proto::AgentKind::Cursor => CURSOR_WAIT_CAP_MS,
+        proto::AgentKind::Codex => CODEX_WAIT_CAP_MS,
+        proto::AgentKind::Opencode => OPENCODE_WAIT_CAP_MS,
+        proto::AgentKind::Grok => grok_timeout_ms.map_or(UNKNOWN_WAIT_CAP_MS, |timeout| {
+            timeout
+                .saturating_sub(GROK_WAIT_MARGIN_MS)
+                .clamp(1, GROK_WAIT_CAP_MS)
+        }),
+        _ => UNKNOWN_WAIT_CAP_MS,
+    }
+}
+
+pub fn wait_cap_note(provider: proto::AgentKind, requested: u64, cap: u64) -> Option<String> {
+    (requested > cap).then(|| {
+        format!(
+            "pane_wait timeout_ms {requested} ms clamped to {cap} ms for {}",
+            provider_label(provider)
+        )
+    })
+}
+
+// Match the sub-agent hold bound so an unreported background completion cannot hold a round forever.
+pub const BACKGROUND_HOLD_MAX_MS: u64 = 45 * 60_000;
 
 // Ordinary control-plane calls stay responsive; long-poll responses use the daemon's wait budget.
 const CLI_HTTP_TIMEOUT_MS: u64 = 15_000;
@@ -264,7 +311,7 @@ impl From<String> for Brief {
 
 pub const HANDBACK_PROTOCOL: &str = "\n\n## Handing back\nCall `pane_submit` with your result \
                                     when you are done — that, not this pane, is what reaches \
-                                    whoever asked. Answering only here reaches nobody.";
+                                    whoever asked. Answering only here reaches nobody.\nUse `run_in_background` and Monitor to wait until every required background job finishes; never end the turn while one is running. Finish with `pane_submit` and a non-empty body.";
 
 pub fn request_header(round: u32) -> String {
     format!(
@@ -425,6 +472,8 @@ pub struct DelegationView {
     pub stalled: bool,
     pub brief: String,
     pub result_staged: bool,
+    pub result_staged_age_ms: Option<u64>,
+    pub hold_reason: Option<String>,
     pub superseded: u32,
     pub ended_at: Option<u64>,
     pub stop_reason: Option<String>,
@@ -459,6 +508,7 @@ impl From<TurnEndSource> for proto::TurnEndSource {
 impl From<InboxKind> for proto::InboxKind {
     fn from(k: InboxKind) -> Self {
         match k {
+            InboxKind::Restored => proto::InboxKind::Restored,
             InboxKind::Result => proto::InboxKind::Result,
             InboxKind::NoHandback => proto::InboxKind::NoHandback,
             InboxKind::NeedsInput => proto::InboxKind::NeedsInput,
@@ -490,6 +540,9 @@ pub fn delegation_info(
     hold_reason: Option<String>,
 ) -> proto::DelegationInfo {
     proto::DelegationInfo {
+        started_at: row.created_at,
+        settled_at: row.settled_at,
+        retained_until: row.retained_until,
         parent: row.parent_session,
         role: row.role,
         state: DelegationState::parse(&row.state)
@@ -583,7 +636,7 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
     let mut notes = Vec::new();
     if !caps.block {
         notes.push(format!(
-            "{provider} cannot report a block; a stall stands in"
+            "{provider}: needs-input not reported by this provider"
         ));
     }
     if !caps.last_message {
@@ -595,6 +648,15 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
         notes.push(format!(
             "{provider} has no turn-end continuation; results wait for its next idle"
         ));
+    }
+    if matches!(
+        agent,
+        proto::AgentKind::Codex
+            | proto::AgentKind::Antigravity
+            | proto::AgentKind::Opencode
+            | proto::AgentKind::Cursor
+    ) {
+        notes.push(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode"));
     }
     if notes.is_empty() {
         None
@@ -612,6 +674,8 @@ impl DelegationView {
             stalled: row.stalled,
             brief: row.brief,
             result_staged: pending.stored,
+            result_staged_age_ms: None,
+            hold_reason: None,
             superseded: pending.superseded,
             ended_at: row.ended_at,
             stop_reason: row.stop_reason,
@@ -695,6 +759,11 @@ pub fn status_source(agent: proto::AgentKind) -> StatusSource {
 
 #[derive(Debug, Clone)]
 pub enum InboxWaitOutcome {
+    Restarting {
+        waited_ms: u64,
+    },
+    Superseded,
+    NothingToWaitOn,
     Delivered {
         rows: Vec<crate::db::InboxRow>,
         delivery_id: String,
@@ -727,6 +796,11 @@ fn status_word(status: Option<proto::AgentStatus>) -> String {
 impl InboxWaitOutcome {
     pub fn message(&self) -> String {
         match self {
+            Self::Restarting { .. } => "Daemon is restarting. Call pane_wait again.".into(),
+            Self::Superseded => "wait superseded by a newer pane_wait".into(),
+            Self::NothingToWaitOn => {
+                "nothing to wait on: no live children or pending inbox rows".into()
+            }
             Self::Delivered {
                 rows,
                 has_more,
@@ -871,6 +945,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
             "branch",
             "reusable",
             "handoff",
+            "state_doc",
             "effort",
             "output_format",
             "boundaries",
@@ -884,7 +959,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
     VerbSpec {
         cli: "get",
         tool: Some("pane_get"),
-        args: &["session"],
+        args: &["session", "result_id"],
     },
     VerbSpec {
         cli: "prompt",
@@ -1223,11 +1298,11 @@ pub fn stalled_body(quiet_ms: u64) -> String {
 pub fn needs_input_body(reason: Option<&str>) -> String {
     match reason.map(str::trim).filter(|r| !r.is_empty()) {
         Some(r) => format!(
-            "this child needs input: {r}. Answer it (`pane_send_keys`), re-prompt it, or \
+            "this child needs input: {r}. Inspect it (`pane_read`) and answer it (`pane_send_keys`), or \
              escalate — it will sit there until somebody does."
         ),
         None => "this child needs input and its CLI did not say why. Inspect it (`pane_read`) \
-                 and answer, re-prompt or escalate."
+                 and answer it (`pane_send_keys`), or escalate to the user."
             .to_string(),
     }
 }
@@ -1431,6 +1506,7 @@ pub fn cap_handoff_excerpt(s: &str) -> Option<String> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InboxKind {
+    Restored,
     Result,
     NoHandback,
     NeedsInput,
@@ -1447,6 +1523,7 @@ impl InboxKind {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Restored => "restored",
             Self::Result => "result",
             Self::NoHandback => "no_handback",
             Self::NeedsInput => "needs_input",
@@ -1459,6 +1536,7 @@ impl InboxKind {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
+            "restored" => Some(Self::Restored),
             "result" => Some(Self::Result),
             "no_handback" => Some(Self::NoHandback),
             "needs_input" => Some(Self::NeedsInput),
@@ -1471,7 +1549,8 @@ impl InboxKind {
     }
 }
 
-pub const INBOX_KIND_VALUES: [&str; 7] = [
+pub const INBOX_KIND_VALUES: [&str; 8] = [
+    "restored",
     "result",
     "no_handback",
     "needs_input",
@@ -1527,6 +1606,10 @@ pub const STOP_BLOCKS_PER_TURN_MAX: u32 = 3;
 // this call runs inside the CLI's own Stop hook, so it must return well inside the
 // CLI's own hook timeout — blocking here stalls the CLI, not just Houston
 pub const STOP_INBOX_QUERY_MS: u64 = 250;
+// Confirmation starts after stdout is flushed and needs a full independent request budget.
+pub const STOP_INBOX_CONFIRM_MS: u64 = 250;
+// Unconfirmed pastes survive a week of outages without being replayed on every future restart.
+pub const UNCONFIRMED_PASTE_MAX_MS: u64 = 7 * 24 * 60 * 60_000;
 
 // door 2: a same-turn continuation, shaped per provider's own hook contract —
 // "block" for Claude/Codex, "continue" for Antigravity. Providers without one
@@ -1615,6 +1698,24 @@ pub struct InboxEntry {
     pub excerpt: Option<String>,
 }
 
+// Executor reports usually span 2–5k characters; 4096 keeps typical reports in one wait
+// while bounding the 8000-character stored worst case and retaining explicit retrieval.
+const RESULT_EXCERPT_MAX_CHARS: usize = 4096;
+
+pub fn result_body_excerpt(row: &crate::db::InboxRow) -> Option<String> {
+    let body = row.body.trim();
+    if row.kind != "result" || body.chars().count() <= RESULT_EXCERPT_MAX_CHARS {
+        return None;
+    }
+    let mut excerpt: String = body.chars().take(RESULT_EXCERPT_MAX_CHARS).collect();
+    excerpt.push_str(&format!(
+        "\n(full body: pane_get {{\"session\":{},\"result_id\":{}}})",
+        row.from_session.unwrap_or_default(),
+        row.id
+    ));
+    Some(excerpt)
+}
+
 pub fn compose_inbox(entries: &[InboxEntry], delivery_id: &str) -> String {
     let printed: Vec<&InboxEntry> = entries
         .iter()
@@ -1680,7 +1781,8 @@ fn compose_entry(all: &[InboxEntry], entry: &InboxEntry) -> String {
     );
     let body = row.body.trim();
     if !body.is_empty() {
-        out.push_str(body);
+        let excerpt = result_body_excerpt(row);
+        out.push_str(excerpt.as_deref().unwrap_or(body));
         out.push('\n');
     }
     if !row.artifacts.is_empty() {
@@ -2053,13 +2155,10 @@ largest one configured, and a grep does not need it.
 
 Use the provider's exact CLI model identifier: Houston forwards it unchanged.
 For example, use `gpt-5.6-luna` for Codex, not the shorthand `luna`.
-The model names in the following table apply to Claude.
-
-| the work | model |
-|---|---|
-| search, grep, read-and-report, a mechanical edit | `sonnet` |
-| ordinary implementation, a review with judgement in it | `sonnet` |
-| genuine architecture, a hard debug, a design call | the CLI default, or name `opus` |
+Read `workspace_info.routing` before choosing a model or effort. Each workspace stores
+role-pattern routes; choose the first matching pattern (`*` matches any role). Explicit
+operator model and effort choices take precedence. If no route matches, choose the
+smallest installed model that can complete the task and name it explicitly.
 
 `sonnet` is the floor, not `haiku`: Claude Code cannot run auto mode on
 `haiku`, so that pane would drop to manual and block on approvals nobody is
@@ -2092,10 +2191,20 @@ same call. Your next action is either independent work or this wait:
 
 `wait`'s default timeout is ten minutes; a timeout is a normal "nothing yet",
 not a stall. Call `wait` again with the default timeout — do not `read`,
-`get` or `prompt` a working child to chase it; diagnose only when the
-operator asks or the child itself reports being blocked. A temporary child
-closes after its final durable handback; use `--reusable` for follow-up
-prompts or a live pane.
+`get` or `prompt` a working child to chase it. Use diagnostics after a wait
+timeout when help is needed, when the operator asks, or when the child
+reports being blocked. A temporary child ends its process after its final durable
+handback and retains its session and transcript until close or retention expiry.
+Use `--reusable` for follow-up prompts or a live pane.
+
+## The parent owns the user conversation
+
+Child results, spawn warnings and requests for input belong to the parent.
+Inspect a blocked child with `pane_read`, then answer through `pane_send_keys`;
+escalate to the user only when their decision is needed. Do not re-prompt a child
+while it is blocked. Delivery failures stay in your inbox and `pane_wait` reports
+why automatic delivery stopped. A dead parent passes rows to its nearest live
+ancestor; only the absence of any live ancestor addresses the operator.
 
 ## Handing off
 
@@ -2114,13 +2223,13 @@ may hand off.
    [--boundaries "…"]` — the brief, in the three parts described above. It
    returns the new pane's JSON, including its `id`. **Take the id from that
    output** — never guess or predict one.
-   - **Name a `--model`.** See the table above; the default is almost always
+   - **Name a `--model`.** Read workspace routing above; the default is almost always
      larger than the chunk needs.
    - **Give it a `--role`** when you will have more than one child running:
      a short name like `reviewer` or `schema-migration`. Every wake from that
      pane then says which one it was, instead of a codename you have to look
      up. It has to be unique among your own live children, and it is free
-     again once that pane is gone.
+     again once that child settles.
    - **Give it a `--worktree SLUG`** when the child should work on its own
      branch without touching this checkout: Houston creates
      `.houston/worktrees/SLUG` on branch `houston/SLUG` (or `--branch B`),
@@ -2131,7 +2240,7 @@ may hand off.
    - For a clean-context review, name the exact target and base/head (or a
      snapshot), list the requirements, and request focused evidence such as
      `file:line` and tests. Do not paste the parent's full transcript; the
-     temporary review pane is cleaned up after its durable handback.
+     temporary review process ends after its durable handback; its transcript remains.
    - The child starts in its CLI's **auto mode** — it will not stop for
      routine approvals, because nobody is at its keyboard. It can still stop
      for something genuinely dangerous; that shows up as `NeedsInput` and
@@ -2145,8 +2254,9 @@ may hand off.
    to diagnose a reported blocker or a timeout; use `hs-pane read <id>` for
    the current terminal screen when the blocker needs terminal interaction.
    Neither call is a prerequisite to waiting or a routine progress check.
-4. Temporary children close automatically after their final durable handback
-   and authoritative completion. Use `hs-pane kill <id>` to dismiss a reusable
+4. Temporary processes end after their final durable handback and authoritative
+   completion; sessions and transcripts remain until close or retention expiry.
+   Use `hs-pane kill <id>` to dismiss a reusable
    child once its work is done. Its terminal goes with it, so preserve any
    needed output first. If it has live children, inspect their purpose before
    confirming the subtree kill with `--yes`.
@@ -2377,7 +2487,8 @@ hs-pane — a Houston pane controlling sibling agent panes
                                        (start in a new worktree at
                                         .houston/worktrees/SLUG, branch
                                         houston/SLUG or B; not with --cwd)
-                [--handoff]            (an independent pane, not a child:
+                [--handoff] [--state-doc TEXT | --state-doc-path FILE]
+                                       (an independent pane, not a child:
                                         no handback, and this pane may close)
                 [--effort low|medium|high|xhigh|max]
                 [--output-format \"…\"] [--boundaries \"…\"]
@@ -2390,7 +2501,7 @@ hs-pane — a Houston pane controlling sibling agent panes
                                           --session waits on your whole inbox.
                                           --until is gone — every status change
                                           you cared about is now a row)
-  hs-pane get <id>                       (one pane, everything known about it)
+  hs-pane get <id> [--result-id ID]      (pane state, or a stored result body)
   hs-pane keys <id> <key…>               (esc enter up down tab ctrl+c y n)
   hs-pane read <id> [--lines N] [--source screen|tail]
                                          (default 40 lines, cap 500. screen is
@@ -2503,7 +2614,19 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
         }
         "get" => {
             let id = id_arg(positional.first(), cmd)?;
-            let v = call("GET", &format!("/orchestrate/get?session={id}"), None)?;
+            let mut path = format!("/orchestrate/get?session={id}");
+            if let Some(value) = flags.get("result-id") {
+                let result_id =
+                    value
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|id| *id > 0)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("--result-id must be a positive integer; got {value:?}")
+                        })?;
+                path.push_str(&format!("&result_id={result_id}"));
+            }
+            let v = call("GET", &path, None)?;
             println!("{}", serde_json::to_string_pretty(&v)?);
         }
         "keys" => {
@@ -2578,6 +2701,15 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             }
             if flags.contains_key("handoff") {
                 body["handoff"] = json!(true);
+            }
+            if flags.contains_key("state-doc") && flags.contains_key("state-doc-path") {
+                anyhow::bail!("state_doc: expected either --state-doc text or --state-doc-path path, got both");
+            }
+            if let Some(text) = flags.get("state-doc") {
+                body["state_doc"] = json!(text);
+            }
+            if let Some(path) = flags.get("state-doc-path") {
+                body["state_doc"] = json!({"path": path});
             }
             if let Some(effort) = flags.get("effort") {
                 body["effort"] = json!(effort);
@@ -2989,6 +3121,10 @@ mod tests {
         ] {
             let composed = brief.compose(1).unwrap();
             assert!(composed.contains("`pane_submit`"), "{composed}");
+            assert!(
+                composed.contains("run_in_background") && composed.contains("Monitor"),
+                "{composed}"
+            );
             assert!(composed.ends_with(HANDBACK_PROTOCOL), "{composed}");
             assert!(
                 composed.find("## Handing back") > composed.find("## Boundaries"),
@@ -4097,6 +4233,8 @@ mod tests {
             round: 1,
             reusable: true,
             cleanup_after: None,
+            settled_at: None,
+            retained_until: None,
         };
         let info = delegation_info(
             row,
@@ -4110,7 +4248,7 @@ mod tests {
                 provisional: 1,
                 last_result_corrected_by: Some(124),
             },
-            Some("cursor cannot report a block; a stall stands in".to_string()),
+            Some("cursor: needs-input not reported by this provider".to_string()),
             Some("this pane's prompt has text the operator has not submitted".to_string()),
         );
         assert_eq!(info.parent, 41);
@@ -4122,7 +4260,7 @@ mod tests {
         assert_eq!(info.last_result_corrected_by, Some(124));
         assert_eq!(
             info.capability_note.as_deref(),
-            Some("cursor cannot report a block; a stall stands in")
+            Some("cursor: needs-input not reported by this provider")
         );
         assert_eq!(
             info.hold_reason.as_deref(),
@@ -4158,6 +4296,8 @@ mod tests {
             round: 1,
             reusable: true,
             cleanup_after: None,
+            settled_at: None,
+            retained_until: None,
         };
         let info = delegation_info(
             row,
@@ -4171,23 +4311,34 @@ mod tests {
     }
 
     #[test]
-    fn capability_note_names_what_the_cli_cannot_report() {
+    fn handback_capability_note_names_providers_without_a_launch_rule() {
         for kind in [
-            proto::AgentKind::Claude,
             proto::AgentKind::Codex,
             proto::AgentKind::Antigravity,
+            proto::AgentKind::Opencode,
+            proto::AgentKind::Cursor,
         ] {
-            assert_eq!(
-                capability_note(kind),
-                None,
-                "{kind:?} reports all four axes"
+            assert!(
+                capability_note(kind)
+                    .is_some_and(|note| note.contains("pane_submit follows its approval mode")),
+                "{kind:?} must expose its handback permission capability"
             );
+        }
+    }
+
+    #[test]
+    fn capability_note_names_what_the_cli_cannot_report() {
+        assert_eq!(capability_note(proto::AgentKind::Claude), None);
+        for kind in [proto::AgentKind::Codex, proto::AgentKind::Antigravity] {
+            let provider = provider_label(kind);
+            assert_eq!(capability_note(kind), Some(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode")));
         }
         assert_eq!(
             capability_note(proto::AgentKind::Cursor).as_deref(),
             Some(
-                "cursor cannot report a block; a stall stands in; cursor has no \
-                 turn-end continuation; results wait for its next idle"
+                "cursor: needs-input not reported by this provider; cursor has no \
+                 turn-end continuation; results wait for its next idle; cursor has no \
+                 handback-only launch rule configured; pane_submit follows its approval mode"
             )
         );
         let provider = provider_label(proto::AgentKind::Grok);
@@ -4204,7 +4355,7 @@ mod tests {
         );
         assert_eq!(
             capability_note(proto::AgentKind::Opencode).as_deref(),
-            Some("opencode has no turn-end continuation; results wait for its next idle")
+            Some("opencode has no turn-end continuation; results wait for its next idle; opencode has no handback-only launch rule configured; pane_submit follows its approval mode")
         );
         for kind in [
             proto::AgentKind::Custom,
@@ -4605,6 +4756,9 @@ mod tests {
             "demo".to_string(),
             "--branch".to_string(),
             "b".to_string(),
+            "--handoff".to_string(),
+            "--state-doc-path".to_string(),
+            "state.txt".to_string(),
         ])
         .expect("a 200 spawn succeeds");
 
@@ -4614,6 +4768,8 @@ mod tests {
         assert!(request.starts_with("POST /orchestrate/spawn"), "{request}");
         assert_eq!(v["worktree"], json!("demo"));
         assert_eq!(v["branch"], json!("b"));
+        assert_eq!(v["handoff"], json!(true));
+        assert_eq!(v["state_doc"], json!({"path":"state.txt"}));
     }
 
     #[test]
@@ -5000,6 +5156,28 @@ mod tests {
     }
 
     #[test]
+    fn a_typical_executor_report_arrives_whole_in_one_wait() {
+        for length in [3072, RESULT_EXCERPT_MAX_CHARS] {
+            let body = "x".repeat(length);
+            let entry = composed_row(30, 7, InboxKind::Result, "done", &body);
+            assert!(result_body_excerpt(&entry.row).is_none());
+            let out = compose_inbox(&[entry], "d-abc");
+            assert!(out.contains(&body));
+            assert!(!out.contains("full body: pane_get"));
+        }
+    }
+
+    #[test]
+    fn result_excerpt_preserves_unicode_and_names_full_body_retrieval() {
+        let body = "界".repeat(RESULT_EXCERPT_MAX_CHARS + 1);
+        let entry = composed_row(30, 7, InboxKind::Result, "done", &body);
+        let out = compose_inbox(&[entry], "d-abc");
+        assert!(out.contains(&"界".repeat(RESULT_EXCERPT_MAX_CHARS)));
+        assert!(!out.contains(&body));
+        assert!(out.contains("pane_get {\"session\":7,\"result_id\":30}"));
+    }
+
+    #[test]
     fn a_provisional_row_says_so_in_its_first_delivery() {
         let mut entry = composed_row(30, 7, InboxKind::Result, "done", "the report");
         entry.row.provisional = true;
@@ -5360,6 +5538,9 @@ pub struct Episode {
     pub reason: Option<String>,
     pub tool_input_fingerprint: Option<String>,
     pub opened_ms: u64,
+    pub strict_correlation: bool,
+    pub auto_review: bool,
+    pub stalled_reported: bool,
 }
 
 #[derive(Debug, Default)]
@@ -5389,6 +5570,15 @@ impl PermissionEpisodes {
         tool_input_fingerprint: Option<String>,
         now: u64,
     ) -> (EpisodeKey, Vec<Episode>) {
+        if let Some(id) = tool_use_id {
+            if let Some(existing) = self
+                .open
+                .iter()
+                .find(|ep| ep.key == EpisodeKey::ToolUseId(id.to_string()))
+            {
+                return (existing.key.clone(), Vec::new());
+            }
+        }
         if tool_use_id.is_none() {
             if let Some(fingerprint) = tool_input_fingerprint.as_deref() {
                 if let Some(existing) = self.open.iter().find(|ep| {
@@ -5436,8 +5626,41 @@ impl PermissionEpisodes {
             reason,
             tool_input_fingerprint,
             opened_ms: now,
+            strict_correlation: false,
+            auto_review: false,
+            stalled_reported: false,
         });
         (key, retired)
+    }
+
+    pub fn mark_codex_permission(&mut self, key: &EpisodeKey, auto_review: bool) {
+        if let Some(ep) = self.open.iter_mut().find(|ep| &ep.key == key) {
+            ep.strict_correlation = true;
+            ep.auto_review = auto_review;
+        }
+    }
+
+    pub fn take_auto_review_stalls(&mut self, now: u64) -> Vec<Episode> {
+        self.open
+            .iter_mut()
+            .filter_map(|ep| {
+                if ep.auto_review
+                    && !ep.stalled_reported
+                    && now.saturating_sub(ep.opened_ms) >= CODEX_AUTO_REVIEW_STALL_MS
+                {
+                    ep.stalled_reported = true;
+                    Some(ep.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn has_auto_review_stall(&self) -> bool {
+        self.open
+            .iter()
+            .any(|ep| ep.auto_review && ep.stalled_reported)
     }
 
     pub fn attach_notification(&mut self, reason: Option<String>) -> bool {
@@ -5477,7 +5700,13 @@ impl PermissionEpisodes {
                                     .zip(prompt_id.as_ref())
                                     .is_none_or(|(expected, actual)| expected == actual)
                             };
-                        if !prompt_matches || tool_name.as_ref() != Some(expected) {
+                        if (ep.strict_correlation
+                            && (expected_prompt.is_none()
+                                || expected_prompt != prompt_id
+                                || ep.tool_input_fingerprint.is_none()))
+                            || !prompt_matches
+                            || tool_name.as_ref() != Some(expected)
+                        {
                             false
                         } else {
                             match (&ep.tool_input_fingerprint, tool_input_fingerprint) {
@@ -5491,8 +5720,10 @@ impl PermissionEpisodes {
                 EpisodeEnd::NextPermissionRequest => {
                     matches!(ep.key, EpisodeKey::Generated { .. })
                         && ep.tool_input_fingerprint.is_none()
+                        && !ep.strict_correlation
                 }
-                EpisodeEnd::TurnEnded | EpisodeEnd::PromptSubmitted => true,
+                EpisodeEnd::TurnEnded => true,
+                EpisodeEnd::PromptSubmitted => !ep.strict_correlation,
             });
         self.open = kept;
         resolved
@@ -6026,6 +6257,105 @@ mod permission_episode_tests {
             eps.open(Some("toolu_1"), None, "Bash", None, 0);
             assert_eq!(eps.resolve_on(&end).len(), 1, "{end:?}");
             assert_eq!(eps.open_count(), 0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod provider_wait_tests {
+    use super::*;
+
+    #[test]
+    fn every_parent_provider_has_its_own_wait_cap() {
+        use proto::AgentKind::*;
+        for (provider, expected) in [
+            (Claude, 90_000),
+            (Cursor, 30_000),
+            (Codex, 600_000),
+            (Grok, 600_000),
+            (Opencode, 600_000),
+            (Antigravity, 30_000),
+        ] {
+            assert_eq!(
+                provider_wait_cap(provider, Some(630_000)),
+                expected,
+                "{provider:?}"
+            );
+            let note = wait_cap_note(provider, 700_000, expected).unwrap();
+            assert!(note.contains("700000") && note.contains(&expected.to_string()));
+            assert!(note.contains(&provider_label(provider)));
+            assert!(wait_cap_note(provider, 1, expected).is_none());
+        }
+        assert_eq!(provider_wait_cap(Grok, Some(45_000)), 15_000);
+        assert_eq!(provider_wait_cap(Grok, None), 30_000);
+        assert_eq!(provider_wait_cap(Grok, Some(1_000)), 1);
+    }
+
+    #[test]
+    fn auto_review_stalls_raise_once_and_clear_on_correlated_resolution() {
+        let mut episodes = PermissionEpisodes::default();
+        let (key, _) = episodes.open_with_fingerprint(
+            None,
+            Some("turn"),
+            "Bash",
+            None,
+            Some("input-digest".into()),
+            10,
+        );
+        episodes.mark_codex_permission(&key, true);
+        assert!(episodes
+            .take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS + 9)
+            .is_empty());
+        let stalls = episodes.take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS + 10);
+        assert_eq!(stalls.len(), 1);
+        assert!(episodes.has_auto_review_stall());
+        let (duplicate, _) = episodes.open_with_fingerprint(
+            None,
+            Some("turn"),
+            "Bash",
+            None,
+            Some("input-digest".into()),
+            CODEX_AUTO_REVIEW_STALL_MS + 11,
+        );
+        assert_eq!(key, duplicate);
+        assert!(episodes
+            .take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS * 2)
+            .is_empty());
+        episodes.resolve_on(&EpisodeEnd::PostToolUse {
+            tool_use_id: None,
+            prompt_id: Some("turn".into()),
+            tool_name: Some("Bash".into()),
+            tool_input_fingerprint: Some("input-digest".into()),
+        });
+        assert!(!episodes.has_auto_review_stall());
+    }
+
+    #[test]
+    fn incomplete_codex_correlation_survives_other_tools_and_new_prompts() {
+        for (turn, fingerprint) in [(Some("turn"), None), (None, Some("digest")), (None, None)] {
+            let mut episodes = PermissionEpisodes::default();
+            let (key, _) = episodes.open_with_fingerprint(
+                None,
+                turn,
+                "Bash",
+                None,
+                fingerprint.map(str::to_string),
+                0,
+            );
+            episodes.mark_codex_permission(&key, true);
+            assert!(episodes
+                .resolve_on(&EpisodeEnd::PostToolUse {
+                    tool_use_id: None,
+                    prompt_id: turn.map(str::to_string),
+                    tool_name: Some("Bash".into()),
+                    tool_input_fingerprint: fingerprint.map(str::to_string)
+                })
+                .is_empty());
+            assert!(episodes.resolve_on(&EpisodeEnd::PromptSubmitted).is_empty());
+            assert!(episodes
+                .resolve_on(&EpisodeEnd::NextPermissionRequest)
+                .is_empty());
+            assert_eq!(episodes.resolve_on(&EpisodeEnd::TurnEnded).len(), 1);
         }
     }
 }

@@ -143,7 +143,7 @@ export const openFileShortcut: ShortcutEntry = {
 export const newBrowserPane: ShortcutEntry = {
   id: 'new-browser-pane',
   keyLabel: 'b',
-  description: 'new browser pane in this workspace',
+  description: 'new browser tab in the side panel',
   category: 'global',
   layer: 'both',
   match: (e) => e.key === 'b'
@@ -251,7 +251,7 @@ export const movePaneNext: ShortcutEntry = {
 export const toggleGit: ShortcutEntry = {
   id: 'toggle-git',
   keyLabel: 'g',
-  description: 'toggle the Source control panel',
+  description: 'toggle the side panel',
   category: 'global',
   layer: 'both',
   match: (e) => e.key === 'g'
@@ -491,7 +491,15 @@ export const splitEditorDown: ShortcutEntry = {
   chord: { code: 'KeyD', ctrl: true, alt: false, shift: true, meta: false }
 }
 
-const EDITOR_SHORTCUTS: ShortcutEntry[] = [splitEditorDown]
+export const toggleFilesTree: ShortcutEntry = {
+  id: 'toggle-files-tree',
+  keyLabel: 'Ctrl+Alt+T',
+  description: 'toggle the tree in the focused Files tab',
+  category: 'editor',
+  chord: { code: 'KeyT', ctrl: true, alt: true, shift: false, meta: false }
+}
+
+const EDITOR_SHORTCUTS: ShortcutEntry[] = [splitEditorDown, toggleFilesTree]
 
 const GESTURE_SHORTCUTS: ShortcutEntry[] = [
   {
@@ -683,4 +691,10 @@ export function findConflict(
     if (chord && chordMatchesEvent(chord, e)) return { kind: 'editor', entry: ed }
   }
   return null
+}
+
+export function filesTreeToggleMatches(event: KeyboardEvent, overrides: KeymapOverrides): boolean {
+  if (!overrides.shortcuts_enabled) return false
+  const chord = overrides.bindings[toggleFilesTree.id] ?? toggleFilesTree.chord!
+  return chordMatchesEvent(chord, event)
 }

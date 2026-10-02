@@ -88,6 +88,16 @@ describe('a rejected native browser command is reported (D42)', () => {
     expect(consoleError).toHaveBeenCalledWith(text)
   })
 
+  it('shows the native webview cap, actual count and requested surface', async () => {
+    const refusal = `browser: MAX_LIVE_CHILDREN is 8; 8 already live; refusing to mount "${LEAF_ID}"`
+    invokeMock.mockImplementation((cmd: string) => cmd === 'browser_mount' ? Promise.reject(new Error(refusal)) : Promise.resolve(undefined))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    act(() => root.render(<BrowserPane node={{ kind: 'browser', id: LEAF_ID, url: 'https://example.test/' }} workspaceDir="/tmp/tr-test-ws" panel onNavigate={() => {}} onClose={() => {}} onHeaderPointerDown={() => {}} />))
+    await vi.waitFor(() => expect(container.textContent).toContain(refusal), { timeout: 5000 })
+    act(() => root.unmount())
+    await flush()
+  }, 10000)
+
   it('reports a failed mount the same way, without the handler being required', async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'browser_mount') return Promise.reject(new Error('browser: no window labelled "main"'))

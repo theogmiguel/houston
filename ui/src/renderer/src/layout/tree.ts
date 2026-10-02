@@ -414,13 +414,14 @@ export function reviveLeaf(
 export function syncTree(
   tree: LayoutNode | null,
   aliveIds: number[],
-  cols: number
+  cols: number,
+  autoPlaceIds: number[] = aliveIds
 ): LayoutNode | null {
   const alive = new Set(aliveIds)
   let next = tree ? prune(tree, alive) : null
-  if (!next) return regrid(tree, aliveIds, cols)
+  if (!next) return regrid(tree, autoPlaceIds, cols)
   const present = new Set(preorderSessions(next))
-  for (const id of aliveIds) if (!present.has(id)) next = appendToRoot(next, leaf(id))
+  for (const id of autoPlaceIds) if (!present.has(id)) next = appendToRoot(next, leaf(id))
   return next
 }
 
@@ -878,11 +879,12 @@ export function syncSessionLayout(
   tree: LayoutNode | null,
   ids: number[],
   cols: number,
-  replaced: ReadonlyMap<number, number>
+  replaced: ReadonlyMap<number, number>,
+  autoPlaceIds: number[] = ids
 ): LayoutNode | null {
   const latest = new Set(replaced.values())
   const alive = replaced.size === 0 ? ids : ids.filter((id) => latest.has(id))
-  return restoreSessionSlots(syncTree(restoreSessionSlots(tree, replaced), alive, cols), replaced)
+  return restoreSessionSlots(syncTree(restoreSessionSlots(tree, replaced), alive, cols, autoPlaceIds.filter((id) => alive.includes(id))), replaced)
 }
 
 export function syncWorkspaceGrids(
@@ -891,7 +893,8 @@ export function syncWorkspaceGrids(
   activeGrid: string,
   wsAliveIds: number[],
   current: Map<string, LayoutState>,
-  replaced: ReadonlyMap<number, number> = new Map()
+  replaced: ReadonlyMap<number, number> = new Map(),
+  autoPlaceIds: number[] = wsAliveIds
 ): Map<string, LayoutState> {
   const latest = new Set(replaced.values())
   const alive = replaced.size === 0 ? wsAliveIds : wsAliveIds.filter((id) => latest.has(id))
@@ -911,7 +914,7 @@ export function syncWorkspaceGrids(
     const ownSet = new Set(own)
     const ids = own.filter((id) => wsAlive.has(id))
     if (gridId === activeGrid) {
-      for (const id of alive) if (!ownSet.has(id) && !allAssigned.has(id)) ids.push(id)
+      for (const id of autoPlaceIds) if (wsAlive.has(id) && !ownSet.has(id) && !allAssigned.has(id)) ids.push(id)
     }
     const tree = restoreSessionSlots(syncTree(state.tree, ids, state.cols), replaced)
     next.set(key, { ...state, tree })

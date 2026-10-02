@@ -297,9 +297,12 @@ mod codex {
             proto::AgentStatus::NeedsInput
         );
         assert_eq!(
-            houston_core::orchestrate::capability_note(proto::AgentKind::Codex),
-            None,
-            "codex reports a block; nothing is missing"
+            houston_core::orchestrate::capability_note(proto::AgentKind::Codex).as_deref(),
+            Some(
+                "codex has no handback-only launch rule configured; pane_submit follows its \
+                 approval mode"
+            ),
+            "codex reports a block; only the handback rule is missing"
         );
     }
 
@@ -1571,7 +1574,7 @@ mod cursor {
         assert!(
             note.as_deref()
                 .unwrap_or_default()
-                .contains("cannot report a block"),
+                .contains("needs-input not reported by this provider"),
             "cursor cannot report a block; the note must say so: {note:?}"
         );
     }
@@ -1902,9 +1905,12 @@ mod antigravity {
             proto::AgentStatus::NeedsInput
         );
         assert_eq!(
-            houston_core::orchestrate::capability_note(proto::AgentKind::Antigravity),
-            None,
-            "antigravity reports all six answers; nothing is missing"
+            houston_core::orchestrate::capability_note(proto::AgentKind::Antigravity).as_deref(),
+            Some(
+                "antigravity has no handback-only launch rule configured; pane_submit follows its \
+                 approval mode"
+            ),
+            "antigravity reports all six answers; only the handback rule is missing"
         );
 
         drive(

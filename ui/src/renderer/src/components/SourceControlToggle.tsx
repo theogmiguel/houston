@@ -17,12 +17,12 @@ export function SourceControlToggle({
   onToggle
 }: SourceControlToggleProps): React.JSX.Element {
   return (
-    <Tooltip label={open ? 'Hide source control' : `Show source control (${chord})`}>
+    <Tooltip label={open ? 'Hide side panel' : `Show side panel (${chord})`}>
       <button
         type="button"
         data-testid="scm-toggle"
         data-open={open ? 'true' : undefined}
-        aria-label={open ? 'Hide source control' : 'Show source control'}
+        aria-label={open ? 'Hide side panel' : 'Show side panel'}
         aria-pressed={open}
         className={`relative ${BTN_ICO} [-webkit-app-region:no-drag] ${
           open ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : ''

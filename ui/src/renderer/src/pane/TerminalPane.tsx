@@ -1,3 +1,6 @@
+import { TERMINAL_FOCUS_EVENT } from '../sidePanel'
+import { FILE_REFERENCE_MIME, fileReference } from '../components/files/fileActions'
+import { claimVisibility } from './registration'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
   GhosttyPaneTerminal,
@@ -212,6 +215,9 @@ export function TerminalPane({
   onOpenFile,
   onOpenDir
 }: Props): React.JSX.Element {
+  const live = isLive(info.state)
+  const liveRef = useRef(live)
+  liveRef.current = live
   const expandedId = useContext(ExpandedContext)
   const gridHidden = useContext(GridHiddenContext)
   const hiddenByExpand = gridHidden || (expandedId != null && expandedId !== info.id)
@@ -227,6 +233,10 @@ export function TerminalPane({
   const onOpenUrlInPaneRef = useRef(onOpenUrlInPane)
   onOpenUrlInPaneRef.current = onOpenUrlInPane
   const hostRef = useRef<HTMLDivElement>(null)
+  const visibilityOwner = useRef<ReturnType<typeof claimVisibility> | null>(null)
+  const reportVisibility = (visible: boolean): void => {
+    if (visibilityOwner.current?.owns()) clientRef.current.sessionVisibility(info.id, visible)
+  }
   const termRef = useRef<PaneTerminal | null>(null)
   const writeQueueRef = useRef<PaneWriteQueue | null>(null)
   const searchRef = useRef<PaneFinder | null>(null)
@@ -304,7 +314,8 @@ export function TerminalPane({
       lineHeight: tuning.lineHeight,
       cursorBlink: tuning.cursorBlink,
       maxScrollbackLines: tuning.scrollbackLines,
-      disableStdin: !(activeRef.current && connectedRef.current),
+      disableStdin: !(liveRef.current && activeRef.current && connectedRef.current),
+      readOnly: !liveRef.current,
       sessionId: info.id,
       load: async (mountEl, options) => {
         const mod = await ghosttySurfaceModule()
@@ -458,6 +469,7 @@ export function TerminalPane({
     const linkProviderDisposable = term.registerLinkProvider(linkProvider)
 
     const sendSize = (cols: number, rows: number): void => {
+      if (!liveRef.current) return
       const reasserted = lastReassertedSizeRef.current
       if (reasserted && (reasserted.cols !== cols || reasserted.rows !== rows)) {
         lastReassertedSizeRef.current = null
@@ -503,6 +515,7 @@ export function TerminalPane({
     }
     const selectionChangeDisposable = term.onSelectionChange(onTermSelectionChange)
     const pastePath = (path: string): boolean => {
+      if (!liveRef.current) return false
       onActivateRef.current()
       if (!connectedRef.current) {
         pushToast('Paste failed', 'daemon connection lost', 'danger')
@@ -520,6 +533,7 @@ export function TerminalPane({
       pastePath(await saveImage(bytes, ext))
     }
     const pasteFromClipboard = async (): Promise<void> => {
+      if (!liveRef.current) return
       let imagePath: string | null = null
       try {
         imagePath = await readClipboardImagePath()
@@ -543,7 +557,7 @@ export function TerminalPane({
       term.paste(text)
     }
 
-    term.attachCustomKeyEventHandler((e) => {
+    const handleKey = (e: KeyboardEvent): boolean => {
       if (e.type === 'keyup') {
         if (endsDictationHold(e, keymapOverridesRef.current)) voiceChordUp(info.id)
         return true
@@ -578,20 +592,22 @@ export function TerminalPane({
       }
       const ctrl = e.ctrlKey && !e.altKey && !e.metaKey
       if (!ctrl) return true
-      if (!e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+      if (!e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         setFind(true)
         return false
       }
-      if (e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+      if (e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault()
         copySelection()
         return false
       }
       return true
-    })
+    }
+    term.attachCustomKeyEventHandler((event) => liveRef.current ? handleKey(event) : false)
 
     const onPaste = (e: ClipboardEvent): void => {
+      if (!liveRef.current) return
       const items = e.clipboardData?.items
       if (!items) return
       for (const it of items) {
@@ -624,14 +640,14 @@ export function TerminalPane({
       return { count: count || 1, hasImages }
     }
     const onDragOver = (e: DragEvent): void => {
-      if (!dragCarriesFiles(e.dataTransfer)) return
+      if (!e.dataTransfer?.types.includes(FILE_REFERENCE_MIME) && !dragCarriesFiles(e.dataTransfer)) return
       e.preventDefault()
       const { count, hasImages } = readDragItems(e.dataTransfer)
       setDragFileCount(count)
       setDragHasImages(hasImages)
     }
     const onDragEnter = (e: DragEvent): void => {
-      if (!dragCarriesFiles(e.dataTransfer)) return
+      if (!e.dataTransfer?.types.includes(FILE_REFERENCE_MIME) && !dragCarriesFiles(e.dataTransfer)) return
       dragCounterRef.current++
       setDragOver(true)
       const { count, hasImages } = readDragItems(e.dataTransfer)
@@ -639,7 +655,7 @@ export function TerminalPane({
       setDragHasImages(hasImages)
     }
     const onDragLeave = (e: DragEvent): void => {
-      if (!dragCarriesFiles(e.dataTransfer)) return
+      if (!e.dataTransfer?.types.includes(FILE_REFERENCE_MIME) && !dragCarriesFiles(e.dataTransfer)) return
       dragCounterRef.current = Math.max(0, dragCounterRef.current - 1)
       if (dragCounterRef.current === 0) setDragOver(false)
     }
@@ -723,7 +739,19 @@ export function TerminalPane({
     }
 
     const onDrop = (e: DragEvent): void => {
+      if (!liveRef.current) return
       dragCounterRef.current = 0
+      const reference = e.dataTransfer?.getData(FILE_REFERENCE_MIME)
+      if (reference) {
+        e.preventDefault()
+        setDragOver(false)
+        try {
+          const entry = JSON.parse(reference) as { path: string; directory: boolean }
+          if (typeof entry.path !== 'string' || typeof entry.directory !== 'boolean') throw new Error(`Cannot insert ${reference}: expected a file path and directory flag`)
+          term.paste(fileReference(entry.path, entry.directory))
+        } catch (error) { pushToast('Cannot insert file reference', String(error), 'danger') }
+        return
+      }
       const entries = readDropEntries(e.dataTransfer)
       if (entries.length === 0) {
         setDragOver(false)
@@ -822,6 +850,7 @@ export function TerminalPane({
     window.addEventListener('blur', onWindowBlur)
 
     const unregisterVoice = registerVoiceInsert(info.id, (text) => {
+      if (!liveRef.current) return false
       onActivateRef.current()
       if (!connectedRef.current) return false
       term.options.disableStdin = false
@@ -845,6 +874,7 @@ export function TerminalPane({
       actions.current = {
         copy: copySelection,
         paste: () => {
+          if (!liveRef.current) return
           onActivateRef.current()
           term.options.disableStdin = false
           void pasteFromClipboard()
@@ -918,7 +948,7 @@ export function TerminalPane({
           taLen: textareaLen()
         })
       }
-      if (deliver && !seqRef.current.awaitingSnapshot) {
+      if (liveRef.current && deliver && !seqRef.current.awaitingSnapshot) {
         clientRef.current.sendStdin(info.id, d)
       }
     })
@@ -942,6 +972,8 @@ export function TerminalPane({
       s.cursor = offset + data.length
       return true
     }
+    const owner = claimVisibility(clientRef.current, info.id)
+    visibilityOwner.current = owner
     const unregister = registerOutput(info.id, {
       frame: (offset, data) => {
         const s = seqRef.current
@@ -1046,7 +1078,7 @@ export function TerminalPane({
       clipboardCopied: () => pushToast('Copied', undefined, 'success', 'auto-copy')
     })
     if (!warmRef.current) {
-      clientRef.current.sessionVisibility(info.id, true)
+      reportVisibility(true)
       sendAttach(activeAtMountRef.current ? ATTACH_REPLAY_BYTES : ATTACH_REPLAY_BYTES_BACKGROUND)
       attachedRef.current = true
     }
@@ -1062,7 +1094,8 @@ export function TerminalPane({
     observer.observe(host)
 
     return () => {
-      if (attachedRef.current) clientRef.current.sessionVisibility(info.id, false)
+      if (attachedRef.current && owner.owns()) clientRef.current.sessionVisibility(info.id, false)
+      owner.release()
       observer.disconnect()
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       if (resizeReassertTimerRef.current !== undefined) {
@@ -1113,20 +1146,29 @@ export function TerminalPane({
   }, [client, info.id, info.ssh_host])
 
   useEffect(() => {
-    const term = termRef.current
-    if (!term) return
-    if (active && surfaceAttached) {
-      term.focus()
-    } else if (!active) {
-      term.blur()
+    const focus = (event: Event): void => {
+      if (liveRef.current && (event as CustomEvent<{ session: number }>).detail.session === info.id) termRef.current?.focus()
     }
-  }, [active, surfaceAttached])
+    window.addEventListener(TERMINAL_FOCUS_EVENT, focus)
+    return () => window.removeEventListener(TERMINAL_FOCUS_EVENT, focus)
+  }, [info.id])
 
   useEffect(() => {
     const term = termRef.current
     if (!term) return
-    term.options.disableStdin = !(active && connected)
-  }, [active, connected])
+    if (live && active && surfaceAttached) {
+      term.focus()
+    } else {
+      term.blur()
+    }
+  }, [active, surfaceAttached, live])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.disableStdin = !(live && active && connected)
+    term.options.readOnly = !live
+  }, [active, connected, live])
 
   useEffect(() => {
     const term = termRef.current
@@ -1206,7 +1248,7 @@ export function TerminalPane({
         syncSizeRef.current()
         seqRef.current.catchup = true
         if (seqRef.current.synced) skipSnapshotOnceRef.current = true
-        clientRef.current.sessionVisibility(info.id, true)
+        reportVisibility(true)
         sendAttach(ATTACH_REPLAY_BYTES)
         attachedRef.current = true
       }
@@ -1222,7 +1264,7 @@ export function TerminalPane({
     hibernateTimerRef.current = setTimeout(() => {
       hibernateTimerRef.current = undefined
       if (!warmRef.current || !attachedRef.current) return
-      clientRef.current.sessionVisibility(info.id, false)
+      reportVisibility(false)
       attachedRef.current = false
     }, HIBERNATE_DEBOUNCE_MS)
     return () => {
@@ -1313,10 +1355,10 @@ export function TerminalPane({
     setFindTerm('')
     searchRef.current?.clearDecorations()
     termRef.current?.clearSelection()
-    if (activeRef.current) termRef.current?.focus()
+    if (liveRef.current && activeRef.current) termRef.current?.focus()
   }
 
-  const typeable = surfaceAttached && active && connected
+  const typeable = live && surfaceAttached && active && connected
 
   return (
     <div

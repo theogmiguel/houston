@@ -188,24 +188,19 @@ const FILTER_BADGE_CLS =
 
 function GroupHeader({
   label,
-  variant = "trio",
   filterOpen,
   activeFilterCount,
   filterLabel,
   onToggleFilter,
-  onSshConnect,
   leadingAction,
 }: {
   label: string;
-  variant?: "trio" | "plus-only";
   filterOpen: boolean;
   activeFilterCount: number;
   filterLabel: string;
   onToggleFilter: (e: React.MouseEvent) => void;
-  onSshConnect: () => void;
   leadingAction?: React.ReactNode;
 }): React.JSX.Element {
-  const plusOnly = variant === "plus-only";
   return (
     <div
       data-testid="tree-group-header"
@@ -233,19 +228,6 @@ function GroupHeader({
             )}
           </button>
         </Tooltip>
-        {plusOnly ? null : (
-          <Tooltip label="Connect over SSH">
-            <button
-              type="button"
-              aria-label="Connect over SSH"
-              data-testid="rail-ssh-connect"
-              onClick={onSshConnect}
-              className={GROUP_ACTION_CLS}
-            >
-              <Icon glyph={IconServer} role="ui" />
-            </button>
-          </Tooltip>
-        )}
       </span>
       <span className="flex flex-none">{leadingAction}</span>
     </div>
@@ -900,6 +882,7 @@ function CollapsedGridsRow({
   onRenameCancel,
   on,
   panes,
+  waiting,
   tagMatched,
   tagTotal,
   live,
@@ -918,6 +901,7 @@ function CollapsedGridsRow({
   color: string;
   on: boolean;
   panes: number;
+  waiting: boolean;
   tagMatched?: number;
   tagTotal?: number;
   live: number;
@@ -1005,6 +989,7 @@ function CollapsedGridsRow({
             {w.name}
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
+            {waiting && <Tooltip label="Children need input"><span role="img" aria-label="Children need input" className="w-[7px] h-[7px] flex-none rounded-full bg-[var(--warn)]" /></Tooltip>}
             {pinned && <PinIndicator />}
             <WorkspacePaneCount
               panes={panes}
@@ -1137,6 +1122,7 @@ function ExpandedGridsRow({
   onRenameCancel,
   on,
   panes,
+  waiting,
   tagMatched,
   tagTotal,
   live,
@@ -1167,6 +1153,7 @@ function ExpandedGridsRow({
   color: string;
   on: boolean;
   panes: number;
+  waiting: boolean;
   tagMatched?: number;
   tagTotal?: number;
   live: number;
@@ -1266,6 +1253,7 @@ function ExpandedGridsRow({
             {w.name}
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
+            {waiting && <Tooltip label="Children need input"><span role="img" aria-label="Children need input" className="w-[7px] h-[7px] flex-none rounded-full bg-[var(--warn)]" /></Tooltip>}
             {pinned && <PinIndicator />}
             <WorkspacePaneCount
               panes={panes}
@@ -1937,6 +1925,51 @@ function SettingsTree({
   );
 }
 
+function AddWorkspaceMenu({ onAddWorkspace, onSshConnect }: {
+  onAddWorkspace: () => void;
+  onSshConnect: () => void;
+}): React.JSX.Element {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!position) return;
+    const close = (): void => setPosition(null);
+    const onDown = (event: MouseEvent): void => {
+      if (!menuRef.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) close();
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") { event.stopPropagation(); close(); trigger.current?.focus(); }
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("blur", close);
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("blur", close);
+    };
+  }, [position]);
+  const dispatch = (action: () => void): void => { setPosition(null); trigger.current?.focus(); action(); };
+  return <>
+    <Tooltip label="Add workspace">
+      <button ref={trigger} type="button" aria-label="Add workspace" aria-haspopup="menu" aria-expanded={position !== null} className={GROUP_ADD_CLS}
+        onClick={() => {
+          const rect = trigger.current!.getBoundingClientRect();
+          setPosition(position ? null : { x: Math.max(8, Math.min(rect.right - 244, window.innerWidth - 252)), y: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 88)) });
+        }}><Icon glyph={IconPlus} role="ui" /></button>
+    </Tooltip>
+    {position && portalOrNull(<div ref={menuRef} role="menu" aria-label="Add workspace" className={CTXMENU_CLS} style={{ left: position.x, top: position.y }}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) setPosition(null); }}>
+      <div className={CTX_ITEMS_CLS}>
+        <button type="button" role="menuitem" className="ctx-item" onClick={() => dispatch(onAddWorkspace)}><Icon glyph={IconFolder} role="ui" /><span>Local folder…</span></button>
+        <button type="button" role="menuitem" className="ctx-item" data-testid="rail-ssh-connect" onClick={() => dispatch(onSshConnect)}><Icon glyph={IconServer} role="ui" /><span>Connect via SSH…</span></button>
+      </div>
+    </div>)}
+  </>;
+}
+
 const RAIL_SLIDE_FROM_RIGHT =
   "motion-safe:animate-[rail-slide-in-right_var(--animate-t-panel)_var(--animate-ease-panel)]";
 
@@ -2031,23 +2064,12 @@ function RailTree({
     >
       <GroupHeader
         label={treeLabel}
-        variant="trio"
         filterOpen={filterOpen}
         activeFilterCount={activeFilterCount}
         filterLabel={filterLabel}
         onToggleFilter={onToggleFilter}
-        onSshConnect={onSshConnect}
         leadingAction={
-          <Tooltip label="Add workspace (folder)">
-            <button
-              type="button"
-              aria-label="Add workspace (folder)"
-              className={GROUP_ADD_CLS}
-              onClick={onAddWorkspace}
-            >
-              <Icon glyph={IconPlus} role="ui" />
-            </button>
-          </Tooltip>
+          <AddWorkspaceMenu onAddWorkspace={onAddWorkspace} onSshConnect={onSshConnect} />
         }
       />
 
@@ -2056,7 +2078,9 @@ function RailTree({
           className={`wlist flex flex-col gap-1 p-2 overflow-y-auto ${dragPath !== null ? "cursor-grabbing" : ""}`}
         >
           {filteredWorkspaces.map((w, i) => {
-            const all = sessions.filter((s) => s.project_dir === w.path);
+            const placed = new Set((gridsByWorkspace[w.path] ?? []).flatMap((grid) => grid.sessionIds ?? []));
+            const all = sessions.filter((s) => (s.project_dir === w.path && s.spawned_by == null) || placed.has(s.id));
+            const waiting = sessions.some((s) => s.project_dir === w.path && s.children_waiting > 0);
             const own = liveCount(all);
             const matched =
               activeTagIds.length > 0
@@ -2102,6 +2126,7 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
+                    waiting={waiting}
                     panes={all.length}
                     tagMatched={activeTagIds.length > 0 ? matched : undefined}
                     tagTotal={all.length}
@@ -2127,6 +2152,7 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
+                    waiting={waiting}
                     panes={all.length}
                     tagMatched={activeTagIds.length > 0 ? matched : undefined}
                     tagTotal={all.length}

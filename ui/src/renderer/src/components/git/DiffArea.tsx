@@ -104,7 +104,7 @@ export function DiffArea({
     )
   }
   return (
-    <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)]">
+    <div className="changes-diff flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)]">
       <DiffHeader row={row} />
       <div className={`${SCROLL} flex-1 bg-[var(--tool-code-bg)]`}>
         <DiffBodyArea row={row} diff={diff} />

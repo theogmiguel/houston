@@ -125,14 +125,15 @@ nothing wrong."
 `--status-{doing,todo,blocked,done}-{bg,text}` are the pill pairs: doing→info hue,
 todo→warn, blocked→stop, done→ok, background at a 14% mix.
 
-AgentStatus (four values only) maps as:
+AgentStatus maps as:
 
 | Status | Token | Motion |
 |---|---|---|
 | `spawning` | `--accent` | pulses |
-| `working` | `--ok` | pulses |
-| `idle` | `--info` | static |
+| `working` | `--info` | pulses |
+| `idle` | `--text-muted` | static |
 | `needs-input` | `--warn` | static |
+| `unavailable` | transparent with a `--text-faint` outline | static |
 
 `needs-input` is static on purpose: it is settled-until-addressed, not transient.
 Only the two genuinely indeterminate states move.

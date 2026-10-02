@@ -243,6 +243,7 @@ export function ghosttySurfaceMockModule(): {
           setFont: async (font: { family?: string; size?: number; lineHeight?: number }) => {
             ghosttyMock.fontSpy(font.family ?? '', font.size ?? 0, font.lineHeight)
           },
+          setReadOnly: vi.fn(),
           setDefaultCursorBlink: (enabled: boolean) => {
             ghosttyMock.cursorBlinkSpy(enabled)
           },

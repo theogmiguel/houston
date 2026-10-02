@@ -99,11 +99,17 @@ export function Tooltip({ label, side = 'bottom', className, openOnClick = false
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') hide()
     }
+    const anchor = wrapRef.current?.firstElementChild ?? wrapRef.current
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
+      if (anchor && anchor.getClientRects().length === 0) hide()
+    }) : null
+    if (anchor) observer?.observe(anchor)
     window.addEventListener('keydown', onKey)
     window.addEventListener('scroll', hide, true)
     window.addEventListener('resize', hide)
     window.addEventListener('blur', hide)
     return () => {
+      observer?.disconnect()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('scroll', hide, true)
       window.removeEventListener('resize', hide)

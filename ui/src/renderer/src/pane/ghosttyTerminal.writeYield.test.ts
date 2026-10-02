@@ -13,6 +13,7 @@ function attachedTerm(onParse: () => void): GhosttyPaneTerminal {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const surface = {
+    setReadOnly: () => {},
     cols: 80,
     rows: 24,
     write: () => onParse(),

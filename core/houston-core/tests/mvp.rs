@@ -400,6 +400,8 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
             inbox_unread: 0,
             tags: vec![],
             session_origin: None,
+            checkout_root: None,
+            worktree: None,
             resumable: false,
             resume_notice: None,
         })

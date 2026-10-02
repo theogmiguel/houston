@@ -1121,3 +1121,453 @@ async fn handoff_refuses_an_unusable_candidate_without_parks_or_kills() {
         guard.0.try_wait().expect("poll supervisor exit")
     });
 }
+
+#[tokio::test]
+async fn failed_candidate_exec_keeps_the_original_generation_and_session() {
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    std::fs::create_dir_all(&channel_dir).unwrap();
+    let stderr_path = home.path().join("supervisor.stderr");
+    let mut command = common::hermetic_command(supervisor_bin(), home.path());
+    command
+        .env("HOUSTON_CHANNEL", "dev")
+        .arg("--channel-dir")
+        .arg(&channel_dir)
+        .arg("--daemon")
+        .arg(core_bin())
+        .stdout(Stdio::null())
+        .stderr(std::fs::File::create(&stderr_path).unwrap());
+    let mut guard = SupervisorGuard(command.spawn().expect("spawn supervised test daemon"));
+    let project = tempfile::tempdir().unwrap();
+    let cfg_path = channel_dir.join("daemon.json");
+    let (before, session_id, ws) = supervised_daemon_with_session(
+        home.path(),
+        &channel_dir,
+        project.path(),
+        vec!["sh", "-c", "cat"],
+    )
+    .await;
+    drop(ws);
+    let supervisor_before = std::fs::read_to_string(channel_dir.join("supervisor.json")).unwrap();
+
+    // The executable passes path validation, but exec fails because its
+    // interpreter does not exist. This exercises the post-validation race.
+    let candidate = home.path().join("unlaunchable-daemon");
+    std::fs::write(&candidate, b"#!/nonexistent/daemon-interpreter\n").unwrap();
+    std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let result = daemon_handoff_to(
+        before.port,
+        &before.token,
+        Some(&candidate.to_string_lossy()),
+    )
+    .await;
+    assert!(
+        !result.accepted,
+        "failed exec must abort adoption: {result:?}"
+    );
+    assert!(
+        result
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("candidate did not connect"),
+        "{result:?}"
+    );
+    let stderr = std::fs::read_to_string(&stderr_path).unwrap();
+    assert!(
+        stderr.contains(&candidate.to_string_lossy().to_string()),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("failed:") && stderr.contains("retaining generation 1"),
+        "{stderr}"
+    );
+    assert!(
+        guard.0.try_wait().unwrap().is_none(),
+        "supervisor must survive failed exec"
+    );
+    let after = read_daemon_json(&cfg_path).expect("original daemon discovery survives");
+    assert_eq!(after.pid, before.pid);
+    assert_eq!(after.generation, before.generation);
+    assert_eq!(
+        std::fs::read_to_string(channel_dir.join("supervisor.json")).unwrap(),
+        supervisor_before
+    );
+    let addr = format!("127.0.0.1:{}", before.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &before.token).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionAttach {
+            session: session_id,
+            replay_bytes: None,
+            snapshot: None,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(session_id, b"after-failed-exec\n").into(),
+    ))
+    .await
+    .unwrap();
+    assert!(
+        collect_output_until(&mut ws, session_id, "after-failed-exec")
+            .await
+            .contains("after-failed-exec")
+    );
+    manage_shutdown(before.port, &before.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+}
+
+struct OrchestrationHandoff {
+    _channel: ChannelGuard,
+    _supervisor: SupervisorGuard,
+    _home: tempfile::TempDir,
+    before: DaemonFile,
+    cfg: std::path::PathBuf,
+    parent: u32,
+    child: u32,
+    log: std::path::PathBuf,
+    child_gate: std::path::PathBuf,
+    parent_gate: std::path::PathBuf,
+}
+
+impl Drop for OrchestrationHandoff {
+    fn drop(&mut self) {
+        if let Some(name) = self._home.path().file_name() {
+            let prefix =
+                std::path::Path::new("/tmp").join(format!("l1-{}", name.to_string_lossy()));
+            let _ = std::fs::copy(
+                &self.log,
+                std::path::PathBuf::from(format!("{}.receipts", prefix.display())),
+            );
+            let _ = std::fs::copy(
+                self._home.path().join("daemon-stderr"),
+                std::path::PathBuf::from(format!("{}.stderr", prefix.display())),
+            );
+        }
+    }
+}
+
+impl OrchestrationHandoff {
+    async fn new(
+        provider: &str,
+        child_steps: serde_json::Value,
+        wait_transport: Option<&str>,
+    ) -> Self {
+        use serde_json::json;
+        let home = tempfile::tempdir().unwrap();
+        let channel_dir = home.path().join(".houston-dev");
+        std::fs::create_dir_all(&channel_dir).unwrap();
+        std::os::unix::fs::symlink(&channel_dir, home.path().join(".houston-chaos")).unwrap();
+        let db = houston_core::db::Db::open(&channel_dir.join("houston.db")).unwrap();
+        db.set_setting(houston_core::orchestrate::ENABLED_KEY, "1")
+            .unwrap();
+        drop(db);
+        let command = common::hermetic_command(supervisor_bin(), home.path());
+        drop(command);
+        for name in ["claude", "codex", "grok"] {
+            let shim = home.path().join("provider-shims").join(name);
+            std::fs::remove_file(&shim).unwrap();
+            std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_fake_agent"), shim).unwrap();
+        }
+        let project = home.path().join("workspace");
+        std::fs::create_dir_all(&project).unwrap();
+        let log = home.path().join("receipts.jsonl");
+        let child_gate = home.path().join("child-ready");
+        let parent_gate = home.path().join("parent-ready");
+        let fixtures =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks");
+        let script = |name: &str, seed: u64, provider: &str, steps: serde_json::Value| {
+            let path = home.path().join(format!("{name}.json"));
+            std::fs::write(&path, json!({"provider":provider,"seed":seed,"home":home.path(),"helper":core_bin(),"fixtures":fixtures,"log":log,"steps":steps}).to_string()).unwrap();
+            path
+        };
+        let mut steps = Vec::new();
+        if wait_transport.is_some() {
+            steps.push(json!({"op":"call","tool":"pane_submit","args":{"body":"PENDING_RESULT","summary":"PENDING_RESULT","request_id":1}}));
+        }
+        steps.push(json!({"op":"wait_file","path":child_gate}));
+        let mut child_steps = child_steps;
+        for step in child_steps.as_array_mut().unwrap() {
+            if step["finish_gate"] == "parent_gate" {
+                step["finish_gate"] = json!(parent_gate);
+            }
+        }
+        steps.extend(child_steps.as_array().unwrap().iter().cloned());
+        steps.push(json!({"op":"hang"}));
+        let child_script = script("child", 2, provider, json!(steps));
+        let mut args = json!({"kind":provider,"prompt":format!("@fake:{}",child_script.display()),"auto_approve":false,"reusable":true,"role":"worker"});
+        if provider == "claude" {
+            args["model"] = json!("haiku");
+        }
+        let mut steps = vec![json!({"op":"spawn","args":args})];
+        if wait_transport.is_some() {
+            steps.push(json!({"op":if wait_transport == Some("http") {"http_wait"} else {"call"},"tool":"pane_wait","args":{"timeout_ms":20000}}));
+        }
+        steps.extend([
+            json!({"op":"wait_file","path":parent_gate}),
+            json!({"op":"call","tool":"pane_wait","args":{"timeout_ms":20000}}),
+            json!({"op":"call","tool":"pane_wait","args":{"timeout_ms":100}}),
+            json!({"op":"hang"}),
+        ]);
+        let parent_script = script("parent", 1, "claude", json!(steps));
+        let channel = ChannelGuard(channel_dir.clone());
+        let mut cmd = common::hermetic_command(supervisor_bin(), home.path());
+        cmd.env("HOUSTON_CHANNEL", "dev")
+            .arg("--channel-dir")
+            .arg(&channel_dir)
+            .arg("--daemon")
+            .arg(core_bin())
+            .stdout(Stdio::null())
+            .stderr(std::fs::File::create(home.path().join("daemon-stderr")).unwrap());
+        let supervisor = SupervisorGuard(cmd.spawn().unwrap());
+        let cfg = channel_dir.join("daemon.json");
+        let before = poll_until(POLL_TIMEOUT, || read_daemon_json(&cfg));
+        let addr = format!("127.0.0.1:{}", before.port).parse().unwrap();
+        let mut ws = connect_when_ready(addr, &before.token).await;
+        let _ = common::next_control(&mut ws).await;
+        ws.send(Message::text(
+            serde_json::to_string(&proto::ClientMsg::WorkspaceAdd {
+                path: project.display().to_string(),
+            })
+            .unwrap(),
+        ))
+        .await
+        .unwrap();
+        ws.send(Message::text(create_custom_msg(
+            vec![
+                env!("CARGO_BIN_EXE_fake_agent"),
+                &format!("@fake:{}", parent_script.display()),
+            ],
+            &project,
+        )))
+        .await
+        .unwrap();
+        let parent = expect_created(&mut ws).await.id;
+        drop(ws);
+        let child = poll_until(POLL_TIMEOUT, || {
+            Self::read_log(&log)
+                .into_iter()
+                .find(|row| {
+                    row["seed"] == 1
+                        && row["event"] == "reply"
+                        && row["data"]["tool"] == "pane_spawn"
+                })?
+                .get("data")?
+                .get("result")?
+                .get("session")?
+                .as_u64()
+                .map(|id| id as u32)
+        });
+        if wait_transport.is_some() {
+            poll_until(POLL_TIMEOUT, || {
+                Self::read_log(&log)
+                    .iter()
+                    .any(|row| {
+                        row["seed"] == 1
+                            && row["event"] == "call"
+                            && row["data"]["tool"] == "pane_wait"
+                    })
+                    .then_some(())
+            });
+            poll_until(POLL_TIMEOUT, || {
+                Self::read_log(&log)
+                    .iter()
+                    .any(|row| {
+                        row["seed"] == 2
+                            && row["event"] == "reply"
+                            && row["data"]["tool"] == "pane_submit"
+                    })
+                    .then_some(())
+            });
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        Self {
+            _home: home,
+            _channel: channel,
+            _supervisor: supervisor,
+            before,
+            cfg,
+            parent,
+            child,
+            log,
+            child_gate,
+            parent_gate,
+        }
+    }
+
+    fn read_log(path: &std::path::Path) -> Vec<serde_json::Value> {
+        std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect()
+    }
+
+    fn waits(&self) -> Vec<serde_json::Value> {
+        Self::read_log(&self.log)
+            .into_iter()
+            .filter(|row| {
+                row["seed"] == 1 && row["event"] == "reply" && row["data"]["tool"] == "pane_wait"
+            })
+            .map(|row| row["data"]["result"].clone())
+            .collect()
+    }
+
+    async fn handoff(&self) -> DaemonFile {
+        let result = daemon_handoff(self.before.port, &self.before.token).await;
+        assert!(result.accepted, "{result:?}");
+        poll_until(POLL_TIMEOUT, || {
+            let after = read_daemon_json(&self.cfg)?;
+            (after.pid != self.before.pid && after.generation == result.generation).then_some(after)
+        })
+    }
+
+    fn release_result(&self) {
+        std::fs::write(&self.child_gate, "").unwrap();
+        std::fs::write(&self.parent_gate, "").unwrap();
+    }
+
+    fn assert_result_once(&self, expected_waits: usize) {
+        poll_until(Duration::from_secs(30), || {
+            (self.waits().len() == expected_waits).then_some(())
+        });
+        let waits = self.waits();
+        let results: Vec<_> = waits
+            .iter()
+            .flat_map(|reply| reply["rows"].as_array().unwrap())
+            .filter(|row| row["kind"] == "result")
+            .collect();
+        assert_eq!(results.len(), 1, "{waits:?}");
+        assert_eq!(results[0]["from_session"], self.child);
+        if expected_waits == 3 {
+            assert_eq!(results[0]["summary"], "PENDING_RESULT");
+        }
+    }
+}
+
+#[tokio::test]
+async fn l1_adopted_child_keeps_its_parent_and_can_submit() {
+    let rig = OrchestrationHandoff::new(
+        "claude",
+        serde_json::json!([{"op":"submit","summary":"ADOPTED_RESULT"}]),
+        None,
+    )
+    .await;
+    let after = rig.handoff().await;
+    let addr = format!("127.0.0.1:{}", after.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &after.token).await;
+    let proto::ServerMsg::HelloOk { sessions, .. } = common::next_control(&mut ws).await else {
+        panic!("missing hello")
+    };
+    let child = sessions
+        .iter()
+        .find(|session| session.id == rig.child)
+        .unwrap();
+    assert_eq!(
+        child.spawned_by,
+        Some(rig.parent),
+        "adoption lost orchestration identity"
+    );
+    assert_eq!(
+        child.delegation.as_ref().unwrap().role.as_deref(),
+        Some("worker")
+    );
+    drop(ws);
+    rig.release_result();
+    rig.assert_result_once(2);
+}
+
+#[tokio::test]
+async fn l1_open_wait_retries_across_handoff_without_losing_a_result() {
+    for transport in ["mcp", "http"] {
+        let rig=OrchestrationHandoff::new("claude",serde_json::json!([{"op":"hook","event":"Stop","fixture":"claude-2.1.263-07-Stop.json"}]),Some(transport)).await;
+        rig.handoff().await;
+        let first = poll_until(POLL_TIMEOUT, || rig.waits().first().cloned());
+        assert_eq!(first["timed_out"], true, "{first}");
+        assert_eq!(first["restarting"], true, "{first}");
+        assert!(first["rows"].as_array().unwrap().is_empty());
+        assert!(first["next_action"].as_str().unwrap().contains("pane_wait"));
+        rig.release_result();
+        rig.assert_result_once(3);
+    }
+}
+
+#[tokio::test]
+async fn l1_manual_claude_child_can_hand_back_without_a_permission_prompt() {
+    let rig=OrchestrationHandoff::new("claude",serde_json::json!([{"op":"require_handback_allow"},{"op":"submit","summary":"MANUAL_RESULT"}]),None).await;
+    rig.release_result();
+    rig.assert_result_once(2);
+}
+
+#[tokio::test]
+async fn l1_codex_startup_cursor_query_survives_the_handoff_window() {
+    let rig =
+        OrchestrationHandoff::new("codex", serde_json::json!([{"op":"terminal_query"}]), None)
+            .await;
+    std::fs::write(&rig.child_gate, "").unwrap();
+    rig.handoff().await;
+    let reply = poll_until(POLL_TIMEOUT, || {
+        OrchestrationHandoff::read_log(&rig.log)
+            .into_iter()
+            .find(|row| row["event"] == "terminal_reply")
+    });
+    assert_eq!(reply["data"]["reply"], "\x1b[3;7R");
+}
+
+#[tokio::test]
+async fn l1_codex_cursor_query_before_handoff() {
+    let rig =
+        OrchestrationHandoff::new("codex", serde_json::json!([{"op":"terminal_query"}]), None)
+            .await;
+    std::fs::write(&rig.child_gate, "").unwrap();
+    let reply = poll_until(POLL_TIMEOUT, || {
+        OrchestrationHandoff::read_log(&rig.log)
+            .into_iter()
+            .find(|row| row["event"] == "terminal_reply")
+    });
+    assert_eq!(reply["data"]["reply"], "\x1b[3;7R");
+}
+
+#[tokio::test]
+async fn l1_manual_grok_child_gets_only_the_handback_permission() {
+    let rig=OrchestrationHandoff::new("grok",serde_json::json!([{"op":"require_handback_allow"},{"op":"submit","summary":"GROK_RESULT"}]),None).await;
+    rig.release_result();
+    rig.assert_result_once(2);
+}
+
+#[tokio::test]
+async fn l1_codex_split_cursor_query_and_post_adoption_da_are_answered() {
+    let rig = OrchestrationHandoff::new(
+        "codex",
+        serde_json::json!([
+            {"op":"terminal_query","finish_gate":"parent_gate"},
+            {"op":"terminal_query","query":"da"}
+        ]),
+        None,
+    )
+    .await;
+    std::fs::write(&rig.child_gate, "").unwrap();
+    poll_until(POLL_TIMEOUT, || {
+        OrchestrationHandoff::read_log(&rig.log)
+            .iter()
+            .any(|row| row["event"] == "query_started")
+            .then_some(())
+    });
+    rig.handoff().await;
+    std::fs::write(&rig.parent_gate, "").unwrap();
+    let replies = poll_until(POLL_TIMEOUT, || {
+        let replies: Vec<_> = OrchestrationHandoff::read_log(&rig.log)
+            .into_iter()
+            .filter(|row| row["event"] == "terminal_reply")
+            .collect();
+        (replies.len() == 2).then_some(replies)
+    });
+    assert_eq!(replies[0]["data"]["reply"], "\x1b[3;7R");
+    assert_eq!(replies[1]["data"]["reply"], "\x1b[?62;22c");
+}

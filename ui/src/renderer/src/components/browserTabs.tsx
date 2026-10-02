@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { BORDER_HAIRLINE_INSET } from './shadowChrome'
 import { normalizeUrl, type WebviewEl } from '../houston/browserUrl'
+import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { useBrowserOpenUrl } from '../houston/browserState'
 import { IconClose, IconPlus } from './icons'
@@ -415,6 +416,7 @@ export function TabsPopover({
   onDismiss: () => void
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
+  useNativeOverlaySuppression('popover', true, ref)
   useEffect(() => {
     const onDown = (e: MouseEvent): void => {
       if (ref.current && !ref.current.contains(e.target as Node)) onDismiss()

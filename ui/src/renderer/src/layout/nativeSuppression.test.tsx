@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, StrictMode } from 'react'
+import { act, StrictMode, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,6 +15,7 @@ import {
   suppressedReasons,
   useNativeSuppression,
   useNativeSuppressionCount,
+  useNativeOverlaySuppression,
   type NativeSuppressionReason
 } from './nativeSuppression'
 
@@ -37,7 +38,7 @@ afterEach(() => {
   __resetNativeSuppressionForTests()
 })
 
-describe('assert/release ref-counting (mirrors suppress.rs)', () => {
+describe('assert/release ref-counting (coalesces wire reason states)', () => {
   it('starts unsuppressed', () => {
     expect(isNativelySuppressed()).toBe(false)
   })
@@ -260,4 +261,25 @@ describe('useNativeSuppressionCount (several asserters of one reason)', () => {
     expect(isNativelySuppressed()).toBe(false)
     expect(sinkCalls).toEqual([])
   })
+})
+
+it('releases a scoped overlay when unmounted while open and disconnects its observer', () => {
+  const disconnect = vi.fn()
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect = disconnect })
+  const sink = vi.fn()
+  setSuppressionSink(sink)
+  function Overlay(): React.JSX.Element {
+    const ref = useRef<HTMLDivElement>(null)
+    useNativeOverlaySuppression('popover', true, ref)
+    return <div ref={ref} />
+  }
+  act(() => root.render(<Overlay />))
+  const scope = sink.mock.calls[0][2]
+  expect(scope.rect()).not.toBeNull()
+  expect(isNativelySuppressed()).toBe(true)
+  act(() => root.render(null))
+  expect(sink).toHaveBeenLastCalledWith('popover', true, scope)
+  expect(isNativelySuppressed()).toBe(false)
+  expect(disconnect).toHaveBeenCalledOnce()
+  vi.unstubAllGlobals()
 })

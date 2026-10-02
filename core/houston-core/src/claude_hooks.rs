@@ -432,6 +432,7 @@ pub fn run_hook_client(args: &[String]) {
         stop_continued,
         session_id: payload.session_id,
         fully_idle: payload.fully_idle,
+        subagent_type: payload.subagent_type,
         tool_name: payload.tool_name,
     };
     let root = crate::paths::config_dir();
@@ -454,6 +455,49 @@ pub fn run_hook_client(args: &[String]) {
             );
         }
     }
+    if event == "PostToolUse"
+        && matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
+        && std::env::var_os(TOOL_BOUNDARY_CONTEXT_ENV)
+            .is_some_and(|path| Path::new(&path).is_file())
+    {
+        tool_boundary_context();
+    }
+}
+
+pub(crate) const TOOL_BOUNDARY_CONTEXT_ENV: &str = "HOUSTON_TOOL_BOUNDARY_CONTEXT";
+
+fn tool_boundary_context() {
+    let Some(base) = std::env::var(crate::mcp_launch::URL_ENV)
+        .ok()
+        .and_then(|url| crate::orchestrate::cli_base_url(Some(&url)).ok())
+    else {
+        return;
+    };
+    let Ok(token) = std::env::var(crate::mcp_launch::CODEX_TOKEN_ENV) else {
+        return;
+    };
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(crate::orchestrate::STOP_INBOX_QUERY_MS);
+    let Ok((200, body)) = crate::orchestrate::http_json_deadline(
+        &base,
+        "POST",
+        "/inbox/tool-boundary",
+        &token,
+        Some(&serde_json::json!({})),
+        deadline,
+    ) else {
+        return;
+    };
+    let Some(text) = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(str::to_string))
+    else {
+        return;
+    };
+    println!(
+        "{}",
+        serde_json::json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}})
+    );
 }
 
 fn stop_hook_try_continue(session: u32, provider: proto::AgentKind) -> bool {
@@ -544,6 +588,8 @@ fn stop_hook_try_continue(session: u32, provider: proto::AgentKind) -> bool {
         }
     }
     let confirm = serde_json::json!({ "delivery_id": delivery_id });
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(crate::orchestrate::STOP_INBOX_CONFIRM_MS);
     if let Err(e) = crate::orchestrate::http_json_deadline(
         &base,
         "POST",
@@ -578,6 +624,7 @@ pub(crate) struct HookPayload {
     pub tool_use_id: Option<String>,
     pub request_id: Option<String>,
     pub fully_idle: Option<bool>,
+    pub subagent_type: Option<String>,
     pub tool_name: Option<String>,
     pub tool_input_fingerprint: Option<String>,
     pub transcript_path: Option<String>,
@@ -615,8 +662,9 @@ fn codex_tool_input_fingerprint(
     if provider != proto::AgentKind::Codex {
         return None;
     }
-    let command = parsed?.get("tool_input")?.get("command")?.as_str()?;
-    Some(format!("{:x}", Sha256::digest(command.as_bytes())))
+    let input = parsed?.get("tool_input")?;
+    let canonical = serde_json::to_vec(input).ok()?;
+    Some(format!("{:x}", Sha256::digest(&canonical)))
 }
 
 pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> HookPayload {
@@ -743,6 +791,9 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .or_else(|| field("requestID").filter(|id| !id.is_empty()))
             .filter(|id| !id.is_empty()),
         fully_idle: field_bool("fullyIdle"),
+        subagent_type: (provider == proto::AgentKind::Grok)
+            .then(|| field("subagentType"))
+            .flatten(),
         tool_name,
         tool_input_fingerprint,
         transcript_path: if provider == proto::AgentKind::Antigravity {
@@ -1594,7 +1645,7 @@ mod tests {
         assert_eq!(p.tool_name.as_deref(), Some("Bash"));
         assert_eq!(
             p.tool_input_fingerprint.as_deref(),
-            Some("0031fd18feb55b6b493544de1976b438eeac0b2d1278821b9e4e8eb07e8cf503")
+            Some("46b54e632fb509e603362a785238ddd4c8cecbc6f4c9dfab3715c46f37d34d24")
         );
         assert!(!p
             .tool_input_fingerprint
@@ -1859,5 +1910,26 @@ mod sentinel_tests {
         ] {
             assert!(!command_is_legacy_managed(cmd), "not ours to remove: {cmd}");
         }
+    }
+}
+
+#[cfg(test)]
+mod input_fingerprint_tests {
+    use super::*;
+
+    #[test]
+    fn codex_non_shell_inputs_use_a_canonical_digest() {
+        let fingerprint =
+            |input| parse_hook_payload(input, proto::AgentKind::Codex).tool_input_fingerprint;
+        let original = fingerprint(r#"{"tool_input":{"file_path":"/tmp/file","content":"first"}}"#);
+        assert!(original.is_some());
+        assert_eq!(
+            original,
+            fingerprint(r#"{"tool_input":{"content":"first","file_path":"/tmp/file"}}"#)
+        );
+        assert_ne!(
+            original,
+            fingerprint(r#"{"tool_input":{"file_path":"/tmp/file","content":"second"}}"#)
+        );
     }
 }

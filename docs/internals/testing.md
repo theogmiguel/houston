@@ -87,3 +87,23 @@ change that touches the shell/home ladders (locally — no CI job runs the Windo
 today). `$SHELL` and `$HOME` feed production ladders in `daemon.rs`, `home_dir.rs` and
 `ssh_config.rs`, and two tests once disagreed between the shells. A Windows-only failure in
 one shell is a real finding about that ladder, not harness noise.
+
+## Orchestration chaos fixtures
+
+Shared Unix subprocess fixtures shield all six provider executable names and preserve that
+PATH through a fixture login shell. This also isolates startup MCP maintenance, which can
+invoke a provider even when a test creates no agent session.
+
+On Unix, `orchestration_chaos_wire` substitutes `fake_agent` for all six spawnable provider
+executables. Scripts replay hook fixtures through `tr-helper` and call the local MCP
+endpoint with the pane credential. The fixture refuses remote endpoints and records
+monotonic JSONL receipts for ordering and delivery checks. It never launches provider
+CLIs. Cursor needs-input is excluded because there is no supported event fixture;
+documentation-derived payloads retain their original evidence limitations.
+
+The default matrix uses seeds `1`, `42` and `24301`. Run the ignored
+`soak_500_delegations` test explicitly for 500 delegations; `HOUSTON_CHAOS_SEED` selects
+the base seed and failure output names the provider, scenario and seed.
+`HOUSTON_CHAOS_SCENARIO` and `HOUSTON_CHAOS_PROVIDER` narrow the fast matrix for diagnosis
+only. Run Cargo under
+the memory guard described in the development runbook, with three build jobs.

@@ -1,9 +1,10 @@
+import { loadSideState, openSideBrowser } from '../sidePanel'
 import { useEffect, useRef } from 'react'
 import { isTauri } from './host'
 
 const OPEN_REQUEST_EVENT = 'browser://open-request'
 
-export function useBrowserOpenRequest(onRequest: (workspaceId: string, url: string) => void): void {
+export function useBrowserOpenRequest(onRequest: (workspaceId: string, url: string, surfaceId?: string) => void): void {
   const cb = useRef(onRequest)
   cb.current = onRequest
 
@@ -14,8 +15,8 @@ export function useBrowserOpenRequest(onRequest: (workspaceId: string, url: stri
 
     void (async () => {
       const { listen } = await import('@tauri-apps/api/event')
-      const dispose = await listen<{ workspaceId: string; url: string }>(OPEN_REQUEST_EVENT, (event) => {
-        cb.current(event.payload.workspaceId, event.payload.url)
+      const dispose = await listen<{ workspaceId: string; url: string; surfaceId?: string }>(OPEN_REQUEST_EVENT, (event) => {
+        cb.current(event.payload.workspaceId, event.payload.url, event.payload.surfaceId)
       })
       if (disposed) {
         dispose()
@@ -53,4 +54,24 @@ export function useBrowserPaneLoad(paneId: string, onLoad: (url: string) => void
       if (loaders.get(paneId) === load) loaders.delete(paneId)
     }
   }, [paneId])
+}
+
+export function reuseSideBrowser(workspace: string, url: string, surfaceId?: string): boolean {
+  const tab = loadSideState(workspace).tabs.find((tab) => tab.kind === 'browser' && (surfaceId === undefined || tab.id === surfaceId))
+  if (tab?.kind !== 'browser') return false
+  if (surfaceId !== undefined) {
+    // The native caller navigates only after this surface acknowledges visibility.
+    openSideBrowser(tab.id, tab.url, workspace, true)
+  } else {
+    openSideBrowser(tab.id, url, workspace)
+    requestBrowserPaneLoad(tab.id, url)
+  }
+  return true
+}
+
+export function routeBrowserOpenRequest(workspace: string, url: string, surfaceId: string | undefined, revealGrid: (workspace: string, surfaceId: string) => boolean, open: (workspace: string, url: string) => void): void {
+  if (surfaceId !== undefined && revealGrid(workspace, surfaceId)) return
+  if (reuseSideBrowser(workspace, url, surfaceId)) return
+  if (surfaceId !== undefined) return
+  open(workspace, url)
 }

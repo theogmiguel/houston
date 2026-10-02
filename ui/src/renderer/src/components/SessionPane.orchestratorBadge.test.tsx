@@ -58,6 +58,7 @@ function mountPane(liveChildren: number): HTMLElement {
       <SessionPane
         client={{} as unknown as HoustonClient}
         info={info}
+        roster={{ sessions: new Map(Array.from({ length: liveChildren }, (_, index) => [index + 2, { ...info, id: index + 2, spawned_by: 1 }])), maxLiveChildren: null }}
         theme="black"
         active
         connected
@@ -89,12 +90,13 @@ describe('SessionPane orchestrator badge (v63)', () => {
     expect(el.querySelector('[data-testid="orchestrator-badge"]')).toBeNull()
   })
 
-  it('renders the live count once children exist', () => {
+  it('moves the hover card to the pinned orchestrator row once children exist', () => {
     const el = mountPane(2)
     const badge = el.querySelector('[data-testid="orchestrator-badge"]')
     expect(badge).not.toBeNull()
-    expect(badge!.closest('[data-testid="head-identity"]')).not.toBeNull()
-    expect(badge!.textContent).toBe('#1 · 2')
+    expect(badge!.closest('[data-testid="head-identity"]')).toBeNull()
+    expect(badge!.closest('[aria-label="Children roster"]')).not.toBeNull()
+    expect(badge!.textContent).toBe('Orchestrator')
     expect(badge!.querySelector('svg')).not.toBeNull()
   })
 
@@ -118,6 +120,7 @@ describe('SessionPane orchestrator badge (v63)', () => {
           <SessionPane
             client={{} as unknown as HoustonClient}
             info={info}
+            roster={{ sessions: new Map(Array.from({ length: liveChildren }, (_, index) => [index + 2, { ...info, id: index + 2, spawned_by: 1 }])), maxLiveChildren: null }}
             theme="black"
             active
             connected

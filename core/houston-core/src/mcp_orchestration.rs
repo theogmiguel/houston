@@ -34,9 +34,10 @@ fn u32_arg(args: &Value, key: &str) -> Result<u32, ToolError> {
     args.get(key)
         .and_then(Value::as_u64)
         .and_then(|n| u32::try_from(n).ok())
+        .filter(|n| *n > 0)
         .ok_or_else(|| {
             ToolError(format!(
-                "{key} is required and must be a session id (a positive integer); got {}",
+                "{key} is required and must be a session id (a positive integer); got {}; example: {{\"{key}\": 123}}",
                 args.get(key).unwrap_or(&Value::Null)
             ))
         })
@@ -48,7 +49,7 @@ fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, ToolError> {
         .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| {
             ToolError(format!(
-                "{key} is required and must be a non-empty string; got {}",
+                "{key} is required and must be a non-empty string; got {}; example: {{\"{key}\": \"result text\"}}",
                 args.get(key).unwrap_or(&Value::Null)
             ))
         })
@@ -94,7 +95,7 @@ const PANE_ROUTING: &str = concat!(
      question, or an exit. Use diagnostics only after a wait timeout, for help, or when the \
      operator asks; do not sit in a diagnostic loop. ",
     "Its signature: `pane_spawn{kind: claude|codex|antigravity|opencode|cursor|grok, prompt, model?, cwd?, ",
-    "auto_approve?, profile?, role?, target_workspace?, reusable?, handoff?, effort?, \
+    "auto_approve?, profile?, role?, target_workspace?, reusable?, handoff?, state_doc?, effort?, \
      output_format?, boundaries?}` — `role` is your own short name ",
     "for that child, unique among your live children, and it is how every wake from it identifies ",
     "itself; `output_format` and `boundaries` are the other two thirds of a brief, composed into ",
@@ -108,7 +109,7 @@ const PANE_ROUTING: &str = concat!(
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
     "`pane_send_keys`, `pane_kill`, `pane_submit`. ",
     "A pane that needs input will not take a `pane_prompt` — read it, then answer it with ",
-    "`pane_send_keys` (esc enter up down tab ctrl+c y n). ",
+    "`pane_send_keys` (esc enter up down tab ctrl+c y n), or escalate to the user when their decision is required. Child needs-input belongs to its parent and does not notify the desktop. ",
     "Scale the spawn to the work: do it yourself when the task is smaller than the brief it would ",
     "need, and when you do delegate, size the model to that chunk rather than taking the CLI's own ",
     "default. A long result is a file the child names in `pane_submit{artifacts}`, never a body ",
@@ -180,7 +181,7 @@ impl ToolProvider for OrchestrationTools {
             return Vec::new();
         }
         let max = daemon.orchestration_max_live_children();
-        let free = max.saturating_sub(daemon.live_children_of(scope.session_id).len() as u32);
+        let free = max.saturating_sub(daemon.active_children_of(scope.session_id).len() as u32);
         let depth_cap = daemon.orchestration_max_spawn_depth();
         let would_be = daemon.spawn_depth_of(scope.session_id) + 1;
         let spawnable = daemon.spawnable_by(scope.session_id);
@@ -222,6 +223,30 @@ impl ToolProvider for OrchestrationTools {
 
     fn all_tools(&self) -> Vec<ToolSpec> {
         self.pane_tools(None, true)
+    }
+
+    fn progress_message(&self, scope: &McpScope, name: &str, elapsed: u64) -> Option<String> {
+        if name != "pane_wait" {
+            return None;
+        }
+        let daemon = self.daemon.upgrade()?;
+        Some(format!(
+            "waiting for {} children; {elapsed}s elapsed",
+            daemon.active_children_of(scope.session_id).len()
+        ))
+    }
+
+    fn finish_delivery(&self, scope: &McpScope, output: &ToolOutput, sent: bool) {
+        if let Some(id) = output
+            .structured
+            .as_ref()
+            .and_then(|v| v.get("delivery_id"))
+            .and_then(Value::as_str)
+        {
+            if let Some(daemon) = self.daemon.upgrade() {
+                daemon.finish_wait_delivery(scope.session_id, id, sent);
+            }
+        }
     }
 
     fn call<'a>(
@@ -287,7 +312,17 @@ impl ToolProvider for OrchestrationTools {
                         opt_str(args, "branch"),
                     )
                     .map_err(|e| ToolError(format!("{e:#}")))?;
+                    let state_doc = args.get("state_doc").cloned();
+                    let reply_daemon = Arc::clone(&daemon);
+                    let isolated = worktree.is_some();
                     let info = tokio::task::spawn_blocking(move || {
+                        let brief = daemon.handoff_state_brief(
+                            caller,
+                            target_workspace.as_deref(),
+                            handoff,
+                            brief,
+                            state_doc.as_ref(),
+                        )?;
                         if handoff {
                             daemon.orchestrate_handoff(
                                 caller,
@@ -331,6 +366,9 @@ impl ToolProvider for OrchestrationTools {
                         "workspace": info.project_dir,
                         "reusable": reusable,
                         "handoff": handoff,
+                        "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
+                        "warning": if isolated { crate::launch::worktree_trust_warning(info.agent) } else { reply_daemon.spawn_checkout_warning(info.id) },
+                        "warnings": reply_daemon.spawn_warnings(&info, isolated),
                         "next_action": if handoff {
                             orchestrate::HANDOFF_NEXT_ACTION
                         } else {
@@ -344,6 +382,17 @@ impl ToolProvider for OrchestrationTools {
                 }
                 "pane_get" => {
                     let session = u32_arg(args, "session")?;
+                    if let Some(value) = args.get("result_id") {
+                        let id = value.as_i64().filter(|id| *id > 0).ok_or_else(|| {
+                            ToolError(format!("result_id must be a positive integer; got {value}"))
+                        })?;
+                        let row = daemon
+                            .orchestrate_result(caller, session, id)
+                            .map_err(refused)?;
+                        return Ok(ToolOutput::structured(
+                            json!({"result_id":id,"body":row.body}),
+                        ));
+                    }
                     let detail = daemon.orchestrate_get(caller, session).map_err(refused)?;
                     Ok(ToolOutput::structured(
                         serde_json::to_value(detail)
@@ -365,7 +414,7 @@ impl ToolProvider for OrchestrationTools {
                         })
                         .ok_or_else(|| {
                             ToolError(format!(
-                                "keys is required and must be an array of key names; got {}",
+                                "keys is required and must be an array of key names; got {}; example: {{\"session\": 123, \"keys\": [\"enter\"]}}",
                                 args.get("keys").unwrap_or(&Value::Null)
                             ))
                         })?;
@@ -403,12 +452,17 @@ impl ToolProvider for OrchestrationTools {
                 "pane_prompt" => {
                     let session = u32_arg(args, "session")?;
                     let text = str_arg(args, "text")?;
-                    let (source, status) = daemon
-                        .orchestrate_prompt(caller, session, text)
-                        .map_err(refused)?;
+                    let text = text.to_string();
+                    let (source, status, held) = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_prompt_with_hold(caller, session, &text)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("prompt task panicked: {e}")))?
+                    .map_err(refused)?;
                     Ok(ToolOutput::structured(json!({
                         "queued": true,
-                        "note": "queued on the pane's wake lane; it types and submits on its own turn",
+                        "held": held,
+                        "note": if held.is_some() { "held on the bounded wake lane until the pane can accept a prompt" } else { "written to the pane and submitted" },
                         "status_source": source,
                         "status_after": status,
                     })))
@@ -439,37 +493,58 @@ impl ToolProvider for OrchestrationTools {
                         .and_then(Value::as_u64)
                         .filter(|n| *n > 0)
                         .unwrap_or(orchestrate::DEFAULT_WAIT_TIMEOUT_MS);
+                    let (provider, cap) = daemon.orchestration_wait_cap(caller);
+                    let cap_note = orchestrate::wait_cap_note(provider, timeout_ms, cap);
+                    let requested_timeout_ms = timeout_ms;
+                    let timeout_ms = timeout_ms.min(cap);
                     let outcome = daemon
-                        .orchestrate_wait(caller, session, kind, timeout_ms, stall_guard)
+                        .orchestrate_wait_reserved(caller, session, kind, timeout_ms, stall_guard)
                         .await
                         .map_err(refused)?;
                     let message = outcome.message();
-                    let next_action = outcome.next_action();
                     match outcome {
                         orchestrate::InboxWaitOutcome::Delivered {
                             rows,
                             delivery_id,
                             has_more,
-                            waited_ms,
+                            waited_ms: _,
                         } => {
                             let entries: Vec<orchestrate::InboxEntry> = rows
-                                .iter()
+                                .into_iter()
                                 .map(|row| orchestrate::InboxEntry {
-                                    from_label: daemon.inbox_sender_label(row),
+                                    from_label: daemon.inbox_sender_label(&row),
                                     excerpt: None,
-                                    row: row.clone(),
+                                    row,
                                 })
                                 .collect();
-                            let text = orchestrate::compose_inbox(&entries, &delivery_id);
-                            let wire_rows: Vec<proto::InboxRow> =
-                                rows.into_iter().map(Into::into).collect();
+                            let mut text = orchestrate::compose_inbox(&entries, &delivery_id);
+                            if let Some(note) = &cap_note {
+                                text.push_str(&format!("\n{note}"));
+                            }
+                            let wire_rows: Vec<Value> = entries
+                                .into_iter()
+                                .map(|entry| {
+                                    let row = entry.row;
+                                    let mut metadata =
+                                        serde_json::to_value(proto::InboxRow::from(row))
+                                            .expect("inbox row serializes");
+                                    metadata
+                                        .as_object_mut()
+                                        .expect("inbox row object")
+                                        .remove("body");
+                                    metadata
+                                })
+                                .collect();
                             Ok(ToolOutput {
                                 text,
                                 structured: Some(json!({
                                     "rows": wire_rows,
                                     "delivery_id": delivery_id,
                                     "has_more": has_more,
-                                    "waited_ms": waited_ms,
+                                    "wait_cap_ms": cap,
+                                    "requested_timeout_ms": requested_timeout_ms,
+                                    "provider": provider,
+                                    "cap_note": cap_note,
                                 })),
                             })
                         }
@@ -478,21 +553,44 @@ impl ToolProvider for OrchestrationTools {
                             status,
                             status_source,
                         } => {
-                            let text = match &next_action {
-                                Some(next) => format!("{message}\n{next}"),
-                                None => message,
-                            };
+                            let next_action = "Call pane_wait again.";
+                            let text = cap_note.as_ref().map_or_else(
+                                || format!("timeout; {next_action}"),
+                                |note| format!("timeout; {next_action} {note}"),
+                            );
                             Ok(ToolOutput {
                                 text,
                                 structured: Some(json!({
                                     "rows": [],
                                     "timed_out": true,
+                                    "wait_cap_ms": cap,
+                                    "requested_timeout_ms": requested_timeout_ms,
+                                    "provider": provider,
+                                    "cap_note": cap_note,
                                     "waited_ms": waited_ms,
                                     "status": status,
                                     "status_source": status_source,
                                     "next_action": next_action,
                                 })),
                             })
+                        }
+                        orchestrate::InboxWaitOutcome::Restarting { waited_ms } => Ok(ToolOutput {
+                            text: message.clone(),
+                            structured: Some(json!({
+                                "rows": [], "timed_out": true, "restarting": true,
+                                "waited_ms": waited_ms, "wait_cap_ms": cap,
+                                "requested_timeout_ms": requested_timeout_ms,
+                                "provider": provider, "cap_note": cap_note,
+                                "next_action": message,
+                            })),
+                        }),
+                        orchestrate::InboxWaitOutcome::Superseded => Ok(ToolOutput::structured(
+                            json!({"superseded": true, "rows": []}),
+                        )),
+                        orchestrate::InboxWaitOutcome::NothingToWaitOn => {
+                            Ok(ToolOutput::structured(
+                                json!({"nothing_to_wait_on": true, "live_children": 0, "rows": [], "cap_note": cap_note, "wait_cap_ms": cap, "requested_timeout_ms": requested_timeout_ms, "provider": provider}),
+                            ))
                         }
                         orchestrate::InboxWaitOutcome::Stalled { .. } => Err(ToolError(message)),
                     }
@@ -516,10 +614,20 @@ impl ToolProvider for OrchestrationTools {
                         body: str_arg(args, "body")?.to_string(),
                         summary: opt_str(args, "summary"),
                         artifacts: str_list_arg(args, "artifacts")?,
-                        request_id: args
-                            .get("request_id")
-                            .and_then(Value::as_u64)
-                            .map(|v| v as u32),
+                        request_id: match args.get("request_id") {
+                            None | Some(Value::Null) => None,
+                            Some(value) => Some(
+                                value
+                                    .as_u64()
+                                    .and_then(|n| u32::try_from(n).ok())
+                                    .ok_or_else(|| {
+                                        ToolError(format!(
+                                            "request_id {value} must be a u64 within 0..={}",
+                                            u32::MAX
+                                        ))
+                                    })?,
+                            ),
+                        },
                     };
                     let outcome = tokio::task::spawn_blocking(move || {
                         daemon.orchestrate_submit(caller, submission)
@@ -550,10 +658,7 @@ impl OrchestrationTools {
             ..a
         };
         let spawn_description = String::from(
-            "Spawn an agent with a self-contained `prompt`. Returns its session id. Children \
-             obey slot/depth caps; top-level `handoff: true` creates an independent pane using \
-             no child slot. Delegate separable work; size `model` to it (`sonnet` for mechanical \
-             work). Brief: `prompt`, `output_format`, `boundaries`.",
+            "Spawn a child with prompt, output_format and boundaries; returns session id. Child slot/depth caps apply. Top-level handoff creates an independent pane without a child slot. Size model to separable work.",
         );
         let mut out = vec![
             ToolSpec {
@@ -587,9 +692,7 @@ impl OrchestrationTools {
                         "worktree": {
                             "type": "string",
                             "description":
-                                "New git worktree at .houston/worktrees/<worktree>, branch \
-                                 houston/<worktree> (or `branch`). One directory name: no `/`, \
-                                 `..` or spaces. Refused with cwd. Recorded for cleanup after merge.",
+                                "New worktree .houston/worktrees/<slug>, branch houston/<slug> or `branch`. Base: origin/HEAD, main, master, HEAD; no base override. Refuses cwd.",
                         },
                         "branch": {
                             "type": "string",
@@ -607,15 +710,17 @@ impl OrchestrationTools {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Keep the pane for follow-ups after handback. Default false: \
-                                 automatic cleanup after the final round.",
+                                "Keep the process for follow-ups after handback. Default: end it, keeping the transcript until close or expiry.",
+                        },
+                        "state_doc": {
+                            "description": "Handoff state, at most 65536 bytes: text or a path in the target workspace. Requires handoff.",
+                            "oneOf": [ {"type": "string"}, {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"], "additionalProperties": false}, {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": false} ]
                         },
                         "handoff": {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Independent pane: survives its parent; no handback or cleanup. \
-                                 Refused from children and with reusable or output_format.",
+                                "Independent pane: no handback or cleanup; this pane may close. Top-level only; refuses reusable, output_format.",
                         },
                         "effort": {
                             "type": "string",
@@ -633,8 +738,7 @@ impl OrchestrationTools {
                         "profile": {
                             "type": "string",
                             "description":
-                                "Saved account label (Settings → Agent accounts); omitted uses \
-                                 the default account. Unknown labels are refused with valid choices.",
+                                "Saved account label (Settings → Agent accounts); omitted uses the default. Unknown labels list valid ones.",
                         },
                         "role": {
                             "type": "string",
@@ -668,7 +772,7 @@ impl OrchestrationTools {
                 title: "List your agent panes".into(),
                 description: format!(
                     "{}Every pane you spawned, and their descendants, with each one's \
-                     current status, role and delegation state.",
+                     current status, role and delegation state. Use after a wait timeout, for help, or when the operator asks.",
                     live.unwrap_or_default()
                 ),
                 input_schema: json!({
@@ -679,15 +783,12 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_get".into(),
                 title: "Everything about one pane".into(),
-                description: "One pane in your subtree, in one call: its state, its children \
-                     and depth, what would end its turn, and — if you spawned it — its role, \
-                     brief, stall flag, and whether it is holding a result. Ask before \
-                     deciding to wait, prompt or kill."
-                    .into(),
+                description: "Subtree pane state, children, depth, pending turn conditions, role, brief, stall and staged result. Use after a wait timeout, for help, or when the operator asks. With result_id, retrieve a stored result body addressed to you, including after child closure.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "session": { "type": "integer", "description": "The pane's session id." },
+                        "result_id": { "type": "integer", "description": "Stored inbox result id for full body retrieval." },
                     },
                     "required": ["session"],
                     "additionalProperties": false,
@@ -726,7 +827,7 @@ impl OrchestrationTools {
                 name: "pane_read".into(),
                 title: "Read a pane's terminal".into(),
                 description: format!(
-                    "What a pane is showing, ANSI stripped. Default \
+                    "Use after a wait timeout, for help, or when the operator asks. What a pane is showing, ANSI stripped. Default \
                      {READ_LINES_DEFAULT} lines, at most {READ_LINES_MAX} and {} characters.",
                     orchestrate::READ_TAIL_MAX_CHARS
                 ),
@@ -744,11 +845,7 @@ impl OrchestrationTools {
                             "type": "string",
                             "enum": orchestrate::READ_SOURCE_VALUES,
                             "description":
-                                "`screen` (default) is the pane's grid as a person sees \
-                                 it — the only readable answer from a CLI that repaints \
-                                 instead of printing lines. `tail` is the raw ring split \
-                                 on newlines: cheaper, and the only way back to text \
-                                 older than the screen.",
+                                "screen (default): visible grid, including repainting CLIs. tail: newline-split raw ring, including text older than the screen.",
                         },
                     },
                     "required": ["session"],
@@ -759,12 +856,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_prompt".into(),
                 title: "Send a prompt to a pane".into(),
-                description: "Type `text` into a pane you spawned and submit it. Queued on the \
-                     pane's own wake lane, not typed synchronously — it lands and submits \
-                     on the pane's own turn. Refused when that pane is sitting at a \
-                     permission or question prompt — read it and answer what it is \
-                     actually asking instead of typing blind."
-                    .into(),
+                description: "Submit `text` to your child. Held status/operator input queues it on the pane's wake lane; otherwise writes synchronously and reports write errors. Refuses permission/question prompts: read them and answer with pane_send_keys.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -779,15 +871,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_wait".into(),
                 title: "Wait for your inbox".into(),
-                description: "Block until your inbox has something for you — a child's \
-                     result, its turn ending with nothing submitted, it asking something, \
-                     or its pane ending — and return the rows inside this call, at zero \
-                     token cost while blocked. Without `session` this waits on your WHOLE \
-                     inbox; with it, on one child's rows (its urgent ones always break \
-                     through `kind`, so you cannot sit forever on a child that is blocked \
-                     or dead). A child with no Houston hook coverage is still waited on: \
-                     only a `pane_submit` or its own exit will ever produce a row for it."
-                    .into(),
+                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. Returns inbox result, no-handback, question or exit rows at zero token cost while blocked. Omit session for the whole inbox; specify a child to scope rows. Urgent child rows bypass kind. Without supported hooks, only submit or exit produces rows.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -807,7 +891,7 @@ impl OrchestrationTools {
                         "timeout_ms": {
                             "type": "integer",
                             "minimum": 1,
-                            "description": "Defaults to 10 minutes.",
+                            "description": "Defaults to 600000 ms; clamped to the calling parent's provider cap, named in the response.",
                         },
                         "stall_guard": {
                             "type": "boolean",
@@ -825,12 +909,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_kill".into(),
                 title: "Kill a pane you spawned".into(),
-                description: "End a pane you spawned and dismiss it from the grid — its \
-                     terminal goes with it, so `pane_read` anything you still need BEFORE \
-                     killing. A pane with live children of its own is refused until you \
-                     repeat it with confirm_children; that refusal is telling you a subtree \
-                     exists."
-                    .into(),
+                description: "End and dismiss your child's terminal; read needed output first. Live descendants require confirm_children to end the subtree.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -849,13 +928,7 @@ impl OrchestrationTools {
                 name: "pane_submit".into(),
                 title: "Hand your result to the pane that spawned you".into(),
                 description: format!(
-                    "Only for a pane that was spawned by another: deliver `body` to your \
-                     parent's inbox — it reads it when it next waits or ends a turn. This \
-                     is your end-of-turn, not a progress ping — call it once, saying what \
-                     you did, what you did not, and anything the parent must decide. \
-                     `body` is clipped past {} characters, and a long result does not \
-                     belong in it at all: write the file, name it in `artifacts`, and let \
-                     `body` summarise it.",
+                    "Child panes only: deliver your final result to the parent's inbox, waking its wait or next turn. Call once at end-of-turn; report completed work, omissions and decisions. Body clips at {} characters; put long results in files named by artifacts.",
                     orchestrate::SUBMIT_BODY_MAX_CHARS
                 ),
                 input_schema: json!({
@@ -882,11 +955,7 @@ impl OrchestrationTools {
                             "type": "integer",
                             "minimum": 1,
                             "description":
-                                "Which request this answers — `workspace_info` reports the \
-                                 one you are on. Only needed when you are answering an \
-                                 older request after a newer one arrived; without it your \
-                                 body is filed against the current request, or stored \
-                                 unassociated if two are open.",
+                                "Request answered; workspace_info reports the current one. Needed for an older request; omit for current, or unassociated if two are open.",
                         },
                     },
                     "required": ["body"],
@@ -905,6 +974,32 @@ impl OrchestrationTools {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wait_descriptions_and_schema_require_bounded_blocking() {
+        let specs = OrchestrationTools {
+            daemon: Weak::new(),
+        }
+        .pane_tools(None, true);
+        let wait = specs.iter().find(|spec| spec.name == "pane_wait").unwrap();
+        assert!(wait.description.contains(
+            "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list"
+        ));
+        assert!(wait.input_schema["properties"]["timeout_ms"]
+            .get("maximum")
+            .is_none());
+        assert!(wait.input_schema["properties"]["timeout_ms"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("calling parent"));
+        for spec in specs
+            .iter()
+            .filter(|spec| matches!(spec.name.as_str(), "pane_get" | "pane_read" | "pane_list"))
+        {
+            assert!(spec.description.contains("after a wait timeout"));
+            assert!(!spec.description.contains("before deciding to wait"));
+        }
+    }
 
     #[test]
     fn every_tool_is_named_pane_and_schema_closed() {
@@ -1100,5 +1195,47 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod argument_example_tests {
+    use super::*;
+
+    #[test]
+    fn k6_worktree_schema_names_base_order_and_no_override() {
+        let provider = OrchestrationTools {
+            daemon: Weak::new(),
+        };
+        let tools = provider.all_tools();
+        let spawn = tools.iter().find(|tool| tool.name == "pane_spawn").unwrap();
+        let description = spawn.input_schema["properties"]["worktree"]["description"]
+            .as_str()
+            .unwrap();
+        assert!(
+            description.contains("origin/HEAD, main, master, HEAD")
+                && description.contains("no base override"),
+            "{description}"
+        );
+    }
+
+    #[test]
+    fn k6_required_arguments_name_shape_value_and_example() {
+        for value in [json!({}), json!({"session": null}), json!({"session": 0})] {
+            let error = u32_arg(&value, "session").unwrap_err().0;
+            assert!(
+                error.contains("positive integer")
+                    && error.contains("got")
+                    && error.contains("example: {\"session\": 123}"),
+                "{error}"
+            );
+        }
+        let error = str_arg(&json!({"body":null}), "body").unwrap_err().0;
+        assert!(
+            error.contains("non-empty string")
+                && error.contains("got null")
+                && error.contains("example: {\"body\": \"result text\"}"),
+            "{error}"
+        );
     }
 }

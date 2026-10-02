@@ -56,6 +56,7 @@ pub async fn start_with_listener(
         .route("/orchestrate/kill", post(orch_kill))
         .route("/orchestrate/submit", post(orch_submit))
         .route("/harness/publish", post(harness_publish))
+        .route("/inbox/tool-boundary", post(inbox_tool_boundary))
         .route("/inbox/reserve", post(inbox_reserve))
         .route("/inbox/delivered", post(inbox_delivered))
         .route(
@@ -452,7 +453,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 Some(Ok(Message::Binary(buf))) => {
                     if let Some((id, payload)) = proto::decode_stdin_frame(&buf) {
                         daemon.note_operator_keystroke(id, payload);
-                        if let Err(e) = daemon.write_stdin(id, payload) {
+                        if let Err(e) = daemon.write_stdin_from_renderer(id, payload) {
                             send_error(&mut sink, e.to_string(), Some("stdin".into())).await;
                         }
                     }
@@ -599,6 +600,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::WaitForIdle { .. }
             | proto::ClientMsg::BrowserToolResult { .. }
             | proto::ClientMsg::InboxList { .. }
+            | proto::ClientMsg::DelegationResultsList { .. }
     )
 }
 
@@ -854,6 +856,25 @@ async fn dispatch(
             tokio::task::spawn_blocking(move || d.worktree_cleanup_run(&dir, paths))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("worktree cleanup pass panicked: {e}")))
+        }
+        proto::ClientMsg::SettledRetentionSet { hours } => {
+            daemon.set_settled_retention_hours(hours)?;
+            daemon.broadcast_control(&daemon.host_info());
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceRoutingGet { workspace } => {
+            let routes = daemon.workspace_routing(&workspace)?;
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::WorkspaceRouting { workspace, routes },
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceRoutingSet { workspace, routes } => {
+            daemon.set_workspace_routing(&workspace, &routes)?;
+            daemon.broadcast_control(&proto::ServerMsg::WorkspaceRouting { workspace, routes });
+            Ok(())
         }
         proto::ClientMsg::OrchestrationCapsSet {
             max_live_children,
@@ -1341,6 +1362,14 @@ async fn dispatch(
         proto::ClientMsg::WorkspaceList => {
             let workspaces = daemon.workspace_list().unwrap_or_default();
             let _ = send_msg(sink, &proto::ServerMsg::WorkspaceList { workspaces }).await;
+            Ok(())
+        }
+        proto::ClientMsg::DelegationResultsList { parent } => {
+            let daemon = Arc::clone(daemon);
+            let msg = tokio::task::spawn_blocking(move || daemon.delegation_results_list(parent))
+                .await
+                .map_err(|e| anyhow::anyhow!("result lookup task panicked: {e}"))??;
+            let _ = send_msg(sink, &msg).await;
             Ok(())
         }
         proto::ClientMsg::InboxList { workspace } => match daemon.inbox_list(&workspace) {
@@ -2333,6 +2362,7 @@ async fn dispatch(
             cols,
             rows,
             profile,
+            default_dir,
         } => {
             let mut params = crate::ssh::SshParams {
                 host,
@@ -2342,10 +2372,9 @@ async fn dispatch(
                 cols: cols.unwrap_or(80),
                 rows: rows.unwrap_or(24),
                 config_identity: None,
+                default_dir,
             };
-            if matches!(params.auth, proto::SshAuth::SshConfig) {
-                crate::ssh::apply_ssh_config(&mut params);
-            }
+            crate::ssh::apply_ssh_config(&mut params);
             daemon.ssh_connect(request, params, profile);
             Ok(())
         }
@@ -3576,6 +3605,7 @@ async fn orch_send_keys(
 #[derive(Deserialize)]
 struct GetQuery {
     session: u32,
+    result_id: Option<i64>,
 }
 
 async fn orch_get(
@@ -3587,6 +3617,16 @@ async fn orch_get(
         Ok(s) => s,
         Err(r) => return *r,
     };
+    if let Some(id) = q.result_id {
+        return match daemon.orchestrate_result(scope.session_id, q.session, id) {
+            Ok(row) => (
+                StatusCode::OK,
+                axum::Json(json!({"result_id":id,"body":row.body})),
+            )
+                .into_response(),
+            Err(e) => orch_err_response(e),
+        };
+    }
     match daemon.orchestrate_get(scope.session_id, q.session) {
         Ok(detail) => (StatusCode::OK, axum::Json(detail)).into_response(),
         Err(e) => orch_error(StatusCode::NOT_FOUND, e),
@@ -3650,6 +3690,8 @@ struct SpawnBody {
     #[serde(default)]
     handoff: bool,
     #[serde(default)]
+    state_doc: Option<serde_json::Value>,
+    #[serde(default)]
     effort: Option<proto::ChatEffort>,
     #[serde(default)]
     output_format: Option<String>,
@@ -3672,6 +3714,9 @@ async fn orch_spawn(
     };
     let reusable = body.reusable;
     let handoff = body.handoff;
+    let effort = body.effort;
+    let isolated = body.worktree.is_some();
+    let reply_daemon = Arc::clone(&daemon);
     if handoff && reusable {
         return orch_err_response(anyhow::anyhow!(
             crate::orchestrate::HANDOFF_REUSABLE_REFUSED
@@ -3683,6 +3728,13 @@ async fn orch_spawn(
             output_format: body.output_format,
             boundaries: body.boundaries,
         };
+        let brief = daemon.handoff_state_brief(
+            scope.session_id,
+            body.target_workspace.as_deref(),
+            handoff,
+            brief,
+            body.state_doc.as_ref(),
+        )?;
         let worktree = crate::worktrees::spawn_ask(body.worktree, body.branch)?;
         if handoff {
             daemon.orchestrate_handoff(
@@ -3727,6 +3779,9 @@ async fn orch_spawn(
                 "workspace": info.project_dir,
                 "reusable": reusable,
                 "handoff": handoff,
+                "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
+                "warning": if isolated { crate::launch::worktree_trust_warning(info.agent) } else { reply_daemon.spawn_checkout_warning(info.id) },
+                "warnings": reply_daemon.spawn_warnings(&info, isolated),
                 "next_action": if handoff {
                     crate::orchestrate::HANDOFF_NEXT_ACTION
                 } else {
@@ -3754,8 +3809,8 @@ async fn orch_prompt(
         Ok(s) => s,
         Err(r) => return *r,
     };
-    let (source, status) =
-        match daemon.orchestrate_prompt(scope.session_id, body.session, &body.text) {
+    let (source, status, held) =
+        match daemon.orchestrate_prompt_with_hold(scope.session_id, body.session, &body.text) {
             Ok(v) => v,
             Err(e) => return orch_err_response(e),
         };
@@ -3763,6 +3818,7 @@ async fn orch_prompt(
         StatusCode::OK,
         axum::Json(json!({
             "queued": true,
+            "held": held,
             "status_source": source,
             "status_after": status,
         })),
@@ -3781,6 +3837,22 @@ struct WaitBody {
     stall_guard: bool,
     #[serde(default)]
     until: Option<String>,
+}
+
+struct WaitResponseDelivery {
+    daemon: Arc<Daemon>,
+    caller: u32,
+    delivery_id: String,
+    sent: bool,
+}
+
+impl Drop for WaitResponseDelivery {
+    fn drop(&mut self) {
+        if !self.sent {
+            self.daemon
+                .finish_wait_delivery(self.caller, &self.delivery_id, false);
+        }
+    }
 }
 
 async fn orch_wait(
@@ -3814,8 +3886,10 @@ async fn orch_wait(
         },
     };
     let timeout_ms = body.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
+    let (provider, cap) = daemon.orchestration_wait_cap(scope.session_id);
+    let cap_note = crate::orchestrate::wait_cap_note(provider, timeout_ms, cap);
     let outcome = daemon
-        .orchestrate_wait(
+        .orchestrate_wait_reserved(
             scope.session_id,
             body.session,
             kind,
@@ -3829,25 +3903,58 @@ async fn orch_wait(
     };
     use crate::orchestrate::InboxWaitOutcome;
     let message = outcome.message();
-    let next_action = outcome.next_action();
+    let next_action = "Call pane_wait again.";
     match outcome {
         InboxWaitOutcome::Delivered {
             rows,
             delivery_id,
             has_more,
-            waited_ms,
+            waited_ms: _,
         } => {
-            let wire_rows: Vec<proto::InboxRow> = rows.into_iter().map(Into::into).collect();
-            (
-                StatusCode::OK,
-                axum::Json(json!({
-                    "rows": wire_rows,
-                    "delivery_id": delivery_id,
-                    "has_more": has_more,
-                    "waited_ms": waited_ms,
-                })),
-            )
-                .into_response()
+            let wire_rows: Vec<proto::InboxRow> = rows.into_iter().map(|mut row| {
+                if let Some(excerpt) = crate::orchestrate::result_body_excerpt(&row) {
+                    row.body = excerpt;
+                }
+                row.into()
+            }).collect();
+            let value = json!({
+                "rows": wire_rows,
+                "delivery_id": delivery_id,
+                "has_more": has_more,
+                "wait_cap_ms": cap,
+                "requested_timeout_ms": timeout_ms,
+                "provider": provider,
+                "cap_note": cap_note,
+            });
+            let bytes = axum::body::Bytes::from(value.to_string());
+            let delivery = WaitResponseDelivery {
+                daemon,
+                caller: scope.session_id,
+                delivery_id,
+                sent: false,
+            };
+            let stream = futures_util::stream::unfold(
+                (Some(bytes), delivery),
+                |(bytes, mut delivery)| async move {
+                    if let Some(bytes) = bytes {
+                        Some((Ok::<_, std::convert::Infallible>(bytes), (None, delivery)))
+                    } else {
+                        delivery.daemon.finish_wait_delivery(
+                            delivery.caller,
+                            &delivery.delivery_id,
+                            true,
+                        );
+                        delivery.sent = true;
+                        drop(delivery);
+                        None
+                    }
+                },
+            );
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(axum::body::Body::from_stream(stream))
+                .expect("static wait response headers")
         }
         InboxWaitOutcome::TimedOut {
             waited_ms,
@@ -3859,10 +3966,33 @@ async fn orch_wait(
                 "rows": [],
                 "timed_out": true,
                 "waited_ms": waited_ms,
+                "wait_cap_ms": cap,
+                "requested_timeout_ms": timeout_ms,
+                "provider": provider,
+                "cap_note": cap_note,
                 "status": status,
                 "status_source": status_source,
                 "next_action": next_action,
             })),
+        )
+            .into_response(),
+        InboxWaitOutcome::Restarting { waited_ms } => (
+            StatusCode::REQUEST_TIMEOUT,
+            axum::Json(json!({
+                "rows": [], "timed_out": true, "restarting": true,
+                "waited_ms": waited_ms, "wait_cap_ms": cap,
+                "requested_timeout_ms": timeout_ms, "provider": provider,
+                "cap_note": cap_note, "next_action": message,
+            })),
+        ).into_response(),
+        InboxWaitOutcome::Superseded => (
+            StatusCode::OK,
+            axum::Json(json!({"superseded":true,"rows":[]})),
+        )
+            .into_response(),
+        InboxWaitOutcome::NothingToWaitOn => (
+            StatusCode::OK,
+            axum::Json(json!({"nothing_to_wait_on":true,"live_children":0,"rows":[],"wait_cap_ms":cap,"requested_timeout_ms":timeout_ms,"provider":provider,"cap_note":cap_note})),
         )
             .into_response(),
         InboxWaitOutcome::Stalled { .. } => (
@@ -3985,6 +4115,18 @@ async fn orch_submit(
         )
             .into_response(),
         Err(e) => orch_err_response(e),
+    }
+}
+
+async fn inbox_tool_boundary(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    match tokio::task::spawn_blocking(move || daemon.inbox_tool_boundary(scope.session_id)).await {
+        Ok(Ok(text)) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
+        Ok(Err(e)) => orch_err_response(e),
+        Err(e) => orch_err_response(anyhow::anyhow!("inbox tool-boundary worker failed: {e}")),
     }
 }
 

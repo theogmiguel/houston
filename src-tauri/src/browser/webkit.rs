@@ -18,6 +18,29 @@ pub fn scheme_of(url: &str) -> String {
         .to_ascii_lowercase()
 }
 
+pub fn set_guest_zoom(webview: &tauri::Webview, id: &str, zoom: f64) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::set_guest_zoom(webview, id, zoom)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        super::webview2_host::run_on_view(webview, id, "set guest zoom", move |platform| {
+            // SAFETY: run_on_view confines controller access to its owning UI thread.
+            unsafe { platform.controller().SetZoomFactor(zoom) }
+                .map_err(|err| format!("browser: guest zoom {zoom}: {err}"))
+        })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = webview;
+        Err(format!(
+            "browser: guest zoom {zoom} for {id:?} is unsupported on {}",
+            std::env::consts::OS
+        ))
+    }
+}
+
 pub struct Capture {
     pub rgba: Vec<u8>,
     pub width: u32,
@@ -431,6 +454,13 @@ mod linux {
                 None
             }
         }
+    }
+
+    pub fn set_guest_zoom(webview: &tauri::Webview, id: &str, zoom: f64) -> Result<(), String> {
+        run_on_view(webview, id, "set guest zoom", move |view| {
+            view.set_zoom_level(zoom);
+            Ok(())
+        })
     }
 
     pub fn navigate(webview: &tauri::webview::Webview, id: &str, url: &str) -> Result<(), String> {

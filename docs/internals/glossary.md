@@ -13,6 +13,18 @@ named.
 | **dogfooding** | Running Houston's own development inside Houston panes. `env_hygiene.rs` scrubs inherited agent markers so a dogfooded daemon does not leak its identity into what it spawns. |
 | **orchestrator** | A session role: decomposes work, briefs sub-agents, runs gates, commits. Never implements directly. |
 
+## Orchestration lifecycle
+
+| Term | Meaning |
+|---|---|
+| **settled child** | A retained completed delegation. The roster places only ended sessions under Settled; a live reusable Done-and-idle child remains Working. Retained for inspection, outside the live-child cap, until explicit close, parent close or retention expiry. |
+| **roster** | The orchestrator's child list, grouped into Needs you, Working and Settled. Selecting a child swaps the inspected terminal without changing session ownership. |
+| **overview tab** | A closable side-panel view of one orchestrator's children, checkouts, result excerpts and operator queue. Closing it does not close sessions. |
+| **headless child** | A live child without a separate grid cell. Its PTY remains available through the orchestrator's roster. |
+| **side panel** | A per-workspace host for pinned Source control and Files tabs and closable overview and browser tabs. Its layout is renderer-local. |
+| **operator queue** | Durable inbox rows addressed to session zero, visible to the human operator and updated by push. Acknowledgement records delivery; resolution records handling. |
+| **restored** | A restart notice listing a restored parent's children, their providers and whether each conversation resumed. It does not claim the interrupted work succeeded. |
+
 ## Product nouns
 
 | Term | Meaning | Code |
@@ -97,11 +109,11 @@ named.
 | **artifact** | A file a worker names in its handback instead of quoting it. Resolved, required to exist, and held inside the workspace; the parent gets the path. | `orchestrate.rs::Submission` |
 | **staging** | A `pane_submit` while the child works writes a row with `ready_at = NULL` — stored but not eligible. The round close sets `ready_at` in the same transaction that moves the delegation, and a second answer to the same request replaces the first in place (counted in `superseded`) while it is unreserved. | `daemon.rs::orchestrate_submit` |
 | **`TurnEndSource`** | Which signal released a stored result: `stop-hook`, `acp-turn`, or `quiet-settle`. Only the last is a judgement, so only it is named to the parent. | `orchestrate.rs` |
-| **quiet-settle** | Turn end inferred from a still screen with nothing running under the pane, for a CLI that reports none. The third named content exception. | `daemon.rs::delegation_settle_pass` |
+| **quiet-settle** | Turn end inferred from a still screen with nothing running under the pane, for a CLI that reports none. The third named status-boundary exception in invariants.md; it flushes delegations, never AgentStatus. | `daemon.rs::delegation_settle_pass` |
 | **`stalled`** | A flag on a live delegation — no output for `DELEGATION_STALL_MS` with nothing running. Never a state; clears on the child's next byte. | `daemon.rs::delegation_stall_pass` |
-| **`children_waiting`** | How many of a pane's live children are blocked or stalled. A daemon-derived scalar on `SessionInfo`, not a client-side reduction — the renderer holds no roster of a parent's children. | `daemon.rs::child_counts_of` |
+| **`children_waiting`** | How many of a pane's live children are blocked or stalled. A daemon-derived scalar on `SessionInfo`, not a client-side reduction. The renderer uses it for the parent status roll-up. | `daemon.rs::child_counts_of` |
 | **`DelegationInfo`** | The delegation record as the RENDERER reads it: `DelegationView` minus `brief`, with typed `state`/`turn_end_source`. Pushed by `DelegationChanged`. | `houston-protocol` |
-| **orchestration card** | The RAISED-tier panel behind a pane header's `⑂`/`↳` badge: a parent's is a roster of its children, a child's is its own record. Focus is its only lever. | `DelegationCard.tsx` |
+| **orchestration card** | The RAISED-tier panel behind a pane header's `⑂`/`↳` badge: a parent's is a roster of its children, a child's is its own record. It exposes inspection, focus and explicit delivery actions. | `DelegationCard.tsx` |
 | **role** | A parent's own short name for one child (`reviewer`), unique among ITS live children and freed when that pane dies. | `orchestrate.rs::validate_role` |
 | **child slot** | One of `MAX_LIVE_CHILDREN = 4` per parent; **depth** is capped at `MAX_SPAWN_DEPTH = 1`. Both settable up to a wire cap. | `orchestrate.rs` |
 | **auto mode** | A spawned child starts in its CLI's approval-bypass mode; a model that cannot run it is refused by name. | `launch.rs`, `orchestrate.rs` |

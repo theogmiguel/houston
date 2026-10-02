@@ -512,6 +512,7 @@ export interface GhosttyTerminalSurfaceOptions {
     rowIndex: number,
     column: number
   ) => TerminalLinkWithRange | null
+  readonly readOnly?: boolean
   readonly cursorBlink?: boolean
   readonly maxScrollbackLines?: number
 }
@@ -543,6 +544,7 @@ export class GhosttyTerminalSurface {
   private cursorTimer: number | null = null
   private compositionInputToSuppress: string | null = null
   private compositionSuppressionTimer: number | null = null
+  private readOnly = false
   private cursorOn = true
   private renderedCursorY: number | null = null
   private renderedBackground: GhosttyColor | null = null
@@ -713,6 +715,7 @@ export class GhosttyTerminalSurface {
       fontFamily,
       options
     )
+    surface.setReadOnly(options.readOnly ?? false)
     surface.fit()
     surface.requestRender()
     return surface
@@ -782,6 +785,15 @@ export class GhosttyTerminalSurface {
     this.theme = theme
     this.core.setTheme(theme)
     this.renderedBackground = syncCanvasBackground(this.canvas, this.renderedBackground, theme.background)
+    this.forceFullRender = true
+    this.requestRender()
+  }
+
+  setReadOnly(readOnly: boolean): void {
+    this.readOnly = readOnly
+    this.input.disabled = readOnly
+    this.input.tabIndex = readOnly ? -1 : 0
+    if (readOnly) this.blur()
     this.forceFullRender = true
     this.requestRender()
   }
@@ -911,6 +923,7 @@ export class GhosttyTerminalSurface {
   }
 
   focus(): void {
+    if (this.readOnly) return
     this.input.focus({ preventScroll: true })
   }
 
@@ -1838,7 +1851,7 @@ export class GhosttyTerminalSurface {
       padding: CONTENT_PADDING,
       originY: this.originY,
       forceFull: this.forceFullRender,
-      cursorOn: this.cursorOn,
+      cursorOn: this.cursorOn && !this.readOnly,
       previousCursorY: this.renderedCursorY,
       focused: this.focused,
       hoveredLinkRange: this.hoveredLink?.range ?? null,
@@ -1849,7 +1862,7 @@ export class GhosttyTerminalSurface {
     })
     this.positionInput()
     this.renderedCursorY =
-      this.cursorOn && this.snapshot.cursorVisible && this.snapshot.cursorY >= 0
+      !this.readOnly && this.cursorOn && this.snapshot.cursorVisible && this.snapshot.cursorY >= 0
         ? this.snapshot.cursorY
         : null
     if (this.scrollbarDirty) {
@@ -1875,7 +1888,7 @@ export class GhosttyTerminalSurface {
 
   private blinkEnabled(): boolean {
     const snapshot = this.snapshot
-    if (!snapshot) return false
+    if (!snapshot || this.readOnly) return false
     return shouldBlinkTerminalCursor({
       focused: this.focused,
       cursorBlinking: snapshot.cursorBlinking,

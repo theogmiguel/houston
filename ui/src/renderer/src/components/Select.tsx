@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
 import { IconCheck, IconChevronDown } from './icons'
 import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
 import { SELECT_CLS } from './selectChrome'
@@ -62,6 +63,7 @@ export function Select({
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  useNativeOverlaySuppression('popover', open && pos !== null, menuRef)
   const typeahead = useRef<{ buf: string; at: number }>({ buf: '', at: 0 })
   const listboxId = useId()
 

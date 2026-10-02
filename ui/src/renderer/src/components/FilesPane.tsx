@@ -1,8 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { FILES_TREE_MIN, FILES_TREE_MAX, useFilesSplit } from './files/useFilesSplit'
+import { filesTreeToggleMatches } from '../keymap'
+import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
+import type { GitFileStatus, HoustonClient } from '../houston/client'
+import { FILE_REFERENCE_MIME, fileReference, gitTreeStatus } from './files/fileActions'
+import { lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { RING_ACCENT_ICON } from './shadowChrome'
 import type { DirEntry } from '../env'
 import type { FilesNode, PaneKey } from '../layout/tree'
-import { readDir, showItemInFolder } from '../houston/bridge'
+import { readDir, showItemInFolder, createFile, createDirectory, renameFile, trashFile } from '../houston/bridge'
 import {
   PANE_BORDER_CLS,
   PANE_HEAD_BG_CLS,
@@ -21,10 +26,14 @@ import { BTN_ICO_STRUCTURE } from './buttonChrome'
 import { HIT_TARGET_28 } from './hitTarget'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { classifyFileTreeEntry, FileTreeIcon } from './fileTreeIcons'
-import { flattenTree, treeKeyAction, visibleEntries, type TreeRow } from './files/filesTree'
-import { useFileTabs, type FileTab } from './files/useFileTabs'
+import { filterTreeRows, flattenTree, treeKeyAction, visibleEntries, type TreeRow } from './files/filesTree'
+import { useFileTabs, type FileTab, type FileTabsState } from './files/useFileTabs'
 import {
+  IconArrowUpRight,
   IconChevronDown,
+  IconChevronLeft,
+  IconPlus,
+  IconSearch,
   IconChevronRight,
   IconClose,
   IconFolder,
@@ -90,6 +99,10 @@ const NOTICE_TITLE =
 const NOTICE_HINT = 'text-[length:var(--tr-text-xs)] text-[var(--text-muted)] max-w-[36ch] break-all'
 
 export interface FilesPaneProps {
+  panel?: boolean
+  client?: HoustonClient | null
+  openFile?: { path: string; line?: number; col?: number } | null
+  onMoveToEditor?: (path: string) => void
   node: FilesNode
   workspaceDir: string
   onClose: () => void
@@ -101,6 +114,10 @@ export interface FilesPaneProps {
 }
 
 export function FilesPane({
+  panel,
+  client,
+  openFile,
+  onMoveToEditor,
   node,
   workspaceDir,
   onClose,
@@ -111,7 +128,11 @@ export function FilesPane({
   onError
 }: FilesPaneProps): React.JSX.Element {
   const focusTier = usePaneFocusTier(active)
+  const keymapOverrides = useContext(KeymapOverridesContext)
   const root = node.root ?? workspaceDir
+  const split = useFilesSplit(workspaceDir, Boolean(panel))
+  const [filter, setFilter] = useState('')
+  const revealPathRef = useRef<string | null>(null)
 
   const [children, setChildren] = useState<Map<string, DirEntry[]>>(new Map())
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
@@ -133,6 +154,20 @@ export function FilesPane({
   const [tabsOverflow, setTabsOverflow] = useState(false)
 
   const fileTabs = useFileTabs(workspaceDir)
+  const [gitFiles, setGitFiles] = useState<GitFileStatus[]>([])
+  const [mutation, setMutation] = useState<{ kind: 'file' | 'directory' | 'rename'; path: string; name: string } | null>(null)
+  useEffect(() => {
+    if (openFile) fileTabs.pinFile(openFile.path)
+  }, [openFile, fileTabs.pinFile])
+  useEffect(() => {
+    setGitFiles([])
+    if (!client) return
+    const off = client.subscribe('git_status', (message) => {
+      if (message.dir === root && message.base == null) setGitFiles(message.files)
+    })
+    client.gitStatus(root, null)
+    return off
+  }, [client, root])
 
   const readInto = useCallback(async (dir: string, isRoot: boolean): Promise<void> => {
     try {
@@ -163,8 +198,8 @@ export function FilesPane({
   }, [root, expandedDirs, readInto])
 
   const rows = useMemo(
-    () => flattenTree(root, children, expandedDirs),
-    [root, children, expandedDirs]
+    () => filterTreeRows(flattenTree(root, children, expandedDirs), split.split ? filter : ''),
+    [root, children, expandedDirs, filter, split.split]
   )
 
   const expandDir = useCallback(
@@ -192,17 +227,25 @@ export function FilesPane({
 
   const revealInTree = useCallback(
     (path: string): void => {
+      setFilter('')
+      split.reveal()
+      revealPathRef.current = path
       for (const dir of ancestorDirs(root, path)) expandDir(dir)
-      const idx = rows.findIndex((r) => r.path === path)
-      if (idx !== -1) {
-        pullFocusRef.current = true
-        setFocusIndex(idx)
-      }
+      if (path !== root && children.get(parentDir(path))?.some((entry) => entry.path === path && entry.dir)) expandDir(path)
     },
-    [root, expandDir, rows]
+    [root, expandDir, children, split]
   )
 
   useEffect(() => {
+    const revealPath = revealPathRef.current
+    if (revealPath) {
+      const index = rows.findIndex((row) => row.path === revealPath)
+      if (index !== -1) {
+        revealPathRef.current = null
+        setFocusIndex(index)
+        rowRefs.current.get(revealPath)?.focus()
+      }
+    }
     if (!pullFocusRef.current) return
     pullFocusRef.current = false
     const row = rows[focusIndex]
@@ -210,6 +253,14 @@ export function FilesPane({
   })
 
   const onTreeKeyDown = (e: React.KeyboardEvent, index: number): void => {
+    const row = rows[index]
+    if (row && (e.key === 'F2' || e.key === 'Delete')) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'F2') setMutation({ kind: 'rename', path: row.path, name: row.name })
+      else void removeEntry(row.path)
+      return
+    }
     const action = treeKeyAction(rows, index, e.key)
     if (action.kind === 'none') return
     e.preventDefault()
@@ -234,6 +285,33 @@ export function FilesPane({
   const reportError = (message: string): void => {
     if (onError) onError(message)
     else fileTabs.surface.setError(message)
+  }
+
+  const removeEntry = async (path: string): Promise<void> => {
+    try {
+      await trashFile(path)
+      for (const tab of fileTabs.tabs) if (tab.path === path || tab.path.startsWith(`${path}/`)) fileTabs.markMissing(tab.path, true)
+      refreshTree()
+    } catch (error) { reportError(String(error)) }
+  }
+  const applyMutation = async (): Promise<void> => {
+    if (!mutation) return
+    const name = mutation.name
+    if (!name || name === '.' || name === '..' || /[\/\\\u0000-\u001f\u007f]/.test(name)) {
+      reportError(`Cannot use ${JSON.stringify(name)}: expected a single non-empty filename without traversal or control characters`)
+      return
+    }
+    const path = `${mutation.kind === 'rename' ? parentDir(mutation.path) : mutation.path}/${name}`
+    try {
+      if (mutation.kind === 'rename') {
+        await renameFile(mutation.path, path)
+        for (const tab of fileTabs.tabs) if (tab.path === mutation.path || tab.path.startsWith(`${mutation.path}/`)) fileTabs.markMissing(tab.path, true)
+        if (!rows.find((row) => row.path === mutation.path)?.dir) fileTabs.pinFile(path)
+      } else if (mutation.kind === 'file') { await createFile(path); fileTabs.pinFile(path) }
+      else await createDirectory(path)
+      setMutation(null)
+      refreshTree()
+    } catch (error) { reportError(String(error)) }
   }
 
   useEffect(() => {
@@ -291,7 +369,7 @@ export function FilesPane({
         </span>
       </Tooltip>
       <span className="head-actions flex items-center gap-px flex-none ml-auto">
-        {}
+        <FileHeaderActions root={root} panel={panel} path={fileTabs.activePath} onCreate={() => setMutation({ kind: 'file', path: root, name: '' })} onMove={onMoveToEditor} onClose={fileTabs.transferTab} />
         <span className={`${TREE_VISIBLE}:hidden inline-flex`}>
           <Tooltip label={treeOpen ? 'Hide tree' : 'Show tree'}>
             <button
@@ -391,12 +469,13 @@ export function FilesPane({
       // An empty listing IS a loaded map entry — `has` distinguishes "read,
       // nothing there" from "not read yet", which array length can't.
       const loaded = children.has(root)
+      const filtered = split.split && filter.trim().length > 0
       return (
         <div className={NOTICE_BODY} data-testid={loaded ? 'files-empty-tree' : 'files-tree-loading'}>
-          <div className={NOTICE_TITLE}>{loaded ? 'Nothing to show' : 'Reading…'}</div>
+          <div className={NOTICE_TITLE}>{filtered ? 'No matching files' : loaded ? 'Nothing to show' : 'Reading…'}</div>
           {loaded && (
             <div className={NOTICE_HINT}>
-              This folder has no files, or everything in it is build output.
+              {filtered ? 'Try a different filename or clear the filter.' : 'This folder has no files, or everything in it is build output.'}
             </div>
           )}
         </div>
@@ -413,6 +492,12 @@ export function FilesPane({
           <TreeNodeRow
             key={row.path}
             row={row}
+            panelSplit={split.split}
+            status={gitTreeStatus(root, row.path, row.dir, gitFiles)}
+            onDragStart={(event) => {
+              try { fileReference(row.path, row.dir); event.dataTransfer.setData(FILE_REFERENCE_MIME, JSON.stringify({ path: row.path, directory: row.dir })); event.dataTransfer.effectAllowed = "copy" }
+              catch (error) { event.preventDefault(); reportError(String(error)) }
+            }}
             selected={row.path === fileTabs.activePath}
             tabIndex={i === focusIndex ? 0 : -1}
             failure={dirErrors.get(row.path) ?? null}
@@ -443,83 +528,29 @@ export function FilesPane({
     )
   }
 
-  const treeColumn = (
-    <aside
-      data-testid="files-tree-column"
-      className={`${TREE_W} flex-none flex flex-col min-h-0 border-r border-[color-mix(in_srgb,var(--divider)_55%,transparent)] ${
-        treeOpen ? 'flex' : `hidden ${TREE_VISIBLE}:flex`
-      }`}
-    >
-      {treeBody()}
-    </aside>
-  )
 
-  const editorColumn = (
-    <div className="editor-leaf flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--tool-code-bg)]">
-      <FileTabStrip
-        tabs={fileTabs.tabs}
-        activePath={fileTabs.activePath}
-        workspaceDir={workspaceDir}
-        overflowing={tabsOverflow}
-        tabScrollRef={tabScrollRef}
-        tabRefs={tabRefs}
-        labelFor={fileTabs.labelFor}
-        onActivate={fileTabs.setActivePath}
-        onClose={fileTabs.requestCloseTab}
-        onContextMenu={(x, y, path) => setTabMenu({ x, y, path })}
-        onOpenOverflow={(x, y) => setOverflowMenu({ x, y })}
-      />
-      {fileTabs.activePath ? (
-        <>
-          <Suspense fallback={<div className={EHOST_WRAP_CLS} />}>
-            <EditorSurfaceBody
-              surface={fileTabs.surface}
-              extraMenuItems={
-                <>
-                  <div className={EDITOR_CTX_SEP_CLS} />
-                  <OpenInMenu
-                    path={fileTabs.activePath}
-                    itemClass={EDITOR_CTX_ITEM_CLS}
-                    onDone={() => fileTabs.surface.setCmMenu(null)}
-                    onError={reportError}
-                  />
-                </>
-              }
-            />
-          </Suspense>
-          <div
-            data-testid="files-status-strip"
-            className="flex-none flex items-center h-[20px] border-t border-[color-mix(in_srgb,var(--divider)_55%,transparent)] bg-[color-mix(in_srgb,var(--card-bg)_45%,transparent)]"
-          >
-            <span className={STRIP_CELL}>{fileTabs.langLabel}</span>
-            <span className={`${STRIP_CELL} ml-auto font-mono`} data-testid="files-caret">
-              {fileTabs.caret ?? ''}
-            </span>
-            {/* Facts about the file, not choices: every read is UTF-8, and the
-                line ending is what the buffer recorded at load. */}
-            <span className={`${STRIP_CELL} font-mono`}>{fileTabs.activeBuf?.lineEnding ?? 'LF'}</span>
-            <span className={`${STRIP_CELL} font-mono`}>UTF-8</span>
-          </div>
-        </>
-      ) : (
-        <div className={NOTICE_BODY} data-testid="files-no-file">
-          <div className={NOTICE_TITLE}>No file open</div>
-          <div className={NOTICE_HINT}>Pick one from the tree to edit it here.</div>
-        </div>
-      )}
-    </div>
-  )
+
 
   return (
     <section
-      className={`pane files-pane flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${active ? 'focus' : ''}`}
+      ref={split.containerRef}
+      data-split={split.split}
+      onKeyDownCapture={(event) => {
+        if (split.split && filesTreeToggleMatches(event.nativeEvent, keymapOverrides)) {
+          event.preventDefault()
+          event.stopPropagation()
+          split.toggle()
+        }
+      }}
+      className={`pane files-pane ${panel ? "files-panel" : ""} flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${active ? 'focus' : ''}`}
       data-panekey={node.id}
       data-testid="files-pane"
     >
-      {header}
-      <div className="flex-1 min-h-0 flex">
-        {treeColumn}
-        {editorColumn}
+      <FilesPaneHeader panel={panel} header={header} />
+      <div className="files-columns flex-1 min-h-0 flex">
+        <FilesTreeColumn split={split} rootName={rootName} filter={filter} onFilter={setFilter} treeOpen={treeOpen} onCreate={() => setMutation({ kind: 'file', path: root, name: '' })} onCollapseAll={() => setExpandedDirs(new Set())} onContextMenu={(x, y) => setMenu({ x, y, path: root, dir: true })}>{treeBody()}</FilesTreeColumn>
+        {split.split && !split.collapsed && <FilesTreeSash width={split.width} onResize={split.resize} onReset={split.reset} />}
+        <FilesEditorColumn panel={panel} split={split} fileTabs={fileTabs} root={root} workspaceDir={workspaceDir} gitFiles={gitFiles} tabsOverflow={tabsOverflow} tabScrollRef={tabScrollRef} tabRefs={tabRefs} onMoveToEditor={onMoveToEditor} onTabMenu={(x, y, path) => setTabMenu({ x, y, path })} onOverflowMenu={(x, y) => setOverflowMenu({ x, y })} revealInTree={revealInTree} reportError={reportError} />
       </div>
       <MenuLayer open={menu !== null} onClose={() => setMenu(null)} suppress="popover" menuRef={menuRef}>
         {menu && (
@@ -536,6 +567,8 @@ export function FilesPane({
             })()}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {(['file', 'directory', 'rename'] as const).map((kind) => <button key={kind} role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { setMutation({ kind, path: kind === 'rename' || menu.dir ? menu.path : parentDir(menu.path), name: kind === 'rename' ? basename(menu.path) : '' }); setMenu(null) }}>{kind === 'file' ? 'New file' : kind === 'directory' ? 'New folder' : 'Rename'}</button>)}
+            <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { void removeEntry(menu.path); setMenu(null) }}>Move to trash</button>
             <OpenInMenu
               path={menu.path}
               label={menu.dir ? 'Open folder in' : 'Open in'}
@@ -597,6 +630,8 @@ export function FilesPane({
           }}
         />
       </MenuLayer>
+      {mutation && <FileMutationForm mutation={mutation} onChange={setMutation} onSubmit={() => void applyMutation()} />}
+
       <AnimOut open={fileTabs.confirmClose !== null} suppress="modal">
         {fileTabs.confirmClose && (
           <SaveDiscardModal
@@ -612,6 +647,9 @@ export function FilesPane({
 }
 
 function TreeNodeRow({
+  panelSplit,
+  status,
+  onDragStart,
   row,
   selected,
   tabIndex,
@@ -622,6 +660,9 @@ function TreeNodeRow({
   onKeyDown,
   onContextMenu
 }: {
+  panelSplit: boolean
+  status: GitFileStatus["status"] | null
+  onDragStart: (event: React.DragEvent) => void
   row: TreeRow
   selected: boolean
   tabIndex: number
@@ -637,6 +678,9 @@ function TreeNodeRow({
     <Tooltip label={failure ? `${row.path} — ${failure}` : row.path} className="flex w-full">
       <button
         ref={registerRef}
+        draggable
+        onDragStart={onDragStart}
+        data-git-status={status ?? undefined}
         role="treeitem"
         aria-selected={selected}
         aria-expanded={row.dir ? row.expanded : undefined}
@@ -645,7 +689,7 @@ function TreeNodeRow({
         data-testid="files-tree-row"
         data-path={row.path}
         className={`${ROW_BASE} ${selected ? ROW_SELECTED : ''} ${failure ? 'text-[var(--danger)]' : ''}`}
-        style={{ paddingLeft: 6 + row.depth * 12 }}
+        style={{ paddingLeft: panelSplit ? 8 + row.depth * 14 : 6 + row.depth * 12 }}
         onClick={onActivate}
         onDoubleClick={onActivateDouble}
         onKeyDown={onKeyDown}
@@ -661,12 +705,18 @@ function TreeNodeRow({
         </span>
         <FileTreeIcon kind={icon} role="ui" />
         <span className="flex-1 min-w-0 overflow-hidden text-ellipsis">{row.name}</span>
+        {status && <span className={`font-mono text-[length:var(--tr-text-xs)] ${status === 'conflicted' || status === 'deleted' ? 'text-[var(--stop)]' : status === 'added' ? 'text-[var(--ok)]' : 'text-[var(--warn)]'}`}>{status === 'untracked' ? '?' : status[0].toUpperCase()}</span>}
       </button>
     </Tooltip>
   )
 }
 
 function FileTabStrip({
+  panelSplit,
+  gitFiles,
+  root,
+  showTree,
+  onMove,
   tabs,
   activePath,
   workspaceDir,
@@ -679,6 +729,11 @@ function FileTabStrip({
   onContextMenu,
   onOpenOverflow
 }: {
+  panelSplit: boolean
+  gitFiles: GitFileStatus[]
+  root: string
+  showTree?: () => void
+  onMove?: () => void
   tabs: FileTab[]
   activePath: string | null
   workspaceDir: string
@@ -691,7 +746,7 @@ function FileTabStrip({
   onContextMenu: (x: number, y: number, path: string) => void
   onOpenOverflow: (x: number, y: number) => void
 }): React.JSX.Element | null {
-  if (tabs.length === 0) return null
+  if (tabs.length === 0 && !panelSplit) return null
   return (
     <div
       role="tablist"
@@ -699,6 +754,7 @@ function FileTabStrip({
       data-testid="files-tab-strip"
       className="flex-none flex items-stretch border-b border-[color-mix(in_srgb,var(--divider)_55%,transparent)] bg-[color-mix(in_srgb,var(--card-bg)_45%,transparent)]"
     >
+      {panelSplit && showTree && <FilesSplitButton label="Show tree" onClick={showTree} glyph={IconPanelLeft} />}
       <div
         ref={tabScrollRef}
         data-testid="files-tab-scroll"
@@ -720,7 +776,7 @@ function FileTabStrip({
                 data-testid="files-tab"
                 data-path={p}
                 className={`${TAB_BASE} ${isActive ? TAB_ACTIVE : ''} ${t.preview ? TAB_PREVIEW : ''}`}
-                onMouseDown={() => onActivate(p)}
+                onMouseDown={(event) => { if (event.button === 0) onActivate(p) }}
                 onAuxClick={(e) => {
                   // onClick never fires for the middle button; auxclick does.
                   if (e.button === 1) onClose(p)
@@ -730,10 +786,8 @@ function FileTabStrip({
                   onContextMenu(e.clientX, e.clientY, p)
                 }}
               >
-                {buf?.dirty && <span className={EDOT_CLS} aria-label="Unsaved changes" />}
-                {}
                 <span className="flex-1 min-w-0 truncate">{labelFor(p)}</span>
-                {}
+                {panelSplit && <FilesTabStatus status={gitTreeStatus(root, p, false, gitFiles)} />}
                 <button
                   className={`btn ${BTN_ICO_STRUCTURE} w-[16px] h-[16px] rounded-[var(--tr-radius-sm)] ${ICO_HEAD_DANGER} ${HIT_TARGET_28}`}
                   aria-label={`Close ${basename(p)}`}
@@ -742,13 +796,14 @@ function FileTabStrip({
                     onClose(p)
                   }}
                 >
-                  <Icon glyph={IconClose} role="label" />
+                  {buf?.dirty ? <span className={EDOT_CLS} aria-label="Unsaved changes" /> : <Icon glyph={IconClose} role="label" />}
                 </button>
               </div>
             </Tooltip>
           )
         })}
       </div>
+      {panelSplit && onMove && <FilesSplitButton label="Open in editor pane" onClick={onMove} glyph={IconArrowUpRight} />}
       {overflowing && (
         <Tooltip label="More open files">
           <button
@@ -905,4 +960,202 @@ function ancestorDirs(root: string, path: string): string[] {
     dir = parentDir(dir)
   }
   return out
+}
+
+type FileMutation = { kind: 'file' | 'directory' | 'rename'; path: string; name: string }
+
+function FileMutationForm({ mutation, onChange, onSubmit }: {
+  mutation: FileMutation
+  onChange: (value: FileMutation | null) => void
+  onSubmit: () => void
+}): React.JSX.Element {
+  const renaming = mutation.kind === 'rename'
+  return <form className="flex-none flex items-center gap-2 p-2" aria-label={`${renaming ? 'Rename' : 'Create in'} ${mutation.path}`} onSubmit={(event) => { event.preventDefault(); onSubmit() }}>
+    <input autoFocus aria-label="Filename" value={mutation.name} onChange={(event) => onChange({ ...mutation, name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onChange(null) } }} className="min-w-0 flex-1 bg-[var(--tool-code-bg)] border border-[var(--border)] rounded-[var(--tr-radius-sm)]" />
+    <button className="btn border-none" type="submit">{renaming ? 'Rename' : 'Create'}</button>
+    <button className="btn border-none" type="button" onClick={() => onChange(null)}>Cancel</button>
+  </form>
+}
+
+function FileHeaderActions({ panel, path, onCreate, onMove, onClose }: {
+  root: string
+  panel?: boolean
+  path: string | null
+  onCreate: () => void
+  onMove?: (path: string) => void
+  onClose: (path: string) => void
+}): React.JSX.Element {
+  return <>
+    <Tooltip label="New file"><button className="btn border-none" aria-label="New file" onClick={onCreate}>New file</button></Tooltip>
+    {panel && path && onMove && <button className="btn border-none" onClick={() => { onMove(path); onClose(path) }}>Open in editor pane</button>}
+  </>
+}
+
+function fileLineEnding(buffer: ReturnType<typeof getBuffer>): string {
+  return buffer?.lineEnding ?? 'LF'
+}
+
+function FilesPaneHeader({ panel, header }: { panel?: boolean; header: React.ReactNode }): React.JSX.Element | null {
+  return panel ? null : <>{header}</>
+}
+
+function FilesEditorHeader({ panel, path, onMove, onClose, tabs }: { panel?: boolean; path: string | null; onMove?: (path: string) => void; onClose: (path: string) => void; tabs: React.ReactNode }): React.JSX.Element {
+  if (!panel) return <>{tabs}</>
+  if (!path) return <></>
+  return <div className="files-viewer-head"><span className="truncate flex-1">{path}</span><Tooltip label="Open in editor pane"><button className={BTN_ICO_STRUCTURE} aria-label="Open in editor pane" onClick={() => { onMove?.(path); onClose(path) }}><Icon glyph={IconArrowUpRight} role="label" /></button></Tooltip></div>
+}
+
+function FilesSplitButton({ label, onClick, glyph }: { label: string; onClick: () => void; glyph: typeof IconPanelLeft }): React.JSX.Element {
+  return <Tooltip label={label}><button type="button" className={`btn ${BTN_ICO_STRUCTURE} files-split-button`} aria-label={label} onClick={onClick}><Icon glyph={glyph} role="label" /></button></Tooltip>
+}
+
+function FilesTreeHeader({ rootName, filter, onFilter, onCreate, onCollapseAll, onCollapse }: {
+  rootName: string; filter: string; onFilter: (value: string) => void; onCreate: () => void; onCollapseAll: () => void; onCollapse: () => void
+}): React.JSX.Element {
+  return <>
+    <div className="files-split-tree-head">
+      <span className="truncate flex-1">{rootName}</span>
+      <FilesSplitButton label="New file" onClick={onCreate} glyph={IconPlus} />
+      <FilesSplitButton label="Collapse all" onClick={onCollapseAll} glyph={IconMinimize} />
+      <FilesSplitButton label="Collapse tree" onClick={onCollapse} glyph={IconChevronLeft} />
+    </div>
+    <label className="files-split-filter"><Icon glyph={IconSearch} role="label" /><input aria-label="Filter files" placeholder="Filter files" value={filter} onChange={(event) => onFilter(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onFilter('') } }} /></label>
+  </>
+}
+
+function FilesTreeSash({ width, onResize, onReset }: { width: number; onResize: (width: number) => void; onReset: () => void }): React.JSX.Element {
+  const drag = useRef<{ x: number; width: number } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  return <div role="separator" aria-label="Resize file tree" aria-orientation="vertical" aria-valuemin={FILES_TREE_MIN} aria-valuemax={FILES_TREE_MAX} aria-valuenow={width} tabIndex={0} className="files-tree-sash" data-dragging={dragging} onDoubleClick={onReset}
+    onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); onResize(width + (event.key === 'ArrowRight' ? 10 : -10)) } }}
+    onPointerDown={(event) => { if (event.button !== 0) return; event.preventDefault(); drag.current = { x: event.clientX, width }; event.currentTarget.setPointerCapture(event.pointerId); setDragging(true) }}
+    onPointerMove={(event) => { if (drag.current) onResize(drag.current.width + event.clientX - drag.current.x) }}
+    onPointerUp={() => { drag.current = null; setDragging(false) }} onLostPointerCapture={() => { drag.current = null; setDragging(false) }} />
+}
+
+function FilesBreadcrumb({ root, path, onReveal }: { root: string; path: string; onReveal: (path: string) => void }): React.JSX.Element {
+  const relative = path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path
+  const segments = relative.split('/').filter(Boolean)
+  return <nav aria-label="File breadcrumb" className="files-breadcrumb">
+    {segments.map((segment, index) => <span key={index} className="files-breadcrumb-segment">
+      {index > 0 && <Icon glyph={IconChevronRight} role="label" />}
+      {index === segments.length - 1 ? <strong>{segment}</strong> : <button className="btn border-none" onClick={() => onReveal(`${root}/${segments.slice(0, index + 1).join('/')}`)}>{segment}</button>}
+    </span>)}
+  </nav>
+}
+
+function FilesTabStatus({ status }: { status: GitFileStatus['status'] | null }): React.JSX.Element | null {
+  if (!status) return null
+  const added = status === 'added' || status === 'untracked'
+  return <span className="files-tab-git" data-added={added}>{added ? 'A' : status[0].toUpperCase()}</span>
+}
+
+function FilesEditorColumn({ panel, split, fileTabs, root, workspaceDir, gitFiles, tabsOverflow, tabScrollRef, tabRefs, onMoveToEditor, onTabMenu, onOverflowMenu, revealInTree, reportError }: {
+  panel?: boolean
+  split: ReturnType<typeof useFilesSplit>
+  fileTabs: FileTabsState
+  root: string
+  workspaceDir: string
+  gitFiles: GitFileStatus[]
+  tabsOverflow: boolean
+  tabScrollRef: React.RefObject<HTMLDivElement | null>
+  tabRefs: React.RefObject<Map<string, HTMLDivElement>>
+  onMoveToEditor?: (path: string) => void
+  onTabMenu: (x: number, y: number, path: string) => void
+  onOverflowMenu: (x: number, y: number) => void
+  revealInTree: (path: string) => void
+  reportError: (message: string) => void
+}): React.JSX.Element {
+  return (
+    <div className="editor-leaf flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--tool-code-bg)]">
+      <FilesEditorHeader panel={panel && !split.split} path={fileTabs.activePath} onMove={onMoveToEditor} onClose={fileTabs.transferTab} tabs={<FileTabStrip
+        panelSplit={split.split}
+        gitFiles={gitFiles}
+        root={root}
+        showTree={split.collapsed ? split.toggle : undefined}
+        onMove={fileTabs.activePath && onMoveToEditor ? () => { onMoveToEditor(fileTabs.activePath!); fileTabs.transferTab(fileTabs.activePath!) } : undefined}
+        tabs={fileTabs.tabs}
+        activePath={fileTabs.activePath}
+        workspaceDir={workspaceDir}
+        overflowing={tabsOverflow}
+        tabScrollRef={tabScrollRef}
+        tabRefs={tabRefs}
+        labelFor={fileTabs.labelFor}
+        onActivate={fileTabs.setActivePath}
+        onClose={fileTabs.requestCloseTab}
+        onContextMenu={onTabMenu}
+        onOpenOverflow={onOverflowMenu}
+      />} />
+      {split.split && fileTabs.activePath && <FilesBreadcrumb root={root} path={fileTabs.activePath} onReveal={revealInTree} />}
+      {fileTabs.tabError && <div role="alert" className="files-tab-error">{fileTabs.tabError}</div>}
+      {fileTabs.activePath ? (
+        <>
+          <Suspense fallback={<div className={EHOST_WRAP_CLS} />}>
+            <EditorSurfaceBody
+              surface={fileTabs.surface}
+              extraMenuItems={
+                <>
+                  <div className={EDITOR_CTX_SEP_CLS} />
+                  <OpenInMenu
+                    path={fileTabs.activePath}
+                    itemClass={EDITOR_CTX_ITEM_CLS}
+                    onDone={() => fileTabs.surface.setCmMenu(null)}
+                    onError={reportError}
+                  />
+                </>
+              }
+            />
+          </Suspense>
+          <div
+            data-testid="files-status-strip"
+            className="flex-none flex items-center h-[20px] border-t border-[color-mix(in_srgb,var(--divider)_55%,transparent)] bg-[color-mix(in_srgb,var(--card-bg)_45%,transparent)]"
+          >
+            <span className={STRIP_CELL}>{fileTabs.langLabel}</span>
+            <span className={`${STRIP_CELL} ml-auto font-mono`} data-testid="files-caret">
+              {fileTabs.caret ?? ''}
+            </span>
+            {/* Facts about the file, not choices: every read is UTF-8, and the
+                line ending is what the buffer recorded at load. */}
+            <span className={`${STRIP_CELL} font-mono`}>{fileLineEnding(fileTabs.activeBuf)}</span>
+            <span className={`${STRIP_CELL} font-mono`}>UTF-8</span>
+          </div>
+        </>
+      ) : (
+        <div className={NOTICE_BODY} data-testid="files-no-file">
+          <div className={NOTICE_TITLE}>No file open</div>
+          <div className={NOTICE_HINT}>Pick one from the tree to edit it here.</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FilesTreeColumn({ split, rootName, filter, onFilter, treeOpen, onCreate, onCollapseAll, onContextMenu, children }: {
+  split: ReturnType<typeof useFilesSplit>
+  rootName: string
+  filter: string
+  onFilter: (filter: string) => void
+  treeOpen: boolean
+  onCreate: () => void
+  onCollapseAll: () => void
+  onContextMenu: (x: number, y: number) => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <aside
+      data-testid="files-tree-column"
+      style={split.split ? { width: split.width, display: split.collapsed ? 'none' : 'flex' } : undefined}
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest('[role="treeitem"]')) return
+        event.preventDefault()
+        onContextMenu(event.clientX, event.clientY)
+      }}
+      className={`files-tree-column ${TREE_W} flex-none flex flex-col min-h-0 border-r border-[color-mix(in_srgb,var(--divider)_55%,transparent)] ${
+        treeOpen ? 'flex' : `hidden ${TREE_VISIBLE}:flex`
+      }`}
+    >
+      {split.split && <FilesTreeHeader rootName={rootName} filter={filter} onFilter={onFilter} onCreate={onCreate} onCollapseAll={onCollapseAll} onCollapse={split.toggle} />}
+      {children}
+    </aside>
+  )
 }
