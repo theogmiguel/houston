@@ -82,9 +82,13 @@ collaborator's contract, not just against its own assertions.
 
 ## Windows
 
-The core suite must be run on Windows under both Git Bash and `pwsh` before landing a
-change that touches the shell/home ladders (locally — no CI job runs the Windows core suite
-today). `$SHELL` and `$HOME` feed production ladders in `daemon.rs`, `home_dir.rs` and
+Windows CI runs core unit tests and selected integration suites. The
+`windows_orchestration_wire` suite uses isolated provider fixtures with ConPTY to check
+worktree spawns through HTTP and MCP, recorded checkout identity and rollback after
+provider preparation fails. The broader orchestration and chaos suites remain Unix-only.
+
+Run the full core suite under both Git Bash and `pwsh` before landing a change that touches
+the shell/home ladders. `$SHELL` and `$HOME` feed production ladders in `daemon.rs`, `home_dir.rs` and
 `ssh_config.rs`, and two tests once disagreed between the shells. A Windows-only failure in
 one shell is a real finding about that ladder, not harness noise.
 

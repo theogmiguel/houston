@@ -1,6 +1,27 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+pub fn windows_command_path(path: &Path) -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Component, Prefix};
+    let Some(Component::Prefix(prefix)) = path.components().next() else {
+        return path.to_path_buf();
+    };
+    // Keep filesystem identity verbatim internally; external programs need DOS/UNC syntax.
+    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    match prefix.kind() {
+        Prefix::VerbatimDisk(_) => PathBuf::from(OsString::from_wide(&wide[4..])),
+        Prefix::VerbatimUNC(_, _) => {
+            let mut normal = OsString::from(r"\\");
+            normal.push(OsString::from_wide(&wide[8..]));
+            PathBuf::from(normal)
+        }
+        _ => path.to_path_buf(),
+    }
+}
+
 pub const CHANNEL_ENV: &str = "HOUSTON_CHANNEL";
 pub const BASE_DIR: &str = ".houston";
 // Bounded so a channel name can never become a path bomb or an unreadable dir name.
