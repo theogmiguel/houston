@@ -446,7 +446,8 @@ fn check_cap(live_ids: &[String], requested_id: &str, max: usize) -> Result<(), 
     Ok(())
 }
 
-#[tauri::command]
+// Native webview calls wait for the UI thread; IPC must dispatch them off that thread.
+#[tauri::command(async)]
 pub fn browser_mount(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -640,7 +641,7 @@ pub fn browser_mount(
     Ok(committed)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_destroy(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -696,7 +697,7 @@ pub fn browser_destroy(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_detach(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -762,7 +763,7 @@ pub fn browser_detach(
     Ok(committed)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_reattach(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -853,7 +854,7 @@ pub fn handle_window_closed(app: &AppHandle, window_label: &str) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_resize(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -876,7 +877,7 @@ pub fn browser_resize(
     Ok(committed)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_set_visible(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -964,7 +965,7 @@ fn refuse_if_hidden(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_navigate(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -978,7 +979,7 @@ pub fn browser_navigate(
     webkit::navigate(&webview, &id, &url)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_reload(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -989,7 +990,7 @@ pub fn browser_reload(
     webkit::reload(&webview, &id, bypass_cache)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_go_back(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -999,7 +1000,7 @@ pub fn browser_go_back(
     webkit::go_back(&webview, &id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_go_forward(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -1009,7 +1010,7 @@ pub fn browser_go_forward(
     webkit::go_forward(&webview, &id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_set_picker_mode(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -1074,13 +1075,13 @@ pub fn browser_set_picker_mode(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_focus_host(app: AppHandle, window_label: Option<String>) -> Result<bool, String> {
     let label = window_label.unwrap_or_else(|| HOST_WINDOW.to_string());
     gtk_host::focus_host(&app, &label)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_clear_picker_selection(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -1103,7 +1104,7 @@ pub fn browser_clear_picker_selection(
     webkit::clear_picker_selection(&webview, &id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_submit_picker_prompt(
     app: AppHandle,
     registry: State<'_, BrowserRegistry>,
@@ -1210,6 +1211,33 @@ mod workspace_scope_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_commands_dispatch_off_the_ui_thread() {
+        let source = include_str!("mod.rs");
+        for name in [
+            "mount",
+            "destroy",
+            "detach",
+            "reattach",
+            "resize",
+            "set_visible",
+            "navigate",
+            "reload",
+            "go_back",
+            "go_forward",
+            "set_picker_mode",
+            "focus_host",
+            "clear_picker_selection",
+            "submit_picker_prompt",
+        ] {
+            assert!(
+                source.contains(&format!("#[tauri::command(async)]\npub fn browser_{name}("))
+                    || source.contains(&format!("#[tauri::command(async)]\r\npub fn browser_{name}(")),
+                "browser_{name} must not block the UI thread while waiting for native webview calls"
+            );
+        }
+    }
+
     #[test]
     fn a_popup_is_always_addressed_to_the_host_window() {
         assert_eq!(popup_event_target(), HOST_WINDOW);

@@ -47,7 +47,7 @@ export function useBrowserNav(
     }
     if (browserState.title != null) patch.title = browserState.title
     if (browserState.favicon != null) patch.favicon = browserState.favicon
-    if (browserState.url != null && browserState.url !== active.url) {
+    if (!browserState.loading && browserState.url != null && browserState.url !== active.url) {
       patch.url = browserState.url
       setUrlInput(browserState.url)
     }
@@ -55,8 +55,9 @@ export function useBrowserNav(
     const fromState = browserState.error?.message ?? null
     setFailMsg((prev) => nextFailMsg(prev, stateFailMsg.current, fromState))
     stateFailMsg.current = fromState
+    // A requested URL must not replay the previous native state before navigation starts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [browserState, active.id, active.url])
+  }, [browserState, active.id])
 
   const activeWebview = (): (WebviewEl & { __ready?: () => boolean }) | null => {
     const views = hostRef.current?.querySelectorAll('webview[data-browser-tab]')
