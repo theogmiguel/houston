@@ -47,7 +47,7 @@ export function TasksSection({
               orchestrator never see the backlog; they get their brief.
               <span
                 data-testid="settings-tasks-current"
-                className="block pt-[6px] text-[11.5px] text-[var(--text-muted)]"
+                className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]"
               >
                 Currently{' '}
                 <b className="font-semibold text-[var(--text-primary)]">

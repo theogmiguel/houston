@@ -69,7 +69,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           <Icon glyph={IconChevronLeft} role="small" />
           Tasks
         </button>
-        <span className="font-mono text-[11px] text-[var(--text-faint)]">{task.key}</span>
+        <span className="font-mono text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">{task.key}</span>
         <span className="spacer" />
         <CopyKeyButton taskKey={task.key} />
         <TaskMenu
@@ -245,7 +245,7 @@ function RefusalBanner({
         <Icon glyph={IconAlertTriangle} role="small" />
         <span className="msg">
           This task changed elsewhere
-          <span className="block text-[11px] text-[var(--text-faint)]">{refusal.message}</span>
+          <span className="block text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">{refusal.message}</span>
         </span>
         <button type="button" className={`btn ${BTN_SECONDARY} ${HIT_TARGET_28}`} onClick={() => onReload(taskId)}>
           Reload
