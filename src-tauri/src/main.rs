@@ -7,6 +7,8 @@ mod bench;
 mod browser;
 mod clipboard;
 mod daemon_host;
+#[cfg(target_os = "linux")]
+mod daemon_isolation;
 mod dialog;
 mod fs;
 mod fs_allowlist;
