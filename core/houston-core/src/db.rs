@@ -1848,7 +1848,7 @@ impl Db {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn query_in_progress_for_test(&self) -> bool {
         self.conn.try_lock().is_err()
     }
