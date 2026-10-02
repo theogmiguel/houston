@@ -172,6 +172,22 @@ For a clean-context review, provide the exact target and base/head (or a snapsho
 requirements, and focused evidence such as `file:line` and test results. Do not paste a
 parent transcript; temporary review panes clean up after their final handback.
 
+## Idempotent retries
+
+To retry a spawn or prompt after a timeout, choose `client_request_id` before the
+first call (`--client-request-id` in `hs-pane`) and repeat the same key and arguments.
+Keys accept 1–64 ASCII letters, digits, dots, underscores and hyphens. Houston
+returns the recorded success without repeating the mutation. Omitted defaults and
+their explicit values share a receipt. A refusal before any action releases the key,
+so it can be retried when a child cap or needs-input condition clears. Reusing a key with
+different arguments or a different operation is refused. Keys belong to the
+calling pane and expire after seven days or eviction from the newest 4096 receipts.
+
+If an error may have acted or a daemon crash leaves a key pending, Houston reports an uncertain outcome.
+Inspect the child before choosing a new key; retrying that pending key cannot
+spawn another child or send another prompt. Calls without a key keep their usual
+behaviour.
+
 ## Mailbox retention
 
 **Mailbox retention** (Settings ▸ Orchestration) controls how long a delivered mailbox

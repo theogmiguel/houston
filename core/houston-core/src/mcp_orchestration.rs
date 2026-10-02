@@ -260,103 +260,19 @@ impl ToolProvider for OrchestrationTools {
             let caller = scope.session_id;
             match name {
                 "pane_spawn" => {
-                    let kind: proto::AgentKind =
-                        serde_json::from_value(args.get("kind").cloned().unwrap_or(Value::Null))
-                            .map_err(|e| {
-                                ToolError(format!(
-                                    "kind must be one of claude|codex|antigravity|opencode|cursor|\
-                                     grok; got {}: {e}",
-                                    args.get("kind").unwrap_or(&Value::Null)
-                                ))
-                            })?;
-                    let prompt = str_arg(args, "prompt")?.to_string();
-                    let model = opt_str(args, "model");
-                    let cwd = opt_str(args, "cwd");
-                    let auto_approve = args.get("auto_approve").and_then(Value::as_bool);
-                    let profile = opt_str(args, "profile");
-                    let role = opt_str(args, "role");
-                    let target_workspace = opt_str(args, "target_workspace");
-                    let reusable = args
-                        .get("reusable")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
-                    let handoff = args
-                        .get("handoff")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
-                    if handoff && reusable {
-                        return Err(ToolError(orchestrate::HANDOFF_REUSABLE_REFUSED.to_string()));
-                    }
-                    let effort = args
-                        .get("effort")
-                        .cloned()
-                        .filter(|value| !value.is_null())
-                        .map(serde_json::from_value)
-                        .transpose()
-                        .map_err(|e| {
-                            ToolError(format!(
-                                "effort must be one of low|medium|high|xhigh|max: {e}"
-                            ))
-                        })?;
-                    let brief = orchestrate::Brief {
-                        prompt,
-                        output_format: opt_str(args, "output_format"),
-                        boundaries: opt_str(args, "boundaries"),
-                    };
-                    // Not `opt_str`: an empty slug must reach the slug rule and be refused,
-                    // not read as "no worktree" and spawn in the workspace instead.
-                    let worktree = crate::worktrees::spawn_ask(
-                        args.get("worktree")
-                            .and_then(Value::as_str)
-                            .map(str::to_string),
-                        opt_str(args, "branch"),
-                    )
-                    .map_err(|e| ToolError(format!("{e:#}")))?;
-                    let state_doc = args.get("state_doc").cloned();
-                    let reply_daemon = Arc::clone(&daemon);
-                    let isolated = worktree.is_some();
-                    let info = tokio::task::spawn_blocking(move || {
-                        let brief = daemon.handoff_state_brief(
-                            caller,
-                            target_workspace.as_deref(),
-                            handoff,
-                            brief,
-                            state_doc.as_ref(),
-                        )?;
-                        if handoff {
-                            daemon.orchestrate_handoff(
-                                caller,
-                                kind,
-                                model,
-                                cwd,
-                                brief,
-                                auto_approve,
-                                profile,
-                                role,
-                                target_workspace,
-                                effort,
-                                worktree,
-                            )
-                        } else {
-                            daemon.orchestrate_spawn_with_options(
-                                caller,
-                                kind,
-                                model,
-                                cwd,
-                                brief,
-                                auto_approve,
-                                profile,
-                                role,
-                                target_workspace,
-                                reusable,
-                                effort,
-                                worktree,
-                            )
-                        }
+                    let request: orchestrate::SpawnRequest =
+                        serde_json::from_value(args.clone())
+                            .map_err(|e| ToolError(format!("pane_spawn arguments: {e}")))?;
+                    let reusable = request.reusable;
+                    let handoff = request.handoff;
+                    let effort = request.effort;
+                    let outcome = tokio::task::spawn_blocking(move || {
+                        daemon.orchestrate_spawn_request(caller, request)
                     })
                     .await
                     .map_err(|e| ToolError(format!("spawn task panicked: {e}")))?
                     .map_err(refused)?;
+                    let info = outcome.session;
                     Ok(ToolOutput::structured(json!({
                         "session": info.id,
                         "title": info.title,
@@ -367,8 +283,8 @@ impl ToolProvider for OrchestrationTools {
                         "reusable": reusable,
                         "handoff": handoff,
                         "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
-                        "warning": if isolated { crate::launch::worktree_trust_warning(info.agent) } else { reply_daemon.spawn_checkout_warning(info.id) },
-                        "warnings": reply_daemon.spawn_warnings(&info, isolated),
+                        "warning": outcome.warning,
+                        "warnings": outcome.warnings,
                         "next_action": if handoff {
                             orchestrate::HANDOFF_NEXT_ACTION
                         } else {
@@ -452,9 +368,18 @@ impl ToolProvider for OrchestrationTools {
                 "pane_prompt" => {
                     let session = u32_arg(args, "session")?;
                     let text = str_arg(args, "text")?;
+                    let key: Option<String> = args
+                        .get("client_request_id")
+                        .cloned()
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|e| {
+                            ToolError(format!("client_request_id: expected a string; {e}"))
+                        })?
+                        .flatten();
                     let text = text.to_string();
                     let (source, status, held) = tokio::task::spawn_blocking(move || {
-                        daemon.orchestrate_prompt_with_hold(caller, session, &text)
+                        daemon.orchestrate_prompt_request(caller, session, &text, key.as_deref())
                     })
                     .await
                     .map_err(|e| ToolError(format!("prompt task panicked: {e}")))?
@@ -668,6 +593,7 @@ impl OrchestrationTools {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
+                        "client_request_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$" },
                         "kind": {
                             "type": "string",
                             "enum": ["claude", "codex", "antigravity", "opencode", "cursor", "grok"],
@@ -680,9 +606,7 @@ impl OrchestrationTools {
                         "model": {
                             "type": "string",
                             "description":
-                                "Exact model identifier accepted by that CLI, forwarded unchanged \
-                                 (for Codex, e.g. gpt-5.6-luna, not luna). Omitted inherits \
-                                 the CLI default.",
+                                "Exact CLI model id; consult workspace_info.providers. Omitted uses CLI default.",
                         },
                         "cwd": {
                             "type": "string",
@@ -783,7 +707,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_get".into(),
                 title: "Everything about one pane".into(),
-                description: "Subtree pane state, children, depth, pending turn conditions, role, brief, stall and staged result. Use after a wait timeout, for help, or when the operator asks. With result_id, retrieve a stored result body addressed to you, including after child closure.".into(),
+                description: "Subtree state, children, depth, role, brief, stall and staged result. Inspect after wait timeout, for help or when asked. result_id retrieves your stored body after closure.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -799,10 +723,7 @@ impl OrchestrationTools {
                 name: "pane_send_keys".into(),
                 title: "Press keys in a pane".into(),
                 description: format!(
-                    "Press keys in one of your panes — the lever for a pane that is BLOCKED, \
-                     which `pane_prompt` refuses on purpose. Only these, at most {} per \
-                     call: {}. A key outside the list sends nothing at all, and `enter` is a \
-                     key you ask for.",
+                    "Press up to {} keys in a blocked child: {}. Invalid keys send nothing; include enter explicitly. pane_prompt refuses permission/question prompts.",
                     orchestrate::SEND_KEYS_MAX,
                     key_names().join(" "),
                 ),
@@ -856,11 +777,12 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_prompt".into(),
                 title: "Send a prompt to a pane".into(),
-                description: "Submit `text` to your child. Held status/operator input queues it on the pane's wake lane; otherwise writes synchronously and reports write errors. Refuses permission/question prompts: read them and answer with pane_send_keys.".into(),
+                description: "Prompt your child; busy status/operator input queues it. Answer permission/question prompts with pane_send_keys. client_request_id deduplicates retries.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "session": { "type": "integer", "description": "The pane's session id." },
+                        "client_request_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$" },
                         "text": { "type": "string", "description": "What to send." },
                     },
                     "required": ["session", "text"],

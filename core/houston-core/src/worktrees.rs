@@ -189,13 +189,18 @@ fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Wo
     // An empty old value reserves a new ref atomically; a racing creator is never ours.
     run_git(repo, &["update-ref", &reference, head, ""])?;
     if let Err(error) = run_git(repo, &["worktree", "add", &dest_str, branch]) {
-        if let Err(rollback) = rollback_add(repo, dest, branch, head) {
-            return Err(error.context(format!(
+        let error = if let Err(rollback) = rollback_add(repo, dest, branch, head) {
+            error.context(format!(
                 "worktree creation failed; rollback for {} and {branch:?} also failed: {rollback:#}",
                 dest.display()
-            )));
-        }
-        return Err(error);
+            ))
+        } else {
+            error
+        };
+        let message = error.to_string();
+        return Err(error)
+            .context(crate::orchestrate::MutationMayHaveActed)
+            .context(message);
     }
     Ok(Worktree {
         path: dest.to_path_buf(),

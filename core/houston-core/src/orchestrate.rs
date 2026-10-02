@@ -307,6 +307,86 @@ pub fn cap_read_tail(lines: Vec<String>, asked: usize) -> Vec<String> {
     kept
 }
 
+// A short ASCII key is enough for UUIDs while bounding schema and receipt storage.
+pub const CLIENT_REQUEST_ID_MAX_BYTES: usize = 64;
+
+pub fn validate_client_request_id(key: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !key.is_empty()
+            && key.len() <= CLIENT_REQUEST_ID_MAX_BYTES
+            && key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')),
+        "client_request_id {key:?}: expected 1..=64 ASCII letters, digits, '.', '_' or '-'"
+    );
+    Ok(())
+}
+
+#[derive(Debug)]
+pub(crate) struct MutationMayHaveActed;
+
+impl std::fmt::Display for MutationMayHaveActed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("mutation may have acted; inspect the pane before retrying")
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SpawnRequest {
+    pub kind: proto::AgentKind,
+    pub model: Option<String>,
+    pub cwd: Option<String>,
+    pub prompt: String,
+    pub auto_approve: Option<bool>,
+    pub profile: Option<String>,
+    pub role: Option<String>,
+    pub target_workspace: Option<String>,
+    #[serde(default)]
+    pub reusable: bool,
+    #[serde(default)]
+    pub handoff: bool,
+    pub state_doc: Option<serde_json::Value>,
+    pub effort: Option<proto::ChatEffort>,
+    pub output_format: Option<String>,
+    pub boundaries: Option<String>,
+    pub worktree: Option<String>,
+    pub branch: Option<String>,
+    #[serde(skip_serializing)]
+    pub client_request_id: Option<String>,
+}
+
+impl SpawnRequest {
+    pub fn normalize(&mut self) {
+        for value in [
+            &mut self.target_workspace,
+            &mut self.output_format,
+            &mut self.boundaries,
+        ] {
+            *value = value
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string);
+        }
+        if let Some(role) = &mut self.role {
+            *role = role.trim().to_ascii_lowercase();
+        }
+        if let Some(slug) = &self.worktree {
+            let default_branch = format!("houston/{}", crate::git::ref_slug(slug));
+            if self.branch.as_deref() == Some(default_branch.as_str()) {
+                self.branch = None;
+            }
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SpawnOutcome {
+    pub session: proto::SessionInfo,
+    pub warning: Option<String>,
+    pub warnings: Vec<proto::PaneSpawnWarning>,
+}
+
 pub const BRIEF_FIELD_MAX_CHARS: usize = 2_000;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -966,6 +1046,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
             "effort",
             "output_format",
             "boundaries",
+            "client_request_id",
         ],
     },
     VerbSpec {
@@ -981,7 +1062,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
     VerbSpec {
         cli: "prompt",
         tool: Some("pane_prompt"),
-        args: &["session", "text"],
+        args: &["session", "text", "client_request_id"],
     },
     VerbSpec {
         cli: "keys",
@@ -2496,7 +2577,7 @@ const USAGE: &str = "\
 hs-pane — a Houston pane controlling sibling agent panes
 
   hs-pane whoami
-  hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok> --prompt \"…\"
+  hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok> --prompt \"…\" [--client-request-id KEY]
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
                 [--role NAME]          (unique among your live children)
                 [--target-workspace DIR] [--reusable]
@@ -2512,7 +2593,7 @@ hs-pane — a Houston pane controlling sibling agent panes
                                        (the brief: shape of the answer, and
                                         what the child must not do)
   hs-pane list
-  hs-pane prompt <id> <text…> [--wait] [--timeout MS]
+  hs-pane prompt <id> <text…> [--client-request-id KEY] [--wait] [--timeout MS]
   hs-pane wait [--session ID] [--kind KIND] [--timeout-ms MS] [--stall-guard]
                                          (blocks for a pane_inbox row; without
                                           --session waits on your whole inbox.
@@ -2692,6 +2773,9 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                 "kind": kind,
                 "prompt": prompt,
             });
+            if let Some(key) = flags.get("client-request-id") {
+                body["client_request_id"] = json!(key);
+            }
             if let Some(m) = flags.get("model") {
                 body["model"] = json!(m);
             }
@@ -2751,7 +2835,10 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             }
             let id = id_arg(positional.first(), cmd)?;
             let text = join_rest(&positional[1..], "--prompt's message")?;
-            let body = json!({ "session": id, "text": text });
+            let mut body = json!({ "session": id, "text": text });
+            if let Some(key) = flags.get("client-request-id") {
+                body["client_request_id"] = json!(key);
+            }
             let v = call("POST", "/orchestrate/prompt", Some(body))?;
             let source = v
                 .get("status_source")

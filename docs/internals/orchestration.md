@@ -436,6 +436,26 @@ prompt returns PTY write errors synchronously. The hold is rechecked before past
 before Enter. A hold detected before writing requeues the prompt; a partial or unsubmitted
 paste creates a note for the prompt sender containing the prompt and is never retried automatically. A queued prompt retains its sender until delivery. If that sender has died, its nearest live ancestor inherits the note; the operator receives it only when no ancestor is live.
 
+Optional `client_request_id` keys for spawn and prompt are shared by HTTP, MCP and
+`hs-pane`. Keys are scoped to the calling pane and admit 1–64 ASCII letters,
+digits, dots, underscores and hyphens. The daemon stores only an argument digest
+and the recorded success in SQLite. Defaults and normalized request fields are applied
+before hashing. Matching retries return that outcome;
+a different operation or argument set is refused with the key's name. Reservation
+precedes the mutation and completion precedes the response. A refusal before the
+action discards its pending receipt, so a retry can act after a cap, input or busy
+condition clears. Errors after a process, checkout, queued prompt or PTY write may
+have acted preserve the pending receipt. A crash between reservation and completion
+leaves a pending receipt; retry is refused with an uncertain-outcome message rather
+than repeating a possibly successful mutation. Receipts expire after seven days;
+at most 4096 remain across the channel, evicting oldest completed receipts first.
+The retry mutex precedes temporary-cleanup and session/delivery locks; receipt DB
+locks are released before entering spawn or delivery. No cleanup, hook or wake
+path acquires the retry mutex. Spawn releases temporary-cleanup during checkout
+creation and reacquires it for registration while retaining the retry mutex.
+A full set of pending receipts refuses new keyed calls until expiry. An expired
+or evicted key is a new request.
+
 ### Door 2: the synchronous `Stop` hook
 
 A parent that is still `Working` never gets a paste — door 3 only fires once it settles —

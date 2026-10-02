@@ -1247,6 +1247,7 @@ pub struct Daemon {
     swarm_finished_sessions: Mutex<HashSet<u32>>,
     inbox_flush_scheduled: Mutex<HashSet<u32>>,
     composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
+    orchestration_retry_lock: Mutex<()>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
@@ -2568,6 +2569,7 @@ impl Daemon {
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
+            orchestration_retry_lock: Mutex::new(()),
             paste_confirmations: Mutex::new(HashMap::new()),
             turn_start_round: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new(HashMap::new()),
@@ -8170,22 +8172,27 @@ impl Daemon {
         let reader = pair
             .master
             .try_clone_reader()
-            .map_err(|e| anyhow!("cloning PTY reader: {e}"))?;
+            .map_err(|e| anyhow!("cloning PTY reader: {e}"))
+            .context(orchestrate::MutationMayHaveActed)?;
         #[cfg(unix)]
         let writer: Box<dyn Write + Send> = {
             let fd = pair
                 .master
                 .as_raw_fd()
-                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))?;
+                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))
+                .context(orchestrate::MutationMayHaveActed)?;
             // SAFETY: pair.master owns fd throughout duplication; the resulting File closes without a blocking EOF write.
-            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?;
+            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }
+                .try_clone_to_owned()
+                .context(orchestrate::MutationMayHaveActed)?;
             Box::new(std::fs::File::from(owned))
         };
         #[cfg(not(unix))]
         let writer = pair
             .master
             .take_writer()
-            .map_err(|e| anyhow!("taking PTY writer: {e}"))?;
+            .map_err(|e| anyhow!("taking PTY writer: {e}"))
+            .context(orchestrate::MutationMayHaveActed)?;
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
         let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
@@ -8281,11 +8288,14 @@ impl Daemon {
         self.reap_reevaluate();
         if !hidden {
             self.db
-                .insert_session_with_title_source(&info, Some(title_source.as_str()))?;
-            self.db.set_session_profile_config_dir(
-                id,
-                Self::agent_profile_config_dir(agent, &extra_env),
-            )?;
+                .insert_session_with_title_source(&info, Some(title_source.as_str()))
+                .context(orchestrate::MutationMayHaveActed)?;
+            self.db
+                .set_session_profile_config_dir(
+                    id,
+                    Self::agent_profile_config_dir(agent, &extra_env),
+                )
+                .context(orchestrate::MutationMayHaveActed)?;
             self.record_launch_conversation(id, resumed, preassigned, resume_handle);
             let mut created = info.clone();
             created.compactions = self.compactions_of(&created);
@@ -12976,7 +12986,8 @@ impl Daemon {
         std::thread::Builder::new()
             .name(format!("swarm-wake-{session_id}"))
             .spawn(move || Self::swarm_wake_drain(daemon, session_id, generation))
-            .with_context(|| format!("spawning the wake lane for session {session_id}"))?;
+            .with_context(|| format!("spawning the wake lane for session {session_id}"))
+            .context(orchestrate::MutationMayHaveActed)?;
         Ok(())
     }
 
@@ -13657,6 +13668,146 @@ impl Daemon {
         )
     }
 
+    fn orchestration_retry<T: serde::Serialize + serde::de::DeserializeOwned>(
+        &self,
+        caller: u32,
+        key: Option<&str>,
+        operation: &str,
+        arguments: &serde_json::Value,
+        action: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        use sha2::Digest;
+        let Some(key) = key else {
+            return action();
+        };
+        orchestrate::validate_client_request_id(key)?;
+        self.orchestrate_whoami(caller)?;
+        let _guard = self
+            .orchestration_retry_lock
+            .lock()
+            .expect("orchestration retry lock");
+        let digest = format!("{:x}", sha2::Sha256::digest(serde_json::to_vec(arguments)?));
+        if let crate::db::OrchestrationReceipt::Recorded(result) = self
+            .db
+            .orchestration_receipt_begin(caller, key, operation, &digest, now_ms())?
+        {
+            let recorded: std::result::Result<T, String> = serde_json::from_str(&result)?;
+            return recorded.map_err(anyhow::Error::msg);
+        }
+        match action() {
+            Ok(value) => {
+                let recorded =
+                    serde_json::to_string(&std::result::Result::<&T, String>::Ok(&value))?;
+                self.db
+                    .orchestration_receipt_finish(caller, key, &recorded)?;
+                Ok(value)
+            }
+            Err(error) => {
+                if error
+                    .downcast_ref::<orchestrate::MutationMayHaveActed>()
+                    .is_none()
+                {
+                    self.db.orchestration_receipt_discard_pending(caller, key)?;
+                }
+                Err(anyhow!(
+                    crate::sanitize::redact_secrets(&format!("{error:#}")).0
+                ))
+            }
+        }
+    }
+
+    pub fn orchestrate_spawn_request(
+        self: &Arc<Self>,
+        caller: u32,
+        mut request: orchestrate::SpawnRequest,
+    ) -> Result<orchestrate::SpawnOutcome> {
+        request.normalize();
+        let arguments = serde_json::to_value(&request)?;
+        let key = request.client_request_id.clone();
+        self.orchestration_retry(caller, key.as_deref(), "pane_spawn", &arguments, || {
+            anyhow::ensure!(
+                !(request.handoff && request.reusable),
+                "{}",
+                orchestrate::HANDOFF_REUSABLE_REFUSED
+            );
+            let brief = orchestrate::Brief {
+                prompt: request.prompt,
+                output_format: request.output_format,
+                boundaries: request.boundaries,
+            };
+            let brief = self.handoff_state_brief(
+                caller,
+                request.target_workspace.as_deref(),
+                request.handoff,
+                brief,
+                request.state_doc.as_ref(),
+            )?;
+            let isolated = request.worktree.is_some();
+            let worktree = crate::worktrees::spawn_ask(request.worktree, request.branch)?;
+            let session = if request.handoff {
+                self.orchestrate_handoff(
+                    caller,
+                    request.kind,
+                    request.model,
+                    request.cwd,
+                    brief,
+                    request.auto_approve,
+                    request.profile,
+                    request.role,
+                    request.target_workspace,
+                    request.effort,
+                    worktree,
+                )
+            } else {
+                self.orchestrate_spawn_with_options(
+                    caller,
+                    request.kind,
+                    request.model,
+                    request.cwd,
+                    brief,
+                    request.auto_approve,
+                    request.profile,
+                    request.role,
+                    request.target_workspace,
+                    request.reusable,
+                    request.effort,
+                    worktree,
+                )
+            }?;
+            let warning = if isolated {
+                crate::launch::worktree_trust_warning(session.agent)
+            } else {
+                self.spawn_checkout_warning(session.id)
+            };
+            let warnings = self.spawn_warnings(&session, isolated);
+            Ok(orchestrate::SpawnOutcome {
+                session,
+                warning,
+                warnings,
+            })
+        })
+    }
+
+    pub fn orchestrate_prompt_request(
+        self: &Arc<Self>,
+        caller: u32,
+        target: u32,
+        text: &str,
+        key: Option<&str>,
+    ) -> Result<(String, Option<proto::AgentStatus>, Option<String>)> {
+        self.orchestration_retry(
+            caller,
+            key,
+            "pane_prompt",
+            &serde_json::json!({"session":target,"text":text}),
+            || {
+                let (source, status, held) =
+                    self.orchestrate_prompt_with_hold(caller, target, text)?;
+                Ok((source.to_string(), status, held))
+            },
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn orchestrate_spawn(
         self: &Arc<Self>,
@@ -14024,7 +14175,9 @@ impl Daemon {
                 Ok(args) => extra_args.extend(args),
                 Err(error) => {
                     self.discard_spawn_worktree(created);
-                    return Err(error).context("worktree spawn refused");
+                    return Err(error)
+                        .context("worktree spawn refused")
+                        .context(orchestrate::MutationMayHaveActed);
                 }
             }
         }
@@ -14050,9 +14203,14 @@ impl Daemon {
                 if let Some(c) = &created {
                     self.discard_spawn_worktree(c);
                 }
-                return Err(e).context(format!(
+                let error = e.context(format!(
                     "opening the delegation record for child {sid} failed; spawn rolled back"
                 ));
+                return Err(if created.is_some() {
+                    error.context(orchestrate::MutationMayHaveActed)
+                } else {
+                    error
+                });
             }
         }
         let observer = self
@@ -14106,7 +14264,11 @@ impl Daemon {
                 if let Some(c) = &created {
                     self.discard_spawn_worktree(c);
                 }
-                return Err(e);
+                return if created.is_some() {
+                    Err(e).context(orchestrate::MutationMayHaveActed)
+                } else {
+                    Err(e)
+                };
             }
         };
         self.record_approval_mode(sid, requested_mode);
@@ -14131,7 +14293,8 @@ impl Daemon {
                      could be recorded: {parent_error}; rolling back the spawned child also \
                      failed: {rollback_error}"
                 )),
-            };
+            }
+            .context(orchestrate::MutationMayHaveActed);
         }
         self.delegation_wake.notify_one();
         self.broadcast_delegation(sid);
@@ -14246,7 +14409,9 @@ impl Daemon {
         };
         if let Err(e) = self.db.managed_worktree_record(&row) {
             self.discard_spawn_worktree(&created);
-            return Err(e).context("spawn refused");
+            return Err(e)
+                .context("spawn refused")
+                .context(orchestrate::MutationMayHaveActed);
         }
         Ok(created)
     }
