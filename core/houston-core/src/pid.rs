@@ -159,6 +159,7 @@ mod win {
 
     pub(super) const QUERY: u32 =
         windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
+    const CHECK: u32 = QUERY | windows_sys::Win32::System::Threading::PROCESS_SYNCHRONIZE;
     pub(super) const TERMINATE: u32 = windows_sys::Win32::System::Threading::PROCESS_TERMINATE;
 
     const ERR_NO_SUCH_PROCESS: i32 = windows_sys::Win32::Foundation::ERROR_INVALID_PARAMETER as i32;
@@ -197,8 +198,6 @@ mod win {
         Err(io::Error::last_os_error())
     }
 
-    const EXIT_STILL_ACTIVE: u32 = 259;
-
     pub(super) fn creation_token(handle: HANDLE) -> Option<u64> {
         let zero = FILETIME {
             dwLowDateTime: 0,
@@ -225,19 +224,23 @@ mod win {
         Some(((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64)
     }
 
-    pub(super) fn already_terminated(pid: u32) -> bool {
-        match open(pid, QUERY) {
-            Ok(handle) => {
-                let mut code: u32 = 0;
-                // SAFETY: `handle` just came from a successful `open` above.
-                let ok = unsafe {
-                    windows_sys::Win32::System::Threading::GetExitCodeProcess(handle, &mut code)
-                };
-                close(handle);
-                ok != 0 && code != EXIT_STILL_ACTIVE
-            }
-            Err(_) => false,
-        }
+    pub(super) fn already_terminated(pid: u32) -> Result<bool, io::Error> {
+        use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
+        let handle = open(pid, CHECK)?;
+        // SAFETY: this handle owns SYNCHRONIZE; a zero timeout never blocks.
+        // A signaled process is exited, including one whose exit code is 259.
+        let state =
+            unsafe { windows_sys::Win32::System::Threading::WaitForSingleObject(handle, 0) };
+        let result = match state {
+            WAIT_OBJECT_0 => Ok(true),
+            WAIT_TIMEOUT => Ok(false),
+            WAIT_FAILED => Err(io::Error::last_os_error()),
+            other => Err(io::Error::other(format!(
+                "process wait returned {other}; expected WAIT_OBJECT_0 or WAIT_TIMEOUT"
+            ))),
+        };
+        close(handle);
+        result
     }
 
     pub(super) fn image_basename(handle: HANDLE) -> Option<String> {
@@ -283,7 +286,14 @@ pub fn signal_process_checked_identity(
         }
     }
     match sig {
-        Signal::Check => deliver_or_classify(pid, win::QUERY, |_, _| Ok(())),
+        Signal::Check => match win::already_terminated(pid) {
+            Ok(true) => Ok(SignalOutcome::NoSuchProcess),
+            Ok(false) => Ok(SignalOutcome::Delivered),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                Ok(SignalOutcome::NoSuchProcess)
+            }
+            Err(err) => Err(SignalError::Os(err)),
+        },
         Signal::Term | Signal::Hup | Signal::Int | Signal::Kill => {
             deliver_or_classify(pid, win::TERMINATE, |_, handle| win::terminate(handle))
         }
@@ -308,7 +318,7 @@ fn deliver_or_classify(
     match result {
         Ok(()) => Ok(SignalOutcome::Delivered),
         Err(err) if win::is_access_denied(&err) => {
-            if win::already_terminated(pid) {
+            if win::already_terminated(pid).unwrap_or(false) {
                 Ok(SignalOutcome::NoSuchProcess)
             } else {
                 Err(SignalError::Os(err))
@@ -486,10 +496,40 @@ mod tests {
 
     #[cfg(not(unix))]
     fn spawn_exit_child() -> std::process::Child {
-        std::process::Command::new("cmd")
-            .args(["/C", "exit 0"])
+        crate::spawn::command("cmd")
+            .args(["/d", "/C", "exit 0"])
             .spawn()
             .expect("spawn cmd")
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn exited_process_is_dead_while_its_handle_is_still_open() {
+        assert!(process_is_alive(std::process::id()));
+        for exit_code in [0, 259] {
+            let mut child = crate::spawn::command("cmd")
+                .args(["/d", "/c", &format!("exit {exit_code}")])
+                .spawn()
+                .unwrap();
+            let pid = child.id();
+            let creation = process_creation_token(pid).unwrap();
+            assert_eq!(child.wait().unwrap().code(), Some(exit_code));
+            // Child retains the kernel process object even after wait completes.
+            assert_eq!(process_creation_token(pid), Some(creation));
+            assert!(
+                !process_is_alive(pid),
+                "exited pid {pid} with code {exit_code} must not be reported alive"
+            );
+            assert_eq!(
+                signal_process_checked_identity(pid, Signal::Check, Some(creation)).unwrap(),
+                SignalOutcome::NoSuchProcess
+            );
+            assert_eq!(
+                signal_process_checked_identity(pid, Signal::Kill, Some(creation)).unwrap(),
+                SignalOutcome::NoSuchProcess
+            );
+            drop(child);
+        }
     }
 }
 
