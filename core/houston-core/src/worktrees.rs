@@ -50,22 +50,7 @@ pub fn create(repo: &Path, task_id: &str, base: Option<&str>, dest: &Path) -> Re
         }
         None => crate::git::default_base(repo).unwrap_or_else(|| "HEAD".to_string()),
     };
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    let dest_str = dest
-        .to_str()
-        .with_context(|| format!("worktree path is not UTF-8: {}", dest.display()))?;
-    run_git(repo, &["worktree", "add", "-b", &branch, dest_str, &base])?;
-    Ok(Worktree {
-        path: dest.to_path_buf(),
-        branch: Some(branch),
-        head: crate::git::head_sha(dest).ok(),
-        is_main: false,
-        is_bare: false,
-        is_detached: false,
-    })
+    add_worktree(repo, &branch, &base, dest)
 }
 
 pub fn list(repo: &Path) -> Result<Vec<Worktree>> {
@@ -186,22 +171,93 @@ pub fn create_on_branch(
     if branch_exists(repo, &branch) {
         bail!("branch {branch:?} already exists; remove its worktree or pick another name");
     }
+    add_worktree(repo, &branch, &base, dest)
+}
+
+fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Worktree> {
+    let dest_str = git_path(dest)?;
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    let dest_str = dest
-        .to_str()
-        .with_context(|| format!("worktree path is not UTF-8: {}", dest.display()))?;
-    run_git(repo, &["worktree", "add", "-b", &branch, dest_str, &base])?;
+    let head = run_git(
+        repo,
+        &["rev-parse", "--verify", &format!("{base}^{{commit}}")],
+    )?;
+    let head = head.trim();
+    let reference = format!("refs/heads/{branch}");
+    // An empty old value reserves a new ref atomically; a racing creator is never ours.
+    run_git(repo, &["update-ref", &reference, head, ""])?;
+    if let Err(error) = run_git(repo, &["worktree", "add", &dest_str, branch]) {
+        if let Err(rollback) = rollback_add(repo, dest, branch, head) {
+            return Err(error.context(format!(
+                "worktree creation failed; rollback for {} and {branch:?} also failed: {rollback:#}",
+                dest.display()
+            )));
+        }
+        return Err(error);
+    }
     Ok(Worktree {
         path: dest.to_path_buf(),
-        branch: Some(branch),
+        branch: Some(branch.to_string()),
         head: crate::git::head_sha(dest).ok(),
         is_main: false,
         is_bare: false,
         is_detached: false,
     })
+}
+
+fn rollback_add(repo: &Path, dest: &Path, branch: &str, head: &str) -> Result<()> {
+    let reference = format!("refs/heads/{branch}");
+    let current = run_git(repo, &["rev-parse", "--verify", &reference])?;
+    if current.trim() != head {
+        bail!(
+            "branch {branch:?} changed from {head} to {}; preserving its worktree and commits",
+            current.trim()
+        );
+    }
+    for tree in list(repo)? {
+        let owned = tree
+            .path
+            .canonicalize()
+            .ok()
+            .zip(dest.canonicalize().ok())
+            .is_some_and(|(actual, expected)| actual == expected);
+        if owned && tree.branch.as_deref() == Some(branch) {
+            remove(repo, dest, true)?;
+        }
+    }
+    if list(repo)?
+        .iter()
+        .any(|tree| tree.branch.as_deref() == Some(branch))
+    {
+        bail!("branch {branch:?} is checked out elsewhere; refusing rollback deletion");
+    }
+    // The expected value also protects a commit written after the earlier check.
+    run_git(repo, &["update-ref", "-d", &reference, head])?;
+    Ok(())
+}
+
+fn git_path(path: &Path) -> Result<String> {
+    let raw = path
+        .to_str()
+        .with_context(|| format!("worktree path is not UTF-8: {}", path.display()))?;
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        // Git interprets verbatim prefixes as //?/ paths, even though Rust accepts them.
+        if matches!(path.components().next(), Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), Prefix::Verbatim(_) | Prefix::DeviceNS(_)))
+        {
+            bail!("worktree path {raw:?} uses an unsupported device prefix; expected a drive or UNC path");
+        }
+        Ok(crate::paths::windows_command_path(path)
+            .to_str()
+            .context("normalised worktree path is not UTF-8")?
+            .replace('\\', "/"))
+    }
+    #[cfg(not(windows))]
+    Ok(raw.to_string())
 }
 
 pub fn has_submodules(worktree: &Path) -> bool {
@@ -220,9 +276,7 @@ pub fn init_submodules(worktree: &Path) -> Result<()> {
 /// gone leaves a stale entry that blocks re-adding the same path.
 pub fn prune(repo: &Path) -> Result<String> {
     ensure_git_repo(repo)?;
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(repo)
+    let out = git_command(repo)
         .args(["worktree", "prune", "-v"])
         .output()
         .with_context(|| format!("spawning git worktree prune in {}", repo.display()))?;
@@ -266,13 +320,11 @@ pub fn remove(repo: &Path, worktree: &Path, force: bool) -> Result<()> {
             worktree.display()
         );
     }
-    let path = worktree
-        .to_str()
-        .with_context(|| format!("worktree path is not UTF-8: {}", worktree.display()))?;
+    let path = git_path(worktree)?;
     if force {
-        run_git(repo, &["worktree", "remove", "--force", path])?;
+        run_git(repo, &["worktree", "remove", "--force", &path])?;
     } else {
-        run_git(repo, &["worktree", "remove", path])?;
+        run_git(repo, &["worktree", "remove", &path])?;
     }
     let _ = run_git(repo, &["worktree", "prune"]);
     Ok(())
@@ -339,9 +391,7 @@ fn ensure_git_repo(dir: &Path) -> Result<()> {
 }
 
 fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = crate::spawn::command("git")
-        .arg("-C")
-        .arg(dir)
+    let out = git_command(dir)
         .args(args)
         .output()
         .with_context(|| format!("spawning git {args:?} in {}", dir.display()))?;
@@ -355,6 +405,14 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<String> {
         );
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn git_command(dir: &Path) -> std::process::Command {
+    let mut command = crate::spawn::command("git");
+    #[cfg(windows)]
+    command.args(["-c", "core.longpaths=true"]);
+    command.arg("-C").arg(dir);
+    command
 }
 
 #[cfg(test)]
@@ -414,6 +472,155 @@ mod tests {
             err.contains("branch \"houston/fix-login\" already exists"),
             "an existing branch must be named in the refusal: {err}"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_windows_paths_create_and_remove_worktrees() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("projeto com acentuação");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let repo = repo.canonicalize().unwrap();
+        for (slug, task) in [("named", false), ("task", true)] {
+            let dest = spawn_path(&repo, slug);
+            let wt = if task {
+                create(&repo, slug, None, &dest)
+            } else {
+                create_named(&repo, slug, None, &dest)
+            }
+            .unwrap();
+            assert_eq!(
+                wt.path.canonicalize().unwrap(),
+                dest.canonicalize().unwrap()
+            );
+            let actual = list(&repo).unwrap();
+            assert!(actual
+                .iter()
+                .any(|tree| { tree.path.canonicalize().unwrap() == dest.canonicalize().unwrap() }));
+            remove(&repo, &dest.canonicalize().unwrap(), true).unwrap();
+            assert!(!dest.exists());
+            assert_eq!(list(&repo).unwrap().len(), 1);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn long_windows_worktree_paths_either_round_trip_or_roll_back_cleanly() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let repo = repo.canonicalize().unwrap();
+        let long = repo
+            .join("segment".repeat(10))
+            .join("segment".repeat(10))
+            .join("segment".repeat(10))
+            .join("long-tree");
+        assert!(long.as_os_str().len() > 260);
+        match create_named(&repo, "long-tree", None, &long) {
+            Ok(_) => {
+                assert!(long.join("README.md").is_file());
+                remove(&repo, &long.canonicalize().unwrap(), true).unwrap();
+            }
+            Err(error) => {
+                // Git versions differ in their internal worktree path limits.
+                assert!(error.to_string().contains("git"), "{error:#}");
+                assert!(!branch_exists(&repo, "houston/long-tree"));
+                assert_eq!(list(&repo).unwrap().len(), 1);
+                create_named(&repo, "long-tree", None, &repo.join("short-tree")).unwrap();
+            }
+        }
+        assert!(!long.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn git_paths_keep_drive_and_unc_roots_without_device_prefixes() {
+        assert_eq!(
+            git_path(Path::new(r"\\?\C:\project space\tree")).unwrap(),
+            "C:/project space/tree"
+        );
+        assert_eq!(
+            git_path(Path::new(r"\\?\UNC\server\share\tree")).unwrap(),
+            "//server/share/tree"
+        );
+        assert_eq!(
+            git_path(Path::new(r"\\server\share\tree")).unwrap(),
+            "//server/share/tree"
+        );
+        assert!(git_path(Path::new(r"\\.\PhysicalDrive0")).is_err());
+    }
+
+    #[test]
+    fn failed_checkout_does_not_leave_a_branch_and_can_be_retried() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        git(
+            &repo,
+            &[
+                "config",
+                "core.hooksPath",
+                repo.join("hooks").to_str().unwrap(),
+            ],
+        );
+        std::fs::create_dir_all(repo.join("hooks")).unwrap();
+        std::fs::write(repo.join("hooks/post-checkout"), "#!/bin/sh\nexit 1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                repo.join("hooks/post-checkout"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        let dest = root.path().join("wt");
+        let error = create_on_branch(&repo, "houston/retry", None, &dest).unwrap_err();
+        assert!(error.to_string().contains("failed"), "{error}");
+        assert!(!branch_exists(&repo, "houston/retry"));
+        assert!(!dest.exists());
+        assert_eq!(list(&repo).unwrap().len(), 1);
+        std::fs::remove_file(repo.join("hooks/post-checkout")).unwrap();
+        create_on_branch(&repo, "houston/retry", None, &dest).unwrap();
+    }
+
+    #[test]
+    fn failed_checkout_preserves_a_commit_written_by_its_hook() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        init_repo(&repo);
+        let original = crate::git::head_sha(&repo).unwrap();
+        let hooks = repo.join("hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        git(
+            &repo,
+            &["config", "core.hooksPath", hooks.to_str().unwrap()],
+        );
+        std::fs::write(
+            hooks.join("post-checkout"),
+            "#!/bin/sh\ngit commit --allow-empty -m hook-commit\nexit 1\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                hooks.join("post-checkout"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        let dest = root.path().join("wt");
+        let error = create_on_branch(&repo, "houston/hook", None, &dest).unwrap_err();
+        assert!(error.to_string().contains("preserving"), "{error:#}");
+        assert!(branch_exists(&repo, "houston/hook"));
+        assert!(dest.exists());
+        assert_ne!(crate::git::head_sha(&dest).unwrap(), original);
+        assert_eq!(list(&repo).unwrap().len(), 2);
     }
 
     #[test]

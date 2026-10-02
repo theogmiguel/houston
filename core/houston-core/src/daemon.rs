@@ -398,6 +398,8 @@ mod process_liveness_tests {
 #[cfg(windows)]
 fn session_spawn_dir(cwd: &Path) -> (PathBuf, Option<PathBuf>) {
     const RISK_LEN: usize = 230;
+    let command_cwd = crate::paths::windows_command_path(cwd);
+    let cwd = command_cwd.as_path();
     if cwd.as_os_str().len() < RISK_LEN {
         return (cwd.to_path_buf(), None);
     }
@@ -6621,10 +6623,25 @@ impl Daemon {
         }
         let facts = crate::git::checkout_facts(Path::new(&info.cwd));
         info.checkout_root = facts.toplevel;
+        #[cfg(windows)]
+        let checkout = info
+            .checkout_root
+            .as_ref()
+            .and_then(|root| Path::new(root).canonicalize().ok());
         info.worktree = match self.db.managed_worktrees() {
             Ok(rows) => rows
                 .into_iter()
-                .find(|row| Some(&row.path) == info.checkout_root.as_ref())
+                .find(|row| {
+                    if Some(&row.path) == info.checkout_root.as_ref() {
+                        return true;
+                    }
+                    #[cfg(windows)]
+                    {
+                        checkout.is_some() && Path::new(&row.path).canonicalize().ok() == checkout
+                    }
+                    #[cfg(not(windows))]
+                    false
+                })
                 .map(|row| proto::SessionWorktree {
                     path: row.path,
                     branch: row.branch,

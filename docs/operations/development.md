@@ -361,7 +361,7 @@ committed inventory and runs in its own `licence-inventory` job.
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
 | `core-checks` | every PR, and every push to `main` except a docs-only change | `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --lib`, all against `core/Cargo.toml` |
 | `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
-| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus Git, management, shutdown, environment and non-ASCII/long-path ConPTY regressions on Windows 2022 |
+| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus Git, management, shutdown, environment, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
 | `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
 
 The remaining integration suites (`core/houston-core/tests/`, which need a real

@@ -106,6 +106,13 @@ target workspace. The parent may still address the child because delegation ance
 not workspace equality, controls access. A child token remains scoped to its own
 workspace, and unrelated panes remain inaccessible.
 
+For an isolated checkout on Linux or Windows, set `worktree` to a new directory slug
+in `pane_spawn` (`hs-pane spawn --worktree SLUG`). Houston creates and records it under
+`.houston/worktrees/SLUG`, using branch `houston/SLUG` unless an explicit `branch` is
+supplied. Existing branches and occupied paths are refused. If creation or provider
+preparation fails, Houston rolls back the fresh checkout and branch. If Git checkout fails
+after a hook has added commits, Houston preserves them and reports that rollback needs attention.
+
 Children are temporary by default. After a durable completed result, Houston ends the
 process and keeps the session and transcript under Settled. Done-and-idle reusable
 children also leave the live-child quota, but remain in Working until their process ends. Closing a settled child or its parent removes
