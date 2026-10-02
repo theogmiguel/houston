@@ -1373,6 +1373,13 @@ impl Db {
         )?;
         ensure_tag_ids_are_monotonic(&conn)?;
         add_column_if_missing(&conn, "sessions", "tags", "tags TEXT NOT NULL DEFAULT '[]'")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "compactions",
+            "compactions INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(&conn, "sessions", "handed_off_at", "handed_off_at INTEGER")?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS ssh_profiles (
                 name TEXT PRIMARY KEY,
@@ -1976,6 +1983,7 @@ impl Db {
                     worktree: None,
                     resumable: false,
                     resume_notice: None,
+                    compactions: None,
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -4533,6 +4541,50 @@ fn insert_inbox_row(conn: &Connection, row: &NewInboxRow, now: u64) -> Result<i6
 }
 
 impl Db {
+    /// Counts one context compaction for `id` and returns the new total.
+    pub fn session_note_compaction(&self, id: u32) -> Result<u32> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "UPDATE sessions SET compactions = compactions + 1 WHERE id = ?1
+             RETURNING compactions",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )?)
+    }
+
+    pub fn session_compactions(&self, id: u32) -> Result<u32> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT compactions FROM sessions WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0))
+    }
+
+    pub fn session_mark_handed_off(&self, id: u32, now: u64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET handed_off_at = COALESCE(handed_off_at, ?2) WHERE id = ?1",
+            rusqlite::params![id, now as i64],
+        )?;
+        Ok(())
+    }
+
+    pub fn session_handed_off(&self, id: u32) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT handed_off_at IS NOT NULL FROM sessions WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(false))
+    }
+
     pub fn session_set_approval_mode(&self, id: u32, mode: &str) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
@@ -5326,6 +5378,7 @@ mod tests {
             worktree: None,
             resumable: false,
             resume_notice: None,
+            compactions: None,
         }
     }
 

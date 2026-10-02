@@ -15,4 +15,9 @@ resumable: boolean,
 /**
  * Why this pane started fresh instead of resuming its conversation.
  */
-resume_notice?: string | null, };
+resume_notice?: string | null,
+/**
+ * Context compactions the agent reported for this pane; `None` when its
+ * provider reports no compaction event.
+ */
+compactions?: number | null, };

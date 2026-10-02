@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 121;
+pub const PROTOCOL_VERSION: u32 = 122;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1344,6 +1344,11 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub resume_notice: Option<String>,
+    /// Context compactions the agent reported for this pane; `None` when its
+    /// provider reports no compaction event.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub compactions: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3059,6 +3064,10 @@ pub enum ServerMsg {
         live_children: u32,
         #[serde(default)]
         children_waiting: u32,
+    },
+    CompactionsChanged {
+        session: u32,
+        compactions: u32,
     },
     DelegationChanged {
         session: u32,

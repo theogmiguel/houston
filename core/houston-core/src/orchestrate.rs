@@ -107,6 +107,23 @@ pub fn read_source_is_screen(source: Option<&str>) -> Result<bool, String> {
 
 pub const HANDOFF_BATCH_MS: u64 = 2_000;
 
+// By the third compaction the earliest decisions have been summarised at least
+// twice, which is when a long orchestration starts to lose them.
+pub const HANDOFF_OFFER_AFTER_COMPACTIONS: u32 = 3;
+
+pub fn handoff_offer_body(pane: u32, compactions: u32) -> String {
+    format!(
+        "pane {pane} has compacted its context {compactions} times; what it remembers of \
+         branches, delegations and decisions is now a lossy summary. If the work will \
+         continue for a while, consider handing it to a new pane: write a state document \
+         with, per repository, the branch, PR and commit; the open delegations; the \
+         decisions taken; known traps; and the next step. Then call pane_spawn with \
+         handoff: true and state_doc: {{path: \"<file>\"}} (hs-pane spawn --handoff \
+         --state-doc-path <file>). This is an offer, not an instruction: carry on here if \
+         the work is nearly done."
+    )
+}
+
 pub const HANDOFF_EXCERPT_MAX_CHARS: usize = 400;
 
 pub const HANDOFF_CORROBORATING_ROWS: usize = 12;

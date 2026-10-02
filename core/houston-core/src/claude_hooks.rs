@@ -9,6 +9,9 @@ pub fn hook_events() -> Vec<&'static str> {
         .iter()
         .map(|(name, _)| *name)
         .chain(crate::agent_events::CLAUDE_CORRELATION_EVENTS)
+        .chain(crate::agent_events::compaction_event(
+            houston_protocol::AgentKind::Claude,
+        ))
         .collect()
 }
 
@@ -982,6 +985,7 @@ mod tests {
                 "PreToolUse",
                 "PostToolUse",
                 "PostToolUseFailure",
+                "PreCompact",
             ]
         );
     }

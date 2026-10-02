@@ -65,6 +65,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         worktree: None,
         resumable: false,
         resume_notice: None,
+        compactions: None,
     })
     .unwrap();
 }

@@ -100,6 +100,7 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
             worktree: None,
             resumable: false,
             resume_notice: None,
+            compactions: None,
         })
         .unwrap();
     }
@@ -172,6 +173,7 @@ fn reparent_refuses_a_swarm_tied_session() {
             worktree: None,
             resumable: false,
             resume_notice: None,
+            compactions: None,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {

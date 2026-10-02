@@ -1,4 +1,4 @@
-# Wire protocol v121
+# Wire protocol v122
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -324,6 +324,7 @@ failure not given a typed refusal comes back as `error`.
 | `session_resized` | `session`, `cols`, `rows` | direct reply. Dims are read back from the PTY for live local sessions; SSH and dead sessions echo the request |
 | `session_renamed` | `session`, `title` | bcast after `session_rename` |
 | `session_tags_set` | `session`, `tags: u32[]` | v100: bcast after `session_set_tags` — the whole set, client replaces |
+| `compactions_changed` | `session`, `compactions` | v122: bcast each time the agent's compaction hook fires; at every `HANDOFF_OFFER_AFTER_COMPACTIONS` (3) a top-level pane with children and no earlier handoff also gets one `operator_note` inbox row with reason `handoff_offer` |
 | `session_resumable` | `session`, `resumable` | v119: bcast when a live session gains its first resume handle (a turn in its root conversation) or loses it (kill, close) |
 | `tag_list` | `tags: TagInfo[]` | v100: bcast after any `tag_*` mutation; whole registry, client replaces |
 | `tag_deleted` | `tag` | v100: bcast beside the `tag_list` that follows a delete — clients holding the id (a tag filter) clean up without diffing |
@@ -446,7 +447,9 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    boot restore; clients retain the pane across missed replacements),
                    resumable (v119: the session holds a resume handle, so a Restart without `fresh`
                    resumes its conversation), resume_notice? (v119: why this session started fresh
-                   instead of resuming; held in memory for the session's life)
+                   instead of resuming; held in memory for the session's life),
+                   compactions? (v122: context compactions the agent's hooks reported for this pane;
+                   absent when its provider reports none)
 DelegationInfo     started_at (epoch ms), settled_at? (epoch ms), retained_until? (epoch ms), parent, role?, state: DelegationState, stalled, result_staged, superseded, ended_at?,
                    stop_reason?, turn_end_source: TurnEndSource, inbox_owed, inbox_provisional,
                    last_result_corrected_by?, capability_note?, hold_reason?, reusable (v98: what the child
@@ -931,6 +934,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |
 | 121 | **Settled children retain their transcripts and conversations.** Delegation timestamps, `restored` inbox kind, configurable settled retention and per-workspace role routing. Existing operator inbox list/ack/resolve and row pushes cover the operator queue. `ssh_connect` gains `default_dir?`; pane spawn results gain typed `warnings` for caller-owned warnings |
 | 120 | **A worktree whose PR has merged is removed with its build output.** New `worktree_cleanup_set` (reply: `host_info` bcast, which gains `worktree_cleanup_enabled` and `worktree_cleanup_grace_hours`), `worktree_cleanup_status` and `worktree_cleanup_run` (which removes only the confirmed `paths`, or only checks), and the `worktree_cleanup` reply/bcast carrying `ManagedWorktreeInfo` with a typed `WorktreeKeep` reason. Only worktrees Houston recorded (`pane_spawn`'s `worktree`, the Changes pane) are ever removed |
 | 119 | **Restored or restarted Claude and Codex panes resume their conversations.** `SessionInfo` gains `resumable` and `resume_notice?`; `session_respawn` gains `fresh?`; new `restore_resume_set` (reply: `host_info` bcast, which gains `restore_resume`) and `session_resumable` bcast. Boot restore after shutdown or crash and `session_respawn` relaunch a Claude session with `--resume <id>` or Codex with `resume <id>` when it holds a resume handle that passes validation, and start fresh with a one-line `resume_notice` otherwise |

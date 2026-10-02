@@ -2129,3 +2129,95 @@ async fn mcp_call(addr: SocketAddr, token: &str, body: serde_json::Value) -> ser
     assert_eq!(status, 200, "mcp call: {value}");
     value
 }
+
+mod compaction {
+    use super::*;
+
+    #[tokio::test]
+    async fn each_provider_compaction_hook_is_counted_once() {
+        let _guard = serial().await;
+        shim_dir();
+        for (kind, slug, fixture_dir, name) in [
+            (
+                proto::AgentKind::Claude,
+                "claude",
+                "claude",
+                "claude-2.1.287-19-PreCompact.json",
+            ),
+            (
+                proto::AgentKind::Codex,
+                "codex",
+                "codex",
+                "codex-0.159.1-schema-10-PreCompact.json",
+            ),
+            (
+                proto::AgentKind::Cursor,
+                "cursor",
+                "cursor",
+                "cursor-schema-07-preCompact.json",
+            ),
+            (
+                proto::AgentKind::Grok,
+                "grok",
+                "grok",
+                "grok-1.0.13-schema-PreCompact.json",
+            ),
+            (
+                proto::AgentKind::Opencode,
+                "opencode",
+                "opencode",
+                "opencode-1.18.33-09-session.compacted.json",
+            ),
+        ] {
+            let (_addr, state, daemon) = start_daemon_with_handle().await;
+            let (info, _dir) = pane(&daemon, kind);
+            let event = houston_core::agent_events::compaction_event(kind).unwrap();
+            let before = daemon.session_status(info.id).unwrap();
+            let mut rx = daemon.observe();
+            drive(
+                state.path(),
+                event,
+                slug,
+                info.id,
+                fixture(fixture_dir, name),
+            )
+            .await;
+            loop {
+                match common::next_broadcast_control(&mut rx).await {
+                    proto::ServerMsg::CompactionsChanged {
+                        session,
+                        compactions,
+                    } if session == info.id => {
+                        assert_eq!(compactions, 1, "{kind:?}");
+                        break;
+                    }
+                    _ => continue,
+                }
+            }
+            let listed = daemon.list().into_iter().find(|s| s.id == info.id).unwrap();
+            assert_eq!(listed.compactions, Some(1), "{kind:?}");
+            assert_eq!(
+                daemon.session_status(info.id).unwrap(),
+                before,
+                "{kind:?}: a compaction is never a status"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_reports_no_compaction_so_its_count_is_absent() {
+        let _guard = serial().await;
+        shim_dir();
+        let (_addr, _state, daemon) = start_daemon_with_handle().await;
+        let (info, _dir) = pane(&daemon, proto::AgentKind::Antigravity);
+        assert_eq!(
+            houston_core::agent_events::compaction_event(proto::AgentKind::Antigravity),
+            None
+        );
+        let listed = daemon.list().into_iter().find(|s| s.id == info.id).unwrap();
+        assert_eq!(
+            listed.compactions, None,
+            "no count is shown for a provider that reports none"
+        );
+    }
+}

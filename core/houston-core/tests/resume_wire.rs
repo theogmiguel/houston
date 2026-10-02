@@ -368,6 +368,7 @@ fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str,
         worktree: None,
         resumable: false,
         resume_notice: None,
+        compactions: None,
     })
     .unwrap();
     db.set_session_resume_handle(id, handle).unwrap();
