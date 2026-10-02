@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 122;
+pub const PROTOCOL_VERSION: u32 = 123;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -408,6 +408,295 @@ pub struct HarnessFinding {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub decided_at_ms: Option<i64>,
     pub recurred: bool,
+}
+
+/// A task's workflow state. Archiving is orthogonal: an archived task keeps
+/// its status and leaves the active lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Backlog,
+    Todo,
+    InProgress,
+    InReview,
+    Done,
+    Canceled,
+}
+
+impl TaskStatus {
+    pub const ALL: [TaskStatus; 6] = [
+        TaskStatus::Backlog,
+        TaskStatus::Todo,
+        TaskStatus::InProgress,
+        TaskStatus::InReview,
+        TaskStatus::Done,
+        TaskStatus::Canceled,
+    ];
+}
+
+/// A task's priority; the stored integer runs 0 none, 1 urgent .. 4 low.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskPriority {
+    None,
+    Urgent,
+    High,
+    Medium,
+    Low,
+}
+
+/// What the workspace's `tasks_access:<workspace>` setting allows. `off` also
+/// withholds every task tool an agent would be offered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TasksAccess {
+    Off,
+    Read,
+    Write,
+}
+
+/// Why a task operation was refused. `Conflict` carries expected and actual
+/// revision; `Limit` carries limit and requested; `AccessOff` and `ReadOnly`
+/// name Settings ▸ Tasks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskErrorKind {
+    Conflict,
+    Limit,
+    NotFound,
+    AccessOff,
+    ReadOnly,
+    Invalid,
+    Cycle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskRunKind {
+    Implementation,
+    Review,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskRunState {
+    Preparing,
+    Running,
+    WaitingForInput,
+    Validating,
+    HandedBack,
+    NeedsReview,
+    Failed,
+    Cancelled,
+    Interrupted,
+}
+
+/// A task as the snapshot lists it: no description, so a 5 000-task list stays
+/// bounded; the detail message carries the text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskSummary {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    /// The task's display key, `HOU-<number>`.
+    pub key: String,
+    pub title: String,
+    pub status: TaskStatus,
+    pub priority: TaskPriority,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub parent_id: Option<i64>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub ref_url: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub revision: i64,
+    pub created_by: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub updated_at_ms: i64,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub archived_at_ms: Option<i64>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub acceptance_checked: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub acceptance_total: u32,
+}
+
+/// One task with its full text. Every mutation bumps `revision`, so a client
+/// that read one can tell its edit is stale.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct Task {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    pub key: String,
+    pub title: String,
+    pub description: String,
+    pub status: TaskStatus,
+    pub priority: TaskPriority,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub parent_id: Option<i64>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub ref_url: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub revision: i64,
+    pub created_by: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub updated_at_ms: i64,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub archived_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskAcceptanceItem {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub position: u32,
+    pub text: String,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub checked_at_ms: Option<i64>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub checked_by: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskComment {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub body: String,
+    pub author: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: i64,
+}
+
+/// One recorded change. `changes` is a JSON diff of the fields that moved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskHistoryEntry {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub actor: String,
+    pub action: String,
+    pub changes: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at_ms: i64,
+}
+
+/// One execution attempt of a task. Slice 1 records none; the shape is fixed
+/// so the wire does not change when Start lands.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskRun {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub task_id: i64,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub attempt: u32,
+    pub kind: TaskRunKind,
+    pub state: TaskRunState,
+    pub provider: AgentKind,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub reviewer: Option<AgentKind>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub session_id: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub delegation_id: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub worktree_path: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub branch: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub base_commit: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub initial_revision: i64,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub summary: Option<String>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub started_at_ms: i64,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub ended_at_ms: Option<i64>,
+}
+
+/// Per-status counts of the workspace's non-archived tasks; the snapshot's
+/// `tasks` list also carries the archived ones, with `archived_at_ms` set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskCounts {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub backlog: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub todo: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub in_progress: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub in_review: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub done: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub canceled: u32,
+}
+
+/// A task write's fields. `title`, `description`, `status`, `priority` and
+/// `acceptance` are absent-or-value; `parent_id` and `ref_url` are three-state,
+/// so absent, null and a value are distinct. `acceptance` replaces the list.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub status: Option<TaskStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub priority: Option<TaskPriority>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub parent_id: Option<Option<i64>>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub ref_url: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<string> | null"))]
+    pub acceptance: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2887,6 +3176,55 @@ pub enum ClientMsg {
         key: String,
         state: HarnessFindingState,
     },
+    /// A workspace's tasks, summaries only, with per-status counts.
+    TaskSnapshot {
+        workspace: String,
+    },
+    /// One task with its acceptance items, comments, history and runs.
+    TaskGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+    },
+    /// Creates (id absent) or updates (id present, `expected_revision`
+    /// required) one task.
+    TaskSave {
+        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        id: Option<i64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        expected_revision: Option<i64>,
+        patch: TaskPatch,
+    },
+    TaskComment {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        body: String,
+    },
+    /// Ticks one acceptance item of a task.
+    TaskCheck {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        item: i64,
+        checked: bool,
+    },
+    /// Archives or restores one task.
+    TaskArchive {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        archived: bool,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        expected_revision: i64,
+    },
+    TasksAccessGet {
+        workspace: String,
+    },
+    TasksAccessSet {
+        workspace: String,
+        access: TasksAccess,
+    },
     SkillSync,
     SkillPush {
         tool: Option<AgentKind>,
@@ -3470,6 +3808,52 @@ pub enum ServerMsg {
     HarnessChanged {
         workspace: String,
     },
+    /// A workspace's task summaries (archived included, flagged by
+    /// `archived_at_ms`) and per-status counts of the non-archived ones.
+    TaskSnapshot {
+        workspace: String,
+        tasks: Vec<TaskSummary>,
+        counts: TaskCounts,
+    },
+    /// One task with its acceptance items, newest comments first, history
+    /// newest first and its recorded runs, newest first.
+    TaskDetail {
+        task: Task,
+        acceptance: Vec<TaskAcceptanceItem>,
+        comments: Vec<TaskComment>,
+        history: Vec<TaskHistoryEntry>,
+        runs: Vec<TaskRun>,
+    },
+    /// One task changed; a client showing the workspace asks for
+    /// `task_snapshot` or `task_get` again.
+    TaskChanged {
+        workspace: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        revision: i64,
+    },
+    /// A task operation was refused; nothing changed. `message` names the
+    /// operation, and `Conflict`/`Limit`/access refusals their numbers.
+    TaskRefused {
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        id: Option<i64>,
+        kind: TaskErrorKind,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        limit: Option<u32>,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        requested: Option<u64>,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        expected: Option<i64>,
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        actual: Option<i64>,
+        message: String,
+    },
+    /// The workspace's Tasks access, after a read or a change.
+    TasksAccess {
+        workspace: String,
+        access: TasksAccess,
+    },
 
     VoiceSettings {
         settings: VoiceSettings,
@@ -3706,6 +4090,22 @@ pub const ROUTINE_RUNS_PAGE: u32 = 50;
 pub const HARNESS_REVIEWS_PAGE: u32 = 50;
 /// A `report.md` past this is served cut, with `truncated` set.
 pub const HARNESS_REPORT_MAX_BYTES: usize = 1024 * 1024;
+/// A task title, per issue #50.
+pub const TASK_TITLE_MAX: usize = 200;
+/// A task description; keeps one row under the MCP body cap (1 MiB).
+pub const TASK_DESCRIPTION_MAX: usize = 65_536;
+/// A comment body; keeps one task's detail reply bounded.
+pub const TASK_COMMENT_MAX: usize = 16_384;
+/// Tasks one workspace may hold; snapshot sends summaries only.
+pub const TASKS_PER_WORKSPACE: u32 = 5_000;
+/// Comments one task may hold; keeps `task_get` bounded.
+pub const COMMENTS_PER_TASK: u32 = 500;
+/// Acceptance items one task may hold; keeps the brief readable.
+pub const ACCEPTANCE_ITEMS_PER_TASK: u32 = 50;
+/// Run records one task's detail answers with; keeps `task_get` bounded.
+pub const RUNS_PER_TASK: u32 = 50;
+/// History rows one task's detail answers with, newest first.
+pub const TASK_HISTORY_PAGE: u32 = 200;
 
 pub const RESTORE_BUDGET_DEFAULT: u32 = 24;
 

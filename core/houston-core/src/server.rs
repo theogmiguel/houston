@@ -601,6 +601,9 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::BrowserToolResult { .. }
             | proto::ClientMsg::InboxList { .. }
             | proto::ClientMsg::DelegationResultsList { .. }
+            | proto::ClientMsg::TaskSnapshot { .. }
+            | proto::ClientMsg::TaskGet { .. }
+            | proto::ClientMsg::TasksAccessGet { .. }
     )
 }
 
@@ -1105,6 +1108,83 @@ async fn dispatch(
             key,
             state,
         } => daemon.harness_decide(&workspace, &key, state),
+        proto::ClientMsg::TaskSnapshot { workspace } => {
+            let msg = daemon.task_snapshot(&workspace)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskGet { id } => {
+            let msg = daemon.task_get(id)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskSave {
+            workspace,
+            id,
+            expected_revision,
+            patch,
+        } => match daemon.task_save(&workspace, id, expected_revision, patch)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskComment { id, body } => match daemon.task_comment(id, &body)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskCheck { id, item, checked } => {
+            match daemon.task_check(id, item, checked)? {
+                msg @ proto::ServerMsg::TaskRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                    Ok(())
+                }
+                msg => {
+                    daemon.broadcast_control(&msg);
+                    Ok(())
+                }
+            }
+        }
+        proto::ClientMsg::TaskArchive {
+            id,
+            archived,
+            expected_revision,
+        } => match daemon.task_archive(id, archived, expected_revision)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TasksAccessGet { workspace } => {
+            let _ = send_msg(sink, &daemon.tasks_access_state(&workspace)).await;
+            Ok(())
+        }
+        proto::ClientMsg::TasksAccessSet { workspace, access } => {
+            match daemon.tasks_access_set(&workspace, access)? {
+                msg @ proto::ServerMsg::TaskRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                    Ok(())
+                }
+                msg => {
+                    daemon.broadcast_control(&msg);
+                    Ok(())
+                }
+            }
+        }
         proto::ClientMsg::AgentHooks => {
             let models = Arc::clone(daemon);
             tokio::spawn(async move { models.refresh_model_catalog(false).await });

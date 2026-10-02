@@ -11,6 +11,11 @@ pub use harness::{
     HarnessDecisionRow, HarnessFindingRow, HarnessFindingWrite, HarnessPublication,
     HarnessReviewRow,
 };
+mod tasks;
+pub use tasks::{
+    TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskRow, TaskRunRow, TaskSummaryRow,
+    TaskUpdate, TaskWrite,
+};
 
 #[derive(Debug, Clone)]
 pub struct SkillPushRow {
@@ -1522,6 +1527,7 @@ impl Db {
                 ON routine_runs(routine_id, id DESC);",
         )?;
         harness::migrate(&conn)?;
+        tasks::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",

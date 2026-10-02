@@ -1,4 +1,4 @@
-# Wire protocol v122
+# Wire protocol v123
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -267,6 +267,23 @@ failure not given a typed refusal comes back as `error`.
 | `harness_report` | `review_id` | `harness_report` (direct); `error` when the review has no `report.md` |
 | `harness_decide` | `workspace`, `key`, `state: HarnessFindingState` (`open` withdraws the decision) | `harness_changed` (bcast); `error` when no review of that workspace raised `key` |
 
+### Tasks
+
+Task writes need the workspace's Tasks access to be `write`; reads need `off` to
+be lifted. Both are per workspace, default `write`, in Settings ▸ Tasks, and
+every refusal names the setting.
+
+| Message | Fields | Reply |
+|---|---|---|
+| `task_snapshot` | `workspace` | `task_snapshot` (direct); `task_refused` `access_off` when the workspace's access is `off` |
+| `task_get` | `id` | `task_detail` (direct); `task_refused` `not_found`\|`access_off` |
+| `task_save` | `workspace`, `id?` (absent creates), `expected_revision?` (required when `id` is present), `patch: TaskPatch` | `task_changed` (bcast) on success; `task_refused` (direct) `conflict`\|`limit`\|`not_found`\|`access_off`\|`read_only`\|`invalid`\|`cycle` |
+| `task_comment` | `id`, `body` (non-empty, ≤ `TASK_COMMENT_MAX`) | `task_changed` (bcast); `task_refused` `not_found`\|`limit`\|`access_off`\|`read_only`\|`invalid` |
+| `task_check` | `id`, `item` (acceptance item id), `checked` | `task_changed` (bcast); `task_refused` `not_found`\|`read_only`\|`access_off` |
+| `task_archive` | `id`, `archived`, `expected_revision` | `task_changed` (bcast); `task_refused` `conflict`\|`not_found`\|`read_only`\|`access_off` |
+| `tasks_access_get` | `workspace` | `tasks_access` (direct) |
+| `tasks_access_set` | `workspace`, `access: TasksAccess` | `tasks_access` (bcast); changing it re-reads every open agent tool list in that workspace |
+
 ### Skill sync and push
 
 | Message | Fields | Reply |
@@ -394,6 +411,11 @@ failure not given a typed refusal comes back as `error`.
 | `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability) | direct reply to `harness_state` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
 | `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, or a decision changed; a client showing it asks for `harness_state` again |
+| `task_snapshot` | `workspace`, `tasks: TaskSummary[]` (newest number first, at most `TASKS_PER_WORKSPACE`; archived tasks stay in the list with `archived_at_ms` set), `counts: TaskCounts` (non-archived only) | direct reply to `task_snapshot` |
+| `task_detail` | `task: Task`, `acceptance: TaskAcceptanceItem[]` (by position), `comments: TaskComment[]` (newest first, at most `COMMENTS_PER_TASK`), `history: TaskHistoryEntry[]` (newest first, at most `TASK_HISTORY_PAGE`), `runs: TaskRun[]` (newest first, at most `RUNS_PER_TASK`) | direct reply to `task_get` |
+| `task_changed` | `workspace`, `id`, `revision` | bcast after any task write — a client showing the workspace asks for `task_snapshot` or `task_get` again |
+| `task_refused` | `id?`, `kind: TaskErrorKind`, `limit?`, `requested?`, `expected?`, `actual?`, `message` | direct reply only; nothing changed. `conflict` carries the task, the expected revision and the actual one; `limit` carries the limit and the actual value; `access_off` and `read_only` name Settings ▸ Tasks |
+| `tasks_access` | `workspace`, `access: TasksAccess` | direct reply to `tasks_access_get`; bcast after `tasks_access_set` |
 | `voice_settings` | `settings: VoiceSettings`, `cloud_key_present`, `keyring_error?`, `models: VoiceModelState[]` | direct reply to `voice_settings_get`; bcast after any settings or key change |
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
@@ -576,12 +598,45 @@ HarnessFinding     review_id, key, title, category, confidence, sessions, count,
                    recurred (a review published after the decision raised it again, so it is open)
 HarnessFindingState open | dismissed | resolved
 
+TaskSummary        id, workspace, number, key (`HOU-<number>`), title,
+                   status: TaskStatus, priority: TaskPriority,
+                   parent_id?, ref_url?, revision (integer; every task write bumps it),
+                   created_by ('user' or an agent's provenance), created_at_ms, updated_at_ms,
+                   archived_at_ms?, acceptance_checked, acceptance_total
+Task               as TaskSummary plus description (≤ `TASK_DESCRIPTION_MAX`)
+TaskStatus         backlog | todo | in_progress | in_review | done | canceled
+TaskPriority       none | urgent | high | medium | low (stored 0..4)
+TaskAcceptanceItem id, position, text, checked_at_ms?, checked_by?
+TaskComment        id, body, author, created_at_ms
+TaskHistoryEntry   id, actor, action, changes (a JSON diff), created_at_ms
+TaskRun            id, task_id, attempt, kind: TaskRunKind, state: TaskRunState,
+                   provider: AgentKind, reviewer?, session_id?, delegation_id?,
+                   worktree_path?, branch?, base_commit?, initial_revision, summary?,
+                   started_at_ms, ended_at_ms?
+TaskRunKind        implementation | review
+TaskRunState       preparing | running | waiting_for_input | validating | handed_back |
+                   needs_review | failed | cancelled | interrupted
+TaskCounts         backlog, todo, in_progress, in_review, done, canceled
+TaskPatch          title?, description?, status?, priority?, acceptance? (each absent = unchanged;
+                   acceptance replaces the whole list when present);
+                   parent_id? and ref_url? are three-state: absent unchanged, null clears, value sets
+TaskErrorKind      conflict | limit | not_found | access_off | read_only | invalid | cycle
+TasksAccess        off | read | write — per workspace, default write
+
 Run caps (generated into `DEFAULTS.ts` beside the record caps, so the tab can
 show a limit before it trips): `ROUTINE_TICK_MS` 15 000 — how often the loop
 looks; `ROUTINE_RUNS_CONCURRENT` 3 — unattended runs in flight at once, the
 fourth waits for a slot; `ROUTINE_RUN_MAX_MS` 1 800 000 — one run's ceiling,
 past which it is stopped as `killed_at_cap`; `ROUTINE_RUNS_PAGE` 50 — how many
 run records `routine_runs` answers with.
+
+Task caps (also in `DEFAULTS.ts`): `TASK_TITLE_MAX` 200 chars;
+`TASK_DESCRIPTION_MAX` 65 536 bytes; `TASK_COMMENT_MAX` 16 384 bytes;
+`TASKS_PER_WORKSPACE` 5 000; `COMMENTS_PER_TASK` 500;
+`ACCEPTANCE_ITEMS_PER_TASK` 50; `RUNS_PER_TASK` 50; `TASK_HISTORY_PAGE` 200.
+Every refusal names the operation, the limit and the actual value; a stale
+`expected_revision` is a `conflict` naming the task, the expected revision and
+the actual one.
 
 CloudStt           groq
 VoiceEngine        tag "kind": local{model_id} | cloud{provider: CloudStt}
@@ -934,6 +989,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 123 | **A local task backlog per workspace.** New `task_snapshot`, `task_get`, `task_save`, `task_comment`, `task_check`, `task_archive`, `tasks_access_get` and `tasks_access_set` client messages and `task_snapshot`, `task_detail`, `task_changed`, `task_refused` and `tasks_access` replies, with `Task`, `TaskSummary`, `TaskPatch`, `TaskStatus`, `TaskPriority`, `TaskAcceptanceItem`, `TaskComment`, `TaskHistoryEntry`, `TaskRun`, `TaskCounts`, `TaskErrorKind` and `TasksAccess`. Tasks live in per-workspace `backlog_*` SQLite tables, get a monotonic `HOU-<n>` number and an integer `revision`, and are gated by a per-workspace Tasks access (`off`/`read`/`write`, default `write`) in Settings ▸ Tasks; the orphan `tasks`/`task_events` tables are unrelated and untouched. Removing a workspace deletes its tasks. No existing message changes |
 | 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |
 | 121 | **Settled children retain their transcripts and conversations.** Delegation timestamps, `restored` inbox kind, configurable settled retention and per-workspace role routing. Existing operator inbox list/ack/resolve and row pushes cover the operator queue. `ssh_connect` gains `default_dir?`; pane spawn results gain typed `warnings` for caller-owned warnings |
 | 120 | **A worktree whose PR has merged is removed with its build output.** New `worktree_cleanup_set` (reply: `host_info` bcast, which gains `worktree_cleanup_enabled` and `worktree_cleanup_grace_hours`), `worktree_cleanup_status` and `worktree_cleanup_run` (which removes only the confirmed `paths`, or only checks), and the `worktree_cleanup` reply/bcast carrying `ManagedWorktreeInfo` with a typed `WorktreeKeep` reason. Only worktrees Houston recorded (`pane_spawn`'s `worktree`, the Changes pane) are ever removed |

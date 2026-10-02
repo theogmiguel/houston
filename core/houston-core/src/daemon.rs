@@ -1105,6 +1105,7 @@ impl DelegationSettleSample {
 }
 
 mod harness_review;
+mod tasks;
 mod worktree_pass;
 
 type TranscriptLink = (Option<String>, Option<String>);
@@ -6777,6 +6778,10 @@ impl Daemon {
 
         self.uninstall_workspace_hooks(path);
         self.db.remove_workspace(path)?;
+        let removed_tasks = self.db.remove_backlog_tasks(path)?;
+        if removed_tasks > 0 {
+            tracing::info!("removed {removed_tasks} task(s) of workspace {path}");
+        }
         self.workspace_list()
     }
 

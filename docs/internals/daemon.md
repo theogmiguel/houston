@@ -361,11 +361,12 @@ only on rare control-plane events — the PTY path never touches SQLite.
 |---|---|
 | workspaces and sessions | `workspaces`, `sessions` |
 | routines | `routines`, `routine_runs` |
+| tasks | `backlog_tasks`, `backlog_task_counters`, `backlog_task_acceptance`, `backlog_task_blocks`, `backlog_task_comments`, `backlog_task_history`, `backlog_task_runs` — a workspace's backlog; `workspace_remove` deletes all of them |
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
 | bookkeeping | `settings`, `mcp_managed`, `workspace_hooks`, `skill_pushes`, `managed_worktrees` (the worktrees Houston created and may remove) |
-| legacy tasks | `tasks`, `task_events` — retained for database compatibility |
+| legacy tasks | `tasks`, `task_events` — an orphan from before the `backlog_` tables, retained for database compatibility and never read or written by Tasks |
 | legacy substrate | `swarms`, `swarm_agents`, `swarm_messages`, `swarm_deliveries`, `swarm_plan_events_applied` |
 
 Tables use `CREATE TABLE IF NOT EXISTS`; unused tables generally remain for compatibility.
