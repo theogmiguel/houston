@@ -30,6 +30,7 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
     'Enable orchestration',
     'Mailbox retention'
   ],
+  tasks: ['Agent access', 'Task key prefix'],
   voice: [
     'Groq API key',
     'Enable dictation',

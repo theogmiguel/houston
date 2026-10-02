@@ -66,6 +66,7 @@ import {
   IconZap,
   IconGlobe,
   IconClock,
+  IconTasks,
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./Tooltip";
@@ -96,6 +97,7 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   user: IconUser,
   folder: IconFolder,
   fork: IconGitFork,
+  tasks: IconTasks,
   mic: IconMic,
   database: IconDatabase,
   chart: IconChartArea,

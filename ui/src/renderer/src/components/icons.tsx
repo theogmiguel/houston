@@ -1234,3 +1234,161 @@ export function IconPhone(p: IconProps): React.JSX.Element {
 export function IconTablet(p: IconProps): React.JSX.Element {
   return <Svg {...p}><rect x="3" y="2" width="18" height="20" rx="2" /><path d="M11 18h2" /></Svg>
 }
+
+export function IconTasks(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="m3 17 2 2 4-4" />
+      <path d="m3 7 2 2 4-4" />
+      <path d="M13 6h8" />
+      <path d="M13 12h8" />
+      <path d="M13 18h8" />
+    </Svg>
+  )
+}
+
+export function IconFunnel(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </Svg>
+  )
+}
+
+export function IconMessageSquare(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </Svg>
+  )
+}
+
+export function IconArchive(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <rect width="20" height="5" x="2" y="3" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="M10 12h4" />
+    </Svg>
+  )
+}
+
+// The Tasks feature's fixed 14px glyph vocabulary. These are not stroke-rung
+// icons: the status ring and priority bars are drawn at a fixed box, so they
+// deliberately do not go through the Icon role ladder.
+function TaskGlyph({ children, ...rest }: IconProps & { children: React.ReactNode }): React.JSX.Element {
+  const hasA11y = rest['aria-label'] != null || rest['aria-labelledby'] != null || rest.role != null
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      {...(!hasA11y && { 'aria-hidden': 'true' })}
+      {...rest}
+    >
+      {children}
+    </svg>
+  )
+}
+
+export function IconTaskStatusBacklog(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--text-faint)" strokeWidth="1.5" strokeDasharray="2.2 2.2" />
+    </TaskGlyph>
+  )
+}
+
+export function IconTaskStatusTodo(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" />
+    </TaskGlyph>
+  )
+}
+
+export function IconTaskStatusProgress(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--warn)" strokeWidth="1.5" />
+      <path d="M7 7V3.2A3.8 3.8 0 0 1 7 10.8Z" fill="var(--warn)" />
+    </TaskGlyph>
+  )
+}
+
+export function IconTaskStatusReview(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--info)" strokeWidth="1.5" />
+      <path d="M7 7V3.2A3.8 3.8 0 1 1 3.2 7Z" fill="var(--info)" />
+    </TaskGlyph>
+  )
+}
+
+export function IconTaskStatusDone(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <circle cx="7" cy="7" r="6" fill="var(--ok)" />
+      <path
+        d="m4.4 7.2 1.9 1.9 3.3-3.8"
+        fill="none"
+        stroke="var(--content-bg)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </TaskGlyph>
+  )
+}
+
+export function IconTaskStatusCanceled(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--text-faint)" strokeWidth="1.5" />
+      <path d="M4.7 7h4.6" stroke="var(--text-faint)" strokeWidth="1.5" strokeLinecap="round" />
+    </TaskGlyph>
+  )
+}
+
+export function IconPriorityUrgent(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <rect x="1.5" y="1.5" width="11" height="11" rx="3" fill="var(--warn)" />
+      <path d="M7 4v4M7 10v.01" stroke="var(--content-bg)" strokeWidth="1.6" strokeLinecap="round" />
+    </TaskGlyph>
+  )
+}
+
+export function IconPriorityNone(p: IconProps): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      <path d="M3 7h8" stroke="var(--text-faint)" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 2.5" />
+    </TaskGlyph>
+  )
+}
+
+const PRIORITY_BARS: ReadonlyArray<readonly [number, number]> = [
+  [2, 4],
+  [6, 7],
+  [10, 10]
+]
+
+export function IconPriorityBars({ level, ...p }: IconProps & { level: 1 | 2 | 3 }): React.JSX.Element {
+  return (
+    <TaskGlyph {...p}>
+      {PRIORITY_BARS.map(([x, h], i) => (
+        <rect
+          key={x}
+          x={x}
+          y={12 - h}
+          width="2.4"
+          height={h}
+          rx="1"
+          fill="var(--text-secondary)"
+          opacity={i < level ? 1 : 0.3}
+        />
+      ))}
+    </TaskGlyph>
+  )
+}

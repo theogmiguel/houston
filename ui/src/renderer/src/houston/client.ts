@@ -13,6 +13,8 @@ import type { ChatEffort } from './generated/ChatEffort'
 import type { ChatPermissionMode } from './generated/ChatPermissionMode'
 import type { Cadence } from './generated/Cadence'
 import type { HarnessFindingState } from './generated/HarnessFindingState'
+import type { TaskPatch } from './generated/TaskPatch'
+import type { TasksAccess } from './generated/TasksAccess'
 import type { GitDiscardKind } from './generated/GitDiscardKind'
 import type { GitCheckpointAgainst } from './generated/GitCheckpointAgainst'
 import type { PrMergeMethod } from './generated/PrMergeMethod'
@@ -1408,6 +1410,38 @@ export class HoustonClient {
 
   harnessDecide(workspace: string, key: string, state: HarnessFindingState): void {
     this.send({ type: 'harness_decide', workspace, key, state })
+  }
+
+  taskSnapshot(workspace: string): void {
+    this.send({ type: 'task_snapshot', workspace })
+  }
+
+  taskGet(id: number): void {
+    this.send({ type: 'task_get', id })
+  }
+
+  taskSave(workspace: string, id: number | null, expectedRevision: number | null, patch: TaskPatch): void {
+    this.send({ type: 'task_save', workspace, id, expected_revision: expectedRevision, patch })
+  }
+
+  taskComment(id: number, body: string): void {
+    this.send({ type: 'task_comment', id, body })
+  }
+
+  taskCheck(id: number, item: number, checked: boolean): void {
+    this.send({ type: 'task_check', id, item, checked })
+  }
+
+  taskArchive(id: number, archived: boolean, expectedRevision: number): void {
+    this.send({ type: 'task_archive', id, archived, expected_revision: expectedRevision })
+  }
+
+  tasksAccessGet(workspace: string): void {
+    this.send({ type: 'tasks_access_get', workspace })
+  }
+
+  tasksAccessSet(workspace: string, access: TasksAccess): void {
+    this.send({ type: 'tasks_access_set', workspace, access })
   }
 
   keymapGet(): void {

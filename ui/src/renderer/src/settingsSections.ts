@@ -8,6 +8,7 @@ export type SettingsSectionId =
   | 'agent-setup'
   | 'workspace-defaults'
   | 'orchestration'
+  | 'tasks'
   | 'voice'
   | 'privacy'
   | 'usage'
@@ -22,6 +23,7 @@ export type SettingsIconKey =
   | 'user'
   | 'folder'
   | 'fork'
+  | 'tasks'
   | 'mic'
   | 'database'
   | 'chart'
@@ -117,6 +119,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
       'spawn', 'spawning', 'agent spawns agent', 'children', 'child panes', 'depth',
       'hs-pane', 'caps', 'mailbox'
     ]
+  },
+  {
+    id: 'tasks',
+    label: 'Tasks',
+    icon: 'tasks',
+    group: 'agents',
+    keywords: ['backlog', 'task', 'access', 'read only', 'agent access', 'todo', 'key prefix']
   },
   {
     id: 'voice',

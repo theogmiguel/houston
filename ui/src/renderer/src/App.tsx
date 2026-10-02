@@ -218,7 +218,7 @@ import {
 import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, loadSideState } from "./sidePanel";
+import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, openSideTasks, loadSideState } from "./sidePanel";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
@@ -3118,6 +3118,7 @@ export function App(): React.JSX.Element {
       toggleScmPanel();
     },
     spawnAgent: (agent) => spawnAgentPane(agent),
+    openTasks: (compose) => openSideTasks(compose === true),
     toggleSidebarRail: () => setSidebarRail((cur) => !cur),
     toggleChromeTheme: () =>
       setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite"),
