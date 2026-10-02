@@ -9,6 +9,15 @@ pub const PROMPT_FILE_THRESHOLD: usize = 12_000;
 
 pub type LaunchArgs = (Vec<String>, Option<(PathBuf, String)>);
 
+pub fn handback_permission_args(agent: proto::AgentKind) -> Vec<String> {
+    match agent {
+        // One token: the flag is variadic, so a separate value could swallow a later positional.
+        proto::AgentKind::Claude => vec!["--allowedTools=mcp__houston__pane_submit".into()],
+        proto::AgentKind::Grok => vec!["--allow".into(), "mcp__houston__pane_submit".into()],
+        _ => Vec::new(),
+    }
+}
+
 pub fn worktree_trust_args(agent: proto::AgentKind, cwd: &Path) -> Result<Vec<String>> {
     use proto::AgentKind::*;
     match agent {
@@ -399,6 +408,21 @@ impl ApprovalMode {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn child_handback_permission_is_limited_to_the_exact_houston_tool() {
+        use houston_protocol::AgentKind::*;
+        assert_eq!(
+            super::handback_permission_args(Claude),
+            ["--allowedTools=mcp__houston__pane_submit"]
+        );
+        assert_eq!(
+            super::handback_permission_args(Grok),
+            ["--allow", "mcp__houston__pane_submit"]
+        );
+        for agent in [Codex, Antigravity, Opencode, Cursor] {
+            assert!(super::handback_permission_args(agent).is_empty());
+        }
+    }
     use super::*;
 
     #[test]

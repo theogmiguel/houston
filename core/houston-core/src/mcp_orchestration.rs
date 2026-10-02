@@ -574,6 +574,16 @@ impl ToolProvider for OrchestrationTools {
                                 })),
                             })
                         }
+                        orchestrate::InboxWaitOutcome::Restarting { waited_ms } => Ok(ToolOutput {
+                            text: message.clone(),
+                            structured: Some(json!({
+                                "rows": [], "timed_out": true, "restarting": true,
+                                "waited_ms": waited_ms, "wait_cap_ms": cap,
+                                "requested_timeout_ms": requested_timeout_ms,
+                                "provider": provider, "cap_note": cap_note,
+                                "next_action": message,
+                            })),
+                        }),
                         orchestrate::InboxWaitOutcome::Superseded => Ok(ToolOutput::structured(
                             json!({"superseded": true, "rows": []}),
                         )),

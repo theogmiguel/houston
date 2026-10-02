@@ -1994,6 +1994,15 @@ impl Db {
         Ok(())
     }
 
+    pub fn session_orchestration_identity(&self, id: u32) -> Result<(Option<u32>, Option<String>)> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT spawned_by, profile_label FROM sessions WHERE id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?)
+    }
+
     pub fn session_origin(&self, id: u32) -> Result<u32> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.query_row(

@@ -649,6 +649,15 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
             "{provider} has no turn-end continuation; results wait for its next idle"
         ));
     }
+    if matches!(
+        agent,
+        proto::AgentKind::Codex
+            | proto::AgentKind::Antigravity
+            | proto::AgentKind::Opencode
+            | proto::AgentKind::Cursor
+    ) {
+        notes.push(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode"));
+    }
     if notes.is_empty() {
         None
     } else {
@@ -750,6 +759,9 @@ pub fn status_source(agent: proto::AgentKind) -> StatusSource {
 
 #[derive(Debug, Clone)]
 pub enum InboxWaitOutcome {
+    Restarting {
+        waited_ms: u64,
+    },
     Superseded,
     NothingToWaitOn,
     Delivered {
@@ -784,6 +796,7 @@ fn status_word(status: Option<proto::AgentStatus>) -> String {
 impl InboxWaitOutcome {
     pub fn message(&self) -> String {
         match self {
+            Self::Restarting { .. } => "Daemon is restarting. Call pane_wait again.".into(),
             Self::Superseded => "wait superseded by a newer pane_wait".into(),
             Self::NothingToWaitOn => {
                 "nothing to wait on: no live children or pending inbox rows".into()
@@ -4298,23 +4311,34 @@ mod tests {
     }
 
     #[test]
-    fn capability_note_names_what_the_cli_cannot_report() {
+    fn handback_capability_note_names_providers_without_a_launch_rule() {
         for kind in [
-            proto::AgentKind::Claude,
             proto::AgentKind::Codex,
             proto::AgentKind::Antigravity,
+            proto::AgentKind::Opencode,
+            proto::AgentKind::Cursor,
         ] {
-            assert_eq!(
-                capability_note(kind),
-                None,
-                "{kind:?} reports all four axes"
+            assert!(
+                capability_note(kind)
+                    .is_some_and(|note| note.contains("pane_submit follows its approval mode")),
+                "{kind:?} must expose its handback permission capability"
             );
+        }
+    }
+
+    #[test]
+    fn capability_note_names_what_the_cli_cannot_report() {
+        assert_eq!(capability_note(proto::AgentKind::Claude), None);
+        for kind in [proto::AgentKind::Codex, proto::AgentKind::Antigravity] {
+            let provider = provider_label(kind);
+            assert_eq!(capability_note(kind), Some(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode")));
         }
         assert_eq!(
             capability_note(proto::AgentKind::Cursor).as_deref(),
             Some(
                 "cursor: needs-input not reported by this provider; cursor has no \
-                 turn-end continuation; results wait for its next idle"
+                 turn-end continuation; results wait for its next idle; cursor has no \
+                 handback-only launch rule configured; pane_submit follows its approval mode"
             )
         );
         let provider = provider_label(proto::AgentKind::Grok);
@@ -4331,7 +4355,7 @@ mod tests {
         );
         assert_eq!(
             capability_note(proto::AgentKind::Opencode).as_deref(),
-            Some("opencode has no turn-end continuation; results wait for its next idle")
+            Some("opencode has no turn-end continuation; results wait for its next idle; opencode has no handback-only launch rule configured; pane_submit follows its approval mode")
         );
         for kind in [
             proto::AgentKind::Custom,

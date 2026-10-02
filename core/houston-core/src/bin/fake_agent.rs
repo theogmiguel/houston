@@ -239,6 +239,69 @@ impl Agent {
             let op = step["op"].as_str().context("step requires op")?;
             self.log("step", json!({"op":op}))?;
             match op {
+                "require_handback_allow" => {
+                    let args: Vec<String> = std::env::args().collect();
+                    let expected = match self.script.provider.as_str() {
+                        "claude" => "--allowedTools",
+                        "grok" => "--allow",
+                        other => bail!("no handback-only launch rule for {other}"),
+                    };
+                    let joined = format!("{expected}=mcp__houston__pane_submit");
+                    if !args.contains(&joined)
+                        && !args
+                            .windows(2)
+                            .any(|pair| pair == [expected, "mcp__houston__pane_submit"])
+                    {
+                        bail!("missing handback-only permission flag {expected}");
+                    }
+                    self.log("handback_allowed", Value::Null)?;
+                }
+                "terminal_query" => {
+                    let da = step["query"] == "da";
+                    print!("{}", if da { "\x1b[c" } else { "\x1b[3;7H\x1b[6" });
+                    std::io::stdout().flush()?;
+                    if let Some(gate) = step["finish_gate"].as_str() {
+                        self.log("query_started", Value::Null)?;
+                        let deadline = Instant::now() + Duration::from_secs(30);
+                        while !std::path::Path::new(gate).exists() {
+                            if Instant::now() >= deadline {
+                                bail!("query continuation barrier timed out");
+                            }
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                    if !da {
+                        print!("n");
+                        std::io::stdout().flush()?;
+                    }
+                    #[cfg(unix)]
+                    {
+                        let mut reply = Vec::new();
+                        let deadline = Instant::now() + Duration::from_secs(10);
+                        while !reply.ends_with(if da { b"c" } else { b"R" }) {
+                            let mut fd = libc::pollfd {
+                                fd: 0,
+                                events: libc::POLLIN,
+                                revents: 0,
+                            };
+                            if Instant::now() >= deadline
+                                || unsafe { libc::poll(&mut fd, 1, 100) } < 0
+                            {
+                                bail!("terminal query reply timed out");
+                            }
+                            if fd.revents & libc::POLLIN != 0 {
+                                let mut byte = [0];
+                                use std::os::fd::AsFd;
+                                nix::unistd::read(std::io::stdin().as_fd(), &mut byte)?;
+                                reply.push(byte[0]);
+                            }
+                        }
+                        self.log(
+                            "terminal_reply",
+                            json!({"reply":String::from_utf8_lossy(&reply)}),
+                        )?;
+                    }
+                }
                 "think" => {
                     // Xorshift fixes the jitter stream independently of the rand crate version.
                     self.random ^= self.random << 13;
@@ -286,6 +349,22 @@ impl Agent {
                         step["tool"].as_str().context("call tool")?,
                         step["args"].clone(),
                     )?;
+                }
+                "http_wait" => {
+                    let endpoint = std::env::var("HOUSTON_MCP_URL")?;
+                    self.log("call", json!({"tool":"pane_wait"}))?;
+                    let result: Value = reqwest::blocking::Client::builder()
+                        .no_proxy()
+                        .build()?
+                        .post(format!(
+                            "{}/orchestrate/wait",
+                            endpoint.trim_end_matches("/mcp")
+                        ))
+                        .bearer_auth(std::env::var("HOUSTON_MCP_TOKEN")?)
+                        .json(&step["args"])
+                        .send()?
+                        .json()?;
+                    self.log("reply", json!({"tool":"pane_wait","result":result}))?;
                 }
                 "background_wait" => {
                     let request = self.request("pane_wait", json!({"timeout_ms":20000}))?;

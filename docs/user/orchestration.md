@@ -118,6 +118,16 @@ After a daemon restart, open Claude and Codex children resume with their parent 
 valid conversation handles are available. The parent receives one restored notice naming
 which children resumed. Other children remain ended and are named in that notice.
 
+A live daemon handoff preserves parent links, delegation roles and scoped credentials.
+An open wait returns a retryable timeout marked `restarting`; call `pane_wait` again
+on the new generation. Pending results remain available for that wait.
+
+Claude and Grok children receive a launch-only permission rule for Houston's
+`pane_submit` tool, including when automatic approval is disabled. Other tools keep
+the selected approval mode. No handback-only launch rule is
+configured for Codex, Antigravity, OpenCode or Cursor; their capability note names
+this limitation, and their selected approval mode still applies to handback.
+
 ## Handing work off to a new pane
 
 When you ask an agent to hand its work off to a new pane, and you no longer need the

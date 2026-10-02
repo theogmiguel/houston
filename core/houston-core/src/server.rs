@@ -3976,6 +3976,15 @@ async fn orch_wait(
             })),
         )
             .into_response(),
+        InboxWaitOutcome::Restarting { waited_ms } => (
+            StatusCode::REQUEST_TIMEOUT,
+            axum::Json(json!({
+                "rows": [], "timed_out": true, "restarting": true,
+                "waited_ms": waited_ms, "wait_cap_ms": cap,
+                "requested_timeout_ms": timeout_ms, "provider": provider,
+                "cap_note": cap_note, "next_action": message,
+            })),
+        ).into_response(),
         InboxWaitOutcome::Superseded => (
             StatusCode::OK,
             axum::Json(json!({"superseded":true,"rows":[]})),

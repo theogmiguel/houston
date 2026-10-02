@@ -2268,8 +2268,17 @@ impl Daemon {
     pub fn new_adopting(
         cfg: DaemonConfig,
         port: u16,
-        adopted: AdoptedSessions,
+        mut adopted: AdoptedSessions,
     ) -> Result<Arc<Self>> {
+        let db = Db::open(&cfg.db_path)?;
+        for (session, _) in &mut adopted {
+            let (parent, profile) = db.session_orchestration_identity(session.info.id)?;
+            // The manifest owns each reconstructed session until its reader is started.
+            let session = Arc::get_mut(session).expect("adoption owns the reconstructed session");
+            session.info.spawned_by = parent;
+            session.info.profile_label = profile;
+        }
+        drop(db);
         Self::new_inner_ex(cfg, None, Some(port), Some(adopted))
     }
 
@@ -3577,6 +3586,9 @@ impl Daemon {
             ));
         }
 
+        for notify in self.inbox_wake.lock().expect("inbox wake lock").values() {
+            notify.notify_waiters();
+        }
         std::thread::sleep(Duration::from_millis(adoption::HANDOFF_MCP_DRAIN_MS));
 
         let live_ids: Vec<u32> = {
@@ -13728,6 +13740,9 @@ impl Daemon {
             "spawned",
         )?;
         extra_args.extend(mode_args);
+        if !handoff {
+            extra_args.extend(crate::launch::handback_permission_args(kind));
+        }
         if let Some(effort) = effort {
             extra_args.extend(crate::launch::effort_args(kind, effort)?);
         }
@@ -14443,6 +14458,11 @@ impl Daemon {
         let mut startup_stall_deadline = stall_guard.then_some(started + stall_window);
 
         let try_reserve = |this: &Arc<Self>| -> Result<Option<orchestrate::InboxWaitOutcome>> {
+            if this.is_handing_off() {
+                return Ok(Some(orchestrate::InboxWaitOutcome::Restarting {
+                    waited_ms: started.elapsed().as_millis() as u64,
+                }));
+            }
             if !this
                 .inbox_waiting
                 .lock()
@@ -14483,6 +14503,13 @@ impl Daemon {
                 }
             }
             let waiting = this.inbox_waiting.lock().expect("inbox waiting lock");
+            if this.is_handing_off() {
+                drop(waiting);
+                this.release_reservation(&delivery_id);
+                return Ok(Some(orchestrate::InboxWaitOutcome::Restarting {
+                    waited_ms: started.elapsed().as_millis() as u64,
+                }));
+            }
             if !waiting
                 .get(&caller)
                 .is_some_and(|state| Arc::ptr_eq(state, &guard.state))

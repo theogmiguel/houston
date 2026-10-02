@@ -4683,7 +4683,8 @@ async fn delegation_info_carries_owed_provisional_and_hold_reason() {
         carried.capability_note.as_deref(),
         Some(
             "cursor: needs-input not reported by this provider; cursor has no turn-end \
-             continuation; results wait for its next idle"
+             continuation; results wait for its next idle; cursor has no handback-only launch \
+             rule configured; pane_submit follows its approval mode"
         )
     );
     assert_eq!(
