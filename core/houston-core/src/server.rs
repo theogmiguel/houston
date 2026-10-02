@@ -3605,6 +3605,7 @@ async fn orch_send_keys(
 #[derive(Deserialize)]
 struct GetQuery {
     session: u32,
+    result_id: Option<i64>,
 }
 
 async fn orch_get(
@@ -3616,6 +3617,16 @@ async fn orch_get(
         Ok(s) => s,
         Err(r) => return *r,
     };
+    if let Some(id) = q.result_id {
+        return match daemon.orchestrate_result(scope.session_id, q.session, id) {
+            Ok(row) => (
+                StatusCode::OK,
+                axum::Json(json!({"result_id":id,"body":row.body})),
+            )
+                .into_response(),
+            Err(e) => orch_err_response(e),
+        };
+    }
     match daemon.orchestrate_get(scope.session_id, q.session) {
         Ok(detail) => (StatusCode::OK, axum::Json(detail)).into_response(),
         Err(e) => orch_error(StatusCode::NOT_FOUND, e),
@@ -3898,14 +3909,18 @@ async fn orch_wait(
             rows,
             delivery_id,
             has_more,
-            waited_ms,
+            waited_ms: _,
         } => {
-            let wire_rows: Vec<proto::InboxRow> = rows.into_iter().map(Into::into).collect();
+            let wire_rows: Vec<proto::InboxRow> = rows.into_iter().map(|mut row| {
+                if let Some(excerpt) = crate::orchestrate::result_body_excerpt(&row) {
+                    row.body = excerpt;
+                }
+                row.into()
+            }).collect();
             let value = json!({
                 "rows": wire_rows,
                 "delivery_id": delivery_id,
                 "has_more": has_more,
-                "waited_ms": waited_ms,
                 "wait_cap_ms": cap,
                 "requested_timeout_ms": timeout_ms,
                 "provider": provider,

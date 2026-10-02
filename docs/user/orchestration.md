@@ -78,6 +78,12 @@ child finishes its turn remains staged; `pane_get` exposes its age when you need
 diagnose a missing completion. Claude background jobs hold a turn open for at most
 45 minutes before a missing-handback notice reaches the parent.
 
+Result bodies up to 4096 characters arrive whole; larger bodies arrive as a bounded
+excerpt. Use `pane_get` with the child's `session` and the excerpt's `result_id` to
+read the full stored body, including after the child closes. The CLI equivalent is
+`hs-pane get SESSION --result-id ID`. Only the result's recipient can retrieve it;
+the submit storage limit still applies.
+
 A follow-up prompt waits when the child is busy or you have unsubmitted text in its
 terminal. The reply names that hold. If Houston can write immediately, a write failure
 is returned directly instead of reporting the prompt as queued.

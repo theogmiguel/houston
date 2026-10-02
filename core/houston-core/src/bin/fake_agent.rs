@@ -37,10 +37,20 @@ impl Agent {
             .create(true)
             .append(true)
             .open(&self.script.log)?;
-        let record = format!(
-            "{}\n",
-            json!({"us": self.started.elapsed().as_micros(), "seed": self.script.seed, "event":event, "data":data})
-        );
+        let record = json!({"us": self.started.elapsed().as_micros(), "seed": self.script.seed, "event":event, "data":data});
+        #[cfg(unix)]
+        let record = {
+            let mut record = record;
+            let mut clock = std::mem::MaybeUninit::<libc::timespec>::uninit();
+            if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, clock.as_mut_ptr()) } != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            let clock = unsafe { clock.assume_init() };
+            record["monotonic_us"] =
+                json!(clock.tv_sec as u64 * 1_000_000 + clock.tv_nsec as u64 / 1000);
+            record
+        };
+        let record = format!("{record}\n");
         log.write_all(record.as_bytes())?;
         Ok(())
     }

@@ -285,11 +285,26 @@ impl Rig {
                 .iter()
                 .find(|saved| Some(saved.id) == row["id"].as_i64())
                 .unwrap();
-            assert!(
-                text.contains(saved.body.trim()),
-                "MCP text lost row {}'s body",
-                saved.id
-            );
+            let body = saved.body.trim();
+            if saved.kind == "result" && body.chars().count() > 4096 {
+                let excerpt: String = body.chars().take(4096).collect();
+                assert!(
+                    text.contains(&excerpt),
+                    "MCP text lost row {}'s excerpt",
+                    saved.id
+                );
+                assert!(text.contains(&format!("\"result_id\":{}", saved.id)));
+                let full = self
+                    .call(
+                        parent,
+                        "pane_get",
+                        json!({"session":saved.from_session.unwrap(),"result_id":saved.id}),
+                    )
+                    .await;
+                assert_eq!(full["body"], saved.body, "stored result body changed");
+            } else {
+                assert!(text.contains(body), "MCP text lost row {}'s body", saved.id);
+            }
         }
         assert_ne!(
             result["timed_out"],

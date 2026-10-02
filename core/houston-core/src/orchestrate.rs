@@ -946,7 +946,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
     VerbSpec {
         cli: "get",
         tool: Some("pane_get"),
-        args: &["session"],
+        args: &["session", "result_id"],
     },
     VerbSpec {
         cli: "prompt",
@@ -1685,6 +1685,24 @@ pub struct InboxEntry {
     pub excerpt: Option<String>,
 }
 
+// Executor reports usually span 2–5k characters; 4096 keeps typical reports in one wait
+// while bounding the 8000-character stored worst case and retaining explicit retrieval.
+const RESULT_EXCERPT_MAX_CHARS: usize = 4096;
+
+pub fn result_body_excerpt(row: &crate::db::InboxRow) -> Option<String> {
+    let body = row.body.trim();
+    if row.kind != "result" || body.chars().count() <= RESULT_EXCERPT_MAX_CHARS {
+        return None;
+    }
+    let mut excerpt: String = body.chars().take(RESULT_EXCERPT_MAX_CHARS).collect();
+    excerpt.push_str(&format!(
+        "\n(full body: pane_get {{\"session\":{},\"result_id\":{}}})",
+        row.from_session.unwrap_or_default(),
+        row.id
+    ));
+    Some(excerpt)
+}
+
 pub fn compose_inbox(entries: &[InboxEntry], delivery_id: &str) -> String {
     let printed: Vec<&InboxEntry> = entries
         .iter()
@@ -1750,7 +1768,8 @@ fn compose_entry(all: &[InboxEntry], entry: &InboxEntry) -> String {
     );
     let body = row.body.trim();
     if !body.is_empty() {
-        out.push_str(body);
+        let excerpt = result_body_excerpt(row);
+        out.push_str(excerpt.as_deref().unwrap_or(body));
         out.push('\n');
     }
     if !row.artifacts.is_empty() {
@@ -2469,7 +2488,7 @@ hs-pane — a Houston pane controlling sibling agent panes
                                           --session waits on your whole inbox.
                                           --until is gone — every status change
                                           you cared about is now a row)
-  hs-pane get <id>                       (one pane, everything known about it)
+  hs-pane get <id> [--result-id ID]      (pane state, or a stored result body)
   hs-pane keys <id> <key…>               (esc enter up down tab ctrl+c y n)
   hs-pane read <id> [--lines N] [--source screen|tail]
                                          (default 40 lines, cap 500. screen is
@@ -2582,7 +2601,19 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
         }
         "get" => {
             let id = id_arg(positional.first(), cmd)?;
-            let v = call("GET", &format!("/orchestrate/get?session={id}"), None)?;
+            let mut path = format!("/orchestrate/get?session={id}");
+            if let Some(value) = flags.get("result-id") {
+                let result_id =
+                    value
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|id| *id > 0)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("--result-id must be a positive integer; got {value:?}")
+                        })?;
+                path.push_str(&format!("&result_id={result_id}"));
+            }
+            let v = call("GET", &path, None)?;
             println!("{}", serde_json::to_string_pretty(&v)?);
         }
         "keys" => {
@@ -5098,6 +5129,28 @@ mod tests {
         );
         assert!(out.contains("2 messages,"), "{out}");
         assert!(out.contains("[exited] #13"), "{out}");
+    }
+
+    #[test]
+    fn a_typical_executor_report_arrives_whole_in_one_wait() {
+        for length in [3072, RESULT_EXCERPT_MAX_CHARS] {
+            let body = "x".repeat(length);
+            let entry = composed_row(30, 7, InboxKind::Result, "done", &body);
+            assert!(result_body_excerpt(&entry.row).is_none());
+            let out = compose_inbox(&[entry], "d-abc");
+            assert!(out.contains(&body));
+            assert!(!out.contains("full body: pane_get"));
+        }
+    }
+
+    #[test]
+    fn result_excerpt_preserves_unicode_and_names_full_body_retrieval() {
+        let body = "界".repeat(RESULT_EXCERPT_MAX_CHARS + 1);
+        let entry = composed_row(30, 7, InboxKind::Result, "done", &body);
+        let out = compose_inbox(&[entry], "d-abc");
+        assert!(out.contains(&"界".repeat(RESULT_EXCERPT_MAX_CHARS)));
+        assert!(!out.contains(&body));
+        assert!(out.contains("pane_get {\"session\":7,\"result_id\":30}"));
     }
 
     #[test]

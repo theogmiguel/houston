@@ -382,6 +382,17 @@ impl ToolProvider for OrchestrationTools {
                 }
                 "pane_get" => {
                     let session = u32_arg(args, "session")?;
+                    if let Some(value) = args.get("result_id") {
+                        let id = value.as_i64().filter(|id| *id > 0).ok_or_else(|| {
+                            ToolError(format!("result_id must be a positive integer; got {value}"))
+                        })?;
+                        let row = daemon
+                            .orchestrate_result(caller, session, id)
+                            .map_err(refused)?;
+                        return Ok(ToolOutput::structured(
+                            json!({"result_id":id,"body":row.body}),
+                        ));
+                    }
                     let detail = daemon.orchestrate_get(caller, session).map_err(refused)?;
                     Ok(ToolOutput::structured(
                         serde_json::to_value(detail)
@@ -496,23 +507,24 @@ impl ToolProvider for OrchestrationTools {
                             rows,
                             delivery_id,
                             has_more,
-                            waited_ms,
+                            waited_ms: _,
                         } => {
                             let entries: Vec<orchestrate::InboxEntry> = rows
-                                .iter()
+                                .into_iter()
                                 .map(|row| orchestrate::InboxEntry {
-                                    from_label: daemon.inbox_sender_label(row),
+                                    from_label: daemon.inbox_sender_label(&row),
                                     excerpt: None,
-                                    row: row.clone(),
+                                    row,
                                 })
                                 .collect();
                             let mut text = orchestrate::compose_inbox(&entries, &delivery_id);
                             if let Some(note) = &cap_note {
                                 text.push_str(&format!("\n{note}"));
                             }
-                            let wire_rows: Vec<Value> = rows
+                            let wire_rows: Vec<Value> = entries
                                 .into_iter()
-                                .map(|row| {
+                                .map(|entry| {
+                                    let row = entry.row;
                                     let mut metadata =
                                         serde_json::to_value(proto::InboxRow::from(row))
                                             .expect("inbox row serializes");
@@ -529,7 +541,6 @@ impl ToolProvider for OrchestrationTools {
                                     "rows": wire_rows,
                                     "delivery_id": delivery_id,
                                     "has_more": has_more,
-                                    "waited_ms": waited_ms,
                                     "wait_cap_ms": cap,
                                     "requested_timeout_ms": requested_timeout_ms,
                                     "provider": provider,
@@ -766,11 +777,12 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_get".into(),
                 title: "Everything about one pane".into(),
-                description: "Subtree pane state, children, depth, pending turn conditions, role, brief, stall and staged result. Use after a wait timeout, for help, or when the operator asks.".into(),
+                description: "Subtree pane state, children, depth, pending turn conditions, role, brief, stall and staged result. Use after a wait timeout, for help, or when the operator asks. With result_id, retrieve a stored result body addressed to you, including after child closure.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "session": { "type": "integer", "description": "The pane's session id." },
+                        "result_id": { "type": "integer", "description": "Stored inbox result id for full body retrieval." },
                     },
                     "required": ["session"],
                     "additionalProperties": false,

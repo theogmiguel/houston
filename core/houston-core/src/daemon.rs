@@ -1076,6 +1076,8 @@ struct RoutineRun {
     denied: bool,
 }
 
+type InboxPasteHook = Box<dyn Fn(u32) + Send + Sync>;
+
 type RoutinePaneRegistrationHook = Box<dyn Fn(u32) + Send + Sync>;
 
 /// The wire's routine update patch; absent fields stay as they are, and
@@ -1162,6 +1164,7 @@ pub struct Daemon {
     reap_armed: Mutex<Option<ReapArm>>,
     reap_generation: AtomicU64,
     exit_hook: Mutex<Box<dyn Fn() + Send + Sync>>,
+    inbox_paste_hook: Mutex<Option<InboxPasteHook>>,
     shutting_down: AtomicBool,
     handing_off: AtomicBool,
     handed_off: AtomicBool,
@@ -2432,6 +2435,7 @@ impl Daemon {
             reap_armed: Mutex::new(None),
             reap_generation: AtomicU64::new(0),
             exit_hook: Mutex::new(Box::new(|| std::process::exit(0))),
+            inbox_paste_hook: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             handing_off: AtomicBool::new(false),
             handed_off: AtomicBool::new(false),
@@ -3035,6 +3039,11 @@ impl Daemon {
     #[doc(hidden)]
     pub fn reap_set_exit_hook_for_test(&self, hook: Box<dyn Fn() + Send + Sync>) {
         *self.exit_hook.lock().expect("reap exit hook lock") = hook;
+    }
+
+    #[doc(hidden)]
+    pub fn inbox_set_paste_hook_for_test(&self, hook: InboxPasteHook) {
+        *self.inbox_paste_hook.lock().expect("inbox paste hook lock") = Some(hook);
     }
 
     pub fn manage_status(&self) -> proto::ManageDaemonStatus {
@@ -14611,6 +14620,26 @@ impl Daemon {
         Ok(())
     }
 
+    pub fn orchestrate_result(
+        &self,
+        caller: u32,
+        child: u32,
+        id: i64,
+    ) -> Result<crate::db::InboxRow> {
+        anyhow::ensure!(id > 0, "result_id must be a positive integer; got {id}");
+        let row = self
+            .db
+            .inbox_get(id)?
+            .ok_or_else(|| anyhow::anyhow!("result_id {id} does not identify a stored result"))?;
+        anyhow::ensure!(
+            row.kind == "result"
+                && row.from_session == Some(child)
+                && (row.to_session == caller || row.original_to == Some(caller)),
+            "result_id {id} for session {child} is not a result addressed to caller {caller}"
+        );
+        Ok(row)
+    }
+
     pub fn orchestrate_get(&self, caller: u32, target: u32) -> Result<orchestrate::PaneDetail> {
         if caller != target {
             self.assert_orchestration_target(caller, target)?;
@@ -16824,6 +16853,14 @@ impl Daemon {
                 self.release_reservation(&delivery_id);
                 return;
             }
+        }
+        if let Some(hook) = self
+            .inbox_paste_hook
+            .lock()
+            .expect("inbox paste hook lock")
+            .as_ref()
+        {
+            hook(parent);
         }
         match self.write_stdin_counting(parent, &payload) {
             Ok(()) => {}
