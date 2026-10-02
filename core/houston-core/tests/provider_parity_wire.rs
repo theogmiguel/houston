@@ -1571,7 +1571,7 @@ mod cursor {
         assert!(
             note.as_deref()
                 .unwrap_or_default()
-                .contains("cannot report a block"),
+                .contains("needs-input not reported by this provider"),
             "cursor cannot report a block; the note must say so: {note:?}"
         );
     }

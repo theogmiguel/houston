@@ -5,7 +5,13 @@
   "turn_id": "turn-question-1",
   "tool_name": "request_user_input",
   "tool_input": {
-    "questions": []
+    "questions": [
+      {
+        "header": "Choice",
+        "question": "Which option should be used?",
+        "options": []
+      }
+    ]
   },
   "tool_output": {
     "answers": {

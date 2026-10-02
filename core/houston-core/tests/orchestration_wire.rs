@@ -3130,11 +3130,7 @@ async fn a_wait_timeout_on_a_working_child_is_not_an_error_and_names_the_next_ac
     let next_action = http_result["next_action"]
         .as_str()
         .unwrap_or_else(|| panic!("HTTP wait timeout carries no next_action: {http_result}"));
-    assert!(next_action.contains("Call wait again"), "{next_action}");
-    assert!(
-        next_action.contains("do not read, get or prompt it"),
-        "{next_action}"
-    );
+    assert_eq!(next_action, "Call pane_wait again.");
 
     let mcp_result = mcp_call(
         r.addr,
@@ -3151,11 +3147,13 @@ async fn a_wait_timeout_on_a_working_child_is_not_an_error_and_names_the_next_ac
         mcp_result["structuredContent"]["timed_out"], true,
         "{mcp_result}"
     );
-    assert!(
-        mcp_result["structuredContent"]["next_action"]
-            .as_str()
-            .is_some_and(|s| s.contains("Call wait again")),
-        "{mcp_result}"
+    assert_eq!(
+        mcp_result["structuredContent"]["next_action"],
+        "Call pane_wait again."
+    );
+    assert_eq!(
+        mcp_result["content"][0]["text"],
+        "timeout; Call pane_wait again."
     );
 }
 
@@ -4684,7 +4682,7 @@ async fn delegation_info_carries_owed_provisional_and_hold_reason() {
     assert_eq!(
         carried.capability_note.as_deref(),
         Some(
-            "cursor cannot report a block; a stall stands in; cursor has no turn-end \
+            "cursor: needs-input not reported by this provider; cursor has no turn-end \
              continuation; results wait for its next idle"
         )
     );
@@ -6163,6 +6161,9 @@ async fn codex_permission_completion_reopens_get_and_prompt_without_a_new_round(
                 prompt_id: Some("a1b2c3d4-1551".into()),
                 tool_name: Some("OtherTool".into()),
                 reason: Some("OtherTool".into()),
+                tool_input_fingerprint: Some(
+                    "76cd2a0d9aa2ce03442a30b892eda947093dd0fdf8ee727690fa464ad6850ac8".into(),
+                ),
                 ..Default::default()
             },
         )
@@ -8340,7 +8341,7 @@ async fn k1_empty_wait_returns_without_a_timeout() {
 }
 
 #[tokio::test]
-async fn k1_mcp_wait_refuses_a_timeout_above_the_transport_budget() {
+async fn h4_mcp_wait_clamps_a_timeout_above_the_parent_budget() {
     let _guard = serial().await;
     let r = rig("bounded-wait").await;
     let parent = r.pane();
@@ -8353,10 +8354,12 @@ async fn k1_mcp_wait_refuses_a_timeout_above_the_transport_budget() {
     );
     let result = tokio::time::timeout(Duration::from_secs(1), result)
         .await
-        .expect("invalid timeout must fail immediately");
-    assert_eq!(result["isError"], true, "{result}");
-    let text = result["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("700000") && text.contains("600000"), "{text}");
+        .expect("an empty inbox returns immediately");
+    assert_ne!(result["isError"], true, "{result}");
+    let content = &result["structuredContent"];
+    assert_eq!(content["requested_timeout_ms"], 700000);
+    assert_eq!(content["wait_cap_ms"], 30000);
+    assert!(content["cap_note"].as_str().unwrap().contains("custom"));
 }
 
 #[tokio::test]

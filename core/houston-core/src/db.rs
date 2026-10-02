@@ -3696,7 +3696,7 @@ impl Db {
             params.push(rusqlite::types::Value::Text(k.to_string()));
         }
         if automatic {
-            sql.push_str(" AND (reason IS NULL OR (reason NOT LIKE 'partial:%' AND reason NOT LIKE 'attempts:%' AND reason NOT LIKE 'backlog:%'))");
+            sql.push_str(" AND (reason IS NULL OR (reason NOT LIKE 'partial:%' AND reason NOT LIKE 'attempts:%' AND reason NOT LIKE 'backlog:%' AND reason != 'approval_outcome_unobserved'))");
         }
         sql.push_str(" ORDER BY created_at, id");
         let candidates = {
@@ -3901,7 +3901,7 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "UPDATE pane_inbox SET original_to = CASE WHEN to_session != ?2 THEN COALESCE(original_to, to_session) ELSE original_to END,
-                to_session = ?2, reason = ?3,
+                to_session = ?2, reason = CASE WHEN reason = 'approval_outcome_unobserved' THEN reason ELSE ?3 END,
                 reserved_at = NULL, delivery_id = NULL
              WHERE id = ?1",
             rusqlite::params![id, recipient, reason],
@@ -3970,7 +3970,7 @@ impl Db {
             )?;
             let recipient = inbox_live_recipient(&conn, to, live_sessions)?;
             conn.execute(
-                "UPDATE pane_inbox SET original_to = COALESCE(original_to, to_session), to_session = ?2, reason = 'parent_dead',
+                "UPDATE pane_inbox SET original_to = COALESCE(original_to, to_session), to_session = ?2, reason = CASE WHEN reason = 'approval_outcome_unobserved' THEN reason ELSE 'parent_dead' END,
                     reserved_at = NULL, delivery_id = NULL
                  WHERE id = ?1",
                 rusqlite::params![id, recipient],
@@ -4364,6 +4364,16 @@ impl Db {
         )?)
     }
 
+    pub fn inbox_resolve_approval_stalls(&self, from: u32, now: u64) -> Result<usize> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute(
+            "UPDATE pane_inbox SET resolved_at = ?2 WHERE from_session = ?1
+             AND kind = 'stalled' AND reason = 'approval_outcome_unobserved'
+             AND delivered_at IS NULL AND resolved_at IS NULL",
+            rusqlite::params![from, now as i64],
+        )?)
+    }
+
     // The row flip and the delegation update share one transaction: "stored" and
     // "eligible" are kept apart so a result cannot reach the parent while the delegation
     // still reads working, and a crash between two writes is how that happens.
@@ -4409,6 +4419,8 @@ impl Db {
                 rusqlite::params![child, state, now as i64],
             )?;
         }
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("completion", child);
         tx.commit()?;
         Ok(row_id)
     }

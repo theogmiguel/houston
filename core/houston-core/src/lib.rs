@@ -74,3 +74,24 @@ pub mod worktrees;
 
 #[cfg(test)]
 pub mod test_tracing_capture;
+
+#[cfg(feature = "test-barriers")]
+#[doc(hidden)]
+pub mod test_barriers {
+    pub fn pause(point: &str, subject: u32) {
+        let Some(directory) = std::env::var_os("HOUSTON_TEST_BARRIER_DIR") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        let armed = directory.join("armed");
+        if std::fs::read_to_string(&armed).ok().as_deref() != Some(point) {
+            return;
+        }
+        std::fs::write(directory.join("reached"), format!("{point} {subject}"))
+            .expect("barrier receipt");
+        while std::fs::read_to_string(&armed).ok().as_deref() == Some(point) {
+            // A short test-only pause keeps barrier release responsive without busy spinning.
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}

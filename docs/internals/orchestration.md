@@ -48,6 +48,39 @@ change under it.
 The daemon implements `McpHost` for itself (`server.rs`), wiring credential resolution, the
 tool registry, per-session agent kind, the progress tick and the notifier registry.
 
+## Provider lifecycle capabilities
+
+These are Houston's installed hook contracts, not proof that every provider version emits
+all supported events. Every PTY additionally reports process exit independently.
+
+| Provider | Turn start | Tool use | Turn end | Needs-input | Session end | Parent wait cap |
+|---|---|---|---|---|---|---|
+| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop/StopFailure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s |
+| Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s |
+| Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional |
+| OpenCode | User messages; busy status is activity | Permission/question events | session.idle/error | Permission/question requests | PTY exit | 600 s with managed launch timeout |
+| Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s |
+| Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout |
+
+Wait budgets belong to the calling parent, regardless of its children's providers. Requests
+above the cap are clamped and report the provider, requested value and cap. Claude's cap
+stays below foreground auto-backgrounding; Cursor keeps a margin under its inspected
+60-second timeout. Codex's launch timeout is 630 seconds. OpenCode's Houston registration
+uses a process-scoped inline timeout of 630000 ms, reversed automatically on exit. Grok's
+`tool_timeouts.pane_wait` overrides the server timeout; unknown or invalid configuration
+uses a provisional 30-second cap. Antigravity's numeric client limit is still unknown.
+A timeout returns one line asking the parent to call `pane_wait` again.
+
+Codex Auto PermissionRequest is approval-flow evidence, not human-wait evidence. An
+unresolved episode after five minutes raises a deduplicated `stalled?` marker with its
+episode, elapsed time and `approval_outcome_unobserved`. The threshold is a conservative
+heuristic: hermetic fake-agent timing is only a latency lower bound, and does not measure
+real reviewers. Slow review, long tools and missing hooks can produce false positives.
+The marker leaves the agent Working, produces no desktop notification and reaches parents
+only through an explicit wait. Matching PostToolUse, Stop or Interrupt clears it. Without a
+call id, matching requires turn, tool and canonical input digest; incomplete evidence waits
+for authoritative end/interruption. A fresh prompt alone cannot clear such an episode.
+
 ## Tools
 
 Every verb below has two doors: the `pane_*` MCP tools and the `hs-pane` CLI. Same daemon
@@ -531,7 +564,8 @@ correlation.
 **Codex automatic approval reviews.** `PermissionRequest` in Auto mode precedes
 approval processing, so an unresolved request is not evidence of a human prompt. The
 session stays Working with `hold_reason: auto-review in progress` until matching tool
-completion resolves the episode. `request_user_input` remains an urgent needs-input
+completion resolves the episode. After five minutes the hold reads
+`stalled? approval_outcome_unobserved`; this is an uncertain diagnostic, not a human prompt. `request_user_input` remains an urgent needs-input
 event. A native approval prompt after reviewer denial has no distinct verified hook in
 the installed CLI; it cannot be inferred from elapsed time or terminal text.
 
@@ -969,7 +1003,7 @@ ourselves is deferred: the algorithm is source, not contract.
   last-said text lives, `{"text": "..."}` — lifted into `last_message` but still never a
   status, since it fires after every assistant message) and `subagentStart`/`subagentStop`
   (correlation-only). No needs-input event exists in Cursor's contract; the stall row
-  covers it and `pane_list` says "cursor cannot report a block; a stall stands in".
+  covers it and `pane_list` says "cursor: needs-input not reported by this provider".
 - **Antigravity.** Binary is `agy`. The installer adds `SessionStart` and
   `PreToolUse`/`PostToolUse`, which fire **only in the matcher-wrapped dialect**
   (`{"matcher": ".*", "hooks": [...]}`); the plain entry the installer writes for the other
@@ -992,7 +1026,7 @@ ourselves is deferred: the algorithm is source, not contract.
 `ProviderCapabilities` has one consumer beyond the tests: `capability_note` turns a missing
 axis into one sentence per provider, joined with `"; "`, and `pane_list` carries it per
 child — "grok reports no last message; the exit or the submit is what the parent gets",
-"cursor cannot report a block; a stall stands in", "opencode has no turn-end continuation;
+"cursor: needs-input not reported by this provider", "opencode has no turn-end continuation;
 results wait for its next idle". A `ProcessOnly` CLI gets exactly its own sentence — "this
 pane reports no turn end; only a submit or its exit reaches its parent" — because the other
 three axes are moot when there is no turn end to hang them off. The renderer's delegation

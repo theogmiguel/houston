@@ -482,15 +482,15 @@ impl ToolProvider for OrchestrationTools {
                         .and_then(Value::as_u64)
                         .filter(|n| *n > 0)
                         .unwrap_or(orchestrate::DEFAULT_WAIT_TIMEOUT_MS);
-                    if timeout_ms > orchestrate::DEFAULT_WAIT_TIMEOUT_MS {
-                        return Err(ToolError(format!("pane_wait timeout_ms {timeout_ms} exceeds the limit {} ms; expected 1..={} ms", orchestrate::DEFAULT_WAIT_TIMEOUT_MS, orchestrate::DEFAULT_WAIT_TIMEOUT_MS)));
-                    }
+                    let (provider, cap) = daemon.orchestration_wait_cap(caller);
+                    let cap_note = orchestrate::wait_cap_note(provider, timeout_ms, cap);
+                    let requested_timeout_ms = timeout_ms;
+                    let timeout_ms = timeout_ms.min(cap);
                     let outcome = daemon
                         .orchestrate_wait_reserved(caller, session, kind, timeout_ms, stall_guard)
                         .await
                         .map_err(refused)?;
                     let message = outcome.message();
-                    let next_action = outcome.next_action();
                     match outcome {
                         orchestrate::InboxWaitOutcome::Delivered {
                             rows,
@@ -506,7 +506,10 @@ impl ToolProvider for OrchestrationTools {
                                     row: row.clone(),
                                 })
                                 .collect();
-                            let text = orchestrate::compose_inbox(&entries, &delivery_id);
+                            let mut text = orchestrate::compose_inbox(&entries, &delivery_id);
+                            if let Some(note) = &cap_note {
+                                text.push_str(&format!("\n{note}"));
+                            }
                             let wire_rows: Vec<Value> = rows
                                 .into_iter()
                                 .map(|row| {
@@ -527,6 +530,10 @@ impl ToolProvider for OrchestrationTools {
                                     "delivery_id": delivery_id,
                                     "has_more": has_more,
                                     "waited_ms": waited_ms,
+                                    "wait_cap_ms": cap,
+                                    "requested_timeout_ms": requested_timeout_ms,
+                                    "provider": provider,
+                                    "cap_note": cap_note,
                                 })),
                             })
                         }
@@ -535,15 +542,20 @@ impl ToolProvider for OrchestrationTools {
                             status,
                             status_source,
                         } => {
-                            let text = match &next_action {
-                                Some(next) => format!("{message}\n{next}"),
-                                None => message,
-                            };
+                            let next_action = "Call pane_wait again.";
+                            let text = cap_note.as_ref().map_or_else(
+                                || format!("timeout; {next_action}"),
+                                |note| format!("timeout; {next_action} {note}"),
+                            );
                             Ok(ToolOutput {
                                 text,
                                 structured: Some(json!({
                                     "rows": [],
                                     "timed_out": true,
+                                    "wait_cap_ms": cap,
+                                    "requested_timeout_ms": requested_timeout_ms,
+                                    "provider": provider,
+                                    "cap_note": cap_note,
                                     "waited_ms": waited_ms,
                                     "status": status,
                                     "status_source": status_source,
@@ -556,7 +568,7 @@ impl ToolProvider for OrchestrationTools {
                         )),
                         orchestrate::InboxWaitOutcome::NothingToWaitOn => {
                             Ok(ToolOutput::structured(
-                                json!({"nothing_to_wait_on": true, "live_children": 0, "rows": []}),
+                                json!({"nothing_to_wait_on": true, "live_children": 0, "rows": [], "cap_note": cap_note, "wait_cap_ms": cap, "requested_timeout_ms": requested_timeout_ms, "provider": provider}),
                             ))
                         }
                         orchestrate::InboxWaitOutcome::Stalled { .. } => Err(ToolError(message)),
@@ -861,8 +873,7 @@ impl OrchestrationTools {
                         "timeout_ms": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
-                            "description": "Defaults to 10 minutes.",
+                            "description": "Defaults to 600000 ms; clamped to the calling parent provider cap (Claude 90000, Cursor/Antigravity 30000, Codex/OpenCode 600000; Grok checks its effective tool timeout).",
                         },
                         "stall_guard": {
                             "type": "boolean",
@@ -956,14 +967,13 @@ mod tests {
         assert!(wait.description.contains(
             "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list"
         ));
-        assert_eq!(
-            wait.input_schema["properties"]["timeout_ms"]["maximum"],
-            orchestrate::DEFAULT_WAIT_TIMEOUT_MS
-        );
-        let maximum = wait.input_schema["properties"]["timeout_ms"]["maximum"]
-            .as_u64()
-            .unwrap();
-        assert!(maximum < crate::mcp_launch::CODEX_TOOL_TIMEOUT_SEC * 1000);
+        assert!(wait.input_schema["properties"]["timeout_ms"]
+            .get("maximum")
+            .is_none());
+        assert!(wait.input_schema["properties"]["timeout_ms"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("calling parent"));
         for spec in specs
             .iter()
             .filter(|spec| matches!(spec.name.as_str(), "pane_get" | "pane_read" | "pane_list"))

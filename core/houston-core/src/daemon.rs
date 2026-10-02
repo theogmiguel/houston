@@ -10205,6 +10205,43 @@ impl Daemon {
                 }
             },
         };
+        if provider == proto::AgentKind::Grok
+            && d.event == "SessionEnd"
+            && d.subagent_type.is_some()
+        {
+            return crate::hook_drop::DropVerdict::Applied;
+        }
+        if provider == proto::AgentKind::Grok
+            && matches!(
+                d.event.as_str(),
+                "StopFailure" | "StopCancelled" | "SessionEnd"
+            )
+        {
+            let outcome = match d.event.as_str() {
+                "StopFailure" => "turn_failed",
+                "StopCancelled" => "turn_interrupted",
+                _ => "session_ended",
+            };
+            if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
+                let _ = self.inbox_write(
+                    row.parent_session,
+                    &self.current_workspace(d.session).unwrap_or_default(),
+                    Some(d.session),
+                    Some(row.round),
+                    orchestrate::InboxKind::OperatorNote,
+                    &format!("grok {outcome}"),
+                    &format!(
+                        "grok {}: {outcome}; PTY exit is reported separately",
+                        d.event
+                    ),
+                    Vec::new(),
+                    Some(outcome),
+                    None,
+                    false,
+                    true,
+                );
+            }
+        }
         let session = self
             .sessions
             .lock()
@@ -10609,20 +10646,24 @@ impl Daemon {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
             }
             let mut episodes = self.permission_episodes.lock().expect("episodes lock");
-            episodes
-                .entry(d.session)
-                .or_default()
-                .open_with_fingerprint(
-                    d.tool_use_id.as_deref().or(d.request_id.as_deref()),
-                    d.prompt_id.as_deref(),
-                    d.tool_name
-                        .as_deref()
-                        .or(d.reason.as_deref())
-                        .unwrap_or("unnamed tool"),
-                    d.reason.clone(),
-                    d.tool_input_fingerprint.clone(),
-                    now,
+            let pending = episodes.entry(d.session).or_default();
+            let (key, _) = pending.open_with_fingerprint(
+                d.tool_use_id.as_deref().or(d.request_id.as_deref()),
+                d.prompt_id.as_deref(),
+                d.tool_name
+                    .as_deref()
+                    .or(d.reason.as_deref())
+                    .unwrap_or("unnamed tool"),
+                d.reason.clone(),
+                d.tool_input_fingerprint.clone(),
+                now,
+            );
+            if provider == proto::AgentKind::Codex {
+                pending.mark_codex_permission(
+                    &key,
+                    self.approval_mode_of(d.session) == crate::launch::ApprovalMode::Auto,
                 );
+            }
             drop(episodes);
             self.apply_agent_event(
                 d.session,
@@ -10890,31 +10931,25 @@ impl Daemon {
                 }
             }
         }
-        let Some((delivery_id, written_at)) = self
+        let mut confirmations = self
             .paste_confirmations
             .lock()
-            .expect("paste confirmations lock")
-            .remove(&session)
-        else {
+            .expect("paste confirmations lock");
+        let Some((delivery_id, written_at)) = confirmations.get(&session) else {
             return;
         };
-        let age = now_ms().saturating_sub(written_at);
+        let age = now_ms().saturating_sub(*written_at);
         if age >= orchestrate::PASTE_CONFIRM_MS {
-            tracing::debug!(
-                "session {session}: delivery {delivery_id} was written {age} ms ago, past the \
-                 {} ms confirmation window",
-                orchestrate::PASTE_CONFIRM_MS
-            );
+            confirmations.remove(&session);
             return;
         }
-        let head = prompt.lines().next().unwrap_or("");
-        if !head.contains(&delivery_id) {
-            tracing::debug!(
-                "session {session}: a prompt that is not delivery {delivery_id} — unconfirmed \
-                 is not failed; the door says what sent is worth"
-            );
+        if !head.contains(delivery_id) {
             return;
         }
+        let (delivery_id, _) = confirmations
+            .remove(&session)
+            .expect("matching receipt exists");
+        drop(confirmations);
         match self.db.inbox_confirm(&delivery_id, now_ms()) {
             Ok(0) => tracing::debug!(
                 "session {session}: nothing left to confirm for delivery {delivery_id}"
@@ -10973,15 +11008,23 @@ impl Daemon {
 
     fn resolve_permission_episodes(&self, session: u32, end: &orchestrate::EpisodeEnd) -> bool {
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
-        if let Some(eps) = episodes.get_mut(&session) {
-            let resolved = eps.resolve_on(end);
-            let cleared = !resolved.is_empty() && eps.open_count() == 0;
-            if cleared {
-                episodes.remove(&session);
-            }
-            return cleared;
+        let Some(eps) = episodes.get_mut(&session) else {
+            return false;
+        };
+        let had_stall = eps.has_auto_review_stall();
+        let resolved = eps.resolve_on(end);
+        let clear_stall = had_stall && !eps.has_auto_review_stall();
+        let cleared = !resolved.is_empty() && eps.open_count() == 0;
+        if cleared {
+            episodes.remove(&session);
         }
-        false
+        drop(episodes);
+        if clear_stall {
+            let _ = self.db.delegation_set_stalled(session, false, now_ms());
+            let _ = self.db.inbox_resolve_approval_stalls(session, now_ms());
+            self.broadcast_delegation(session);
+        }
+        cleared
     }
 
     fn subagent_expiry_pass(self: &Arc<Self>, now: u64) {
@@ -11034,7 +11077,39 @@ impl Daemon {
         }
         let mut episodes = self.permission_episodes.lock().expect("episodes lock");
         episodes.retain(|id, _| live.contains(id));
+        let stalls: Vec<_> = episodes
+            .iter_mut()
+            .flat_map(|(child, episodes)| {
+                episodes
+                    .take_auto_review_stalls(now)
+                    .into_iter()
+                    .map(|episode| (*child, episode))
+            })
+            .collect();
         drop(episodes);
+        for (child, episode) in stalls {
+            let Ok(Some(row)) = self.db.delegation_for_child(child) else {
+                continue;
+            };
+            let _ = self.db.delegation_set_stalled(child, true, now_ms());
+            self.broadcast_delegation(child);
+            let elapsed = now.saturating_sub(episode.opened_ms);
+            let body = format!("stalled? codex episode {:?}; elapsed {elapsed} ms; approval_outcome_unobserved. Heuristic only; no human-wait signal observed.", episode.key);
+            let _ = self.inbox_write(
+                row.parent_session,
+                &self.current_workspace(child).unwrap_or_default(),
+                Some(child),
+                Some(row.round),
+                orchestrate::InboxKind::Stalled,
+                "stalled? codex auto-review",
+                &body,
+                Vec::new(),
+                Some("approval_outcome_unobserved"),
+                None,
+                false,
+                true,
+            );
+        }
         self.antigravity_roots
             .lock()
             .expect("antigravity roots lock")
@@ -13838,6 +13913,8 @@ impl Daemon {
         self.delegation_wake.notify_one();
         self.broadcast_delegation(sid);
         self.broadcast_live_children(caller);
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("spawn", sid);
         Ok(info)
     }
 
@@ -13854,13 +13931,20 @@ impl Daemon {
         } else {
             ("shared_checkout", self.spawn_checkout_warning(info.id))
         };
-        message
+        let mut warnings: Vec<_> = message
             .into_iter()
             .map(|message| proto::PaneSpawnWarning {
                 code: code.into(),
                 message,
             })
-            .collect()
+            .collect();
+        if info.agent == proto::AgentKind::Cursor {
+            warnings.push(proto::PaneSpawnWarning {
+                code: "needs_input_unreported".into(),
+                message: "cursor: needs-input not reported by this provider".into(),
+            });
+        }
+        warnings
     }
 
     pub fn spawn_checkout_warning(&self, child: u32) -> Option<String> {
@@ -14298,6 +14382,29 @@ impl Daemon {
         Ok(outcome)
     }
 
+    pub fn orchestration_wait_cap(&self, caller: u32) -> (proto::AgentKind, u64) {
+        let provider = self
+            .agent_kind_of(caller)
+            .unwrap_or(proto::AgentKind::Custom);
+        let grok_timeout = if provider == proto::AgentKind::Grok {
+            crate::home_dir::home_dir().and_then(|home| {
+                match std::fs::read_to_string(home.join(".grok/config.toml")) {
+                    Ok(text) => crate::mcp_register_grok::effective_wait_timeout_ms(Some(&text)),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        crate::mcp_register_grok::effective_wait_timeout_ms(None)
+                    }
+                    Err(_) => None,
+                }
+            })
+        } else {
+            None
+        };
+        (
+            provider,
+            orchestrate::provider_wait_cap(provider, grok_timeout),
+        )
+    }
+
     pub async fn orchestrate_wait_reserved(
         self: &Arc<Self>,
         caller: u32,
@@ -14307,11 +14414,11 @@ impl Daemon {
         stall_guard: bool,
     ) -> Result<orchestrate::InboxWaitOutcome> {
         anyhow::ensure!(
-            timeout_ms > 0 && timeout_ms <= orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
-            "pane_wait timeout_ms {timeout_ms} must be 1..={} ms; limit {} ms",
-            orchestrate::DEFAULT_WAIT_TIMEOUT_MS,
-            orchestrate::DEFAULT_WAIT_TIMEOUT_MS
+            timeout_ms > 0,
+            "pane_wait timeout_ms {timeout_ms} must be a positive integer in milliseconds"
         );
+        let (_, cap) = self.orchestration_wait_cap(caller);
+        let timeout_ms = timeout_ms.min(cap);
         if stall_guard && child.is_none() {
             bail!(
                 "wait refused: stall_guard requires session — it watches one child's own status \
@@ -14388,6 +14495,8 @@ impl Daemon {
                 .lock()
                 .expect("inbox delivering lock")
                 .insert(delivery_id.clone(), caller);
+            #[cfg(feature = "test-barriers")]
+            crate::test_barriers::pause("reservation", caller);
             Ok(Some(orchestrate::InboxWaitOutcome::Delivered {
                 rows,
                 delivery_id,
@@ -14740,6 +14849,8 @@ impl Daemon {
                 orchestrate::SUBMIT_SUMMARY_MAX_CHARS
             )
         })?;
+        #[cfg(feature = "test-barriers")]
+        crate::test_barriers::pause("staging", child);
         if let Some(excerpt) = self.session_handoff_excerpt(child) {
             if let Err(e) = self.db.inbox_set_excerpt(id, &excerpt) {
                 tracing::warn!("persisting the screen excerpt for child result {id} failed: {e}");
@@ -15426,9 +15537,11 @@ impl Daemon {
             }
             AgentEvent::TurnEnded => orchestrate::DelegationEvent::TurnEnded,
             AgentEvent::NeedsInput => orchestrate::DelegationEvent::Blocked,
-            AgentEvent::SessionStarted | AgentEvent::Activity | AgentEvent::TurnInterrupted => {
-                return
-            }
+            AgentEvent::SessionStarted
+            | AgentEvent::Activity
+            | AgentEvent::TurnInterrupted
+            | AgentEvent::TurnFailed
+            | AgentEvent::SessionEnded => return,
         };
         let row = match self.db.delegation_for_child(child) {
             Ok(Some(row)) => row,
@@ -15868,7 +15981,20 @@ impl Daemon {
                 .get(&child)
                 .is_some_and(|e| e.open_count() > 0)
         {
-            return Some("auto-review in progress".to_string());
+            let stalled = self
+                .permission_episodes
+                .lock()
+                .expect("episodes lock")
+                .get(&child)
+                .is_some_and(|episodes| episodes.has_auto_review_stall());
+            return Some(
+                if stalled {
+                    "stalled? approval_outcome_unobserved"
+                } else {
+                    "auto-review in progress"
+                }
+                .to_string(),
+            );
         }
         self.background_holds
             .lock()
@@ -16338,6 +16464,15 @@ impl Daemon {
         now: u64,
     ) {
         let child = row.child_session;
+        if self
+            .permission_episodes
+            .lock()
+            .expect("episodes lock")
+            .get(&child)
+            .is_some_and(|episodes| episodes.has_auto_review_stall())
+        {
+            return;
+        }
         let blocked = orchestrate::DelegationState::parse(&row.state)
             == Some(orchestrate::DelegationState::NeedsInput);
         let quiet = now.saturating_sub(s.last_output.load(Ordering::Relaxed));
@@ -16556,6 +16691,10 @@ impl Daemon {
     }
 
     pub fn paste_hold_reason(&self, parent: u32) -> Option<String> {
+        #[cfg(feature = "test-barriers")]
+        if std::env::var_os("HOUSTON_TEST_INBOX_WAIT_ONLY").is_some() {
+            return Some("the crash harness consumes inbox rows through pane_wait".into());
+        }
         match self.session_status(parent) {
             Ok(Some(proto::AgentStatus::Idle)) => {}
             Ok(Some(proto::AgentStatus::NeedsInput)) => {
@@ -18746,6 +18885,81 @@ mod idle_profile_tests {
         assert_eq!(after.state, before.state);
         assert_eq!(after.round, before.round);
         assert_eq!(after.ended_at, before.ended_at);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn h4_unrelated_prompt_preserves_the_pending_paste_confirmation() {
+        let (daemon, state) = test_daemon();
+        daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
+        let parent = r1_parent(&daemon, state.path());
+        let now = now_ms();
+        let id = daemon
+            .db
+            .inbox_insert(
+                &crate::db::NewInboxRow {
+                    to_session: parent,
+                    workspace: state.path().to_string_lossy().into_owned(),
+                    from_session: None,
+                    request_id: None,
+                    kind: "operator_note".into(),
+                    urgent: false,
+                    summary: "message".into(),
+                    body: "body".into(),
+                    artifacts: Vec::new(),
+                    provisional: false,
+                    corrects: None,
+                    reason: None,
+                    ready: true,
+                },
+                now,
+            )
+            .unwrap();
+        let (receipt, _) = daemon
+            .db
+            .inbox_reserve(parent, now, 8, 8000)
+            .unwrap()
+            .unwrap();
+        daemon
+            .db
+            .inbox_mark_delivered(&receipt, "paste", now)
+            .unwrap();
+        daemon
+            .paste_confirmations
+            .lock()
+            .unwrap()
+            .insert(parent, (receipt.clone(), now));
+        daemon.confirm_paste_from_prompt(parent, Some("ordinary startup prompt"));
+        assert!(daemon
+            .paste_confirmations
+            .lock()
+            .unwrap()
+            .contains_key(&parent));
+        assert!(daemon
+            .db
+            .inbox_get(id)
+            .unwrap()
+            .unwrap()
+            .confirmed_at
+            .is_none());
+        daemon.confirm_paste_from_prompt(
+            parent,
+            Some(&format!("--- Houston inbox, delivery {receipt} ---")),
+        );
+        assert!(daemon
+            .db
+            .inbox_get(id)
+            .unwrap()
+            .unwrap()
+            .confirmed_at
+            .is_some());
+        assert!(!daemon
+            .paste_confirmations
+            .lock()
+            .unwrap()
+            .contains_key(&parent));
+        daemon.kill(parent).unwrap();
+        daemon.close(parent).unwrap();
     }
 
     #[test]

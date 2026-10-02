@@ -67,7 +67,11 @@ Completion also reaches the parent's inbox through its next supported delivery p
 Routine status checks and terminal reads are unnecessary; reserve them for a reported
 blocker, a timeout, or an explicit request to inspect the child.
 
-A wait can last at most ten minutes. Starting another wait replaces the previous one;
+Waits are capped by the parent provider: Claude uses 90 seconds; Cursor and Antigravity
+use 30 seconds; Codex and Houston-configured OpenCode use ten minutes. Grok uses up to
+ten minutes, shortened by its effective per-tool timeout. Requests above the cap are
+clamped and the response names the requested value and cap. A timeout asks the parent
+to wait again. Starting another wait replaces the previous one;
 interrupted waits leave results available for delivery. If there are no live children or
 pending messages, a whole-inbox wait returns immediately. A result submitted before the
 child finishes its turn remains staged; `pane_get` exposes its age when you need to
@@ -77,6 +81,14 @@ diagnose a missing completion. Claude background jobs hold a turn open for at mo
 A follow-up prompt waits when the child is busy or you have unsubmitted text in its
 terminal. The reply names that hold. If Houston can write immediately, a write failure
 is returned directly instead of reporting the prompt as queued.
+
+Cursor does not report needs-input. Its capability note and spawn warning say
+“needs-input not reported by this provider”; an absent badge cannot prove it is working.
+
+Codex Auto review can show `stalled?` after an observed approval episode remains unresolved
+for five minutes. This is a diagnostic heuristic, not a request for human input. It clears
+when a matching tool completion or authoritative turn end/interruption arrives. Houston
+does not send keys or a desktop notification in response to it.
 
 ## Workspaces and child lifetime
 

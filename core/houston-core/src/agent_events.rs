@@ -13,15 +13,19 @@ pub enum AgentEvent {
     // the SAME end (Claude's Stop/StopFailure) — see EXCLUSIVE_TURN_ENDS.
     TurnEnded,
     TurnInterrupted,
+    TurnFailed,
+    SessionEnded,
     NeedsInput,
 }
 
 impl AgentEvent {
     pub fn status(self) -> proto::AgentStatus {
         match self {
-            AgentEvent::SessionStarted | AgentEvent::TurnEnded | AgentEvent::TurnInterrupted => {
-                proto::AgentStatus::Idle
-            }
+            AgentEvent::SessionStarted
+            | AgentEvent::TurnEnded
+            | AgentEvent::TurnInterrupted
+            | AgentEvent::TurnFailed
+            | AgentEvent::SessionEnded => proto::AgentStatus::Idle,
             AgentEvent::PromptSubmitted | AgentEvent::Activity | AgentEvent::InputResolved => {
                 proto::AgentStatus::Working
             }
@@ -121,10 +125,13 @@ const CURSOR_EVENTS: [(&str, AgentEvent); 3] = [
 pub const CURSOR_CORRELATION_EVENTS: [&str; 3] =
     ["subagentStart", "subagentStop", "afterAgentResponse"];
 
-const GROK_EVENTS: [(&str, AgentEvent); 4] = [
+const GROK_EVENTS: [(&str, AgentEvent); 7] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
     ("Stop", AgentEvent::TurnEnded),
+    ("StopFailure", AgentEvent::TurnFailed),
+    ("StopCancelled", AgentEvent::TurnInterrupted),
+    ("SessionEnd", AgentEvent::SessionEnded),
     ("Notification", AgentEvent::NeedsInput),
 ];
 
@@ -203,6 +210,23 @@ mod tests {
     }
 
     #[test]
+    fn grok_terminal_events_keep_distinct_outcomes() {
+        use proto::AgentKind::Grok;
+        assert_eq!(
+            AgentEvent::from_provider(Grok, "StopFailure"),
+            Some(AgentEvent::TurnFailed)
+        );
+        assert_eq!(
+            AgentEvent::from_provider(Grok, "StopCancelled"),
+            Some(AgentEvent::TurnInterrupted)
+        );
+        assert_eq!(
+            AgentEvent::from_provider(Grok, "SessionEnd"),
+            Some(AgentEvent::SessionEnded)
+        );
+    }
+
+    #[test]
     fn opencode_status_is_activity_not_a_new_prompt() {
         assert_eq!(
             AgentEvent::from_provider(proto::AgentKind::Opencode, "session.status"),
@@ -274,6 +298,9 @@ mod tests {
                     ("SessionStart", AgentEvent::SessionStarted),
                     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
                     ("Stop", AgentEvent::TurnEnded),
+                    ("StopFailure", AgentEvent::TurnFailed),
+                    ("StopCancelled", AgentEvent::TurnInterrupted),
+                    ("SessionEnd", AgentEvent::SessionEnded),
                     ("Notification", AgentEvent::NeedsInput),
                 ],
             ),

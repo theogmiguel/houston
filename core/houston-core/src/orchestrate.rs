@@ -9,6 +9,47 @@ pub const NO_HANDBACK_SETTLE_MS: u64 = 5 * 60 * 1000;
 // caller control back instead of hanging on a child that never reports a status
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 600_000;
 
+// Stay below Claude's 120-second foreground auto-background threshold.
+pub const CLAUDE_WAIT_CAP_MS: u64 = 90_000;
+// Leave thirty seconds under Cursor's inspected sixty-second MCP timeout.
+pub const CURSOR_WAIT_CAP_MS: u64 = 30_000;
+// Houston launches Codex with a 630-second tool timeout.
+pub const CODEX_WAIT_CAP_MS: u64 = 600_000;
+// Managed OpenCode launch configuration leaves thirty seconds for transport.
+pub const OPENCODE_WAIT_CAP_MS: u64 = 600_000;
+// Grok's effective per-tool timeout must also cover a transport margin.
+pub const GROK_WAIT_CAP_MS: u64 = 600_000;
+// Unknown client limits get a provisional thirty-second ceiling.
+pub const UNKNOWN_WAIT_CAP_MS: u64 = 30_000;
+// Five minutes allows ordinary reviewer delays before reporting a diagnostic heuristic.
+pub const CODEX_AUTO_REVIEW_STALL_MS: u64 = 300_000;
+// Leave room for client response handling even with a short Grok override.
+const GROK_WAIT_MARGIN_MS: u64 = 30_000;
+
+pub fn provider_wait_cap(provider: proto::AgentKind, grok_timeout_ms: Option<u64>) -> u64 {
+    match provider {
+        proto::AgentKind::Claude => CLAUDE_WAIT_CAP_MS,
+        proto::AgentKind::Cursor => CURSOR_WAIT_CAP_MS,
+        proto::AgentKind::Codex => CODEX_WAIT_CAP_MS,
+        proto::AgentKind::Opencode => OPENCODE_WAIT_CAP_MS,
+        proto::AgentKind::Grok => grok_timeout_ms.map_or(UNKNOWN_WAIT_CAP_MS, |timeout| {
+            timeout
+                .saturating_sub(GROK_WAIT_MARGIN_MS)
+                .clamp(1, GROK_WAIT_CAP_MS)
+        }),
+        _ => UNKNOWN_WAIT_CAP_MS,
+    }
+}
+
+pub fn wait_cap_note(provider: proto::AgentKind, requested: u64, cap: u64) -> Option<String> {
+    (requested > cap).then(|| {
+        format!(
+            "pane_wait timeout_ms {requested} ms clamped to {cap} ms for {}",
+            provider_label(provider)
+        )
+    })
+}
+
 // Match the sub-agent hold bound so an unreported background completion cannot hold a round forever.
 pub const BACKGROUND_HOLD_MAX_MS: u64 = 45 * 60_000;
 
@@ -595,7 +636,7 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
     let mut notes = Vec::new();
     if !caps.block {
         notes.push(format!(
-            "{provider} cannot report a block; a stall stands in"
+            "{provider}: needs-input not reported by this provider"
         ));
     }
     if !caps.last_message {
@@ -4163,7 +4204,7 @@ mod tests {
                 provisional: 1,
                 last_result_corrected_by: Some(124),
             },
-            Some("cursor cannot report a block; a stall stands in".to_string()),
+            Some("cursor: needs-input not reported by this provider".to_string()),
             Some("this pane's prompt has text the operator has not submitted".to_string()),
         );
         assert_eq!(info.parent, 41);
@@ -4175,7 +4216,7 @@ mod tests {
         assert_eq!(info.last_result_corrected_by, Some(124));
         assert_eq!(
             info.capability_note.as_deref(),
-            Some("cursor cannot report a block; a stall stands in")
+            Some("cursor: needs-input not reported by this provider")
         );
         assert_eq!(
             info.hold_reason.as_deref(),
@@ -4241,7 +4282,7 @@ mod tests {
         assert_eq!(
             capability_note(proto::AgentKind::Cursor).as_deref(),
             Some(
-                "cursor cannot report a block; a stall stands in; cursor has no \
+                "cursor: needs-input not reported by this provider; cursor has no \
                  turn-end continuation; results wait for its next idle"
             )
         );
@@ -5420,6 +5461,9 @@ pub struct Episode {
     pub reason: Option<String>,
     pub tool_input_fingerprint: Option<String>,
     pub opened_ms: u64,
+    pub strict_correlation: bool,
+    pub auto_review: bool,
+    pub stalled_reported: bool,
 }
 
 #[derive(Debug, Default)]
@@ -5449,6 +5493,15 @@ impl PermissionEpisodes {
         tool_input_fingerprint: Option<String>,
         now: u64,
     ) -> (EpisodeKey, Vec<Episode>) {
+        if let Some(id) = tool_use_id {
+            if let Some(existing) = self
+                .open
+                .iter()
+                .find(|ep| ep.key == EpisodeKey::ToolUseId(id.to_string()))
+            {
+                return (existing.key.clone(), Vec::new());
+            }
+        }
         if tool_use_id.is_none() {
             if let Some(fingerprint) = tool_input_fingerprint.as_deref() {
                 if let Some(existing) = self.open.iter().find(|ep| {
@@ -5496,8 +5549,41 @@ impl PermissionEpisodes {
             reason,
             tool_input_fingerprint,
             opened_ms: now,
+            strict_correlation: false,
+            auto_review: false,
+            stalled_reported: false,
         });
         (key, retired)
+    }
+
+    pub fn mark_codex_permission(&mut self, key: &EpisodeKey, auto_review: bool) {
+        if let Some(ep) = self.open.iter_mut().find(|ep| &ep.key == key) {
+            ep.strict_correlation = true;
+            ep.auto_review = auto_review;
+        }
+    }
+
+    pub fn take_auto_review_stalls(&mut self, now: u64) -> Vec<Episode> {
+        self.open
+            .iter_mut()
+            .filter_map(|ep| {
+                if ep.auto_review
+                    && !ep.stalled_reported
+                    && now.saturating_sub(ep.opened_ms) >= CODEX_AUTO_REVIEW_STALL_MS
+                {
+                    ep.stalled_reported = true;
+                    Some(ep.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn has_auto_review_stall(&self) -> bool {
+        self.open
+            .iter()
+            .any(|ep| ep.auto_review && ep.stalled_reported)
     }
 
     pub fn attach_notification(&mut self, reason: Option<String>) -> bool {
@@ -5537,7 +5623,13 @@ impl PermissionEpisodes {
                                     .zip(prompt_id.as_ref())
                                     .is_none_or(|(expected, actual)| expected == actual)
                             };
-                        if !prompt_matches || tool_name.as_ref() != Some(expected) {
+                        if (ep.strict_correlation
+                            && (expected_prompt.is_none()
+                                || expected_prompt != prompt_id
+                                || ep.tool_input_fingerprint.is_none()))
+                            || !prompt_matches
+                            || tool_name.as_ref() != Some(expected)
+                        {
                             false
                         } else {
                             match (&ep.tool_input_fingerprint, tool_input_fingerprint) {
@@ -5551,8 +5643,10 @@ impl PermissionEpisodes {
                 EpisodeEnd::NextPermissionRequest => {
                     matches!(ep.key, EpisodeKey::Generated { .. })
                         && ep.tool_input_fingerprint.is_none()
+                        && !ep.strict_correlation
                 }
-                EpisodeEnd::TurnEnded | EpisodeEnd::PromptSubmitted => true,
+                EpisodeEnd::TurnEnded => true,
+                EpisodeEnd::PromptSubmitted => !ep.strict_correlation,
             });
         self.open = kept;
         resolved
@@ -6086,6 +6180,105 @@ mod permission_episode_tests {
             eps.open(Some("toolu_1"), None, "Bash", None, 0);
             assert_eq!(eps.resolve_on(&end).len(), 1, "{end:?}");
             assert_eq!(eps.open_count(), 0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod provider_wait_tests {
+    use super::*;
+
+    #[test]
+    fn every_parent_provider_has_its_own_wait_cap() {
+        use proto::AgentKind::*;
+        for (provider, expected) in [
+            (Claude, 90_000),
+            (Cursor, 30_000),
+            (Codex, 600_000),
+            (Grok, 600_000),
+            (Opencode, 600_000),
+            (Antigravity, 30_000),
+        ] {
+            assert_eq!(
+                provider_wait_cap(provider, Some(630_000)),
+                expected,
+                "{provider:?}"
+            );
+            let note = wait_cap_note(provider, 700_000, expected).unwrap();
+            assert!(note.contains("700000") && note.contains(&expected.to_string()));
+            assert!(note.contains(&provider_label(provider)));
+            assert!(wait_cap_note(provider, 1, expected).is_none());
+        }
+        assert_eq!(provider_wait_cap(Grok, Some(45_000)), 15_000);
+        assert_eq!(provider_wait_cap(Grok, None), 30_000);
+        assert_eq!(provider_wait_cap(Grok, Some(1_000)), 1);
+    }
+
+    #[test]
+    fn auto_review_stalls_raise_once_and_clear_on_correlated_resolution() {
+        let mut episodes = PermissionEpisodes::default();
+        let (key, _) = episodes.open_with_fingerprint(
+            None,
+            Some("turn"),
+            "Bash",
+            None,
+            Some("input-digest".into()),
+            10,
+        );
+        episodes.mark_codex_permission(&key, true);
+        assert!(episodes
+            .take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS + 9)
+            .is_empty());
+        let stalls = episodes.take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS + 10);
+        assert_eq!(stalls.len(), 1);
+        assert!(episodes.has_auto_review_stall());
+        let (duplicate, _) = episodes.open_with_fingerprint(
+            None,
+            Some("turn"),
+            "Bash",
+            None,
+            Some("input-digest".into()),
+            CODEX_AUTO_REVIEW_STALL_MS + 11,
+        );
+        assert_eq!(key, duplicate);
+        assert!(episodes
+            .take_auto_review_stalls(CODEX_AUTO_REVIEW_STALL_MS * 2)
+            .is_empty());
+        episodes.resolve_on(&EpisodeEnd::PostToolUse {
+            tool_use_id: None,
+            prompt_id: Some("turn".into()),
+            tool_name: Some("Bash".into()),
+            tool_input_fingerprint: Some("input-digest".into()),
+        });
+        assert!(!episodes.has_auto_review_stall());
+    }
+
+    #[test]
+    fn incomplete_codex_correlation_survives_other_tools_and_new_prompts() {
+        for (turn, fingerprint) in [(Some("turn"), None), (None, Some("digest")), (None, None)] {
+            let mut episodes = PermissionEpisodes::default();
+            let (key, _) = episodes.open_with_fingerprint(
+                None,
+                turn,
+                "Bash",
+                None,
+                fingerprint.map(str::to_string),
+                0,
+            );
+            episodes.mark_codex_permission(&key, true);
+            assert!(episodes
+                .resolve_on(&EpisodeEnd::PostToolUse {
+                    tool_use_id: None,
+                    prompt_id: turn.map(str::to_string),
+                    tool_name: Some("Bash".into()),
+                    tool_input_fingerprint: fingerprint.map(str::to_string)
+                })
+                .is_empty());
+            assert!(episodes.resolve_on(&EpisodeEnd::PromptSubmitted).is_empty());
+            assert!(episodes
+                .resolve_on(&EpisodeEnd::NextPermissionRequest)
+                .is_empty());
+            assert_eq!(episodes.resolve_on(&EpisodeEnd::TurnEnded).len(), 1);
         }
     }
 }

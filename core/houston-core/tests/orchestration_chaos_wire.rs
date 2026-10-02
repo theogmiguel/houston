@@ -1391,3 +1391,843 @@ async fn r1_operator_close_uses_the_delegation_before_teardown() {
         );
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn h4_wait_caps_follow_the_parent_not_its_children() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    for (provider, expected) in [
+        ("claude", 90_000),
+        ("cursor", 30_000),
+        ("codex", 600_000),
+        ("grok", 600_000),
+        ("opencode", 600_000),
+        ("antigravity", 30_000),
+    ] {
+        let agent = serde_json::from_value(json!(provider)).unwrap();
+        let parent = rig.pane(agent, vec!["sh".into(), "-c".into(), "exec cat".into()]);
+        let result = rig
+            .call(parent, "pane_wait", json!({"timeout_ms":700_000}))
+            .await;
+        assert_eq!(result["nothing_to_wait_on"], true, "{provider}: {result}");
+        assert_eq!(result["wait_cap_ms"], expected, "{provider}: {result}");
+        assert_eq!(result["requested_timeout_ms"], 700_000);
+        assert!(result["cap_note"].as_str().unwrap().contains(provider));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn h4_grok_schema_terminals_reach_the_parent_with_distinct_outcomes() {
+    let _serial = SERIAL.lock().await;
+    for (event, outcome) in [
+        ("StopFailure", "turn_failed"),
+        ("StopCancelled", "turn_interrupted"),
+        ("SessionEnd", "session_ended"),
+    ] {
+        let rig = Rig::new().await;
+        let parent = rig.parent();
+        let script = rig.script(
+            "grok",
+            42,
+            "terminal",
+            json!([
+                {"op":"hook", "event":event, "fixture":format!("grok-1.0.13-schema-{event}.json")},
+                {"op":"hang"}
+            ]),
+        );
+        let child = rig.spawn(parent, "grok", &script, json!({})).await;
+        let response = rig
+            .call(
+                parent,
+                "pane_wait",
+                json!({"session":child,"timeout_ms":20_000}),
+            )
+            .await;
+        let rows = rig.daemon.inbox_rows_for_test(parent);
+        assert!(
+            rows.iter()
+                .any(|row| row.reason.as_deref() == Some(outcome)),
+            "{event}: {response}"
+        );
+        assert_eq!(
+            rig.daemon.session_status(child).unwrap(),
+            Some(proto::AgentStatus::Idle)
+        );
+        assert!(rig
+            .daemon
+            .list()
+            .iter()
+            .find(|pane| pane.id == child)
+            .unwrap()
+            .state
+            .is_live());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn h4_auto_review_marker_is_deduplicated_wait_only_and_cleared() {
+    use houston_core::hook_drop::{drop_dir, now_ms, write_drop, HookDrop};
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let parent = rig.fake_parent("claude", 42).await;
+    let script = rig.script("codex", 42, "review-stall", json!([{"op":"hang"}]));
+    let child = rig.spawn(parent, "codex", &script, json!({})).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        rig.daemon.hook_drop_tick_for_test();
+        if rig.daemon.session_status(child).unwrap() == Some(proto::AgentStatus::Working) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "startup prompt was not applied");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let drop = HookDrop {
+        session: child,
+        agent: Some("codex".into()),
+        event: "PermissionRequest".into(),
+        prompt_id: Some("review-turn".into()),
+        tool_name: Some("Bash".into()),
+        tool_input_fingerprint: Some("input-digest".into()),
+        ..Default::default()
+    };
+    let directory = drop_dir(rig.state.path());
+    write_drop(&directory, &drop, now_ms()).unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+    let raised_at = now_ms() + houston_core::orchestrate::CODEX_AUTO_REVIEW_STALL_MS + 1;
+    rig.daemon.subagent_expiry_tick_at(raised_at);
+    rig.daemon.subagent_expiry_tick_at(raised_at + 1);
+    let markers: Vec<_> = rig
+        .daemon
+        .inbox_rows_for_test(parent)
+        .into_iter()
+        .filter(|row| row.reason.as_deref() == Some("approval_outcome_unobserved"))
+        .collect();
+    assert_eq!(markers.len(), 1);
+    assert!(markers[0].body.contains("stalled?") && markers[0].body.contains("elapsed"));
+    assert_eq!(
+        rig.daemon.session_status(child).unwrap(),
+        Some(proto::AgentStatus::Working)
+    );
+    assert!(rig.daemon.delegation_of(child).unwrap().stalled);
+    assert!(matches!(
+        rig.daemon
+            .inbox_reserve_for_stop_hook(parent, now_ms())
+            .unwrap(),
+        houston_core::orchestrate::StopHookReserveOutcome::Empty
+    ));
+    let resolution = HookDrop {
+        event: "PostToolUse".into(),
+        ..drop
+    };
+    write_drop(&directory, &resolution, now_ms()).unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+    assert!(!rig.daemon.delegation_of(child).unwrap().stalled);
+    assert!(rig
+        .daemon
+        .inbox_rows_for_test(parent)
+        .iter()
+        .find(|row| row.id == markers[0].id)
+        .unwrap()
+        .resolved_at
+        .is_some());
+    rig.daemon.subagent_expiry_tick_at(raised_at + 2);
+    assert_eq!(
+        rig.daemon
+            .inbox_rows_for_test(parent)
+            .iter()
+            .filter(|row| row.reason.as_deref() == Some("approval_outcome_unobserved"))
+            .count(),
+        1
+    );
+    assert!(!rig.logs().iter().any(
+        |record| record["event"] == "prompt" && record["data"].to_string().contains("stalled?")
+    ));
+}
+
+#[cfg(feature = "test-barriers")]
+#[path = "common/mod.rs"]
+mod common;
+
+#[cfg(feature = "test-barriers")]
+mod daemon_crash {
+    use super::*;
+    use futures_util::SinkExt;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Child, Stdio};
+    use tokio_tungstenite::tungstenite::Message;
+
+    // Cold subprocess startup and restore are slower than in-process hook replay.
+    const DEADLINE: Duration = Duration::from_secs(60);
+
+    struct ProcessRig {
+        home: tempfile::TempDir,
+        workspace: PathBuf,
+        barriers: PathBuf,
+        child: Option<Child>,
+        discovery: Value,
+    }
+
+    impl Drop for ProcessRig {
+        fn drop(&mut self) {
+            self.stop();
+        }
+    }
+
+    impl ProcessRig {
+        fn state(&self) -> PathBuf {
+            self.home.path().join(".houston-chaos")
+        }
+        fn database(&self) -> rusqlite::Connection {
+            let db = rusqlite::Connection::open(self.state().join("houston.db")).unwrap();
+            db.busy_timeout(DEADLINE).unwrap();
+            db
+        }
+        fn stop(&mut self) {
+            if let Some(mut child) = self.child.take() {
+                let discovery: Value = serde_json::from_slice(
+                    &std::fs::read(self.state().join("daemon.json")).unwrap(),
+                )
+                .unwrap();
+                let pid = discovery["pid"].as_u64().unwrap() as u32;
+                assert_eq!(
+                    pid,
+                    child.id(),
+                    "channel discovery must name this exact child"
+                );
+                houston_core::pid::signal_process_checked_identity(
+                    pid,
+                    houston_core::pid::Signal::Kill,
+                    discovery["pid_creation"].as_u64(),
+                )
+                .unwrap();
+                child.wait().unwrap();
+            }
+        }
+        async fn start(&mut self) {
+            let log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(self.home.path().join("daemon.log"))
+                .unwrap();
+            let child =
+                common::hermetic_command(env!("CARGO_BIN_EXE_houston-core"), self.home.path())
+                    .env("HOUSTON_CHANNEL", "chaos")
+                    .env("HOUSTON_DISABLE_SWARM_AUTOLAUNCH", "1")
+                    .env("HOUSTON_TEST_BARRIER_DIR", &self.barriers)
+                    .env("HOUSTON_TEST_INBOX_WAIT_ONLY", "1")
+                    .stdout(Stdio::null())
+                    .stderr(log)
+                    .spawn()
+                    .unwrap();
+            let pid = child.id();
+            self.child = Some(child);
+            let deadline = Instant::now() + DEADLINE;
+            loop {
+                if let Ok(raw) = std::fs::read(self.state().join("daemon.json")) {
+                    if let Ok(discovery) = serde_json::from_slice::<Value>(&raw) {
+                        if discovery["pid"] == pid {
+                            self.discovery = discovery;
+                            return;
+                        }
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "subprocess did not publish discovery: {}",
+                    std::fs::read_to_string(self.home.path().join("daemon.log"))
+                        .unwrap_or_default()
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        fn script(&self, name: &str, provider: &str, steps: Value) -> PathBuf {
+            let path = self.home.path().join(format!("{name}.json"));
+            std::fs::write(
+                &path,
+                json!({"provider":provider,"seed":42,"home":self.home.path(),
+                "helper":env!("CARGO_BIN_EXE_tr-helper"),
+                "fixtures":Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks"),
+                "log":self.home.path().join(format!("{name}.jsonl")),"steps":steps,"resume_metadata":true})
+                .to_string(),
+            )
+            .unwrap();
+            path
+        }
+        async fn new() -> Self {
+            let home = tempfile::tempdir().unwrap();
+            let workspace = home.path().join("workspace");
+            let barriers = home.path().join("barriers");
+            std::fs::create_dir_all(&workspace).unwrap();
+            std::fs::create_dir_all(&barriers).unwrap();
+            let rig = Self {
+                home,
+                workspace,
+                barriers,
+                child: None,
+                discovery: Value::Null,
+            };
+            std::fs::create_dir_all(rig.state()).unwrap();
+            let db = houston_core::db::Db::open(&rig.state().join("houston.db")).unwrap();
+            db.set_setting(houston_core::orchestrate::ENABLED_KEY, "1")
+                .unwrap();
+            db.set_setting("updates_check", "0").unwrap();
+            db.set_setting("orchestration_max_spawn_depth", "3")
+                .unwrap();
+            db.add_workspace(rig.workspace.to_str().unwrap(), "crash fixture")
+                .unwrap();
+            drop(db);
+            // The shared helper creates all provider refusals and preserves this PATH in login shells.
+            let _ = common::hermetic_command(env!("CARGO_BIN_EXE_houston-core"), rig.home.path());
+            for (name, provider) in [
+                ("claude", "claude"),
+                ("codex", "codex"),
+                ("agy", "antigravity"),
+                ("opencode", "opencode"),
+                ("cursor-agent", "cursor"),
+                ("grok", "grok"),
+            ] {
+                let script = rig.script(
+                    &format!("resume-{provider}"),
+                    provider,
+                    json!([{"op":"hang"}]),
+                );
+                let shim = rig.home.path().join("provider-shims").join(name);
+                let content = format!("#!/bin/sh\ncase \"$1\" in mcp|--help|--version) exit 0;; esac\ncase \"$*\" in *@fake:*) exec '{}' \"$@\";; *) exec '{}' '@fake:{}' \"$@\";; esac\n",
+                    env!("CARGO_BIN_EXE_fake_agent"), env!("CARGO_BIN_EXE_fake_agent"), script.display());
+                std::fs::write(&shim, content).unwrap();
+                std::fs::set_permissions(shim, std::fs::Permissions::from_mode(0o700)).unwrap();
+            }
+            rig
+        }
+        async fn ws(&self) -> common::WsStream {
+            common::connect_and_hello(
+                format!("127.0.0.1:{}", self.discovery["port"].as_u64().unwrap())
+                    .parse()
+                    .unwrap(),
+                self.discovery["token"].as_str().unwrap(),
+            )
+            .await
+        }
+        fn arm(&self, point: &str) {
+            let _ = std::fs::remove_file(self.barriers.join("reached"));
+            std::fs::write(self.barriers.join("armed"), point).unwrap();
+        }
+        async fn reached(&self, point: &str) -> u32 {
+            let deadline = Instant::now() + DEADLINE;
+            loop {
+                if let Ok(receipt) = std::fs::read_to_string(self.barriers.join("reached")) {
+                    if let Some(id) = receipt.strip_prefix(&format!("{point} ")) {
+                        return id.parse().unwrap();
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "{point} barrier not reached: {}",
+                    std::fs::read_to_string(self.home.path().join("daemon.log"))
+                        .unwrap_or_default()
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        async fn await_child(&self) -> u32 {
+            let deadline = Instant::now() + DEADLINE;
+            loop {
+                let id = self
+                    .database()
+                    .query_row(
+                        "SELECT child_session FROM delegations WHERE role='crash-child'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .ok();
+                if let Some(id) = id {
+                    return id;
+                }
+                assert!(Instant::now() < deadline, "no child delegation");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        fn received_results(&self) -> Vec<String> {
+            let log = std::fs::read_to_string(self.home.path().join("resume-parent.jsonl"))
+                .or_else(|_| std::fs::read_to_string(self.home.path().join("resume-claude.jsonl")))
+                .unwrap_or_default();
+            log.lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter(|event| event["event"] == "reply" && event["data"]["tool"] == "pane_wait")
+                .flat_map(|event| {
+                    event["data"]["result"]["rows"]
+                        .as_array()
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .filter(|row| row["kind"] == "result")
+                .map(|row| row["summary"].as_str().unwrap().to_string())
+                .collect()
+        }
+        fn seed_resume(&self, id: u32) {
+            // This is the same persisted handle/transcript shape produced by authoritative hook promotion.
+            let conversation = uuid::Uuid::from_u128(u128::from(id)).to_string();
+            let transcript = self.home.path().join(format!("{conversation}.jsonl"));
+            std::fs::write(&transcript, "conversation metadata\n").unwrap();
+            houston_core::db::Db::open(&self.state().join("houston.db"))
+                .unwrap()
+                .set_session_resume_handle(
+                    id,
+                    Some((&conversation, Some(transcript.to_str().unwrap()))),
+                )
+                .unwrap();
+        }
+    }
+
+    async fn crash_at(provider: &str, point: &str) {
+        let mut rig = ProcessRig::new().await;
+        let go = rig.home.path().join("go");
+        let wait = rig.home.path().join("wait");
+        let script = rig.script("child", provider, json!([
+            {"op":"call","tool":"pane_submit","args":{"body":"FIRST","summary":"FIRST","request_id":0}},
+            {"op":"wait_file","path":go},
+            {"op":"call","tool":"pane_submit","args":{"body":"SECOND","summary":"SECOND","request_id":1}},
+            {"op":"stop"},{"op":"hang"}
+        ]));
+        let probe_script = rig.script("restore-probe", provider, json!([{"op":"hang"}]));
+        let parent_script = rig.script("parent", "claude", json!([
+            {"op":"spawn","args":{"kind":provider,"prompt":format!("@fake:{}",script.display()),"role":"crash-child","reusable":true}},
+            {"op":"spawn","args":{"kind":provider,"prompt":format!("@fake:{}",probe_script.display()),"role":"restore-probe","reusable":true}},
+            {"op":"wait_file","path":wait}, {"op":"wait_all"},{"op":"hang"}
+        ]));
+        if point == "spawn" {
+            rig.arm(point);
+        }
+        rig.start().await;
+        let mut ws = rig.ws().await;
+        let _ = common::next_control(&mut ws).await;
+        let message = json!({"type":"session_create","agent":"claude","project_dir":rig.workspace,
+            "cmd":[env!("CARGO_BIN_EXE_fake_agent"),format!("@fake:{}",parent_script.display())],
+            "cols":80,"rows":24,"shell_integration":false});
+        ws.send(Message::text(message.to_string())).await.unwrap();
+        let parent = common::expect_created(&mut ws).await.id;
+        let child = if point == "spawn" {
+            rig.reached(point).await
+        } else {
+            rig.await_child().await
+        };
+        rig.seed_resume(parent);
+        if provider != "grok" {
+            rig.seed_resume(child);
+        }
+        if point != "spawn" {
+            let deadline = Instant::now() + DEADLINE;
+            loop {
+                let probe: Option<u32> = rig
+                    .database()
+                    .query_row(
+                        "SELECT child_session FROM delegations WHERE role='restore-probe'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .ok();
+                if let Some(probe) = probe {
+                    if provider != "grok" {
+                        rig.seed_resume(probe);
+                    }
+                    break;
+                }
+                assert!(Instant::now() < deadline, "restore probe did not spawn");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            let deadline = Instant::now() + DEADLINE;
+            loop {
+                let count: i64 = rig
+                    .database()
+                    .query_row(
+                        "SELECT COUNT(*) FROM pane_inbox WHERE kind='result' AND summary='FIRST'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                if count == 1 {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "first submit did not persist");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            rig.arm(point);
+            std::fs::write(go, "go").unwrap();
+            if point == "reservation" {
+                let deadline = Instant::now() + DEADLINE;
+                loop {
+                    let ready: i64 = rig.database().query_row("SELECT COUNT(*) FROM pane_inbox WHERE kind='result' AND ready_at IS NOT NULL", [], |r| r.get(0)).unwrap();
+                    if ready == 2 {
+                        break;
+                    }
+                    assert!(Instant::now() < deadline, "results never became eligible");
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                std::fs::write(wait, "wait").unwrap();
+            }
+            rig.reached(point).await;
+        }
+        rig.stop();
+        drop(ws);
+        let db = rig.database();
+        let delivered: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM pane_inbox WHERE kind='result' AND delivered_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            delivered, 0,
+            "{provider}/{point}: killed response must not consume results"
+        );
+        let pending: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM pane_inbox WHERE kind='result'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let reserved: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM pane_inbox WHERE delivery_id IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        if point == "reservation" {
+            assert_eq!(reserved, 2);
+        }
+        let old_receipts: Vec<String> = db
+            .prepare("SELECT DISTINCT delivery_id FROM pane_inbox WHERE delivery_id IS NOT NULL")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        drop(db);
+        std::fs::remove_file(rig.barriers.join("armed")).unwrap();
+        // Resumed fixtures never resubmit. They resolve the previous turn and explicitly wait.
+        rig.script(
+            "resume-claude",
+            "claude",
+            json!([
+                {"op":"call","tool":"pane_wait","args":{"timeout_ms":20000}},
+                {"op":"call","tool":"pane_wait","args":{"timeout_ms":20000}},
+                {"op":"hang"}
+            ]),
+        );
+        rig.script(
+            &format!("resume-{provider}"),
+            provider,
+            json!([{"op":"stop"},{"op":"hang"}]),
+        );
+        if provider == "claude" {
+            // The resume invocation names the original conversation, so select scripts by that identity.
+            let shim = rig.home.path().join("provider-shims/claude");
+            let parent_resume = rig.home.path().join("resume-parent.json");
+            rig.script(
+                "resume-parent",
+                "claude",
+                json!([
+                    {"op":"call","tool":"pane_wait","args":{"timeout_ms":20000}},
+                    {"op":"call","tool":"pane_wait","args":{"timeout_ms":20000}},{"op":"hang"}
+                ]),
+            );
+            let child_resume = rig.home.path().join("resume-claude.json");
+            let conversation = uuid::Uuid::from_u128(u128::from(parent)).to_string();
+            std::fs::write(&shim, format!("#!/bin/sh\ncase \"$1\" in mcp|--help|--version) exit 0;; esac\ncase \"$*\" in *'{conversation}'*) exec '{}' '@fake:{}' \"$@\";; *) exec '{}' '@fake:{}' \"$@\";; esac\n",
+                env!("CARGO_BIN_EXE_fake_agent"),parent_resume.display(),env!("CARGO_BIN_EXE_fake_agent"),child_resume.display())).unwrap();
+        }
+        rig.start().await;
+        let deadline = Instant::now() + DEADLINE;
+        loop {
+            let count: i64 = rig.database().query_row("SELECT COUNT(*) FROM pane_inbox WHERE kind='result' AND delivered_at IS NOT NULL AND (delivered_via != 'paste' OR confirmed_at IS NOT NULL)", [], |r| r.get(0)).unwrap();
+            let notices: i64 = rig
+                .database()
+                .query_row(
+                    "SELECT COUNT(*) FROM pane_inbox WHERE kind='restored'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            if count == pending && rig.received_results().len() as i64 == pending && notices == 1 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{provider}/{point}: replay never delivered: daemon={} parent={} child={} rows={:?}",
+                std::fs::read_to_string(rig.home.path().join("daemon.log")).unwrap_or_default(),
+                std::fs::read_to_string(rig.home.path().join("resume-parent.jsonl")).unwrap_or_else(|_| std::fs::read_to_string(rig.home.path().join("resume-claude.jsonl")).unwrap_or_default()),
+                std::fs::read_to_string(rig.home.path().join(format!("resume-{provider}.jsonl"))).unwrap_or_default(),
+                rig.database().prepare("SELECT summary,to_session,ready_at,delivered_at,confirmed_at,reason,delivery_id FROM pane_inbox").unwrap().query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,u32>(1)?,r.get::<_,Option<i64>>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<String>>(5)?,r.get::<_,Option<String>>(6)?))).unwrap().map(Result::unwrap).collect::<Vec<_>>()
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let db = rig.database();
+        let results: Vec<(String, String)> = db
+            .prepare("SELECT summary,delivered_via FROM pane_inbox WHERE kind='result' ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            results.len() as i64,
+            pending,
+            "{provider}/{point}: duplicate submissions"
+        );
+        if pending == 2 {
+            assert_eq!(rig.received_results(), ["FIRST", "SECOND"]);
+            assert_eq!(
+                results.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+                ["FIRST", "SECOND"]
+            );
+        }
+        assert!(
+            results
+                .iter()
+                .all(|r| matches!(r.1.as_str(), "wait" | "paste" | "stop_hook")),
+            "{results:?}"
+        );
+        let notices: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM pane_inbox WHERE kind='restored'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(notices, 1, "{provider}/{point}: one restored roster notice");
+        for receipt in old_receipts {
+            let held: i64 = db
+                .query_row(
+                    "SELECT COUNT(*) FROM pane_inbox WHERE delivery_id = ?1",
+                    [&receipt],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(held, 0, "restart must free old reservation {receipt}");
+        }
+        let recipient: u32 = db
+            .query_row(
+                "SELECT to_session FROM pane_inbox WHERE kind='restored'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_ne!(
+            recipient, parent,
+            "restoration must mint a new session identity"
+        );
+        let misrouted: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM pane_inbox WHERE kind='result' AND to_session != ?1",
+                [recipient],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(misrouted, 0, "all replies follow their restored parent");
+        let notice: String = db
+            .query_row(
+                "SELECT body FROM pane_inbox WHERE kind='restored'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&notice).unwrap()[0]["resumed"],
+            provider != "grok"
+        );
+        eprintln!("h4 crash provider={provider} point={point} results={pending} restored=1");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn h4_daemon_crash_routes_through_an_unresumed_parent_to_the_live_ancestor() {
+        let _serial = SERIAL.lock().await;
+        let mut rig = ProcessRig::new().await;
+        let go = rig.home.path().join("ancestor-go");
+        let leaf_script = rig.script("leaf", "codex", json!([
+            {"op":"wait_file","path":go},
+            {"op":"call","tool":"pane_submit","args":{"body":"ANCESTOR","summary":"ANCESTOR","request_id":0}},
+            {"op":"stop"},{"op":"hang"}
+        ]));
+        let middle_script = rig.script("middle", "grok", json!([
+            {"op":"spawn","args":{"kind":"codex","prompt":format!("@fake:{}",leaf_script.display()),"role":"leaf","reusable":true}},
+            {"op":"hang"}
+        ]));
+        let root_script = rig.script("root", "claude", json!([
+            {"op":"spawn","args":{"kind":"grok","prompt":format!("@fake:{}",middle_script.display()),"role":"middle","reusable":true}},
+            {"op":"hang"}
+        ]));
+        rig.start().await;
+        let mut ws = rig.ws().await;
+        let _ = common::next_control(&mut ws).await;
+        ws.send(Message::text(
+            json!({"type":"session_create","agent":"claude","project_dir":rig.workspace,
+            "cmd":[env!("CARGO_BIN_EXE_fake_agent"),format!("@fake:{}",root_script.display())],
+            "cols":80,"rows":24,"shell_integration":false})
+            .to_string(),
+        ))
+        .await
+        .unwrap();
+        let root = common::expect_created(&mut ws).await.id;
+        let deadline = Instant::now() + DEADLINE;
+        loop {
+            let count: i64 = rig
+                .database()
+                .query_row("SELECT COUNT(*) FROM delegations", [], |r| r.get(0))
+                .unwrap();
+            if count == 2 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "nested delegation did not spawn");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        rig.seed_resume(root);
+        rig.arm("staging");
+        std::fs::write(go, "go").unwrap();
+        rig.reached("staging").await;
+        rig.stop();
+        drop(ws);
+        std::fs::remove_file(rig.barriers.join("armed")).unwrap();
+        rig.script(
+            "resume-claude",
+            "claude",
+            json!([
+                {"op":"call","tool":"pane_wait","args":{"timeout_ms":20000}},
+                {"op":"call","tool":"pane_wait","args":{"timeout_ms":20000}},{"op":"hang"}
+            ]),
+        );
+        rig.start().await;
+        let deadline = Instant::now() + DEADLINE;
+        loop {
+            let count: i64 = rig.database().query_row("SELECT COUNT(*) FROM pane_inbox WHERE summary='ANCESTOR' AND delivered_at IS NOT NULL AND (delivered_via != 'paste' OR confirmed_at IS NOT NULL)", [], |r| r.get(0)).unwrap();
+            if count == 1 && rig.received_results() == ["ANCESTOR"] {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "ancestor did not receive recovered handback"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let db = rig.database();
+        let recipient: u32 = db
+            .query_row(
+                "SELECT to_session FROM pane_inbox WHERE kind='restored'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_ne!(recipient, root);
+        let (actual, original, reason): (u32, Option<u32>, Option<String>) = db
+            .query_row(
+                "SELECT to_session,original_to,reason FROM pane_inbox WHERE summary='ANCESTOR'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(actual, recipient);
+        assert!(original.is_some());
+        assert_eq!(reason.as_deref(), Some("parent_dead"));
+        let count: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM pane_inbox WHERE summary='ANCESTOR'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        let body: String = db
+            .query_row(
+                "SELECT body FROM pane_inbox WHERE kind='restored'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap()[0]["resumed"],
+            false
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn h4_exact_daemon_crash_points_recover_durable_inbox_rows() {
+        let _serial = SERIAL.lock().await;
+        for provider in ["claude", "codex", "grok"] {
+            for point in ["spawn", "staging", "reservation", "completion"] {
+                if std::env::var("HOUSTON_CRASH_CASE")
+                    .is_ok_and(|case| case != format!("{provider}/{point}"))
+                {
+                    continue;
+                }
+                crash_at(provider, point).await;
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn h4_codex_missing_call_identity_cannot_be_cleared_by_an_unrelated_tool() {
+    use houston_core::hook_drop::{drop_dir, now_ms, write_drop, HookDrop};
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let parent = rig.parent();
+    let script = rig.script("codex", 42, "missing-identity", json!([{"op":"hang"}]));
+    let child = rig.spawn(parent, "codex", &script, json!({})).await;
+    let directory = drop_dir(rig.state.path());
+    let permission = HookDrop {
+        session: child,
+        agent: Some("codex".into()),
+        event: "PermissionRequest".into(),
+        prompt_id: Some("turn".into()),
+        tool_name: Some("Bash".into()),
+        ..Default::default()
+    };
+    write_drop(&directory, &permission, now_ms()).unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+    write_drop(
+        &directory,
+        &HookDrop {
+            event: "PostToolUse".into(),
+            ..permission.clone()
+        },
+        now_ms(),
+    )
+    .unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+    assert_eq!(
+        rig.daemon
+            .list()
+            .iter()
+            .find(|pane| pane.id == child)
+            .unwrap()
+            .delegation
+            .as_ref()
+            .unwrap()
+            .hold_reason
+            .as_deref(),
+        Some("auto-review in progress")
+    );
+    write_drop(
+        &directory,
+        &HookDrop {
+            event: "Interrupt".into(),
+            ..permission
+        },
+        now_ms(),
+    )
+    .unwrap();
+    rig.daemon.hook_drop_tick_for_test();
+    assert!(rig
+        .daemon
+        .list()
+        .iter()
+        .find(|pane| pane.id == child)
+        .unwrap()
+        .delegation
+        .as_ref()
+        .unwrap()
+        .hold_reason
+        .is_none());
+}

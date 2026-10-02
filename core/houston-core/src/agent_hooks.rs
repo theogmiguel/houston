@@ -1246,7 +1246,11 @@ mod tests {
         let cmds = hooks_json_commands(&read(&path));
         assert!(cmds.iter().any(|c| c == "my-own-hook"), "{cmds:?}");
         let events = crate::agent_events::events_for(proto::AgentKind::Grok);
-        assert_eq!(events.len(), 4, "Grok maps the full Claude four");
+        assert_eq!(
+            events.len(),
+            7,
+            "Grok installs successful, failed, cancelled and session terminals"
+        );
         let extra = crate::agent_events::GROK_CORRELATION_EVENTS.len();
         assert_eq!(cmds.len(), events.len() + extra + 1, "{cmds:?}");
         let root: serde_json::Value =

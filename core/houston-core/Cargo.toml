@@ -7,6 +7,10 @@ repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
 
+[features]
+# Crash barriers are opt-in test instrumentation and are absent from shipping builds.
+test-barriers = []
+
 [dependencies]
 anyhow.workspace = true
 # "multipart" is NOT here: only voice/cloud.rs's tests use it, and it drags in

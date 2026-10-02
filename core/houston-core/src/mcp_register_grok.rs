@@ -8,6 +8,9 @@ pub const URL_PLACEHOLDER: &str = "${HOUSTON_MCP_URL}";
 
 pub const TOKEN_PLACEHOLDER: &str = "${HOUSTON_MCP_TOKEN}";
 
+// Bundled Grok configuration documents a 6000-second default tool timeout.
+const DEFAULT_TOOL_TIMEOUT_MS: u64 = 6_000_000;
+
 const ADD_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub fn registration_args() -> Vec<String> {
@@ -76,6 +79,32 @@ fn kind_of(v: &toml::Value) -> &'static str {
         toml::Value::Datetime(_) => "a datetime",
         toml::Value::Array(_) => "an array",
         toml::Value::Table(_) => "a table",
+    }
+}
+
+/// Read per-tool precedence without changing user configuration or exposing credentials.
+pub fn effective_wait_timeout_ms(contents: Option<&str>) -> Option<u64> {
+    let parsed: toml::Value = match contents {
+        None => return Some(DEFAULT_TOOL_TIMEOUT_MS),
+        Some(text) => text.parse().ok()?,
+    };
+    let server = parsed
+        .get("mcp_servers")
+        .and_then(|servers| servers.get(crate::mcp_server::SERVER_NAME));
+    let Some(server) = server else {
+        return Some(DEFAULT_TOOL_TIMEOUT_MS);
+    };
+    let timeout = server
+        .get("tool_timeouts")
+        .and_then(|timeouts| timeouts.get("pane_wait"))
+        .or_else(|| server.get("tool_timeout_sec"));
+    match timeout {
+        None => Some(DEFAULT_TOOL_TIMEOUT_MS),
+        Some(value) => value
+            .as_integer()
+            .and_then(|n| u64::try_from(n).ok())
+            .filter(|n| *n > 0)
+            .and_then(|n| n.checked_mul(1_000)),
     }
 }
 
@@ -309,5 +338,36 @@ url = "http://127.0.0.1:9999/mcp"
         let err = run_stub(dir.path(), &stub).await.unwrap_err();
         assert!(err.contains("exited Some(3)"), "{err}");
         assert!(err.contains("boom: no auth"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod wait_timeout_tests {
+    use super::*;
+
+    #[test]
+    fn per_tool_timeout_wins_over_server_timeout() {
+        assert_eq!(
+            effective_wait_timeout_ms(Some(
+                "[mcp_servers.houston]\ntool_timeout_sec = 630\ntool_timeouts = { pane_wait = 45 }"
+            )),
+            Some(45_000)
+        );
+        assert_eq!(
+            effective_wait_timeout_ms(Some("[mcp_servers.houston]\ntool_timeout_sec = 630")),
+            Some(630_000)
+        );
+        assert_eq!(effective_wait_timeout_ms(None), Some(6_000_000));
+        assert_eq!(
+            effective_wait_timeout_ms(Some("model = 'grok'")),
+            Some(6_000_000)
+        );
+        for invalid in [
+            "invalid toml",
+            "[mcp_servers.houston]\ntool_timeout_sec = 'oops'",
+            "[mcp_servers.houston]\ntool_timeouts = { pane_wait = -1 }",
+        ] {
+            assert_eq!(effective_wait_timeout_ms(Some(invalid)), None);
+        }
     }
 }

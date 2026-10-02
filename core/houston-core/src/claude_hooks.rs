@@ -432,6 +432,7 @@ pub fn run_hook_client(args: &[String]) {
         stop_continued,
         session_id: payload.session_id,
         fully_idle: payload.fully_idle,
+        subagent_type: payload.subagent_type,
         tool_name: payload.tool_name,
     };
     let root = crate::paths::config_dir();
@@ -623,6 +624,7 @@ pub(crate) struct HookPayload {
     pub tool_use_id: Option<String>,
     pub request_id: Option<String>,
     pub fully_idle: Option<bool>,
+    pub subagent_type: Option<String>,
     pub tool_name: Option<String>,
     pub tool_input_fingerprint: Option<String>,
     pub transcript_path: Option<String>,
@@ -660,8 +662,9 @@ fn codex_tool_input_fingerprint(
     if provider != proto::AgentKind::Codex {
         return None;
     }
-    let command = parsed?.get("tool_input")?.get("command")?.as_str()?;
-    Some(format!("{:x}", Sha256::digest(command.as_bytes())))
+    let input = parsed?.get("tool_input")?;
+    let canonical = serde_json::to_vec(input).ok()?;
+    Some(format!("{:x}", Sha256::digest(&canonical)))
 }
 
 pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> HookPayload {
@@ -788,6 +791,9 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .or_else(|| field("requestID").filter(|id| !id.is_empty()))
             .filter(|id| !id.is_empty()),
         fully_idle: field_bool("fullyIdle"),
+        subagent_type: (provider == proto::AgentKind::Grok)
+            .then(|| field("subagentType"))
+            .flatten(),
         tool_name,
         tool_input_fingerprint,
         transcript_path: if provider == proto::AgentKind::Antigravity {
@@ -1639,7 +1645,7 @@ mod tests {
         assert_eq!(p.tool_name.as_deref(), Some("Bash"));
         assert_eq!(
             p.tool_input_fingerprint.as_deref(),
-            Some("0031fd18feb55b6b493544de1976b438eeac0b2d1278821b9e4e8eb07e8cf503")
+            Some("46b54e632fb509e603362a785238ddd4c8cecbc6f4c9dfab3715c46f37d34d24")
         );
         assert!(!p
             .tool_input_fingerprint
@@ -1904,5 +1910,26 @@ mod sentinel_tests {
         ] {
             assert!(!command_is_legacy_managed(cmd), "not ours to remove: {cmd}");
         }
+    }
+}
+
+#[cfg(test)]
+mod input_fingerprint_tests {
+    use super::*;
+
+    #[test]
+    fn codex_non_shell_inputs_use_a_canonical_digest() {
+        let fingerprint =
+            |input| parse_hook_payload(input, proto::AgentKind::Codex).tool_input_fingerprint;
+        let original = fingerprint(r#"{"tool_input":{"file_path":"/tmp/file","content":"first"}}"#);
+        assert!(original.is_some());
+        assert_eq!(
+            original,
+            fingerprint(r#"{"tool_input":{"content":"first","file_path":"/tmp/file"}}"#)
+        );
+        assert_ne!(
+            original,
+            fingerprint(r#"{"tool_input":{"file_path":"/tmp/file","content":"second"}}"#)
+        );
     }
 }

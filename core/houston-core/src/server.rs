@@ -3875,6 +3875,8 @@ async fn orch_wait(
         },
     };
     let timeout_ms = body.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
+    let (provider, cap) = daemon.orchestration_wait_cap(scope.session_id);
+    let cap_note = crate::orchestrate::wait_cap_note(provider, timeout_ms, cap);
     let outcome = daemon
         .orchestrate_wait_reserved(
             scope.session_id,
@@ -3890,7 +3892,7 @@ async fn orch_wait(
     };
     use crate::orchestrate::InboxWaitOutcome;
     let message = outcome.message();
-    let next_action = outcome.next_action();
+    let next_action = "Call pane_wait again.";
     match outcome {
         InboxWaitOutcome::Delivered {
             rows,
@@ -3904,6 +3906,10 @@ async fn orch_wait(
                 "delivery_id": delivery_id,
                 "has_more": has_more,
                 "waited_ms": waited_ms,
+                "wait_cap_ms": cap,
+                "requested_timeout_ms": timeout_ms,
+                "provider": provider,
+                "cap_note": cap_note,
             });
             let bytes = axum::body::Bytes::from(value.to_string());
             let delivery = WaitResponseDelivery {
@@ -3945,6 +3951,10 @@ async fn orch_wait(
                 "rows": [],
                 "timed_out": true,
                 "waited_ms": waited_ms,
+                "wait_cap_ms": cap,
+                "requested_timeout_ms": timeout_ms,
+                "provider": provider,
+                "cap_note": cap_note,
                 "status": status,
                 "status_source": status_source,
                 "next_action": next_action,
@@ -3958,7 +3968,7 @@ async fn orch_wait(
             .into_response(),
         InboxWaitOutcome::NothingToWaitOn => (
             StatusCode::OK,
-            axum::Json(json!({"nothing_to_wait_on":true,"live_children":0,"rows":[]})),
+            axum::Json(json!({"nothing_to_wait_on":true,"live_children":0,"rows":[],"wait_cap_ms":cap,"requested_timeout_ms":timeout_ms,"provider":provider,"cap_note":cap_note})),
         )
             .into_response(),
         InboxWaitOutcome::Stalled { .. } => (

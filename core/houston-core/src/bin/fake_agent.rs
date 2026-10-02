@@ -16,6 +16,8 @@ struct Script {
     fixtures: PathBuf,
     log: PathBuf,
     steps: Vec<Value>,
+    #[serde(default)]
+    resume_metadata: bool,
 }
 
 struct Agent {
@@ -54,6 +56,18 @@ impl Agent {
                 .join(&self.script.provider)
                 .join(fixture),
         )?)?;
+        if self.script.resume_metadata && self.script.provider == "claude" {
+            let pane: u32 = std::env::var("HOUSTON_SESSION")?.parse()?;
+            let conversation = uuid::Uuid::from_u128(u128::from(pane)).to_string();
+            if let Some(value) = payload.get_mut("session_id") {
+                *value = json!(conversation);
+            }
+            if let Some(value) = payload.get_mut("transcript_path") {
+                let transcript = self.script.home.join(format!("{conversation}.jsonl"));
+                std::fs::write(&transcript, "conversation metadata\n")?;
+                *value = json!(transcript);
+            }
+        }
         if let Some(text) = &self.prompt_text {
             if let Some(prompt) = payload.get_mut("prompt") {
                 *prompt = json!(text);
@@ -89,7 +103,7 @@ impl Agent {
             );
         }
         let payload: Value = serde_json::from_slice(&payload)?;
-        self.log("hook",json!({"event":event,"fixture":fixture,"prompt":payload.get("prompt"),"stderr":String::from_utf8_lossy(&output.stderr)}))
+        self.log("hook",json!({"event":event,"fixture":fixture,"prompt":payload.get("prompt"),"stderr":String::from_utf8_lossy(&output.stderr),"output":String::from_utf8_lossy(&output.stdout)}))
     }
 
     fn lifecycle(&self, stage: &str) -> Result<()> {
