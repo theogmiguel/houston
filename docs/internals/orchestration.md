@@ -23,6 +23,44 @@ pane drops its record, and a new worktree at a recorded path replaces the stale 
 a slug is reusable once its worktree and branch are gone. Houston does not commit changes
 on an agent's behalf.
 
+## Guarantees
+
+These are the properties orchestration promises, and the only ones. Each is enforced by the
+invariant checker in `tests/orchestration_chaos_wire.rs`, which drives every spawnable
+provider through `fake_agent` with randomized seeds, daemon kills and slow writers. A change
+that weakens one of them changes this list in the same PR.
+
+- **No lost signal.** A row is persisted before any door reads it. A crash between a child's
+  `pane_submit` and the end of its round cannot leave a result that is neither stored nor
+  eligible (`ready_at` is set in the transaction that closes the round). Restart recovery
+  releases reservations and returns unconfirmed pastes to pending.
+- **At-least-once, recognisably.** Delivery is never claimed exactly-once. A redelivered row
+  keeps its `pane_inbox.id`, carries a new `delivery_id` and says "possibly delivered before";
+  a stale confirmation cannot mark a later attempt.
+- **One door per attempt.** Doors claim disjoint rows through a conditional reservation, and
+  an active HTTP body or PTY write pins its reservation until it completes or is cancelled.
+- **No paste into the wrong process.** A row is pasted only into the process generation it
+  was addressed to. A restored pane receives pending rows on its first prompt or through
+  `pane_wait`.
+- **Every row has a live owner.** A row addressed to an ended pane moves to the nearest live
+  ancestor orchestrator, keeping `original_to`; it reaches the operator only when no
+  ancestor is live. Delegated children never address the operator directly.
+- **Status comes from the provider.** Lifecycle state comes from hooks or supported streams,
+  never from terminal text. Where a provider has no signal for a state, the provider table
+  says so, and Houston does not guess.
+- **Limits refuse visibly.** Every cap names the limit, the actual value and the refused
+  operation, and is returned to the caller that hit it. A producer is refused only when the
+  insert itself fails.
+- **Untrusted text is bounded and redacted.** Every agent- or hook-written field passes
+  `orchestrate::inbox_row_new`, which caps it and runs secret redaction, before it is stored.
+
+Known limits:
+- A server body completing is not an application acknowledgement.
+- Codex has no authoritative human-escalation event; an unresolved Auto review shows the
+  `stalled?` diagnostic described below, which can be a false positive.
+- Cursor has no needs-input signal.
+- Windows writer cancellation has no automated test yet.
+
 ## The MCP endpoint
 
 Transport is **MCP over streamable HTTP** on the daemon's existing loopback listener:
