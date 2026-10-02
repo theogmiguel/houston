@@ -161,14 +161,20 @@ async fn git_branch_over_the_wire() {
     assert_eq!(reply.branch.as_deref(), Some("main"));
     let root = std::fs::canonicalize(repo.path()).unwrap();
     assert_eq!(
-        reply.toplevel.as_deref(),
-        root.to_str(),
+        reply
+            .toplevel
+            .as_deref()
+            .map(|p| std::fs::canonicalize(p).unwrap()),
+        Some(root.clone()),
         "the reply must carry the work tree's root"
     );
     let common = std::fs::canonicalize(root.join(".git")).unwrap();
     assert_eq!(
-        reply.common_dir.as_deref(),
-        common.to_str(),
+        reply
+            .common_dir
+            .as_deref()
+            .map(|p| std::fs::canonicalize(p).unwrap()),
+        Some(common),
         "the reply must carry the repository's common dir"
     );
 }

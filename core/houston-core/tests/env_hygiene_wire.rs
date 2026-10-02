@@ -14,6 +14,7 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     std::env::set_var("CLAUDE_CODE_SESSION_ID", "the-launchers-session");
     std::env::set_var("CLAUDE_EFFORT", "xhigh");
     std::env::set_var("NO_COLOR", "1");
+    std::env::set_var("TERM", "dumb");
     houston_core::env_hygiene::scrub();
 
     let state_dir = tempfile::tempdir().unwrap();
@@ -26,12 +27,30 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     let mut rx = daemon.observe();
 
     let dump_sh = dump.display().to_string().replace('\\', "/");
-    let cmd = format!("env > {dump_sh} && echo DUMPED && sleep 30");
+    #[cfg(unix)]
+    let cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!("env > '{dump_sh}' && touch '{dump_sh}.ready' && echo DUMPED && sleep 30"),
+    ];
+    #[cfg(windows)]
+    let cmd = vec![
+        "powershell.exe".to_string(),
+        "-NoProfile".to_string(),
+        "-NonInteractive".to_string(),
+        "-Command".to_string(),
+        format!(
+            "Get-ChildItem Env: | ForEach-Object {{ $_.Name + '=' + $_.Value }} | \
+             Set-Content -Encoding utf8 -LiteralPath '{dump_sh}'; \
+             [IO.File]::WriteAllText('{dump_sh}.ready', 'ready'); \
+             Write-Output DUMPED; Start-Sleep -Seconds 30"
+        ),
+    ];
     let info = daemon
         .create_session(CreateParams {
             agent: proto::AgentKind::Custom,
             project_dir: tmp.path().to_path_buf(),
-            cmd: Some(vec!["sh".to_string(), "-c".to_string(), cmd]),
+            cmd: Some(cmd),
             cols: 80,
             rows: 24,
             cwd_from: None,
@@ -43,6 +62,16 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         })
         .unwrap();
     collect_broadcast_until(&mut rx, info.id, "DUMPED").await;
+
+    // ConPTY may echo the launch command before its output file is ready.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !tmp.path().join("child-env.txt.ready").is_file() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "environment dump was not created"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
 
     let child_env = std::fs::read_to_string(&dump).expect("the pane dumped its environment");
     let lines: Vec<&str> = child_env.lines().collect();
@@ -68,6 +97,10 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         "launcher log colours must not disable pane colours"
     );
     assert!(has("COLORTERM=truecolor"));
+    assert!(
+        has("TERM=xterm-256color"),
+        "a pane must advertise its own terminal capabilities"
+    );
 
     daemon.kill(info.id).ok();
 }

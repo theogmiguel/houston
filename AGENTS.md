@@ -125,7 +125,7 @@ The [development runbook](docs/operations/development.md) contains exact command
   Stable cuts require the tip of `main`, an unused tag and a version newer than the last
   stable release. See the [release runbook](docs/operations/release.md).
 - A manually pushed `v*` tag starts no workflow; releases are produced only by **Cut
-  release**. `build-installers.yml` builds both OSes and files nothing.
+  release**. `build-installers.yml` builds selected OSes (both by default) and files nothing.
 
 ## Documentation
 

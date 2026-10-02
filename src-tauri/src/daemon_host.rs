@@ -306,6 +306,7 @@ pub fn terminate_and_wait(
     terminate_and_wait_identity(pid, None, timeout, alive)
 }
 
+#[cfg(any(unix, test))]
 pub fn terminate_and_wait_identity(
     pid: u32,
     expected_creation: Option<u64>,
@@ -797,6 +798,8 @@ pub fn spawn_detached(
     log_path: &Path,
     render_overrides: &crate::webview_render::AppliedOverrides,
 ) -> Result<(), String> {
+    #[cfg(not(unix))]
+    let _ = state_dir;
     let open_log = || -> Result<std::fs::File, String> {
         if let Some(parent) = log_path.parent() {
             fs::create_dir_all(parent)

@@ -5,6 +5,7 @@ use houston_core::daemon::{CreateParams, Daemon, DaemonConfig};
 use houston_protocol as proto;
 use std::sync::Arc;
 
+#[cfg(unix)]
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn daemon(state_dir: &std::path::Path) -> Arc<Daemon> {
@@ -34,6 +35,7 @@ fn create_custom(d: &Arc<Daemon>, dir: &std::path::Path, cmd: Vec<&str>) -> u32 
 }
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_session_ignoring_sighup_and_sigterm_is_reported_unterminated_with_no_marker() {
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
@@ -79,7 +81,16 @@ async fn an_ordinary_session_confirms_exit_within_the_bound_and_the_marker_is_wr
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     let d = daemon(state.path());
-    let id = create_custom(&d, proj.path(), vec!["sh", "-c", "sleep 30"]);
+    #[cfg(unix)]
+    let cmd = vec!["sh", "-c", "sleep 30"];
+    #[cfg(windows)]
+    let cmd = vec![
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        "Start-Sleep -Seconds 30",
+    ];
+    let id = create_custom(&d, proj.path(), cmd);
 
     d.reap_set_exit_hook_for_test(Box::new(|| {}));
     let result = d.manage_shutdown();

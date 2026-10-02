@@ -18,6 +18,10 @@ Panes are not only terminals: a workspace can also hold a Files pane, an editor,
 browser pane, or a Skills pane (see `docs/user/files-editor-browser.md`). Git changes
 and pull requests open in Source control beside the grid (see `docs/user/changes.md`).
 
+New terminal sessions support 256-colour and true-colour output even when the
+launcher disables its own colours. Existing sessions retain their original
+environment; restart an affected session after updating Houston.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a
@@ -86,11 +90,13 @@ prompt/command tracking in plain-shell panes.
 
 ## Closing the window
 
-Closing the window does not stop anything: the daemon and every session it owns keep
-running in the background, and Houston's tray icon is what stays visible while the
-window is gone. The only action that stops sessions is Quit Houston, which asks you to
-confirm and names how many sessions that ends. Reopen the window and your panes are
-still there, doing whatever they were doing.
+Closing the window leaves the daemon and its sessions running. Settings ▸ Daemon ▸
+Background controls whether Houston stays in the tray or quits its client when the
+window closes. Reopen Houston to reconnect to the sessions.
+
+To end the sessions and exit, use **Quit and stop daemon** in the command palette,
+or **Stop daemon** in Settings ▸ Daemon. Confirming names the affected sessions and
+routines before stopping them.
 
 ## Killing a pane
 

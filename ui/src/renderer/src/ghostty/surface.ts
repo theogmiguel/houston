@@ -17,6 +17,7 @@ import {
   type GhosttyCellRange
 } from './renderer'
 import { findUrls, joinWrappedLine, mapJoinedOffset, type JoinedLine } from '../pane/webLinks'
+import { SynchronizedOutput } from './synchronizedOutput'
 
 export const DEFAULT_TERMINAL_FONT_SIZE = 13
 const MIN_TERMINAL_FONT_SIZE = 6
@@ -525,6 +526,7 @@ export class GhosttyTerminalSurface {
   private readonly mount: HTMLElement
   private readonly context: CanvasRenderingContext2D
   private readonly core: GhosttyTerminalCore
+  private readonly synchronizedOutput: SynchronizedOutput
   private readonly options: GhosttyTerminalSurfaceOptions
   private metrics: GhosttyCellMetrics
   private fontFamily: string
@@ -607,6 +609,7 @@ export class GhosttyTerminalSurface {
     this.scrollbarThumb = scrollbarThumb
     this.context = context
     this.core = core
+    this.synchronizedOutput = new SynchronizedOutput(core, () => this.requestRender())
     this.metrics = metrics
     this.options = options
     this.theme = options.theme
@@ -1090,6 +1093,7 @@ export class GhosttyTerminalSurface {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.synchronizedOutput.dispose()
     this.resizeObserver.disconnect()
     document.fonts.removeEventListener('loadingdone', this.onFontsLoaded)
     this.dprMedia?.removeEventListener('change', this.onDevicePixelRatioChange)
@@ -1802,6 +1806,7 @@ export class GhosttyTerminalSurface {
       window.cancelAnimationFrame(this.frame)
       this.frame = 0
     }
+    if (this.synchronizedOutput.defer()) return
     this.snapshot = this.core.snapshot()
     if (!this.blinkEnabled()) this.cursorOn = true
     const scrollState = this.readScrollbarState()

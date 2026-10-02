@@ -21,6 +21,11 @@ A browser pane is a real browser surface embedded in the grid, and an agent can 
 it: click, type, hover, press a key, or select an option, the same way it can type into
 a terminal pane.
 
+On Windows, browser panes use WebView2. Manual navigation, back, forward and
+reload are available. The element picker and agent DOM actions currently return
+an unsupported-platform error because isolated script worlds are unavailable in
+the Windows implementation. Reloading without cache is also unsupported.
+
 When an agent asks to open a page and its workspace has no browser pane showing one,
 Houston opens a browser pane at that page. The agent's other browser actions need a page
 open first.
