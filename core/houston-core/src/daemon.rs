@@ -1025,6 +1025,63 @@ fn is_submitting_enter(payload: &[u8]) -> bool {
     payload.ends_with(b"\r") && !payload.ends_with(b"\x1b\r")
 }
 
+/// True when every byte is a terminal-generated report (focus, SGR mouse, and
+/// CPR/DA/DECRPM/window/keyboard-mode or OSC/DCS/APC query replies): the
+/// renderer writes these to the PTY, but they are not operator input.
+fn is_terminal_report_only(payload: &[u8]) -> bool {
+    let mut i = 0;
+    if payload.is_empty() {
+        return false;
+    }
+    while i < payload.len() {
+        if payload[i] != 0x1b || i + 1 >= payload.len() {
+            return false;
+        }
+        match payload[i + 1] {
+            b'[' => {
+                let start = i + 2;
+                let Some(len) = payload[start..]
+                    .iter()
+                    .position(|b| (0x40..=0x7e).contains(b))
+                else {
+                    return false;
+                };
+                let params = &payload[start..start + len];
+                let reported = match payload[start + len] {
+                    b'I' | b'O' => params.is_empty(),
+                    b'R' | b't' => params.iter().all(|b| b.is_ascii_digit() || *b == b';'),
+                    b'c' | b'u' | b'y' => matches!(params.first(), Some(b'?' | b'>' | b'=')),
+                    b'M' | b'm' => params.first() == Some(&b'<'),
+                    _ => false,
+                };
+                if !reported {
+                    return false;
+                }
+                i = start + len + 1;
+            }
+            b']' | b'P' | b'_' => {
+                let body = &payload[i + 2..];
+                let end = body.iter().enumerate().find_map(|(k, b)| match b {
+                    0x07 => Some(k + 1),
+                    0x1b if body.get(k + 1) == Some(&b'\\') => Some(k + 2),
+                    _ => None,
+                });
+                let Some(end) = end else {
+                    return false;
+                };
+                i += 2 + end;
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+#[doc(hidden)]
+pub fn is_terminal_report_only_for_test(payload: &[u8]) -> bool {
+    is_terminal_report_only(payload)
+}
+
 #[doc(hidden)]
 pub fn is_submitting_enter_for_test(payload: &[u8]) -> bool {
     is_submitting_enter(payload)
@@ -16822,6 +16879,9 @@ impl Daemon {
     }
 
     pub fn note_operator_keystroke(&self, session: u32, payload: &[u8]) {
+        if is_terminal_report_only(payload) {
+            return;
+        }
         self.composer_occupied
             .lock()
             .expect("composer lock")

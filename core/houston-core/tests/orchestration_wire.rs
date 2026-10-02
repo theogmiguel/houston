@@ -1798,6 +1798,60 @@ async fn no_paste_over_a_prompt_the_operator_is_still_typing() {
 }
 
 #[tokio::test]
+async fn terminal_reports_from_the_renderer_are_not_operator_typing() {
+    let _guard = serial().await;
+    let r = rig("hold-reports").await;
+    let pane = r.pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+
+    let (_, body) = r
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "h0"}))
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+    apply_hook_event(r._state.path(), pane.id, "Stop").await;
+
+    // Focusing the pane and answering the CLI's terminal queries write these
+    // bytes without the operator typing anything.
+    for report in [
+        &b"\x1b[I"[..],
+        b"\x1b[12;40R",
+        b"\x1b[?62;22c",
+        b"\x1b[?2026;2$y",
+        b"\x1b]11;rgb:0000/0000/0000\x1b\\",
+        b"\x1b[<0;10;5M\x1b[<0;10;5m",
+    ] {
+        r.daemon.note_operator_keystroke(pane.id, report);
+    }
+
+    let mut rx = r.daemon.observe();
+    r.daemon
+        .orchestrate_submit(kid, "REPORTS-ONLY the task is done".to_string().into())
+        .unwrap();
+    apply_hook_event(r._state.path(), kid, "Stop").await;
+    let acc = collect_broadcast_until(&mut rx, pane.id, "REPORTS-ONLY").await;
+    assert!(acc.contains("REPORTS-ONLY"), "{acc:?}");
+}
+
+#[test]
+fn terminal_report_classification_keeps_real_keys_as_typing() {
+    use houston_core::daemon::is_terminal_report_only_for_test as report;
+    for typed in [
+        &b"a"[..],
+        b"\r",
+        b"\x1b",
+        b"\x1b[A",
+        b"\x1b[200~pasted\x1b[201~",
+        b"\x1b[Ix",
+        b"",
+    ] {
+        assert!(!report(typed), "{typed:?} is operator input");
+    }
+    assert!(report(b"\x1b[O"));
+    assert!(report(b"\x1bP>|ghostty 1.2\x1b\\"));
+}
+
+#[tokio::test]
 async fn submit_while_parent_is_working_queues_until_turn_end() {
     let _guard = serial().await;
     let r = rig("handoff-busy").await;
