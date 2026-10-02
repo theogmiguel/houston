@@ -130,7 +130,7 @@ fn run(cli: Cli) -> ! {
     let mut generation_pids: std::collections::HashMap<i32, std::collections::VecDeque<u64>> =
         std::collections::HashMap::new();
 
-    spawn_generation(
+    if let Err(e) = spawn_generation(
         &cli.channel_dir,
         &cli.daemon_path,
         &cli.daemon_args,
@@ -138,7 +138,13 @@ fn run(cli: Cli) -> ! {
         &mut current_pid,
         &mut writer,
         tx.clone(),
-    );
+    ) {
+        log(&format!(
+            "spawning initial generation {generation} from {:?}: {e}",
+            cli.daemon_path
+        ));
+        process::exit(1);
+    }
     generation_pids
         .entry(current_pid.expect("spawn_generation always sets a pid"))
         .or_default()
@@ -194,19 +200,20 @@ fn run(cli: Cli) -> ! {
                 }
                 match rx.recv_timeout(Duration::from_millis(200)) {
                     Ok(Event::SpawnRequested(req)) => {
-                        spawn_next_generation(
+                        if spawn_next_generation(
                             &cli,
                             req,
                             &mut generation,
                             &mut current_pid,
                             &mut writer,
                             &tx,
-                        );
-                        generation_pids
-                            .entry(current_pid.expect("just spawned"))
-                            .or_default()
-                            .push_back(generation);
-                        daemon_alive = true;
+                        ) {
+                            generation_pids
+                                .entry(current_pid.expect("just spawned"))
+                                .or_default()
+                                .push_back(generation);
+                            daemon_alive = true;
+                        }
                     }
                     Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {
                         log("exiting: no daemon generation alive, no orphans remain, no spawn pending");
@@ -216,19 +223,20 @@ fn run(cli: Cli) -> ! {
                 }
             }
             Ok(Event::SpawnRequested(req)) => {
-                spawn_next_generation(
+                if spawn_next_generation(
                     &cli,
                     req,
                     &mut generation,
                     &mut current_pid,
                     &mut writer,
                     &tx,
-                );
-                generation_pids
-                    .entry(current_pid.expect("just spawned"))
-                    .or_default()
-                    .push_back(generation);
-                daemon_alive = true;
+                ) {
+                    generation_pids
+                        .entry(current_pid.expect("just spawned"))
+                        .or_default()
+                        .push_back(generation);
+                    daemon_alive = true;
+                }
             }
             Ok(Event::ReaderClosed) => {}
             Err(_) => {
@@ -279,16 +287,14 @@ fn spawn_generation(
     current_pid: &mut Option<i32>,
     writer: &mut Option<UnixStream>,
     tx: Sender<Event>,
-) {
-    let (sup_end, daemon_end) = UnixStream::pair().expect("houston-supervisor: socketpair");
-    let pid = spawn_daemon_process(daemon_path, args, daemon_end);
+) -> std::io::Result<()> {
+    let (sup_end, daemon_end) = UnixStream::pair()?;
+    let reader_half = sup_end.try_clone()?;
+    let pid = spawn_daemon_process(daemon_path, args, daemon_end)?;
     *current_pid = Some(pid);
     if let Err(e) = write_supervisor_json(channel_dir, generation) {
         log(&format!("writing supervisor.json: {e}"));
     }
-    let reader_half = sup_end
-        .try_clone()
-        .expect("houston-supervisor: clone control socket for reader thread");
     *writer = Some(sup_end);
     thread::spawn(move || {
         let mut r = reader_half;
@@ -304,6 +310,7 @@ fn spawn_generation(
             }
         }
     });
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -314,25 +321,37 @@ fn spawn_next_generation(
     current_pid: &mut Option<i32>,
     writer: &mut Option<UnixStream>,
     tx: &Sender<Event>,
-) {
-    *generation += 1;
+) -> bool {
+    let next_generation = *generation + 1;
     log(&format!(
-        "spawn_next requested: generation {} <- {} {:?}",
-        *generation, req.daemon_path, req.args
+        "spawn_next requested: generation {next_generation} <- {} {:?}",
+        req.daemon_path, req.args
     ));
-    spawn_generation(
+    if let Err(e) = spawn_generation(
         &cli.channel_dir,
         &req.daemon_path,
         &req.args,
-        *generation,
+        next_generation,
         current_pid,
         writer,
         tx.clone(),
-    );
+    ) {
+        log(&format!(
+            "spawning generation {next_generation} from {:?} failed: {e}; retaining generation {generation}",
+            req.daemon_path
+        ));
+        return false;
+    }
+    *generation = next_generation;
+    true
 }
 
 #[cfg(unix)]
-fn spawn_daemon_process(daemon_path: &str, args: &[String], daemon_end: UnixStream) -> i32 {
+fn spawn_daemon_process(
+    daemon_path: &str,
+    args: &[String],
+    daemon_end: UnixStream,
+) -> std::io::Result<i32> {
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
 
@@ -349,12 +368,10 @@ fn spawn_daemon_process(daemon_path: &str, args: &[String], daemon_end: UnixStre
             Ok(())
         });
     }
-    let child = cmd
-        .spawn()
-        .unwrap_or_else(|e| panic!("houston-supervisor: spawning {daemon_path:?}: {e}"));
+    let child = cmd.spawn()?;
     let pid = child.id() as i32;
     drop(child);
-    pid
+    Ok(pid)
 }
 
 #[cfg(unix)]

@@ -1122,6 +1122,107 @@ async fn handoff_refuses_an_unusable_candidate_without_parks_or_kills() {
     });
 }
 
+#[tokio::test]
+async fn failed_candidate_exec_keeps_the_original_generation_and_session() {
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    std::fs::create_dir_all(&channel_dir).unwrap();
+    let stderr_path = home.path().join("supervisor.stderr");
+    let mut command = common::hermetic_command(supervisor_bin(), home.path());
+    command
+        .env("HOUSTON_CHANNEL", "dev")
+        .arg("--channel-dir")
+        .arg(&channel_dir)
+        .arg("--daemon")
+        .arg(core_bin())
+        .stdout(Stdio::null())
+        .stderr(std::fs::File::create(&stderr_path).unwrap());
+    let mut guard = SupervisorGuard(command.spawn().expect("spawn supervised test daemon"));
+    let project = tempfile::tempdir().unwrap();
+    let cfg_path = channel_dir.join("daemon.json");
+    let (before, session_id, ws) = supervised_daemon_with_session(
+        home.path(),
+        &channel_dir,
+        project.path(),
+        vec!["sh", "-c", "cat"],
+    )
+    .await;
+    drop(ws);
+    let supervisor_before = std::fs::read_to_string(channel_dir.join("supervisor.json")).unwrap();
+
+    // The executable passes path validation, but exec fails because its
+    // interpreter does not exist. This exercises the post-validation race.
+    let candidate = home.path().join("unlaunchable-daemon");
+    std::fs::write(&candidate, b"#!/nonexistent/daemon-interpreter\n").unwrap();
+    std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let result = daemon_handoff_to(
+        before.port,
+        &before.token,
+        Some(&candidate.to_string_lossy()),
+    )
+    .await;
+    assert!(
+        !result.accepted,
+        "failed exec must abort adoption: {result:?}"
+    );
+    assert!(
+        result
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("candidate did not connect"),
+        "{result:?}"
+    );
+    let stderr = std::fs::read_to_string(&stderr_path).unwrap();
+    assert!(
+        stderr.contains(&candidate.to_string_lossy().to_string()),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("failed:") && stderr.contains("retaining generation 1"),
+        "{stderr}"
+    );
+    assert!(
+        guard.0.try_wait().unwrap().is_none(),
+        "supervisor must survive failed exec"
+    );
+    let after = read_daemon_json(&cfg_path).expect("original daemon discovery survives");
+    assert_eq!(after.pid, before.pid);
+    assert_eq!(after.generation, before.generation);
+    assert_eq!(
+        std::fs::read_to_string(channel_dir.join("supervisor.json")).unwrap(),
+        supervisor_before
+    );
+    let addr = format!("127.0.0.1:{}", before.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &before.token).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionAttach {
+            session: session_id,
+            replay_bytes: None,
+            snapshot: None,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    ws.send(Message::Binary(
+        proto::encode_stdin_frame(session_id, b"after-failed-exec\n").into(),
+    ))
+    .await
+    .unwrap();
+    assert!(
+        collect_output_until(&mut ws, session_id, "after-failed-exec")
+            .await
+            .contains("after-failed-exec")
+    );
+    manage_shutdown(before.port, &before.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+}
+
 struct OrchestrationHandoff {
     _channel: ChannelGuard,
     _supervisor: SupervisorGuard,

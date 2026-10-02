@@ -2176,38 +2176,63 @@ pub struct TakenSnapshot {
 /// else this executable. A bad path refuses before anything is parked.
 #[cfg(unix)]
 fn handoff_binary(candidate: Option<&str>) -> Result<PathBuf, String> {
+    resolve_handoff_binary(candidate, std::env::current_exe())
+}
+
+#[cfg(unix)]
+fn resolve_handoff_binary(
+    candidate: Option<&str>,
+    current_exe: std::io::Result<PathBuf>,
+) -> Result<PathBuf, String> {
     use std::os::unix::fs::PermissionsExt;
 
-    let Some(raw) = candidate else {
-        return std::env::current_exe()
-            .map_err(|e| format!("resolving this daemon's own binary path: {e}"));
+    let candidate = match candidate {
+        Some(raw) => PathBuf::from(raw),
+        None => {
+            let path =
+                current_exe.map_err(|e| format!("resolving this daemon's own binary path: {e}"))?;
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::ffi::{OsStrExt, OsStringExt};
+                // /proc/self/exe names the unlinked inode after an atomic binary replacement.
+                let bytes = path.as_os_str().as_bytes();
+                match bytes.strip_suffix(b" (deleted)") {
+                    Some(original) => {
+                        PathBuf::from(std::ffi::OsString::from_vec(original.to_vec()))
+                    }
+                    None => path,
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            path
+        }
     };
-    let candidate = Path::new(raw);
+    let raw = candidate.as_os_str();
     if !candidate.is_absolute() {
         return Err(format!(
             "handoff candidate {raw:?} is not an absolute path; expected the freshly installed \
              daemon binary's absolute path"
         ));
     }
-    let meta = std::fs::metadata(candidate).map_err(|e| {
+    let meta = std::fs::metadata(&candidate).map_err(|e| {
         format!(
             "handoff candidate {raw:?} cannot be read: {e}; expected the freshly installed \
-             daemon binary"
+             daemon binary (an absolute path to a regular executable file)"
         )
     })?;
     if !meta.is_file() {
         return Err(format!(
             "handoff candidate {raw:?} is not a regular file; expected the freshly installed \
-             daemon binary"
+             daemon binary (an absolute path to a regular executable file)"
         ));
     }
     if meta.permissions().mode() & 0o111 == 0 {
         return Err(format!(
             "handoff candidate {raw:?} is not executable; expected the freshly installed \
-             daemon binary"
+             daemon binary (an absolute path to a regular executable file)"
         ));
     }
-    Ok(candidate.to_path_buf())
+    Ok(candidate)
 }
 
 /// Claims `handing_off` for one handoff attempt, so a second caller is refused
@@ -19242,6 +19267,56 @@ mod handoff_refusal_tests {
             std::env::current_exe().expect("current_exe"),
             "an absent candidate must keep the pre-candidate behavior"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn deleted_current_executable_resolves_and_validates_the_replacement() {
+        use std::os::unix::ffi::OsStringExt;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir
+            .path()
+            .join(std::ffi::OsString::from_vec(b"daemon-\xff".to_vec()));
+        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut deleted = path.as_os_str().to_os_string();
+        deleted.push(" (deleted)");
+        assert_eq!(
+            resolve_handoff_binary(None, Ok(deleted.into())).unwrap(),
+            path
+        );
+    }
+
+    #[test]
+    fn default_current_executable_gets_the_named_candidate_validation() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("daemon");
+        for shape in ["missing", "directory", "not executable"] {
+            match shape {
+                "directory" => std::fs::create_dir(&path).unwrap(),
+                "not executable" => {
+                    std::fs::remove_dir(&path).unwrap();
+                    std::fs::write(&path, b"binary").unwrap();
+                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+                        .unwrap();
+                }
+                _ => {}
+            }
+            let err = resolve_handoff_binary(None, Ok(path.clone())).unwrap_err();
+            assert!(err.contains(&path.to_string_lossy().to_string()), "{err}");
+            assert!(err.contains("expected"), "{err}");
+            #[cfg(target_os = "linux")]
+            {
+                let mut deleted = path.as_os_str().to_os_string();
+                deleted.push(" (deleted)");
+                assert_eq!(
+                    resolve_handoff_binary(None, Ok(deleted.into())).unwrap_err(),
+                    err
+                );
+            }
+        }
     }
 
     #[test]
