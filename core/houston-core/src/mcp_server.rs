@@ -1005,6 +1005,19 @@ struct ResponseDelivery {
     output: Option<ToolOutput>,
 }
 
+impl ResponseDelivery {
+    fn complete(mut self) {
+        if let Some(output) = self.output.take() {
+            self.provider.finish_delivery(&self.scope, &output, true);
+        }
+    }
+}
+
+struct QueuedFrame {
+    bytes: Bytes,
+    delivery: Option<ResponseDelivery>,
+}
+
 impl Drop for ResponseDelivery {
     fn drop(&mut self) {
         if let Some(output) = &self.output {
@@ -1026,7 +1039,7 @@ fn stream_tools_call(
     registration: CallRegistration,
 ) -> Response {
     let is_sse = token.is_some();
-    let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(4);
+    let (tx, rx) = tokio::sync::mpsc::channel::<QueuedFrame>(4);
     tokio::spawn(async move {
         let _registration = registration;
         let start = Instant::now();
@@ -1037,11 +1050,11 @@ fn stream_tools_call(
         let result = loop {
             tokio::select! {
                 biased;
+                res = &mut call => break res,
                 _ = tx.closed() => return,
                 _ = cancelled.changed() => {
                     if *cancelled.borrow() { return; }
                 },
-                res = &mut call => break res,
                 _ = interval.tick(), if is_sse => {
                     let elapsed = start.elapsed().as_secs();
                     let message = if let Some(message) = provider.progress_message(&scope, &name, elapsed) {
@@ -1057,7 +1070,7 @@ fn stream_tools_call(
                         "params":{"progressToken":token, "progress":elapsed,"message":message}});
                     tokio::select! {
                         _ = cancelled.changed() => return,
-                        sent = tx.send(sse_event(&note)) => if sent.is_err() { return; },
+                        sent = tx.send(QueuedFrame { bytes: sse_event(&note), delivery: None }) => if sent.is_err() { return; },
                     }
                 }
             }
@@ -1081,24 +1094,31 @@ fn stream_tools_call(
         } else {
             Bytes::from(response.to_string())
         };
-        let sent = tokio::select! {
-            biased;
-            _ = cancelled.changed() => false,
-            result = tx.send(frame) => result.is_ok(),
+        let frame = QueuedFrame {
+            bytes: frame,
+            delivery: Some(delivery),
         };
-        if sent {
-            if let Some(output) = delivery.output.take() {
-                delivery
-                    .provider
-                    .finish_delivery(&delivery.scope, &output, true);
-            }
+        tokio::select! {
+            biased;
+            _ = cancelled.changed() => {},
+            _ = tx.send(frame) => {},
         }
     });
-    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
-        rx.recv()
-            .await
-            .map(|frame| (Ok::<_, std::convert::Infallible>(frame), rx))
-    });
+    let stream = futures_util::stream::unfold(
+        (rx, None::<ResponseDelivery>),
+        |(mut rx, pending)| async move {
+            // A subsequent poll proves the body consumer accepted the previous final frame.
+            if let Some(delivery) = pending {
+                delivery.complete();
+            }
+            rx.recv().await.map(|frame| {
+                (
+                    Ok::<_, std::convert::Infallible>(frame.bytes),
+                    (rx, frame.delivery),
+                )
+            })
+        },
+    );
     Response::builder()
         .status(StatusCode::OK)
         .header(
@@ -1170,5 +1190,87 @@ fn summarize(value: &Value) -> String {
         Value::Bool(_) => "a boolean".into(),
         Value::Number(_) => "a number".into(),
         Value::String(_) => "a string".into(),
+    }
+}
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct Provider {
+        finishes: Mutex<Vec<bool>>,
+    }
+    impl ToolProvider for Provider {
+        fn tools(&self, _: &McpScope) -> Vec<ToolSpec> {
+            Vec::new()
+        }
+        fn call<'a>(
+            &'a self,
+            _: &'a McpScope,
+            _: &'a str,
+            _: &'a Value,
+        ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
+            Box::pin(async { Ok(ToolOutput::text("result")) })
+        }
+        fn finish_delivery(&self, _: &McpScope, _: &ToolOutput, sent: bool) {
+            self.finishes.lock().unwrap().push(sent);
+        }
+    }
+
+    fn response(provider: Arc<Provider>) -> Response {
+        let (cancel, cancelled) = tokio::sync::watch::channel(false);
+        stream_tools_call(
+            provider,
+            McpScope {
+                session_id: 1,
+                workspace_id: "workspace".into(),
+            },
+            "pane_wait".into(),
+            json!({}),
+            json!(1),
+            None,
+            Duration::from_secs(10),
+            cancelled,
+            CallRegistration {
+                active_calls: Arc::default(),
+                key: (1, "1".into()),
+                cancel,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn r1_a_queued_frame_is_not_a_completed_body_delivery() {
+        let provider = Arc::new(Provider::default());
+        let response = response(provider.clone());
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let before = provider.finishes.lock().unwrap().clone();
+        drop(response);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(
+            before.is_empty(),
+            "queueing the frame must not finalize a wait: {before:?}"
+        );
+        assert_eq!(*provider.finishes.lock().unwrap(), vec![false]);
+    }
+
+    #[tokio::test]
+    async fn r1_disconnect_with_an_immediately_ready_result_releases_delivery() {
+        let provider = Arc::new(Provider::default());
+        drop(response(provider.clone()));
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(*provider.finishes.lock().unwrap(), vec![false]);
+    }
+
+    #[tokio::test]
+    async fn r1_a_completed_body_confirms_once() {
+        let provider = Arc::new(Provider::default());
+        let bytes = axum::body::to_bytes(response(provider.clone()).into_body(), 10000)
+            .await
+            .unwrap();
+        assert!(!bytes.is_empty());
+        assert_eq!(*provider.finishes.lock().unwrap(), vec![true]);
     }
 }

@@ -453,7 +453,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
                 Some(Ok(Message::Binary(buf))) => {
                     if let Some((id, payload)) = proto::decode_stdin_frame(&buf) {
                         daemon.note_operator_keystroke(id, payload);
-                        if let Err(e) = daemon.write_stdin(id, payload) {
+                        if let Err(e) = daemon.write_stdin_from_renderer(id, payload) {
                             send_error(&mut sink, e.to_string(), Some("stdin".into())).await;
                         }
                     }
@@ -3906,25 +3906,32 @@ async fn orch_wait(
                 "waited_ms": waited_ms,
             });
             let bytes = axum::body::Bytes::from(value.to_string());
-            let length = bytes.len();
             let delivery = WaitResponseDelivery {
                 daemon,
                 caller: scope.session_id,
                 delivery_id,
                 sent: false,
             };
-            let stream = futures_util::stream::once(async move {
-                let mut delivery = delivery;
-                delivery
-                    .daemon
-                    .finish_wait_delivery(delivery.caller, &delivery.delivery_id, true);
-                delivery.sent = true;
-                Ok::<_, std::convert::Infallible>(bytes)
-            });
+            let stream = futures_util::stream::unfold(
+                (Some(bytes), delivery),
+                |(bytes, mut delivery)| async move {
+                    if let Some(bytes) = bytes {
+                        Some((Ok::<_, std::convert::Infallible>(bytes), (None, delivery)))
+                    } else {
+                        delivery.daemon.finish_wait_delivery(
+                            delivery.caller,
+                            &delivery.delivery_id,
+                            true,
+                        );
+                        delivery.sent = true;
+                        drop(delivery);
+                        None
+                    }
+                },
+            );
             Response::builder()
                 .status(StatusCode::OK)
                 .header(axum::http::header::CONTENT_TYPE, "application/json")
-                .header(axum::http::header::CONTENT_LENGTH, length)
                 .body(axum::body::Body::from_stream(stream))
                 .expect("static wait response headers")
         }
@@ -4082,9 +4089,10 @@ async fn inbox_tool_boundary(State(daemon): State<Arc<Daemon>>, headers: HeaderM
         Ok(s) => s,
         Err(r) => return *r,
     };
-    match daemon.inbox_tool_boundary(scope.session_id) {
-        Ok(text) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
-        Err(e) => orch_err_response(e),
+    match tokio::task::spawn_blocking(move || daemon.inbox_tool_boundary(scope.session_id)).await {
+        Ok(Ok(text)) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
+        Ok(Err(e)) => orch_err_response(e),
+        Err(e) => orch_err_response(anyhow::anyhow!("inbox tool-boundary worker failed: {e}")),
     }
 }
 

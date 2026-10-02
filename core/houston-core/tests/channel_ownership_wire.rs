@@ -13,6 +13,35 @@ fn bin() -> &'static str {
 }
 
 #[test]
+fn the_hermetic_login_probe_cannot_restore_host_provider_executables() {
+    let home = tempfile::tempdir().unwrap();
+    let output = common::hermetic_command("/bin/sh", home.path())
+        .args(["-c", "\"$SHELL\" -lic ''; for provider in claude codex agy opencode cursor-agent grok; do command -v \"$provider\"; done"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    let mut lines = text.lines();
+    let login = lines
+        .next()
+        .and_then(|line| line.strip_prefix("__TR_LOGIN_PATH__"))
+        .expect("isolated login shell did not report its fixture PATH");
+    let first = std::path::Path::new(login.split(':').next().unwrap());
+    assert!(
+        first.starts_with(home.path()),
+        "host PATH restored: {login}"
+    );
+    let providers: Vec<_> = lines.collect();
+    assert_eq!(providers.len(), 6);
+    for provider in providers {
+        assert!(
+            std::path::Path::new(provider).starts_with(home.path()),
+            "host provider resolved: {provider}"
+        );
+    }
+}
+
+#[test]
 fn refuses_to_own_a_channel_when_houston_channel_is_unset() {
     let home = tempfile::tempdir().unwrap();
 

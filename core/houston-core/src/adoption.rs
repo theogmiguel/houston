@@ -174,6 +174,7 @@ pub fn recv_fds(sock: RawFd, max_fds: usize) -> Result<Vec<OwnedFd>> {
 pub struct RawMasterPty {
     file: std::sync::Mutex<Option<File>>,
     child_pid: Option<i32>,
+    interrupt: crate::daemon::WriteInterrupt,
 }
 
 impl RawMasterPty {
@@ -186,6 +187,7 @@ impl RawMasterPty {
             RawMasterPty {
                 file: std::sync::Mutex::new(Some(file)),
                 child_pid,
+                interrupt: crate::daemon::WriteInterrupt::default(),
             },
             reader_half,
         ))
@@ -196,7 +198,9 @@ impl RawMasterPty {
         let Some(f) = guard.as_mut() else {
             bail!("adopted session has no live pty (already killed)");
         };
-        f.write_all(data)?;
+        let _writing = self.interrupt.start();
+        crate::daemon::write_all_counting(f, data, || self.interrupt.cancelled())
+            .map_err(|(_, error)| error)?;
         f.flush()?;
         Ok(())
     }
@@ -253,7 +257,7 @@ impl RawMasterPty {
     }
 
     pub fn release(&self) {
-        *self.file.lock().expect("raw pty file lock") = None;
+        crate::daemon::cancel_pty_writer(&self.file, &self.interrupt);
     }
 
     pub fn as_raw_fd(&self) -> Option<RawFd> {

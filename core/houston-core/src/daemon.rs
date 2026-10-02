@@ -32,6 +32,10 @@ const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
 const SWARM_WAKE_LANE_MAX: usize = 16;
+// Held text must not keep a polling thread alive indefinitely; durable inbox rows stay waitable.
+const SWARM_WAKE_HOLD_MAX: Duration = Duration::from_secs(30);
+// Back off composer checks while retaining sub-second responsiveness to a cleared hold.
+const SWARM_WAKE_BACKOFF_MAX: Duration = Duration::from_millis(640);
 
 fn pty_dump_dir() -> Option<&'static Path> {
     static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -585,6 +589,80 @@ fn ensure_quiesce_signal_installed() {
     });
 }
 
+#[cfg(unix)]
+#[derive(Default)]
+pub(crate) struct WriteInterrupt {
+    cancelled: AtomicBool,
+    thread: Mutex<Option<usize>>,
+}
+
+#[cfg(unix)]
+impl WriteInterrupt {
+    pub(crate) fn start(&self) -> WriteThread<'_> {
+        ensure_quiesce_signal_installed();
+        // SAFETY: pthread_self has no preconditions; the guard clears it before this thread can exit.
+        *self.thread.lock().expect("write thread lock") =
+            Some(unsafe { libc::pthread_self() } as usize);
+        WriteThread(self)
+    }
+
+    pub(crate) fn cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        if let Some(thread) = *self.thread.lock().expect("write thread lock") {
+            // SAFETY: the lock prevents the write guard from clearing the live thread id or exiting.
+            unsafe {
+                libc::pthread_kill(thread as libc::pthread_t, libc::SIGUSR1);
+            }
+        }
+    }
+}
+
+// Retry interruption closes the race between a cancellation check and entering write(2).
+#[cfg(unix)]
+const PTY_WRITE_CANCEL_RETRY: Duration = Duration::from_millis(1);
+// Teardown must remain responsive even if the kernel cannot interrupt a writer.
+#[cfg(unix)]
+const PTY_WRITE_CANCEL_MAX: Duration = Duration::from_secs(1);
+
+#[cfg(unix)]
+pub(crate) fn cancel_pty_writer<W>(writer: &Mutex<Option<W>>, interrupt: &WriteInterrupt) -> bool {
+    let started = Instant::now();
+    loop {
+        interrupt.cancel();
+        match writer.try_lock() {
+            Ok(mut writer) => {
+                *writer = None;
+                return true;
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {}
+            Err(std::sync::TryLockError::Poisoned(_)) => panic!("writer lock poisoned"),
+        }
+        if started.elapsed() >= PTY_WRITE_CANCEL_MAX {
+            tracing::warn!(
+                "terminal writer did not stop after {} ms, teardown limit {} ms",
+                started.elapsed().as_millis(),
+                PTY_WRITE_CANCEL_MAX.as_millis()
+            );
+            return false;
+        }
+        std::thread::sleep(PTY_WRITE_CANCEL_RETRY);
+    }
+}
+
+#[cfg(unix)]
+pub(crate) struct WriteThread<'a>(&'a WriteInterrupt);
+
+#[cfg(unix)]
+impl Drop for WriteThread<'_> {
+    fn drop(&mut self) {
+        *self.0.thread.lock().expect("write thread lock") = None;
+    }
+}
+
 #[derive(Default)]
 struct SupervisorWaitState {
     eof: bool,
@@ -596,6 +674,8 @@ enum Backend {
         writer: Mutex<Option<Box<dyn Write + Send>>>,
         master: Mutex<Option<Box<dyn MasterPty + Send>>>,
         killer: Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>,
+        #[cfg(unix)]
+        interrupt: WriteInterrupt,
     },
     Ssh(crate::ssh::SshHandle),
     #[cfg(unix)]
@@ -642,9 +722,22 @@ impl std::fmt::Display for StdinWriteError {
     }
 }
 
-fn write_all_counting(w: &mut dyn Write, data: &[u8]) -> std::result::Result<(), (usize, IoError)> {
+pub(crate) fn write_all_counting(
+    w: &mut dyn Write,
+    data: &[u8],
+    cancelled: impl Fn() -> bool,
+) -> std::result::Result<(), (usize, IoError)> {
     let mut done = 0usize;
     while done < data.len() {
+        if cancelled() {
+            return Err((
+                done,
+                IoError::new(
+                    std::io::ErrorKind::Interrupted,
+                    "terminal write cancelled during teardown",
+                ),
+            ));
+        }
         match w.write(&data[done..]) {
             Ok(0) => {
                 return Err((
@@ -674,14 +767,31 @@ impl Backend {
         data: &[u8],
     ) -> std::result::Result<(), StdinWriteError> {
         match self {
-            Backend::Pty { writer, .. } => {
+            Backend::Pty {
+                writer,
+                #[cfg(unix)]
+                interrupt,
+                ..
+            } => {
                 let mut w = writer.lock().expect("writer lock");
                 let Some(w) = w.as_mut() else {
                     return Err(StdinWriteError::nothing(anyhow!(
                         "session {id} has no live pty (already killed)"
                     )));
                 };
-                write_all_counting(w.as_mut(), data).map_err(|(written, e)| StdinWriteError {
+                #[cfg(unix)]
+                let _writing = interrupt.start();
+                write_all_counting(w.as_mut(), data, || {
+                    #[cfg(unix)]
+                    {
+                        interrupt.cancelled()
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        false
+                    }
+                })
+                .map_err(|(written, e)| StdinWriteError {
                     written: Some(written),
                     error: anyhow::Error::new(e).context(format!("writing stdin to session {id}")),
                 })?;
@@ -732,8 +842,20 @@ impl Backend {
     }
 
     fn release_pty(&self) {
-        if let Backend::Pty { writer, master, .. } = self {
-            *writer.lock().expect("writer lock") = None;
+        if let Backend::Pty {
+            writer,
+            master,
+            #[cfg(unix)]
+            interrupt,
+            ..
+        } = self
+        {
+            #[cfg(unix)]
+            cancel_pty_writer(writer, interrupt);
+            #[cfg(not(unix))]
+            {
+                *writer.lock().expect("writer lock") = None;
+            }
             *master.lock().expect("master lock") = None;
         }
         #[cfg(unix)]
@@ -748,6 +870,8 @@ impl Backend {
                 writer,
                 master,
                 killer,
+                #[cfg(unix)]
+                interrupt,
             } => {
                 let result = {
                     #[cfg(unix)]
@@ -774,7 +898,12 @@ impl Backend {
                         }
                     }
                 };
-                *writer.lock().expect("writer lock") = None;
+                #[cfg(unix)]
+                cancel_pty_writer(writer, interrupt);
+                #[cfg(not(unix))]
+                {
+                    *writer.lock().expect("writer lock") = None;
+                }
                 *master.lock().expect("master lock") = None;
                 result.with_context(|| format!("killing session {id}"))
             }
@@ -7926,6 +8055,17 @@ impl Daemon {
             .master
             .try_clone_reader()
             .map_err(|e| anyhow!("cloning PTY reader: {e}"))?;
+        #[cfg(unix)]
+        let writer: Box<dyn Write + Send> = {
+            let fd = pair
+                .master
+                .as_raw_fd()
+                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))?;
+            // SAFETY: pair.master owns fd throughout duplication; the resulting File closes without a blocking EOF write.
+            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?;
+            Box::new(std::fs::File::from(owned))
+        };
+        #[cfg(not(unix))]
         let writer = pair
             .master
             .take_writer()
@@ -8010,6 +8150,8 @@ impl Daemon {
                 writer: Mutex::new(Some(writer)),
                 master: Mutex::new(Some(pair.master)),
                 killer: Mutex::new(Some(killer)),
+                #[cfg(unix)]
+                interrupt: WriteInterrupt::default(),
             },
             supervisor_wait: Mutex::new(SupervisorWaitState::default()),
             park: Arc::new(ParkState::default()),
@@ -9046,9 +9188,11 @@ impl Daemon {
             )));
         }
         let session = self.get(id).map_err(StdinWriteError::nothing)?;
-        let state = session.state.lock().expect("state lock");
+        let state = *session.state.lock().expect("state lock");
         if !state.is_live() {
-            return Ok(());
+            return Err(StdinWriteError::nothing(anyhow!(
+                "session {id} is {state:?}; stdin requires a live session"
+            )));
         }
         if let Some(cap) = self
             .stdin_partial_after
@@ -9064,6 +9208,20 @@ impl Daemon {
             });
         }
         session.backend.write_stdin_counting(id, data)
+    }
+
+    pub fn write_stdin_from_renderer(&self, id: u32, data: &[u8]) -> Result<()> {
+        let Ok(session) = self.get(id) else {
+            return self.write_stdin(id, data);
+        };
+        if !session.state.lock().expect("state lock").is_live() {
+            return Ok(());
+        }
+        let result = self.write_stdin(id, data);
+        if !session.state.lock().expect("state lock").is_live() {
+            return Ok(());
+        }
+        result
     }
 
     #[doc(hidden)]
@@ -10720,6 +10878,18 @@ impl Daemon {
 
     fn confirm_paste_from_prompt(&self, session: u32, prompt: Option<&str>) {
         let Some(prompt) = prompt else { return };
+        let head = prompt.lines().next().unwrap_or("");
+        if let Some((_, suffix)) = head.split_once(", delivery ") {
+            let receipt = suffix.trim_end_matches(" ---");
+            if receipt.len() == 32 && receipt.bytes().all(|b| b.is_ascii_hexdigit()) {
+                match self.db.inbox_confirm_partial(session, receipt, now_ms()) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("confirming partial paste {receipt} for pane {session}: {e}")
+                    }
+                }
+            }
+        }
         let Some((delivery_id, written_at)) = self
             .paste_confirmations
             .lock()
@@ -12543,9 +12713,15 @@ impl Daemon {
     }
 
     fn swarm_wake_drain(daemon: std::sync::Weak<Self>, session_id: u32, generation: u64) {
+        let mut held_since = None;
+        let mut backoff = SWARM_WAKE_SETTLE;
         loop {
             let Some(this) = daemon.upgrade() else { return };
-            if this.refusing_mutations() || this.get(session_id).is_err() {
+            if this.refusing_mutations()
+                || !this
+                    .get(session_id)
+                    .is_ok_and(|session| session.state.lock().expect("state lock").is_live())
+            {
                 let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
                 if lanes
                     .get(&session_id)
@@ -12556,10 +12732,39 @@ impl Daemon {
                 return;
             }
             if this.paste_hold_reason(session_id).is_some() {
+                let since = held_since.get_or_insert_with(Instant::now);
+                if since.elapsed() >= SWARM_WAKE_HOLD_MAX {
+                    let queue = {
+                        let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
+                        if lanes
+                            .get(&session_id)
+                            .is_some_and(|lane| lane.generation == generation)
+                        {
+                            lanes
+                                .remove(&session_id)
+                                .map(|lane| lane.queue)
+                                .unwrap_or_default()
+                        } else {
+                            VecDeque::new()
+                        }
+                    };
+                    for item in queue {
+                        if let WakeItem::Text(_, sender) = item {
+                            this.note_to_sender(session_id, sender, "prompt_held", &format!(
+                                "pane {session_id} remained held for {} ms, the limit is {} ms; its queued prompt was not delivered",
+                                since.elapsed().as_millis(), SWARM_WAKE_HOLD_MAX.as_millis()));
+                        }
+                    }
+                    this.notify_inbox_wake(session_id);
+                    return;
+                }
                 drop(this);
-                std::thread::sleep(SWARM_WAKE_SETTLE);
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(SWARM_WAKE_BACKOFF_MAX);
                 continue;
             }
+            held_since = None;
+            backoff = SWARM_WAKE_SETTLE;
             let next = {
                 let mut lanes = this.swarm_wake_lanes.lock().expect("wake lanes lock");
                 take_wake_item(&mut lanes, session_id, generation)
@@ -14034,6 +14239,10 @@ impl Daemon {
         });
         let released = if sent {
             match self.db.inbox_mark_delivered(delivery_id, "wait", now_ms()) {
+                Ok(0) => {
+                    tracing::warn!("wait delivery {delivery_id} no longer owns any row; suppressing its confirmation");
+                    false
+                }
                 Ok(_) => false,
                 Err(e) => {
                     tracing::warn!("confirming wait delivery {delivery_id}: {e}");
@@ -14122,8 +14331,10 @@ impl Daemon {
         let mut startup_stall_deadline = stall_guard.then_some(started + stall_window);
 
         let try_reserve = |this: &Arc<Self>| -> Result<Option<orchestrate::InboxWaitOutcome>> {
-            let waiting = this.inbox_waiting.lock().expect("inbox waiting lock");
-            if !waiting
+            if !this
+                .inbox_waiting
+                .lock()
+                .expect("inbox waiting lock")
                 .get(&caller)
                 .is_some_and(|state| Arc::ptr_eq(state, &guard.state))
             {
@@ -14141,12 +14352,38 @@ impl Daemon {
             else {
                 return Ok(None);
             };
+            let has_more = match this.db.inbox_count_matching(caller, now, child, kind_str) {
+                Ok(count) => count > 0,
+                Err(error) => {
+                    this.release_reservation(&delivery_id);
+                    return Err(error);
+                }
+            };
+            match this.db.inbox_pin_reservation(&delivery_id) {
+                Ok(true) => {}
+                Ok(false) => {
+                    this.release_reservation(&delivery_id);
+                    return Ok(None);
+                }
+                Err(error) => {
+                    this.release_reservation(&delivery_id);
+                    return Err(error);
+                }
+            }
+            let waiting = this.inbox_waiting.lock().expect("inbox waiting lock");
+            if !waiting
+                .get(&caller)
+                .is_some_and(|state| Arc::ptr_eq(state, &guard.state))
+            {
+                drop(waiting);
+                this.release_reservation(&delivery_id);
+                return Ok(Some(orchestrate::InboxWaitOutcome::Superseded));
+            }
             *guard
                 .state
                 .reservation
                 .lock()
                 .expect("wait reservation lock") = Some(delivery_id.clone());
-            let has_more = this.db.inbox_count_matching(caller, now, child, kind_str)? > 0;
             this.inbox_delivering
                 .lock()
                 .expect("inbox delivering lock")
@@ -14383,7 +14620,8 @@ impl Daemon {
             };
             (s.info.spawned_by?, codename)
         };
-        Some((parent, self.child_label(id, &codename)))
+        self.operator_ended_notice_needed(id, parent)
+            .then(|| (parent, self.child_label(id, &codename)))
     }
 
     pub fn session_kill_checked(self: &Arc<Self>, id: u32, confirm_children: bool) -> Result<()> {
@@ -14391,7 +14629,7 @@ impl Daemon {
         let notice = self.operator_ended_notice_facts(id);
         self.kill(id)?;
         if let Some((parent, label)) = notice {
-            self.queue_operator_ended_notice(id, parent, label);
+            self.write_operator_ended_notice(id, parent, label);
         }
         Ok(())
     }
@@ -14401,7 +14639,7 @@ impl Daemon {
         let notice = self.operator_ended_notice_facts(id);
         self.close(id)?;
         if let Some((parent, label)) = notice {
-            self.queue_operator_ended_notice(id, parent, label);
+            self.write_operator_ended_notice(id, parent, label);
         }
         Ok(())
     }
@@ -15172,6 +15410,15 @@ impl Daemon {
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
+        // Exit can win after apply_agent_event checks liveness. This lock also
+        // protects finish_session, so a delayed hook cannot reopen an ended pane.
+        if self
+            .get(child)
+            .ok()
+            .is_none_or(|session| !session.state.lock().expect("state lock").is_live())
+        {
+            return;
+        }
         let opens_round = ev == AgentEvent::PromptSubmitted;
         let event = match ev {
             AgentEvent::PromptSubmitted | AgentEvent::InputResolved => {
@@ -15301,7 +15548,10 @@ impl Daemon {
             if let Some(id) = pending {
                 self.broadcast_inbox_row(id);
             }
-            self.inbox_notify(parent, false);
+            let recipient = pending
+                .and_then(|id| self.db.inbox_get(id).ok().flatten())
+                .map_or(parent, |result| result.to_session);
+            self.inbox_notify(recipient, false);
             if self
                 .db
                 .delegation_for_child(child)
@@ -15858,6 +16108,15 @@ impl Daemon {
 
     #[doc(hidden)]
     pub fn delegation_watch_tick_at(self: &Arc<Self>, now: u64) {
+        self.delegation_watch_tick_with_clocks_for_test(now, now_ms());
+    }
+
+    #[doc(hidden)]
+    pub fn delegation_watch_tick_with_clocks_for_test(
+        self: &Arc<Self>,
+        now: u64,
+        cleanup_now: u64,
+    ) {
         if self.refusing_mutations() {
             return;
         }
@@ -16007,7 +16266,6 @@ impl Daemon {
             self.delegation_stall_pass(row, &s, busy, now);
             self.delegation_settle_pass(row, &s, busy, now);
         }
-        let cleanup_now = now_ms();
         for row in self.db.delegations_retained().unwrap_or_default() {
             let _guard = self
                 .temporary_cleanup_lock
@@ -16242,13 +16500,7 @@ impl Daemon {
             return;
         }
         if urgent {
-            let this = Arc::clone(self);
-            if let Err(e) = std::thread::Builder::new()
-                .name(format!("inbox-urgent-{to}"))
-                .spawn(move || this.flush_inbox_batch(to))
-            {
-                tracing::warn!("scheduling an urgent inbox flush for pane {to}: {e}");
-            }
+            self.flush_inbox_batch(to);
             return;
         }
         let schedule = self
@@ -16425,6 +16677,15 @@ impl Daemon {
             self.release_reservation(&delivery_id);
             return;
         }
+        match self.db.inbox_pin_reservation(&delivery_id) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(e) => {
+                tracing::warn!("pinning pane {parent}'s paste reservation {delivery_id}: {e}");
+                self.release_reservation(&delivery_id);
+                return;
+            }
+        }
         match self.write_stdin_counting(parent, &payload) {
             Ok(()) => {}
             Err(e) if e.nothing_written() => {
@@ -16457,8 +16718,25 @@ impl Daemon {
             return;
         }
         let now = now_ms();
-        if let Err(e) = self.db.inbox_mark_delivered(&delivery_id, "paste", now) {
-            tracing::warn!("marking pane {parent}'s paste delivered: {e}");
+        match self.db.inbox_mark_delivered(&delivery_id, "paste", now) {
+            Ok(0) => {
+                self.paste_went_partial(
+                    &delivery_id,
+                    &rows,
+                    "paste was submitted but its reservation no longer owns any rows",
+                );
+                return;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!("marking pane {parent}'s paste delivered: {e}");
+                self.paste_went_partial(
+                    &delivery_id,
+                    &rows,
+                    &format!("paste was submitted but its delivery receipt failed: {e}"),
+                );
+                return;
+            }
         }
         for row in &rows {
             self.broadcast_inbox_row(row.id);
@@ -16519,6 +16797,15 @@ impl Daemon {
         self.release_reservation(delivery_id);
         for row in rows {
             self.retain_or_readdress_row(row.id, &format!("partial: {what}"));
+            if let Err(e) =
+                self.db
+                    .inbox_record_partial(row.id, row.to_session, delivery_id, now_ms())
+            {
+                tracing::warn!(
+                    "recording partial delivery {delivery_id} for row {}: {e}",
+                    row.id
+                );
+            }
         }
     }
 
@@ -16558,6 +16845,7 @@ impl Daemon {
             return;
         }
         self.broadcast_inbox_row(id);
+        self.notify_inbox_wake(recipient);
         if recipient != row.to_session {
             self.inbox_notify(recipient, true);
         }
@@ -16679,7 +16967,29 @@ impl Daemon {
         Ok(id)
     }
 
+    fn operator_ended_notice_needed(&self, child: u32, parent: u32) -> bool {
+        self.db
+            .delegation_for_child(child)
+            .ok()
+            .flatten()
+            .is_none_or(|delegation| {
+                orchestrate::DelegationState::parse(&delegation.state)
+                    .is_some_and(|state| !state.is_closed())
+                    && delegation.settled_at.is_none()
+                    && !self
+                        .db
+                        .inbox_round_has_result(parent, child, delegation.round)
+                        .unwrap_or(false)
+            })
+    }
+
     pub fn queue_operator_ended_notice(self: &Arc<Self>, child: u32, parent: u32, label: String) {
+        if self.operator_ended_notice_needed(child, parent) {
+            self.write_operator_ended_notice(child, parent, label);
+        }
+    }
+
+    fn write_operator_ended_notice(self: &Arc<Self>, child: u32, parent: u32, label: String) {
         if !self
             .sessions
             .lock()
@@ -17078,7 +17388,8 @@ mod stdin_write_progress_tests {
             accept: 4,
             calls: 0,
         };
-        let (written, _) = write_all_counting(&mut w, b"0123456789").expect_err("it fails");
+        let (written, _) =
+            write_all_counting(&mut w, b"0123456789", || false).expect_err("it fails");
         assert_eq!(
             written, 4,
             "four bytes are on the wire; retrying the whole payload would paste them twice"
@@ -17091,7 +17402,8 @@ mod stdin_write_progress_tests {
             accept: 0,
             calls: 1,
         };
-        let (written, _) = write_all_counting(&mut w, b"0123456789").expect_err("it fails");
+        let (written, _) =
+            write_all_counting(&mut w, b"0123456789", || false).expect_err("it fails");
         assert_eq!(written, 0);
         let err = StdinWriteError {
             written: Some(written),
@@ -17121,7 +17433,7 @@ mod stdin_write_progress_tests {
                 Ok(())
             }
         }
-        write_all_counting(&mut Trickle, b"hello").expect("a slow writer still finishes");
+        write_all_counting(&mut Trickle, b"hello", || false).expect("a slow writer still finishes");
     }
 }
 
@@ -18127,6 +18439,313 @@ mod idle_profile_tests {
             !daemon.delegation_watch_armed(),
             "the last open delegation closing must park the watcher"
         );
+    }
+
+    #[cfg(unix)]
+    fn r1_parent(daemon: &Arc<Daemon>, state: &Path) -> u32 {
+        daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Custom,
+                project_dir: state.to_path_buf(),
+                cmd: Some(vec!["sh".into(), "-c".into(), "exec cat".into()]),
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+            })
+            .unwrap()
+            .id
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn r1_closing_a_settled_child_does_not_queue_a_false_notice() {
+        let (daemon, state) = test_daemon();
+        let parent = r1_parent(&daemon, state.path());
+        daemon
+            .db
+            .delegation_create(parent, 999, None, "brief", now_ms())
+            .unwrap();
+        daemon
+            .db
+            .delegation_finish(999, "done", None, now_ms())
+            .unwrap();
+        daemon.queue_operator_ended_notice(999, parent, "executor".into());
+        let rows = daemon.db.inbox_list_for_session(parent).unwrap();
+        daemon.kill(parent).unwrap();
+        daemon.close(parent).unwrap();
+        assert!(
+            rows.is_empty(),
+            "closed delegations must not invent an operator notice"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn r1_wait_only_rows_wake_the_same_parent() {
+        let (daemon, state) = test_daemon();
+        daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
+        let parent = r1_parent(&daemon, state.path());
+        let id = daemon
+            .db
+            .inbox_insert(
+                &crate::db::NewInboxRow {
+                    to_session: parent,
+                    workspace: state.path().display().to_string(),
+                    from_session: Some(999),
+                    request_id: Some(1),
+                    kind: "result".into(),
+                    urgent: false,
+                    summary: "answer".into(),
+                    body: "body".into(),
+                    artifacts: Vec::new(),
+                    provisional: false,
+                    corrects: None,
+                    reason: None,
+                    ready: true,
+                },
+                now_ms(),
+            )
+            .unwrap();
+        let guard = daemon.enter_inbox_wait(parent).unwrap();
+        let notify = guard.notify.clone();
+        let notified = notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        daemon.retain_or_readdress_row(id, "partial: composer contains the text");
+        let notified = tokio::time::timeout(Duration::from_millis(100), notified).await;
+        drop(guard);
+        daemon.kill(parent).unwrap();
+        daemon.close(parent).unwrap();
+        assert!(
+            notified.is_ok(),
+            "a wait-only row must wake its unchanged recipient"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn r1_held_lane_stops_when_its_session_is_not_live() {
+        let (daemon, state) = test_daemon();
+        let parent = r1_parent(&daemon, state.path());
+        daemon.kill(parent).unwrap();
+        daemon.swarm_wake_lanes.lock().unwrap().insert(
+            parent,
+            WakeLane {
+                generation: 123,
+                queue: VecDeque::from([WakeItem::Text("held".into(), 0)]),
+            },
+        );
+        let weak = Arc::downgrade(&daemon);
+        let draining = std::thread::spawn(move || Daemon::swarm_wake_drain(weak, parent, 123));
+        std::thread::sleep(Duration::from_millis(200));
+        let pending = daemon
+            .swarm_wake_lanes
+            .lock()
+            .unwrap()
+            .contains_key(&parent);
+        daemon.close(parent).unwrap();
+        draining.join().unwrap();
+        assert!(
+            !pending,
+            "a killed session must not keep a polling lane alive"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn r1_active_wait_cannot_expire_into_another_door() {
+        let (daemon, state) = test_daemon();
+        daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
+        let parent = r1_parent(&daemon, state.path());
+        daemon
+            .db
+            .inbox_insert(
+                &crate::db::NewInboxRow {
+                    to_session: parent,
+                    workspace: state.path().display().to_string(),
+                    from_session: Some(999),
+                    request_id: Some(1),
+                    kind: "result".into(),
+                    urgent: false,
+                    summary: "answer".into(),
+                    body: "body".into(),
+                    artifacts: Vec::new(),
+                    provisional: false,
+                    corrects: None,
+                    reason: None,
+                    ready: true,
+                },
+                now_ms(),
+            )
+            .unwrap();
+        let outcome = daemon
+            .orchestrate_wait_reserved(parent, None, None, 100, false)
+            .await
+            .unwrap();
+        let orchestrate::InboxWaitOutcome::Delivered { delivery_id, .. } = outcome else {
+            panic!("expected reservation")
+        };
+        let stolen = daemon
+            .db
+            .inbox_reserve(
+                parent,
+                now_ms() + 2 * orchestrate::INBOX_RESERVATION_MS,
+                20,
+                64000,
+            )
+            .unwrap();
+        daemon.finish_wait_delivery(parent, &delivery_id, false);
+        daemon.kill(parent).unwrap();
+        daemon.close(parent).unwrap();
+        assert!(
+            stolen.is_none(),
+            "an active transport must retain its reservation until completion or cancellation"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn r1_database_contention_does_not_hold_the_waiter_registry() {
+        let (daemon, state) = test_daemon();
+        daemon.reap_set_exit_hook_for_test(Box::new(|| {}));
+        let parent = r1_parent(&daemon, state.path());
+        daemon
+            .db
+            .inbox_insert(
+                &crate::db::NewInboxRow {
+                    to_session: parent,
+                    workspace: state.path().display().to_string(),
+                    from_session: Some(999),
+                    request_id: Some(1),
+                    kind: "result".into(),
+                    urgent: false,
+                    summary: "answer".into(),
+                    body: "body".into(),
+                    artifacts: Vec::new(),
+                    provisional: false,
+                    corrects: None,
+                    reason: None,
+                    ready: true,
+                },
+                now_ms(),
+            )
+            .unwrap();
+        let db = rusqlite::Connection::open(state.path().join("t.db")).unwrap();
+        db.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let waiter = daemon.clone();
+        let waiting = tokio::spawn(async move {
+            waiter
+                .orchestrate_wait_reserved(parent, None, None, 1000, false)
+                .await
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !daemon.db.query_in_progress_for_test() {
+            assert!(
+                Instant::now() < deadline,
+                "fixture did not contend on the database"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        let available = daemon.inbox_waiting.try_lock().is_ok();
+        db.execute_batch("COMMIT").unwrap();
+        let outcome = waiting.await.unwrap().unwrap();
+        let orchestrate::InboxWaitOutcome::Delivered { delivery_id, .. } = outcome else {
+            panic!("expected rows")
+        };
+        daemon.finish_wait_delivery(parent, &delivery_id, false);
+        daemon.kill(parent).unwrap();
+        daemon.close(parent).unwrap();
+        assert!(
+            available,
+            "SQLite contention must not block waiter cancellation/supersession"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn r1_blocked_stdin_does_not_hold_session_state_or_prevent_kill() {
+        let (daemon, state) = test_daemon();
+        let child = daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Custom,
+                project_dir: state.path().to_path_buf(),
+                cmd: Some(vec![
+                    "sh".into(),
+                    "-c".into(),
+                    "stty raw -echo; exec sleep 60".into(),
+                ]),
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+            })
+            .unwrap()
+            .id;
+        let session = daemon.get(child).unwrap();
+        let pid = session.pid.unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let (written_tx, written_rx) = std::sync::mpsc::channel();
+        let writer = daemon.clone();
+        let writing = std::thread::spawn(move || {
+            let outcome = writer.write_stdin_counting(child, &vec![b'x'; 1024 * 1024]);
+            let _ = written_tx.send(outcome);
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            written_rx.try_recv().is_err(),
+            "fixture must block in the PTY write"
+        );
+        let state_available = session.state.try_lock().is_ok();
+        let (killed_tx, killed_rx) = std::sync::mpsc::channel();
+        let killer = daemon.clone();
+        let killing = std::thread::spawn(move || {
+            let _ = killed_tx.send(killer.kill(child));
+        });
+        let killed = killed_rx.recv_timeout(Duration::from_secs(2));
+        if killed.is_err() {
+            session.backend.kill(child, Some(pid)).unwrap();
+        }
+        writing.join().unwrap();
+        killing.join().unwrap();
+        assert!(
+            state_available,
+            "a blocked PTY writer must release the session state lock"
+        );
+        killed
+            .expect("kill must unblock the PTY writer within two seconds")
+            .unwrap();
+        daemon.close(child).unwrap();
+    }
+
+    #[test]
+    fn an_admitted_prompt_cannot_reopen_a_removed_child() {
+        let (daemon, _state) = test_daemon();
+        daemon
+            .db
+            .delegation_create(1, 2, None, "brief", now_ms())
+            .unwrap();
+        daemon
+            .db
+            .delegation_finish(2, "cancelled", Some("closed"), now_ms())
+            .unwrap();
+        let before = daemon.delegation_of(2).unwrap();
+
+        // The hook passed its status liveness check before close removed the pane.
+        daemon.advance_delegation(2, crate::agent_events::AgentEvent::PromptSubmitted);
+
+        let after = daemon.delegation_of(2).unwrap();
+        assert_eq!(after.state, before.state);
+        assert_eq!(after.round, before.round);
+        assert_eq!(after.ended_at, before.ended_at);
     }
 
     #[test]

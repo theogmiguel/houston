@@ -1552,6 +1552,10 @@ pub const STOP_BLOCKS_PER_TURN_MAX: u32 = 3;
 // this call runs inside the CLI's own Stop hook, so it must return well inside the
 // CLI's own hook timeout — blocking here stalls the CLI, not just Houston
 pub const STOP_INBOX_QUERY_MS: u64 = 250;
+// Confirmation starts after stdout is flushed and needs a full independent request budget.
+pub const STOP_INBOX_CONFIRM_MS: u64 = 250;
+// Unconfirmed pastes survive a week of outages without being replayed on every future restart.
+pub const UNCONFIRMED_PASTE_MAX_MS: u64 = 7 * 24 * 60 * 60_000;
 
 // door 2: a same-turn continuation, shaped per provider's own hook contract —
 // "block" for Claude/Codex, "continue" for Antigravity. Providers without one

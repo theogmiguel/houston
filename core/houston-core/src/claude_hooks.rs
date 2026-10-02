@@ -587,6 +587,8 @@ fn stop_hook_try_continue(session: u32, provider: proto::AgentKind) -> bool {
         }
     }
     let confirm = serde_json::json!({ "delivery_id": delivery_id });
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(crate::orchestrate::STOP_INBOX_CONFIRM_MS);
     if let Err(e) = crate::orchestrate::http_json_deadline(
         &base,
         "POST",

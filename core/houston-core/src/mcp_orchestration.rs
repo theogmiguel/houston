@@ -507,8 +507,19 @@ impl ToolProvider for OrchestrationTools {
                                 })
                                 .collect();
                             let text = orchestrate::compose_inbox(&entries, &delivery_id);
-                            let wire_rows: Vec<proto::InboxRow> =
-                                rows.into_iter().map(Into::into).collect();
+                            let wire_rows: Vec<Value> = rows
+                                .into_iter()
+                                .map(|row| {
+                                    let mut metadata =
+                                        serde_json::to_value(proto::InboxRow::from(row))
+                                            .expect("inbox row serializes");
+                                    metadata
+                                        .as_object_mut()
+                                        .expect("inbox row object")
+                                        .remove("body");
+                                    metadata
+                                })
+                                .collect();
                             Ok(ToolOutput {
                                 text,
                                 structured: Some(json!({

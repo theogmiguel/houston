@@ -62,7 +62,7 @@ spelling, or a verb that is CLI-only).
 | `pane_get` | `mcp_orchestration.rs` | `hs-pane get` | one pane in the caller's own subtree, in one call: its state, its children and depth, what would end its turn, and its role/brief/stall/staged-result if it is a child of the caller |
 | `pane_read` | `mcp_orchestration.rs` | `hs-pane read` | a child's terminal, ANSI-stripped, capped: `source=screen` (default) reads the session's emulator (`vt.rs`), `source=tail` splits the byte ring on newlines. Anything else is refused by name |
 | `pane_prompt` | `mcp_orchestration.rs` | `hs-pane prompt` | send follow-up text into a child; return immediate write failures and queue held prompts on the bounded wake lane |
-| `pane_wait` | `mcp_orchestration.rs` | `hs-pane wait` | door 1: block on the caller's own `pane_inbox` until an eligible row exists (or the timeout runs out), reserve it, return the rows in this same call, and mark `delivered_via = 'wait'` after transport acceptance. `session` (optional) scopes to one child; `kind` (optional) filters to one row kind but never hides an urgent one for a waited child. `until` is removed and refused by name, naming `kind` as its replacement |
+| `pane_wait` | `mcp_orchestration.rs` | `hs-pane wait` | door 1: block on the caller's own `pane_inbox` until an eligible row exists (or the timeout runs out), reserve it, return the rows in this same call, and mark `delivered_via = 'wait'` after the response body completes. `session` (optional) scopes to one child; `kind` (optional) filters to one row kind but never hides an urgent one for a waited child. `until` is removed and refused by name, naming `kind` as its replacement |
 | `pane_kill` | `mcp_orchestration.rs` | `hs-pane kill` | end a child pane |
 | `pane_submit` | `mcp_orchestration.rs` | `hs-pane submit` | worker→parent result handoff, with an optional summary and artifact paths; wakes the parent |
 | — | — | `hs-pane keys` | press a small set of keys in a pane (the CLI-only spelling of `pane_send_keys`) |
@@ -128,7 +128,8 @@ The inbox has its own limits, all in `orchestrate.rs` beside the doors that spen
 `INBOX_BATCH_MAX_ROWS` (20) and `INBOX_BATCH_MAX_BYTES` (64 000) cap one reservation,
 `INBOX_RESERVATION_MS` (30 000) expires a door that died mid-delivery, `PASTE_ATTEMPTS_MAX`
 (3) and `PASTE_CONFIRM_MS` (60 000) bound door 3's proof, `OPERATOR_TYPING_GUARD_MS` (3 000)
-debounces the composer hold, `STOP_INBOX_QUERY_MS` (250) is door 2's whole budget,
+debounces the composer hold, `STOP_INBOX_QUERY_MS` (250) bounds door 2's reserve query and
+`STOP_INBOX_CONFIRM_MS` (250) gives its post-stdout confirmation a separate budget,
 `STOP_BLOCKS_PER_TURN_MAX` (3) caps its blocks, `INBOX_PENDING_PER_PANE_MAX` (200) and
 `INBOX_OPERATOR_MAX_ROWS` (1 000) bound the queues, and `SUBAGENT_INFLIGHT_MAX_MS`
 (45 min) / `OWED_NOTIFICATION_MAX_MS` (2 min) expire the sub-agent round's withheld turn
@@ -250,7 +251,9 @@ with nothing submitted), `needs_input` (urgent), `exited` (urgent, the child's p
 gone), `stalled`, `operator_note` (the operator ended or interrupted the child), and `mail`
 (a swarm-scope message addressed to a pane's label). `needs_input` and `exited` are the
 urgent kinds,
-and they bypass every batch window.
+and they bypass every batch window. Swarm mail between siblings remains agent-to-agent
+traffic. A top-level pane may address the operator; delegated children hand results to their
+orchestrator and its live ancestors.
 
 Three timestamps, three words: `created_at` is **persisted**, `delivered_at` is **sent**,
 `confirmed_at` is **proven**. What "sent" is worth depends on the door:
@@ -259,7 +262,7 @@ Three timestamps, three words: `created_at` is **persisted**, `delivered_at` is 
 |---|---|---|---|
 | `wait` | returned inside the tool result of a live turn | no mechanism; final | `delivered_at` |
 | `stop_hook` | the helper printed it and the CLI accepted the hook's stdout | no mechanism; final | `delivered_at` |
-| `paste` | bytes reached the PTY | yes, the parent's own prompt hook | `confirmed_at` |
+| `paste` | bytes reached the PTY | yes, the parent's own prompt hook | `confirmed_at`, or the seven-day unconfirmed cap |
 | `operator` | opened in the renderer | yes, the ack | `confirmed_at` |
 
 `confirmed_at IS NULL` is therefore never read as "failed" on its own; the door says.
@@ -269,9 +272,12 @@ changes on every reservation. `attempts` counts delivery attempts by any door �
 reservation, not only door-3 pastes — which is what lets door 2's "possibly delivered
 before" note and door 3's re-address threshold share one counter. A duplicate after a retry
 is recognisably the same message under a second delivery id, and a stale confirmation from
-an earlier attempt cannot mark a later body. A reservation a door fails to complete expires
-after `INBOX_RESERVATION_MS` and the row is eligible again; on boot every reservation is
-released.
+an earlier attempt cannot mark a later body. Stop-hook reservations expire after
+`INBOX_RESERVATION_MS`. Active HTTP bodies and PTY
+writes pin their reservations until completion or cancellation, so a slow writer cannot
+lose its row to another door. Boot releases all reservations. Unconfirmed paste attempts
+expire after `UNCONFIRMED_PASTE_MAX_MS` (seven days), counted from the first attempt across
+restarts; this also bounds providers whose prompt fixture carries no receipt text.
 
 Every `summary`, `body`, `reason` and the hook helper's `last_message` pass
 `orchestrate::inbox_row_new` first, which caps them at the same limits `pane_submit`
@@ -315,11 +321,13 @@ writes a row calls `Daemon::inbox_notify`, which fires a per-session `tokio::syn
 (`Daemon::inbox_wake`) before anything else, whether or not the row is urgent. The wait
 loop reserves-then-awaits (never the other order), so a write racing the check is never
 lost — the DB is the truth, the notify is only a hint to re-check it sooner. Reserved
-rows remain undelivered until the MCP response sender accepts the final frame. A failed
-send releases the reservation. Disconnects cancel immediately through the response
-sender's closed signal; `notifications/cancelled` cancels the matching request in the
-caller's scope. This applies to SSE progress responses and plain JSON waits. Transport
-acceptance means the server accepted the frame, not that the model read it.
+rows remain undelivered until the response body consumer completes the final frame.
+Dropping a queued frame or an incomplete body releases its reservation. Disconnects cancel
+through the response sender's closed signal; `notifications/cancelled` cancels the matching
+request in the caller's scope. This applies to SSE progress responses and plain JSON waits.
+Body completion is a server-side transport boundary; it cannot prove that the client
+application or model read the bytes. MCP returns each body once in textual content;
+structured rows carry metadata and omit `body`.
 
 Zero tokens are spent while blocked. After spawn, agents must wait instead of polling
 `pane_get`, `pane_read` or `pane_list`; those are diagnostics after a timeout, for help,
@@ -435,9 +443,21 @@ window. Three refusals hold it back, and the rows stay pending through all of th
   rule applies after `PASTE_ATTEMPTS_MAX` proven-zero attempts. A dead parent's nearest
   live ancestor inherits the row; only the absence of a live ancestor reaches the operator.
 
-The framing's first line carries the `delivery_id`, and the parent's next `UserPromptSubmit`
-whose prompt HEAD carries that exact id sets `confirmed_at`. `PASTE_CONFIRM_MS` counts from
-the submitting `\r`, not from enqueue.
+The framing's first line carries the `delivery_id`. For providers whose prompt hooks
+include text, the next prompt hook whose prompt head carries that exact id sets
+`confirmed_at`; payloads without prompt text cannot provide this confirmation.
+A partial paste keeps a durable receipt associated with its row. If the operator submits
+that complete receipt header from the composer, the prompt hook resolves the wait-only row
+before a later wait can deliver it again. An incomplete header provides no such proof.
+A database failure after submitting Enter makes the row wait-only with the failure reason;
+automatic delivery cannot blindly repeat the submitted paste.
+Held wake lanes back off to 640 ms between checks and stop after a 30-second hold, reporting
+undelivered text to its sender. Durable inbox rows remain available through wait. Ended
+sessions stop their lanes immediately. Session state is never held while writing to a PTY;
+Unix teardown interrupts its active counted writer before releasing the handle.
+`PASTE_CONFIRM_MS` counts from the submitting `\r`, not from enqueue. Delivery ids use
+compact lowercase hexadecimal so prompt redaction preserves the receipt while still
+removing bearer UUIDs.
 
 ### The sub-agent round
 
@@ -615,6 +635,8 @@ restarts produce one state, and it runs **after** restore:
    enter `working`: their mission is live again, while `unknown` describes an interrupted
    mission whose process has not resumed. Children of deferred parents inherit the visible
    deferral and resume through the same policy when the parent is manually respawned.
+   Rebinding updates every inbox reference to the current session generation in one
+   transaction, so a later ancestor reroute still closes the original delegation round.
    Unsupported children remain ended; settled children remain
    archived. A child without a valid resume handle never starts a bare replacement CLI.
 3. `db::inbox_recover_after_restart` runs against the live set restore actually brought

@@ -2839,7 +2839,10 @@ async fn wait_returns_rows_in_turn() {
         Some("wait")
     );
     assert!(
-        rows[0]["body"].as_str().unwrap().contains("RESULT-BODY"),
+        result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("RESULT-BODY"),
         "{result}"
     );
     assert_eq!(result["structuredContent"]["has_more"], false, "{result}");
@@ -2906,7 +2909,10 @@ async fn urgent_rows_break_a_kind_filter() {
     assert_eq!(rows.len(), 1, "{result}");
     assert_eq!(rows[0]["kind"], "needs_input", "{result}");
     assert!(
-        rows[0]["body"].as_str().unwrap().contains("Bash"),
+        result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Bash"),
         "{result}"
     );
 }
@@ -3083,7 +3089,7 @@ async fn hs_pane_wait_matches_the_tool() {
         "{http_result}"
     );
     assert!(
-        mcp_result["structuredContent"]["rows"][0]["body"]
+        mcp_result["content"][0]["text"]
             .as_str()
             .unwrap()
             .contains("PARITY-MCP"),
@@ -3251,7 +3257,7 @@ async fn k2_temporary_child_is_ended_and_kept_with_durable_result_after_restart(
 
     assert_eq!(r.daemon.resize(child, 100, 40).unwrap(), (100, 40));
     r.daemon
-        .write_stdin(child, b"ignored after settlement")
+        .write_stdin_from_renderer(child, b"ignored after settlement")
         .unwrap();
     let db_path = r._state.path().join("test.db");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
@@ -8729,10 +8735,14 @@ async fn k1_disconnected_sse_and_json_waits_leave_results_undelivered() {
             serde_json::json!({"session":child,"timeout_ms":100}),
         )
         .await;
-        assert_eq!(
-            result["structuredContent"]["rows"][0]["body"], "disconnect answer",
+        assert!(
+            result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("disconnect answer"),
             "{result}"
         );
+        assert!(result["structuredContent"]["rows"][0].get("body").is_none());
     }
 }
 

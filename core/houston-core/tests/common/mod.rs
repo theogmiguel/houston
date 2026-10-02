@@ -23,6 +23,37 @@ pub fn hermetic_command(
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("HOME", home)
         .env("USERPROFILE", home);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let shims = home.join("provider-shims");
+        std::fs::create_dir_all(&shims).unwrap();
+        for name in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
+            let path = shims.join(name);
+            if !path.exists() {
+                std::fs::write(
+                    &path,
+                    "#!/bin/sh\necho 'real provider CLI refused by test fixture' >&2\nexit 1\n",
+                )
+                .unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            }
+        }
+        let shell = shims.join("login-shell");
+        if !shell.exists() {
+            std::fs::write(&shell, "#!/bin/sh\nif [ \"$1\" = '-lic' ]; then\n  printf '__TR_LOGIN_PATH__%s\\n' \"$PATH\"\nelse\n  exec /bin/sh \"$@\"\nfi\n").unwrap();
+            std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        cmd.env(
+            "PATH",
+            format!(
+                "{}:{}",
+                shims.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("SHELL", shell);
+    }
     #[cfg(windows)]
     for key in ["SystemRoot", "SystemDrive", "windir", "TEMP", "TMP"] {
         if let Ok(v) = std::env::var(key) {
