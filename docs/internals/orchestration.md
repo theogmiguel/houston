@@ -1270,3 +1270,12 @@ own `needs-input` status triggers one.
 
 No supported API-failure hook carries a verified machine-readable reset time,
 so Houston does not schedule automatic resume.
+
+The workspace-info provider catalog checks executable presence and reuses cached versions
+and derives capabilities from the event map and launch rules. It reads Codex's
+local `models_cache.json` under `CODEX_HOME` or `~/.codex`, without a network
+request. Other providers have no verified local model-list source. Cache reads
+are limited to 2 MiB; the response includes at most 64 identifiers of 128 bytes
+per provider and marks truncation. Model identifiers describe the local cache,
+not guaranteed account access. Unknown or over-128-byte versions remain null; workspace-info never
+launches version probes. It reports the routes alongside the provider catalog.

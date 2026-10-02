@@ -13476,6 +13476,29 @@ impl Daemon {
         Ok(brief)
     }
 
+    fn orchestration_provider_catalog(&self) -> Vec<serde_json::Value> {
+        use proto::AgentKind::*;
+        [Claude, Codex, Antigravity, Opencode, Cursor, Grok].into_iter().map(|provider| {
+            let binary = crate::cli_probe::binary_name(provider).expect("spawnable provider binary");
+            let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(binary);
+            let caps = orchestrate::provider_capabilities(provider);
+            let (models, model_note) = crate::cli_probe::local_models(provider);
+            serde_json::json!({
+                "provider": provider, "installed": cli.present, "version": cli.version,
+                "models": models, "model_note": model_note,
+                "per_run_effort": crate::launch::effort_args(provider, proto::ChatEffort::Medium).is_ok(),
+                "capabilities": {
+                    "needs_input": caps.block, "last_message": caps.last_message,
+                    "turn_end": caps.turn_end, "turn_end_continuation": caps.door2,
+                    "handback_only_permission": !crate::launch::handback_permission_args(provider).is_empty(),
+                    "compaction_counting": crate::agent_events::compaction_event(provider).is_some(),
+                    "turn_failure": crate::agent_events::events_for(provider).iter().any(|(_, ev)| *ev == crate::agent_events::AgentEvent::TurnFailed),
+                },
+                "capability_note": orchestrate::capability_note(provider),
+            })
+        }).collect()
+    }
+
     pub fn orchestrate_whoami_json(&self, caller: u32) -> Result<serde_json::Value> {
         let info = self.orchestrate_whoami(caller)?;
         let registered_workspaces = self
@@ -13498,6 +13521,7 @@ impl Daemon {
             "channel": self.channel(),
             "registered_workspaces": registered_workspaces,
             "routing": self.workspace_routing(&info.project_dir)?,
+            "providers": self.orchestration_provider_catalog(),
         }))
     }
 

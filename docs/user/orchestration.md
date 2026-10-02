@@ -228,3 +228,9 @@ the child available for inspection with a failed delegation and send its parent
 the reported reason. Send a follow-up when the provider allows another turn;
 Houston cannot infer a limit reset time from these hooks. A provider may also
 continue on its own.
+
+Use `workspace_info.providers` before choosing a provider or model. It reports
+installed CLIs, locally known versions and model identifiers, per-run effort
+support, and orchestration capabilities. `workspace_info.routing` contains the
+current workspace's model and effort routes. A null model list means unknown;
+it does not mean that the provider accepts no models.

@@ -10717,3 +10717,58 @@ async fn provider_failure_retains_temporary_child_and_notifies_once() {
         );
     }
 }
+
+#[tokio::test]
+async fn workspace_info_reports_bounded_local_provider_catalog() {
+    let _guard = serial().await;
+    let r = rig("provider-catalog").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    let codex_home = r._state.path().join("catalog-codex");
+    std::fs::create_dir_all(&codex_home).unwrap();
+    std::fs::write(
+        codex_home.join("models_cache.json"),
+        br#"{"models":[{"slug":"fixture-codex-model"}]}"#,
+    )
+    .unwrap();
+    let previous_home = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex_home);
+    let info = mcp_call(
+        r.addr,
+        &r.token_for(parent.id),
+        "workspace_info",
+        serde_json::json!({}),
+    )
+    .await;
+    if let Some(home) = previous_home {
+        std::env::set_var("CODEX_HOME", home);
+    } else {
+        std::env::remove_var("CODEX_HOME");
+    }
+    assert_eq!(info["isError"], false, "{info}");
+    let info = &info["structuredContent"];
+    let providers = info["providers"].as_array().unwrap();
+    assert_eq!(providers.len(), 6);
+    assert!(info.get("routing").is_some());
+    for provider in providers {
+        assert!(provider["installed"].is_boolean());
+        assert!(provider.get("version").is_some());
+        assert!(provider["models"].is_null() || provider["models"].is_array());
+        assert!(provider["model_note"].is_string());
+        let kind: proto::AgentKind = serde_json::from_value(provider["provider"].clone()).unwrap();
+        let caps = houston_core::orchestrate::provider_capabilities(kind);
+        assert_eq!(provider["capabilities"]["needs_input"], caps.block);
+        assert_eq!(provider["capabilities"]["last_message"], caps.last_message);
+        assert_eq!(
+            provider["capabilities"]["turn_end_continuation"],
+            caps.door2
+        );
+    }
+    let codex = providers.iter().find(|p| p["provider"] == "codex").unwrap();
+    assert_eq!(codex["models"], serde_json::json!(["fixture-codex-model"]));
+    for provider in providers.iter().filter(|p| p["provider"] != "codex") {
+        assert!(provider["models"].is_null());
+        assert!(provider["model_note"].as_str().unwrap().contains("unknown"));
+    }
+    assert!(serde_json::to_vec(providers).unwrap().len() < 16_384);
+}
