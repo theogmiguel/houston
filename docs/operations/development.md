@@ -355,13 +355,15 @@ committed inventory and runs in its own `licence-inventory` job.
 | `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | The twenty-five hermetic, sub-second text-search scripts above |
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
 | `core-checks` | every PR, and every push to `main` except a docs-only change | `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --lib`, all against `core/Cargo.toml` |
-| `windows-checks` | every PR, and every push to `main` except a docs-only change | renderer checks and build gates, core and native unit suites and Clippy, plus Git, management, shutdown, environment and non-ASCII/long-path ConPTY regressions on Windows 2022 |
+| `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
+| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus Git, management, shutdown, environment and non-ASCII/long-path ConPTY regressions on Windows 2022 |
 | `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
 
 The remaining integration suites (`core/houston-core/tests/`, which need a real
 PTY, a keyring or an unlocked session), Linux `src-tauri` gates and load-sensitive
-gates stay local. The Windows job covers the portable ConPTY regressions and
-native unit gates; it does not establish interactive browser or installer parity.
+gates stay local. Windows renderer and Rust checks run in parallel; the native
+job builds its own fresh frontend assets and covers portable ConPTY regressions.
+These gates do not establish interactive browser or installer parity.
 
 Two more freshness gates exist outside this set — they need build output CI's
 hermetic job doesn't have, and run only at build/install time:

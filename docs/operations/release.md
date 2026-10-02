@@ -18,11 +18,11 @@ through them:
 Only **`publish-draft.yml`** makes a release visible. A merge to `main` ships
 nothing, and pushing a `v*` tag by hand now does nothing at all.
 
-**`ci.yml`** runs five jobs — `safety-checks` (the hermetic text-search
+**`ci.yml`** runs six jobs — `safety-checks` (the hermetic text-search
 scripts), `renderer-checks` (`ui`'s `bun run typecheck` and `bun run test`),
 `core-checks` (`cargo fmt`, `cargo clippy`, `cargo test --lib`, against
-`core/Cargo.toml`), `windows-checks` (renderer and native gates plus portable
-core integrations on Windows) and `licence-inventory` (the committed third-party
+`core/Cargo.toml`), `windows-renderer-checks` (renderer gates on Windows),
+`windows-checks` (native gates plus portable core integrations on Windows) and `licence-inventory` (the committed third-party
 inventory still matches both dependency graphs) — on every pull request, and on
 every push to `main` except a docs-only change. Remaining integration suites,
 Linux `src-tauri` gates and load-sensitive gates still run locally by whoever

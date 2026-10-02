@@ -209,12 +209,9 @@ jobs:
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  windows-checks:
+  windows-renderer-checks:
     runs-on: windows-2022
-    timeout-minutes: 45
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
+    timeout-minutes: 15
     defaults:
       run:
         shell: pwsh
@@ -222,15 +219,6 @@ jobs:
       - name: Record job start time
         run: '"JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            core
-            src-tauri
-          key: windows-checks
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
@@ -255,6 +243,43 @@ jobs:
           bun run check:css
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           bun run check:bundle
+          exit $LASTEXITCODE
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
+          "| Job | Elapsed (s) |`n|---|---|`n| windows-renderer-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
+
+  windows-checks:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      HOUSTON_CHANNEL: dev
+      CARGO_BUILD_JOBS: 3
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Record job start time
+        run: '"JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+            src-tauri
+          key: windows-checks
+      - uses: oven-sh/setup-bun@v2
+      - name: Build renderer assets for native compilation
+        working-directory: ui
+        run: |
+          bun install --frozen-lockfile
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run build
           exit $LASTEXITCODE
       - name: Check core formatting and Clippy
         working-directory: core
