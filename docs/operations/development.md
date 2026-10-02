@@ -16,8 +16,8 @@ distribution's package names will differ):
 2. [Bun](https://bun.sh), used for renderer dependencies and scripts.
 3. A current Node.js release. Several repository gates execute `.mjs` files
    with `node` directly.
-4. Google Chrome installed at `/usr/bin/google-chrome`. The CSS scoping gate
-   launches that exact binary through Playwright.
+4. Google Chrome installed for the host operating system. The CSS scoping gate
+   uses Playwright's `chrome` channel to find the installed browser.
 5. The pinned Tauri CLI:
    `cargo install tauri-cli --version 2.11.4 --locked`.
 6. Linux system packages:
@@ -56,7 +56,12 @@ target suffix required by Tauri, builds the debug app (`cargo build` in
 `src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel
 <target>`. The app connects to a running daemon for the target channel or
 spawns one detached, through `houston-supervisor` on Linux — it no longer
-hosts the daemon in-process. `HOUSTON_DAEMON_BIN_DIR` is exported to
+hosts the daemon in-process. On Linux with user systemd, the supervisor starts in its
+own transient `houston-daemon-<channel>-<id>.service`. List those units with
+`systemctl --user list-units 'houston-daemon-*'` and inspect a selected unit with
+`systemctl --user status <unit>` or `journalctl --user -u <unit>`. The usual daemon log
+files remain available. If user systemd is unavailable, launch prints a named notice and
+uses `setsid`, which does not isolate the cgroup. `HOUSTON_DAEMON_BIN_DIR` is exported to
 `core/target/debug` first, so the app's connect-or-spawn finds the debug
 sidecars there instead of assuming a packaged layout beside its own binary. With
 `--fresh`, all builds finish before the daemon is replaced, so the replacement
@@ -355,12 +360,15 @@ committed inventory and runs in its own `licence-inventory` job.
 | `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | The twenty-five hermetic, sub-second text-search scripts above |
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
 | `core-checks` | every PR, and every push to `main` except a docs-only change | `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --lib`, all against `core/Cargo.toml` |
+| `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
+| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus Git, management, shutdown, environment and non-ASCII/long-path ConPTY regressions on Windows 2022 |
 | `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
 
-The integration suites (`core/houston-core/tests/`, which need a real PTY, a
-keyring or an unlocked session), the `src-tauri` gates, and the
-load-sensitive gates below all stay local — none of them fit a hermetic
-runner, and the Cadence section above is what actually runs them.
+The remaining integration suites (`core/houston-core/tests/`, which need a real
+PTY, a keyring or an unlocked session), Linux `src-tauri` gates and load-sensitive
+gates stay local. Windows renderer and Rust checks run in parallel; the native
+job builds its own fresh frontend assets and covers portable ConPTY regressions.
+These gates do not establish interactive browser or installer parity.
 
 Two more freshness gates exist outside this set — they need build output CI's
 hermetic job doesn't have, and run only at build/install time:
@@ -586,16 +594,24 @@ execute a path inside the repo. Installs:
 
 ```
 ./scripts/build-app.ps1
-cargo tauri build --bundles nsis      # documented extra step
+cd src-tauri
+cargo tauri bundle --bundles nsis --ci --no-sign
 ```
 
 `build-app.ps1` runs the full renderer gate (`typecheck`, `test`, `build`,
 `check:css`), the same `check-renderer-fresh.sh` via Git Bash, stages
-`tr-helper.exe` and `houston-core.exe` before the app build, then runs
-`cargo build --release` and copies `houston-tauri.exe` → `houston.exe`. It
-stops short of bundling by design — the NSIS step above is the documented
-extra. Output lands at
+`tr-helper.exe` and `houston-core.exe` from one locked Cargo build before
+building the application with `cargo tauri build --no-bundle --ci -- --locked`.
+The separate `bundle` command packages that production build without compiling
+it again. The example omits updater signing for a local build; release workflows
+provide the signing keys and sign the final installer bytes. Output lands at
 `src-tauri/target/release/bundle/nsis/*.exe`.
+
+The Windows bundle workflow downloads the pinned upstream Tauri CLI executable,
+checks its archive against the release asset's SHA-256 digest and verifies the CLI
+version. A separate cache keeps it across dependency changes; cold runners do not
+compile the CLI from source. Job summaries report elapsed time, and build and bundle
+steps are separate so their costs can be compared.
 
 **The Windows installer is unsigned.** No code-signing certificate exists
 for this project, so SmartScreen will warn on first run — this is expected,

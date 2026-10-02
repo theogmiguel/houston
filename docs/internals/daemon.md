@@ -165,8 +165,11 @@ refuses by name at startup, and the app spawns `houston-core` directly there ins
 
 What it never does: it never calls `kill(2)` itself, never substitutes a PTY EOF for an exit
 code, and never spawns a replacement generation on its own initiative — only when asked. On
-the daemon side, `main.rs` takes fd 3 when `HOUSTON_SUPERVISOR_FD` is set and records the
-supervisor's pid in `daemon.json`; a small reader thread relays each `{pid, status}` to
+the daemon side, startup consumes and removes `HOUSTON_SUPERVISOR_FD` before runtime
+threads start. It adopts only a decimal descriptor above 2 naming an open socket and sets
+`FD_CLOEXEC`; invalid values leave the descriptor untouched and run unsupervised. PTY
+children receive neither the variable nor the control socket. A validated connection records
+the supervisor's pid in `daemon.json`; a small reader thread relays each `{pid, status}` to
 `Daemon::supervisor_child_exited`, which attributes it to the live session whose child pid
 matches — buffering whichever of PTY EOF or the supervisor's report arrives first so the
 session finishes only once both are known, the same rule "The read loop" states below for the

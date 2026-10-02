@@ -278,3 +278,77 @@ mod tests {
         assert!(read_to_supervisor(&mut cur).is_err());
     }
 }
+
+#[cfg(unix)]
+pub fn validate_supervisor_fd(raw: &str) -> Result<i32, String> {
+    let refusal = || {
+        format!(
+        "refusing {SUPERVISOR_FD_ENV}={raw:?}; expected decimal descriptor above 2 naming an open socket"
+    )
+    };
+    if raw.is_empty() || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(refusal());
+    }
+    let fd = raw.parse::<i32>().map_err(|_| refusal())?;
+    if fd <= 2 {
+        return Err(refusal());
+    }
+    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: fstat initializes the supplied storage on success and never adopts the fd.
+    if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } == -1 {
+        return Err(format!(
+            "{}: {}",
+            refusal(),
+            std::io::Error::last_os_error()
+        ));
+    }
+    // SAFETY: fstat succeeded above, so the storage is initialized.
+    let stat = unsafe { stat.assume_init() };
+    if stat.st_mode & libc::S_IFMT != libc::S_IFSOCK {
+        return Err(refusal());
+    }
+    // SAFETY: both fcntl operations only access flags on the validated live descriptor.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags == -1 || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } == -1 {
+        return Err(format!(
+            "{}: {}",
+            refusal(),
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(fd)
+}
+
+#[cfg(all(test, unix))]
+mod descriptor_tests {
+    use super::*;
+    use std::os::fd::AsRawFd;
+
+    #[test]
+    fn refuses_invalid_and_stdio_descriptors() {
+        for value in ["invalid", "-1", "0", "1", "2", "+3", " 3"] {
+            assert!(validate_supervisor_fd(value).is_err(), "accepted {value:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_regular_file_without_closing_it() {
+        let file = tempfile::tempfile().unwrap();
+        assert!(validate_supervisor_fd(&file.as_raw_fd().to_string()).is_err());
+        assert!(file.metadata().is_ok());
+    }
+
+    #[test]
+    fn accepts_socket_and_sets_close_on_exec() {
+        let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        let fd = socket.as_raw_fd();
+        // SAFETY: the test owns this live socket descriptor.
+        unsafe {
+            assert_ne!(libc::fcntl(fd, libc::F_SETFD, 0), -1);
+        }
+        assert_eq!(validate_supervisor_fd(&fd.to_string()).unwrap(), fd);
+        // SAFETY: the test retains ownership of the validated descriptor.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
+    }
+}

@@ -1,6 +1,6 @@
-//! Inheritance of agent-session markers, and why the daemon must drop them: a
-//! daemon started inside an agent session would hand every process it spawns that
-//! session's identity. Identity only — `CLAUDE_CONFIG_DIR`, `ANTHROPIC_*` survive.
+//! Drop inherited session identities and private supervisor startup state before
+//! the daemon spawns children. Agent settings such as `CLAUDE_CONFIG_DIR` and
+//! `ANTHROPIC_*` remain available.
 const SESSION_MARKERS: &[&str] = &[
     "CLAUDE_CODE_CHILD_SESSION",
     "CLAUDECODE",
@@ -9,6 +9,7 @@ const SESSION_MARKERS: &[&str] = &[
     "CLAUDE_PID",
     "CLAUDE_CODE_ENTRYPOINT",
     "CLAUDE_CODE_EXECPATH",
+    crate::supervisor::SUPERVISOR_FD_ENV,
 ];
 
 pub fn markers_in(keys: impl Iterator<Item = String>) -> Vec<String> {
@@ -20,9 +21,8 @@ pub fn markers_in(keys: impl Iterator<Item = String>) -> Vec<String> {
     hits
 }
 
-/// Remove inherited agent-session markers so every later spawn gets a clean
-/// identity. Call once during startup, **before** any spawn (rc files can branch
-/// on `$CLAUDECODE`) and before the server is up: env mutation is single-threaded only.
+/// Remove inherited session markers and the private supervisor variable before
+/// any runtime thread or child starts; rc files can branch on `$CLAUDECODE`.
 pub fn scrub() {
     let hits = markers_in(std::env::vars().map(|(k, _)| k));
     if hits.is_empty() {
@@ -32,7 +32,7 @@ pub fn scrub() {
         std::env::remove_var(k);
     }
     tracing::info!(
-        "dropped inherited agent-session marker(s) {} — this daemon was started from inside an \
+        "dropped inherited private marker(s) {} — this daemon was started from inside an \
          agent session; spawned panes get their own identity",
         hits.join(", ")
     );

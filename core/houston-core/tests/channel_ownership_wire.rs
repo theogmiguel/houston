@@ -190,3 +190,52 @@ fn boots_normally_when_houston_channel_is_set_explicitly() {
         .expect("signalling the spawned daemon");
     let _ = child.wait();
 }
+
+#[test]
+fn channel_flag_without_environment_owns_dev_only() {
+    let home = tempfile::tempdir().unwrap();
+    let mut command = common::hermetic_command(bin(), home.path());
+    let mut child = command
+        .env_remove("HOUSTON_CHANNEL")
+        .args(["--channel", "dev"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _guard = ChildGuard(child.id());
+    let config = home.path().join(".houston-dev/daemon.json");
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !config.exists() {
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("daemon exited before owning dev: {status}");
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "dev discovery missing"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!home.path().join(".houston").exists());
+    houston_core::pid::signal_process(child.id(), houston_core::pid::Signal::Term).unwrap();
+    child.wait().unwrap();
+}
+
+#[test]
+fn conflicting_flag_and_environment_refuse_before_creating_state() {
+    let home = tempfile::tempdir().unwrap();
+    let mut command = common::hermetic_command(bin(), home.path());
+    command
+        .env("HOUSTON_CHANNEL", "release")
+        .args(["--channel", "dev"]);
+    let output = houston_core::spawn::output_within(command, Duration::from_secs(20))
+        .unwrap()
+        .expect("conflicting channels must refuse before daemon startup");
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("release") && error.contains("dev") && error.contains("agree"),
+        "{error}"
+    );
+    assert!(!home.path().join(".houston").exists());
+    assert!(!home.path().join(".houston-dev").exists());
+}

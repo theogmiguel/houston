@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 const uiDir = dirname(dirname(fileURLToPath(import.meta.url)))
 const BASELINE_PATH = join(uiDir, 'complexity-baseline.json')
-const OXLINT = join(uiDir, 'node_modules/.bin/oxlint')
+const OXLINT = join(uiDir, 'node_modules/oxlint/bin/oxlint')
 const SCAN_ROOT = process.env.SCAN_ROOT
 const SRC = SCAN_ROOT === undefined ? join(uiDir, 'src') : resolve(SCAN_ROOT)
 const BASE = SCAN_ROOT === undefined ? uiDir : dirname(uiDir)
@@ -111,8 +111,8 @@ function runOxlint(files) {
   const rcPath = join(mkdtempSync(join(tmpdir(), 'houston-cx-')), 'oxlintrc.json')
   writeFileSync(rcPath, JSON.stringify({ rules: { complexity: ['error', { max: 1 }] } }))
   const proc = spawnSync(
-    OXLINT,
-    ['-c', rcPath, '--disable-nested-config', '-f', 'json', ...files],
+    process.execPath,
+    [OXLINT, '-c', rcPath, '--disable-nested-config', '-f', 'json', ...files],
     { cwd: BASE, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
   if (proc.error !== undefined) throw proc.error

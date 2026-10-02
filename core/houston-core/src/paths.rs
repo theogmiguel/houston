@@ -61,12 +61,9 @@ impl ChannelOwnershipRefusal {
                 release_dir,
                 dev_dir,
             } => format!(
-                "houston-core: refusing to own a daemon: {CHANNEL_ENV} is not set. Without it \
-                 this process would silently own {} (the release channel -- the installed \
-                 app's live state) or, with it set, {} (the dev channel). Set \
-                 {CHANNEL_ENV}=release or {CHANNEL_ENV}=dev explicitly before launching -- \
-                 scripts/start.sh and scripts/dev.sh both do this already; a stray direct \
-                 invocation of this binary is what this refusal is for.",
+                "houston-core: refusing to own a daemon: neither --channel nor {CHANNEL_ENV} is set; \
+                 expected an explicit --channel <name> or {CHANNEL_ENV}=<name>. Unspecified ownership \
+                 could target {} (release) or {} (dev).",
                 release_dir.display(),
                 dev_dir.display()
             ),
@@ -94,6 +91,46 @@ pub fn resolve_owning_channel(
     validate_channel(raw).map_err(|_| ChannelOwnershipRefusal::Invalid {
         raw: raw.to_string(),
     })
+}
+
+pub fn resolve_daemon_channel(
+    args: &[String],
+    env_value: Option<&str>,
+    home: &Path,
+) -> Result<Option<String>, String> {
+    let mut flag = None;
+    let mut arguments = args.iter();
+    while let Some(argument) = arguments.next() {
+        if argument != "--channel" {
+            continue;
+        }
+        let value = arguments.next().ok_or_else(|| {
+            "houston-core: --channel is missing its value; expected --channel <name>".to_string()
+        })?;
+        if flag.replace(value.as_str()).is_some() {
+            return Err(format!(
+                "houston-core: repeated --channel={value:?}; expected one channel flag"
+            ));
+        }
+    }
+    let chosen = resolve_owning_channel(flag.or(env_value), home).map_err(|refusal| {
+        match (&refusal, flag) {
+            (ChannelOwnershipRefusal::Invalid { raw }, Some(_)) => format!(
+                "houston-core: refusing --channel={raw:?}; {}",
+                channel_shape_rule()
+            ),
+            _ => refusal.message(),
+        }
+    })?;
+    if let (Some(flag), Some(environment)) = (flag, env_value) {
+        let inherited = validate_channel(environment).map_err(|error| error.to_string())?;
+        if inherited != chosen {
+            return Err(format!(
+                "houston-core: refusing --channel={flag:?} with {CHANNEL_ENV}={environment:?}; expected both channel values to agree"
+            ));
+        }
+    }
+    Ok(chosen)
 }
 
 pub fn config_dir() -> Result<PathBuf> {
@@ -347,5 +384,55 @@ mod tests {
             None,
             "a bare trailing dash is not a channel name"
         );
+    }
+}
+
+#[cfg(test)]
+mod daemon_channel_tests {
+    use super::*;
+
+    #[test]
+    fn flag_and_environment_combinations() {
+        let home = tempfile::tempdir().unwrap();
+        for (flag, env, expected) in [
+            (None, None, Err(())),
+            (Some("dev"), None, Ok(Some("dev"))),
+            (None, Some("dev"), Ok(Some("dev"))),
+            (Some("dev"), Some("dev"), Ok(Some("dev"))),
+            (Some("dev"), Some("release"), Err(())),
+            (Some("release"), Some("dev"), Err(())),
+            (Some("release"), None, Ok(None)),
+            (None, Some("release"), Ok(None)),
+            (Some("release"), Some("release"), Ok(None)),
+            (Some("release"), Some(""), Ok(None)),
+            (Some("../invalid"), None, Err(())),
+            (None, Some("../invalid"), Err(())),
+            (Some("dev"), Some("../invalid"), Err(())),
+        ] {
+            let args = flag
+                .map(|value| vec!["--channel".into(), value.into()])
+                .unwrap_or_default();
+            let actual = resolve_daemon_channel(&args, env, home.path());
+            assert_eq!(
+                actual
+                    .as_ref()
+                    .map(|value| value.as_deref())
+                    .map_err(|_| ()),
+                expected,
+                "flag={flag:?}, environment={env:?}: {actual:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_and_repeated_channel_flags_refuse() {
+        let home = tempfile::tempdir().unwrap();
+        for values in [
+            vec!["--channel"],
+            vec!["--channel", "dev", "--channel", "dev"],
+        ] {
+            let args = values.into_iter().map(String::from).collect::<Vec<_>>();
+            assert!(resolve_daemon_channel(&args, Some("dev"), home.path()).is_err());
+        }
     }
 }

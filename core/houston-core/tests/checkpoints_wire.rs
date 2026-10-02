@@ -35,6 +35,7 @@ fn git_out(dir: &Path, args: &[&str]) -> String {
 
 fn init_repo(dir: &Path) {
     run_git(dir, &["init", "-b", "main"]);
+    run_git(dir, &["config", "core.autocrlf", "false"]);
     run_git(dir, &["config", "user.email", "t@t.local"]);
     run_git(dir, &["config", "user.name", "t"]);
     std::fs::write(dir.join("README.md"), "hello\n").unwrap();
@@ -123,6 +124,7 @@ fn a_file_recreated_during_a_operation_is_removed_by_revert() {
 fn a_checkpoint_reverts_in_a_repository_without_a_commit() {
     let tmp = tempfile::tempdir().unwrap();
     run_git(tmp.path(), &["init", "-b", "main"]);
+    run_git(tmp.path(), &["config", "core.autocrlf", "false"]);
     run_git(tmp.path(), &["config", "user.email", "t@t.local"]);
     run_git(tmp.path(), &["config", "user.name", "t"]);
     std::fs::write(tmp.path().join("first.txt"), "here before the operation\n").unwrap();

@@ -7,6 +7,8 @@ mod bench;
 mod browser;
 mod clipboard;
 mod daemon_host;
+#[cfg(target_os = "linux")]
+mod daemon_isolation;
 mod dialog;
 mod fs;
 mod fs_allowlist;
@@ -116,11 +118,12 @@ fn boot_refusal_may_prompt() -> bool {
     let bench = bench_requested();
     #[cfg(not(feature = "bench"))]
     let bench = false;
-    boot_refusal_may_prompt_when(has_display(), bench)
+    let ci = std::env::var("CI").is_ok_and(|v| v == "true" || v == "1");
+    boot_refusal_may_prompt_when(has_display(), bench, ci)
 }
 
-fn boot_refusal_may_prompt_when(has_display: bool, bench_run: bool) -> bool {
-    has_display && !bench_run
+fn boot_refusal_may_prompt_when(has_display: bool, bench_run: bool, ci: bool) -> bool {
+    has_display && !bench_run && !ci
 }
 
 /// An exit request with a code terminates the process — except Tauri's restart
@@ -1087,20 +1090,26 @@ mod boot_refusal_prompt_tests {
     #[test]
     fn a_bench_run_never_prompts_even_with_a_display() {
         assert!(
-            !boot_refusal_may_prompt_when(true, true),
+            !boot_refusal_may_prompt_when(true, true, false),
             "a bench run is unattended: a modal there waits forever on a button nobody presses"
         );
     }
 
     #[test]
     fn a_headless_run_never_prompts() {
-        assert!(!boot_refusal_may_prompt_when(false, false));
-        assert!(!boot_refusal_may_prompt_when(false, true));
+        assert!(!boot_refusal_may_prompt_when(false, false, false));
+        assert!(!boot_refusal_may_prompt_when(false, true, false));
+    }
+
+    #[test]
+    fn a_ci_run_never_prompts_even_with_a_display() {
+        assert!(!boot_refusal_may_prompt_when(true, false, true));
+        assert!(!boot_refusal_may_prompt_when(true, true, true));
     }
 
     #[test]
     fn an_ordinary_run_with_a_display_still_prompts() {
-        assert!(boot_refusal_may_prompt_when(true, false));
+        assert!(boot_refusal_may_prompt_when(true, false, false));
     }
 }
 

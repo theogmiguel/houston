@@ -722,9 +722,8 @@ impl OrchestrationTools {
                         "auto_approve": {
                             "type": "boolean",
                             "description":
-                                "Leave unset: the CLI's own AUTO mode. true also skips \
-                                 AUTO's own prompts (the dangerous flag); false makes the \
-                                 child stop and ask, reported as NeedsInput.",
+                                "Omitted: CLI AUTO mode. true skips AUTO prompts (dangerous); \
+                                 false asks, reported as NeedsInput.",
                         },
                         "profile": {
                             "type": "string",
@@ -735,10 +734,8 @@ impl OrchestrationTools {
                             "type": "string",
                             "maxLength": orchestrate::ROLE_MAX_CHARS,
                             "description":
-                                "Your own short name for this child (\"reviewer\"), carried \
-                                 in `pane_list` and in every handback. Lowercase, digits and \
-                                 hyphens; unique among your live children. With handoff, \
-                                 only the new pane's title.",
+                                "Child label in pane_list and handbacks: lowercase, digits, \
+                                 hyphens; unique among live children. Handoff: pane title only.",
                         },
                         "output_format": {
                             "type": "string",
@@ -751,9 +748,8 @@ impl OrchestrationTools {
                             "type": "string",
                             "maxLength": orchestrate::BRIEF_FIELD_MAX_CHARS,
                             "description":
-                                "What this child must not do — \"read-only outside ui/\". \
-                                 Composed into the prompt as a limit to report at, never \
-                                 cross.",
+                                "Limits, e.g. \"read-only outside ui/\". Added to the prompt; \
+                                 the child must report at a limit, never cross it.",
                         },
                     },
                     "required": ["kind", "prompt"],

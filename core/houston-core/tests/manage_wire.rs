@@ -112,7 +112,7 @@ async fn a_manage_version_mismatch_is_refused_by_name() {
 }
 
 #[tokio::test]
-async fn daemon_handoff_is_refused_without_a_registered_listener() {
+async fn daemon_handoff_is_refused_without_runtime_support() {
     let (addr, _dir) = common::start_daemon().await;
     let resp = manage_request(
         addr,
@@ -124,11 +124,16 @@ async fn daemon_handoff_is_refused_without_a_registered_listener() {
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
     let body: proto::ManageDaemonHandoffResult = resp.json().await.unwrap();
     assert!(!body.accepted);
+    let expected_reason = if cfg!(target_os = "linux") {
+        "listener"
+    } else {
+        "Linux-only"
+    };
     assert!(
         body.reason
             .as_deref()
             .unwrap_or_default()
-            .contains("listener"),
+            .contains(expected_reason),
         "refusal must name why, got {:?}",
         body.reason
     );
@@ -413,6 +418,7 @@ async fn manage_request_with_candidate(
 }
 
 #[tokio::test]
+#[cfg(target_os = "linux")]
 async fn daemon_handoff_refuses_an_invalid_candidate_by_name_before_anything_moves() {
     let (addr, _dir) = common::start_daemon().await;
     let resp = manage_request_with_candidate(

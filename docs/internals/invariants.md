@@ -92,16 +92,16 @@ crashing) must never end a session underneath it. The app's only lifecycle actio
 on quit is closing its `/ws` connection; the daemon decides its own exit, on an orderly stop
 or its reap timer, never on the app's behalf.
 
-### The binary resolves its channel from the flag, never the environment
+### Explicit channel ownership cannot silently change targets
 
-**Enforced by** `scripts/check-dev-channel.sh`, which runs `dev.sh --print-target` in a
-throwaway `$HOME` and asserts an inherited `HOUSTON_CHANNEL` never moves the target.
+**Enforced by** `scripts/check-dev-channel.sh` for the development launcher and
+`channel_ownership_wire.rs` for the daemon. Both use throwaway homes.
 
-**Why.** Every pane inherits `HOUSTON_CHANNEL=release` from the installed app. If the
-binary read it as a request, running `dev.sh` from an installed-app pane would drive the
-release channel. The env var is the *pane* input (used by the `--fresh` self-protection
-guard); `--channel` is the *target* input. `paths::resolve_owning_channel` refuses when
-neither is explicit.
+**Why.** Every installed-app pane inherits `HOUSTON_CHANNEL=release`. The development
+launcher selects its target from `--channel`, defaulting to dev regardless of that inherited
+value. The daemon accepts the flag or an explicit environment value, refuses disagreement,
+and refuses when neither is present. The inherited pane channel cannot silently override
+an explicit daemon target.
 
 ### One host spawns the background loops
 

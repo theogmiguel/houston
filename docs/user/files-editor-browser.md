@@ -78,6 +78,11 @@ secure. This label describes the connection, not whether the page content is tru
 Select element hands the page selection and your instruction to the focused live agent.
 Without an agent target, selection is disabled and its tooltip explains how to enable it.
 
+On Windows, browser panes use WebView2. Manual navigation, back, forward and
+reload are available. The element picker and agent DOM actions currently return
+an unsupported-platform error because isolated script worlds are unavailable in
+the Windows implementation. Reloading without cache is also unsupported.
+
 ### Why this needs a consent gate
 
 An agent acting inside a browser pane can be acting inside a session that is logged in

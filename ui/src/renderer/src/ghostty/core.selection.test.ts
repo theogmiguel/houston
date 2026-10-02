@@ -51,6 +51,21 @@ function selectedCellsByRow(core: GhosttyTerminalCore): Map<number, number[]> {
   return selected;
 }
 
+describe("terminal colours", () => {
+  it("preserves ANSI, indexed and RGB foregrounds through repaint and resize", async () => {
+    const core = await createCore();
+    core.write("\x1b]133;C\x07\x1b[31mR\x1b[38;5;46mG\x1b[38;2;17;91;203mB\x1b[0mW\r\n");
+    const before = core.snapshot().rowData[0]!.cells.slice(0, 4).map((cell) => cell.foreground);
+    expect(before[0]!.r).toBeGreaterThan(before[0]!.g);
+    expect(before[1]).toEqual({ r: 0, g: 255, b: 0 });
+    expect(before[2]).toEqual({ r: 17, g: 91, b: 203 });
+    expect(before[3]).toEqual(THEME.foreground);
+    core.resize(100, 30, 8, 17);
+    expect(ghosttyRowText(core.snapshot().rowData[0]!)).toBe("RGBW");
+    expect(core.snapshot().rowData[0]!.cells.slice(0, 4).map((cell) => cell.foreground)).toEqual(before);
+  });
+});
+
 describe("drag-selection visibility (surface's own conversion path)", () => {
   it("marks the dragged viewport cells selected in a fresh pane", async () => {
     const core = await createCore();

@@ -45,11 +45,11 @@ permissions:
 jobs:
   windows-bundle:
     # PINNED, not `windows-latest`: image churn breaking native toolchain
-    # detection is a documented failure mode, and this is the only job in the
-    # tree that builds on Windows, so nothing else would catch the drift.
+    # detection is a documented failure mode. Keep this aligned with windows-checks.
     runs-on: windows-2022
     env:
       HOUSTON_CHANNEL: dev
+      CARGO_BUILD_JOBS: 3
     steps:
       - name: Record start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
@@ -84,18 +84,44 @@ jobs:
           cache-on-failure: true
       - uses: oven-sh/setup-bun@v2
 
-      # `cargo install` of the CLI is minutes of compile that never changes at
-      # a pinned version, so it gets its own cache keyed on that version rather
-      # than riding the workspace cache rust-cache manages and prunes.
+      # The upstream executable avoids compiling the CLI on a cold runner;
+      # its separate cache survives workspace dependency changes.
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
         uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-tauri.exe
-          key: cargo-tauri-${{ inputs.tauri_cli_version }}-windows-2022
+          key: cargo-tauri-prebuilt-${{ inputs.tauri_cli_version }}-windows-2022
       - name: Install the pinned Tauri CLI
         if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
-        run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_CLI_VERSION: ${{ inputs.tauri_cli_version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = gh api "repos/tauri-apps/tauri/releases/tags/tauri-cli-v$env:TAURI_CLI_VERSION" | ConvertFrom-Json
+          if ($LASTEXITCODE) { throw 'Unable to read the pinned Tauri CLI release' }
+          $assets = @($release.assets | Where-Object name -EQ 'cargo-tauri-x86_64-pc-windows-msvc.zip')
+          if ($assets.Count -ne 1 -or $assets[0].digest -notmatch '^sha256:[a-f0-9]{64}$') {
+            throw "Expected one Windows Tauri CLI asset with a SHA-256 digest for $env:TAURI_CLI_VERSION"
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'cargo-tauri.zip'
+          Invoke-WebRequest $assets[0].browser_download_url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ("sha256:$actual" -ne $assets[0].digest) { throw 'Tauri CLI archive checksum mismatch' }
+          $expanded = Join-Path $env:RUNNER_TEMP 'cargo-tauri'
+          Expand-Archive -LiteralPath $archive -DestinationPath $expanded -Force
+          Copy-Item -LiteralPath (Join-Path $expanded 'cargo-tauri.exe') -Destination "$HOME/.cargo/bin/cargo-tauri.exe" -Force
+      - name: Verify the pinned Tauri CLI
+        shell: pwsh
+        env:
+          TAURI_CLI_VERSION: ${{ inputs.tauri_cli_version }}
+        run: |
+          $actual = cargo tauri --version
+          if ($LASTEXITCODE -or $actual -ne "tauri-cli $env:TAURI_CLI_VERSION") {
+            throw "Expected tauri-cli $env:TAURI_CLI_VERSION, got '$actual'"
+          }
 
       # Secrets cannot be used in an `if:`, so they are read into env here and
       # tested before the expensive build. A partial Azure configuration is a
@@ -185,7 +211,7 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: ui
 
-      - name: Build the renderer, run the protocol gate, build the binary
+      - name: Check renderer and build application without bundling
         shell: pwsh
         run: ./scripts/build-app.ps1
 
@@ -213,12 +239,12 @@ jobs:
             Remove-Item -Recurse -Force $bundleDir
           }
           if ('${{ steps.signing.outputs.updater }}' -eq 'true') {
-            cargo tauri build --bundles nsis
+            cargo tauri bundle --bundles nsis --ci
           } else {
-            cargo tauri build --bundles nsis --no-sign
+            cargo tauri bundle --bundles nsis --ci --no-sign
           }
           if ($LASTEXITCODE -ne 0) {
-            throw "cargo tauri build --bundles nsis failed with exit code $LASTEXITCODE"
+            throw "cargo tauri bundle --bundles nsis failed with exit code $LASTEXITCODE"
           }
 
       - name: Sign the NSIS installer with Azure Trusted Signing
@@ -247,7 +273,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $installers = @(Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis -Filter *.exe)
           if ($installers.Count -eq 0) {
-            Write-Error "no NSIS installer under src-tauri/target/release/bundle/nsis -- cargo tauri build did not bundle one"
+            Write-Error "no NSIS installer under src-tauri/target/release/bundle/nsis -- cargo tauri bundle did not produce one"
             exit 1
           }
           foreach ($installer in $installers) {
