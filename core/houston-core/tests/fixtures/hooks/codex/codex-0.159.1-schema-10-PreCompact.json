@@ -1,0 +1,7 @@
+{
+  "_note": "shaped from the hook event list in the codex 0.159.1 binary (PreCompact sits beside SessionStart and Stop) and Claude's PreCompact fields — not captured live.",
+  "hook_event_name": "PreCompact",
+  "session_id": "019a-codex-schema-01",
+  "cwd": "/tmp/example",
+  "trigger": "auto"
+}

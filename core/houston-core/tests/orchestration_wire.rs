@@ -1797,6 +1797,162 @@ async fn no_paste_over_a_prompt_the_operator_is_still_typing() {
     assert!(acc.contains("TYPED-GUARD"), "{acc:?}");
 }
 
+async fn compact(state_dir: &std::path::Path, session: u32, agent: Option<&str>, times: u32) {
+    for _ in 0..times {
+        apply_drop(
+            state_dir,
+            houston_core::hook_drop::HookDrop {
+                event: if agent == Some("cursor") {
+                    "preCompact"
+                } else {
+                    "PreCompact"
+                }
+                .into(),
+                session,
+                agent: agent.map(str::to_string),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+}
+
+fn handoff_offers(daemon: &Daemon, pane: u32) -> Vec<houston_core::db::InboxRow> {
+    daemon
+        .inbox_rows_for_test(pane)
+        .into_iter()
+        .filter(|row| row.reason.as_deref() == Some("handoff_offer"))
+        .collect()
+}
+
+#[tokio::test]
+async fn an_orchestrator_is_offered_one_handoff_after_repeated_compactions() {
+    let _guard = serial().await;
+    let r = rig("compaction-offer").await;
+    let pane = r.bypass_pane();
+    let token = r.token_for(pane.id);
+    r.daemon.orchestration_set(true).unwrap();
+    let (status, body) = r
+        .post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "h0"}))
+        .await;
+    assert_eq!(status, 200, "{body}");
+
+    let mut rx = r.daemon.observe();
+    compact(r._state.path(), pane.id, None, 2).await;
+    assert!(
+        handoff_offers(&r.daemon, pane.id).is_empty(),
+        "two compactions are below the threshold"
+    );
+    compact(r._state.path(), pane.id, None, 3).await;
+
+    let offers = handoff_offers(&r.daemon, pane.id);
+    assert_eq!(
+        offers.len(),
+        1,
+        "one offer per threshold crossing: {offers:?}"
+    );
+    let offer = &offers[0];
+    assert_eq!(
+        offer.kind, "operator_note",
+        "an offer is never a needs-input"
+    );
+    assert!(!offer.urgent, "{offer:?}");
+    assert!(
+        offer.body.contains("compacted its context 3 times"),
+        "{}",
+        offer.body
+    );
+    for needle in [
+        "handoff: true",
+        "state_doc",
+        "branch, PR and commit",
+        "open delegations",
+        "next step",
+    ] {
+        assert!(
+            offer.body.contains(needle),
+            "{needle:?} missing from {}",
+            offer.body
+        );
+    }
+    let mut seen = Vec::new();
+    while seen.len() < 5 {
+        if let proto::ServerMsg::CompactionsChanged {
+            session,
+            compactions,
+        } = common::next_broadcast_control(&mut rx).await
+        {
+            if session == pane.id {
+                seen.push(compactions);
+            }
+        }
+    }
+    assert_eq!(seen, vec![1, 2, 3, 4, 5]);
+    let info = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|s| s.id == pane.id)
+        .unwrap();
+    assert_eq!(
+        info.compactions,
+        Some(5),
+        "the overview reads the current count"
+    );
+}
+
+#[tokio::test]
+async fn children_handed_off_panes_and_childless_panes_are_never_offered_a_handoff() {
+    let _guard = serial().await;
+    let r = rig("compaction-no-offer").await;
+    r.daemon.orchestration_set(true).unwrap();
+
+    let parent = r.bypass_pane();
+    let (_, body) = r
+        .post_spawn(
+            &r.token_for(parent.id),
+            serde_json::json!({"kind": "codex", "prompt": "h0"}),
+        )
+        .await;
+    let kid = body["session_id"].as_u64().unwrap() as u32;
+    compact(r._state.path(), kid, Some("codex"), 3).await;
+    assert!(
+        handoff_offers(&r.daemon, kid).is_empty(),
+        "a child reports to its parent"
+    );
+
+    let handed = r.bypass_pane();
+    let token = r.token_for(handed.id);
+    r.post_spawn(&token, serde_json::json!({"kind": "codex", "prompt": "h1"}))
+        .await;
+    let (status, body) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind": "codex", "prompt": "carry on", "handoff": true}),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    compact(r._state.path(), handed.id, None, 3).await;
+    assert!(
+        handoff_offers(&r.daemon, handed.id).is_empty(),
+        "this pane already handed off"
+    );
+
+    let alone = r.bypass_pane();
+    compact(r._state.path(), alone.id, None, 3).await;
+    assert!(
+        handoff_offers(&r.daemon, alone.id).is_empty(),
+        "a pane with no children orchestrates nothing"
+    );
+    let info = r
+        .daemon
+        .list()
+        .into_iter()
+        .find(|s| s.id == alone.id)
+        .unwrap();
+    assert_eq!(info.compactions, Some(3), "the count is still visible");
+}
+
 #[tokio::test]
 async fn terminal_reports_from_the_renderer_are_not_operator_typing() {
     let _guard = serial().await;

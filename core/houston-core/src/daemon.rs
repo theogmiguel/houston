@@ -3865,6 +3865,7 @@ impl Daemon {
             worktree: None,
             resumable: false,
             resume_notice: None,
+            compactions: None,
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -6677,6 +6678,7 @@ impl Daemon {
                     )
                 });
                 info.resumable = matches!(self.db.session_resume_handle(info.id), Ok(Some(_)));
+                info.compactions = self.compactions_of(info);
                 info.inbox_unread = self.db.inbox_pending_count(info.id).unwrap_or_else(|e| {
                     tracing::warn!("reading inbox_unread for session {}: {e}", info.id);
                     0
@@ -8198,6 +8200,7 @@ impl Daemon {
             worktree: None,
             resumable: resume_handle.is_some(),
             resume_notice,
+            compactions: None,
         };
 
         self.session_checkout_metadata(&mut info);
@@ -8267,7 +8270,9 @@ impl Daemon {
                 Self::agent_profile_config_dir(agent, &extra_env),
             )?;
             self.record_launch_conversation(id, resumed, preassigned, resume_handle);
-            self.broadcast_control(&proto::ServerMsg::SessionCreated { info: info.clone() });
+            let mut created = info.clone();
+            created.compactions = self.compactions_of(&created);
+            self.broadcast_control(&proto::ServerMsg::SessionCreated { info: created });
         }
 
         if let Some(parent) = spawned_by {
@@ -8584,6 +8589,7 @@ impl Daemon {
             worktree: None,
             resumable: false,
             resume_notice: None,
+            compactions: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -10351,6 +10357,12 @@ impl Daemon {
             self.mark_detected(d.session, &session, provider);
             self.note_transcript_link(d.session, provider, d);
             self.note_resume_turn(d.session, &session, provider, d);
+            if crate::agent_events::compaction_event(provider) == Some(d.event.as_str())
+                && d.subagent_type.is_none()
+                && d.agent_id.is_none()
+            {
+                self.note_compaction(d.session);
+            }
         }
         self.note_hook_last_message(
             d.session,
@@ -13993,6 +14005,9 @@ impl Daemon {
         };
         self.record_approval_mode(sid, requested_mode);
         if handoff {
+            if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {
+                tracing::warn!("recording that pane {caller} handed off to {sid}: {e:#}");
+            }
             return Ok(info);
         }
         if let Err(parent_error) = self.get(caller) {
@@ -17133,6 +17148,55 @@ impl Daemon {
         if recipient != row.to_session {
             self.inbox_notify(recipient, true);
         }
+    }
+
+    fn note_compaction(self: &Arc<Self>, session: u32) {
+        let compactions = match self.db.session_note_compaction(session) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!("counting a compaction for session {session}: {e:#}");
+                return;
+            }
+        };
+        self.broadcast_control(&proto::ServerMsg::CompactionsChanged {
+            session,
+            compactions,
+        });
+        if compactions % orchestrate::HANDOFF_OFFER_AFTER_COMPACTIONS != 0
+            || self.parent_of(session).is_some()
+            || self.db.session_handed_off(session).unwrap_or(true)
+            || self
+                .db
+                .delegations_for_parent(session)
+                .map_or(true, |children| children.is_empty())
+        {
+            return;
+        }
+        let workspace = self.current_workspace(session).unwrap_or_default();
+        if let Err(e) = self.inbox_write(
+            session,
+            &workspace,
+            None,
+            None,
+            orchestrate::InboxKind::OperatorNote,
+            &format!("handoff offer after {compactions} compactions"),
+            &orchestrate::handoff_offer_body(session, compactions),
+            Vec::new(),
+            Some("handoff_offer"),
+            None,
+            false,
+            true,
+        ) {
+            tracing::warn!("offering a handoff to pane {session}: {e:#}");
+        }
+    }
+
+    fn compactions_of(&self, info: &proto::SessionInfo) -> Option<u32> {
+        crate::agent_events::compaction_event(info.detected_agent.unwrap_or(info.agent))?;
+        Some(self.db.session_compactions(info.id).unwrap_or_else(|e| {
+            tracing::warn!("reading compactions for session {}: {e}", info.id);
+            0
+        }))
     }
 
     fn note_to_sender(self: &Arc<Self>, about: u32, sender: u32, tag: &str, why: &str) {

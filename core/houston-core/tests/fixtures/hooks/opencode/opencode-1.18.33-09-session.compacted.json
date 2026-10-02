@@ -1,0 +1,4 @@
+{
+  "_note": "the plugin's own constructed payload for a ROOT session.compacted; the bus event in the opencode 1.18.33 binary is defined with only sessionID — not captured live.",
+  "session_id": "ses_root01"
+}

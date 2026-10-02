@@ -274,6 +274,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
             worktree: None,
             resumable: false,
             resume_notice: None,
+            compactions: None,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {

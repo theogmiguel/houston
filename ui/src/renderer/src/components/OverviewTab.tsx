@@ -66,13 +66,21 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
   const action = (label: string, onClick: () => void): React.JSX.Element => <button className={`btn ${BTN_GHOST}`} onClick={onClick}>{label}</button>
   return <div className="overview">
-    <header className="overview-head"><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <IconAgent brand agent={parent.detected_agent ?? parent.agent} className="w-3.5 h-3.5 flex-none" />}<strong>{parent?.title ?? `Orchestrator ${parentId}`}</strong><span className="font-mono text-[var(--text-faint)]">pane {parentId}</span>{action('Show terminal', () => selectOverviewChild(parentId, null))}</header>
+    <header className="overview-head"><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <IconAgent brand agent={parent.detected_agent ?? parent.agent} className="w-3.5 h-3.5 flex-none" />}<strong>{parent?.title ?? `Orchestrator ${parentId}`}</strong><span className="font-mono text-[var(--text-faint)]">pane {parentId}</span>{parent && <CompactionCount parent={parent} />}{action('Show terminal', () => selectOverviewChild(parentId, null))}</header>
     {(!parent || !isLive(parent.state)) && <div className="overview-summary">Orchestrator ended.{action('Close', onClose)}</div>}
     <div className="overview-summary"><strong className={children.some((child) => childGroup(child) === 'Needs you') ? 'text-[var(--warn)]' : undefined}>{children.length}</strong><span className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</span><span className="flex-1" /><Segmented aria-label="Group children" className="overview-grouping" value={groupBy} onChange={setGroupBy} options={[{ value: 'status', label: 'Status' }, { value: 'worktree', label: 'Worktree' }]} /></div>
     <div className="overview-bar">{(['Needs you', 'Working', 'Done', 'Failed'] as const).map((group) => <i key={group} data-group={group} style={{ flex: group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length }} />)}</div>
     <div className="overview-cards">{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={results.find((result) => result.child === child.id)} now={now} counts={counts} client={client} onReview={onReview} />)}</div>
     {addressed.length > 0 && <section aria-label="Addressed to you"><h3 className="overview-summary">Addressed to you</h3>{addressed.map((row) => <article key={String(row.id)} className="overview-child"><div className="overview-task">{row.summary || row.body}</div><div className="overview-actions">{action('Acknowledge', () => client.inboxAck(row.id))}{action('Resolve', () => client.inboxResolve(row.id))}</div></article>)}</section>}
   </div>
+}
+
+function CompactionCount({ parent }: { parent: SessionInfo }): React.JSX.Element | null {
+  const agent = parent.detected_agent ?? parent.agent
+  if (parent.compactions == null) {
+    return agent === 'shell' || agent === 'custom' || agent === 'ssh' ? null : <span className="text-[var(--text-faint)]">compactions not reported by {agent}</span>
+  }
+  return <Tooltip label="Context compactions the agent reported. Every third one, Houston offers this orchestrator a handoff to a new pane."><span className="font-mono text-[var(--text-faint)]">{parent.compactions} {parent.compactions === 1 ? 'compaction' : 'compactions'}</span></Tooltip>
 }
 
 function CheckoutChips({ child, parent, shared, count }: { child: SessionInfo; parent?: SessionInfo; shared?: SessionInfo; count?: number }): React.JSX.Element {

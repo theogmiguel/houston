@@ -174,6 +174,19 @@ pub fn names_root_conversation(provider: proto::AgentKind, event: &str) -> bool 
         && (event.starts_with("permission.") || event.starts_with("question.")))
 }
 
+/// The hook a provider fires when it compacts its own context. Counted, never
+/// a status. Antigravity reports no compaction event.
+pub fn compaction_event(provider: proto::AgentKind) -> Option<&'static str> {
+    match provider {
+        proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Grok => {
+            Some("PreCompact")
+        }
+        proto::AgentKind::Cursor => Some("preCompact"),
+        proto::AgentKind::Opencode => Some("session.compacted"),
+        _ => None,
+    }
+}
+
 pub fn has_event_mapping(provider: proto::AgentKind) -> bool {
     !events_for(provider).is_empty()
 }

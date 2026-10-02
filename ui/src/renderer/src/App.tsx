@@ -413,6 +413,7 @@ type RosterPatchMsg = Extract<
       | "session_renamed"
       | "session_reparented"
       | "live_children_changed"
+      | "compactions_changed"
       | "delegation_changed"
       | "session_tags_set"
       | "session_resumable";
@@ -423,6 +424,7 @@ const ROSTER_PATCH_TYPES: ReadonlySet<ServerMsg["type"]> = new Set([
   "session_renamed",
   "session_reparented",
   "live_children_changed",
+  "compactions_changed",
   "delegation_changed",
   "session_tags_set",
   "session_resumable",
@@ -448,11 +450,13 @@ function patchRosterFields(
               live_children: msg.live_children,
               children_waiting: msg.children_waiting,
             }
-          : msg.type === "session_tags_set"
-            ? { tags: msg.tags }
-            : msg.type === "session_resumable"
-              ? { resumable: msg.resumable }
-              : { delegation: msg.delegation };
+          : msg.type === "compactions_changed"
+            ? { compactions: msg.compactions }
+            : msg.type === "session_tags_set"
+              ? { tags: msg.tags }
+              : msg.type === "session_resumable"
+                ? { resumable: msg.resumable }
+                : { delegation: msg.delegation };
   return new Map(prev).set(msg.session, { ...cur, ...patch });
 }
 

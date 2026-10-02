@@ -120,6 +120,10 @@ pub fn install(
                 .map(|event| (*event, hook_command(launcher, provider, event, sentinel))),
         );
     }
+    commands.extend(
+        crate::agent_events::compaction_event(provider)
+            .map(|event| (event, hook_command(launcher, provider, event, sentinel))),
+    );
     match provider {
         proto::AgentKind::Codex => codex_install(&path, &commands, sentinel)?,
         proto::AgentKind::Cursor => cursor_install(&path, &commands, sentinel)?,
@@ -630,6 +634,12 @@ fn opencode_plugin_source(commands: &[(&str, String)], sentinel: &str) -> String
          \x20         await run(t, {{ session_id: id, message }})\n\
          \x20         return\n\
          \x20       }}\n\
+         \x20       if (t === \"session.compacted\") {{\n\
+         \x20         const id = p?.sessionID ?? \"\"\n\
+         \x20         if (!id || await parentOf(id)) return\n\
+         \x20         await run(t, {{ session_id: id }})\n\
+         \x20         return\n\
+         \x20       }}\n\
          \x20       if (t === \"session.idle\") {{\n\
          \x20         const id = p?.sessionID ?? \"\"\n\
          \x20         const parentID = await parentOf(id)\n\
@@ -1058,7 +1068,7 @@ mod tests {
         assert!(is_installed(proto::AgentKind::Codex, &h, DEV));
         let events = crate::agent_events::events_for(proto::AgentKind::Codex);
         assert_eq!(events.len(), 5, "Codex maps lifecycle plus interruption");
-        let extra = crate::agent_events::CODEX_CORRELATION_EVENTS.len();
+        let extra = crate::agent_events::CODEX_CORRELATION_EVENTS.len() + 1; // compaction
         assert_eq!(cmds.len(), events.len() + extra + 1, "{cmds:?}");
         let root: serde_json::Value =
             serde_json::from_str(&read(&path)).expect("valid Codex hooks JSON");
@@ -1190,7 +1200,7 @@ mod tests {
         assert!(cmds.iter().any(|c| has_sentinel(c, DEV)), "{cmds:?}");
         assert!(is_installed(proto::AgentKind::Cursor, &h, DEV));
         let tr_entries = crate::agent_events::events_for(proto::AgentKind::Cursor).len();
-        let extra = crate::agent_events::CURSOR_CORRELATION_EVENTS.len();
+        let extra = crate::agent_events::CURSOR_CORRELATION_EVENTS.len() + 1; // compaction
         assert_eq!(cmds.len(), tr_entries + extra + 1, "{cmds:?}");
 
         install(proto::AgentKind::Cursor, &h, &launcher(), DEV).expect("reinstall");
@@ -1251,7 +1261,7 @@ mod tests {
             7,
             "Grok installs successful, failed, cancelled and session terminals"
         );
-        let extra = crate::agent_events::GROK_CORRELATION_EVENTS.len();
+        let extra = crate::agent_events::GROK_CORRELATION_EVENTS.len() + 1; // compaction
         assert_eq!(cmds.len(), events.len() + extra + 1, "{cmds:?}");
         let root: serde_json::Value =
             serde_json::from_str(&read(&path)).expect("valid JSON after install");
@@ -1375,6 +1385,41 @@ mod tests {
         assert!(uninstall(proto::AgentKind::Opencode, &h, DEV).expect("uninstall"));
         assert!(!path.exists(), "Houston's own plugin file is removed");
         assert!(!uninstall(proto::AgentKind::Opencode, &h, DEV).expect("second uninstall"));
+    }
+
+    #[test]
+    fn each_provider_that_reports_compaction_installs_its_compaction_hook() {
+        for provider in [
+            proto::AgentKind::Codex,
+            proto::AgentKind::Cursor,
+            proto::AgentKind::Opencode,
+            proto::AgentKind::Grok,
+        ] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let h = home(&dir);
+            let path = install(provider, &h, &launcher(), DEV).expect("install");
+            let event =
+                crate::agent_events::compaction_event(provider).expect("a compaction event");
+            let src = read(&path);
+            assert!(src.contains(event), "{provider:?} misses {event}:\n{src}");
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let h = home(&dir);
+        let path = install(proto::AgentKind::Opencode, &h, &launcher(), DEV).expect("install");
+        let branch = read(&path)
+            .split("session.compacted\") {")
+            .nth(1)
+            .and_then(|rest| rest.split_once("}\n"))
+            .map(|(body, _)| body.to_string())
+            .expect("a session.compacted branch");
+        assert!(
+            branch.contains("parentOf(id)"),
+            "a child session's compaction is not the pane's:\n{branch}"
+        );
+        assert_eq!(
+            crate::agent_events::compaction_event(proto::AgentKind::Antigravity),
+            None
+        );
     }
 
     #[test]

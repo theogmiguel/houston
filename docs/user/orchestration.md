@@ -138,6 +138,15 @@ closing the new one. Only a pane without a parent can hand off, and `reusable` a
 `output_format` are refused with `handoff`. Orchestration must be enabled in
 Settings → Orchestration.
 
+Each compaction of an agent's context lowers what it remembers of earlier decisions.
+Houston counts the compactions that Claude, Codex, Grok, Cursor and OpenCode report
+through their hooks, and the orchestrator overview shows the current count. Antigravity
+reports no compaction event, so the overview says that no count is available. After every
+third compaction, a top-level pane that has children and has not already handed off
+receives one inbox note offering a handoff, describing what the state document should
+contain. The note is not a question and starts nothing: you or the orchestrator decide
+whether to hand off.
+
 Spawn may also request `effort` (`low`, `medium`, `high`, `xhigh` or `max`) through MCP,
 HTTP or `hs-pane spawn --effort`. Workspace routing can supply model and effort choices;
 without a matching route, the agent chooses them. Providers without a per-run effort

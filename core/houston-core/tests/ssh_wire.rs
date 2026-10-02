@@ -465,6 +465,7 @@ async fn ssh_husks_are_deferred_never_auto_reconnected() {
             worktree: None,
             resumable: false,
             resume_notice: None,
+            compactions: None,
         })
         .unwrap();
         std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
