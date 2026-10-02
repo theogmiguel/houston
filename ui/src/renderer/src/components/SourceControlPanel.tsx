@@ -352,7 +352,7 @@ export function SourceControlPanel({
         onWidth={onWidth}
         onReset={onResetWidth}
       />}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col gap-1 overflow-hidden">
       <SourceControlHeader dir={dir} client={client} tab={tab} onTab={onTab} summary={summary} hasPr={hasPr} prTone={prTone} branchText={branchText} review={review} refresh={refresh} />
       <div className="flex-1 min-h-0 flex flex-col">
         <div
@@ -408,7 +408,7 @@ function SourceControlHeader({ dir, client, tab, onTab, summary, hasPr, prTone, 
   branchText: string
   refresh: () => void
 }): React.JSX.Element {
-  return (<header className="scbar flex-none flex items-center gap-2 h-[var(--h-pane-head)] mb-1 pl-2.5 pr-1.5 overflow-hidden">
+  return (<header className="scbar flex-none flex items-center gap-2 h-[var(--h-pane-head)] pl-2.5 pr-1.5 overflow-hidden">
         <span className="min-w-0 truncate text-[length:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
           {dir ? repoName(dir) : 'No workspace'}
         </span>
