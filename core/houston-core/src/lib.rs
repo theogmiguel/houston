@@ -28,6 +28,7 @@ pub mod env_hygiene;
 pub mod exe_path;
 #[doc(hidden)]
 pub mod fixture_dirs;
+pub mod forge;
 pub mod frame_queue;
 pub mod fs_retry;
 pub mod fs_watch;
