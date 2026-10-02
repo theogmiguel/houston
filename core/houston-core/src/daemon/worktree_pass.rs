@@ -386,7 +386,7 @@ fn keep_reason(
         };
         return (None, Some(keep));
     }
-    let facts = match crate::gh::pr_for_checkout(path) {
+    let facts = match crate::forge::merged_facts(path) {
         PrLookup::Found(f) => f,
         PrLookup::NoPr => return (None, Some(WorktreeKeep::NoPr)),
         PrLookup::Failed(e) => {

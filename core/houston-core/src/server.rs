@@ -2860,9 +2860,9 @@ fn read_pr_detail(
         .as_ref()
         .filter(|l| number.is_none_or(|n| l.number == n));
     let read = match number {
-        Some(n) => crate::pull_requests::read(
+        Some(n) => crate::forge::read(
             dir,
-            Some(n),
+            n,
             stored_link
                 .map(|l| l.source)
                 .unwrap_or(proto::PullRequestLinkSource::Detected),
@@ -2870,11 +2870,8 @@ fn read_pr_detail(
         )
         .map(Some),
         None => match stored_link {
-            Some(link) => {
-                crate::pull_requests::read(dir, Some(link.number), link.source, Some(link))
-                    .map(Some)
-            }
-            None => crate::pull_requests::read_branch(dir),
+            Some(link) => crate::forge::read(dir, link.number, link.source, Some(link)).map(Some),
+            None => crate::forge::read_branch(dir),
         },
     };
     match read {
@@ -2972,7 +2969,7 @@ async fn link_pull_request(
             return Err(crate::gh::hint_for(gh)
                 .unwrap_or_else(|| "gh is not ready to link a pull request".to_string()));
         }
-        crate::pull_requests::read(&d, Some(number), proto::PullRequestLinkSource::Manual, None)
+        crate::forge::read(&d, number, proto::PullRequestLinkSource::Manual, None)
             .map_err(|e| e.to_string())
     })
     .await
