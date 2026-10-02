@@ -7514,14 +7514,7 @@ impl Daemon {
         cmd.cwd(&spawn_dir);
         #[cfg(unix)]
         cmd.cwd(&cwd);
-        #[cfg(windows)]
-        {
-            let term_inherited = std::env::var_os("TERM").is_some_and(|v| !v.is_empty());
-            if !term_inherited {
-                cmd.env("TERM", "xterm-256color");
-            }
-        }
-        #[cfg(not(windows))]
+        // The pane's capabilities do not depend on the terminal that launched the daemon.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         // A launcher may disable its own log colours; each pane is a new colour-capable terminal.
