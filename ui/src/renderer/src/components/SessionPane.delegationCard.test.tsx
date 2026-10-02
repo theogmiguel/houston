@@ -364,7 +364,7 @@ describe('the delegation card names its parent by codename and reports the inbox
         info={
           pane({
             delegation: delegation({
-              capability_note: 'cursor cannot report a block; a stall stands in'
+              capability_note: 'cursor: needs-input not reported by this provider'
             })
           })
         }
@@ -372,7 +372,7 @@ describe('the delegation card names its parent by codename and reports the inbox
       />
     )
     expect(openCard('origin-badge').textContent).toContain(
-      'cursor cannot report a block; a stall stands in'
+      'cursor: needs-input not reported by this provider'
     )
   })
 

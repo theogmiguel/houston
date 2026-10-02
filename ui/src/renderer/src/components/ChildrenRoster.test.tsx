@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ChildrenRoster, childGroup, delegationAge } from './ChildrenRoster'
+import { ChildrenRoster, childGroup, delegationAge, glyphLabel } from './ChildrenRoster'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 
 const child = (id: number, state: SessionInfo['state'] = 'running'): SessionInfo => ({ id, state, codename: `child-${id}`, hidden: false, inbox_unread: 0, resumable: false, title: `worker ${id}`, agent: 'claude', cwd: '/tmp/p', project_dir: '/tmp/p', spawned_by: 1, status: 'working', children_waiting: 0, live_children: 0, tags: [] } as SessionInfo)
@@ -102,4 +102,12 @@ describe('roster carry-overs', () => {
     window.removeEventListener('houston:side-open', handler)
   })
 
+})
+
+describe('glyph labels', () => {
+  it('name a provider capability gap next to the role and group', () => {
+    const cursor = { ...child(5), agent: 'cursor', delegation: { state: 'working', role: 'scout', capability_note: 'cursor: needs-input not reported by this provider' } as SessionInfo['delegation'] } as SessionInfo
+    expect(glyphLabel(cursor)).toBe('scout · Working · cursor: needs-input not reported by this provider')
+    expect(glyphLabel(child(4))).toBe('worker 4 · Working')
+  })
 })
