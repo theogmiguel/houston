@@ -68,6 +68,19 @@ existing daemon over `/manage`, or spawn one detached — on Linux through the
 crash, and writes `supervisor.json` beside `daemon.json`), on Windows by spawning
 `houston-core.exe` directly (no supervisor there).
 
+On Linux, the app asks the systemd user manager through D-Bus `StartTransientUnit` to
+start the supervisor in a unique `houston-daemon-<channel>-<id>.service`. The supervisor,
+daemon and PTYs share that unit's cgroup, independently of the app's desktop scope.
+Stopping or OOM-killing the app scope therefore leaves the daemon's unit running. The
+unit is collected when inactive or failed; daemon discovery and adoption still use the
+channel's existing files and authenticated endpoints.
+
+Without a systemd user manager, launch falls back to `setsid` and prints the reason.
+That separates the Unix session but preserves the caller's cgroup, so group termination
+can still end the daemon. On Windows, detached creation separates the console but does
+not escape a containing job object. An externally imposed job with kill-on-close can
+still terminate the daemon; Houston does not require permission to break away from it.
+
 `houston-core` and `houston-tauri` (the app) both answer three argv aliases before any
 daemon/Tauri setup: `hook` (the hook client), `hs-mail` and `hs-pane` (the agent-facing
 CLIs). The slim `tr-helper` binary executes `hook` without linking GTK/WebKit and returns a
@@ -82,10 +95,10 @@ development. Everything hangs off the state dir: `houston.db`, `daemon.json`,
 `daemon.lock`, `logs/`, `scrollback/`, `hooks/drop/`, `bin/`, the webview's
 `data_directory`, the single-instance D-Bus id.
 
-The binary resolves its channel from the `--channel` flag only. The ambient
-`HOUSTON_CHANNEL` is the *pane* input — it tells a process which channel it is running
-inside — and `resolve_owning_channel` refuses outright when neither is explicit, so a stray
-invocation can never own `release` by accident. Channel names are validated (`[a-z0-9-]`,
+The app resolves its channel from `--channel`. The daemon accepts either `--channel` or
+`HOUSTON_CHANNEL`, refuses when both identify different channels, and refuses when neither
+is explicit. The resolved daemon channel is propagated to its children before startup,
+so state, logs and hooks agree. A stray invocation cannot own `release` by accident. Channel names are validated (`[a-z0-9-]`,
 1–32 chars) because they become a directory under `$HOME`.
 
 ### Singleton and `--fresh`

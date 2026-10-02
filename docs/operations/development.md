@@ -56,7 +56,12 @@ target suffix required by Tauri, builds the debug app (`cargo build` in
 `src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel
 <target>`. The app connects to a running daemon for the target channel or
 spawns one detached, through `houston-supervisor` on Linux — it no longer
-hosts the daemon in-process. `HOUSTON_DAEMON_BIN_DIR` is exported to
+hosts the daemon in-process. On Linux with user systemd, the supervisor starts in its
+own transient `houston-daemon-<channel>-<id>.service`. List those units with
+`systemctl --user list-units 'houston-daemon-*'` and inspect a selected unit with
+`systemctl --user status <unit>` or `journalctl --user -u <unit>`. The usual daemon log
+files remain available. If user systemd is unavailable, launch prints a named notice and
+uses `setsid`, which does not isolate the cgroup. `HOUSTON_DAEMON_BIN_DIR` is exported to
 `core/target/debug` first, so the app's connect-or-spawn finds the debug
 sidecars there instead of assuming a packaged layout beside its own binary. With
 `--fresh`, all builds finish before the daemon is replaced, so the replacement

@@ -21,19 +21,13 @@ struct DaemonFileConfig {
     generation: Option<u64>,
 }
 
-// Refuses to own EITHER channel's state when `HOUSTON_CHANNEL` is unset,
-// unlike `paths::config_dir` (which treats unset as the release channel):
-// defense in depth against a stray direct invocation of this binary.
 fn owning_config_dir() -> Result<PathBuf> {
     let home = houston_core::home_dir::home_dir().context("cannot resolve home directory")?;
     let env_value = std::env::var(houston_core::paths::CHANNEL_ENV).ok();
-    match houston_core::paths::resolve_owning_channel(env_value.as_deref(), &home) {
-        Ok(channel) => Ok(houston_core::paths::dir_for(&home, channel.as_deref())),
-        Err(refusal) => {
-            eprintln!("{}", refusal.message());
-            std::process::exit(1);
-        }
-    }
+    let args = std::env::args().collect::<Vec<_>>();
+    let channel = houston_core::paths::resolve_daemon_channel(&args, env_value.as_deref(), &home)
+        .map_err(anyhow::Error::msg)?;
+    Ok(houston_core::paths::dir_for(&home, channel.as_deref()))
 }
 
 fn print_protocol_requested(args: &[String]) -> bool {
@@ -97,23 +91,44 @@ async fn run_status() -> Result<()> {
 }
 
 #[cfg(unix)]
-fn spawn_supervisor_reader(daemon: &std::sync::Arc<houston_core::daemon::Daemon>) -> Option<u32> {
-    use std::os::unix::io::FromRawFd;
-    let fd_str = std::env::var(houston_core::supervisor::SUPERVISOR_FD_ENV).ok()?;
-    let fd: i32 = match fd_str.parse() {
-        Ok(fd) => fd,
-        Err(_) => {
-            tracing::warn!(
-                "{} = {fd_str:?} is not a valid fd number; running unsupervised",
-                houston_core::supervisor::SUPERVISOR_FD_ENV
-            );
-            return None;
+type SupervisorSocket = std::os::unix::net::UnixStream;
+#[cfg(not(unix))]
+type SupervisorSocket = ();
+
+fn take_supervisor_socket() -> Option<SupervisorSocket> {
+    let raw = std::env::var_os(houston_core::supervisor::SUPERVISOR_FD_ENV);
+    std::env::remove_var(houston_core::supervisor::SUPERVISOR_FD_ENV);
+    let raw = raw?;
+    #[cfg(unix)]
+    {
+        use std::os::fd::FromRawFd;
+        let result = raw.to_str().ok_or_else(|| format!(
+            "refusing HOUSTON_SUPERVISOR_FD={raw:?}; expected a UTF-8 decimal descriptor above 2 naming an open socket"
+        )).and_then(houston_core::supervisor::validate_supervisor_fd);
+        match result {
+            Ok(fd) => {
+                // SAFETY: startup validated this socket before any thread or child could reuse its fd.
+                Some(unsafe { SupervisorSocket::from_raw_fd(fd) })
+            }
+            Err(refusal) => {
+                eprintln!("houston-core: {refusal}; running unsupervised");
+                None
+            }
         }
-    };
-    // SAFETY: `houston-supervisor` dup2's the daemon's end of its control
-    // socketpair onto this fd before exec and clears FD_CLOEXEC, so it is
-    // guaranteed open and ours alone to own.
-    let stream = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd) };
+    }
+    #[cfg(not(unix))]
+    {
+        eprintln!("houston-core: refusing HOUSTON_SUPERVISOR_FD={raw:?}; expected no supervisor descriptor on this platform; running unsupervised");
+        None
+    }
+}
+
+#[cfg(unix)]
+fn spawn_supervisor_reader(
+    daemon: &std::sync::Arc<houston_core::daemon::Daemon>,
+    socket: Option<SupervisorSocket>,
+) -> Option<u32> {
+    let stream = socket?;
     let writer_half = match stream.try_clone() {
         Ok(w) => w,
         Err(e) => {
@@ -146,7 +161,10 @@ fn spawn_supervisor_reader(daemon: &std::sync::Arc<houston_core::daemon::Daemon>
 }
 
 #[cfg(not(unix))]
-fn spawn_supervisor_reader(_daemon: &std::sync::Arc<houston_core::daemon::Daemon>) -> Option<u32> {
+fn spawn_supervisor_reader(
+    _daemon: &std::sync::Arc<houston_core::daemon::Daemon>,
+    _socket: Option<SupervisorSocket>,
+) -> Option<u32> {
     None
 }
 
@@ -171,7 +189,7 @@ async fn exit_retired_daemon(daemon: &std::sync::Arc<Daemon>) {
 }
 
 #[cfg(unix)]
-async fn run_adopt(socket_path: String) -> Result<()> {
+async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) -> Result<()> {
     use houston_core::adoption::{self, FromNew, FromOld};
     use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 
@@ -303,10 +321,9 @@ async fn run_adopt(socket_path: String) -> Result<()> {
     let _ = fs::remove_file(&socket_path);
 
     let _log_guard = houston_core::logging::init();
-    houston_core::env_hygiene::scrub();
     houston_core::login_path::adopt();
 
-    let _supervisor_pid = spawn_supervisor_reader(&daemon);
+    let _supervisor_pid = spawn_supervisor_reader(&daemon, supervisor);
 
     houston_core::boot::spawn_startup_refresh(&daemon);
     houston_core::boot::spawn_background_loops(&daemon);
@@ -338,8 +355,39 @@ async fn run_adopt(socket_path: String) -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let args = std::env::args().collect::<Vec<_>>();
+    let helper = matches!(
+        args.get(1).map(String::as_str),
+        Some("hook" | "hs-mail" | "hs-pane" | "hs-harness")
+    );
+    if !helper && !print_protocol_requested(&args) {
+        let home = houston_core::home_dir::home_dir().context("cannot resolve home directory")?;
+        let inherited = std::env::var(houston_core::paths::CHANNEL_ENV).ok();
+        let channel =
+            houston_core::paths::resolve_daemon_channel(&args, inherited.as_deref(), &home)
+                .map_err(anyhow::Error::msg)?;
+        std::env::set_var(
+            houston_core::paths::CHANNEL_ENV,
+            channel.as_deref().unwrap_or("release"),
+        );
+    }
+    let supervisor = if helper || print_protocol_requested(&args) || status_requested(&args) {
+        std::env::remove_var(houston_core::supervisor::SUPERVISOR_FD_ENV);
+        None
+    } else {
+        take_supervisor_socket()
+    };
+    if !helper && !print_protocol_requested(&args) && !status_requested(&args) {
+        houston_core::env_hygiene::scrub();
+    }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(supervisor))
+}
+
+async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if print_protocol_requested(&args) {
         println!("{}", houston_protocol::PROTOCOL_VERSION);
@@ -350,7 +398,7 @@ async fn main() -> Result<()> {
     }
     #[cfg(unix)]
     if let Some(socket_path) = adopt_socket_requested(&args) {
-        return run_adopt(socket_path).await;
+        return run_adopt(socket_path, supervisor).await;
     }
     if args.get(1).map(String::as_str) == Some("hook") {
         houston_core::claude_hooks::run_hook_client(&args);
@@ -372,8 +420,6 @@ async fn main() -> Result<()> {
     let dir = owning_config_dir()?;
 
     let _log_guard = houston_core::logging::init();
-
-    houston_core::env_hygiene::scrub();
 
     houston_core::login_path::adopt();
 
@@ -400,7 +446,7 @@ async fn main() -> Result<()> {
     let (addr, handle) = server::start_with_listener(daemon.clone(), listener).await?;
     daemon.set_server_abort(handle.abort_handle());
 
-    let supervisor_pid = spawn_supervisor_reader(&daemon);
+    let supervisor_pid = spawn_supervisor_reader(&daemon, supervisor);
 
     let cfg_path = dir.join("daemon.json");
     let cfg = DaemonFileConfig {

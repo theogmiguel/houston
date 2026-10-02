@@ -8,6 +8,8 @@ use houston_protocol as proto;
 async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     let tmp = tempfile::tempdir().unwrap();
     let dump = tmp.path().join("child-env.txt");
+    std::env::set_var("HOME", tmp.path());
+    std::env::set_var("USERPROFILE", tmp.path());
 
     std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
     std::env::set_var("CLAUDECODE", "1");
@@ -15,7 +17,10 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     std::env::set_var("CLAUDE_EFFORT", "xhigh");
     std::env::set_var("NO_COLOR", "1");
     std::env::set_var("TERM", "dumb");
+    std::env::set_var("HOUSTON_SUPERVISOR_FD", "3");
     houston_core::env_hygiene::scrub();
+    assert!(std::env::var_os("HOUSTON_SUPERVISOR_FD").is_none());
+    std::env::set_var("HOUSTON_SUPERVISOR_FD", "3");
 
     let state_dir = tempfile::tempdir().unwrap();
     let daemon = Daemon::new(DaemonConfig {
@@ -89,6 +94,10 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
         assert!(!has(marker), "pane inherited {marker} — {child_env}");
     }
     assert!(
+        !has("HOUSTON_SUPERVISOR_FD="),
+        "pane inherited the private supervisor variable"
+    );
+    assert!(
         has("CLAUDE_EFFORT=xhigh"),
         "a config var must survive the scrub: {child_env}"
     );
@@ -103,4 +112,5 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
     );
 
     daemon.kill(info.id).ok();
+    std::env::remove_var("HOUSTON_SUPERVISOR_FD");
 }

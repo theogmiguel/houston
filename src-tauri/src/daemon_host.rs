@@ -848,6 +848,16 @@ pub fn spawn_detached(
             .stdin(std::process::Stdio::null())
             .stdout(stdout_log)
             .stderr(stderr_log);
+        #[cfg(target_os = "linux")]
+        {
+            let isolation = crate::daemon_isolation::start(&cmd, channel_env, log_path);
+            match crate::daemon_isolation::fallback_reason(&isolation) {
+                None => return Ok(()),
+                Some(reason) => eprintln!(
+                    "houston-tauri: daemon isolation unavailable for channel {channel_env:?}: {reason}; using setsid"
+                ),
+            }
+        }
         // SAFETY: `pre_exec` runs after fork, before exec, in the child only;
         // `setsid()` there only detaches it from this process's session.
         unsafe {
