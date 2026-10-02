@@ -222,3 +222,9 @@ orchestrator. The orchestrator answers the child or asks you for a decision. Spa
 warnings return to the orchestrator; they do not appear in "Addressed to you".
 Only a top-level pane waiting for your input triggers a desktop notification.
 The "Addressed to you" group is hidden when empty.
+
+Provider usage limits and API failures reported by Claude, Grok or OpenCode leave
+the child available for inspection with a failed delegation and send its parent
+the reported reason. Send a follow-up when the provider allows another turn;
+Houston cannot infer a limit reset time from these hooks. A provider may also
+continue on its own.

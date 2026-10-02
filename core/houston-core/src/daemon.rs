@@ -10333,14 +10333,79 @@ impl Daemon {
         {
             return crate::hook_drop::DropVerdict::Applied;
         }
+        if crate::agent_events::AgentEvent::from_provider(provider, &d.event)
+            == Some(crate::agent_events::AgentEvent::TurnFailed)
+        {
+            let _guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            let Ok(session) = self.get(d.session) else {
+                return crate::hook_drop::DropVerdict::NoSession;
+            };
+            if !session.state.lock().expect("state lock").is_live() {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
+                let name = crate::agent_hooks::provider_slug(provider);
+                let reason = format!(
+                    "{name} {}: {}{}",
+                    d.event,
+                    d.error
+                        .as_deref()
+                        .or(d.reason.as_deref())
+                        .unwrap_or("turn_failed"),
+                    d.error_details
+                        .as_ref()
+                        .map(|details| format!("; {details}"))
+                        .unwrap_or_default()
+                );
+                if row.state != "failed" {
+                    let note = orchestrate::inbox_row_new(
+                        row.parent_session,
+                        &self.current_workspace(d.session).unwrap_or_default(),
+                        Some(d.session),
+                        Some(row.round),
+                        orchestrate::InboxKind::OperatorNote,
+                        &format!("{name} turn_failed"),
+                        &reason,
+                        Vec::new(),
+                        false,
+                        None,
+                        Some("turn_failed"),
+                        true,
+                    );
+                    let written = note.and_then(|mut note| {
+                        // A failed live turn must also wake a parent waiting only for results.
+                        note.urgent = true;
+                        self.db.delegation_close_round(
+                            d.session,
+                            "failed",
+                            Some(&reason),
+                            true,
+                            crate::db::RoundHandback::Write(&note),
+                            now_ms(),
+                        )
+                    });
+                    match written {
+                        Ok(Some(id)) => {
+                            self.broadcast_inbox_row(id);
+                            self.inbox_notify(row.parent_session, true);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!("recording failed turn for child {}: {e}", d.session);
+                            return crate::hook_drop::DropVerdict::Retry;
+                        }
+                    }
+                    self.broadcast_delegation(d.session);
+                }
+            }
+        }
         if provider == proto::AgentKind::Grok
-            && matches!(
-                d.event.as_str(),
-                "StopFailure" | "StopCancelled" | "SessionEnd"
-            )
+            && matches!(d.event.as_str(), "StopCancelled" | "SessionEnd")
         {
             let outcome = match d.event.as_str() {
-                "StopFailure" => "turn_failed",
                 "StopCancelled" => "turn_interrupted",
                 _ => "session_ended",
             };
@@ -14282,7 +14347,13 @@ impl Daemon {
         if let Some(row) = self.delegation_of(target) {
             if row.parent_session == caller && self.respawn_chain_tip(target).is_none() {
                 if let Some(state) = orchestrate::DelegationState::parse(&row.state) {
-                    if let Some(refusal) = orchestrate::prompt_refusal(target, state) {
+                    let failed_live_turn = state == orchestrate::DelegationState::Failed
+                        && self.get(target).is_ok_and(|session| {
+                            session.state.lock().expect("state lock").is_live()
+                        });
+                    if let Some(refusal) =
+                        orchestrate::prompt_refusal(target, state).filter(|_| !failed_live_turn)
+                    {
                         bail!("{refusal}");
                     }
                 }
@@ -15725,6 +15796,9 @@ impl Daemon {
             );
             return;
         };
+        if from == orchestrate::DelegationState::Failed && !opens_round {
+            return;
+        }
         let parent = row.parent_session;
         let workspace = self.current_workspace(child).unwrap_or_default();
         let pending = self
@@ -15746,7 +15820,11 @@ impl Daemon {
             self.broadcast_delegation(child);
             return;
         }
-        let to = orchestrate::delegation_transition(from, event, staged).filter(|to| *to != from);
+        let to = if from == orchestrate::DelegationState::Failed && opens_round {
+            Some(orchestrate::DelegationState::Working)
+        } else {
+            orchestrate::delegation_transition(from, event, staged).filter(|to| *to != from)
+        };
 
         let mut moved_by_close = false;
         if let Some(to) = to {

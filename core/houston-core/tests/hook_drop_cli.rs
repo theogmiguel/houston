@@ -355,6 +355,8 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
         background_tasks: Some(0),
         internal_prompt: false,
         reason: Some("Bash".into()),
+        error: Some("rate_limit".into()),
+        error_details: Some("Usage limit reached".into()),
         notification_type: Some("permission_prompt".into()),
         stop_hook_active: true,
         prompt_id: Some("prompt-abc".into()),
@@ -429,4 +431,16 @@ fn only_the_panes_own_channel_launcher_drops_the_event() {
         "the pane's own launcher drops exactly once: {written:?}"
     );
     assert_eq!(written[0].event, "UserPromptSubmit");
+}
+
+#[test]
+fn claude_stop_failure_drop_preserves_binary_schema() {
+    let f = Fixture::new();
+    let payload = include_str!("fixtures/hooks/claude/stop_failure.json");
+    let (code, _, stderr) = f.run_hook("StopFailure", 7, payload);
+    assert_eq!(code, 0, "{stderr}");
+    let got = drops(&f.drop_dir());
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].error.as_deref(), Some("rate_limit"));
+    assert_eq!(got[0].error_details.as_deref(), Some("Usage limit reached"));
 }

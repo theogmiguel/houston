@@ -26,7 +26,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "cursor-agent"] {
+        for name in ["grok", "codex", "claude", "agy", "cursor-agent", "opencode"] {
             #[cfg(windows)]
             {
                 let ps1 = "$ErrorActionPreference = 'Stop'\nif (-not $env:FIXTURE_SILENT) { Write-Output ('ARGV:' + ($args -join ' ')); Write-Output 'FIXTURE-READY' }\n# Echo-style fixture: whatever the daemon pastes comes straight back\n# into scrollback (the sh fixture's `exec cat`). [Console]::In reads the\n# ConPTY-delivered lines; EOF parks forever so the pane never exits.\nwhile ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { Start-Sleep -Seconds 86400 } else { Write-Output $l } }\n";
@@ -10595,4 +10595,125 @@ async fn k8_exhausted_paste_attempts_remain_available_to_parent_wait() {
     assert!(
         matches!(outcome, houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } if rows.iter().any(|row| row.id == result.row_id))
     );
+}
+
+#[tokio::test]
+async fn provider_failure_retains_temporary_child_and_notifies_once() {
+    let _guard = serial().await;
+    let r = rig("provider-failure").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    r.daemon.set_orchestration_caps(4, 1).unwrap();
+    for (provider, event) in [
+        ("claude", "StopFailure"),
+        ("grok", "StopFailure"),
+        ("opencode", "session.error"),
+    ] {
+        let (status, spawned) = r
+            .post_spawn(&token, serde_json::json!({"kind":provider,"prompt":"work"}))
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        let kind: proto::AgentKind = serde_json::from_value(serde_json::json!(provider)).unwrap();
+        let start = if provider == "opencode" {
+            "message.updated"
+        } else {
+            "UserPromptSubmit"
+        };
+        r.daemon.handle_hook_from(child, kind, start, None);
+        r.daemon
+            .orchestrate_submit(child, "staged answer before API failure".to_string().into())
+            .unwrap();
+        let drop = houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some(provider.into()),
+            event: event.into(),
+            error: Some("rate_limit".into()),
+            error_details: Some("Usage limit reached".into()),
+            ..Default::default()
+        };
+        apply_drop(r._state.path(), drop.clone()).await;
+        apply_drop(r._state.path(), drop).await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some(provider.into()),
+                event: if provider == "opencode" {
+                    "session.idle"
+                } else {
+                    "Stop"
+                }
+                .into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        r.daemon.delegation_watch_tick_at(u64::MAX / 2);
+        let row = r.daemon.delegation_of(child).unwrap();
+        assert_eq!(row.state, "failed");
+        let visible =
+            serde_json::to_value(r.daemon.orchestrate_get(parent.id, child).unwrap()).unwrap();
+        assert_eq!(visible["delegation"]["state"], "failed");
+        assert!(visible["delegation"]["stop_reason"]
+            .as_str()
+            .unwrap()
+            .contains("rate_limit"));
+        assert_eq!(
+            row.stop_reason.as_deref(),
+            Some(format!("{provider} {event}: rate_limit; Usage limit reached").as_str())
+        );
+        assert!(row.settled_at.is_none());
+        assert!(row.cleanup_after.is_none());
+        assert!(r.daemon.list().iter().any(|s| s.id == child));
+        let notes = r
+            .daemon
+            .inbox_rows_for_test(parent.id)
+            .into_iter()
+            .filter(|n| n.from_session == Some(child) && n.reason.as_deref() == Some("turn_failed"))
+            .collect::<Vec<_>>();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].urgent);
+        assert!(r
+            .daemon
+            .inbox_rows_for_test(parent.id)
+            .iter()
+            .filter(|row| row.from_session == Some(child) && row.kind == "result")
+            .all(|row| row.ready_at.is_none()));
+        r.daemon
+            .orchestrate_prompt(parent.id, child, "resume after the provider reset")
+            .unwrap();
+        await_child_echo(&r.daemon, child, "resume after the provider reset").await;
+        r.daemon.handle_hook_from(child, kind, start, None);
+        assert_eq!(r.daemon.delegation_of(child).unwrap().state, "working");
+        assert!(r.daemon.delegation_of(child).unwrap().stop_reason.is_none());
+        assert!(notes[0].body.contains("Usage limit reached"));
+        r.daemon.kill(child).unwrap();
+        let ended = r.daemon.delegation_of(child).unwrap();
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some(provider.into()),
+                event: event.into(),
+                error: Some("late_failure".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let after = r.daemon.delegation_of(child).unwrap();
+        assert_eq!(after.state, ended.state);
+        assert_eq!(after.stop_reason, ended.stop_reason);
+        assert_eq!(
+            r.daemon
+                .inbox_rows_for_test(parent.id)
+                .iter()
+                .filter(|row| row.from_session == Some(child)
+                    && row.reason.as_deref() == Some("turn_failed"))
+                .count(),
+            1
+        );
+    }
 }

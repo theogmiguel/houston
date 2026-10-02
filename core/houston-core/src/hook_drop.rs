@@ -52,6 +52,10 @@ pub struct HookDrop {
     #[serde(default)]
     pub reason: Option<String>,
     #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub error_details: Option<String>,
+    #[serde(default)]
     pub notification_type: Option<String>,
     #[serde(default)]
     pub stop_hook_active: bool,
@@ -106,6 +110,8 @@ impl Default for HookDrop {
             background_tasks: None,
             internal_prompt: false,
             reason: None,
+            error: None,
+            error_details: None,
             notification_type: None,
             stop_hook_active: false,
             prompt_id: None,
