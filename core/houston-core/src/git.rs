@@ -1610,14 +1610,20 @@ mod tests {
         assert_eq!(facts.branch.as_deref(), Some("main"));
         let root = fs::canonicalize(tmp.path()).unwrap();
         assert_eq!(
-            facts.toplevel.as_deref(),
-            root.to_str(),
+            facts
+                .toplevel
+                .as_deref()
+                .map(|p| fs::canonicalize(p).unwrap()),
+            Some(root.clone()),
             "the toplevel must be the work tree's root"
         );
         let common = fs::canonicalize(root.join(".git")).unwrap();
         assert_eq!(
-            facts.common_dir.as_deref(),
-            common.to_str(),
+            facts
+                .common_dir
+                .as_deref()
+                .map(|p| fs::canonicalize(p).unwrap()),
+            Some(common),
             "the common dir must be absolute"
         );
     }
@@ -2179,7 +2185,10 @@ mod tests {
             .expect("main must be listed");
         assert!(main.current, "main is checked out");
         assert!(main.is_default, "main is the default branch");
-        assert_eq!(main.worktree_path.as_deref(), tmp.path().to_str());
+        assert_eq!(
+            fs::canonicalize(main.worktree_path.as_ref().unwrap()).unwrap(),
+            fs::canonicalize(tmp.path()).unwrap()
+        );
 
         let feature = list
             .branches
@@ -2195,7 +2204,10 @@ mod tests {
             .iter()
             .find(|b| b.name == "task/wt")
             .expect("the worktree branch must be listed");
-        assert_eq!(task.worktree_path.as_deref(), wt.to_str());
+        assert_eq!(
+            fs::canonicalize(task.worktree_path.as_ref().unwrap()).unwrap(),
+            fs::canonicalize(wt).unwrap()
+        );
 
         assert!(
             list.remotes.is_empty(),

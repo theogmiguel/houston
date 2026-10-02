@@ -587,11 +587,9 @@ impl OrchestrationTools {
                         "worktree": {
                             "type": "string",
                             "description":
-                                "Start the child in a new git worktree of the target workspace, \
-                                 created at .houston/worktrees/<worktree> on branch \
-                                 houston/<worktree> (or `branch`). One directory name: no \
-                                 `/`, `..` or spaces. Refused together with cwd. Houston \
-                                 records it and can remove it once its PR has merged.",
+                                "New git worktree at .houston/worktrees/<worktree>, branch \
+                                 houston/<worktree> (or `branch`). One directory name: no `/`, \
+                                 `..` or spaces. Refused with cwd. Recorded for cleanup after merge.",
                         },
                         "branch": {
                             "type": "string",
@@ -609,17 +607,15 @@ impl OrchestrationTools {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Keep the pane after a completed handback for follow-up prompts. \
-                                 Omit or set false for automatic cleanup after the final round.",
+                                "Keep the pane for follow-ups after handback. Default false: \
+                                 automatic cleanup after the final round.",
                         },
                         "handoff": {
                             "type": "boolean",
                             "default": false,
                             "description":
-                                "Open an independent pane instead of a child: no handback, no \
-                                 cleanup, and your pane may close without killing it. For when \
-                                 the user hands the work off and no longer needs this pane. \
-                                 Refused from a child pane and with reusable or output_format.",
+                                "Independent pane: survives its parent; no handback or cleanup. \
+                                 Refused from children and with reusable or output_format.",
                         },
                         "effort": {
                             "type": "string",
@@ -631,26 +627,21 @@ impl OrchestrationTools {
                         "auto_approve": {
                             "type": "boolean",
                             "description":
-                                "Leave unset: the CLI's own AUTO mode. true also skips \
-                                 AUTO's own prompts (the dangerous flag); false makes the \
-                                 child stop and ask, reported as NeedsInput.",
+                                "Omitted: CLI AUTO mode. true skips AUTO prompts (dangerous); \
+                                 false asks, reported as NeedsInput.",
                         },
                         "profile": {
                             "type": "string",
                             "description":
-                                "A saved account-profile label (Settings → Agent accounts) \
-                                 to run this child under. Leave unset: the child spends the \
-                                 DEFAULT account. An unknown label is refused, naming the \
-                                 ones that exist.",
+                                "Saved account label (Settings → Agent accounts); omitted uses \
+                                 the default account. Unknown labels are refused with valid choices.",
                         },
                         "role": {
                             "type": "string",
                             "maxLength": orchestrate::ROLE_MAX_CHARS,
                             "description":
-                                "Your own short name for this child (\"reviewer\"), carried \
-                                 in `pane_list` and in every handback. Lowercase, digits and \
-                                 hyphens; unique among your live children. With handoff, \
-                                 only the new pane's title.",
+                                "Child label in pane_list and handbacks: lowercase, digits, \
+                                 hyphens; unique among live children. Handoff: pane title only.",
                         },
                         "output_format": {
                             "type": "string",
@@ -663,9 +654,8 @@ impl OrchestrationTools {
                             "type": "string",
                             "maxLength": orchestrate::BRIEF_FIELD_MAX_CHARS,
                             "description":
-                                "What this child must not do — \"read-only outside ui/\". \
-                                 Composed into the prompt as a limit to report at, never \
-                                 cross.",
+                                "Limits, e.g. \"read-only outside ui/\". Added to the prompt; \
+                                 the child must report at a limit, never cross it.",
                         },
                     },
                     "required": ["kind", "prompt"],

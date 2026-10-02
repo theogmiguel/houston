@@ -7514,14 +7514,7 @@ impl Daemon {
         cmd.cwd(&spawn_dir);
         #[cfg(unix)]
         cmd.cwd(&cwd);
-        #[cfg(windows)]
-        {
-            let term_inherited = std::env::var_os("TERM").is_some_and(|v| !v.is_empty());
-            if !term_inherited {
-                cmd.env("TERM", "xterm-256color");
-            }
-        }
-        #[cfg(not(windows))]
+        // The pane's capabilities do not depend on the terminal that launched the daemon.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         // A launcher may disable its own log colours; each pane is a new colour-capable terminal.
@@ -8787,9 +8780,11 @@ impl Daemon {
 
     pub fn ws_detach(&self, id: u32) {
         if let Some(session) = self.sessions.lock().expect("sessions lock").get(&id) {
-            let _ = session
+            // Attach and detach hold the same lock, so no other writer can change the count.
+            let count = session.ws_attaches.load(Ordering::Relaxed);
+            session
                 .ws_attaches
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1));
+                .store(count.saturating_sub(1), Ordering::Relaxed);
         }
     }
 
