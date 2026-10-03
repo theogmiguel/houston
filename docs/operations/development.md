@@ -267,9 +267,17 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-(Wrap `cargo test` in `dbus-run-session` with `gnome-keyring-daemon
---unlock` if `voice::cloud`'s Secret Service tests need a private session
-bus locally.)
+Locally, run `cargo test` through `scripts/with-test-keyring.sh` when
+`voice::cloud`'s Secret Service tests need a keyring:
+`scripts/oom-shield.sh scripts/with-test-keyring.sh cargo test`. Never run
+`gnome-keyring-daemon --unlock` directly on a desktop host, even inside
+`dbus-run-session`: the daemon opens the host's real
+`~/.local/share/keyrings/login.keyring`, and once anything prompts it
+re-encrypts that keyring with the password read from stdin (empty or `\n`).
+The user's login password then no longer unlocks it. The wrapper avoids this
+by pointing `XDG_DATA_HOME` and `XDG_RUNTIME_DIR` at a temporary directory.
+The bare `--unlock` recipe is only safe in CI and the testbed VM, which have
+no user keyring to damage.
 
 **`ui/`** (order matters):
 
