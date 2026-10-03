@@ -143,6 +143,10 @@
   cursor: pointer;
 }
 
+.tk-row.ws {
+  grid-template-columns: 14px 14px 50px minmax(0, 1fr) auto auto;
+}
+
 .tk-row:hover {
   background: var(--hover-fill);
 }
@@ -621,4 +625,250 @@
 
 .tk-form .prop-select {
   height: 28px;
+}
+
+/* Slice 3: pane chip, run marks, Now card and execution card. Geometry and
+   ink come from the mock (`p2-css.css` and its page styles), with the mock's
+   private height/radius variables mapped onto Houston's tokens. */
+
+.tkchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--h-tag-chip);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--tr-radius-sm);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  flex: none;
+  cursor: pointer;
+}
+
+.tkchip:hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.tkchip .tk-glyph {
+  width: 11px;
+  height: 11px;
+}
+
+.chip-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  height: var(--h-tag-chip);
+  padding: 0 6px;
+  border-radius: var(--tr-radius-sm);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tk-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tk-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--tr-radius-pill);
+  flex: none;
+}
+
+.tk-dot.working {
+  background: var(--info);
+}
+
+.tk-dot.spawning {
+  background: var(--accent);
+}
+
+.tk-dot.needs {
+  background: var(--warn);
+}
+
+.tk-dot.idle {
+  background: var(--text-muted);
+}
+
+.tk-dot.done {
+  background: var(--ok);
+}
+
+.tk-dot.failed {
+  background: var(--stop);
+}
+
+.tk-st.needs {
+  color: var(--status-todo-text);
+}
+
+.tk-st.working {
+  color: var(--status-doing-text);
+}
+
+.tk-st.done {
+  color: var(--status-done-text);
+}
+
+.tk-st.failed {
+  color: var(--status-blocked-text);
+}
+
+.tk-st.spawning {
+  color: var(--accent);
+}
+
+.tk-st.idle {
+  color: var(--text-muted);
+}
+
+.nowcard {
+  margin: 8px 10px 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--tr-radius-card);
+  background: var(--content-bg);
+}
+
+.nowcard .lab {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.nowcard .t1 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.nowcard .r1 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.nowcard .chkl {
+  padding: 2px 0;
+}
+
+.nowcard .f {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.exec {
+  margin: 6px 10px 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--tr-radius-card);
+  background: var(--content-bg);
+  overflow: hidden;
+}
+
+.exec.needs {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+}
+
+.exec .h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.exec .h b {
+  font-weight: 600;
+}
+
+.exec .r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.exec .ask2 {
+  margin: 0 10px 8px;
+  padding: 6px 10px;
+  border-radius: var(--tr-radius-sm);
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.exec .findings {
+  margin: 0 10px 8px;
+  padding: 6px 10px;
+  border-radius: var(--tr-radius-sm);
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+
+.exec .findings > svg {
+  margin-top: 2px;
+}
+
+.exec .f {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--divider);
+}
+
+.sysmark {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border: 1px solid var(--divider);
+  border-radius: var(--tr-radius-input);
+  padding: 0 4px;
+  margin-left: 6px;
+}
+
+.act .tk-dot {
+  margin-top: 6px;
 }

@@ -31,8 +31,8 @@ function fakeClient() {
   return { client, emit, asClient: client as unknown as HoustonClient }
 }
 
-function Probe({ client, workspace }: { client: HoustonClient; workspace: string }): React.JSX.Element {
-  const tasks = useTasks(client, workspace)
+function Probe({ client, workspace, scope }: { client: HoustonClient; workspace: string | null; scope?: string }): React.JSX.Element {
+  const tasks = useTasks(client, workspace, scope)
   return (
     <div>
       <output data-testid="snapshot-count">{tasks.snapshot?.tasks.length ?? -1}</output>
@@ -42,14 +42,15 @@ function Probe({ client, workspace }: { client: HoustonClient; workspace: string
       <button onClick={() => tasks.openTask(7)}>Open</button>
       <button onClick={() => tasks.reloadTask(7)}>Reload</button>
       <button onClick={() => tasks.closeTask()}>Close</button>
+      <button onClick={() => tasks.createTask({ title: 'New' })}>Create</button>
     </div>
   )
 }
 
 const SNAPSHOT: Extract<ServerMsg, { type: 'task_snapshot' }> = {
   type: 'task_snapshot',
-  workspace: '/w',
-  counts: { backlog: 1, todo: 0, in_progress: 0, in_review: 0, done: 0, canceled: 0 },
+  scope: '/w',
+  counts: { ready: 0, backlog: 1, todo: 0, in_progress: 0, in_review: 0, done: 0, canceled: 0 },
   tasks: [
     {
       id: 7,
@@ -96,6 +97,27 @@ describe('useTasks', () => {
     container.remove()
   })
 
+  it('reads global tasks from other workspaces and refreshes when a binding is cleared', () => {
+    const { client, emit, asClient } = fakeClient()
+    act(() => root.render(<Probe client={asClient} workspace="/w" scope="all" />))
+    expect(client.taskSnapshot).toHaveBeenCalledWith('all')
+    emit({ ...SNAPSHOT, scope: 'all', tasks: [{ ...SNAPSHOT.tasks[0], workspace: '/other' }] })
+    expect(container.querySelector('[data-testid="snapshot-count"]')?.textContent).toBe('1')
+    act(() => container.querySelector('button')!.click())
+    emit({ ...DETAIL, task: { ...DETAIL.task, workspace: '/other' } })
+    expect(container.querySelector('[data-testid="detail-title"]')?.textContent).toBe('from detail')
+    client.taskSnapshot.mockClear()
+    emit({ type: 'task_changed', workspace: null, id: 7, revision: 2 })
+    expect(client.taskSnapshot).toHaveBeenCalledWith('all')
+  })
+
+  it('creates unassigned tasks when no workspace is selected', () => {
+    const { client, asClient } = fakeClient()
+    act(() => root.render(<Probe client={asClient} workspace={null} scope="all" />))
+    act(() => container.querySelectorAll('button')[3].click())
+    expect(client.taskSave).toHaveBeenCalledWith(null, null, null, { title: 'New' })
+  })
+
   it('reads the snapshot and access on mount, refetches on a change, and reloads the open task', () => {
     const { client, emit, asClient } = fakeClient()
     act(() => root.render(<Probe client={asClient} workspace="/w" />))
@@ -103,7 +125,7 @@ describe('useTasks', () => {
     expect(client.tasksAccessGet).toHaveBeenCalledWith('/w')
 
     emit(SNAPSHOT)
-    emit({ ...SNAPSHOT, workspace: '/other', tasks: [] })
+    emit({ ...SNAPSHOT, scope: '/other', tasks: [] })
     expect(container.querySelector('[data-testid="snapshot-count"]')?.textContent).toBe('1')
 
     act(() => container.querySelector('button')!.click())

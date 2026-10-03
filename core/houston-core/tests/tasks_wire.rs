@@ -48,7 +48,7 @@ async fn save(
     send(
         ws,
         &proto::ClientMsg::TaskSave {
-            workspace: workspace.to_string(),
+            workspace: (!workspace.is_empty()).then(|| workspace.to_string()),
             id,
             expected_revision,
             patch,
@@ -72,7 +72,7 @@ async fn snapshot(
     send(
         ws,
         &proto::ClientMsg::TaskSnapshot {
-            workspace: workspace.to_string(),
+            scope: workspace.to_string(),
         },
     )
     .await;
@@ -95,8 +95,9 @@ fn workspace(state: &std::path::Path) -> String {
 
 #[tokio::test]
 async fn a_task_round_trip_over_the_wire() {
-    let (addr, state, _daemon) = start_daemon_with_handle().await;
+    let (addr, state, daemon) = start_daemon_with_handle().await;
     let workspace = workspace(state.path());
+    daemon.workspace_add(&workspace).unwrap();
     let mut ws = connect_and_hello(addr, TOKEN).await;
 
     let (first, first_rev) = changed(save(&mut ws, &workspace, None, None, patch("First")).await);
@@ -264,8 +265,9 @@ async fn a_task_round_trip_over_the_wire() {
 
 #[tokio::test]
 async fn a_description_over_the_cap_is_refused_naming_limit_actual_and_operation() {
-    let (addr, state, _daemon) = start_daemon_with_handle().await;
+    let (addr, state, daemon) = start_daemon_with_handle().await;
     let workspace = workspace(state.path());
+    daemon.workspace_add(&workspace).unwrap();
     let mut ws = connect_and_hello(addr, TOKEN).await;
 
     let (id, rev) = changed(save(&mut ws, &workspace, None, None, patch("Capped")).await);
@@ -310,132 +312,52 @@ async fn a_description_over_the_cap_is_refused_naming_limit_actual_and_operation
 }
 
 #[tokio::test]
-async fn tasks_access_off_and_read_are_refused_naming_settings() {
-    let (addr, state, _daemon) = start_daemon_with_handle().await;
+async fn tasks_access_settings_gate_agents_without_hiding_the_global_user_backlog() {
+    let (addr, state, daemon) = start_daemon_with_handle().await;
     let workspace = workspace(state.path());
+    daemon.workspace_add(&workspace).unwrap();
     let mut ws = connect_and_hello(addr, TOKEN).await;
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::TasksAccessGet {
-            workspace: workspace.clone(),
-        },
-    )
-    .await;
-    let proto::ServerMsg::TasksAccess { access, .. } = next_task_reply(&mut ws).await else {
-        panic!("expected TasksAccess");
-    };
-    assert_eq!(access, proto::TasksAccess::Write, "write is the default");
-
-    let (id, rev) = changed(save(&mut ws, &workspace, None, None, patch("Guarded")).await);
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::TasksAccessSet {
-            workspace: workspace.clone(),
-            access: proto::TasksAccess::Off,
-        },
-    )
-    .await;
-    let proto::ServerMsg::TasksAccess { access, .. } = next_task_reply(&mut ws).await else {
-        panic!("expected TasksAccess");
-    };
-    assert_eq!(access, proto::TasksAccess::Off);
-
-    let msg = save(&mut ws, &workspace, None, None, patch("Refused")).await;
-    let proto::ServerMsg::TaskRefused { kind, message, .. } = msg else {
-        panic!("expected TaskRefused, got {msg:?}");
-    };
-    assert_eq!(kind, proto::TaskErrorKind::AccessOff);
-    assert!(message.contains("Settings ▸ Tasks"), "{message}");
-    assert!(message.contains("off"), "{message}");
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::TaskSnapshot {
-            workspace: workspace.clone(),
-        },
-    )
-    .await;
-    let proto::ServerMsg::TaskRefused { kind, message, .. } = next_task_reply(&mut ws).await else {
-        panic!("expected TaskRefused");
-    };
-    assert_eq!(kind, proto::TaskErrorKind::AccessOff);
-    assert!(message.contains("Settings ▸ Tasks"), "{message}");
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::TasksAccessSet {
-            workspace: workspace.clone(),
-            access: proto::TasksAccess::Read,
-        },
-    )
-    .await;
-    let proto::ServerMsg::TasksAccess { access, .. } = next_task_reply(&mut ws).await else {
-        panic!("expected TasksAccess");
-    };
-    assert_eq!(access, proto::TasksAccess::Read);
-
-    let (tasks, _) = snapshot(&mut ws, &workspace).await;
-    assert_eq!(tasks.len(), 1, "read access still lists");
-    let msg = save(&mut ws, &workspace, None, None, patch("Refused")).await;
-    let proto::ServerMsg::TaskRefused { kind, message, .. } = msg else {
-        panic!("expected TaskRefused, got {msg:?}");
-    };
-    assert_eq!(kind, proto::TaskErrorKind::ReadOnly);
-    assert!(message.contains("Settings ▸ Tasks"), "{message}");
-    assert!(message.contains("read"), "{message}");
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::TaskComment {
-            id,
-            body: "not allowed".to_string(),
-        },
-    )
-    .await;
-    let proto::ServerMsg::TaskRefused { kind, .. } = next_task_reply(&mut ws).await else {
-        panic!("expected TaskRefused");
-    };
-    assert_eq!(kind, proto::TaskErrorKind::ReadOnly);
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::TaskArchive {
-            id,
-            archived: true,
-            expected_revision: rev,
-        },
-    )
-    .await;
-    let proto::ServerMsg::TaskRefused { kind, .. } = next_task_reply(&mut ws).await else {
-        panic!("expected TaskRefused");
-    };
-    assert_eq!(kind, proto::TaskErrorKind::ReadOnly);
-
-    send(
-        &mut ws,
-        &proto::ClientMsg::TasksAccessSet {
-            workspace: workspace.clone(),
-            access: proto::TasksAccess::Write,
-        },
-    )
-    .await;
-    let proto::ServerMsg::TasksAccess { access, .. } = next_task_reply(&mut ws).await else {
-        panic!("expected TasksAccess");
-    };
-    assert_eq!(access, proto::TasksAccess::Write);
-    let (_, resumed_rev) = changed(
-        save(
+    for access in [proto::TasksAccess::Off, proto::TasksAccess::Read] {
+        send(
             &mut ws,
-            &workspace,
-            Some(id),
-            Some(rev),
-            patch("Guarded again"),
+            &proto::ClientMsg::TasksAccessSet {
+                workspace: workspace.clone(),
+                access,
+            },
         )
-        .await,
-    );
-    assert_eq!(resumed_rev, rev + 1);
+        .await;
+        assert!(matches!(
+            next_task_reply(&mut ws).await,
+            proto::ServerMsg::TasksAccess { .. }
+        ));
+        let (id, revision) =
+            changed(save(&mut ws, &workspace, None, None, patch("User task")).await);
+        let (tasks, _) = snapshot(&mut ws, "all").await;
+        assert!(tasks.iter().any(|task| task.id == id));
+        send(
+            &mut ws,
+            &proto::ClientMsg::TaskComment {
+                id,
+                body: "User comment".to_string(),
+            },
+        )
+        .await;
+        let (_, next_revision) = changed(next_task_reply(&mut ws).await);
+        assert_eq!(next_revision, revision + 1);
+        assert!(matches!(
+            daemon
+                .task_save_as(
+                    &workspace,
+                    None,
+                    None,
+                    patch("Agent task"),
+                    "agent:test",
+                    "task_create"
+                )
+                .unwrap(),
+            proto::ServerMsg::TaskRefused { .. }
+        ));
+    }
 }
 
 #[tokio::test]
@@ -452,6 +374,7 @@ async fn tasks_survive_a_daemon_restart() {
 
     let (id, revision) = {
         let daemon = Daemon::new(cfg()).unwrap();
+        daemon.workspace_add(&workspace).unwrap();
         let proto::ServerMsg::TaskChanged { id, revision, .. } = daemon
             .task_save(&workspace, None, None, patch("Persisted"))
             .unwrap()
@@ -493,7 +416,7 @@ async fn tasks_survive_a_daemon_restart() {
 }
 
 #[tokio::test]
-async fn workspace_remove_deletes_its_tasks() {
+async fn workspace_remove_unassigns_tasks_and_interrupts_runs() {
     let (_addr, state, daemon) = start_daemon_with_handle().await;
     let dir = state.path().join("project");
     std::fs::create_dir_all(&dir).unwrap();
@@ -501,7 +424,7 @@ async fn workspace_remove_deletes_its_tasks() {
     daemon.workspace_add(&workspace).unwrap();
 
     let proto::ServerMsg::TaskChanged { id, .. } = daemon
-        .task_save(&workspace, None, None, patch("Doomed"))
+        .task_save(&workspace, None, None, patch("Retained"))
         .unwrap()
     else {
         panic!("expected TaskChanged");
@@ -511,6 +434,8 @@ async fn workspace_remove_deletes_its_tasks() {
         proto::ServerMsg::TaskDetail { .. }
     ));
 
+    let conn = rusqlite::Connection::open(state.path().join("test.db")).unwrap();
+    conn.execute("INSERT INTO backlog_task_runs (task_id, attempt, kind, state, provider, initial_revision, started_at) VALUES (?1, 1, 'implementation', 'running', 'grok', 1, 0)", [id]).unwrap();
     daemon.workspace_remove(&workspace).unwrap();
 
     let proto::ServerMsg::TaskSnapshot { tasks, counts, .. } =
@@ -520,8 +445,265 @@ async fn workspace_remove_deletes_its_tasks() {
     };
     assert!(tasks.is_empty(), "{tasks:?}");
     assert_eq!(counts, proto::TaskCounts::default());
-    let proto::ServerMsg::TaskRefused { kind, .. } = daemon.task_get(id).unwrap() else {
-        panic!("expected TaskRefused");
+    let proto::ServerMsg::TaskDetail {
+        task,
+        history,
+        runs,
+        ..
+    } = daemon.task_get(id).unwrap()
+    else {
+        panic!("expected retained TaskDetail");
     };
-    assert_eq!(kind, proto::TaskErrorKind::NotFound);
+    assert_eq!(task.workspace, None);
+    assert_eq!(task.key, "HOU-1");
+    assert!(history
+        .iter()
+        .any(|entry| entry.actor == "houston:workspace-removed"));
+    assert_eq!(runs[0].state, proto::TaskRunState::Interrupted);
+    assert!(runs[0].reason.as_deref().unwrap().contains(&workspace));
+    let proto::ServerMsg::TaskSnapshot { tasks, .. } = daemon.task_snapshot("unassigned").unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    assert_eq!(tasks.len(), 1);
+}
+
+#[test]
+fn migration_preserves_rows_history_and_counter_without_reusing_numbers() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("old-tasks.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("CREATE TABLE backlog_tasks (
+        id INTEGER PRIMARY KEY, workspace TEXT NOT NULL, number INTEGER NOT NULL,
+        title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 0, parent_id INTEGER REFERENCES backlog_tasks(id),
+        ref_url TEXT, revision INTEGER NOT NULL DEFAULT 1, created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, archived_at INTEGER,
+        UNIQUE(workspace, number));
+        CREATE TABLE backlog_task_counters (workspace TEXT PRIMARY KEY, next_number INTEGER NOT NULL);
+        INSERT INTO backlog_task_counters VALUES ('/one', 30), ('/two', 2);
+        INSERT INTO backlog_tasks VALUES (7, '/one', 1, 'first', 'brief', 'todo', 2, NULL, 'url', 9, 'user', 11, 12, NULL);
+        INSERT INTO backlog_tasks VALUES (8, '/two', 1, 'second', '', 'todo', 0, 7, NULL, 4, 'user', 13, 14, NULL);
+        INSERT INTO backlog_tasks VALUES (9, '/two', 5, 'unique', '', 'done', 0, NULL, NULL, 6, 'user', 15, 16, 17);
+        CREATE TABLE backlog_task_history (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, changes TEXT NOT NULL, created_at INTEGER NOT NULL);
+        INSERT INTO backlog_task_history VALUES (20, 8, 'user', 'create', '{}', 13);
+        CREATE TABLE backlog_task_comments (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, body TEXT NOT NULL, author TEXT NOT NULL, created_at INTEGER NOT NULL);
+            INSERT INTO backlog_task_comments VALUES (21, 8, 'preserved', 'user', 14);
+            CREATE TABLE backlog_task_acceptance (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, position INTEGER NOT NULL, text TEXT NOT NULL, checked_at INTEGER, checked_by TEXT);
+            INSERT INTO backlog_task_acceptance VALUES (22, 8, 0, 'keep checked', 14, 'user');
+            CREATE TABLE backlog_task_blocks (task_id INTEGER NOT NULL, blocked_by_id INTEGER NOT NULL, PRIMARY KEY(task_id, blocked_by_id));
+            INSERT INTO backlog_task_blocks VALUES (8, 7);
+            CREATE TABLE backlog_task_runs (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, attempt INTEGER NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, provider TEXT NOT NULL, reviewer TEXT, session_id INTEGER, delegation_id INTEGER, worktree_path TEXT, branch TEXT, base_commit TEXT, initial_revision INTEGER NOT NULL, summary TEXT, started_at INTEGER NOT NULL, ended_at INTEGER);
+            INSERT INTO backlog_task_runs VALUES (23, 8, 1, 'implementation', 'running', 'claude', NULL, NULL, NULL, NULL, NULL, NULL, 4, NULL, 14, NULL);").unwrap();
+    drop(conn);
+    let db = houston_core::db::Db::open(&path).unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let rows: Vec<(i64, i64, i64, Option<i64>)> = conn
+        .prepare("SELECT id, number, revision, parent_id FROM backlog_tasks ORDER BY id")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![(7, 1, 9, None), (8, 6, 4, Some(7)), (9, 5, 6, None)]
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT body FROM backlog_task_comments WHERE id = 21 AND task_id = 8",
+            [],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "preserved"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT action FROM backlog_task_history WHERE id = 20",
+            [],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "create"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT checked_at FROM backlog_task_acceptance WHERE id = 22",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        14
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT blocked_by_id FROM backlog_task_blocks WHERE task_id = 8",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        7
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT initial_revision FROM backlog_task_runs WHERE id = 23",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        4
+    );
+    let changes: String = conn.query_row("SELECT changes FROM backlog_task_history WHERE task_id = 8 AND actor = 'houston:renumbered'", [], |row| row.get(0)).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&changes).unwrap(),
+        serde_json::json!({"key": {"old": "HOU-1", "new": "HOU-6"}})
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT next_number FROM backlog_task_counters WHERE workspace = 'all'",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        30
+    );
+    conn.execute("UPDATE backlog_tasks SET workspace = NULL WHERE id = 8", [])
+        .unwrap();
+    assert!(conn
+        .execute("UPDATE backlog_tasks SET number = 1 WHERE id = 8", [])
+        .is_err());
+    drop(db);
+    drop(conn);
+    let _db = houston_core::db::Db::open(&path).unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM backlog_task_history", [], |row| row
+            .get::<_, i64>(
+            0
+        ))
+        .unwrap(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn global_keys_snapshot_scopes_and_optional_workspace_patch_over_wire() {
+    let (addr, state, daemon) = start_daemon_with_handle().await;
+    let first_workspace = workspace(state.path());
+    let second_dir = state.path().join("other");
+    std::fs::create_dir_all(&second_dir).unwrap();
+    let second_workspace = second_dir.display().to_string();
+    daemon.workspace_add(&first_workspace).unwrap();
+    daemon.workspace_add(&second_workspace).unwrap();
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let (first, _) = changed(
+        save(
+            &mut ws,
+            &first_workspace,
+            None,
+            None,
+            patch("First workspace"),
+        )
+        .await,
+    );
+    let (second, _) = changed(
+        save(
+            &mut ws,
+            &second_workspace,
+            None,
+            None,
+            patch("Second workspace"),
+        )
+        .await,
+    );
+    let (unassigned, revision) = changed(save(&mut ws, "", None, None, patch("Unassigned")).await);
+    let (all, counts) = snapshot(&mut ws, "all").await;
+    assert_eq!(counts.backlog, 3);
+    let keys: std::collections::HashSet<_> = all.iter().map(|task| task.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        std::collections::HashSet::from(["HOU-1", "HOU-2", "HOU-3"])
+    );
+    assert_eq!(
+        snapshot(&mut ws, &first_workspace)
+            .await
+            .0
+            .iter()
+            .map(|task| task.id)
+            .collect::<Vec<_>>(),
+        vec![first]
+    );
+    assert_eq!(
+        snapshot(&mut ws, &second_workspace)
+            .await
+            .0
+            .iter()
+            .map(|task| task.id)
+            .collect::<Vec<_>>(),
+        vec![second]
+    );
+    assert_eq!(snapshot(&mut ws, "unassigned").await.0[0].id, unassigned);
+    let (_, assigned_revision) = changed(
+        save(
+            &mut ws,
+            "",
+            Some(unassigned),
+            Some(revision),
+            proto::TaskPatch {
+                workspace: Some(Some(second_workspace.clone())),
+                ..Default::default()
+            },
+        )
+        .await,
+    );
+    assert!(snapshot(&mut ws, "unassigned").await.0.is_empty());
+    assert_eq!(snapshot(&mut ws, &second_workspace).await.0.len(), 2);
+    let (_, cleared_revision) = changed(
+        save(
+            &mut ws,
+            &second_workspace,
+            Some(unassigned),
+            Some(assigned_revision),
+            proto::TaskPatch {
+                workspace: Some(None),
+                ..Default::default()
+            },
+        )
+        .await,
+    );
+    let proto::ServerMsg::TaskDetail { task, history, .. } = detail(&mut ws, unassigned).await
+    else {
+        panic!("expected detail");
+    };
+    assert_eq!(task.workspace, None);
+    assert_eq!(task.key, "HOU-3", "assignment never changes the key");
+    assert!(history
+        .iter()
+        .any(|entry| entry.changes.contains("workspace")));
+    let invalid = state.path().join("unregistered").display().to_string();
+    let proto::ServerMsg::TaskRefused { message, .. } = save(
+        &mut ws,
+        "",
+        Some(unassigned),
+        Some(cleared_revision),
+        proto::TaskPatch {
+            workspace: Some(Some(invalid.clone())),
+            ..Default::default()
+        },
+    )
+    .await
+    else {
+        panic!("expected refusal");
+    };
+    assert!(
+        message.contains(&invalid) && message.contains("registered workspace path"),
+        "{message}"
+    );
+    assert_eq!(
+        daemon.task_id_for_key(&first_workspace, "HOU-2").unwrap(),
+        Some(second)
+    );
 }

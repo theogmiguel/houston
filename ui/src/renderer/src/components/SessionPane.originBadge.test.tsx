@@ -61,7 +61,7 @@ function mountPane(
   act(() => {
     root!.render(
       <SessionPane
-        client={{} as unknown as HoustonClient}
+        client={{ subscribe: () => () => {}, taskSnapshot: () => {}, taskQueueRun: () => {} } as unknown as HoustonClient}
         info={info}
         theme="black"
         active

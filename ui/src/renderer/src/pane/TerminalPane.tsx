@@ -1,6 +1,7 @@
 import { TERMINAL_FOCUS_EVENT, openSideTasks } from '../sidePanel'
 import { FILE_REFERENCE_MIME, fileReference } from '../components/files/fileActions'
 import { claimVisibility } from './registration'
+import { registerTerminalSelection } from './terminalSelection'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
   GhosttyPaneTerminal,
@@ -302,6 +303,10 @@ export function TerminalPane({
     const t = setTimeout(() => setSkeletonGone(true), 560)
     return () => clearTimeout(t)
   }, [synced])
+
+  useEffect(() => {
+    return registerTerminalSelection(info.id, () => termRef.current?.getSelection() ?? '')
+  }, [info.id])
 
   useEffect(() => {
     const host = hostRef.current

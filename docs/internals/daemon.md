@@ -361,7 +361,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 |---|---|
 | workspaces and sessions | `workspaces`, `sessions` |
 | routines | `routines`, `routine_runs` |
-| tasks | `backlog_tasks`, `backlog_task_counters`, `backlog_task_acceptance`, `backlog_task_blocks`, `backlog_task_comments`, `backlog_task_history`, `backlog_task_runs` — a workspace's backlog; `workspace_remove` deletes all of them |
+| tasks | `backlog_tasks`, `backlog_task_counters`, `backlog_task_acceptance`, `backlog_task_blocks`, `backlog_task_comments`, `backlog_task_history`, `backlog_task_runs` — one global backlog with optional workspace bindings; `workspace_remove` unassigns tasks and interrupts their open runs, preserving rows and history |
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
@@ -384,9 +384,14 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns five tasks:
-`swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop` and
-`worktree_cleanup_loop`. While `worktree_cleanup_enabled` is on, the last runs one pass at
+`boot::spawn_background_loops` is called only by the daemon host and spawns six tasks:
+`swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
+`worktree_cleanup_loop` and `task_pr_watch_loop`. The task PR watch is not gated by
+`worktree_cleanup_enabled`: every `TASK_PR_WATCH_INTERVAL_MS` it runs one `gh pr view` in
+the worktree of each in-review task that has a run branch. A merged PR records `done` with
+`houston:pr-merged` in history; a missing or unauthenticated `gh`, or a branch with no PR,
+leaves the task in review and writes the reason on its run. While `worktree_cleanup_enabled` is on, the worktree cleanup
+loop runs one pass at
 boot and every 6 h over each workspace with rows in `managed_worktrees`: it works out why
 each recorded worktree stays (`WorktreeKeep`), measures it, removes the ones nothing keeps
 and broadcasts `worktree_cleanup` per workspace. While the setting is off the loop does no

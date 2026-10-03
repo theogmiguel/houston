@@ -7,4 +7,10 @@ import type { TaskRunState } from "./TaskRunState";
  * One execution attempt of a task. Slice 1 records none; the shape is fixed
  * so the wire does not change when Start lands.
  */
-export type TaskRun = { id: number, task_id: number, attempt: number, kind: TaskRunKind, state: TaskRunState, provider: AgentKind, reviewer?: AgentKind | null, session_id?: number | null, delegation_id?: number | null, worktree_path?: string | null, branch?: string | null, base_commit?: string | null, initial_revision: number, summary?: string | null, started_at_ms: number, ended_at_ms?: number | null, };
+export type TaskRun = { id: number, task_id: number, attempt: number, kind: TaskRunKind, state: TaskRunState, provider: AgentKind, reviewer?: AgentKind | null, session_id?: number | null, delegation_id?: number | null, worktree_path?: string | null, branch?: string | null, base_commit?: string | null, initial_revision: number, summary?: string | null,
+/**
+ * Why the run is not running: an interrupted pane, a `gh` that is missing
+ * or unauthenticated during the PR watch, or a refused resume. Cleared
+ * when the run moves again.
+ */
+reason?: string | null, started_at_ms: number, ended_at_ms?: number | null, };

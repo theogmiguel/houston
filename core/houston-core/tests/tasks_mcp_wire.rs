@@ -22,6 +22,7 @@ fn workspace(state: &Path) -> PathBuf {
 }
 
 fn plain_pane(daemon: &Arc<Daemon>, ws: &Path) -> u32 {
+    daemon.workspace_add(&ws.display().to_string()).unwrap();
     daemon
         .create_session(CreateParams {
             agent: proto::AgentKind::Custom,
@@ -622,4 +623,162 @@ async fn a_task_key_that_does_not_exist_is_refused_naming_the_key() {
         message.contains("expected an existing HOU-<number>"),
         "{message}"
     );
+}
+
+/// Global keys stay distinct while agent access follows the configured scope.
+#[tokio::test]
+async fn task_tools_read_globally_and_write_only_own_workspace() {
+    let r = rig().await;
+    let other_ws = {
+        let dir = r.ws.parent().unwrap().join("project2");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::canonicalize(dir).unwrap()
+    };
+    r.daemon
+        .workspace_add(&other_ws.display().to_string())
+        .unwrap();
+    let first = r.token_for(r.pane());
+    for title in ["first one", "first two", "first three"] {
+        ok_call(r.addr, &first, "task_create", json!({ "title": title })).await;
+    }
+    let pane = plain_pane(&r.daemon, &other_ws);
+    let token = token(&r.daemon, pane, &other_ws);
+    let one = ok_call(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "second one" }),
+    )
+    .await;
+    let two = ok_call(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "second two" }),
+    )
+    .await;
+    assert_eq!(
+        (one["key"].as_str(), one["id"].as_i64()),
+        (Some("HOU-4"), Some(4))
+    );
+    assert_eq!(
+        (two["key"].as_str(), two["id"].as_i64()),
+        (Some("HOU-5"), Some(5))
+    );
+
+    for reference in [json!("HOU-4"), json!("hou-4"), json!(4)] {
+        let detail = ok_call(r.addr, &token, "task_get", json!({ "id": reference })).await;
+        assert_eq!(
+            detail["task"]["title"], "second one",
+            "{reference}: {detail}"
+        );
+    }
+
+    let updated = ok_call(
+        r.addr,
+        &token,
+        "task_update",
+        json!({ "id": "HOU-4", "expected_revision": one["revision"], "title": "renamed" }),
+    )
+    .await;
+    assert_eq!(updated["id"], 4, "{updated}");
+
+    let claimed = ok_call(r.addr, &token, "task_claim", json!({ "id": "HOU-5" })).await;
+    assert_eq!(claimed["id"], 5, "{claimed}");
+    let handed = ok_call(
+        r.addr,
+        &token,
+        "task_handback",
+        json!({ "id": "HOU-5", "summary": "done" }),
+    )
+    .await;
+    assert_eq!(handed["status"], "in_review", "{handed}");
+    let claimed = ok_call(r.addr, &token, "task_claim", json!({ "id": 4 })).await;
+    assert_eq!(claimed["key"], "HOU-4", "{claimed}");
+
+    ok_call(r.addr, &first, "task_claim", json!({ "id": "HOU-1" })).await;
+    for reference in [json!(1), json!("HOU-1"), json!("HOU-3")] {
+        let detail = ok_call(r.addr, &token, "task_get", json!({ "id": reference })).await;
+        assert_eq!(detail["task"]["workspace"], r.workspace());
+    }
+    let (status, body) = request(r.addr, "GET", "/task/get?id=1", &token, None).await;
+    assert_eq!(status, 200, "{body}");
+    let listed = ok_call(r.addr, &token, "task_list", json!({})).await;
+    assert_eq!(listed["tasks"].as_array().unwrap().len(), 5);
+    let detail = ok_call(r.addr, &token, "task_get", json!({ "id": "HOU-1" })).await;
+    assert_eq!(detail["task"]["status"], "in_progress");
+    r.daemon.orchestration_set(true).unwrap();
+    for (name, args) in [
+        (
+            "task_update",
+            json!({ "id": "HOU-1", "expected_revision": detail["task"]["revision"], "title": "forbidden" }),
+        ),
+        (
+            "task_comment",
+            json!({ "id": "HOU-1", "body": "forbidden" }),
+        ),
+        ("task_check", json!({ "id": "HOU-1", "item": 1 })),
+        ("task_claim", json!({ "id": "HOU-1" })),
+        (
+            "task_handback",
+            json!({ "id": "HOU-1", "summary": "forbidden" }),
+        ),
+        ("task_execute", json!({ "id": "HOU-1", "agent": "claude" })),
+    ] {
+        let text = refused(r.addr, &token, name, args).await;
+        assert!(
+            text.contains("HOU-1")
+                && text.contains(&r.workspace())
+                && text.contains("tasks of another workspace are read-only to agents"),
+            "{name}: {text}"
+        );
+    }
+    let (status, body) = post(
+        r.addr,
+        "/task/comment",
+        &token,
+        json!({ "id": 1, "body": "forbidden" }),
+    )
+    .await;
+    assert_ne!(status, 200, "{body}");
+    assert!(
+        body.to_string()
+            .contains("tasks of another workspace are read-only to agents"),
+        "{body}"
+    );
+    r.daemon
+        .tasks_access_set(&other_ws.display().to_string(), proto::TasksAccess::Off)
+        .unwrap();
+    let text = refused(r.addr, &token, "task_get", json!({ "id": "HOU-1" })).await;
+    assert!(text.contains("off"), "{text}");
+    r.daemon
+        .tasks_access_set(&other_ws.display().to_string(), proto::TasksAccess::Write)
+        .unwrap();
+    let text = refused(r.addr, &token, "task_get", json!({ "id": "TSK-1" })).await;
+    assert!(
+        text.contains("\"TSK-1\"") && text.contains("HOU-"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn unassigned_tasks_are_visible_and_claim_assigns_the_callers_workspace() {
+    let r = rig().await;
+    let token = r.token_for(r.pane());
+    let created = ok_call(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "unassigned", "workspace": null }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let listed = ok_call(r.addr, &token, "task_list", json!({})).await;
+    assert_eq!(listed["tasks"][0]["workspace"], Value::Null);
+    ok_call(r.addr, &token, "task_claim", json!({ "id": id })).await;
+    let (task, _, history) = task_detail(r.daemon.task_get(id).unwrap());
+    assert_eq!(task.workspace.as_deref(), Some(r.workspace().as_str()));
+    assert!(history
+        .iter()
+        .any(|entry| entry.action == "houston:claim-assign"));
 }

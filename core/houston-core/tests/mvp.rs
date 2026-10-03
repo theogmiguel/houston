@@ -405,6 +405,7 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
             resumable: false,
             resume_notice: None,
             compactions: None,
+            task: None,
         })
         .unwrap();
     }

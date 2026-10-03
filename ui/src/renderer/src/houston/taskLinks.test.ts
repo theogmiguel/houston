@@ -46,7 +46,7 @@ describe('task key index', () => {
     rememberTaskKeys('/ws/a', [summary(3, 'HOU-3')])
     expect(taskIdForKey('/ws/a', 'HOU-3')).toBe(3)
     expect(taskIdForKey('/ws/a', 'HOU-9')).toBeNull()
-    expect(taskIdForKey('/ws/b', 'HOU-3')).toBeNull()
+    expect(taskIdForKey('/ws/b', 'HOU-3')).toBe(3)
   })
 
   it('replaces the previous snapshot for the workspace', () => {

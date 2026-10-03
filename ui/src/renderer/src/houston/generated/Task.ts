@@ -6,4 +6,4 @@ import type { TaskStatus } from "./TaskStatus";
  * One task with its full text. Every mutation bumps `revision`, so a client
  * that read one can tell its edit is stale.
  */
-export type Task = { id: number, workspace: string, number: number, key: string, title: string, description: string, status: TaskStatus, priority: TaskPriority, parent_id?: number | null, ref_url?: string | null, revision: number, created_by: string, created_at_ms: number, updated_at_ms: number, archived_at_ms?: number | null, };
+export type Task = { id: number, workspace?: string | null, number: number, key: string, title: string, description: string, status: TaskStatus, priority: TaskPriority, parent_id?: number | null, ref_url?: string | null, revision: number, created_by: string, created_at_ms: number, updated_at_ms: number, archived_at_ms?: number | null, };

@@ -613,6 +613,8 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::TaskSnapshot { .. }
             | proto::ClientMsg::TaskGet { .. }
             | proto::ClientMsg::TasksAccessGet { .. }
+            | proto::ClientMsg::TaskStartSettingsGet { .. }
+            | proto::ClientMsg::TaskReviewSettingsGet { .. }
     )
 }
 
@@ -1117,8 +1119,8 @@ async fn dispatch(
             key,
             state,
         } => daemon.harness_decide(&workspace, &key, state),
-        proto::ClientMsg::TaskSnapshot { workspace } => {
-            let msg = daemon.task_snapshot(&workspace)?;
+        proto::ClientMsg::TaskSnapshot { scope } => {
+            let msg = daemon.task_snapshot(&scope)?;
             let _ = send_msg(sink, &msg).await;
             Ok(())
         }
@@ -1132,7 +1134,12 @@ async fn dispatch(
             id,
             expected_revision,
             patch,
-        } => match daemon.task_save(&workspace, id, expected_revision, patch)? {
+        } => match daemon.task_save(
+            workspace.as_deref().unwrap_or(""),
+            id,
+            expected_revision,
+            patch,
+        )? {
             msg @ proto::ServerMsg::TaskRefused { .. } => {
                 let _ = send_msg(sink, &msg).await;
                 Ok(())
@@ -1193,6 +1200,80 @@ async fn dispatch(
                     Ok(())
                 }
             }
+        }
+        proto::ClientMsg::TaskStartSettingsGet { workspace } => {
+            let _ = send_msg(sink, &daemon.tasks_start_settings_state(&workspace)).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskStartSettingsSet {
+            workspace,
+            agent,
+            delivery,
+        } => match daemon.tasks_start_settings_set(&workspace, agent, delivery)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskReviewSettingsGet { workspace } => {
+            let _ = send_msg(sink, &daemon.tasks_review_settings_state(&workspace)).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskReviewSettingsSet {
+            workspace,
+            reviewer,
+            rework_rounds,
+        } => match daemon.tasks_review_settings_set(&workspace, reviewer, rework_rounds)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskStart {
+            id,
+            agent,
+            base,
+            workspace,
+        } => {
+            let started = daemon.task_start_in(id, agent, base, workspace)?;
+            match started {
+                msg @ proto::ServerMsg::TaskRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                msg => daemon.broadcast_control(&msg),
+            }
+            Ok(())
+        }
+        proto::ClientMsg::TaskRunControl { run_id, action } => {
+            match daemon.task_run_control(run_id, action)? {
+                msg @ proto::ServerMsg::TaskRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                msg => daemon.broadcast_control(&msg),
+            }
+            Ok(())
+        }
+        proto::ClientMsg::TaskQueueRun {
+            orchestrator_session,
+            count,
+            agent,
+        } => {
+            // The queue's answer is the requester's own: the started tasks each
+            // broadcast their own TaskChanged/TaskRunChanged.
+            let _ = send_msg(
+                sink,
+                &daemon.task_queue_run(orchestrator_session, count, agent)?,
+            )
+            .await;
+            Ok(())
         }
         proto::ClientMsg::AgentHooks => {
             let models = Arc::clone(daemon);
@@ -4192,8 +4273,16 @@ struct TaskIdBody {
     id: Option<i64>,
 }
 
+fn deserialize_task_workspace<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Deserialize)]
 struct TaskCreateBody {
+    #[serde(default, deserialize_with = "deserialize_task_workspace")]
+    workspace: Option<Option<String>>,
     title: String,
     #[serde(default)]
     description: Option<String>,
@@ -4209,6 +4298,8 @@ struct TaskCreateBody {
 
 #[derive(Deserialize)]
 struct TaskUpdateBody {
+    #[serde(default, deserialize_with = "deserialize_task_workspace")]
+    workspace: Option<Option<String>>,
     key: Option<String>,
     id: Option<i64>,
     expected_revision: i64,
@@ -4247,8 +4338,7 @@ struct TaskHandbackBody {
     summary: String,
 }
 
-/// Resolves a routing key or id against the caller's workspace; an unknown key
-/// is refused naming the value and the expected shape.
+/// Resolves global task references and checks the caller's agent scope.
 fn task_id_from(
     daemon: &Daemon,
     workspace: &str,
@@ -4256,19 +4346,14 @@ fn task_id_from(
     id: Option<i64>,
     operation: &str,
 ) -> anyhow::Result<i64> {
-    match (key, id) {
-        (Some(key), _) => daemon.task_id_for_key(workspace, key)?.ok_or_else(|| {
-            anyhow::anyhow!(
-                "{operation} refused: no task with key {key:?} in workspace {workspace:?} \
-                 (expected an existing HOU-<number>)"
-            )
-        }),
-        (None, Some(id)) => Ok(id),
-        (None, None) => anyhow::bail!(
-            "{operation} refused: a task key or id is required (expected \
-             {{\"key\":\"HOU-1\"}} or {{\"id\":1}})"
+    let value = match (key, id) {
+        (Some(key), _) => json!(key),
+        (None, Some(id)) => json!(id),
+        _ => anyhow::bail!(
+            "{operation} refused: a task key or id is required (expected HOU-1 or integer id)"
         ),
-    }
+    };
+    daemon.task_ref_in(workspace, &value, operation)
 }
 
 /// One `/task/*` call: the pane's scope is the workspace, a child is refused by
@@ -4402,6 +4487,7 @@ async fn task_create(
                 parent_id: parent_id.map(Some),
                 ref_url: None,
                 acceptance: body.acceptance,
+                workspace: body.workspace,
             },
             actor,
             "task_create",
@@ -4442,6 +4528,7 @@ async fn task_update(
                 parent_id: parent_id.map(Some),
                 ref_url: None,
                 acceptance: body.acceptance,
+                workspace: body.workspace,
             },
             actor,
             "task_update",
@@ -4501,6 +4588,7 @@ async fn task_check(
             item.id,
             true,
             actor,
+            Some(scope.session_id),
             "task_check",
         )
     })

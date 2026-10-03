@@ -13,8 +13,8 @@ pub use harness::{
 };
 mod tasks;
 pub use tasks::{
-    TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow, TaskRunRow,
-    TaskSummaryRow, TaskUpdate, TaskWrite,
+    SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
+    TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
 };
 
 #[derive(Debug, Clone)]
@@ -1990,6 +1990,7 @@ impl Db {
                     resumable: false,
                     resume_notice: None,
                     compactions: None,
+                    task: None,
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -5385,6 +5386,7 @@ mod tests {
             resumable: false,
             resume_notice: None,
             compactions: None,
+            task: None,
         }
     }
 

@@ -1,26 +1,35 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import type { AgentKind } from '../../houston/generated/AgentKind'
+import type { SessionInfo } from '../../houston/client'
 import type { TaskAcceptanceItem } from '../../houston/generated/TaskAcceptanceItem'
 import type { TaskComment } from '../../houston/generated/TaskComment'
 import type { TaskHistoryEntry } from '../../houston/generated/TaskHistoryEntry'
 import type { TaskPatch } from '../../houston/generated/TaskPatch'
 import type { TaskPriority } from '../../houston/generated/TaskPriority'
+import type { TaskRun } from '../../houston/generated/TaskRun'
+import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
-import type { TaskDetailData, TaskRefusal } from '../../houston/useTasks'
+import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
 import { BTN_GHOST, BTN_SECONDARY } from '../buttonChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from '../Icon'
 import {
+  IconAgent,
   IconAlertTriangle,
   IconArchive,
   IconCheck,
   IconChevronLeft,
   IconCopy,
+  IconCornerDownRight,
   IconEllipsis,
+  IconGitFork,
   IconMessageSquare,
   IconPencil,
+  IconPlay,
   IconPlus,
-  IconUndo
+  IconUndo,
+  IconUser
 } from '../icons'
 import { Select, type SelectOption } from '../Select'
 import { Tooltip } from '../Tooltip'
@@ -31,14 +40,16 @@ import {
   formatAgo,
   historyLine,
   PRIORITY_LABEL,
+  READ_ONLY_REASON,
   STATUS_LABEL,
-  STATUS_ORDER
+  STATUS_ORDER,
+  taskAgentLabel,
+  taskReviewer,
+  taskReviewOutcome
 } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
+import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
-
-const READ_ONLY_REASON =
-  'Tasks are read-only for this workspace — change Settings ▸ Tasks ▸ Agent access'
 
 export interface TaskDetailProps {
   detail: TaskDetailData
@@ -46,21 +57,32 @@ export interface TaskDetailProps {
   refusal: TaskRefusal | null
   now: number
   parentOptions: SelectOption[]
+  workspaceOptions?: SelectOption[]
+  sessions: ReadonlyMap<number, SessionInfo>
+  startSettings: TaskStartSettings | null
   onBack: () => void
   onReload: (id: number) => void
   onSave: (id: number, expectedRevision: number, patch: TaskPatch) => void
   onCheck: (id: number, item: number, checked: boolean) => void
   onComment: (id: number, body: string) => void
   onArchive: (id: number, archived: boolean, expectedRevision: number) => void
+  onStart: (id: number, agent: AgentKind, workspace?: string | null) => void
+  onRunControl: (runId: number, action: TaskRunAction) => void
+  onOpenSession: (sessionId: number) => void
+  onReview: (session: SessionInfo) => void
 }
 
 export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
-  const { detail, access, refusal, now } = props
+  const { detail, refusal, now } = props
   const { task } = detail
-  const readOnly = access === 'read' || access === 'off'
+  const readOnly = false
   const [title, setTitle] = useServerDraft(task.title, task.revision)
   const [description, setDescription] = useServerDraft(task.description, task.revision)
   const archived = task.archived_at_ms != null
+  const latestRun = detail.runs[0] ?? null
+  const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
+  const reviewer = taskReviewer(detail.runs)
+  const review = taskReviewOutcome(detail.runs, detail.comments)
 
   return (
     <div className="tasks-root" data-testid="task-detail">
@@ -119,6 +141,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           )}
         </div>
         <div className="tk-props">
+          <Select aria-label="Workspace" data-testid="task-workspace" value={task.workspace ?? ''} options={[{ value: '', label: 'No workspace' }, ...(props.workspaceOptions ?? [])]} disabled={readOnly} prefix={<span className="k">Workspace</span>} chrome="prop-select" onChange={(value) => props.onSave(task.id, task.revision, { workspace: value || null })} />
           <Select
             aria-label="Status"
             data-testid="task-status"
@@ -149,6 +172,13 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             chrome="prop-select"
             onChange={(value) => props.onSave(task.id, task.revision, { parent_id: value === '' ? null : Number(value) })}
           />
+          {reviewer !== null && (
+            <span className="prop" data-testid="task-reviewer-prop">
+              <span className="k">Reviewer</span>
+              <IconAgent agent={reviewer} brand className="w-3.5 h-3.5 flex-none" />
+              {taskAgentLabel(reviewer)}
+            </span>
+          )}
         </div>
         <SectionHeading heading="Description" />
         <textarea
@@ -175,8 +205,30 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           readOnly={readOnly}
           onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
         />
+        {latestRun ? (
+          <TaskExecutionCard
+            run={latestRun}
+            sessions={props.sessions}
+            now={now}
+            readOnly={readOnly}
+            review={review}
+            onOpenSession={props.onOpenSession}
+            onReview={props.onReview}
+            onRunControl={props.onRunControl}
+          />
+        ) : (
+          startable && (
+            <TaskStartCard
+              task={task}
+              settings={props.startSettings}
+              workspaceOptions={props.workspaceOptions}
+              readOnly={readOnly}
+              onStart={props.onStart}
+            />
+          )
+        )}
         <SectionHeading heading="Activity" />
-        <ActivityFeed history={detail.history} comments={detail.comments} now={now} />
+        <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
         <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
       </div>
     </div>
@@ -301,6 +353,7 @@ interface ActivityEntry {
   icon: ReactNode
   verb: string
   detail?: string
+  system?: string
   comment?: string
 }
 
@@ -311,13 +364,23 @@ const HISTORY_ICON: Readonly<Record<string, ReactNode>> = {
   uncheck: <Icon glyph={IconCheck} role="small" />,
   archive: <Icon glyph={IconArchive} role="small" />,
   restore: <Icon glyph={IconUndo} role="small" />,
+  claim: <Icon glyph={IconUser} role="small" />,
+  handback: <Icon glyph={IconCornerDownRight} role="small" />,
+  start: <Icon glyph={IconPlay} role="small" />,
+  resume: <Icon glyph={IconPlay} role="small" />,
+  pane_working: <span className="tk-dot working" />,
+  pr_merged: <Icon glyph={IconGitFork} role="small" />,
   default: <Icon glyph={IconPencil} role="small" />
 }
 
-function activityEntries(history: TaskHistoryEntry[], comments: TaskComment[]): ActivityEntry[] {
+function activityEntries(
+  history: TaskHistoryEntry[],
+  comments: TaskComment[],
+  runs: readonly TaskRun[]
+): ActivityEntry[] {
   const entries: ActivityEntry[] = []
   for (const entry of history) {
-    const line = historyLine(entry)
+    const line = historyLine(entry, runs)
     if (!line) continue
     entries.push({
       key: `h${entry.id}`,
@@ -325,7 +388,8 @@ function activityEntries(history: TaskHistoryEntry[], comments: TaskComment[]): 
       actor: entry.actor,
       icon: HISTORY_ICON[entry.action] ?? HISTORY_ICON.default,
       verb: line.verb,
-      detail: line.detail
+      detail: line.detail,
+      system: line.system
     })
   }
   for (const comment of comments) {
@@ -344,13 +408,15 @@ function activityEntries(history: TaskHistoryEntry[], comments: TaskComment[]): 
 function ActivityFeed({
   history,
   comments,
+  runs,
   now
 }: {
   history: TaskHistoryEntry[]
   comments: TaskComment[]
+  runs: readonly TaskRun[]
   now: number
 }): React.JSX.Element {
-  const entries = activityEntries(history, comments)
+  const entries = activityEntries(history, comments, runs)
   if (entries.length === 0) return <div className="tk-body muted">No activity yet.</div>
   return (
     <>
@@ -360,6 +426,7 @@ function ActivityFeed({
           <span>
             <b>{actorLabel(entry.actor)}</b> {entry.verb}
             {entry.detail && <span className="muted"> {entry.detail}</span>}
+            {entry.system && <span className="sysmark">{entry.system}</span>}
             {entry.comment && <div className="bubble">{entry.comment}</div>}
           </span>
           <span className="tm">{formatAge(entry.at, now)}</span>

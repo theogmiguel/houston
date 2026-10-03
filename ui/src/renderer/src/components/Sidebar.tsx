@@ -2703,7 +2703,7 @@ export function Sidebar({
     <aside
       data-custom={dataCustom}
       {...materialAttrs("shell")}
-      className={`w-full flex-none flex flex-col relative z-[var(--z-leaf)] ${MATERIAL_CLS.shell} ${
+      className={`w-full flex-none flex flex-col relative z-[var(--z-leaf)] select-none ${MATERIAL_CLS.shell} ${
         custom ? "shadow-[var(--glass-rail-shadow)]" : ""
       } ${className}`}
     >

@@ -3,5 +3,6 @@
 /**
  * Per-status counts of the workspace's non-archived tasks; the snapshot's
  * `tasks` list also carries the archived ones, with `archived_at_ms` set.
+ * `ready` is the queue's pool: todo tasks with no unfinished blocker.
  */
-export type TaskCounts = { backlog: number, todo: number, in_progress: number, in_review: number, done: number, canceled: number, };
+export type TaskCounts = { ready: number, backlog: number, todo: number, in_progress: number, in_review: number, done: number, canceled: number, };

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 123;
+pub const PROTOCOL_VERSION: u32 = 124;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -472,6 +472,9 @@ pub enum TaskErrorKind {
     ReadOnly,
     Invalid,
     Cycle,
+    /// Another pane or run holds the task; `limit` and `actual` name the live
+    /// run count and the message names the holder.
+    Busy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -480,6 +483,28 @@ pub enum TaskErrorKind {
 pub enum TaskRunKind {
     Implementation,
     Review,
+}
+
+/// What a client may do to a run: `stop` ends its pane, `resume` opens the next
+/// attempt on the same worktree and branch, `retry` opens the next attempt
+/// there with the newest reviewer findings appended to the brief.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskRunAction {
+    Stop,
+    Resume,
+    Retry,
+}
+
+/// How a task brief reaches the agent a Start launches: `send` submits it as
+/// the pane's first prompt, `prefill` types it into the input box unsubmitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskPromptDelivery {
+    Send,
+    Prefill,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -504,7 +529,9 @@ pub enum TaskRunState {
 pub struct TaskSummary {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
-    pub workspace: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub workspace: Option<String>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     /// The task's display key, `HOU-<number>`.
@@ -529,6 +556,12 @@ pub struct TaskSummary {
     pub acceptance_checked: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_total: u32,
+    /// The newest run still in flight for this task, if any; the snapshot
+    /// carries it so the list can show the execution card without a detail
+    /// fetch. Handed-back and finished runs stay only in `task_detail.runs`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub open_run: Option<TaskRun>,
 }
 
 /// One task with its full text. Every mutation bumps `revision`, so a client
@@ -538,7 +571,9 @@ pub struct TaskSummary {
 pub struct Task {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
-    pub workspace: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub workspace: Option<String>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub key: String,
@@ -601,7 +636,7 @@ pub struct TaskHistoryEntry {
 
 /// One execution attempt of a task. Slice 1 records none; the shape is fixed
 /// so the wire does not change when Start lands.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskRun {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -636,6 +671,12 @@ pub struct TaskRun {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub summary: Option<String>,
+    /// Why the run is not running: an interrupted pane, a `gh` that is missing
+    /// or unauthenticated during the PR watch, or a refused resume. Cleared
+    /// when the run moves again.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub reason: Option<String>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at_ms: i64,
     #[serde(default)]
@@ -643,11 +684,32 @@ pub struct TaskRun {
     pub ended_at_ms: Option<i64>,
 }
 
+/// The task a session is bound to, as a pane chip shows it: the newest run
+/// recorded with that `session_id`, its task and the run's state. A session
+/// with no run has no binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionTask {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub task_id: i64,
+    /// The task's display key, `HOU-<number>`.
+    pub key: String,
+    pub title: String,
+    pub status: TaskStatus,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub run_id: i64,
+    pub run_state: TaskRunState,
+}
+
 /// Per-status counts of the workspace's non-archived tasks; the snapshot's
 /// `tasks` list also carries the archived ones, with `archived_at_ms` set.
+/// `ready` is the queue's pool: todo tasks with no unfinished blocker.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskCounts {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub ready: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub backlog: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -662,12 +724,30 @@ pub struct TaskCounts {
     pub canceled: u32,
 }
 
+/// One ready task a `task_queue_run` could not start, with the refusal the
+/// daemon would have answered for a direct Start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskQueueRefusal {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub id: i64,
+    pub key: String,
+    pub message: String,
+}
+
 /// A task write's fields. `title`, `description`, `status`, `priority` and
-/// `acceptance` are absent-or-value; `parent_id` and `ref_url` are three-state,
+/// `acceptance` are absent-or-value; workspace, parent and URL are three-state,
 /// so absent, null and a value are distinct. `acceptance` replaces the list.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskPatch {
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub workspace: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub title: Option<String>,
@@ -1638,6 +1718,12 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub compactions: Option<u32>,
+    /// The task this pane is bound to, from the newest run that names it; a
+    /// pane launched or claimed by a task carries it so the header can show a
+    /// chip without the Tasks tab being open.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub task: Option<SessionTask>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3176,9 +3262,9 @@ pub enum ClientMsg {
         key: String,
         state: HarnessFindingState,
     },
-    /// A workspace's tasks, summaries only, with per-status counts.
+    /// Global task summaries scoped to all, unassigned or a workspace path.
     TaskSnapshot {
-        workspace: String,
+        scope: String,
     },
     /// One task with its acceptance items, comments, history and runs.
     TaskGet {
@@ -3188,7 +3274,9 @@ pub enum ClientMsg {
     /// Creates (id absent) or updates (id present, `expected_revision`
     /// required) one task.
     TaskSave {
-        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         id: Option<i64>,
@@ -3217,6 +3305,62 @@ pub enum ClientMsg {
         archived: bool,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
+    },
+    /// Starts an implementation run: a worktree on `houston/task/hou-<n>-<slug>`,
+    /// a pane launched in it with the task brief, and the run recorded against
+    /// the task. `base` is checked out only when the branch is new.
+    TaskStart {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+        agent: AgentKind,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        base: Option<String>,
+    },
+    /// Stops or resumes one run. `resume` opens attempt N+1 on the same
+    /// worktree and branch.
+    TaskRunControl {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        run_id: i64,
+        action: TaskRunAction,
+    },
+    /// The workspace's Start defaults: which agent a Start uses when the client
+    /// names none, and whether the brief is submitted or prefilled.
+    TaskStartSettingsGet {
+        workspace: String,
+    },
+    TaskStartSettingsSet {
+        workspace: String,
+        agent: AgentKind,
+        delivery: TaskPromptDelivery,
+    },
+    /// The workspace's review defaults: the reviewer `task_execute` uses when it
+    /// names none, and how many automatic rework rounds a failed review may take.
+    TaskReviewSettingsGet {
+        workspace: String,
+    },
+    TaskReviewSettingsSet {
+        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        reviewer: Option<AgentKind>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        rework_rounds: u32,
+    },
+    /// The roster's "Run next N": starts the top `count` ready tasks as children
+    /// of `orchestrator_session`, all or nothing. No agent names the workspace's
+    /// Start default for each task.
+    TaskQueueRun {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        orchestrator_session: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        count: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        agent: Option<AgentKind>,
     },
     TasksAccessGet {
         workspace: String,
@@ -3808,10 +3952,10 @@ pub enum ServerMsg {
     HarnessChanged {
         workspace: String,
     },
-    /// A workspace's task summaries (archived included, flagged by
+    /// Scoped global task summaries (archived included, flagged by
     /// `archived_at_ms`) and per-status counts of the non-archived ones.
     TaskSnapshot {
-        workspace: String,
+        scope: String,
         tasks: Vec<TaskSummary>,
         counts: TaskCounts,
     },
@@ -3827,7 +3971,9 @@ pub enum ServerMsg {
     /// One task changed; a client showing the workspace asks for
     /// `task_snapshot` or `task_get` again.
     TaskChanged {
-        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -3848,6 +3994,40 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         actual: Option<i64>,
         message: String,
+    },
+    /// One run changed state or binding (started, needs input, handed back,
+    /// interrupted, resumed, stopped). A client showing the task refreshes it.
+    TaskRunChanged {
+        run: TaskRun,
+    },
+    /// The workspace's Start defaults, after a read or a change.
+    TaskStartSettings {
+        workspace: String,
+        agent: AgentKind,
+        delivery: TaskPromptDelivery,
+    },
+    /// The workspace's review defaults, after a read or a change.
+    TaskReviewSettings {
+        workspace: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        reviewer: Option<AgentKind>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        rework_rounds: u32,
+    },
+    /// One `task_queue_run`'s outcome: the keys it started, the tasks it could
+    /// not start and why, and what the roster shows next to the button.
+    TaskQueueResult {
+        workspace: String,
+        /// The started tasks' keys, in the order they were picked.
+        started: Vec<String>,
+        #[serde(default)]
+        refused: Vec<TaskQueueRefusal>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        ready_count: u32,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        free_children: u32,
     },
     /// The workspace's Tasks access, after a read or a change.
     TasksAccess {
@@ -4096,7 +4276,7 @@ pub const TASK_TITLE_MAX: usize = 200;
 pub const TASK_DESCRIPTION_MAX: usize = 65_536;
 /// A comment body; keeps one task's detail reply bounded.
 pub const TASK_COMMENT_MAX: usize = 16_384;
-/// Tasks one workspace may hold; snapshot sends summaries only.
+/// Tasks the global backlog may hold; snapshot sends summaries only.
 pub const TASKS_PER_WORKSPACE: u32 = 5_000;
 /// Comments one task may hold; keeps `task_get` bounded.
 pub const COMMENTS_PER_TASK: u32 = 500;
@@ -4106,6 +4286,17 @@ pub const ACCEPTANCE_ITEMS_PER_TASK: u32 = 50;
 pub const RUNS_PER_TASK: u32 = 50;
 /// History rows one task's detail answers with, newest first.
 pub const TASK_HISTORY_PAGE: u32 = 200;
+/// The task brief, above `launch::PROMPT_FILE_THRESHOLD` (12 000) so it is
+/// delivered as a file, and small enough that one Start stays bounded.
+pub const TASK_BRIEF_MAX_BYTES: usize = 16_384;
+/// Live implementation runs one task may have; a second Start or claim is
+/// refused by name rather than queued.
+pub const TASK_LIVE_IMPLEMENTATION_RUNS: u32 = 1;
+/// The task PR watch interval: one `gh pr view` per in-review task per tick.
+pub const TASK_PR_WATCH_INTERVAL_MS: u64 = 300_000;
+/// Automatic rework rounds a failed review may take, per workspace; a runaway
+/// reviewer-and-implementer pair must cost a bounded number of agent runs.
+pub const TASKS_REWORK_ROUNDS_MAX: u32 = 5;
 
 pub const RESTORE_BUDGET_DEFAULT: u32 = 24;
 

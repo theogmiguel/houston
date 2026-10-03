@@ -2605,6 +2605,7 @@ impl Daemon {
         conpty_warmup();
         if adopted.is_none() {
             daemon.close_delegations_lost_to_the_restart();
+            daemon.reconcile_task_runs();
             daemon.run_restore_policy(startup_cause);
             let live_sessions: Vec<u32> = daemon
                 .sessions
@@ -2894,6 +2895,14 @@ impl Daemon {
             };
             notices.push(serde_json::json!({ "role": row.and_then(|r| r.role), "child": new_id, "provider": child.agent, "resumed": resumed, "reason": reason }));
             if let Some(restored) = restored {
+                // A resumed task child reopens its run: the restart's
+                // reconcile interrupted it, and the pane is working again.
+                if let Err(e) = self.task_run_resumed_on_restore(child.id, restored.id) {
+                    tracing::warn!(
+                        "tasks: resuming the run of restored child {}: {e:#}",
+                        child.id
+                    );
+                }
                 let mut nested = Vec::new();
                 self.restore_children(child.id, new_id, children, &mut nested, respawned);
                 self.record_restored_children(&restored, &nested);
@@ -3870,6 +3879,7 @@ impl Daemon {
             resumable: false,
             resume_notice: None,
             compactions: None,
+            task: None,
         };
         let vt = adopted_emulator(m);
         Arc::new(Session {
@@ -5599,6 +5609,9 @@ impl Daemon {
                 prompt: Some(row.prompt.clone()),
             },
             vec![(crate::harness::RUN_ENV.to_string(), run_id.to_string())],
+            Vec::new(),
+            None,
+            None,
         );
         let session = match spawned {
             Ok(info) => info,
@@ -6302,6 +6315,7 @@ impl Daemon {
                 session: id,
                 status,
             });
+            self.tasks_on_session_status(id, status);
             if orchestrate::settled(status) {
                 if let Some(this) = self.self_arc() {
                     this.drain_pending_inbox(id);
@@ -6555,6 +6569,7 @@ impl Daemon {
                 ev.status()
             );
         }
+        self.tasks_on_session_status(id, ev.status());
         if deliver_delegation {
             self.advance_delegation(id, ev);
         }
@@ -6651,7 +6666,15 @@ impl Daemon {
             .map(|s| s.snapshot_info())
             .collect();
         out.extend(self.dead.lock().expect("dead lock").values().cloned());
+        let bindings = self.db.task_bindings().unwrap_or_else(|e| {
+            tracing::warn!("reading session-to-task bindings: {e}");
+            Vec::new()
+        });
         for info in out.iter_mut() {
+            info.task = bindings
+                .iter()
+                .find(|binding| binding.run.session_id == Some(info.id))
+                .map(tasks::binding_to_session_task);
             self.session_checkout_metadata(info);
             if info.session_origin.is_none() {
                 info.session_origin = Some(self.db.session_origin(info.id).unwrap_or_else(|e| {
@@ -6753,6 +6776,23 @@ impl Daemon {
             }
         }
 
+        let tasks = self.db.list_tasks(path, proto::TASKS_PER_WORKSPACE)?;
+        let runs = self.db.open_task_runs()?;
+        self.db.remove_backlog_tasks(path)?;
+        for task in &tasks {
+            self.broadcast_control(&proto::ServerMsg::TaskChanged {
+                workspace: None,
+                id: task.id,
+                revision: task.revision + 1,
+            });
+        }
+        for run in runs
+            .iter()
+            .filter(|run| tasks.iter().any(|task| task.id == run.task_id))
+        {
+            self.broadcast_task_run(run.id);
+        }
+
         let live_ids: Vec<u32> = self
             .sessions
             .lock()
@@ -6781,10 +6821,6 @@ impl Daemon {
 
         self.uninstall_workspace_hooks(path);
         self.db.remove_workspace(path)?;
-        let removed_tasks = self.db.remove_backlog_tasks(path)?;
-        if removed_tasks > 0 {
-            tracing::info!("removed {removed_tasks} task(s) of workspace {path}");
-        }
         self.workspace_list()
     }
 
@@ -6807,14 +6843,19 @@ impl Daemon {
     }
 
     pub fn create_session(self: &Arc<Self>, p: CreateParams) -> Result<proto::SessionInfo> {
-        self.create_session_with_env(p, Vec::new())
+        self.create_session_with_env(p, Vec::new(), Vec::new(), None, None)
     }
 
-    /// `env` is exported to the pane on top of the profile's environment.
+    /// `env` adds to the profile's environment, `spawn_args` follow the provider's
+    /// own, `prompt_label` names the prompt file (default: the session id) and `cwd`
+    /// starts the process elsewhere while the session stays in `project_dir`.
     fn create_session_with_env(
         self: &Arc<Self>,
         p: CreateParams,
         env: Vec<(String, String)>,
+        spawn_args: Vec<String>,
+        prompt_label: Option<String>,
+        cwd: Option<PathBuf>,
     ) -> Result<proto::SessionInfo> {
         if self.refusing_mutations() {
             bail!("refused: daemon is shutting down");
@@ -6825,14 +6866,14 @@ impl Daemon {
                 p.project_dir.display()
             );
         }
-        let cwd = p
-            .cwd_from
-            .and_then(|src| self.live_cwd(src))
+        let cwd = cwd
+            .or_else(|| p.cwd_from.and_then(|src| self.live_cwd(src)))
             .unwrap_or_else(|| p.project_dir.clone());
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let title = self.next_codename();
         let prompt = p.prompt.as_deref().unwrap_or("");
-        let extra_args = if !prompt.trim().is_empty() {
+        let prompt_label = prompt_label.unwrap_or_else(|| format!("session-{id}"));
+        let mut extra_args = if !prompt.trim().is_empty() {
             let prompts_dir = init_prompts_dir(&p.project_dir)?;
             let (args, prompt_file) = crate::launch::launch_args(
                 p.agent,
@@ -6841,7 +6882,7 @@ impl Daemon {
                 None,
                 prompt,
                 Some(&prompts_dir),
-                "session",
+                &prompt_label,
             )?;
             if let Some((path, contents)) = prompt_file {
                 std::fs::write(&path, contents)
@@ -6860,6 +6901,7 @@ impl Daemon {
         } else {
             Vec::new()
         };
+        extra_args.extend(spawn_args);
         if let Some(slug) = p.acp.as_deref() {
             let known = crate::acp::find_known_acp_agent(slug).ok_or_else(|| {
                 anyhow!(
@@ -8209,6 +8251,7 @@ impl Daemon {
             resumable: resume_handle.is_some(),
             resume_notice,
             compactions: None,
+            task: None,
         };
 
         self.session_checkout_metadata(&mut info);
@@ -8406,6 +8449,7 @@ impl Daemon {
         self.mcp_notify.close_session(id);
         self.swarm_session_finished(id, final_state, exit_code);
         self.reap_reevaluate();
+        self.task_run_session_ended(id);
         final_state
     }
 
@@ -8598,6 +8642,7 @@ impl Daemon {
             resumable: false,
             resume_notice: None,
             compactions: None,
+            task: None,
         };
         let session = Arc::new(Session {
             info: info.clone(),
@@ -13616,7 +13661,36 @@ impl Daemon {
             reusable,
             effort,
             false,
-            worktree,
+            worktree.map(SpawnWorktreeRequest::Create),
+        )
+    }
+
+    /// A task run's child: the caller (the orchestrator) already opened the
+    /// task's worktree and the run records it, so the spawn adopts it instead
+    /// of asking git for a new one.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn orchestrate_spawn_task_child(
+        self: &Arc<Self>,
+        caller: u32,
+        kind: proto::AgentKind,
+        brief: orchestrate::Brief,
+        role: Option<String>,
+        created: CreatedWorktree,
+    ) -> Result<proto::SessionInfo> {
+        self.spawn_agent_pane(
+            caller,
+            kind,
+            None,
+            None,
+            brief,
+            None,
+            None,
+            role,
+            None,
+            false,
+            None,
+            false,
+            Some(SpawnWorktreeRequest::Existing(created)),
         )
     }
 
@@ -13651,7 +13725,7 @@ impl Daemon {
             false,
             effort,
             true,
-            worktree,
+            worktree.map(SpawnWorktreeRequest::Create),
         )
     }
 
@@ -13670,9 +13744,9 @@ impl Daemon {
         reusable: bool,
         effort: Option<proto::ChatEffort>,
         handoff: bool,
-        worktree: Option<crate::worktrees::SpawnWorktree>,
+        worktree: Option<SpawnWorktreeRequest>,
     ) -> Result<proto::SessionInfo> {
-        if let Some(ask) = &worktree {
+        if let Some(SpawnWorktreeRequest::Create(ask)) = &worktree {
             if cwd.is_some() {
                 bail!(
                     "spawn refused: `worktree` and `cwd` cannot be combined - the child starts \
@@ -13867,8 +13941,8 @@ impl Daemon {
                 .resolve_named_profile(kind, label)
                 .context("spawn refused")?,
         };
-        let worktree_branch = worktree.as_ref().and_then(|ask| {
-            crate::git::checkout_facts(&project_dir)
+        let worktree_branch = match &worktree {
+            Some(SpawnWorktreeRequest::Create(ask)) => crate::git::checkout_facts(&project_dir)
                 .common_dir
                 .map(|common| {
                     (
@@ -13877,17 +13951,27 @@ impl Daemon {
                             format!("houston/{}", crate::git::ref_slug(&ask.slug))
                         }),
                     )
-                })
-        });
-        if let (Some(key), Some(ask)) = (&worktree_branch, &worktree) {
+                }),
+            Some(SpawnWorktreeRequest::Existing(created)) => {
+                crate::git::checkout_facts(&project_dir)
+                    .common_dir
+                    .map(|common| (common, created.branch.clone()))
+            }
+            None => None,
+        };
+        if let (Some(key), Some(worktree)) = (&worktree_branch, &worktree) {
+            let label = match worktree {
+                SpawnWorktreeRequest::Create(ask) => ask.slug.clone(),
+                SpawnWorktreeRequest::Existing(created) => created.branch.clone(),
+            };
             let mut reservations = self
                 .worktree_branch_reservations
                 .lock()
                 .expect("worktree branch reservations lock");
             if let Some(other) = reservations.get(key) {
-                bail!("spawn refused: worktree slug collision: {:?} and {other:?} reserve branch {:?}; use a distinct explicit branch", ask.slug, key.1);
+                bail!("spawn refused: worktree slug collision: {:?} and {other:?} reserve branch {:?}; use a distinct explicit branch", label, key.1);
             }
-            reservations.insert(key.clone(), ask.slug.clone());
+            reservations.insert(key.clone(), label);
         }
         let sid = self.next_id.fetch_add(1, Ordering::Relaxed);
         self.spawn_reservations
@@ -13900,8 +13984,11 @@ impl Daemon {
             worktree_branch,
         };
         drop(_cleanup_guard);
+        // A tree this spawn did not create belongs to the run that did; a failed
+        // spawn must not remove a task's worktree or branch.
+        let created_here = matches!(&worktree, Some(SpawnWorktreeRequest::Create(_)));
         let created = match &worktree {
-            Some(ask) => {
+            Some(SpawnWorktreeRequest::Create(ask)) => {
                 let observer = self
                     .worktree_spawn_observer_for_test
                     .lock()
@@ -13910,8 +13997,9 @@ impl Daemon {
                 if let Some(observer) = observer {
                     observer(sid);
                 }
-                Some(self.create_spawn_worktree(&project_dir, ask, caller)?)
+                Some(self.create_spawn_worktree(&project_dir, ask, Some(caller))?)
             }
+            Some(SpawnWorktreeRequest::Existing(created)) => Some(created.clone()),
             None => None,
         };
         let _cleanup_guard = self
@@ -13925,7 +14013,9 @@ impl Daemon {
             {
                 Ok(args) => extra_args.extend(args),
                 Err(error) => {
-                    self.discard_spawn_worktree(created);
+                    if created_here {
+                        self.discard_spawn_worktree(created);
+                    }
                     return Err(error).context("worktree spawn refused");
                 }
             }
@@ -13949,8 +14039,10 @@ impl Daemon {
                 reusable,
                 now_ms(),
             ) {
-                if let Some(c) = &created {
-                    self.discard_spawn_worktree(c);
+                if created_here {
+                    if let Some(c) = &created {
+                        self.discard_spawn_worktree(c);
+                    }
                 }
                 return Err(e).context(format!(
                     "opening the delegation record for child {sid} failed; spawn rolled back"
@@ -14005,8 +14097,10 @@ impl Daemon {
                         tracing::warn!("discarding failed spawn {sid}: {discard}");
                     }
                 }
-                if let Some(c) = &created {
-                    self.discard_spawn_worktree(c);
+                if created_here {
+                    if let Some(c) = &created {
+                        self.discard_spawn_worktree(c);
+                    }
                 }
                 return Err(e);
             }
@@ -14020,8 +14114,10 @@ impl Daemon {
         }
         if let Err(parent_error) = self.get(caller) {
             let rollback = self.rollback_spawned_child(sid);
-            if let Some(c) = &created {
-                self.discard_spawn_worktree(c);
+            if created_here {
+                if let Some(c) = &created {
+                    self.discard_spawn_worktree(c);
+                }
             }
             return match rollback {
                 Ok(()) => Err(parent_error).context(format!(
@@ -14092,11 +14188,13 @@ impl Daemon {
         (!siblings.is_empty()).then(|| format!("shared checkout_root {root:?}: child {child} shares the checkout with live sibling panes {siblings:?}; parallel writes may conflict; use worktree for isolation"))
     }
 
+    /// `caller` is the pane whose spawn asked for the tree; a task Start has no
+    /// caller pane, so its provenance keeps no session.
     fn create_spawn_worktree(
         &self,
         project_dir: &Path,
         ask: &crate::worktrees::SpawnWorktree,
-        caller: u32,
+        caller: Option<u32>,
     ) -> Result<CreatedWorktree> {
         if !crate::git::is_git_repo(project_dir) {
             bail!(
@@ -14141,7 +14239,7 @@ impl Daemon {
             repo_common_dir: common_dir,
             branch: created.branch.clone(),
             provenance: crate::db::WorktreeProvenance::PaneSpawn,
-            created_by_session: Some(caller),
+            created_by_session: caller,
             created_at_ms: now_ms() as i64,
             bytes: None,
             measured_at_ms: None,
@@ -14955,7 +15053,7 @@ impl Daemon {
         child: u32,
         submission: orchestrate::Submission,
     ) -> Result<orchestrate::SubmitOutcome> {
-        let _cleanup_guard = self
+        let cleanup_guard = self
             .temporary_cleanup_lock
             .lock()
             .expect("temporary cleanup lock");
@@ -14972,9 +15070,10 @@ impl Daemon {
         };
         let artifacts = self.resolve_artifacts(child, &submission.artifacts)?;
         let workspace = self.current_workspace(child)?;
-        let body = orchestrate::cap_submit_body(&orchestrate::sanitize_handoff_text(
-            submission.body.trim(),
-        ));
+        // The structured result is parsed from the whole sanitized body; the
+        // capped body is what the inbox row and the run keep.
+        let raw_body = orchestrate::sanitize_handoff_text(submission.body.trim());
+        let body = orchestrate::cap_submit_body(&raw_body);
         let summary = submission
             .summary
             .as_deref()
@@ -15032,6 +15131,12 @@ impl Daemon {
             }
         }
         self.broadcast_delegation(child);
+        // A task child's body settles its run and may spawn the reviewer or the
+        // next rework attempt; both need the cleanup lock, so this drops first.
+        drop(cleanup_guard);
+        if let Err(e) = self.task_settle_submission(child, parent, &raw_body, &body) {
+            tracing::warn!("tasks: settling the submission of child {child}: {e:#}");
+        }
         Ok(orchestrate::SubmitOutcome {
             row_id: id,
             request_id,
@@ -17386,10 +17491,19 @@ fn init_prompts_dir(project_dir: &Path) -> Result<PathBuf> {
     Ok(dir)
 }
 
-struct CreatedWorktree {
-    repo: PathBuf,
-    path: PathBuf,
-    branch: String,
+#[derive(Clone)]
+pub(crate) struct CreatedWorktree {
+    pub(crate) repo: PathBuf,
+    pub(crate) path: PathBuf,
+    pub(crate) branch: String,
+}
+
+/// Where a spawn's worktree comes from: `Create` asks git for the slug/branch
+/// the caller named, `Existing` adopts a tree a task run already opened and
+/// recorded (with a delegation still created for the child).
+enum SpawnWorktreeRequest {
+    Create(crate::worktrees::SpawnWorktree),
+    Existing(CreatedWorktree),
 }
 
 fn init_orchestration_scope(project_dir: &Path) -> Result<(PathBuf, PathBuf)> {

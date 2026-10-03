@@ -10,7 +10,7 @@ let root: Root
 let host: HTMLDivElement
 let children: SessionInfo[]
 const closeSession = vi.fn()
-const client = { closeSession } as unknown as HoustonClient
+const client = { closeSession, subscribe: () => () => {}, taskSnapshot: vi.fn(), taskQueueRun: vi.fn() } as unknown as HoustonClient
 const props = () => ({ parent: child(1), children, client, selected: null, onSelect: vi.fn(), onMove: vi.fn(), collapsed: false, onCollapse: vi.fn() })
 const render = () => act(() => root.render(<ChildrenRoster {...props()} />))
 const click = (text: string) => act(() => [...host.querySelectorAll('button')].find((b) => b.textContent === text)!.click())

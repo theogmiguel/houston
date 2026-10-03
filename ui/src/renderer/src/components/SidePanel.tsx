@@ -20,14 +20,19 @@ const TasksTab = lazy(() => import('./tasks/TasksTab').then((module) => ({ defau
 
 export function SidePanel(props: SourceControlPanelProps & {
   workspace: string
+  workspaces?: { path: string; name: string }[]
   expanded?: boolean
   onExpanded?: (expanded: boolean) => void
   focused?: boolean
   closed?: boolean
   onSendToTerminal?: (text: string) => void
   sessions: ReadonlyMap<number, SessionInfo>
+  /// The focused pane, so its task can drive the Tasks tab's Now card.
+  activeSessionId?: number | null
   request: SideOpen | null
   onReviewChild: (child: SessionInfo) => void
+  onTaskStartRequested?: (taskId: number, workspace: string) => void
+  onFocusPane?: (id: number) => void
   onMoveFile: (root: string, path: string) => void
   onFocusSide: () => void
   onFocusGrid: () => void
@@ -56,6 +61,7 @@ export function SidePanel(props: SourceControlPanelProps & {
         const active = tabs.findIndex((tab) => tab.kind === 'tasks')
         if (request.compose) tabs[active] = { kind: 'tasks', compose: true }
         else if (request.openId !== undefined) tabs[active] = { kind: 'tasks', openId: request.openId }
+        else if (request.create !== undefined) tabs[active] = { kind: 'tasks', create: request.create }
         return { tabs, active: active === -1 ? 0 : active }
       }
       let active = tabs.findIndex((tab) => tab.kind === 'overview' && tab.orchestrator === request.orchestrator)
@@ -106,7 +112,7 @@ export function SidePanel(props: SourceControlPanelProps & {
       <div className={`flex-1 min-h-0 flex-col ${active.kind === 'scm' ? 'flex' : 'hidden'}`}><SourceControlPanel {...props} embedded onChangedCount={setChangedCount} /></div>
       {active.kind === 'files' && <Suspense fallback={<div />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'side-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} /></Suspense>}
       {active.kind === 'overview' && props.client && <Suspense fallback={<div />}><OverviewTab parentId={active.orchestrator} sessions={props.sessions} client={props.client} onClose={() => close(state.active)} onReview={(child) => { props.onReviewChild(child); setState((current) => ({ ...current, active: 0 })) }} /></Suspense>}
-      {active.kind === 'tasks' && <Suspense fallback={<div />}><TasksTab client={props.client} workspace={props.workspace} compose={active.compose} onComposeHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} openTaskId={active.openId} onOpenTaskHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} /></Suspense>}
+      {active.kind === 'tasks' && <Suspense fallback={<div />}><TasksTab client={props.client} workspace={props.workspace === 'all' ? '' : props.workspace} workspaces={props.workspaces} boundSession={props.activeSessionId != null ? props.sessions.get(props.activeSessionId) ?? null : null} sessions={props.sessions} onFocusPane={props.onFocusPane} onReviewChild={props.onReviewChild} onStartRequested={props.onTaskStartRequested} compose={active.compose} onComposeHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} openTaskId={active.openId} onOpenTaskHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} createDraft={active.create} onCreateDraftHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} /></Suspense>}
       {state.tabs.map((tab, index) => tab.kind === 'browser' && <div key={tab.id} className={`side-browser ${state.active === index ? 'flex' : 'hidden'}`}><Suspense fallback={<div />}><BrowserPane node={{ kind: 'browser', id: tab.id, url: tab.url }} workspaceDir={props.workspace} loadRequest={props.request?.kind === 'browser' && !props.request.revealOnly && props.request.id === tab.id ? props.request : undefined} active={state.active === index && !props.closed && props.focused !== false} hiddenByExpand={props.closed || state.active !== index || props.hiddenByOverlay} panel onNavigate={(url) => setState((current) => ({ ...current, tabs: current.tabs.map((item) => item.kind === 'browser' && item.id === tab.id ? { ...item, url } : item) }))} onClose={() => close(index)} onMoveToGrid={(url) => { moveBrowserToGrid(tab.id, url, props.workspace); close(index) }} onHeaderPointerDown={() => {}} onSendToTerminal={props.onSendToTerminal} /></Suspense></div>)}
     </div>
   </aside>
@@ -114,6 +120,7 @@ export function SidePanel(props: SourceControlPanelProps & {
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: SourceControlPanelProps & {
   selectedWorkspace: string
+  workspaces?: { path: string; name: string }[]
   expanded?: boolean
   onExpanded?: (expanded: boolean) => void
   focused?: boolean
@@ -128,9 +135,10 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions, re
   onRevealWorkspace: (root: string) => void
   onOpenEditor: (root: string, path: string, anchor: null) => void
   onReviewChild: (child: SessionInfo) => void
+  onTaskStartRequested?: (taskId: number, workspace: string) => void
 }): React.JSX.Element {
   const workspace = selectedWorkspace === 'all' ? sessions.get(activeId ?? -1)?.project_dir ?? 'all' : selectedWorkspace
-  return <SidePanel {...props} key={workspace} workspace={workspace} sessions={sessions} request={request} reviewTarget={reviewChild?.id} onReviewChild={onReviewChild}
+  return <SidePanel {...props} key={workspace} workspace={workspace} sessions={sessions} request={request} activeSessionId={activeId} onFocusPane={onFocusPane} reviewTarget={reviewChild?.id} onReviewChild={onReviewChild}
     onFocusSide={() => onSurface('side')}
     onFocusGrid={() => { onSurface('grid'); if (activeId !== null) { onFocusPane(activeId); selectOverviewChild(activeId, null) } }}
     onMoveFile={(root, path) => { onRevealWorkspace(root); onOpenEditor(root, path, null); onSurface('grid') }} />

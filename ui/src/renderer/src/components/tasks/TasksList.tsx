@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
@@ -26,14 +26,19 @@ import {
 } from './format'
 import { TaskMenu } from './TaskMenu'
 import { TaskRow } from './TaskRow'
+import { Segmented } from '../Segmented'
 
 export interface TasksListProps {
-  workspaceName: string
+  scope?: 'all' | 'workspace'
+  onScope?: (scope: 'all' | 'workspace') => void
+  showWorkspace?: boolean
   tasks: TaskSummary[]
   selectedId: number | null
   now: number
   access: TasksAccess | null
   refusal: TaskRefusal | null
+  /// The focused pane's task card, between the header and the grouped list.
+  nowCard?: ReactNode
   onOpen: (id: number) => void
   onNew: (status?: TaskStatus) => void
   onAccess: (access: TasksAccess) => void
@@ -81,6 +86,7 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
           <span className="msg">{props.refusal.message}</span>
         </div>
       )}
+      {props.nowCard}
       {groups.length === 0 ? (
         <div className="flex-1 min-h-0 flex items-center justify-center">
           <EmptyState
@@ -89,8 +95,8 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
             headline={query.trim() === '' ? 'No tasks yet' : 'No matching tasks'}
             description={
               query.trim() === ''
-                ? 'A local backlog per workspace. Create the first task to start the list.'
-                : `Nothing matches “${query.trim()}” in this workspace.`
+                ? 'A global local backlog. Create the first task to start the list.'
+                : `Nothing matches “${query.trim()}” in this view.`
             }
             action={{ label: 'New task', onClick: () => props.onNew() }}
             actionTestId="tasks-empty-new"
@@ -106,6 +112,7 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
               collapsed={collapsed.has(group.key)}
               selectedId={props.selectedId}
               now={props.now}
+              showWorkspace={props.showWorkspace}
               onToggle={() => toggle(group.key)}
               onOpen={props.onOpen}
               onNew={props.onNew}
@@ -126,7 +133,8 @@ function filterTasks(tasks: TaskSummary[], query: string): TaskSummary[] {
 }
 
 function TasksHead({
-  workspaceName,
+  scope,
+  onScope,
   access,
   searching,
   onSearching,
@@ -142,11 +150,12 @@ function TasksHead({
 }): React.JSX.Element {
   return (
     <div className="tk-head">
-      <span className="crumb2">
-        <b>{workspaceName}</b>
-        <span>›</span>
-        <span>Tasks</span>
-      </span>
+      <Segmented
+        aria-label="Task scope"
+        value={scope ?? 'all'}
+        options={[{ value: 'all', label: 'All' }, { value: 'workspace', label: 'This workspace' }]}
+        onChange={onScope}
+      />
       <span className="spacer" />
       <span className="tk-filter">
         <Icon glyph={IconFunnel} role="small" />
@@ -214,6 +223,7 @@ function TaskGroupBlock({
   collapsed,
   selectedId,
   now,
+  showWorkspace,
   onToggle,
   onOpen,
   onNew
@@ -222,6 +232,7 @@ function TaskGroupBlock({
   collapsed: boolean
   selectedId: number | null
   now: number
+  showWorkspace?: boolean
   onToggle: () => void
   onOpen: (id: number) => void
   onNew: (status?: TaskStatus) => void
@@ -265,7 +276,7 @@ function TaskGroupBlock({
       </div>
       {!collapsed &&
         group.tasks.map((task) => (
-          <TaskRow key={task.id} task={task} selected={task.id === selectedId} now={now} onOpen={onOpen} />
+          <TaskRow key={task.id} task={task} selected={task.id === selectedId} now={now} showWorkspace={showWorkspace} onOpen={onOpen} />
         ))}
     </>
   )

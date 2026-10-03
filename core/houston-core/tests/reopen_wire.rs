@@ -275,6 +275,7 @@ async fn respawn_refuses_a_swarm_tied_session() {
             resumable: false,
             resume_notice: None,
             compactions: None,
+            task: None,
         })
         .unwrap();
         let roster = vec![proto::SwarmRosterEntry {
@@ -385,11 +386,12 @@ async fn a_long_opening_prompt_is_written_to_a_prompt_file() {
         })
         .unwrap();
 
+    // The label is the session's own id, so two launches never share one file.
     let written = tmp
         .path()
         .join(".houston")
         .join("prompts")
-        .join("prompt-session.md");
+        .join(format!("prompt-session-{}.md", info.id));
     assert!(written.is_file(), "no prompt file at {}", written.display());
     assert_eq!(std::fs::read_to_string(&written).unwrap(), prompt);
     assert_eq!(

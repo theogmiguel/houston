@@ -43,7 +43,7 @@ import {
   NavRoutinesEmpty,
   NavSkills
 } from './navStories'
-import { TasksDetailStory, TasksListStory, TasksSettingsStory } from './tasksStories'
+import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory } from './tasksStories'
 
 const noop = (): void => {}
 
@@ -137,5 +137,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/hooks': () => <NavHooks />,
   'tasks/list': () => <TasksListStory />,
   'tasks/detail': () => <TasksDetailStory />,
+  'tasks/roster': () => <TasksRosterStory />,
+  'tasks/queue': () => <TasksQueueStory />,
   'settings/tasks': () => <TasksSettingsStory />
 }

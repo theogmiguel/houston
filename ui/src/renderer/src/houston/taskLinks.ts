@@ -19,9 +19,8 @@ export function matchTaskKeys(text: string): TaskKeyMatch[] {
   return matches
 }
 
-/// The keys of the last loaded snapshot of each workspace. A terminal link can
-/// only resolve a key the Tasks tab has actually seen, so a stray `HOU-9` in
-/// prose is not clickable.
+/// Loaded snapshots index global keys for terminal links; an unseen key is
+/// not clickable. Scope changes replace only their own snapshot.
 const taskIndexes = new Map<string, ReadonlyMap<string, number>>()
 
 export function rememberTaskKeys(workspace: string, tasks: readonly TaskSummary[]): void {
@@ -30,6 +29,10 @@ export function rememberTaskKeys(workspace: string, tasks: readonly TaskSummary[
   taskIndexes.set(workspace, byKey)
 }
 
-export function taskIdForKey(workspace: string, key: string): number | null {
-  return taskIndexes.get(workspace)?.get(key) ?? null
+export function taskIdForKey(_workspace: string, key: string): number | null {
+  for (const index of taskIndexes.values()) {
+    const id = index.get(key)
+    if (id !== undefined) return id
+  }
+  return null
 }

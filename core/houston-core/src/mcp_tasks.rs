@@ -1,4 +1,4 @@
-//! `task_*`: a workspace's Tasks backlog over MCP. Offered to top-level panes
+//! `task_*`: the global Tasks backlog over MCP. Offered to top-level panes
 //! only — a child's scope is the brief — and gated by the workspace's
 //! Settings ▸ Tasks access, which decides whether the tools are advertised.
 use std::sync::{Arc, Weak};
@@ -66,11 +66,15 @@ fn local_write(name: &str, title: &str, description: &str, schema: Value) -> Too
     }
 }
 
+fn id_property() -> Value {
+    json!({ "type": ["integer", "string"], "description": "The task id or key (HOU-42)" })
+}
+
 fn id_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "id": { "type": "integer", "description": "The task's numeric id, as task_list returns." },
+            "id": id_property(),
         },
         "required": ["id"],
         "additionalProperties": false,
@@ -79,6 +83,7 @@ fn id_schema() -> Value {
 
 fn write_fields() -> serde_json::Map<String, Value> {
     let mut properties = serde_json::Map::new();
+    properties.insert("workspace".into(), json!({ "type": ["string", "null"], "description": "Registered workspace path; null clears assignment." }));
     properties.insert(
         "title".into(),
         json!({ "type": "string", "maxLength": proto::TASK_TITLE_MAX }),
@@ -113,7 +118,7 @@ fn write_fields() -> serde_json::Map<String, Value> {
 
 fn update_schema() -> Value {
     let mut properties = write_fields();
-    properties.insert("id".into(), json!({ "type": "integer" }));
+    properties.insert("id".into(), id_property());
     properties.insert("expected_revision".into(), json!({ "type": "integer" }));
     json!({
         "type": "object",
@@ -159,7 +164,7 @@ fn all_specs() -> Vec<ToolSpec> {
         readonly(
             "task_list",
             "List tasks",
-            "List this workspace's active tasks, optionally filtered by status, readiness or \
+            "List active tasks across every workspace, optionally filtered by status, readiness or \
              text. Ready means a todo task with no unfinished blocker. Results are newest \
              first, capped by `limit`.",
             json!({
@@ -209,7 +214,7 @@ fn all_specs() -> Vec<ToolSpec> {
             json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "integer" },
+                    "id": id_property(),
                     "body": { "type": "string" },
                 },
                 "required": ["id", "body"],
@@ -223,7 +228,7 @@ fn all_specs() -> Vec<ToolSpec> {
             json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "integer" },
+                    "id": id_property(),
                     "item": { "type": "integer" },
                     "checked": { "type": "boolean", "description": "Defaults to true." },
                 },
@@ -246,15 +251,87 @@ fn all_specs() -> Vec<ToolSpec> {
             json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "integer" },
+                    "id": id_property(),
                     "summary": { "type": "string" },
                 },
                 "required": ["id", "summary"],
                 "additionalProperties": false,
             }),
         ),
+        ToolSpec {
+            name: "task_execute".into(),
+            title: "Start a task as your child".into(),
+            description: "Start a task as a child of your pane: the task's worktree and branch, a \
+                 delegation, and the task brief; the task moves to in_progress. Offered only \
+                 while you may spawn children (the same rule as pane_spawn), and the child \
+                 counts against orchestration_max_live_children. The child ends its \
+                 pane_submit with a `task_result` JSON line and Houston settles the run from \
+                 it: acceptance items ticked by name, the summary as a comment, the task to \
+                 in_review. With `reviewer`, or the workspace's default, an independent \
+                 read-only reviewer is opened on the same branch once the child settles. If \
+                 the task already has a live implementation run it is refused as busy."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": id_property(),
+                    "agent": {
+                        "type": "string",
+                        "enum": SPAWNABLE_AGENTS,
+                        "description": "Which agent CLI runs the task.",
+                    },
+                    "reviewer": {
+                        "type": "string",
+                        "enum": SPAWNABLE_AGENTS,
+                        "description": "Optional reviewer CLI; omitted uses the workspace's Settings ▸ Tasks default (none unless set).",
+                    },
+                },
+                "required": ["id", "agent"],
+                "additionalProperties": false,
+            }),
+            annotations: Annotations::destructive(),
+        },
+        ToolSpec {
+            name: "task_review".into(),
+            title: "Review a task's implementation".into(),
+            description: "Open an independent read-only reviewer child for the task's newest \
+                 implementation run: the task text, acceptance list, branch, diff range and \
+                 the implementation summary reach the reviewer as labelled untrusted data; it \
+                 ends its pane_submit with a `task_review` JSON line. A pass leaves a verdict \
+                 comment and the task in review for the user; a fail leaves the findings as a \
+                 comment and marks the run needs_review. Offered only while you may spawn \
+                 children; the reviewer counts against orchestration_max_live_children. It \
+                 reviews in the implementer's worktree once that run settled, or a detached \
+                 tree of the same branch while it is still running."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": id_property(),
+                    "agent": {
+                        "type": "string",
+                        "enum": SPAWNABLE_AGENTS,
+                        "description": "Which agent CLI runs the review.",
+                    },
+                },
+                "required": ["id", "agent"],
+                "additionalProperties": false,
+            }),
+            annotations: Annotations::destructive(),
+        },
     ]
 }
+
+/// The providers a task child or reviewer can be launched as; the same six
+/// `pane_spawn` accepts.
+const SPAWNABLE_AGENTS: [&str; 6] = [
+    "claude",
+    "codex",
+    "antigravity",
+    "opencode",
+    "cursor",
+    "grok",
+];
 
 fn read_specs() -> Vec<ToolSpec> {
     all_specs()
@@ -280,14 +357,20 @@ impl ToolProvider for TasksTools {
         if advertised(&daemon, scope).is_empty() {
             return None;
         }
-        Some(
+        // The instructions are fetched once, so they must not move with live
+        // state; the tool list is the live answer for whether the spawning
+        // verbs are offered.
+        Some(String::from(
             "Houston tasks: task_next returns the highest-priority ready task; task_list and \
              task_get read; task_create, task_update, task_comment and task_check write; \
              task_claim takes a task and task_handback returns it for review. The same verbs \
              are on `hs-task` when MCP is unavailable (`hs-task` with no arguments prints \
-             usage). Access is per workspace in Settings ▸ Tasks."
-                .into(),
-        )
+             usage). Reads cover every workspace; writes are limited to your workspace and unassigned tasks. Access is per workspace in Settings ▸ Tasks. While you may spawn \
+             children, task_execute starts a ready task as your child (its result settles the \
+             task) and task_review opens an independent reviewer on the run's branch; both \
+             count against your live-child cap. A task_execute or task_review refusal names \
+             the cap, its value and the task.",
+        ))
     }
 
     fn call<'a>(
@@ -314,21 +397,26 @@ impl ToolProvider for TasksTools {
     }
 }
 
-/// What one MCP caller may see: children get nothing (scope isolation), and
-/// the workspace's access decides reads and writes.
+/// What one MCP caller may see: children get nothing (scope isolation), the
+/// workspace's access decides reads and writes, and the two verbs that spawn a
+/// child follow `pane_spawn`'s rule — advertised only to a spawnable caller.
 fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
     if daemon.parent_of(scope.session_id).is_some() {
         return Vec::new();
     }
-    match daemon.tasks_access(&scope.workspace_id) {
+    let mut specs = match daemon.tasks_access(&scope.workspace_id) {
         proto::TasksAccess::Off => Vec::new(),
         proto::TasksAccess::Read => read_specs(),
         proto::TasksAccess::Write => all_specs(),
+    };
+    if !daemon.spawnable_by(scope.session_id) {
+        specs.retain(|spec| spec.name != "task_execute" && spec.name != "task_review");
     }
+    specs
 }
 
 fn dispatch(
-    daemon: &Daemon,
+    daemon: &Arc<Daemon>,
     session: u32,
     workspace: &str,
     name: &str,
@@ -371,7 +459,7 @@ fn dispatch(
             })))
         }
         "task_get" => {
-            let id = required_id(args)?;
+            let id = task_ref(daemon, workspace, args, name)?;
             let msg = daemon.task_get_in(workspace, id)?;
             let proto::ServerMsg::TaskDetail {
                 task,
@@ -443,7 +531,7 @@ fn dispatch(
             changed_output(daemon, msg, Some("created"))
         }
         "task_update" => {
-            let id = required_id(args)?;
+            let id = task_ref(daemon, workspace, args, name)?;
             let expected = required_revision(args)?;
             let patch = patch_from_args(daemon, workspace, args)?;
             let msg = daemon.task_save_as(
@@ -457,17 +545,24 @@ fn dispatch(
             changed_output(daemon, msg, Some("updated"))
         }
         "task_comment" => {
-            let id = required_id(args)?;
+            let id = task_ref(daemon, workspace, args, name)?;
             let body = required_string(args, "body")?;
             let msg = daemon.task_comment_as(Some(workspace), id, &body, &actor, "task_comment")?;
             changed_output(daemon, msg, Some("commented"))
         }
         "task_check" => {
-            let id = required_id(args)?;
+            let id = task_ref(daemon, workspace, args, name)?;
             let item = required_i64(args, "item")?;
             let checked = optional_bool(args, "checked")?.unwrap_or(true);
-            let msg =
-                daemon.task_check_as(Some(workspace), id, item, checked, &actor, "task_check")?;
+            let msg = daemon.task_check_as(
+                Some(workspace),
+                id,
+                item,
+                checked,
+                &actor,
+                Some(session),
+                "task_check",
+            )?;
             changed_output(
                 daemon,
                 msg,
@@ -475,24 +570,80 @@ fn dispatch(
             )
         }
         "task_claim" => {
-            let id = required_id(args)?;
+            let id = task_ref(daemon, workspace, args, name)?;
             let msg = daemon.task_claim(workspace, id, session, &actor, "task_claim")?;
             let output = changed_output(daemon, msg, Some("claimed"))?;
             Ok(with_status(output, "in_progress"))
         }
         "task_handback" => {
-            let id = required_id(args)?;
+            let id = task_ref(daemon, workspace, args, name)?;
             let summary = required_string(args, "summary")?;
             let msg =
                 daemon.task_handback(workspace, id, &summary, session, &actor, "task_handback")?;
             let output = changed_output(daemon, msg, Some("handed back"))?;
             Ok(with_status(output, "in_review"))
         }
+        "task_execute" => {
+            let id = spawn_task_ref(daemon, workspace, args, name)?;
+            let agent = required_agent(args, "agent")?;
+            let reviewer = optional_agent(args, "reviewer")?;
+            let msg =
+                daemon.task_execute(workspace, id, session, agent, reviewer, "task_execute")?;
+            let output = changed_output(daemon, msg, Some("executing as your child"))?;
+            Ok(with_run(daemon.task_latest_run(id), output))
+        }
+        "task_review" => {
+            let id = spawn_task_ref(daemon, workspace, args, name)?;
+            let agent = required_agent(args, "agent")?;
+            let msg = daemon.task_review(workspace, id, session, agent, "task_review")?;
+            let output = changed_output(daemon, msg, Some("reviewing"))?;
+            Ok(with_run(daemon.task_latest_review_run(id), output))
+        }
         other => Err(ToolError(format!(
             "task provider has no tool {other:?}; expected one of [\"task_list\", \"task_get\", \
              \"task_next\", \"task_create\", \"task_update\", \"task_comment\", \"task_check\", \
-             \"task_claim\", \"task_handback\"]"
+             \"task_claim\", \"task_handback\", \"task_execute\", \"task_review\"]"
         ))),
+    }
+}
+
+/// Adds the run a `task_execute` or `task_review` just opened, so the caller
+/// has the child session id to wait on without a second read.
+fn with_run(run: Result<Option<proto::TaskRun>, anyhow::Error>, output: ToolOutput) -> ToolOutput {
+    let mut value = output.structured.unwrap_or(Value::Null);
+    match run {
+        Ok(Some(run)) => match serde_json::to_value(run) {
+            Ok(run) => {
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("run".into(), run);
+                }
+            }
+            Err(e) => tracing::warn!("serializing a task run: {e}"),
+        },
+        Ok(None) => {}
+        Err(e) => tracing::warn!("reading the newest task run: {e:#}"),
+    }
+    task_output(value)
+}
+
+fn required_agent(args: &Value, key: &str) -> Result<proto::AgentKind, ToolError> {
+    optional_agent(args, key)?.ok_or_else(|| {
+        ToolError(format!(
+            "{key} is required and must be one of {SPAWNABLE_AGENTS:?}; got none"
+        ))
+    })
+}
+
+fn optional_agent(args: &Value, key: &str) -> Result<Option<proto::AgentKind>, ToolError> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value::<proto::AgentKind>(value.clone())
+            .map(Some)
+            .map_err(|_| {
+                ToolError(format!(
+                    "{key} must be one of {SPAWNABLE_AGENTS:?}; got {value}"
+                ))
+            }),
     }
 }
 
@@ -588,13 +739,24 @@ fn patch_from_args(
         acceptance: optional_string_list(args, "acceptance")?,
         ..Default::default()
     };
+    if let Some(value) = args.get("workspace") {
+        patch.workspace = Some(match value {
+            Value::Null => None,
+            Value::String(path) => Some(path.clone()),
+            _ => {
+                return Err(ToolError(format!(
+                    "workspace must be a registered workspace path or null; got {value}"
+                )))
+            }
+        });
+    }
     if let Some(parent) = optional_string(args, "parent")? {
         let Some(parent_id) = daemon
             .task_id_for_key(workspace, &parent)
             .map_err(|e| ToolError(format!("{e:#}")))?
         else {
             return Err(ToolError(format!(
-                "parent key {parent:?} does not exist in this workspace (expected an existing \
+                "parent key {parent:?} does not exist in the global backlog (expected an existing \
                  task key, for example HOU-2)"
             )));
         };
@@ -650,14 +812,36 @@ fn optional_u32(args: &Value, key: &str) -> Result<Option<u32>, ToolError> {
     }
 }
 
-fn required_id(args: &Value) -> Result<i64, ToolError> {
-    let id = required_i64(args, "id")?;
-    if id <= 0 {
-        return Err(ToolError(format!(
-            "id must be a positive task id (task_list returns one); got {id}"
-        )));
+/// The spawning verbs are refused by the orchestration switch before the task
+/// is looked up, so an operator is told spawning is off rather than sent
+/// looking for a task; the placeholder id never reaches a lookup.
+fn spawn_task_ref(
+    daemon: &Daemon,
+    workspace: &str,
+    args: &Value,
+    operation: &str,
+) -> Result<i64, ToolError> {
+    if daemon.orchestration_enabled() {
+        task_ref(daemon, workspace, args, operation)
+    } else {
+        Ok(0)
     }
-    Ok(id)
+}
+
+fn task_ref(
+    daemon: &Daemon,
+    workspace: &str,
+    args: &Value,
+    operation: &str,
+) -> Result<i64, ToolError> {
+    let value = args.get("id").ok_or_else(|| {
+        ToolError(format!(
+            "{operation} refused: id is required (an integer task id or a key like HOU-1); got none"
+        ))
+    })?;
+    daemon
+        .task_ref_in(workspace, value, operation)
+        .map_err(|e| ToolError(format!("{e:#}")))
 }
 
 fn required_i64(args: &Value, key: &str) -> Result<i64, ToolError> {

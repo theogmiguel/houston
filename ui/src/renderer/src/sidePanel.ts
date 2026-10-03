@@ -1,7 +1,11 @@
+/// A task the palette already assembled from a terminal selection: TasksTab
+/// creates it on arrival and opens its detail.
+export interface TaskDraft { title: string; description: string }
+
 export type SideTab =
   | { kind: 'scm' }
   | { kind: 'files'; root?: string }
-  | { kind: 'tasks'; compose?: boolean; openId?: number }
+  | { kind: 'tasks'; compose?: boolean; openId?: number; create?: TaskDraft }
   | { kind: 'overview'; orchestrator: number }
   | { kind: 'browser'; id: string; url: string }
 
@@ -10,17 +14,17 @@ export const SIDE_OPEN_EVENT = 'houston:side-open'
 export const TERMINAL_FOCUS_EVENT = 'houston:terminal-focus'
 export const SIDE_BROWSER_MOVE_EVENT = 'houston:side-browser-move'
 export const SIDE_SELECT_EVENT = 'houston:side-select'
-export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'tasks'; compose?: boolean; openId?: number } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string; revealOnly?: boolean }
+export type SideOpen = { kind: 'overview'; orchestrator: number } | { kind: 'tasks'; compose?: boolean; openId?: number; create?: TaskDraft } | { kind: 'files'; root: string; path: string; line?: number; col?: number } | { kind: 'browser'; id: string; url: string; workspace: string; revealOnly?: boolean }
 
 export function openSideBrowser(id: string, url: string, workspace: string, revealOnly = false): void {
   window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'browser', id, url, workspace, ...(revealOnly ? { revealOnly: true } : {}) } }))
 }
 
-// `compose` opens the tab with the create-task editor already up, which is
-// what the palette's "New task" wants and a plain tab click does not; `openId`
-// is a terminal `HOU-n` link asking for one task's detail.
-export function openSideTasks(compose = false, openId?: number): void {
-  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'tasks', ...(compose ? { compose: true } : {}), ...(openId !== undefined ? { openId } : {}) } }))
+// `compose` opens the create-task editor (palette "New task"); `openId` opens
+// one task's detail (a terminal `HOU-n` link); `create` is a draft from the
+// terminal selection that TasksTab creates and then opens.
+export function openSideTasks(compose = false, openId?: number, create?: TaskDraft): void {
+  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'tasks', ...(compose ? { compose: true } : {}), ...(openId !== undefined ? { openId } : {}), ...(create !== undefined ? { create } : {}) } }))
 }
 
 export function moveBrowserToGrid(id: string, url: string, workspace: string): void {

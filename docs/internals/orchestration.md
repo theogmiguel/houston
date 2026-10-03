@@ -141,12 +141,14 @@ spelling, or a verb that is CLI-only).
 | `harness_publish` | `mcp_harness.rs` | `hs-harness publish` | not a pane verb: a harness review run hands its `report.md` and `findings.json` to the Harness view. Offered only to that run's pane while it is in flight, whatever the orchestration setting |
 | — | — | `hs-harness` | the extractor a harness review run calls (`inventory`, `digest`, `publish`); its wrapper sits beside `hs-pane`, and `digest` refuses outside a routine run (carve-out #6 in `invariants.md`) |
 | `task_list` | `mcp_tasks.rs` | `hs-task ls` | list the workspace's active tasks, filtered by `status`, `ready`, `mine`, `query` and a capped `limit`; ready is a todo task with no unfinished blocker |
-| `task_get` | `mcp_tasks.rs` | `hs-task show` | one task's full text, acceptance items and recent comments |
+| `task_get` | `mcp_tasks.rs` | `hs-task show` | one task's full text, acceptance items and recent comments. Every `task_*` tool's `id` is an integer id or a `HOU-<n>` key resolved globally (`Daemon::task_ref_in`; `hs-task` keys go through `task_id_for_key`, the same lookup) |
 | `task_next` | `mcp_tasks.rs` | `hs-task next` | the highest-priority ready task (urgent, high, medium, low, then none) |
 | `task_create` | `mcp_tasks.rs` | `hs-task add` | create a task, attributed to the calling pane |
 | `task_update` | `mcp_tasks.rs` | — | edit a task's fields; requires the `expected_revision` the last read showed, so a stale edit is refused naming expected and actual |
 | `task_comment`, `task_check` | `mcp_tasks.rs` | `hs-task comment`, `hs-task check` | append a comment, or tick one acceptance item by its id (the CLI's `ITEM` is the 1-based position) |
 | `task_claim`, `task_handback` | `mcp_tasks.rs` | `hs-task claim`, `hs-task handback` | claim moves backlog/todo to in progress and records the session; handback writes the summary as a comment and moves to in review. Neither sets Done |
+| `task_execute` | `mcp_tasks.rs` | — | start a task as a child of the calling orchestrator: the task's worktree and branch, a delegation and the child brief; the run stores the delegation and the child's `pane_submit` settles it. Offered only to a spawnable caller, exactly like `pane_spawn` |
+| `task_review` | `mcp_tasks.rs` | — | open an independent read-only reviewer child for the task's newest implementation run, on its worktree once that run settled or a detached tree of the same branch while it is still running |
 | — | — | `hs-task` | the Tasks helper, a shell wrapper beside `hs-pane`; the key defaults to `$HOUSTON_TASK` and there is no `done` verb |
 | `browser_current_page` | `src-tauri/src/browser/mcp_tools.rs` | — | URL, title, favicon, loading state |
 | `browser_capture` | `mcp_tools.rs` | — | PNG screenshot of the browser pane |
@@ -185,6 +187,41 @@ the access setting pushes `tools/list_changed` at that workspace's open tool lis
 text in a tool result is wrapped as labelled untrusted data and each text field is capped by
 `mcp_tasks::TASK_TOOL_TEXT_MAX`.
 
+Agents list and read the whole global backlog. Writes are limited to tasks of their own
+workspace and unassigned tasks; another workspace’s task is refused naming its key,
+workspace and the rule “tasks of another workspace are read-only to agents”. Task keys
+resolve globally, and per-workspace access gates the caller rather than the task.
+`task_execute` and queue starts require tasks assigned to the orchestrator’s workspace.
+
+`task_claim` assigns an unassigned task to the caller’s workspace and binds the calling pane as the task’s run (a `backlog_task_runs` row with that
+session and no worktree), and `task_handback` finishes it, so a pane that merely claims
+follows the task exactly as a Started one does, including the pane-exit interruption and the
+one-live-run rule. The run's `reason` is the surface for a failure the pane did not cause
+(an interrupted daemon or an unavailable `gh`), and its `initial_revision` is the drift
+guard: a task edited during the run says so in the handback comment. A task brief is
+composed by the daemon — task text between explicit data markers under
+`TASK_BRIEF_MAX_BYTES` — and handed to the pane by `HOUSTON_TASK` plus either a submitted
+prompt or a bracketed prefill, never by transcript scraping.
+
+`task_execute` and `task_review` are the two verbs that open a child, so they follow
+`pane_spawn`'s advertisement rule and count against `orchestration_max_live_children`;
+settled children do not count, and a refusal names the cap, its value and the task.
+`task_execute` starts the task through the orchestration spawn path with a delegation, so
+the child's `pane_submit` settles the run: Houston parses one trailing single-line JSON
+object, `{"task_result":{"status":...,"summary":...,"checks":[...]}}`, ticks the acceptance
+items whose names match, writes the summary as a comment (with the drift marker when the
+task's revision moved since `initial_revision`) and moves the task to in review. The same
+settlement parses `{"task_review":...}` from a reviewer run. A missing or malformed line
+never guesses: the run becomes `needs_review` and keeps the raw text as its summary. The
+inbox row is unchanged, so exactly-once delivery is untouched. A reviewer's pass comments
+the verdict and leaves the task in review for the user; a fail comments the findings, marks
+the implementation run `needs_review`, and — when the workspace's `tasks_rework_rounds`
+is above zero — opens attempt N+1 with the findings appended as labelled data until
+`TASKS_REWORK_ROUNDS_MAX`. `TaskRunAction::retry` is the same attempt N+1 by hand. The
+reviewer runs in the implementer's worktree once that run settled and in a detached tree of
+the same branch while it is still running; its boundaries text says read-only, report
+evidence, never mark Done.
+
 `orchestrate.rs` is the pure layer under all of it — no DB, no PTY: scope and cap
 verdicts, wait and stall decisions, inbox composition and the sub-agent and permission
 rounds, plus the `hs-pane` CLI. The lifecycle methods themselves live on `Daemon`.
@@ -203,6 +240,7 @@ rounds, plus the `hs-pane` CLI. The lifecycle methods themselves live on `Daemon
 | `BRIEF_FIELD_MAX_CHARS` | 2 000 | `output_format` / `boundaries` qualify the task in a line or two; the task itself is `prompt`, which has no cap |
 | `SUBMIT_SUMMARY_MAX_CHARS` | 200 | a subject line for the batched inbox |
 | `SUBMIT_ARTIFACTS_MAX` / `ARTIFACT_PATH_MAX_CHARS` | 8 / 512 | a report plus its evidence; eight paths cannot outweigh the result they annotate |
+| `TASKS_REWORK_ROUNDS_MAX` | 5 | automatic rework rounds a failed review may take per workspace: a reviewer-and-implementer pair must cost a bounded number of agent runs |
 | `SWARM_WAKE_LANE_MAX` | 16 | queued nudges per pane; a pane that has not read sixteen will not read the seventeenth |
 
 Both spawn caps are wire-settable up to `proto::ORCHESTRATION_CAP_MAX` and stored under the

@@ -57,6 +57,10 @@ export interface PaletteActions {
   toggleGitPane: () => void
   spawnAgent: (agent: AgentKind) => void
   openTasks: (compose?: boolean) => void
+  /// The focused terminal's current selection, read when the palette builds
+  /// its commands; empty when no terminal holds one.
+  focusedSelection?: () => string
+  newTaskFromSelection?: (selection: string) => void
 
   toggleSidebarRail: () => void
   toggleChromeTheme: () => void
@@ -267,7 +271,18 @@ function buildPaneCommands(actions: PaletteActions, hasWorkspace: boolean): Comm
 
 function buildTaskCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
   const disabledReason = hasWorkspace ? undefined : 'Open a workspace to use its task backlog'
+  const selection = actions.focusedSelection?.() ?? ''
   return [
+    {
+      id: 'tasks.new-from-selection',
+      title: 'New task from terminal selection',
+      group: 'Tasks',
+      keywords: ['task', 'backlog', 'create', 'selection', 'terminal', 'clipboard'],
+      enabled: hasWorkspace && selection.trim() !== '',
+      disabledReason:
+        disabledReason ?? (selection.trim() === '' ? 'Select text in a terminal first' : undefined),
+      run: () => actions.newTaskFromSelection?.(selection)
+    },
     {
       id: 'tasks.new',
       title: 'New task',

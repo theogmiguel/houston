@@ -56,7 +56,7 @@ function mountPane(liveChildren: number): HTMLElement {
   act(() => {
     root!.render(
       <SessionPane
-        client={{} as unknown as HoustonClient}
+        client={{ subscribe: () => () => {}, taskSnapshot: () => {}, taskQueueRun: () => {} } as unknown as HoustonClient}
         info={info}
         roster={{ sessions: new Map(Array.from({ length: liveChildren }, (_, index) => [index + 2, { ...info, id: index + 2, spawned_by: 1 }])), maxLiveChildren: null }}
         theme="black"
@@ -118,7 +118,7 @@ describe('SessionPane orchestrator badge (v63)', () => {
       act(() => {
         root!.render(
           <SessionPane
-            client={{} as unknown as HoustonClient}
+        client={{ subscribe: () => () => {}, taskSnapshot: () => {}, taskQueueRun: () => {} } as unknown as HoustonClient}
             info={info}
             roster={{ sessions: new Map(Array.from({ length: liveChildren }, (_, index) => [index + 2, { ...info, id: index + 2, spawned_by: 1 }])), maxLiveChildren: null }}
             theme="black"
