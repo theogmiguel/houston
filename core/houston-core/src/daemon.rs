@@ -7877,8 +7877,9 @@ impl Daemon {
         if session.acp.is_some() {
             self.acp_tick(id, session, chunk);
         }
-        let frame = Arc::new(proto::encode_output_frame(id, offset, chunk));
-        self.frame_taps.offer(id, offset, chunk.len(), &frame);
+        self.frame_taps.offer_lazy(id, offset, chunk.len(), || {
+            Arc::new(proto::encode_output_frame(id, offset, chunk))
+        });
         true
     }
 
