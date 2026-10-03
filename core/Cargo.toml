@@ -23,3 +23,11 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+[profile.release]
+# Thin LTO improves cross-crate optimization without full LTO's link cost.
+lto = "thin"
+# A single codegen unit enables whole-crate optimization.
+codegen-units = 1
+# Remove symbol tables from shipped binaries to reduce their size.
+strip = "symbols"
