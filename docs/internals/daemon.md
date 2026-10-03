@@ -54,6 +54,7 @@ One line each, from the module's own doc header. Declared in `lib.rs`.
 | | `routines.rs` | Routines — the pure half of the routine record |
 | integrations | `git.rs` | Git queries for the Changes pane; every operation shells out |
 | | `gh.rs` | One PR status line, through the GitHub CLI |
+| | `forge.rs`, `forge_credentials.rs` | Which forge serves a workspace's remote; the Bitbucket Cloud token in the keychain |
 | | `ssh.rs` | SSH panes: a remote shell as a normal grid pane |
 | | `ssh_config.rs`, `ssh_credentials.rs` | Four config directives; credentials in the keychain |
 | | `usage/` | Token-usage reporting for the agent CLIs Houston hosts (7 files) |
@@ -512,6 +513,24 @@ display. `gh.rs` wraps the GitHub CLI through `crate::spawn::command("gh")`: `st
 probes install and auth, `pr_status()` reads `gh pr view --json …`, `pr_create()` runs
 `gh pr create --fill` then re-reads. A missing or unauthenticated `gh` is a **typed state**,
 never a wire error — a wire error here becomes a toast loop.
+
+`forge.rs` resolves the forge from the remote's host once per request, before any `gh`
+probe. A host containing `github.com` (including SSH aliases such as `github.com-work`)
+reads through `gh`; `bitbucket.org` reads through `pull_requests/bitbucket.rs` over REST;
+Bitbucket Data Center, GitLab and Azure DevOps hosts are refused by name. Any other host,
+such as GitHub Enterprise Server, is left to `gh` exactly as before forge resolution
+existed: only the Pull request tab's read refuses it. The resolved host is parsed without
+its userinfo, because a remote URL can embed a token and refusals reach the screen.
+Bitbucket workspace and repository slugs are checked before they enter an API path.
+Pull-request reads dispatch on the forge; every write, listing, diff and stack read stays
+GitHub-only behind one guard, `forge::require_github`, which refuses a known non-GitHub
+forge before any network call. The Bitbucket reader runs only when the user has enabled it
+and a token is in the keychain entry of the daemon's own state directory (`houston-forge`
+for the installed one, `houston-forge-<channel>` or `houston-forge-dir-<digest>`
+otherwise), so a development or test daemon never reads or deletes the installed build's
+token. The reader sends credentials only to its configured API origin and refuses a
+pagination link elsewhere. The worktree sweep asks `forge::merged_facts`, which does not
+contact Bitbucket.
 
 ## Voice
 

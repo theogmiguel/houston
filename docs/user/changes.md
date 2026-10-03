@@ -108,6 +108,9 @@ also fetches that one ref, `refs/pull/<number>/head`, from the remote whose URL 
 PR's repository, using your own git credentials. Without `gh`, a check sends nothing and
 fetches nothing.
 
+Worktrees of a Bitbucket repository are not checked yet: they stay listed with `gh`
+unavailable, and a check sends nothing to Bitbucket for them.
+
 ## Fetching and pulling
 
 Fetch brings remote-tracking branches up to date and reports what changed. Pull is
@@ -126,3 +129,42 @@ you review the PR, refresh and review them before trying to merge again.
 
 Push remains independent of GitHub: it needs a configured git remote and credentials,
 not the GitHub CLI.
+
+### Bitbucket Cloud
+
+A workspace whose git remote is on `bitbucket.org` can show its pull request in the same
+tab, read-only: title, state, author, branches, changed lines and files, commits, build
+statuses as checks, approvals and change requests, comments and inline threads. Houston
+does not create, comment on, review or merge Bitbucket pull requests; **Open on
+Bitbucket** opens the pull request's page instead. Linking a pull request by number and
+unlinking it work as they do for GitHub. Bitbucket Data Center and Server are not
+supported.
+
+To turn it on:
+
+1. In your Atlassian account settings, create an API token with the
+   `read:pullrequest:bitbucket` and `read:repository:bitbucket` scopes. Bitbucket makes
+   the token expire within a year; create a new one when it does.
+2. In Settings ▸ Accounts ▸ Bitbucket Cloud, enter your Atlassian account e-mail and the
+   token, and turn on **Read Bitbucket Cloud pull requests** (off by default).
+
+The token is stored in your OS keychain, never in Houston's settings or logs, and is not
+shown again. **Disconnect** removes it from the keychain. If the keychain is unavailable,
+the tab says so and Houston stores nothing.
+
+While the setting is off, or no token is stored, Houston sends nothing to Bitbucket.
+When it is on, Houston contacts `api.bitbucket.org` over HTTPS only while the Pull
+request tab is open, when you press Refresh and when you link a pull request by number;
+never in the background. Each read sends:
+
+- your Atlassian e-mail and API token, as the request's `Authorization` header;
+- a `User-Agent` header naming Houston and its version (`houston/<version>`);
+- the workspace and repository names, and the pull request number;
+- paging parameters (`pagelen` and Bitbucket's page cursor);
+- to find the branch's own pull request, the local branch name, with the pull request
+  states searched, the sort order and the response fields wanted.
+
+It sends no file content, diff or agent transcript. One refresh makes about six
+requests. Bitbucket allows 1,000 API requests per hour per user, shared with your other
+tools that use the same account; when the limit is reached, the tab says so and Houston
+does not retry.

@@ -61,7 +61,8 @@ interrupted and the task stays in progress.
 Every five minutes Houston checks in-review tasks that have a branch: it runs `gh pr view`
 in the task's worktree, and a merged pull request moves the task to **Done**. `gh` missing
 or not signed in leaves the task in review and states why on the run; it never closes a task
-on its own.
+on its own. A worktree whose remote is on Bitbucket, GitLab or Azure DevOps is not checked:
+`gh` is not run, and the run says the task stays in review until you move it.
 
 ## The queue and review
 
@@ -147,4 +148,5 @@ attribution survives the pane.
 The only network call Tasks makes on its own is the merge check: while a task is in review
 with a run branch, Houston runs the GitHub CLI (`gh pr view`) in that task's worktree every
 five minutes. The request goes to GitHub with your `gh` credentials; Houston itself sends
-nothing. With `gh` absent or signed out the task simply stays in review.
+nothing. With `gh` absent or signed out, or for a worktree on another forge, the task simply
+stays in review and nothing is sent.

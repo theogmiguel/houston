@@ -49,6 +49,7 @@ named.
 | **scrim** | The translucent coat a surface wears over the field to keep its own ink legible: the chrome scrim on the rail and topbar, the pane scrim on terminals. | `--custom-chrome-scrim`, `--custom-pane-scrim` |
 | **the band** | The bounded luminance Custom's dither clamps its output into (dark themes cap the bright end, paper lifts the dark end) — the invariant that lets a build-time gate prove chrome legibility against an image it has never seen. | `backdrop/dither.ts` |
 | **Glass (retired)** | The window mode Custom replaced: a blurred sheet behind the chrome. The name survives only in the overlay tier (`raised-glass` / `overlay-glass`) and the `tr-glass-mode` migration. | `material.ts`, `backgroundMode.ts` |
+| **forge** | The host of a workspace's pull requests, resolved by the daemon from the git remote: GitHub through `gh`, or Bitbucket Cloud through its REST API (read-only, opt-in). | `forge.rs` |
 | **Source control** | The workspace's right panel, with Changes and Pull request tabs; it is not a grid pane. | `SourceControlPanel.tsx`, `ChangesPane.tsx`, `git.rs`, `gh.rs` |
 | **browser pane** | A native child webview in a grid slot, driven by the user or by an agent through `browser_*` MCP tools. | `src-tauri/src/browser/` |
 | **profile** | A saved per-provider account/config-dir choice applied at spawn, and again by name at respawn. | `agent_profiles` |
