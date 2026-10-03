@@ -523,6 +523,15 @@ function offeredUpdate(
 
 const RECONNECT_MS = 1000;
 
+function ReconnectAge({ since }: { since: number }): React.JSX.Element {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return <>{Math.max(0, Math.round((now - since) / 1000))}s</>
+}
+
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
   return {
@@ -2857,13 +2866,6 @@ export function App(): React.JSX.Element {
     return () => configureDictation(null);
   }, [voiceClient, voiceEnabled, voiceCaptureMode]);
 
-  const [, forceReconnectTick] = useState(0);
-  useEffect(() => {
-    if (conn.kind !== "reconnecting") return;
-    const t = setInterval(() => forceReconnectTick((x) => x + 1), 1000);
-    return () => clearInterval(t);
-  }, [conn.kind]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement;
@@ -3433,7 +3435,7 @@ export function App(): React.JSX.Element {
               <span className="loop-anim flex-none w-2 h-2 rounded-[50%] bg-[var(--danger)] [--dot-pulse-opacity:0.25] motion-safe:[animation:dot-pulse_1.2s_steps(4,end)_infinite]" />
               <span>
                 daemon connection lost — reconnecting…{" "}
-                {Math.max(0, Math.round((Date.now() - conn.since) / 1000))}s
+                <ReconnectAge since={conn.since} />
                 {conn.error ? ` (${conn.error})` : ""}
               </span>
               <button

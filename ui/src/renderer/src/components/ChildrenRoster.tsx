@@ -11,6 +11,7 @@ import { BTN_GHOST, BTN_ICO } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { MATERIAL_CLS } from './material'
 import { Segmented } from './Segmented'
+import { useAgeNow } from './ageTicker'
 
 // The queue view and the task chip carry the backlog helpers; both load on
 // demand so the Tasks modules stay off the boot path.
@@ -58,6 +59,11 @@ export function delegationAge(start: number, now: number): string {
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`
 }
 
+export function DelegationAge({ start, end, ticking }: { start: number; end?: number; ticking: boolean }): React.JSX.Element {
+  const now = useAgeNow(ticking)
+  return <>{delegationAge(start, end ?? now)}</>
+}
+
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
   if (!isLive(info.state)) return <Tooltip label="Ended"><span className="w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
   return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
@@ -81,12 +87,6 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const latest = useRef(children)
   latest.current = children
-  const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    // Ages only need second resolution, independent of terminal rendering.
-    const tick = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(tick)
-  }, [])
   useEffect(() => () => clearTimeout(timer.current), [])
   const settled = children.filter((child) => childGroup(child) === 'Settled')
   const closeSettled = (): void => {
@@ -160,7 +160,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
             <div className="children-group"><span>{group}</span><span>{items.length}</span></div>
             {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
               <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span>{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
-              <span className="children-slot"><span className="children-state">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span>
+              <span className="children-slot"><span className="children-state"><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={isLive(child.state) && child.delegation?.settled_at == null} /></span>
                 <span className="children-actions">
                   {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><button className={ROSTER_ICON} aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>}
                   <Tooltip label="Open"><button className={ROSTER_ICON} aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>
