@@ -101,6 +101,7 @@ pub(crate) mod imp {
     }
 
     pub(crate) fn go_back(webview: &tauri::webview::Webview, id: &str) -> Result<(), String> {
+        let id_owned = id.to_string();
         // SAFETY: run_on_view guarantees the main thread; COM calls only.
         run_on_view(webview, id, "go_back", move |platform| unsafe {
             let core: ICoreWebView2 = platform
@@ -112,9 +113,7 @@ pub(crate) mod imp {
                 .map_err(|err| format!("browser: CanGoBack(): {err}"))?;
             if !can.as_bool() {
                 return Err(
-                    "browser: child has no back history entry (canGoBack=false); refusing to \
-                     go back"
-                        .to_string(),
+                    format!("browser: child {id_owned:?} has no back history entry (canGoBack=false); refusing to go back"),
                 );
             }
             core.GoBack()
@@ -123,6 +122,7 @@ pub(crate) mod imp {
     }
 
     pub(crate) fn go_forward(webview: &tauri::webview::Webview, id: &str) -> Result<(), String> {
+        let id_owned = id.to_string();
         // SAFETY: run_on_view guarantees the main thread; COM calls only.
         run_on_view(webview, id, "go_forward", move |platform| unsafe {
             let core: ICoreWebView2 = platform
@@ -134,9 +134,7 @@ pub(crate) mod imp {
                 .map_err(|err| format!("browser: CanGoForward(): {err}"))?;
             if !can.as_bool() {
                 return Err(
-                    "browser: child has no forward history entry (canGoForward=false); \
-                     refusing to go forward"
-                        .to_string(),
+                    format!("browser: child {id_owned:?} has no forward history entry (canGoForward=false); refusing to go forward"),
                 );
             }
             core.GoForward()
@@ -430,13 +428,15 @@ pub(crate) mod imp {
     }
 
     pub(crate) fn dispatch_mousedown_for_selftest(
-        _webview: &tauri::webview::Webview,
-        _id: &str,
+        webview: &tauri::webview::Webview,
+        id: &str,
     ) -> Result<(), String> {
-        Err(
-            "browser: no synthesized-input equivalent exists in these WebView2 bindings"
-                .to_string(),
-        )
+        // Windows reports controller focus rather than DOM mousedown events.
+        run_on_view(webview, id, "exercise child focus", |platform| {
+            // SAFETY: run_on_view confines controller access to its UI thread.
+            unsafe { platform.controller().MoveFocus(webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC) }
+                .map_err(|error| format!("browser: child MoveFocus failed: {error}"))
+        })
     }
 }
 

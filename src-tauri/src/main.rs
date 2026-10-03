@@ -425,6 +425,10 @@ fn main() {
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
+    #[cfg(windows)]
+    {
+        builder = browser::ipc_transport::install(builder);
+    }
     #[cfg(feature = "bench")]
     {
         builder = builder.manage(bench::BenchState::new(bench_scenarios));

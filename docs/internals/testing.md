@@ -91,6 +91,13 @@ its launch receipts in its own state directory so recycled session IDs cannot mi
 receipts across tests. `tasks_wire` covers the portable backlog protocol on Windows.
 The broader orchestration and chaos suites remain Unix-only.
 
+The native `--browser-selftest` also runs on Windows with an isolated development
+channel. It checks WebView2 navigation, history, captures, cookie persistence, host
+and child focus, and denial of child IPC over both HTTP and data URLs. The main
+renderer must retain its large-response channel transport. Unsupported picker,
+cache-bypass reload and crash-injection operations require explicit refusals; GTK
+corner-paint metrics are Linux-only.
+
 Run the full core suite under both Git Bash and `pwsh` before landing a change that touches
 the shell/home ladders. `$SHELL` and `$HOME` feed production ladders in `daemon.rs`, `home_dir.rs` and
 `ssh_config.rs`, and two tests once disagreed between the shells. A Windows-only failure in

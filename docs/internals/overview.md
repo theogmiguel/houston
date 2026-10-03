@@ -407,7 +407,10 @@ no pane virtualization, no unix-socket transport (the browser WebSocket API cann
   `Window::add_child` and a GTK escape hatch because `Webview::set_bounds` is a no-op there.
 - Windows builds and ships (ConPTY, WebView2, NSIS). A kill *releases* the PTY because
   conhost's death does not propagate pipe-close. `whisper-rs` is unix-only; the Windows local
-  voice engine is a named refusal.
+  voice engine is a named refusal. WebView2's web-message switch does not block
+  Tauri's custom-protocol fetch transport. Windows routes that protocol through a
+  native webview-label guard before plugin dispatch, including channel-data fetches;
+  browser content has no application authority.
 - Tauri's `tracing` feature must never be enabled: it makes `eval_script_with_callback`
   block, which lets the watchdog supervisor block on the very event loop it watches.
   `check-watchdog.sh` enforces it.
