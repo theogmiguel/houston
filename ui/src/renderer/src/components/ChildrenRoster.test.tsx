@@ -98,6 +98,29 @@ describe('settled children', () => {
   })
 })
 
+describe('needs-you filter', () => {
+  const needy = (id: number): SessionInfo => ({ ...child(id), status: 'needs-input' })
+  it('lives on the Needs you heading, not the roster head', () => {
+    children = [needy(2), child(3)]
+    render()
+    expect(host.querySelector('.children-head [aria-label="Filter children"]')).toBeNull()
+    click('Show only')
+    expect(host.textContent).not.toContain('worker 3')
+    click('Show all')
+    expect(host.textContent).toContain('worker 3')
+  })
+  it('clears itself once nothing needs you, so the list cannot stay empty', () => {
+    children = [needy(2), child(3)]
+    render(); click('Show only')
+    children = [child(2), child(3)]
+    render()
+    expect(host.textContent).toContain('worker 3')
+    children = [needy(2), child(3)]
+    render()
+    expect(host.textContent).toContain('worker 3')
+  })
+})
+
 describe('roster carry-overs', () => {
   it('opens the overview tab from its footer', () => {
     const handler = vi.fn()
