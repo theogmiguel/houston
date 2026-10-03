@@ -40,22 +40,21 @@ impl Host {
     }
 }
 
-/// An unknown host is named without the remote's userinfo: a remote URL can
-/// embed a token, and this name reaches refusals on screen.
+/// The remote's host by name, without its userinfo: a remote URL can embed a
+/// token, and this name reaches refusals on screen.
 pub fn classify_remote(url: &str) -> Host {
-    let lower = url.to_lowercase();
-    if lower.contains("github.com") {
-        Host::GitHub
-    } else if lower.contains("gitlab") {
-        Host::GitLab
-    } else if lower.contains("bitbucket") {
-        Host::Bitbucket
-    } else if lower.contains("dev.azure.com") || lower.contains("visualstudio.com") {
-        Host::AzureDevOps
-    } else {
-        Host::Unknown(
-            crate::forge::remote_host(url).unwrap_or_else(|| "a local path".to_string()),
-        )
+    use crate::forge::{Forge, ForgeResolution};
+    match crate::forge::resolve_url(url) {
+        ForgeResolution::Ready(Forge::GitHub) => Host::GitHub,
+        ForgeResolution::Ready(Forge::Bitbucket { .. }) => Host::Bitbucket,
+        ForgeResolution::Unsupported { host } => match host.as_str() {
+            "GitLab" => Host::GitLab,
+            "Azure DevOps" => Host::AzureDevOps,
+            "Bitbucket Data Center" | "bitbucket.org" => Host::Bitbucket,
+            _ => Host::Unknown(host),
+        },
+        ForgeResolution::Unknown { host } => Host::Unknown(host),
+        ForgeResolution::NoRemote => Host::Unknown("no remote".to_string()),
     }
 }
 
