@@ -158,9 +158,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
         {grouped.map((group) => {
           const items = ordered.filter((child) => childGroup(child) === group && (!filter || group === 'Needs you'))
           return items.length > 0 && <div key={group}>
-            {group === 'Needs you'
-              ? <div className="children-group"><span>{group} {items.length}</span><button className="children-group-toggle" aria-label="Filter children" aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="small" />{filter ? 'Show all' : 'Show only'}</button></div>
-              : <div className="children-group"><span>{group}</span><span>{items.length}</span></div>}
+            <div className="children-group"><span>{group}</span>{group === 'Needs you' && <button className="children-group-toggle" aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="small" />Show only</button>}<span>{items.length}</span></div>
             {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
               <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span>{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
               <span className="children-slot"><span className="children-state">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span>
