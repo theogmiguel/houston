@@ -11,12 +11,12 @@ import { BTN_GHOST, BTN_ICO } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { MATERIAL_CLS } from './material'
 import { Segmented } from './Segmented'
-import { useAgeNow } from './ageTicker'
 
 // The queue view and the task chip carry the backlog helpers; both load on
 // demand so the Tasks modules stay off the boot path.
 const RosterQueue = lazy(() => import('./tasks/RosterQueue').then((module) => ({ default: module.RosterQueue })))
 const TaskChip = lazy(() => import('./tasks/TaskChip').then((module) => ({ default: module.TaskChip })))
+export const DelegationAge = lazy(() => import('./ageTicker').then((module) => ({ default: module.AgeLabel })))
 
 /// The Queue segment's ready count: a snapshot subscription light enough for
 /// boot, so the segment is honest before the view (and its full hook) loads.
@@ -51,17 +51,14 @@ export function childStateWord(info: SessionInfo): string {
   return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'working'
 }
 
+const ageTicks = (info: SessionInfo): boolean => isLive(info.state) && info.delegation?.settled_at == null
+
 // A missing provider signal is named, so an absent badge is not read as proof of work.
 export const glyphLabel = (info: SessionInfo) => [info.delegation?.role ?? info.title, childGroup(info), info.delegation?.capability_note].filter(Boolean).join(' · ')
 
 export function delegationAge(start: number, now: number): string {
   const seconds = Math.max(0, Math.floor((now - start) / 1000))
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`
-}
-
-export function DelegationAge({ start, end, ticking }: { start: number; end?: number; ticking: boolean }): React.JSX.Element {
-  const now = useAgeNow(ticking)
-  return <>{delegationAge(start, end ?? now)}</>
 }
 
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
@@ -160,7 +157,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
             <div className="children-group"><span>{group}</span><span>{items.length}</span></div>
             {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
               <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span>{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
-              <span className="children-slot"><span className="children-state"><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={isLive(child.state) && child.delegation?.settled_at == null} /></span>
+              <span className="children-slot"><span className="children-state"><Suspense fallback={delegationAge(child.delegation?.started_at ?? Date.now(), child.delegation?.settled_at ?? Date.now())}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={ageTicks(child)} /></Suspense></span>
                 <span className="children-actions">
                   {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><button className={ROSTER_ICON} aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>}
                   <Tooltip label="Open"><button className={ROSTER_ICON} aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>

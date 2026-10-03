@@ -1,7 +1,7 @@
 import { Icon } from './Icon'
 import { Segmented } from './Segmented'
 import { Tooltip } from './Tooltip'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import type { DelegationResult } from '../houston/generated/DelegationResult'
@@ -113,5 +113,5 @@ function childResultExcerpt(child: SessionInfo, result: DelegationResult | undef
 
 
 function OverviewChildHead({ child, needs, settled }: { child: SessionInfo; needs: boolean; settled: boolean }): React.JSX.Element {
-  return <div className="overview-child-head"><span className="overview-dot" data-state={settled ? child.delegation?.state : undefined}><ChildStatusDot info={child} /></span><IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state" data-state={needs ? 'needs_input' : childStateWord(child)}>{needs ? 'Needs you' : childStateWord(child).replace(/^./, (letter) => letter.toUpperCase())}</span><span className="age"><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={!settled && child.delegation?.settled_at == null} /></span></div>
+  return <div className="overview-child-head"><span className="overview-dot" data-state={settled ? child.delegation?.state : undefined}><ChildStatusDot info={child} /></span><IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state" data-state={needs ? 'needs_input' : childStateWord(child)}>{needs ? 'Needs you' : childStateWord(child).replace(/^./, (letter) => letter.toUpperCase())}</span><span className="age"><Suspense fallback={null}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={!settled && child.delegation?.settled_at == null} /></Suspense></span></div>
 }

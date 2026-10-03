@@ -27,3 +27,13 @@ const getSnapshot = (): number => now
 export function useAgeNow(ticking: boolean): number {
   return useSyncExternalStore(ticking ? subscribe : subscribeNever, getSnapshot, getSnapshot)
 }
+
+function ageText(start: number, end: number): string {
+  const seconds = Math.max(0, Math.floor((end - start) / 1000))
+  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`
+}
+
+export function AgeLabel({ start, end, ticking }: { start: number; end?: number | null; ticking: boolean }): React.JSX.Element {
+  const current = useAgeNow(ticking)
+  return <>{ageText(start, end ?? current)}</>
+}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, act } from '@testing-library/react'
+import { fireEvent, render, screen, act, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
@@ -31,13 +31,13 @@ describe('orchestrator overview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     expect(client.closeSession).toHaveBeenCalledWith(2)
   })
-  it('shows protocol ages, targets review and resumes a settled child without fresh', () => {
+  it('shows protocol ages, targets review and resumes a settled child without fresh', async () => {
     const sessions = new Map([[1, session(1, null)], [2, session(2, 1, true)]])
     const respawnSession = vi.fn()
     const onReview = vi.fn()
     const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn(), respawnSession } as unknown as HoustonClient
     render(<OverviewTab parentId={1} sessions={sessions} client={client} onClose={vi.fn()} onReview={onReview} />)
-    expect(screen.getByText('1m')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('1m')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Review changes' }))
     expect(onReview).toHaveBeenCalledWith(sessions.get(2))
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))

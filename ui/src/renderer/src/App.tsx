@@ -115,7 +115,6 @@ import { tabsStorageKey } from "./components/browserTabsKey";
 import { recordAndReload } from "./reloadBudget";
 import { AnimOut } from "./components/AnimOut";
 import {
-  BTN_GHOST_BG,
   BTN_ICO,
   BTN_PRIMARY,
 } from "./components/buttonChrome";
@@ -523,15 +522,7 @@ function offeredUpdate(
 }
 
 const RECONNECT_MS = 1000;
-
-function ReconnectAge({ since }: { since: number }): React.JSX.Element {
-  const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-  return <>{Math.max(0, Math.round((now - since) / 1000))}s</>
-}
+const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -558,30 +549,12 @@ export function App(): React.JSX.Element {
 
   // A brief blur can be incidental; sustained blur pauses ambient animation.
   useEffect(() => {
-    let blurTimer: ReturnType<typeof setTimeout> | undefined;
-    const update = (): void => {
-      document.documentElement.toggleAttribute(
-        "data-motion-paused",
-        document.visibilityState === "hidden" || !document.hasFocus(),
-      );
-    };
-    const onBlur = (): void => {
-      blurTimer = setTimeout(update, 500);
-    };
-    const onFocus = (): void => {
-      clearTimeout(blurTimer);
-      update();
-    };
-    update();
-    document.addEventListener("visibilitychange", update);
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      clearTimeout(blurTimer);
-      document.removeEventListener("visibilitychange", update);
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("focus", onFocus);
-    };
+    let mounted = true;
+    let dispose: (() => void) | undefined;
+    void import("./motionPause").then(({ watchMotionPause }) => {
+      if (mounted) dispose = watchMotionPause();
+    });
+    return () => { mounted = false; dispose?.(); };
   }, []);
 
   const [buttonLayout, setButtonLayout] = useState<WindowButtonLayout>(
@@ -3431,26 +3404,16 @@ export function App(): React.JSX.Element {
           </header>
 
           {conn.kind === "reconnecting" && (
-            <div
-              className="fixed top-[calc(var(--h-top)+16px)] left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex items-center gap-2 py-1.5 px-3.5 border border-[var(--status-blocked-text)] rounded-full bg-[var(--card-bg)] text-[var(--status-blocked-text)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] shadow-[var(--shadow-md)] max-w-[70vw]"
-              role="status"
-            >
-              <span className="loop-anim flex-none w-2 h-2 rounded-[50%] bg-[var(--danger)] [--dot-pulse-opacity:0.25] motion-safe:[animation:dot-pulse_1.2s_steps(4,end)_infinite]" />
-              <span>
-                daemon connection lost — reconnecting…{" "}
-                <ReconnectAge since={conn.since} />
-                {conn.error ? ` (${conn.error})` : ""}
-              </span>
-              <button
-                className={`btn ${BTN_GHOST_BG} text-inherit border border-current py-px px-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]`}
-                onClick={() => {
+            <Suspense fallback={null}>
+              <ReconnectBanner
+                since={conn.since}
+                error={conn.error}
+                onRetry={() => {
                   clearTimeout(retryTimerRef.current);
                   reconnectRef.current();
                 }}
-              >
-                Retry now
-              </button>
-            </div>
+              />
+            </Suspense>
           )}
 
           {}
