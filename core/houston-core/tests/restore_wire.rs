@@ -47,6 +47,7 @@ fn seed(state_dir: &std::path::Path, dirs: &[&std::path::Path], clean: bool) {
             resumable: false,
             resume_notice: None,
             compactions: None,
+            task: None,
         })
         .unwrap();
     }
@@ -93,6 +94,7 @@ fn seed_one(
         resumable: false,
         resume_notice: None,
         compactions: None,
+        task: None,
     })
     .unwrap();
 }
@@ -206,6 +208,7 @@ fn invalid_cwd_is_deferred_not_respawned() {
         resumable: false,
         resume_notice: None,
         compactions: None,
+        task: None,
     })
     .unwrap();
     drop(db);
@@ -379,6 +382,7 @@ fn no_flags_set_runs_normal_restore_policy() {
         resumable: false,
         resume_notice: None,
         compactions: None,
+        task: None,
     })
     .unwrap();
     drop(db);

@@ -212,6 +212,72 @@ fn add_worktree(repo: &Path, branch: &str, base: &str, dest: &Path) -> Result<Wo
     })
 }
 
+/// A task worktree: a fresh branch off `base`, or — on a re-Start — the same
+/// branch checked out again at the same path when its earlier tree is gone.
+/// The caller handles a tree that is already there and on the branch.
+pub fn create_task(repo: &Path, branch: &str, base: Option<&str>, dest: &Path) -> Result<Worktree> {
+    ensure_git_repo(repo)?;
+    crate::git::validate_branch_name(branch)?;
+    if dest.exists() {
+        bail!(
+            "worktree path {} is already occupied; a task reuses its own tree, so the occupant \
+             is not a task's",
+            dest.display()
+        );
+    }
+    if !branch_exists(repo, branch) {
+        return create_on_branch(repo, branch, base, dest);
+    }
+    let dest_str = git_path(dest)?;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    run_git(repo, &["worktree", "add", &dest_str, branch])?;
+    Ok(Worktree {
+        path: dest.to_path_buf(),
+        branch: Some(branch.to_string()),
+        head: crate::git::head_sha(dest).ok(),
+        is_main: false,
+        is_bare: false,
+        is_detached: false,
+    })
+}
+
+/// A detached tree at `commitish` (a branch tip or commit). A reviewer reads
+/// the branch while the implementer's own worktree keeps it checked out, so the
+/// new tree must not claim the branch.
+pub fn create_detached(repo: &Path, commitish: &str, dest: &Path) -> Result<Worktree> {
+    ensure_git_repo(repo)?;
+    if !ref_exists(repo, commitish) {
+        bail!(
+            "commit-ish {commitish:?} does not exist in {}; expected an existing branch, tag or \
+             commit",
+            repo.display()
+        );
+    }
+    if dest.exists() {
+        bail!(
+            "worktree path {} is already occupied; nothing was created",
+            dest.display()
+        );
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    let dest_str = git_path(dest)?;
+    run_git(repo, &["worktree", "add", "--detach", &dest_str, commitish])?;
+    Ok(Worktree {
+        path: dest.to_path_buf(),
+        branch: None,
+        head: crate::git::head_sha(dest).ok(),
+        is_main: false,
+        is_bare: false,
+        is_detached: true,
+    })
+}
+
 fn rollback_add(repo: &Path, dest: &Path, branch: &str, head: &str) -> Result<()> {
     let reference = format!("refs/heads/{branch}");
     let current = run_git(repo, &["rev-parse", "--verify", &reference])?;

@@ -22,6 +22,7 @@ function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
     closePane: vi.fn(),
     toggleGitPane: vi.fn(),
     spawnAgent: vi.fn(),
+    openTasks: vi.fn(),
     toggleSidebarRail: vi.fn(),
     toggleChromeTheme: vi.fn(),
     openAddPanePopover: vi.fn(),

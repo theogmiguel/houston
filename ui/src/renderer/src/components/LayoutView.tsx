@@ -387,6 +387,10 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
   )
 }
 
+// Set on <html> while a pane header drag is live; base.css turns user-select off
+// app-wide so the drag never paints a native text selection across the chrome.
+export const PANE_DRAG_CLASS = 'pane-dragging'
+
 function LayoutViewImpl(props: Props): React.JSX.Element {
   const { tree, sessions, onMove, onSwap, onResize, onDetach, workspaceDir, onStackWith } = props
   const gridHidden = props.gridHidden ?? false
@@ -474,11 +478,23 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
         }
         publish()
       }
-      const up = (): void => {
+      const release = (): void => {
         window.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', up)
+        window.removeEventListener('pointercancel', cancel)
+        window.removeEventListener('blur', cancel)
         window.removeEventListener('keydown', onAlt)
         window.removeEventListener('keyup', onAlt)
+        document.documentElement.classList.remove(PANE_DRAG_CLASS)
+      }
+      const cancel = (): void => {
+        release()
+        clearSidebarHighlight()
+        setDragKey(null)
+        setDrop(null)
+      }
+      const up = (): void => {
+        release()
         const detachTarget = sidebarRow
         clearSidebarHighlight()
         const target = dropRef.current
@@ -503,8 +519,12 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
         setDragKey(null)
         setDrop(null)
       }
+      document.documentElement.classList.add(PANE_DRAG_CLASS)
+      window.getSelection()?.removeAllRanges()
       window.addEventListener('pointermove', move)
       window.addEventListener('pointerup', up)
+      window.addEventListener('pointercancel', cancel)
+      window.addEventListener('blur', cancel)
       window.addEventListener('keydown', onAlt)
       window.addEventListener('keyup', onAlt)
     },

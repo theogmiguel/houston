@@ -11,9 +11,9 @@ describe('settingsSections — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Filled — thirteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
-    expect(SETTINGS_SECTIONS.length).toBe(13)
-    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(13)
+  it('Filled — fourteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
+    expect(SETTINGS_SECTIONS.length).toBe(14)
+    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(14)
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('usage')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('accounts')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('agent-setup')
@@ -54,6 +54,7 @@ describe('settingsSections — state matrix', () => {
       'agent-setup',
       'workspace-defaults',
       'orchestration',
+      'tasks',
       'voice'
     ])
     expect(inGroup('data')).toEqual(['privacy', 'usage', 'daemon'])

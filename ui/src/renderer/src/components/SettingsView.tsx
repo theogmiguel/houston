@@ -31,6 +31,7 @@ import { PrivacySection } from './settings/PrivacySection'
 import { VoiceSection } from './settings/VoiceSection'
 import { ShortcutsSection } from './settings/ShortcutsSection'
 import { OrchestrationSection } from './settings/OrchestrationSection'
+import { TasksSection } from './settings/TasksSection'
 import type { UsageSummaryMsg } from './UsageSection'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
 import type { AgentProfileActive } from '../houston/generated/AgentProfileActive'
@@ -339,6 +340,14 @@ function SectionDispatch({
             onOpenAcpPane={onOpenAcpPane}
             historyWorkspace={historyWorkspace}
             historyWorkspaceName={historyWorkspaceName}
+          />
+        )}
+
+        {section === 'tasks' && (
+          <TasksSection
+            client={daemonClient ?? null}
+            workspace={historyWorkspace}
+            workspaceName={historyWorkspaceName}
           />
         )}
 

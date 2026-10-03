@@ -131,6 +131,7 @@ The daemon serves an axum router on `127.0.0.1:<ephemeral>`:
 | `GET /ws` | renderer | control messages (JSON text frames) and PTY bytes (binary frames) |
 | `POST/GET/DELETE /mcp` | agent CLIs | MCP over streamable HTTP, per-pane bearer token |
 | `/orchestrate/*` | `hs-pane` | the same verbs as plain HTTP for the CLI helper |
+| `/task/*` | `hs-task` | the Tasks backlog as plain HTTP for the `hs-task` CLI (same daemon path as the `task_*` MCP tools) |
 
 The renderer learns port and token from the Tauri command `host_config`, not from
 `daemon.json`. `host.rs` may not log (a unit test greps its own source for `println!` and

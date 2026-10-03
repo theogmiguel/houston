@@ -7,7 +7,7 @@ import type { HoustonClient, SessionInfo } from '../houston/client'
 vi.mock('../pane/TerminalPane', () => ({ TerminalPane: ({ info, onOpenFile, onOpenDir }: { info: SessionInfo; onOpenFile: (path: string) => void; onOpenDir: (path: string) => void }) => <div data-terminal={info.id} data-root={info.project_dir} data-cwd={info.cwd}><button onClick={() => onOpenFile(`${info.cwd}/file.ts`)}>file {info.id}</button><button onClick={() => onOpenDir(info.cwd)}>dir {info.id}</button></div> }))
 import { SessionPane } from './SessionPane'
 
-const client = { respawnSession: vi.fn(), closeSession: vi.fn() } as unknown as HoustonClient
+const client = { respawnSession: vi.fn(), closeSession: vi.fn(), subscribe: () => () => {}, taskSnapshot: vi.fn(), taskQueueRun: vi.fn() } as unknown as HoustonClient
 const noop = () => {}
 const info = (id: number, spawned_by: number | null = null): SessionInfo => ({ id, spawned_by, agent: 'claude', state: 'running', title: `pane ${id}`, cwd: `/tmp/child${id}/sub`, project_dir: `/tmp/child${id}`, codename: `child${id}`, tags: [], hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, resumable: false, status: 'working' })
 let root: Root

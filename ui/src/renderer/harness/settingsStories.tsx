@@ -8,7 +8,7 @@ import type { SettingsSectionId } from '../src/settingsSections'
 
 const noop = (): void => {}
 
-function SettingsScreen({
+export function SettingsScreen({
   section,
   props
 }: {

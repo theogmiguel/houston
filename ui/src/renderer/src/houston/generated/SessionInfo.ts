@@ -5,6 +5,7 @@ import type { DelegationInfo } from "./DelegationInfo";
 import type { RestoreReason } from "./RestoreReason";
 import type { SessionContext } from "./SessionContext";
 import type { SessionState } from "./SessionState";
+import type { SessionTask } from "./SessionTask";
 import type { SessionWorktree } from "./SessionWorktree";
 
 export type SessionInfo = { id: number, agent: AgentKind, project_dir: string, cwd: string, checkout_root?: string | null, worktree?: SessionWorktree | null, state: SessionState, title: string, codename: string, detected_agent?: AgentKind | null, hidden: boolean, ssh_host?: string | null, restore_deferred?: RestoreReason | null, status?: AgentStatus | null, context?: SessionContext | null, swarm_agent?: number | null, spawned_by?: number | null, acp?: string | null, live_children: number, profile_label?: string | null, children_waiting: number, delegation?: DelegationInfo | null, inbox_unread: number, tags: Array<number>, session_origin?: number | null,
@@ -20,4 +21,10 @@ resume_notice?: string | null,
  * Context compactions the agent reported for this pane; `None` when its
  * provider reports no compaction event.
  */
-compactions?: number | null, };
+compactions?: number | null,
+/**
+ * The task this pane is bound to, from the newest run that names it; a
+ * pane launched or claimed by a task carries it so the header can show a
+ * chip without the Tasks tab being open.
+ */
+task?: SessionTask | null, };

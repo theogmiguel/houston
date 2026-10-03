@@ -27,6 +27,7 @@ export interface SelectProps {
   'data-testid'?: string
   className?: string
   chrome?: string
+  prefix?: React.ReactNode
 }
 
 // How long a type-ahead buffer survives between keystrokes. 800 ms sits between
@@ -55,7 +56,8 @@ export function Select({
   'aria-label': ariaLabel,
   'data-testid': testId,
   className = '',
-  chrome = SELECT_CLS
+  chrome = SELECT_CLS,
+  prefix
 }: SelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<MenuPos | null>(null)
@@ -249,6 +251,7 @@ export function Select({
           }}
           className={`${chrome} ${TRIGGER_LAYOUT_CLS} ${className}`}
         >
+          {prefix && <span className="flex-none inline-flex items-center">{prefix}</span>}
           <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ''}</span>
           <Icon glyph={IconChevronDown} role="small" className="flex-none text-[var(--text-muted)]" />
         </button>

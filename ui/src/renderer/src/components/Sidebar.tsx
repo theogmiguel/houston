@@ -66,6 +66,7 @@ import {
   IconZap,
   IconGlobe,
   IconClock,
+  IconTasks,
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./Tooltip";
@@ -96,6 +97,7 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   user: IconUser,
   folder: IconFolder,
   fork: IconGitFork,
+  tasks: IconTasks,
   mic: IconMic,
   database: IconDatabase,
   chart: IconChartArea,
@@ -2701,7 +2703,7 @@ export function Sidebar({
     <aside
       data-custom={dataCustom}
       {...materialAttrs("shell")}
-      className={`w-full flex-none flex flex-col relative z-[var(--z-leaf)] ${MATERIAL_CLS.shell} ${
+      className={`w-full flex-none flex flex-col relative z-[var(--z-leaf)] select-none ${MATERIAL_CLS.shell} ${
         custom ? "shadow-[var(--glass-rail-shadow)]" : ""
       } ${className}`}
     >

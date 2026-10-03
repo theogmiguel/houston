@@ -70,6 +70,7 @@ import { HeaderDelegationBadge, type PaneRoster } from './DelegationCard'
 import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
 import { ContextIndicator } from './ContextIndicator'
+import { PaneTaskChip } from './tasks/PaneTaskChip'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -475,6 +476,7 @@ function SessionPaneImpl({
             title={info.title}
             onRename={(t) => client.renameSession(info.id, t)}
           />
+          <PaneTaskChip task={info.task} />
           <BranchChip branch={branch} note={branchNote} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}

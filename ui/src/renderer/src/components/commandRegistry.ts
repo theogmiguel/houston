@@ -34,6 +34,7 @@ export type CommandGroup =
   | 'Go to'
   | 'Appearance'
   | 'Workspaces'
+  | 'Tasks'
   | 'Window'
 
 export interface Command {
@@ -55,6 +56,11 @@ export interface PaletteActions {
   closePane?: () => void
   toggleGitPane: () => void
   spawnAgent: (agent: AgentKind) => void
+  openTasks: (compose?: boolean) => void
+  /// The focused terminal's current selection, read when the palette builds
+  /// its commands; empty when no terminal holds one.
+  focusedSelection?: () => string
+  newTaskFromSelection?: (selection: string) => void
 
   toggleSidebarRail: () => void
   toggleChromeTheme: () => void
@@ -261,6 +267,41 @@ function buildPaneCommands(actions: PaletteActions, hasWorkspace: boolean): Comm
     })
   }
   return commands
+}
+
+function buildTaskCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
+  const disabledReason = hasWorkspace ? undefined : 'Open a workspace to use its task backlog'
+  const selection = actions.focusedSelection?.() ?? ''
+  return [
+    {
+      id: 'tasks.new-from-selection',
+      title: 'New task from terminal selection',
+      group: 'Tasks',
+      keywords: ['task', 'backlog', 'create', 'selection', 'terminal', 'clipboard'],
+      enabled: hasWorkspace && selection.trim() !== '',
+      disabledReason:
+        disabledReason ?? (selection.trim() === '' ? 'Select text in a terminal first' : undefined),
+      run: () => actions.newTaskFromSelection?.(selection)
+    },
+    {
+      id: 'tasks.new',
+      title: 'New task',
+      group: 'Tasks',
+      keywords: ['task', 'backlog', 'create', 'todo'],
+      enabled: hasWorkspace,
+      disabledReason,
+      run: () => actions.openTasks(true)
+    },
+    {
+      id: 'tasks.open',
+      title: 'Open Tasks',
+      group: 'Tasks',
+      keywords: ['backlog', 'list', 'todo', 'task'],
+      enabled: hasWorkspace,
+      disabledReason,
+      run: () => actions.openTasks()
+    }
+  ]
 }
 
 function buildAgentCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
@@ -493,6 +534,7 @@ export function buildCommands(input: BuildCommandsInput): Command[] {
     ...buildOpenTabCommands(actions, grids ?? []),
     ...buildPaneCommands(actions, hasWorkspace),
     ...buildAgentCommands(actions, hasWorkspace),
+    ...buildTaskCommands(actions, hasWorkspace),
     ...buildGridCommands(actions),
     ...buildViewCommands(actions),
     ...buildRailNavCommands(actions),

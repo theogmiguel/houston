@@ -359,7 +359,7 @@ fn main() -> Result<()> {
     let args = std::env::args().collect::<Vec<_>>();
     let helper = matches!(
         args.get(1).map(String::as_str),
-        Some("hook" | "hs-mail" | "hs-pane" | "hs-harness")
+        Some("hook" | "hs-mail" | "hs-pane" | "hs-harness" | "hs-task")
     );
     if !helper && !print_protocol_requested(&args) {
         let home = houston_core::home_dir::home_dir().context("cannot resolve home directory")?;
@@ -414,6 +414,7 @@ async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
         }
         Some("hs-pane") => std::process::exit(houston_core::orchestrate::run_pane_cli(&args[2..])),
         Some("hs-harness") => std::process::exit(houston_core::harness::run_cli(&args[2..])),
+        Some("hs-task") => std::process::exit(houston_core::tasks_cli::run_cli(&args[2..])),
         _ => {}
     }
 

@@ -218,7 +218,8 @@ import {
 import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, loadSideState } from "./sidePanel";
+import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, openSideTasks, loadSideState } from "./sidePanel";
+import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
@@ -358,6 +359,9 @@ function writeFocusedPane(workspace: string, paneId: string): void {
 }
 
 const SPLIT_INTENT_TTL_MS = 10_000;
+// A Start creates a worktree and launches the agent before its run is bound to
+// a pane; 60s covers a slow checkout without letting a refused Start linger.
+const TASK_START_INTENT_TTL_MS = 60_000;
 
 const PANE_GROW_TTL_MS = 1_000;
 
@@ -894,6 +898,12 @@ export function App(): React.JSX.Element {
       agent: AgentKind;
       ts: number;
     }[]
+  >([]);
+  // Starts this client sent, so the pane the daemon creates for one is placed
+  // beside the pane that was focused; a run started by another client or an
+  // agent has no entry and keeps the default placement.
+  const taskStartIntents = useRef<
+    { taskId: number; anchor: number | null; ws: string; ts: number }[]
   >([]);
   const newPaneOrigins = useRef<Map<PaneKey, SplitSide>>(new Map());
   const reviewIntents = useRef<
@@ -1698,6 +1708,52 @@ export function App(): React.JSX.Element {
     const timer = setInterval(() => conn.client.hostInfoGet(), 30_000);
     return () => clearInterval(timer);
   }, [conn]);
+
+  const handleTaskStartRequested = useCallback((taskId: number, ws: string): void => {
+    const focused = activeIdRef.current;
+    taskStartIntents.current.push({
+      taskId,
+      anchor: focused,
+      ws,
+      ts: Date.now(),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (conn.kind !== "ready") return;
+    const offRun = conn.client.subscribe("task_run_changed", (msg) => {
+      const session = msg.run.session_id;
+      if (session == null) return;
+      const q = taskStartIntents.current;
+      while (q.length > 0 && Date.now() - q[0].ts > TASK_START_INTENT_TTL_MS)
+        q.shift();
+      const at = q.findIndex((i) => i.taskId === msg.run.task_id);
+      if (at === -1) return;
+      const [intent] = q.splice(at, 1);
+      const key = gridStorageKey(intent.ws, activeGridId(intent.ws));
+      setLayouts((prev) => {
+        const cur = prev.get(key) ?? loadLayout(key);
+        const anchor = intent.anchor;
+        if (!cur.tree || anchor === null || anchor === session) return prev;
+        const placed = preorderSessions(cur.tree);
+        if (!placed.includes(anchor)) return prev;
+        const tree = placed.includes(session)
+          ? moveLeaf(cur.tree, session, anchor, "right")
+          : insertBeside(cur.tree, anchor, leaf(session), "right");
+        return new Map(prev).set(key, { ...cur, tree });
+      });
+      setActiveId(session);
+    });
+    const offRefused = conn.client.subscribe("task_refused", (msg) => {
+      taskStartIntents.current = taskStartIntents.current.filter(
+        (i) => i.taskId !== msg.id,
+      );
+    });
+    return () => {
+      offRun();
+      offRefused();
+    };
+  }, [conn, activeGridId]);
 
   // Subscribed rather than another arm in the dispatcher above: that function is
   // the file's largest and the complexity ratchet only falls.
@@ -3118,6 +3174,16 @@ export function App(): React.JSX.Element {
       toggleScmPanel();
     },
     spawnAgent: (agent) => spawnAgentPane(agent),
+    openTasks: (compose) => openSideTasks(compose === true),
+    focusedSelection: () => terminalSelection(activeId),
+    newTaskFromSelection: (selection) => {
+      if (selectedWs === "all") return;
+      // The draft helper rides with the Tasks formatting module, which stays off the boot path.
+      void import("./components/tasks/format").then(({ taskDraftFromSelection }) => {
+        const draft = taskDraftFromSelection(selection);
+        if (draft !== null) openSideTasks(false, undefined, draft);
+      });
+    },
     toggleSidebarRail: () => setSidebarRail((cur) => !cur),
     toggleChromeTheme: () =>
       setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite"),
@@ -3588,6 +3654,8 @@ export function App(): React.JSX.Element {
                   onRevealWorkspace={revealWorkspace}
                   onOpenEditor={openEditorFile}
                   onReviewChild={(child) => { setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
+                  onTaskStartRequested={handleTaskStartRequested}
+                  workspaces={workspaces}
                   dir={scmProps.dir}
                   client={scmProps.client}
                   width={scmWidth}

@@ -11,6 +11,11 @@ pub use harness::{
     HarnessDecisionRow, HarnessFindingRow, HarnessFindingWrite, HarnessPublication,
     HarnessReviewRow,
 };
+mod tasks;
+pub use tasks::{
+    SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
+    TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
+};
 
 // Seven days and 4096 receipts cover ordinary retries without unbounded local storage.
 pub const ORCHESTRATION_RECEIPT_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
@@ -1542,6 +1547,7 @@ impl Db {
                 ON routine_runs(routine_id, id DESC);",
         )?;
         harness::migrate(&conn)?;
+        tasks::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",
@@ -2004,6 +2010,7 @@ impl Db {
                     resumable: false,
                     resume_notice: None,
                     compactions: None,
+                    task: None,
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -5460,6 +5467,7 @@ mod tests {
             resumable: false,
             resume_notice: None,
             compactions: None,
+            task: None,
         }
     }
 

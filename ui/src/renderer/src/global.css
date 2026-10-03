@@ -87,3 +87,23 @@ body {
 .children-status[data-state="failed"] .agent-dot{background:var(--stop)}
 
 .children-status{display:inline-flex;flex:none}
+/* Roster Queue view — geometry and ink from the mock's `.qcol` / `.qgrp` /
+   `.qrow` / `.qfoot`, mapped onto Houston's tokens. */
+.queue-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+.queue-group { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+.queue-group .n { font-family: var(--font-mono); letter-spacing: 0; }
+.queue-empty { padding: 6px 14px; font-size: 11.5px; color: var(--text-faint); }
+.queue-row { position: relative; display: flex; flex-direction: column; gap: 2px; margin: 0 6px; padding: 6px 8px; border: 0; border-radius: var(--tr-radius-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.queue-row:hover { background: var(--hover-fill); }
+.queue-row .l1 { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.5px; }
+.queue-row .l2 { display: flex; align-items: center; gap: 6px; padding-left: 21px; font-size: 11.5px; color: var(--text-muted); min-width: 0; }
+.queue-foot { margin-top: auto; border-top: 1px solid var(--divider); padding: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 11.5px; color: var(--text-muted); }
+.queue-meter { display: flex; align-items: center; gap: 8px; }
+.queue-meter-bar { flex: 1; height: 4px; border-radius: var(--tr-radius-pill); background: color-mix(in srgb, var(--text-primary) 10%, transparent); overflow: hidden; display: flex; gap: 2px; }
+.queue-meter-bar i { display: block; height: 100%; }
+.queue-note { font-size: 11px; color: var(--text-faint); }
+.queue-actions { display: flex; align-items: center; gap: 8px; }
+.queue-result { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.queue-result .ok { color: var(--status-done-text); }
+.queue-result .bad { color: var(--status-blocked-text); }
+.children-column .tkchip { padding: 0 5px; }

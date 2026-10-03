@@ -88,6 +88,7 @@ fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
         resumable: false,
         resume_notice: None,
         compactions: None,
+        task: None,
     }
 }
 
