@@ -1,3 +1,4 @@
+pub mod bitbucket;
 pub(crate) mod github;
 pub(crate) mod shared;
 pub(crate) mod watch;

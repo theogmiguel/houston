@@ -370,7 +370,7 @@ fn reviews(v: Option<&serde_json::Value>) -> Vec<PrReview> {
         .collect()
 }
 
-fn clip(body: String) -> String {
+pub(super) fn clip(body: String) -> String {
     let max = super::DETAIL_BODY_MAX;
     if body.len() <= max {
         return body;
