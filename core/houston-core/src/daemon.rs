@@ -12881,25 +12881,11 @@ impl Daemon {
 
     fn swarm_activity_tick(&self, session: u32, agent_id: u64, chunk: &[u8]) {
         let now = now_ms();
-        {
-            let map = self.swarm_activity.lock().expect("swarm_activity lock");
-            if map
-                .get(&agent_id)
-                .is_some_and(|(_, at)| now.saturating_sub(*at) < 1000)
-            {
-                return;
-            }
-        }
-        let Some(text) = Self::extract_activity(chunk) else {
-            return;
-        };
-        {
+        let text = {
             let mut map = self.swarm_activity.lock().expect("swarm_activity lock");
-            if map.get(&agent_id).is_some_and(|(prev, _)| *prev == text) {
-                return;
-            }
-            map.insert(agent_id, (text, now));
-        }
+            Self::extract_activity_if_due(&mut map, agent_id, now, || Self::extract_activity(chunk))
+        };
+        let Some(_text) = text else { return };
         if let Err(e) = self.db.swarm_agent_touch_activity(agent_id, now) {
             tracing::warn!("persisting activity timestamp for swarm agent {agent_id}: {e}");
         }
@@ -12919,6 +12905,29 @@ impl Daemon {
                 agent: self.swarm_overlay(agent),
             });
         }
+    }
+
+    fn extract_activity_if_due(
+        activity: &mut HashMap<u64, (String, u64)>,
+        agent_id: u64,
+        now: u64,
+        extract: impl FnOnce() -> Option<String>,
+    ) -> Option<String> {
+        if activity
+            .get(&agent_id)
+            .is_some_and(|(_, at)| now.saturating_sub(*at) < 1000)
+        {
+            return None;
+        }
+        let text = extract()?;
+        if let Some((previous, at)) = activity.get_mut(&agent_id) {
+            if *previous == text {
+                *at = now;
+                return None;
+            }
+        }
+        activity.insert(agent_id, (text.clone(), now));
+        Some(text)
     }
 
     fn extract_activity(chunk: &[u8]) -> Option<String> {
@@ -18037,6 +18046,25 @@ mod windows_helper_wrapper_tests {
             "a literal % in the exe path must be doubled, not left singly \
              (which cmd.exe would try to expand as a variable): {content:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod swarm_activity_throttle_tests {
+    use super::Daemon;
+    use std::collections::HashMap;
+
+    #[test]
+    fn identical_activity_refreshes_the_throttle_without_reextracting_each_chunk() {
+        let mut activity = HashMap::new();
+        let mut extracts = 0;
+        for now in [0, 1000, 1001, 1002] {
+            let _ = Daemon::extract_activity_if_due(&mut activity, 7, now, || {
+                extracts += 1;
+                Some("same activity".to_owned())
+            });
+        }
+        assert_eq!(extracts, 2);
     }
 }
 
