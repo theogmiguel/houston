@@ -398,6 +398,7 @@ impl Daemon {
             archived_at_ms: row.archived_at_ms,
             acceptance_checked: row.acceptance_checked,
             acceptance_total: row.acceptance_total,
+            intake: None,
             open_run: None,
         }
     }
@@ -474,6 +475,7 @@ impl Daemon {
             reason: row.reason.clone(),
             started_at_ms: row.started_at_ms,
             ended_at_ms: row.ended_at_ms,
+            pr_url: row.pr_url.clone(),
         }
     }
 
@@ -493,11 +495,13 @@ impl Daemon {
                 map.insert(run.task_id, run);
                 map
             });
+        let intakes = self.task_intakes()?;
         Ok(rows
             .into_iter()
             .map(|row| {
                 let mut wire = Self::task_summary_to_wire(row);
                 wire.open_run = open.get(&wire.id).map(Self::task_run_ref_to_wire);
+                wire.intake = intakes.get(&wire.id).cloned();
                 wire
             })
             .collect())
@@ -944,7 +948,7 @@ impl Daemon {
         }
     }
 
-    fn task_create(
+    pub(super) fn task_create(
         &self,
         workspace: &str,
         patch: proto::TaskPatch,
@@ -1965,6 +1969,14 @@ impl Daemon {
         brief.push_str(&Self::task_data_block(row, acceptance));
         if let Some(findings) = findings {
             brief.push_str(&Self::task_findings_block(key, findings));
+        }
+        if row.created_by.starts_with("slack:") {
+            brief.push_str(
+                "\n\nThis task was filed from a Slack request. Follow this repository's factory \
+                 skill if it has one. Ask a question only with `hs-task ask \"...\"` (or the \
+                 `task_ask` MCP tool): it goes to the request's thread, and the answer arrives as \
+                 your next prompt, so end your turn after asking.",
+            );
         }
         brief.push_str(
             "\n\nWhen the work is done, hand the task back with `hs-task handback --summary \

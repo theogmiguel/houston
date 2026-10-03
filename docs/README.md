@@ -14,6 +14,7 @@ Two halves. The first is for using Houston; the second is for working on it.
 - [Orchestration](user/orchestration.md) — letting an agent open and drive other panes
 - [Routines](user/routines.md) — scheduling repeatable work in an agent pane
 - [Tasks](user/tasks.md) — a local backlog per workspace and the access agents get to it
+- [Slack requests](user/slack.md) — filing a Slack mention as a task the owner starts, and what that sends
 - [Changes](user/changes.md) — the git surface
 - [Files, editor and browser panes](user/files-editor-browser.md) — the three non-terminal
   pane types, and the browser pane's consent model

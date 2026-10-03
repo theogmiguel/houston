@@ -321,6 +321,7 @@ function SectionDispatch({
 
         {section === 'accounts' && (
           <AccountsSection
+            client={daemonClient ?? null}
             agentProfiles={agentProfiles}
             onAgentProfileUpsert={onAgentProfileUpsert}
             onAgentProfileDelete={onAgentProfileDelete}

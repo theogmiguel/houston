@@ -65,6 +65,7 @@ pub async fn start_with_listener(
         .route("/task/check", post(task_check))
         .route("/task/claim", post(task_claim))
         .route("/task/handback", post(task_handback))
+        .route("/task/ask", post(task_ask))
         .route("/inbox/tool-boundary", post(inbox_tool_boundary))
         .route("/inbox/reserve", post(inbox_reserve))
         .route("/inbox/delivered", post(inbox_delivered))
@@ -605,6 +606,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::SshConfigHosts
             | proto::ClientMsg::SessionPolicyGet
             | proto::ClientMsg::UpdateGet
+            | proto::ClientMsg::SlackGet
             | proto::ClientMsg::KeymapGet
             | proto::ClientMsg::WaitForIdle { .. }
             | proto::ClientMsg::BrowserToolResult { .. }
@@ -2675,6 +2677,42 @@ async fn dispatch(
             daemon.update_wake.notify_one();
             Ok(())
         }
+        proto::ClientMsg::SlackGet => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || d.slack_state_msg(None)).await?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::SlackConnect {
+            app_token,
+            bot_token,
+        } => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || {
+                d.slack_connect(app_token.as_deref(), bot_token.as_deref())
+            })
+            .await?;
+            slack_reply(daemon, sink, msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::SlackDisconnect => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || d.slack_disconnect()).await?;
+            slack_reply(daemon, sink, msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::SlackConfigure {
+            owner_user_id,
+            channels,
+        } => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || {
+                d.slack_configure(owner_user_id.as_deref(), &channels)
+            })
+            .await?;
+            slack_reply(daemon, sink, msg).await;
+            Ok(())
+        }
         proto::ClientMsg::KeymapGet => {
             let overrides = daemon.keymap_overrides();
             let _ = send_msg(sink, &proto::ServerMsg::Keymap { overrides }).await;
@@ -3682,6 +3720,23 @@ async fn send_msg(
     sink.send(Message::Text(json.into())).await.map_err(|_| ())
 }
 
+/// A refused Slack change goes back to the asker only; an applied one
+/// reaches every client, so each Settings view shows the same state.
+async fn slack_reply(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    msg: proto::ServerMsg,
+) {
+    match &msg {
+        proto::ServerMsg::Slack {
+            refusal: Some(_), ..
+        } => {
+            let _ = send_msg(sink, &msg).await;
+        }
+        _ => daemon.broadcast_control(&msg),
+    }
+}
+
 async fn send_error(
     sink: &mut (impl SinkExt<Message> + Unpin),
     message: String,
@@ -4564,6 +4619,33 @@ async fn task_handback(
         )
     })
     .await
+}
+
+#[derive(Deserialize)]
+struct TaskAskBody {
+    question: String,
+}
+
+/// Posts a Slack-filed task's question to its thread and returns at once; the
+/// answer reaches the pane later as a prompt, never as this call's result.
+async fn task_ask(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<TaskAskBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    match tokio::task::spawn_blocking(move || {
+        daemon.slack_task_ask(scope.session_id, &body.question)
+    })
+    .await
+    {
+        Ok(Ok(text)) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
+        Ok(Err(e)) => orch_error(StatusCode::CONFLICT, e),
+        Err(e) => orch_err_response(anyhow::anyhow!("task ask worker failed: {e}")),
+    }
 }
 
 async fn orch_submit(

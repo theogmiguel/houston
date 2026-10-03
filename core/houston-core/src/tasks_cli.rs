@@ -15,6 +15,7 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task comment [HOU-n] TEXT
   hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
   hs-task handback [HOU-n] --summary T
+  hs-task ask QUESTION                (a Slack-filed task: asks in its thread)
 
 The task key defaults to $HOUSTON_TASK when set; otherwise pass HOU-n.
 Statuses: backlog, todo, in_progress, in_review, done, canceled.
@@ -157,6 +158,21 @@ fn cli(args: &[String]) -> Result<()> {
                 "/task/handback",
                 Some(json!({ "key": key, "summary": summary })),
             )?)
+        }
+        "ask" => {
+            let question = rest.join(" ");
+            if question.trim().is_empty() {
+                bail!("ask needs the question; expected `hs-task ask \"QUESTION\"`");
+            }
+            let reply = call("POST", "/task/ask", Some(json!({ "question": question })))?;
+            println!(
+                "{}",
+                reply
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+            );
+            Ok(())
         }
         other => bail!("unknown hs-task command {other:?}\n\n{USAGE}"),
     }

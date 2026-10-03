@@ -60,6 +60,7 @@ pub mod scrollback;
 pub mod server;
 pub mod shellint;
 pub mod skill_sync;
+pub mod slack;
 pub mod spawn;
 pub mod ssh;
 pub mod ssh_config;

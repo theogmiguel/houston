@@ -5,6 +5,7 @@ import type { SshAuth } from './generated/SshAuth'
 import type { SshProfile } from './generated/SshProfile'
 import type { SessionPolicy } from './generated/SessionPolicy'
 import type { UpdatePolicy } from './generated/UpdatePolicy'
+import type { SlackChannelMap } from './generated/SlackChannelMap'
 import type { KeymapOverrides } from './generated/KeymapOverrides'
 import type { CloudStt } from './generated/CloudStt'
 import type { VoiceSettings } from './generated/VoiceSettings'
@@ -1148,6 +1149,22 @@ export class HoustonClient {
 
   updateCheckNow(): void {
     this.send({ type: 'update_check_now' })
+  }
+
+  slackGet(): void {
+    this.send({ type: 'slack_get' })
+  }
+
+  slackConnect(appToken: string | null, botToken: string | null): void {
+    this.send({ type: 'slack_connect', app_token: appToken, bot_token: botToken })
+  }
+
+  slackDisconnect(): void {
+    this.send({ type: 'slack_disconnect' })
+  }
+
+  slackConfigure(ownerUserId: string | null, channels: SlackChannelMap[]): void {
+    this.send({ type: 'slack_configure', owner_user_id: ownerUserId, channels })
   }
 
   skillSync(): void {

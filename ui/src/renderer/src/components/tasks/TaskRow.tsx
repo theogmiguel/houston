@@ -23,6 +23,16 @@ export function TaskRunMark({ run, showProvider = true }: { run: TaskRun; showPr
   )
 }
 
+// A Slack-filed task waiting to start says why: for the owner's ✅, or for a
+// working slot with its place in the queue.
+function intakeLabel(task: TaskSummary): string | null {
+  const intake = task.intake
+  if (!intake || task.open_run) return null
+  if (intake.state === 'pending') return 'Slack · awaiting ✅'
+  if (intake.state === 'queued') return `Slack · queued #${intake.queue_position ?? '?'}`
+  return null
+}
+
 export function TaskRow({
   task,
   selected,
@@ -49,6 +59,11 @@ export function TaskRow({
       <span className="tk-key">{task.key}</span>
       <span className="tk-title">{task.title}</span>
       {showWorkspace && <Tooltip label={task.workspace ?? 'No workspace'} className="inline-flex min-w-0"><span className="chip-branch max-w-[140px]" data-testid="task-workspace-chip"><span className="truncate">{task.workspace?.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'No workspace'}</span></span></Tooltip>}
+      {intakeLabel(task) && (
+        <span className="chip-branch" data-testid="task-intake-chip">
+          <span className="truncate">{intakeLabel(task)}</span>
+        </span>
+      )}
       {task.open_run ? (
         <TaskRunMark run={task.open_run} />
       ) : (

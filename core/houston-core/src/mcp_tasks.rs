@@ -253,6 +253,20 @@ fn all_specs() -> Vec<ToolSpec> {
                 "additionalProperties": false,
             }),
         ),
+        local_write(
+            "task_ask",
+            "Ask in the request's thread",
+            "For a task filed from Slack: post one question to the request's thread and end \
+             your turn; the requester's or owner's answer arrives as your next prompt.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "question": { "type": "string" },
+                },
+                "required": ["question"],
+                "additionalProperties": false,
+            }),
+        ),
         ToolSpec {
             name: "task_execute".into(),
             title: "Start a task as your child".into(),
@@ -566,6 +580,11 @@ fn dispatch(
             let output = changed_output(daemon, msg, Some("handed back"))?;
             Ok(with_status(output, "in_review"))
         }
+        "task_ask" => {
+            let question = required_string(args, "question")?;
+            let text = daemon.slack_task_ask(session, &question)?;
+            Ok(task_output(json!({ "posted": true, "next": text })))
+        }
         "task_execute" => {
             let id = spawn_task_ref(daemon, workspace, args, name)?;
             let agent = required_agent(args, "agent")?;
@@ -585,7 +604,7 @@ fn dispatch(
         other => Err(ToolError(format!(
             "task provider has no tool {other:?}; expected one of [\"task_list\", \"task_get\", \
              \"task_next\", \"task_create\", \"task_update\", \"task_comment\", \"task_check\", \
-             \"task_claim\", \"task_handback\", \"task_execute\", \"task_review\"]"
+             \"task_claim\", \"task_handback\", \"task_ask\", \"task_execute\", \"task_review\"]"
         ))),
     }
 }
