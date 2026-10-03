@@ -423,6 +423,8 @@ pub fn run_hook_client(args: &[String]) {
         background_tasks: payload.background_tasks,
         internal_prompt: payload.internal_prompt,
         reason: payload.reason,
+        error: payload.error,
+        error_details: payload.error_details,
         notification_type: payload.notification_type,
         stop_hook_active: payload.stop_hook_active,
         prompt_id: payload.prompt_id,
@@ -620,6 +622,8 @@ pub(crate) struct HookPayload {
     pub internal_prompt: bool,
     pub task_id: Option<String>,
     pub reason: Option<String>,
+    pub error: Option<String>,
+    pub error_details: Option<String>,
     pub notification_type: Option<String>,
     pub stop_hook_active: bool,
     pub prompt_id: Option<String>,
@@ -756,6 +760,11 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
                         .flatten()
                 })
                 .map(|m| crate::orchestrate::cap_submit_body(&m)),
+        ),
+        error: clean(field("error").map(|v| crate::orchestrate::cap_submit_body(&v))),
+        error_details: clean(
+            grok_field("error_details", "errorDetails")
+                .map(|v| crate::orchestrate::cap_submit_body(&v)),
         ),
         background_tasks: background.map(|a| a.len() as u32),
         pending_task_ids: background
@@ -1519,6 +1528,14 @@ mod tests {
             .join(name);
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("reading the fixture {}: {e}", path.display()))
+    }
+
+    #[test]
+    fn claude_stop_failure_preserves_error_and_details() {
+        let p = parse_hook_payload(&docs_fixture("stop_failure.json"), proto::AgentKind::Claude);
+        assert_eq!(p.error.as_deref(), Some("rate_limit"));
+        assert_eq!(p.error_details.as_deref(), Some("Usage limit reached"));
+        assert_eq!(p.last_message.as_deref(), Some("Waiting for capacity"));
     }
 
     #[test]

@@ -26,7 +26,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
-        for name in ["grok", "codex", "claude", "agy", "cursor-agent"] {
+        for name in ["grok", "codex", "claude", "agy", "cursor-agent", "opencode"] {
             #[cfg(windows)]
             {
                 let ps1 = "$ErrorActionPreference = 'Stop'\nif (-not $env:FIXTURE_SILENT) { Write-Output ('ARGV:' + ($args -join ' ')); Write-Output 'FIXTURE-READY' }\n# Echo-style fixture: whatever the daemon pastes comes straight back\n# into scrollback (the sh fixture's `exec cat`). [Console]::In reads the\n# ConPTY-delivered lines; EOF parks forever so the pane never exits.\nwhile ($true) { $l = [Console]::In.ReadLine(); if ($null -eq $l) { Start-Sleep -Seconds 86400 } else { Write-Output $l } }\n";
@@ -44,7 +44,7 @@ fn shim_dir() -> PathBuf {
                 let path = dir.join(name);
                 std::fs::write(
                     &path,
-                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
+                    "#!/bin/sh\n# Kernel tty ECHO would double every byte we\n# read back (the line discipline mirrors stdin to the\n# scrollback before cat even runs) - turn it off.\nstty -echo 2>/dev/null\nif [ -n \"$HOUSTON_TEST_RAW_PTY\" ]; then stty raw -echo 2>/dev/null; fi\n# FIXTURE_SILENT: a child that has printed nothing yet, which is\n# a real state (a full-screen CLI's first seconds) and the one the\n# premature-turn-end gate is about.\nif [ -z \"$FIXTURE_SILENT\" ]; then\nprintf 'ARGV:%s\\n' \"$*\"\necho FIXTURE-READY\nfi\nexec cat\n",
                 )
                 .unwrap();
                 use std::os::unix::fs::PermissionsExt;
@@ -10595,4 +10595,812 @@ async fn k8_exhausted_paste_attempts_remain_available_to_parent_wait() {
     assert!(
         matches!(outcome, houston_core::orchestrate::InboxWaitOutcome::Delivered { rows, .. } if rows.iter().any(|row| row.id == result.row_id))
     );
+}
+
+#[tokio::test]
+async fn provider_failure_retains_temporary_child_and_notifies_once() {
+    let _guard = serial().await;
+    let r = rig("provider-failure").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    r.daemon.set_orchestration_caps(4, 1).unwrap();
+    for (provider, event) in [
+        ("claude", "StopFailure"),
+        ("grok", "StopFailure"),
+        ("opencode", "session.error"),
+    ] {
+        let (status, spawned) = r
+            .post_spawn(&token, serde_json::json!({"kind":provider,"prompt":"work"}))
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        let kind: proto::AgentKind = serde_json::from_value(serde_json::json!(provider)).unwrap();
+        let start = if provider == "opencode" {
+            "message.updated"
+        } else {
+            "UserPromptSubmit"
+        };
+        r.daemon.handle_hook_from(child, kind, start, None);
+        r.daemon
+            .orchestrate_submit(child, "staged answer before API failure".to_string().into())
+            .unwrap();
+        let drop = houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some(provider.into()),
+            event: event.into(),
+            error: Some("rate_limit".into()),
+            error_details: Some("Usage limit reached".into()),
+            ..Default::default()
+        };
+        apply_drop(r._state.path(), drop.clone()).await;
+        apply_drop(r._state.path(), drop).await;
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some(provider.into()),
+                event: if provider == "opencode" {
+                    "session.idle"
+                } else {
+                    "Stop"
+                }
+                .into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        r.daemon.delegation_watch_tick_at(u64::MAX / 2);
+        let row = r.daemon.delegation_of(child).unwrap();
+        assert_eq!(row.state, "failed");
+        let visible =
+            serde_json::to_value(r.daemon.orchestrate_get(parent.id, child).unwrap()).unwrap();
+        assert_eq!(visible["delegation"]["state"], "failed");
+        assert!(visible["delegation"]["stop_reason"]
+            .as_str()
+            .unwrap()
+            .contains("rate_limit"));
+        assert_eq!(
+            row.stop_reason.as_deref(),
+            Some(format!("{provider} {event}: rate_limit; Usage limit reached").as_str())
+        );
+        assert!(row.settled_at.is_none());
+        assert!(row.cleanup_after.is_none());
+        assert!(r.daemon.list().iter().any(|s| s.id == child));
+        let notes = r
+            .daemon
+            .inbox_rows_for_test(parent.id)
+            .into_iter()
+            .filter(|n| n.from_session == Some(child) && n.reason.as_deref() == Some("turn_failed"))
+            .collect::<Vec<_>>();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].urgent);
+        assert!(r
+            .daemon
+            .inbox_rows_for_test(parent.id)
+            .iter()
+            .filter(|row| row.from_session == Some(child) && row.kind == "result")
+            .all(|row| row.ready_at.is_none()));
+        r.daemon
+            .orchestrate_prompt(parent.id, child, "resume after the provider reset")
+            .unwrap();
+        await_child_echo(&r.daemon, child, "resume after the provider reset").await;
+        r.daemon.handle_hook_from(child, kind, start, None);
+        assert_eq!(r.daemon.delegation_of(child).unwrap().state, "working");
+        assert!(r.daemon.delegation_of(child).unwrap().stop_reason.is_none());
+        assert!(notes[0].body.contains("Usage limit reached"));
+        r.daemon.kill(child).unwrap();
+        let ended = r.daemon.delegation_of(child).unwrap();
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some(provider.into()),
+                event: event.into(),
+                error: Some("late_failure".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let after = r.daemon.delegation_of(child).unwrap();
+        assert_eq!(after.state, ended.state);
+        assert_eq!(after.stop_reason, ended.stop_reason);
+        assert_eq!(
+            r.daemon
+                .inbox_rows_for_test(parent.id)
+                .iter()
+                .filter(|row| row.from_session == Some(child)
+                    && row.reason.as_deref() == Some("turn_failed"))
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
+async fn workspace_info_reports_bounded_local_provider_catalog() {
+    let _guard = serial().await;
+    let r = rig("provider-catalog").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    let codex_home = r._state.path().join("catalog-codex");
+    std::fs::create_dir_all(&codex_home).unwrap();
+    std::fs::write(
+        codex_home.join("models_cache.json"),
+        br#"{"models":[{"slug":"fixture-codex-model"}]}"#,
+    )
+    .unwrap();
+    let previous_home = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex_home);
+    let info = mcp_call(
+        r.addr,
+        &r.token_for(parent.id),
+        "workspace_info",
+        serde_json::json!({}),
+    )
+    .await;
+    if let Some(home) = previous_home {
+        std::env::set_var("CODEX_HOME", home);
+    } else {
+        std::env::remove_var("CODEX_HOME");
+    }
+    assert_eq!(info["isError"], false, "{info}");
+    let info = &info["structuredContent"];
+    let providers = info["providers"].as_array().unwrap();
+    assert_eq!(providers.len(), 6);
+    assert!(info.get("routing").is_some());
+    for provider in providers {
+        assert!(provider["installed"].is_boolean());
+        assert!(provider.get("version").is_some());
+        assert!(provider["models"].is_null() || provider["models"].is_array());
+        assert!(provider["model_note"].is_string());
+        let kind: proto::AgentKind = serde_json::from_value(provider["provider"].clone()).unwrap();
+        let caps = houston_core::orchestrate::provider_capabilities(kind);
+        assert_eq!(provider["capabilities"]["needs_input"], caps.block);
+        assert_eq!(provider["capabilities"]["last_message"], caps.last_message);
+        assert_eq!(
+            provider["capabilities"]["turn_end_continuation"],
+            caps.door2
+        );
+    }
+    let codex = providers.iter().find(|p| p["provider"] == "codex").unwrap();
+    assert_eq!(codex["models"], serde_json::json!(["fixture-codex-model"]));
+    for provider in providers.iter().filter(|p| p["provider"] != "codex") {
+        assert!(provider["models"].is_null());
+        assert!(provider["model_note"].as_str().unwrap().contains("unknown"));
+    }
+    assert!(serde_json::to_vec(providers).unwrap().len() < 16_384);
+}
+
+#[tokio::test]
+async fn mutating_retries_share_persisted_receipts_across_http_and_mcp() {
+    let _guard = serial().await;
+    let r = rig("mutation-retries").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let spawns = Arc::new(AtomicUsize::new(0));
+    r.daemon.set_spawn_observer_for_test(Arc::new({
+        let spawns = spawns.clone();
+        move |_| {
+            spawns.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    let request = serde_json::json!({"kind":"claude","prompt":"work","reusable":true,"client_request_id":"spawn-001"});
+    let (status, first) = r.post_spawn(&token, request.clone()).await;
+    assert_eq!(status, 200, "{first}");
+    let (status, retry) = r.post_spawn(&token, request.clone()).await;
+    assert_eq!(status, 200, "{retry}");
+    assert_eq!(first, retry);
+    let mcp = mcp_call(r.addr, &token, "pane_spawn", request.clone()).await;
+    assert_eq!(mcp["isError"], false, "{mcp}");
+    assert_eq!(mcp["structuredContent"]["session"], first["session_id"]);
+    assert_eq!(spawns.load(Ordering::SeqCst), 1);
+    let child = first["session_id"].as_u64().unwrap() as u32;
+    assert_eq!(r.daemon.delegations_of_parent(parent.id).len(), 1);
+    let mut different = request;
+    different["prompt"] = serde_json::json!("different work");
+    let (status, refusal) = r.post_spawn(&token, different).await;
+    assert!(status >= 400, "{refusal}");
+    assert!(refusal["error"].as_str().unwrap().contains("spawn-001"));
+    assert!(refusal["error"]
+        .as_str()
+        .unwrap()
+        .contains("different arguments"));
+
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Claude, "UserPromptSubmit", None);
+    let prompt = serde_json::json!({"session":child,"text":"RETRY-PROMPT-ONCE","client_request_id":"prompt-001"});
+    let (status, first_prompt) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/prompt",
+        &token,
+        Some(prompt.clone()),
+    )
+    .await;
+    assert_eq!(status, 200, "{first_prompt}");
+    let (status, repeated_prompt) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/prompt",
+        &token,
+        Some(prompt.clone()),
+    )
+    .await;
+    assert_eq!(status, 200, "{repeated_prompt}");
+    assert_eq!(first_prompt, repeated_prompt);
+    let mcp = mcp_call(r.addr, &token, "pane_prompt", prompt.clone()).await;
+    assert_eq!(mcp["isError"], false, "{mcp}");
+    assert_eq!(mcp["structuredContent"]["held"], first_prompt["held"]);
+    let mut different = prompt;
+    different["text"] = serde_json::json!("different prompt");
+    let refusal = mcp_call(r.addr, &token, "pane_prompt", different).await;
+    assert_eq!(refusal["isError"], true);
+    assert!(refusal.to_string().contains("prompt-001"));
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Claude, "Stop", None);
+    await_child_echo(&r.daemon, child, "RETRY-PROMPT-ONCE").await;
+    let bytes = r.daemon.scrollback(child, None).unwrap().data;
+    assert_eq!(
+        String::from_utf8_lossy(&bytes)
+            .matches("RETRY-PROMPT-ONCE")
+            .count(),
+        1
+    );
+
+    let db = houston_core::db::Db::open(&r._state.path().join("test.db")).unwrap();
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    let digest: String = conn.query_row("SELECT arguments_digest FROM orchestration_receipts WHERE caller=?1 AND client_request_id='spawn-001'", [parent.id], |row| row.get(0)).unwrap();
+    assert!(matches!(
+        db.orchestration_receipt_begin(
+            parent.id,
+            "spawn-001",
+            "pane_spawn",
+            &digest,
+            houston_core::daemon::now_ms()
+        )
+        .unwrap(),
+        houston_core::db::OrchestrationReceipt::Recorded(_)
+    ));
+}
+
+#[tokio::test]
+async fn concurrent_spawn_retries_act_once_and_keys_are_scoped_to_the_caller() {
+    let _guard = serial().await;
+    let r = rig("concurrent-retries").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let request = serde_json::json!({"kind":"grok","prompt":"work","client_request_id":"same-key"});
+    let (first, second) = tokio::join!(
+        http_json(
+            r.addr,
+            "POST",
+            "/orchestrate/spawn",
+            &token,
+            Some(request.clone())
+        ),
+        http_json(
+            r.addr,
+            "POST",
+            "/orchestrate/spawn",
+            &token,
+            Some(request.clone())
+        )
+    );
+    assert_eq!(first.0, 200, "{first:?}");
+    assert_eq!(first, second);
+    assert_eq!(r.daemon.delegations_of_parent(parent.id).len(), 1);
+    let other = r.pane();
+    let (status, independent) = r.post_spawn(&r.token_for(other.id), request).await;
+    assert_eq!(status, 200, "{independent}");
+    assert_ne!(independent["session_id"], first.1["session_id"]);
+    for key in ["", "bad/key", "with space", "ação", &"x".repeat(65)] {
+        let refusal = mcp_call(
+            r.addr,
+            &token,
+            "pane_spawn",
+            serde_json::json!({"kind":"grok","prompt":"work","client_request_id":key}),
+        )
+        .await;
+        assert_eq!(refusal["isError"], true, "{refusal}");
+        assert!(refusal.to_string().contains("client_request_id"));
+        assert!(refusal.to_string().contains("1..=64"));
+    }
+}
+
+#[tokio::test]
+async fn prompt_modes_deliver_steer_now_and_queue_at_turn_end() {
+    let _guard = serial().await;
+    let r = rig("prompt-modes").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    for (provider, kind, start, end) in [
+        (
+            "claude",
+            proto::AgentKind::Claude,
+            "UserPromptSubmit",
+            "Stop",
+        ),
+        ("codex", proto::AgentKind::Codex, "UserPromptSubmit", "Stop"),
+        (
+            "antigravity",
+            proto::AgentKind::Antigravity,
+            "PreInvocation",
+            "Stop",
+        ),
+        (
+            "opencode",
+            proto::AgentKind::Opencode,
+            "message.updated",
+            "session.idle",
+        ),
+        (
+            "cursor",
+            proto::AgentKind::Cursor,
+            "beforeSubmitPrompt",
+            "stop",
+        ),
+        ("grok", proto::AgentKind::Grok, "UserPromptSubmit", "Stop"),
+    ] {
+        let (status, spawned) = r
+            .post_spawn(
+                &token,
+                serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        r.daemon.handle_hook_from(child, kind, start, None);
+        assert_eq!(
+            r.daemon.session_status(child).unwrap(),
+            Some(proto::AgentStatus::Working)
+        );
+        let steer = mcp_call(
+            r.addr,
+            &token,
+            "pane_prompt",
+            serde_json::json!({"session":child,"text":"STEER-NOW-MARKER","mode":"steer"}),
+        )
+        .await;
+        assert_eq!(steer["isError"], false, "{steer}");
+        assert!(steer["structuredContent"]["held"].is_null());
+        await_child_echo(&r.daemon, child, "STEER-NOW-MARKER").await;
+        assert_eq!(
+            r.daemon.session_status(child).unwrap(),
+            Some(proto::AgentStatus::Working)
+        );
+        let (status, queued) = http_json(
+            r.addr,
+            "POST",
+            "/orchestrate/prompt",
+            &token,
+            Some(serde_json::json!({"session":child,"text":"QUEUE-LATER-MARKER"})),
+        )
+        .await;
+        assert_eq!(status, 200, "{queued}");
+        assert!(queued["held"].is_string());
+        assert!(
+            !String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+                .contains("QUEUE-LATER-MARKER")
+        );
+        r.daemon.handle_hook_from(child, kind, end, None);
+        await_child_echo(&r.daemon, child, "QUEUE-LATER-MARKER").await;
+        r.daemon.kill(child).unwrap();
+        r.daemon.close(child).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn immediate_prompt_modes_preserve_operator_drafts_and_name_refusals() {
+    let _guard = serial().await;
+    let r = rig("prompt-mode-refusals").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "UserPromptSubmit", None);
+    r.daemon.note_operator_keystroke(child, b"operator draft");
+    for mode in ["steer", "restart"] {
+        let refusal = mcp_call(
+            r.addr,
+            &token,
+            "pane_prompt",
+            serde_json::json!({"session":child,"text":"MUST-NOT-PASTE","mode":mode}),
+        )
+        .await;
+        assert_eq!(refusal["isError"], true, "{refusal}");
+        assert!(refusal.to_string().contains("operator"));
+        assert!(
+            !String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+                .contains("MUST-NOT-PASTE")
+        );
+    }
+    r.daemon.clear_composer_occupied(child);
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "PermissionRequest", None);
+    let refusal = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"MUST-NOT-PASTE","mode":"steer"}),
+    )
+    .await;
+    assert_eq!(refusal["isError"], true, "{refusal}");
+    assert!(refusal.to_string().contains("needs input"));
+    let refusal = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child,"text":"work","mode":"invalid"}),
+    )
+    .await;
+    assert_eq!(refusal["isError"], true);
+    assert!(refusal.to_string().contains("invalid"));
+    assert!(refusal.to_string().contains("queue, steer or restart"));
+    for provider in ["claude", "opencode", "cursor", "antigravity"] {
+        let (status, spawned) = r
+            .post_spawn(
+                &token,
+                serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
+            )
+            .await;
+        assert_eq!(status, 200, "{spawned}");
+        let refusal = mcp_call(
+            r.addr,
+            &token,
+            "pane_prompt",
+            serde_json::json!({"session":spawned["session_id"],"text":"work","mode":"restart"}),
+        )
+        .await;
+        assert_eq!(refusal["isError"], true, "{refusal}");
+        assert!(refusal.to_string().to_lowercase().contains(provider));
+        assert!(refusal.to_string().contains("accepted modes: queue, steer"));
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        r.daemon.kill(child).unwrap();
+        r.daemon.close(child).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn restart_interrupts_before_delivery_and_waits_for_authoritative_idle() {
+    let _guard = serial().await;
+    let r = rig("restart-prompts").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    for (provider, kind, end, interrupt) in [
+        ("codex", proto::AgentKind::Codex, "Interrupt", 0x1b),
+        ("grok", proto::AgentKind::Grok, "StopCancelled", 0x03),
+    ] {
+        std::env::set_var("HOUSTON_TEST_RAW_PTY", "1");
+        let (status, spawned) = r
+            .post_spawn(
+                &token,
+                serde_json::json!({"kind":provider,"prompt":"work","reusable":true}),
+            )
+            .await;
+        std::env::remove_var("HOUSTON_TEST_RAW_PTY");
+        assert_eq!(status, 200, "{spawned}");
+        let child = spawned["session_id"].as_u64().unwrap() as u32;
+        let start = if provider == "opencode" {
+            "message.updated"
+        } else {
+            "UserPromptSubmit"
+        };
+        r.daemon.handle_hook_from(child, kind, start, None);
+        let before = r.daemon.scrollback(child, None).unwrap().data.len();
+        let (status, result) = http_json(r.addr, "POST", "/orchestrate/prompt", &token,
+            Some(serde_json::json!({"session":child,"text":"RESTART-PROMPT-MARKER","mode":"restart"}))).await;
+        assert_eq!(status, 200, "{result}");
+        assert!(result["held"].is_string());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let bytes = r.daemon.scrollback(child, None).unwrap().data;
+            if bytes
+                .get(before..)
+                .is_some_and(|bytes| bytes.contains(&interrupt))
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "interrupt key was not written for {provider}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            !String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+                .contains("RESTART-PROMPT-MARKER")
+        );
+        r.daemon.handle_hook_from(child, kind, end, None);
+        await_child_echo(&r.daemon, child, "RESTART-PROMPT-MARKER").await;
+        r.daemon.kill(child).unwrap();
+        r.daemon.close(child).unwrap();
+    }
+}
+
+#[test]
+fn retry_receipts_bound_retention_and_refuse_uncertain_outcomes() {
+    use houston_core::db::{
+        Db, OrchestrationReceipt, ORCHESTRATION_RECEIPT_MAX, ORCHESTRATION_RECEIPT_RETENTION_MS,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("receipts.db");
+    let db = Db::open(&path).unwrap();
+    assert!(matches!(
+        db.orchestration_receipt_begin(1, "pending", "pane_spawn", "digest", 100)
+            .unwrap(),
+        OrchestrationReceipt::New
+    ));
+    drop(db);
+    let db = Db::open(&path).unwrap();
+    let error = db
+        .orchestration_receipt_begin(1, "pending", "pane_spawn", "digest", 101)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("pending") && error.contains("uncertain outcome"));
+    let error = db
+        .orchestration_receipt_begin(1, "pending", "pane_prompt", "other-digest", 101)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("pending") && error.contains("different arguments"));
+    let later = ORCHESTRATION_RECEIPT_RETENTION_MS + 102;
+    assert!(matches!(
+        db.orchestration_receipt_begin(1, "pending", "pane_spawn", "digest", later)
+            .unwrap(),
+        OrchestrationReceipt::New
+    ));
+    db.orchestration_receipt_finish(1, "pending", r#"{"Ok":1}"#)
+        .unwrap();
+    let mut conn = rusqlite::Connection::open(&path).unwrap();
+    let tx = conn.transaction().unwrap();
+    for n in 1..ORCHESTRATION_RECEIPT_MAX {
+        tx.execute(r#"INSERT INTO orchestration_receipts (caller, client_request_id, operation, arguments_digest, result, created_at) VALUES (1, ?1, 'pane_prompt', 'digest', '{"Ok":1}', ?2)"#,
+            rusqlite::params![format!("receipt-{n}"), later as i64]).unwrap();
+    }
+    tx.commit().unwrap();
+    db.orchestration_receipt_begin(1, "next", "pane_prompt", "digest", later + 1)
+        .unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM orchestration_receipts", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, ORCHESTRATION_RECEIPT_MAX);
+    let oldest: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM orchestration_receipts WHERE client_request_id='pending'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(oldest, 0);
+}
+
+#[tokio::test]
+async fn keyed_refusals_retry_after_child_cap_and_needs_input_clear() {
+    let _guard = serial().await;
+    let r = rig("retry-refusals").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    r.daemon.set_orchestration_caps(1, 3).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, first) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"claude","prompt":"work","reusable":true}),
+        )
+        .await;
+    let first_child = first["session_id"].as_u64().unwrap() as u32;
+    let request = serde_json::json!({"kind":"claude","prompt":"retry work","reusable":true,"client_request_id":"cap-clears"});
+    let (status, refusal) = r.post_spawn(&token, request.clone()).await;
+    assert!(status >= 400, "{refusal}");
+    assert!(refusal["error"].as_str().unwrap().contains("cap"));
+    r.daemon.kill(first_child).unwrap();
+    r.daemon.close(first_child).unwrap();
+    let (status, spawned) = r.post_spawn(&token, request).await;
+    assert_eq!(status, 200, "{spawned}");
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Claude, "PermissionRequest", None);
+    let prompt = serde_json::json!({"session":child,"text":"RETRY-AFTER-INPUT","client_request_id":"input-clears"});
+    let refusal = mcp_call(r.addr, &token, "pane_prompt", prompt.clone()).await;
+    assert_eq!(refusal["isError"], true, "{refusal}");
+    assert!(refusal.to_string().contains("NeedsInput"));
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Claude, "Stop", None);
+    let delivered = mcp_call(r.addr, &token, "pane_prompt", prompt).await;
+    assert_eq!(delivered["isError"], false, "{delivered}");
+    await_child_echo(&r.daemon, child, "RETRY-AFTER-INPUT").await;
+}
+
+#[tokio::test]
+async fn keyed_spawn_defaults_and_normalized_fields_share_one_receipt() {
+    let _guard = serial().await;
+    let r = rig("retry-defaults").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let request = serde_json::json!({"kind":"claude","prompt":"work","role":" Reviewer ","output_format":" ","target_workspace":" ","client_request_id":"default-spawn"});
+    let (status, first) = r.post_spawn(&token, request.clone()).await;
+    assert_eq!(status, 200, "{first}");
+    let mut explicit = request;
+    explicit["reusable"] = serde_json::json!(false);
+    explicit["handoff"] = serde_json::json!(false);
+    explicit["role"] = serde_json::json!("reviewer");
+    explicit["output_format"] = serde_json::Value::Null;
+    explicit["target_workspace"] = serde_json::Value::Null;
+    explicit["boundaries"] = serde_json::Value::Null;
+    let retry = mcp_call(r.addr, &token, "pane_spawn", explicit.clone()).await;
+    assert_eq!(retry["isError"], false, "{retry}");
+    assert_eq!(retry["structuredContent"]["session"], first["session_id"]);
+    assert_eq!(r.daemon.delegations_of_parent(parent.id).len(), 1);
+    explicit["auto_approve"] = serde_json::json!(false);
+    let different = mcp_call(r.addr, &token, "pane_spawn", explicit).await;
+    assert_eq!(
+        different["isError"], true,
+        "explicit false means default permission mode, whereas omitted means auto"
+    );
+    assert!(different.to_string().contains("different arguments"));
+}
+
+#[tokio::test]
+async fn keyed_spawn_error_after_process_creation_keeps_an_uncertain_receipt() {
+    let _guard = serial().await;
+    let r = rig("retry-uncertain-spawn").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let spawns = Arc::new(AtomicUsize::new(0));
+    r.daemon.set_spawn_observer_for_test(Arc::new({
+        let spawns = spawns.clone();
+        move |_| {
+            spawns.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    conn.execute_batch("CREATE TRIGGER refuse_child_session BEFORE INSERT ON sessions WHEN NEW.spawned_by IS NOT NULL BEGIN SELECT RAISE(FAIL, 'child persistence refused'); END;").unwrap();
+    let request =
+        serde_json::json!({"kind":"claude","prompt":"work","client_request_id":"uncertain-spawn"});
+    let (status, failed) = r.post_spawn(&token, request.clone()).await;
+    assert!(status >= 400, "{failed}");
+    assert!(failed["error"]
+        .as_str()
+        .unwrap()
+        .contains("child persistence refused"));
+    conn.execute_batch("DROP TRIGGER refuse_child_session;")
+        .unwrap();
+    let (status, retry) = r.post_spawn(&token, request).await;
+    assert!(status >= 400, "{retry}");
+    assert!(retry["error"]
+        .as_str()
+        .unwrap()
+        .contains("uncertain outcome"));
+    assert_eq!(spawns.load(Ordering::SeqCst), 1);
+    assert!(conn.query_row("SELECT result IS NULL FROM orchestration_receipts WHERE client_request_id='uncertain-spawn'", [], |row| row.get::<_, bool>(0)).unwrap());
+}
+
+#[tokio::test]
+async fn keyed_worktree_refusal_before_checkout_releases_the_receipt() {
+    let _guard = serial().await;
+    let r = rig("retry-before-checkout").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let request = serde_json::json!({"kind":"claude","prompt":"work","worktree":"retry-tree","client_request_id":"before-checkout"});
+    let (status, refusal) = r.post_spawn(&token, request.clone()).await;
+    assert!(status >= 400, "{refusal}");
+    let conn = rusqlite::Connection::open(r._state.path().join("test.db")).unwrap();
+    let receipts: u32 = conn
+        .query_row(
+            "SELECT count(*) FROM orchestration_receipts WHERE client_request_id='before-checkout'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(receipts, 0);
+    for args in [
+        vec!["init", "-q"],
+        vec![
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "Initialize fixture",
+        ],
+    ] {
+        let output = houston_core::spawn::command("git")
+            .arg("-C")
+            .arg(&r.ws_dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let (status, retry) = r.post_spawn(&token, request).await;
+    assert_eq!(status, 200, "{retry}");
+    assert_eq!(r.daemon.delegations_of_parent(parent.id).len(), 1);
+}
+
+#[tokio::test]
+async fn keyed_prompt_defaults_and_operator_draft_retry_share_normalized_intent() {
+    let _guard = serial().await;
+    let r = rig("retry-prompt-defaults").await;
+    let _cleanup = SessionCleanup(r.daemon.clone());
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex","prompt":"work","reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "UserPromptSubmit", None);
+    let request = serde_json::json!({"session":child,"text":"  DEFAULT-QUEUE-ONCE  ","client_request_id":"default-prompt"});
+    let first = mcp_call(r.addr, &token, "pane_prompt", request.clone()).await;
+    assert_eq!(first["isError"], false, "{first}");
+    let mut explicit = request;
+    explicit["mode"] = serde_json::json!("queue");
+    explicit["text"] = serde_json::json!("DEFAULT-QUEUE-ONCE");
+    let (status, retry) = http_json(
+        r.addr,
+        "POST",
+        "/orchestrate/prompt",
+        &token,
+        Some(explicit),
+    )
+    .await;
+    assert_eq!(status, 200, "{retry}");
+    assert_eq!(retry["held"], first["structuredContent"]["held"]);
+    r.daemon
+        .handle_hook_from(child, proto::AgentKind::Codex, "Stop", None);
+    await_child_echo(&r.daemon, child, "DEFAULT-QUEUE-ONCE").await;
+    assert_eq!(
+        String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+            .matches("DEFAULT-QUEUE-ONCE")
+            .count(),
+        1
+    );
+    r.daemon.note_operator_keystroke(child, b"operator draft");
+    let request = serde_json::json!({"session":child,"text":"AFTER-DRAFT-CLEARS","mode":"steer","client_request_id":"draft-clears"});
+    let refusal = mcp_call(r.addr, &token, "pane_prompt", request.clone()).await;
+    assert_eq!(refusal["isError"], true, "{refusal}");
+    assert!(refusal.to_string().contains("operator"));
+    r.daemon.clear_composer_occupied(child);
+    let retry = mcp_call(r.addr, &token, "pane_prompt", request).await;
+    assert_eq!(retry["isError"], false, "{retry}");
+    await_child_echo(&r.daemon, child, "AFTER-DRAFT-CLEARS").await;
 }

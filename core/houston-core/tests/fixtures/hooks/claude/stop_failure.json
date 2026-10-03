@@ -1,0 +1,7 @@
+{
+  "_note": "shaped from the 2.1.287 binary schema - not captured live",
+  "hook_event_name": "StopFailure",
+  "error": "rate_limit",
+  "error_details": "Usage limit reached",
+  "last_assistant_message": "Waiting for capacity"
+}

@@ -307,6 +307,129 @@ pub fn cap_read_tail(lines: Vec<String>, asked: usize) -> Vec<String> {
     kept
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptMode {
+    Queue,
+    Steer,
+    Restart,
+}
+
+impl PromptMode {
+    pub fn parse(value: Option<&str>) -> anyhow::Result<Self> {
+        match value.unwrap_or("queue") {
+            "queue" => Ok(Self::Queue),
+            "steer" => Ok(Self::Steer),
+            "restart" => Ok(Self::Restart),
+            other => anyhow::bail!("mode {other:?}: expected queue, steer or restart"),
+        }
+    }
+}
+
+pub fn prompt_interrupt_key(provider: proto::AgentKind) -> anyhow::Result<&'static [u8]> {
+    use proto::AgentKind::*;
+    match provider {
+        Codex => Ok(b"\x1b"),
+        Grok => Ok(b"\x03"),
+        Claude => anyhow::bail!("mode restart refused for provider Claude: Stop does not run after user interrupts; no verified post-interrupt idle signal; accepted modes: queue, steer"),
+        Opencode => anyhow::bail!("mode restart refused for provider OpenCode: no captured or documented post-interrupt idle contract for its interrupt sequence; accepted modes: queue, steer"),
+        other => anyhow::bail!("mode restart refused for provider {other:?}: no verified interrupt key; accepted modes: queue, steer"),
+    }
+}
+
+pub fn prompt_mode_supported(provider: proto::AgentKind, mode: PromptMode) -> anyhow::Result<()> {
+    use proto::AgentKind::*;
+    if mode == PromptMode::Queue {
+        return Ok(());
+    }
+    anyhow::ensure!(matches!(provider, Claude | Codex | Antigravity | Opencode | Cursor | Grok),
+        "mode {mode:?} refused for provider {provider:?}: expected Claude, Codex, Antigravity, OpenCode, Cursor or Grok");
+    if mode == PromptMode::Restart {
+        prompt_interrupt_key(provider)?;
+    }
+    Ok(())
+}
+
+// A short ASCII key is enough for UUIDs while bounding schema and receipt storage.
+pub const CLIENT_REQUEST_ID_MAX_BYTES: usize = 64;
+
+pub fn validate_client_request_id(key: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !key.is_empty()
+            && key.len() <= CLIENT_REQUEST_ID_MAX_BYTES
+            && key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')),
+        "client_request_id {key:?}: expected 1..=64 ASCII letters, digits, '.', '_' or '-'"
+    );
+    Ok(())
+}
+
+#[derive(Debug)]
+pub(crate) struct MutationMayHaveActed;
+
+impl std::fmt::Display for MutationMayHaveActed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("mutation may have acted; inspect the pane before retrying")
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SpawnRequest {
+    pub kind: proto::AgentKind,
+    pub model: Option<String>,
+    pub cwd: Option<String>,
+    pub prompt: String,
+    pub auto_approve: Option<bool>,
+    pub profile: Option<String>,
+    pub role: Option<String>,
+    pub target_workspace: Option<String>,
+    #[serde(default)]
+    pub reusable: bool,
+    #[serde(default)]
+    pub handoff: bool,
+    pub state_doc: Option<serde_json::Value>,
+    pub effort: Option<proto::ChatEffort>,
+    pub output_format: Option<String>,
+    pub boundaries: Option<String>,
+    pub worktree: Option<String>,
+    pub branch: Option<String>,
+    #[serde(skip_serializing)]
+    pub client_request_id: Option<String>,
+}
+
+impl SpawnRequest {
+    pub fn normalize(&mut self) {
+        for value in [
+            &mut self.target_workspace,
+            &mut self.output_format,
+            &mut self.boundaries,
+        ] {
+            *value = value
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string);
+        }
+        if let Some(role) = &mut self.role {
+            *role = role.trim().to_ascii_lowercase();
+        }
+        if let Some(slug) = &self.worktree {
+            let default_branch = format!("houston/{}", crate::git::ref_slug(slug));
+            if self.branch.as_deref() == Some(default_branch.as_str()) {
+                self.branch = None;
+            }
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SpawnOutcome {
+    pub session: proto::SessionInfo,
+    pub warning: Option<String>,
+    pub warnings: Vec<proto::PaneSpawnWarning>,
+}
+
 pub const BRIEF_FIELD_MAX_CHARS: usize = 2_000;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -966,6 +1089,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
             "effort",
             "output_format",
             "boundaries",
+            "client_request_id",
         ],
     },
     VerbSpec {
@@ -981,7 +1105,7 @@ pub const PANE_VERBS: &[VerbSpec] = &[
     VerbSpec {
         cli: "prompt",
         tool: Some("pane_prompt"),
-        args: &["session", "text"],
+        args: &["session", "text", "client_request_id", "mode"],
     },
     VerbSpec {
         cli: "keys",
@@ -2496,7 +2620,7 @@ const USAGE: &str = "\
 hs-pane — a Houston pane controlling sibling agent panes
 
   hs-pane whoami
-  hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok> --prompt \"…\"
+  hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok> --prompt \"…\" [--client-request-id KEY]
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
                 [--role NAME]          (unique among your live children)
                 [--target-workspace DIR] [--reusable]
@@ -2512,7 +2636,7 @@ hs-pane — a Houston pane controlling sibling agent panes
                                        (the brief: shape of the answer, and
                                         what the child must not do)
   hs-pane list
-  hs-pane prompt <id> <text…> [--wait] [--timeout MS]
+  hs-pane prompt <id> <text…> [--mode queue|steer|restart] [--client-request-id KEY] [--wait] [--timeout MS]
   hs-pane wait [--session ID] [--kind KIND] [--timeout-ms MS] [--stall-guard]
                                          (blocks for a pane_inbox row; without
                                           --session waits on your whole inbox.
@@ -2692,6 +2816,9 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
                 "kind": kind,
                 "prompt": prompt,
             });
+            if let Some(key) = flags.get("client-request-id") {
+                body["client_request_id"] = json!(key);
+            }
             if let Some(m) = flags.get("model") {
                 body["model"] = json!(m);
             }
@@ -2751,7 +2878,13 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
             }
             let id = id_arg(positional.first(), cmd)?;
             let text = join_rest(&positional[1..], "--prompt's message")?;
-            let body = json!({ "session": id, "text": text });
+            let mut body = json!({ "session": id, "text": text });
+            if let Some(key) = flags.get("client-request-id") {
+                body["client_request_id"] = json!(key);
+            }
+            if let Some(mode) = flags.get("mode") {
+                body["mode"] = json!(mode);
+            }
             let v = call("POST", "/orchestrate/prompt", Some(body))?;
             let source = v
                 .get("status_source")
@@ -6373,6 +6506,45 @@ mod provider_wait_tests {
                 .resolve_on(&EpisodeEnd::NextPermissionRequest)
                 .is_empty());
             assert_eq!(episodes.resolve_on(&EpisodeEnd::TurnEnded).len(), 1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod prompt_delivery_tests {
+    use super::*;
+
+    #[test]
+    fn delivery_modes_name_the_accepted_values_and_provider_keys() {
+        assert_eq!(PromptMode::parse(None).unwrap(), PromptMode::Queue);
+        assert_eq!(PromptMode::parse(Some("steer")).unwrap(), PromptMode::Steer);
+        assert_eq!(
+            PromptMode::parse(Some("restart")).unwrap(),
+            PromptMode::Restart
+        );
+        let error = PromptMode::parse(Some("immediate"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("immediate") && error.contains("queue, steer or restart"));
+        assert_eq!(
+            prompt_interrupt_key(proto::AgentKind::Codex).unwrap(),
+            b"\x1b"
+        );
+        assert_eq!(
+            prompt_interrupt_key(proto::AgentKind::Grok).unwrap(),
+            b"\x03"
+        );
+        for (provider, name) in [
+            (proto::AgentKind::Claude, "Claude"),
+            (proto::AgentKind::Opencode, "OpenCode"),
+            (proto::AgentKind::Antigravity, "Antigravity"),
+            (proto::AgentKind::Cursor, "Cursor"),
+        ] {
+            assert!(prompt_mode_supported(provider, PromptMode::Steer).is_ok());
+            let error = prompt_mode_supported(provider, PromptMode::Restart)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(name) && error.contains("accepted modes: queue, steer"));
         }
     }
 }

@@ -12,6 +12,15 @@ pub use harness::{
     HarnessReviewRow,
 };
 
+// Seven days and 4096 receipts cover ordinary retries without unbounded local storage.
+pub const ORCHESTRATION_RECEIPT_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+pub const ORCHESTRATION_RECEIPT_MAX: i64 = 4096;
+
+pub enum OrchestrationReceipt {
+    New,
+    Recorded(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct SkillPushRow {
     pub tool: String,
@@ -1314,6 +1323,17 @@ impl Db {
             .with_context(|| format!("setting cache_size on {}", path.display()))?;
         conn.pragma_update(None, "temp_store", "MEMORY")
             .with_context(|| format!("setting temp_store on {}", path.display()))?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS orchestration_receipts (
+            caller INTEGER NOT NULL,
+            client_request_id TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            arguments_digest TEXT NOT NULL,
+            result TEXT,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (caller, client_request_id)
+        );",
+        )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS workspaces (
                 path TEXT PRIMARY KEY,
@@ -3497,6 +3517,67 @@ impl Db {
             .query_map(rusqlite::params![parent], map_delegation_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    pub fn orchestration_receipt_begin(
+        &self,
+        caller: u32,
+        key: &str,
+        operation: &str,
+        digest: &str,
+        now: u64,
+    ) -> Result<OrchestrationReceipt> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM orchestration_receipts WHERE created_at < ?1",
+            [now.saturating_sub(ORCHESTRATION_RECEIPT_RETENTION_MS) as i64],
+        )?;
+        let existing: Option<(String, String, Option<String>)> = tx.query_row(
+            "SELECT operation, arguments_digest, result FROM orchestration_receipts WHERE caller = ?1 AND client_request_id = ?2",
+            rusqlite::params![caller, key], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
+        if let Some((original_operation, original_digest, result)) = existing {
+            anyhow::ensure!(original_operation == operation && original_digest == digest,
+                "client_request_id {key:?} reused with different arguments or operation; expected the original {original_operation} request");
+            let result = result.ok_or_else(|| anyhow::anyhow!(
+                "client_request_id {key:?} is pending with an uncertain outcome; inspect the pane before choosing a new key"))?;
+            tx.commit()?;
+            return Ok(OrchestrationReceipt::Recorded(result));
+        }
+        let count: i64 =
+            tx.query_row("SELECT COUNT(*) FROM orchestration_receipts", [], |row| {
+                row.get(0)
+            })?;
+        if count >= ORCHESTRATION_RECEIPT_MAX {
+            tx.execute("DELETE FROM orchestration_receipts WHERE rowid IN
+                (SELECT rowid FROM orchestration_receipts WHERE result IS NOT NULL ORDER BY created_at, rowid LIMIT ?1)",
+                [count - ORCHESTRATION_RECEIPT_MAX + 1])?;
+            let remaining: i64 =
+                tx.query_row("SELECT COUNT(*) FROM orchestration_receipts", [], |row| {
+                    row.get(0)
+                })?;
+            anyhow::ensure!(remaining < ORCHESTRATION_RECEIPT_MAX,
+                "orchestration receipt limit {ORCHESTRATION_RECEIPT_MAX}: actual {remaining} pending receipts; cannot record client_request_id {key:?}");
+        }
+        tx.execute("INSERT INTO orchestration_receipts (caller, client_request_id, operation, arguments_digest, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![caller, key, operation, digest, now as i64])?;
+        tx.commit()?;
+        Ok(OrchestrationReceipt::New)
+    }
+
+    pub fn orchestration_receipt_discard_pending(&self, caller: u32, key: &str) -> Result<()> {
+        self.conn.lock().expect("db lock").execute(
+            "DELETE FROM orchestration_receipts WHERE caller = ?1 AND client_request_id = ?2 AND result IS NULL",
+            rusqlite::params![caller, key],
+        )?;
+        Ok(())
+    }
+
+    pub fn orchestration_receipt_finish(&self, caller: u32, key: &str, result: &str) -> Result<()> {
+        self.conn.lock().expect("db lock").execute(
+            "UPDATE orchestration_receipts SET result = ?3 WHERE caller = ?1 AND client_request_id = ?2 AND result IS NULL",
+            rusqlite::params![caller, key, result])?;
+        Ok(())
     }
 
     pub fn delegation_set_state(&self, child: u32, state: &str, now: u64) -> Result<()> {

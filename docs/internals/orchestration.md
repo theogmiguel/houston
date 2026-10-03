@@ -91,14 +91,14 @@ tool registry, per-session agent kind, the progress tick and the notifier regist
 These are Houston's installed hook contracts, not proof that every provider version emits
 all supported events. Every PTY additionally reports process exit independently.
 
-| Provider | Turn start | Tool use | Turn end | Needs-input | Session end | Parent wait cap |
-|---|---|---|---|---|---|---|
-| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop/StopFailure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s |
-| Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s |
-| Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional |
-| OpenCode | User messages; busy status is activity | Permission/question events | session.idle/error | Permission/question requests | PTY exit | 600 s with managed launch timeout |
-| Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s |
-| Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout |
+| Provider | Turn start | Tool use | Turn end | Needs-input | Session end | Parent wait cap | API failure | Restart |
+|---|---|---|---|---|---|---|---|---|
+| Claude | UserPromptSubmit | Interactive PreToolUse; PostToolUse/Failure | Stop; StopFailure is failure | PermissionRequest, interactive tools, blocking notifications, elicitation | PTY exit | 90 s | StopFailure; error and details | Unsupported: no idle hook after user interrupt |
+| Codex | UserPromptSubmit | request_user_input; PostToolUse | Stop; Interrupt is interruption | Ask approvals, request_user_input; Auto approvals are activity | SessionEnd correlation; PTY exit | 600 s | Unsupported in hooks | Escape |
+| Antigravity | PreInvocation (each invocation) | PreToolUse/PostToolUse | Stop | Supported ask tools only | PTY exit | 30 s, provisional | Unsupported in hooks | Refused: no verified key |
+| OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error | Unsupported: interrupt-to-idle contract unverified |
+| Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s | Unsupported in hooks | Refused: no verified key |
+| Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout | StopFailure | Ctrl+C with empty composer |
 
 Wait budgets belong to the calling parent, regardless of its children's providers. Requests
 above the cap are clamped and report the provider, requested value and cap. Claude's cap
@@ -430,11 +430,48 @@ back the reservation. PTY startup and registration remain under the cleanup lock
 occupancy immediately and defer cleanup cancellation to the watcher when that lock is
 busy, so unrelated terminal input does not wait for a spawn.
 
-`pane_prompt` applies the same status and operator-composer hold as inbox pastes. A held
-prompt remains on the bounded wake lane and reports `held`; an immediately writable
-prompt returns PTY write errors synchronously. The hold is rechecked before paste and
-before Enter. A hold detected before writing requeues the prompt; a partial or unsubmitted
-paste creates a note for the prompt sender containing the prompt and is never retried automatically. A queued prompt retains its sender until delivery. If that sender has died, its nearest live ancestor inherits the note; the operator receives it only when no ancestor is live.
+`pane_prompt` defaults to `mode: "queue"`: it applies the same status and
+operator-composer hold as inbox pastes. A held prompt remains on the bounded wake
+lane and reports `held`. `steer` permits a paste while the provider is working;
+`restart` sends the provider's interrupt key while working and queues delivery
+until authoritative idle. Both immediate modes refuse an operator draft,
+needs-input, or an occupied wake lane before writing. The composer and
+needs-input guards are rechecked before paste and before Enter. A partial or
+unsubmitted paste creates a note for the sender and is never retried automatically.
+Queued prompts retain their sender; a dead sender's nearest live ancestor inherits
+the note, or the operator receives it when no ancestor is live.
+
+Restart supports Codex's default Escape binding and its documented
+[Interrupt hook](https://learn.chatgpt.com/docs/hooks#interrupt), mapped to idle.
+Grok 1.0.13's bundled hook documentation specifies `StopCancelled` for user
+interrupts, including Ctrl+C with an empty composer; that event maps to idle.
+Claude is refused: its [Stop hook](https://code.claude.com/docs/en/hooks#stop)
+explicitly excludes user interrupts. OpenCode is refused: the root `session.idle`
+fixture proves normal idle, not interruption; its installed TUI uses an Escape
+counter before abort, without a captured or documented interrupt-to-idle contract.
+Cursor and Antigravity have no verified interrupt/idle pair and are also refused.
+Custom remapped interrupt bindings are not detected; supported providers must
+retain their default binding for restart delivery.
+
+Optional `client_request_id` keys for spawn and prompt are shared by HTTP, MCP and
+`hs-pane`. Keys are scoped to the calling pane and admit 1–64 ASCII letters,
+digits, dots, underscores and hyphens. The daemon stores only an argument digest
+and the recorded success in SQLite. Defaults and normalized request fields are applied
+before hashing. Matching retries return that outcome;
+a different operation or argument set is refused with the key's name. Reservation
+precedes the mutation and completion precedes the response. A refusal before the
+action discards its pending receipt, so a retry can act after a cap, input or busy
+condition clears. Errors after a process, checkout, queued prompt or PTY write may
+have acted preserve the pending receipt. A crash between reservation and completion
+leaves a pending receipt; retry is refused with an uncertain-outcome message rather
+than repeating a possibly successful mutation. Receipts expire after seven days;
+at most 4096 remain across the channel, evicting oldest completed receipts first.
+The retry mutex precedes temporary-cleanup and session/delivery locks; receipt DB
+locks are released before entering spawn or delivery. No cleanup, hook or wake
+path acquires the retry mutex. Spawn releases temporary-cleanup during checkout
+creation and reacquires it for registration while retaining the retry mutex.
+A full set of pending receipts refuses new keyed calls until expiry. An expired
+or evicted key is a new request.
 
 ### Door 2: the synchronous `Stop` hook
 
@@ -758,23 +795,15 @@ The seeded skill consults ordered role-pattern routes for model and effort selec
 explicit operator choices take precedence. Handoff state is bounded UTF-8 text or a
 workspace-contained file and becomes part of the independent pane's brief.
 
-**Closed is not the same as terminal**, and the two predicates on
-`DelegationState` are not interchangeable. All four closing states are CLOSED:
-`DelegationState::is_closed`, the record carries an `ended_at`, and the parent is owed
-nothing further. Only `failed | cancelled` are TERMINAL (`is_terminal`) — their pane's
-process is gone, so no event will ever reach them again.
-
-`done` and `unknown` are the difference, and reusing a finished child is why. That pane is
-still alive; a parent that hands it a new `pane_prompt` produces a real
-`UserPromptSubmit`, and the resulting `TurnStarted` REOPENS the record to `working`.
-`Daemon::advance_delegation` reopens through `db::delegation_reopen`, which takes
-`ended_at` and `stop_reason` back off and opens the next request — so the new turn's
-`TurnEnded` closes on a NEW row or on nothing at all, never a second time on the one the
-parent already collected. `TurnStarted` is the only event that moves a closed record; every
-other one still returns `None`, so a stray turn end cannot flip a delivered result back
-open. `pane_prompt` follows the same split: `orchestrate::prompt_refusal` refuses only
-`failed | cancelled`, naming the state and listing what would be accepted.
-
+Closed records carry `ended_at`; done and unknown records reopen only on a fresh
+turn start. Failed and cancelled records normally describe an ended process and
+refuse prompts. A provider API-failure hook is the live-process exception: its
+failed delegation carries `stop_reason`, its staged result remains withheld, and
+its parent receives one urgent `operator_note` per round. Duplicate failure drops
+and later idle events do not settle or clean up that child. A fresh prompt into
+the live child reopens the record to working through `delegation_reopen`, clears
+the failure reason, and opens the next request. Failed children continue occupying
+child slots until explicitly ended or resumed.
 The lifecycle rides `AgentEvent`, not `AgentStatus` — `SessionStarted` and `TurnEnded`
 both land on `Idle`, and only one of them means a turn finished — so it is applied in
 `handle_hook_from`, beside `set_status`, and in `acp_tick` for a pane driven over ACP.
@@ -1275,3 +1304,15 @@ Child `needs_input` writes an urgent row to the parent. The parent inspects the 
 and answers through `pane_send_keys`, or asks the user for a decision. Child status and
 roll-up badges do not trigger native desktop notifications. Only a top-level pane's
 own `needs-input` status triggers one.
+
+No supported API-failure hook carries a verified machine-readable reset time,
+so Houston does not schedule automatic resume.
+
+The workspace-info provider catalog checks executable presence and reuses cached versions
+and derives capabilities from the event map and launch rules. It reads Codex's
+local `models_cache.json` under `CODEX_HOME` or `~/.codex`, without a network
+request. Other providers have no verified local model-list source. Cache reads
+are limited to 2 MiB; the response includes at most 64 identifiers of 128 bytes
+per provider and marks truncation. Model identifiers describe the local cache,
+not guaranteed account access. Unknown or over-128-byte versions remain null; workspace-info never
+launches version probes. It reports the routes alongside the provider catalog.

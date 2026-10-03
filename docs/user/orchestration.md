@@ -172,6 +172,35 @@ For a clean-context review, provide the exact target and base/head (or a snapsho
 requirements, and focused evidence such as `file:line` and test results. Do not paste a
 parent transcript; temporary review panes clean up after their final handback.
 
+## Follow-up delivery and retries
+
+`pane_prompt` accepts `mode: "queue" | "steer" | "restart"`; `hs-pane prompt` uses
+`--mode`. Queue is the default and waits until the child can accept a prompt.
+Steer writes into the PTY immediately, including during a working turn; the CLI
+controls how it uses that input. Restart interrupts a working turn and delivers
+the prompt after the child reports idle. It supports Codex with its default Escape
+binding and Grok with Ctrl+C. Claude, OpenCode, Cursor and Antigravity are refused
+by name because a reliable interrupt-to-idle path is not verified. Keep the
+supported provider's default interrupt binding.
+
+Steer and restart refuse an operator draft, a question or permission prompt, or
+another queued prompt. Inspect a blocked child and answer with `pane_send_keys`;
+use queue to wait for a busy composer. These modes never paste over operator text.
+
+To retry a spawn or prompt after a timeout, choose `client_request_id` before the
+first call (`--client-request-id` in `hs-pane`) and repeat the same key and arguments.
+Keys accept 1–64 ASCII letters, digits, dots, underscores and hyphens. Houston
+returns the recorded success without repeating the mutation. Omitted defaults and
+their explicit values share a receipt. A refusal before any action releases the key,
+so it can be retried when a child cap or needs-input condition clears. Reusing a key with
+different arguments or a different operation is refused. Keys belong to the
+calling pane and expire after seven days or eviction from the newest 4096 receipts.
+
+If an error may have acted or a daemon crash leaves a key pending, Houston reports an uncertain outcome.
+Inspect the child before choosing a new key; retrying that pending key cannot
+spawn another child or send another prompt. Calls without a key keep their usual
+behaviour.
+
 ## Mailbox retention
 
 **Mailbox retention** (Settings ▸ Orchestration) controls how long a delivered mailbox
@@ -222,3 +251,15 @@ orchestrator. The orchestrator answers the child or asks you for a decision. Spa
 warnings return to the orchestrator; they do not appear in "Addressed to you".
 Only a top-level pane waiting for your input triggers a desktop notification.
 The "Addressed to you" group is hidden when empty.
+
+Provider usage limits and API failures reported by Claude, Grok or OpenCode leave
+the child available for inspection with a failed delegation and send its parent
+the reported reason. Send a follow-up when the provider allows another turn;
+Houston cannot infer a limit reset time from these hooks. A provider may also
+continue on its own.
+
+Use `workspace_info.providers` before choosing a provider or model. It reports
+installed CLIs, locally known versions and model identifiers, per-run effort
+support, and orchestration capabilities. `workspace_info.routing` contains the
+current workspace's model and effort routes. A null model list means unknown;
+it does not mean that the provider accepts no models.

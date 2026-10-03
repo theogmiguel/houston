@@ -1194,3 +1194,15 @@ async fn h2_cli_wait_result_excerpt_matches_mcp() {
         .unwrap();
     assert_eq!(full["body"], stored.body);
 }
+
+#[tokio::test]
+async fn claude_enabled_advertisement_stays_under_byte_budget() {
+    let _serial = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let parent = rig.pane(
+        proto::AgentKind::Claude,
+        vec!["sh".into(), "-c".into(), "exec cat".into()],
+    );
+    let advertisement = rig.rpc(parent, "tools/list", json!({})).await;
+    bytes("claude/enabled", &advertisement, Some(16_549));
+}

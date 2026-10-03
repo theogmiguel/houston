@@ -1247,6 +1247,7 @@ pub struct Daemon {
     swarm_finished_sessions: Mutex<HashSet<u32>>,
     inbox_flush_scheduled: Mutex<HashSet<u32>>,
     composer_occupied: Mutex<HashMap<u32, ComposerKeystroke>>,
+    orchestration_retry_lock: Mutex<()>,
     paste_confirmations: Mutex<HashMap<u32, (String, u64)>>,
     turn_start_round: Mutex<HashMap<u32, u32>>,
     last_prompt_id: Mutex<HashMap<u32, String>>,
@@ -2568,6 +2569,7 @@ impl Daemon {
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
+            orchestration_retry_lock: Mutex::new(()),
             paste_confirmations: Mutex::new(HashMap::new()),
             turn_start_round: Mutex::new(HashMap::new()),
             last_prompt_id: Mutex::new(HashMap::new()),
@@ -8170,22 +8172,27 @@ impl Daemon {
         let reader = pair
             .master
             .try_clone_reader()
-            .map_err(|e| anyhow!("cloning PTY reader: {e}"))?;
+            .map_err(|e| anyhow!("cloning PTY reader: {e}"))
+            .context(orchestrate::MutationMayHaveActed)?;
         #[cfg(unix)]
         let writer: Box<dyn Write + Send> = {
             let fd = pair
                 .master
                 .as_raw_fd()
-                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))?;
+                .ok_or_else(|| anyhow!("session {id}: PTY master requires a file descriptor"))
+                .context(orchestrate::MutationMayHaveActed)?;
             // SAFETY: pair.master owns fd throughout duplication; the resulting File closes without a blocking EOF write.
-            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }.try_clone_to_owned()?;
+            let owned = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }
+                .try_clone_to_owned()
+                .context(orchestrate::MutationMayHaveActed)?;
             Box::new(std::fs::File::from(owned))
         };
         #[cfg(not(unix))]
         let writer = pair
             .master
             .take_writer()
-            .map_err(|e| anyhow!("taking PTY writer: {e}"))?;
+            .map_err(|e| anyhow!("taking PTY writer: {e}"))
+            .context(orchestrate::MutationMayHaveActed)?;
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
         let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
@@ -8281,11 +8288,14 @@ impl Daemon {
         self.reap_reevaluate();
         if !hidden {
             self.db
-                .insert_session_with_title_source(&info, Some(title_source.as_str()))?;
-            self.db.set_session_profile_config_dir(
-                id,
-                Self::agent_profile_config_dir(agent, &extra_env),
-            )?;
+                .insert_session_with_title_source(&info, Some(title_source.as_str()))
+                .context(orchestrate::MutationMayHaveActed)?;
+            self.db
+                .set_session_profile_config_dir(
+                    id,
+                    Self::agent_profile_config_dir(agent, &extra_env),
+                )
+                .context(orchestrate::MutationMayHaveActed)?;
             self.record_launch_conversation(id, resumed, preassigned, resume_handle);
             let mut created = info.clone();
             created.compactions = self.compactions_of(&created);
@@ -10333,14 +10343,79 @@ impl Daemon {
         {
             return crate::hook_drop::DropVerdict::Applied;
         }
+        if crate::agent_events::AgentEvent::from_provider(provider, &d.event)
+            == Some(crate::agent_events::AgentEvent::TurnFailed)
+        {
+            let _guard = self
+                .temporary_cleanup_lock
+                .lock()
+                .expect("temporary cleanup lock");
+            let Ok(session) = self.get(d.session) else {
+                return crate::hook_drop::DropVerdict::NoSession;
+            };
+            if !session.state.lock().expect("state lock").is_live() {
+                return crate::hook_drop::DropVerdict::Applied;
+            }
+            if let Ok(Some(row)) = self.db.delegation_for_child(d.session) {
+                let name = crate::agent_hooks::provider_slug(provider);
+                let reason = format!(
+                    "{name} {}: {}{}",
+                    d.event,
+                    d.error
+                        .as_deref()
+                        .or(d.reason.as_deref())
+                        .unwrap_or("turn_failed"),
+                    d.error_details
+                        .as_ref()
+                        .map(|details| format!("; {details}"))
+                        .unwrap_or_default()
+                );
+                if row.state != "failed" {
+                    let note = orchestrate::inbox_row_new(
+                        row.parent_session,
+                        &self.current_workspace(d.session).unwrap_or_default(),
+                        Some(d.session),
+                        Some(row.round),
+                        orchestrate::InboxKind::OperatorNote,
+                        &format!("{name} turn_failed"),
+                        &reason,
+                        Vec::new(),
+                        false,
+                        None,
+                        Some("turn_failed"),
+                        true,
+                    );
+                    let written = note.and_then(|mut note| {
+                        // A failed live turn must also wake a parent waiting only for results.
+                        note.urgent = true;
+                        self.db.delegation_close_round(
+                            d.session,
+                            "failed",
+                            Some(&reason),
+                            true,
+                            crate::db::RoundHandback::Write(&note),
+                            now_ms(),
+                        )
+                    });
+                    match written {
+                        Ok(Some(id)) => {
+                            self.broadcast_inbox_row(id);
+                            self.inbox_notify(row.parent_session, true);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!("recording failed turn for child {}: {e}", d.session);
+                            return crate::hook_drop::DropVerdict::Retry;
+                        }
+                    }
+                    self.broadcast_delegation(d.session);
+                }
+            }
+        }
         if provider == proto::AgentKind::Grok
-            && matches!(
-                d.event.as_str(),
-                "StopFailure" | "StopCancelled" | "SessionEnd"
-            )
+            && matches!(d.event.as_str(), "StopCancelled" | "SessionEnd")
         {
             let outcome = match d.event.as_str() {
-                "StopFailure" => "turn_failed",
                 "StopCancelled" => "turn_interrupted",
                 _ => "session_ended",
             };
@@ -12911,7 +12986,8 @@ impl Daemon {
         std::thread::Builder::new()
             .name(format!("swarm-wake-{session_id}"))
             .spawn(move || Self::swarm_wake_drain(daemon, session_id, generation))
-            .with_context(|| format!("spawning the wake lane for session {session_id}"))?;
+            .with_context(|| format!("spawning the wake lane for session {session_id}"))
+            .context(orchestrate::MutationMayHaveActed)?;
         Ok(())
     }
 
@@ -13006,7 +13082,24 @@ impl Daemon {
     }
 
     fn paste_text(self: &Arc<Self>, session_id: u32, text: &str, sender: u32) -> Result<bool> {
-        if self.paste_hold_reason(session_id).is_some() {
+        self.paste_text_with_activity(session_id, text, sender, false)
+    }
+
+    fn paste_text_with_activity(
+        self: &Arc<Self>,
+        session_id: u32,
+        text: &str,
+        sender: u32,
+        allow_working: bool,
+    ) -> Result<bool> {
+        let hold = || {
+            if allow_working {
+                self.immediate_paste_hold_reason(session_id)
+            } else {
+                self.paste_hold_reason(session_id)
+            }
+        };
+        if hold().is_some() {
             return Ok(false);
         }
         match self.write_stdin_counting(session_id, &bracketed_paste(text)) {
@@ -13020,7 +13113,7 @@ impl Daemon {
             }
         }
         std::thread::sleep(SWARM_WAKE_SETTLE);
-        let partial = if let Some(reason) = self.paste_hold_reason(session_id) {
+        let partial = if let Some(reason) = hold() {
             Some(format!("prompt was pasted but not submitted: {reason}"))
         } else {
             self.write_stdin_counting(session_id, b"\r")
@@ -13411,6 +13504,29 @@ impl Daemon {
         Ok(brief)
     }
 
+    fn orchestration_provider_catalog(&self) -> Vec<serde_json::Value> {
+        use proto::AgentKind::*;
+        [Claude, Codex, Antigravity, Opencode, Cursor, Grok].into_iter().map(|provider| {
+            let binary = crate::cli_probe::binary_name(provider).expect("spawnable provider binary");
+            let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(binary);
+            let caps = orchestrate::provider_capabilities(provider);
+            let (models, model_note) = crate::cli_probe::local_models(provider);
+            serde_json::json!({
+                "provider": provider, "installed": cli.present, "version": cli.version,
+                "models": models, "model_note": model_note,
+                "per_run_effort": crate::launch::effort_args(provider, proto::ChatEffort::Medium).is_ok(),
+                "capabilities": {
+                    "needs_input": caps.block, "last_message": caps.last_message,
+                    "turn_end": caps.turn_end, "turn_end_continuation": caps.door2,
+                    "handback_only_permission": !crate::launch::handback_permission_args(provider).is_empty(),
+                    "compaction_counting": crate::agent_events::compaction_event(provider).is_some(),
+                    "turn_failure": crate::agent_events::events_for(provider).iter().any(|(_, ev)| *ev == crate::agent_events::AgentEvent::TurnFailed),
+                },
+                "capability_note": orchestrate::capability_note(provider),
+            })
+        }).collect()
+    }
+
     pub fn orchestrate_whoami_json(&self, caller: u32) -> Result<serde_json::Value> {
         let info = self.orchestrate_whoami(caller)?;
         let registered_workspaces = self
@@ -13433,6 +13549,7 @@ impl Daemon {
             "channel": self.channel(),
             "registered_workspaces": registered_workspaces,
             "routing": self.workspace_routing(&info.project_dir)?,
+            "providers": self.orchestration_provider_catalog(),
         }))
     }
 
@@ -13565,6 +13682,149 @@ impl Daemon {
             } else {
                 known.join(", ")
             }
+        )
+    }
+
+    fn orchestration_retry<T: serde::Serialize + serde::de::DeserializeOwned>(
+        &self,
+        caller: u32,
+        key: Option<&str>,
+        operation: &str,
+        arguments: &serde_json::Value,
+        action: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        use sha2::Digest;
+        let Some(key) = key else {
+            return action();
+        };
+        orchestrate::validate_client_request_id(key)?;
+        self.orchestrate_whoami(caller)?;
+        let _guard = self
+            .orchestration_retry_lock
+            .lock()
+            .expect("orchestration retry lock");
+        let digest = format!("{:x}", sha2::Sha256::digest(serde_json::to_vec(arguments)?));
+        if let crate::db::OrchestrationReceipt::Recorded(result) = self
+            .db
+            .orchestration_receipt_begin(caller, key, operation, &digest, now_ms())?
+        {
+            let recorded: std::result::Result<T, String> = serde_json::from_str(&result)?;
+            return recorded.map_err(anyhow::Error::msg);
+        }
+        match action() {
+            Ok(value) => {
+                let recorded =
+                    serde_json::to_string(&std::result::Result::<&T, String>::Ok(&value))?;
+                self.db
+                    .orchestration_receipt_finish(caller, key, &recorded)?;
+                Ok(value)
+            }
+            Err(error) => {
+                if error
+                    .downcast_ref::<orchestrate::MutationMayHaveActed>()
+                    .is_none()
+                {
+                    self.db.orchestration_receipt_discard_pending(caller, key)?;
+                }
+                Err(anyhow!(
+                    crate::sanitize::redact_secrets(&format!("{error:#}")).0
+                ))
+            }
+        }
+    }
+
+    pub fn orchestrate_spawn_request(
+        self: &Arc<Self>,
+        caller: u32,
+        mut request: orchestrate::SpawnRequest,
+    ) -> Result<orchestrate::SpawnOutcome> {
+        request.normalize();
+        let arguments = serde_json::to_value(&request)?;
+        let key = request.client_request_id.clone();
+        self.orchestration_retry(caller, key.as_deref(), "pane_spawn", &arguments, || {
+            anyhow::ensure!(
+                !(request.handoff && request.reusable),
+                "{}",
+                orchestrate::HANDOFF_REUSABLE_REFUSED
+            );
+            let brief = orchestrate::Brief {
+                prompt: request.prompt,
+                output_format: request.output_format,
+                boundaries: request.boundaries,
+            };
+            let brief = self.handoff_state_brief(
+                caller,
+                request.target_workspace.as_deref(),
+                request.handoff,
+                brief,
+                request.state_doc.as_ref(),
+            )?;
+            let isolated = request.worktree.is_some();
+            let worktree = crate::worktrees::spawn_ask(request.worktree, request.branch)?;
+            let session = if request.handoff {
+                self.orchestrate_handoff(
+                    caller,
+                    request.kind,
+                    request.model,
+                    request.cwd,
+                    brief,
+                    request.auto_approve,
+                    request.profile,
+                    request.role,
+                    request.target_workspace,
+                    request.effort,
+                    worktree,
+                )
+            } else {
+                self.orchestrate_spawn_with_options(
+                    caller,
+                    request.kind,
+                    request.model,
+                    request.cwd,
+                    brief,
+                    request.auto_approve,
+                    request.profile,
+                    request.role,
+                    request.target_workspace,
+                    request.reusable,
+                    request.effort,
+                    worktree,
+                )
+            }?;
+            let warning = if isolated {
+                crate::launch::worktree_trust_warning(session.agent)
+            } else {
+                self.spawn_checkout_warning(session.id)
+            };
+            let warnings = self.spawn_warnings(&session, isolated);
+            Ok(orchestrate::SpawnOutcome {
+                session,
+                warning,
+                warnings,
+            })
+        })
+    }
+
+    pub fn orchestrate_prompt_request(
+        self: &Arc<Self>,
+        caller: u32,
+        target: u32,
+        text: &str,
+        key: Option<&str>,
+        mode: Option<&str>,
+    ) -> Result<(String, Option<proto::AgentStatus>, Option<String>)> {
+        let mode = orchestrate::PromptMode::parse(mode)?;
+        let text = text.trim();
+        self.orchestration_retry(
+            caller,
+            key,
+            "pane_prompt",
+            &serde_json::json!({"session":target,"text":text,"mode":mode}),
+            || {
+                let (source, status, held) =
+                    self.orchestrate_prompt_with_mode(caller, target, text, mode)?;
+                Ok((source.to_string(), status, held))
+            },
         )
     }
 
@@ -13935,7 +14195,9 @@ impl Daemon {
                 Ok(args) => extra_args.extend(args),
                 Err(error) => {
                     self.discard_spawn_worktree(created);
-                    return Err(error).context("worktree spawn refused");
+                    return Err(error)
+                        .context("worktree spawn refused")
+                        .context(orchestrate::MutationMayHaveActed);
                 }
             }
         }
@@ -13961,9 +14223,14 @@ impl Daemon {
                 if let Some(c) = &created {
                     self.discard_spawn_worktree(c);
                 }
-                return Err(e).context(format!(
+                let error = e.context(format!(
                     "opening the delegation record for child {sid} failed; spawn rolled back"
                 ));
+                return Err(if created.is_some() {
+                    error.context(orchestrate::MutationMayHaveActed)
+                } else {
+                    error
+                });
             }
         }
         let observer = self
@@ -14017,7 +14284,11 @@ impl Daemon {
                 if let Some(c) = &created {
                     self.discard_spawn_worktree(c);
                 }
-                return Err(e);
+                return if created.is_some() {
+                    Err(e).context(orchestrate::MutationMayHaveActed)
+                } else {
+                    Err(e)
+                };
             }
         };
         self.record_approval_mode(sid, requested_mode);
@@ -14042,7 +14313,8 @@ impl Daemon {
                      could be recorded: {parent_error}; rolling back the spawned child also \
                      failed: {rollback_error}"
                 )),
-            };
+            }
+            .context(orchestrate::MutationMayHaveActed);
         }
         self.delegation_wake.notify_one();
         self.broadcast_delegation(sid);
@@ -14157,7 +14429,9 @@ impl Daemon {
         };
         if let Err(e) = self.db.managed_worktree_record(&row) {
             self.discard_spawn_worktree(&created);
-            return Err(e).context("spawn refused");
+            return Err(e)
+                .context("spawn refused")
+                .context(orchestrate::MutationMayHaveActed);
         }
         Ok(created)
     }
@@ -14273,6 +14547,16 @@ impl Daemon {
         target: u32,
         text: &str,
     ) -> Result<(&'static str, Option<proto::AgentStatus>, Option<String>)> {
+        self.orchestrate_prompt_with_mode(caller, target, text, orchestrate::PromptMode::Queue)
+    }
+
+    fn orchestrate_prompt_with_mode(
+        self: &Arc<Self>,
+        caller: u32,
+        target: u32,
+        text: &str,
+        mode: orchestrate::PromptMode,
+    ) -> Result<(&'static str, Option<proto::AgentStatus>, Option<String>)> {
         let text = text.trim();
         anyhow::ensure!(!text.is_empty(), "prompt text must not be empty");
         let _cleanup_guard = self
@@ -14282,13 +14566,30 @@ impl Daemon {
         if let Some(row) = self.delegation_of(target) {
             if row.parent_session == caller && self.respawn_chain_tip(target).is_none() {
                 if let Some(state) = orchestrate::DelegationState::parse(&row.state) {
-                    if let Some(refusal) = orchestrate::prompt_refusal(target, state) {
+                    let failed_live_turn = state == orchestrate::DelegationState::Failed
+                        && self.get(target).is_ok_and(|session| {
+                            session.state.lock().expect("state lock").is_live()
+                        });
+                    if let Some(refusal) =
+                        orchestrate::prompt_refusal(target, state).filter(|_| !failed_live_turn)
+                    {
                         bail!("{refusal}");
                     }
                 }
             }
         }
         self.assert_orchestration_target(caller, target)?;
+        let provider = self
+            .agent_kind_of(target)
+            .ok_or_else(|| anyhow!("pane {target} has no provider"))?;
+        orchestrate::prompt_mode_supported(provider, mode)?;
+        if mode != orchestrate::PromptMode::Queue {
+            if let Some(reason) = self.immediate_paste_hold_reason(target) {
+                bail!("mode {mode:?} refused for pane {target}: {reason}; use mode queue");
+            }
+            anyhow::ensure!(!self.swarm_wake_lanes.lock().expect("wake lanes lock").contains_key(&target),
+                "mode {mode:?} refused for pane {target}: a prompt is already queued; use mode queue");
+        }
         self.cancel_temporary_cleanup_locked(target);
         let source = {
             let s = self.get(target)?;
@@ -14307,7 +14608,33 @@ impl Daemon {
             Some(round) => format!("{}\n\n{text}", orchestrate::request_header(round)),
             None => text.to_string(),
         };
-        let held = self.swarm_wake_write(target, &framed, caller)?;
+        let held = match mode {
+            orchestrate::PromptMode::Queue => self.swarm_wake_write(target, &framed, caller)?,
+            orchestrate::PromptMode::Steer => {
+                anyhow::ensure!(self.paste_text_with_activity(target, &framed, caller, true)?,
+                    "mode steer refused for pane {target}: operator input or a permission request appeared before paste; use mode queue");
+                None
+            }
+            orchestrate::PromptMode::Restart => {
+                if self.session_status(target)? == Some(proto::AgentStatus::Working) {
+                    if let Err(error) = self
+                        .write_stdin_counting(target, orchestrate::prompt_interrupt_key(provider)?)
+                    {
+                        let nothing_written = error.nothing_written();
+                        let error = anyhow!("interrupting pane {target}: {error}");
+                        return Err(if nothing_written {
+                            error
+                        } else {
+                            error.context(orchestrate::MutationMayHaveActed)
+                        });
+                    }
+                    self.swarm_wake_write(target, &framed, caller)
+                        .context(orchestrate::MutationMayHaveActed)?
+                } else {
+                    self.swarm_wake_write(target, &framed, caller)?
+                }
+            }
+        };
         if source == orchestrate::StatusSource::ProcessOnly {
             match self.db.delegation_bump_round(target, now_ms()) {
                 Ok(Some(round)) => {
@@ -14333,7 +14660,12 @@ impl Daemon {
         } else {
             self.broadcast_delegation(target);
         }
-        Ok((source_label, self.session_status(target)?, held))
+        Ok((
+            source_label,
+            self.session_status(target)
+                .context(orchestrate::MutationMayHaveActed)?,
+            held,
+        ))
     }
 
     pub fn session_status(&self, id: u32) -> Result<Option<proto::AgentStatus>> {
@@ -15725,6 +16057,9 @@ impl Daemon {
             );
             return;
         };
+        if from == orchestrate::DelegationState::Failed && !opens_round {
+            return;
+        }
         let parent = row.parent_session;
         let workspace = self.current_workspace(child).unwrap_or_default();
         let pending = self
@@ -15746,7 +16081,11 @@ impl Daemon {
             self.broadcast_delegation(child);
             return;
         }
-        let to = orchestrate::delegation_transition(from, event, staged).filter(|to| *to != from);
+        let to = if from == orchestrate::DelegationState::Failed && opens_round {
+            Some(orchestrate::DelegationState::Working)
+        } else {
+            orchestrate::delegation_transition(from, event, staged).filter(|to| *to != from)
+        };
 
         let mut moved_by_close = false;
         if let Some(to) = to {
@@ -16890,6 +17229,20 @@ impl Daemon {
             }
             Err(e) => return Some(format!("this pane cannot be read: {e}")),
         }
+        self.operator_composer_hold_reason(parent)
+    }
+
+    fn immediate_paste_hold_reason(&self, target: u32) -> Option<String> {
+        match self.session_status(target) {
+            Ok(Some(proto::AgentStatus::NeedsInput)) => {
+                Some("pane needs input; inspect it and use pane_send_keys".into())
+            }
+            Err(error) => Some(format!("pane cannot be read: {error}")),
+            _ => self.operator_composer_hold_reason(target),
+        }
+    }
+
+    fn operator_composer_hold_reason(&self, parent: u32) -> Option<String> {
         let typed = self
             .composer_occupied
             .lock()
