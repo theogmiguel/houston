@@ -9,6 +9,7 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::serve::ListenerExt;
 use axum::Router;
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
@@ -76,6 +77,7 @@ pub async fn start_with_listener(
         )
         .with_state(daemon.clone());
     let local = listener.local_addr()?;
+    let listener = listener.tap_io(enable_tcp_nodelay);
     #[cfg(unix)]
     let shutdown = {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -95,6 +97,12 @@ pub async fn start_with_listener(
         }
     });
     Ok((local, handle))
+}
+
+fn enable_tcp_nodelay(stream: &mut tokio::net::TcpStream) {
+    if let Err(err) = stream.set_nodelay(true) {
+        tracing::debug!("setting TCP_NODELAY on an accepted socket failed: {err}");
+    }
 }
 
 // Constant-time compare: token lengths are fixed (UUIDv4), so the early
@@ -4695,6 +4703,7 @@ async fn inbox_delivered(
 #[cfg(test)]
 mod frame_flush_tests {
     use super::*;
+    use axum::serve::Listener;
     use futures_util::Sink;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -4767,5 +4776,18 @@ mod frame_flush_tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(payloads, [b"first".to_vec(), b"second".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn accepted_tcp_sockets_enable_nodelay() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut listener = listener.tap_io(enable_tcp_nodelay);
+        let accept = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await;
+            stream.nodelay().unwrap()
+        });
+        let _client = tokio::net::TcpStream::connect(address).await.unwrap();
+        assert!(accept.await.unwrap());
     }
 }
