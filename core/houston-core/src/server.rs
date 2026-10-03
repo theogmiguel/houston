@@ -3836,42 +3836,7 @@ async fn orch_read(
     }
 }
 
-#[derive(Deserialize)]
-struct SpawnBody {
-    kind: proto::AgentKind,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    cwd: Option<String>,
-    prompt: String,
-    // Approval bypass for a delegated child: on by default, opposite of the
-    // operator's own `session_create` default, because a child has nobody at
-    // its keyboard. Absent keeps the CLI's auto mode; `true` is the bypass.
-    #[serde(default)]
-    auto_approve: Option<bool>,
-    #[serde(default)]
-    profile: Option<String>,
-    #[serde(default)]
-    role: Option<String>,
-    #[serde(default)]
-    target_workspace: Option<String>,
-    #[serde(default)]
-    reusable: bool,
-    #[serde(default)]
-    handoff: bool,
-    #[serde(default)]
-    state_doc: Option<serde_json::Value>,
-    #[serde(default)]
-    effort: Option<proto::ChatEffort>,
-    #[serde(default)]
-    output_format: Option<String>,
-    #[serde(default)]
-    boundaries: Option<String>,
-    #[serde(default)]
-    worktree: Option<String>,
-    #[serde(default)]
-    branch: Option<String>,
-}
+type SpawnBody = crate::orchestrate::SpawnRequest;
 
 async fn orch_spawn(
     State(daemon): State<Arc<Daemon>>,
@@ -3885,62 +3850,15 @@ async fn orch_spawn(
     let reusable = body.reusable;
     let handoff = body.handoff;
     let effort = body.effort;
-    let isolated = body.worktree.is_some();
-    let reply_daemon = Arc::clone(&daemon);
-    if handoff && reusable {
-        return orch_err_response(anyhow::anyhow!(
-            crate::orchestrate::HANDOFF_REUSABLE_REFUSED
-        ));
-    }
     let result = tokio::task::spawn_blocking(move || {
-        let brief = crate::orchestrate::Brief {
-            prompt: body.prompt,
-            output_format: body.output_format,
-            boundaries: body.boundaries,
-        };
-        let brief = daemon.handoff_state_brief(
-            scope.session_id,
-            body.target_workspace.as_deref(),
-            handoff,
-            brief,
-            body.state_doc.as_ref(),
-        )?;
-        let worktree = crate::worktrees::spawn_ask(body.worktree, body.branch)?;
-        if handoff {
-            daemon.orchestrate_handoff(
-                scope.session_id,
-                body.kind,
-                body.model,
-                body.cwd,
-                brief,
-                body.auto_approve,
-                body.profile,
-                body.role,
-                body.target_workspace,
-                body.effort,
-                worktree,
-            )
-        } else {
-            daemon.orchestrate_spawn_with_options(
-                scope.session_id,
-                body.kind,
-                body.model,
-                body.cwd,
-                brief,
-                body.auto_approve,
-                body.profile,
-                body.role,
-                body.target_workspace,
-                body.reusable,
-                body.effort,
-                worktree,
-            )
-        }
+        daemon.orchestrate_spawn_request(scope.session_id, body)
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("orchestrate spawn panicked: {e}")));
     match result {
-        Ok(info) => (
+        Ok(outcome) => {
+            let info = outcome.session;
+            (
             StatusCode::OK,
             axum::Json(json!({
                 "session_id": info.id,
@@ -3950,8 +3868,8 @@ async fn orch_spawn(
                 "reusable": reusable,
                 "handoff": handoff,
                 "effort": effort.map(|effort| serde_json::to_value(effort).expect("effort serializes")).unwrap_or(json!("CLI default")),
-                "warning": if isolated { crate::launch::worktree_trust_warning(info.agent) } else { reply_daemon.spawn_checkout_warning(info.id) },
-                "warnings": reply_daemon.spawn_warnings(&info, isolated),
+                "warning": outcome.warning,
+                "warnings": outcome.warnings,
                 "next_action": if handoff {
                     crate::orchestrate::HANDOFF_NEXT_ACTION
                 } else {
@@ -3959,7 +3877,8 @@ async fn orch_spawn(
                 },
             })),
         )
-            .into_response(),
+            .into_response()
+        }
         Err(e) => orch_err_response(e),
     }
 }
@@ -3968,6 +3887,8 @@ async fn orch_spawn(
 struct PromptBody {
     session: u32,
     text: String,
+    client_request_id: Option<String>,
+    mode: Option<String>,
 }
 
 async fn orch_prompt(
@@ -3979,14 +3900,27 @@ async fn orch_prompt(
         Ok(s) => s,
         Err(r) => return *r,
     };
-    let (source, status, held) =
-        match daemon.orchestrate_prompt_with_hold(scope.session_id, body.session, &body.text) {
-            Ok(v) => v,
-            Err(e) => return orch_err_response(e),
-        };
+    let mode = body.mode.clone().unwrap_or_else(|| "queue".into());
+    let result = tokio::task::spawn_blocking(move || {
+        daemon.orchestrate_prompt_request(
+            scope.session_id,
+            body.session,
+            &body.text,
+            body.client_request_id.as_deref(),
+            body.mode.as_deref(),
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("orchestrate prompt panicked: {e}")));
+    let (source, status, held) = match result {
+        Ok(result) => result,
+        Err(e) => return orch_err_response(e),
+    };
+
     (
         StatusCode::OK,
         axum::Json(json!({
+            "mode": mode,
             "queued": true,
             "held": held,
             "status_source": source,

@@ -8,9 +8,7 @@ pub enum AgentEvent {
     // OpenCode emits this for session.status busy/retry pulses.
     Activity,
     InputResolved,
-    // At most one row of this per provider: its own loop-termination event,
-    // never a per-step event near a turn's end. Exception: two spellings of
-    // the SAME end (Claude's Stop/StopFailure) — see EXCLUSIVE_TURN_ENDS.
+    // The provider's successful loop-termination event, never a per-step event.
     TurnEnded,
     TurnInterrupted,
     TurnFailed,
@@ -62,7 +60,7 @@ const CLAUDE_EVENTS: [(&str, AgentEvent); 9] = [
     ("SessionStart", AgentEvent::SessionStarted),
     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
     ("Stop", AgentEvent::TurnEnded),
-    ("StopFailure", AgentEvent::TurnEnded),
+    ("StopFailure", AgentEvent::TurnFailed),
     ("Notification", AgentEvent::NeedsInput),
     ("PermissionRequest", AgentEvent::NeedsInput),
     ("PermissionDenied", AgentEvent::InputResolved),
@@ -108,7 +106,7 @@ const OPENCODE_EVENTS: [(&str, AgentEvent); 14] = [
     ("question.v2.replied", AgentEvent::InputResolved),
     ("question.v2.rejected", AgentEvent::InputResolved),
     ("session.idle", AgentEvent::TurnEnded),
-    ("session.error", AgentEvent::TurnEnded),
+    ("session.error", AgentEvent::TurnFailed),
 ];
 
 pub const OPENCODE_CORRELATION_EVENTS: [&str; 1] = ["SubagentStop"];
@@ -260,7 +258,7 @@ mod tests {
                     ("SessionStart", AgentEvent::SessionStarted),
                     ("UserPromptSubmit", AgentEvent::PromptSubmitted),
                     ("Stop", AgentEvent::TurnEnded),
-                    ("StopFailure", AgentEvent::TurnEnded),
+                    ("StopFailure", AgentEvent::TurnFailed),
                     ("Notification", AgentEvent::NeedsInput),
                     ("PermissionRequest", AgentEvent::NeedsInput),
                     ("PermissionDenied", AgentEvent::InputResolved),
@@ -294,7 +292,7 @@ mod tests {
                     ("question.v2.replied", AgentEvent::InputResolved),
                     ("question.v2.rejected", AgentEvent::InputResolved),
                     ("session.idle", AgentEvent::TurnEnded),
-                    ("session.error", AgentEvent::TurnEnded),
+                    ("session.error", AgentEvent::TurnFailed),
                 ],
             ),
             (
@@ -359,14 +357,6 @@ mod tests {
         proto::AgentKind::Ssh,
     ];
 
-    const EXCLUSIVE_TURN_ENDS: [(proto::AgentKind, [&str; 2]); 2] = [
-        (proto::AgentKind::Claude, ["Stop", "StopFailure"]),
-        (
-            proto::AgentKind::Opencode,
-            ["session.idle", "session.error"],
-        ),
-    ];
-
     #[test]
     fn every_provider_ends_a_turn_at_most_once() {
         for kind in EVERY_KIND {
@@ -375,11 +365,8 @@ mod tests {
                 .filter(|(_, ev)| *ev == AgentEvent::TurnEnded)
                 .map(|(name, _)| *name)
                 .collect();
-            let licensed = EXCLUSIVE_TURN_ENDS
-                .iter()
-                .any(|(k, pair)| *k == kind && ends == pair);
             assert!(
-                ends.len() <= 1 || licensed,
+                ends.len() <= 1,
                 "{kind:?} maps {} events to TurnEnded ({ends:?}) — a turn can only end once, \
                  and the row must be the CLI's loop-termination event",
                 ends.len()

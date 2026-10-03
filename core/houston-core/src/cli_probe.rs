@@ -132,6 +132,21 @@ impl ProbeCache {
         fresh
     }
 
+    pub fn cached_presence(&mut self, binary: &'static str) -> CliPresence {
+        self.discard_if_path_changed();
+        let present = crate::exe_path::resolve(binary).is_some_and(|path| path.is_file());
+        CliPresence {
+            present,
+            version: self
+                .entries
+                .get(binary)
+                .filter(|_| present)
+                .and_then(|entry| entry.version.as_ref())
+                .filter(|version| version.len() <= CATALOG_VERSION_MAX_BYTES)
+                .cloned(),
+        }
+    }
+
     pub fn clear(&mut self) {
         self.entries.clear();
     }
@@ -142,6 +157,76 @@ impl ProbeCache {
             self.path = now;
             self.entries.clear();
         }
+    }
+}
+
+// Cap cached version strings so a malformed CLI banner cannot inflate the catalog.
+const CATALOG_VERSION_MAX_BYTES: usize = 128;
+
+// Limit local cache reads and identifiers so workspace_info remains small even for a corrupt cache.
+const LOCAL_MODEL_CACHE_MAX_BYTES: u64 = 2 * 1024 * 1024;
+const LOCAL_MODEL_MAX: usize = 64;
+const LOCAL_MODEL_ID_MAX_BYTES: usize = 128;
+
+pub fn local_models(provider: proto::AgentKind) -> (Option<Vec<String>>, &'static str) {
+    if provider != proto::AgentKind::Codex {
+        return (None, "unknown: no verified local model list");
+    }
+    let Some(home) = std::env::var_os("CODEX_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
+        })
+    else {
+        return (None, "unknown: Codex home unavailable");
+    };
+    codex_local_models(&home.join("models_cache.json"))
+}
+
+fn codex_local_models(path: &std::path::Path) -> (Option<Vec<String>>, &'static str) {
+    let read = || -> Option<Vec<String>> {
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)
+            .ok()?
+            .take(LOCAL_MODEL_CACHE_MAX_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .ok()?;
+        if bytes.len() as u64 > LOCAL_MODEL_CACHE_MAX_BYTES {
+            return None;
+        }
+        let document: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        let entries = document.get("models")?.as_array()?;
+        let mut models = entries
+            .iter()
+            .filter_map(|model| model.get("slug")?.as_str())
+            .filter(|id| {
+                !id.is_empty()
+                    && id.len() <= LOCAL_MODEL_ID_MAX_BYTES
+                    && !id.chars().any(char::is_control)
+            })
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        models.sort();
+        models.dedup();
+        Some(models)
+    };
+    match read() {
+        Some(mut models) => {
+            let truncated = models.len() > LOCAL_MODEL_MAX;
+            models.truncate(LOCAL_MODEL_MAX);
+            (
+                Some(models),
+                if truncated {
+                    "local Codex cache; truncated to 64 identifiers"
+                } else {
+                    "local Codex cache; availability may depend on account"
+                },
+            )
+        }
+        None => (
+            None,
+            "unknown: Codex cache missing, invalid or exceeds 2097152 bytes",
+        ),
     }
 }
 
@@ -156,6 +241,33 @@ mod tests {
         std::fs::write(&p, format!("#!/bin/sh\nprintf '%s\\n' '{line}'\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         p.display().to_string()
+    }
+
+    #[test]
+    fn local_codex_models_are_bounded_and_unknown_is_explicit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models_cache.json");
+        assert!(codex_local_models(&path).0.is_none());
+        let mut entries = (0..80)
+            .map(|n| serde_json::json!({"slug":format!("fixture-model-{n:03}")}))
+            .collect::<Vec<_>>();
+        entries.push(serde_json::json!({"slug":"invalid\nidentifier"}));
+        entries.push(serde_json::json!({"slug":"x".repeat(129)}));
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({"models":entries})).unwrap(),
+        )
+        .unwrap();
+        let (models, note) = codex_local_models(&path);
+        let models = models.unwrap();
+        assert_eq!(models.len(), 64);
+        assert_eq!(models[0], "fixture-model-000");
+        assert!(models
+            .iter()
+            .all(|id| !id.contains('\n') && id.len() <= 128));
+        assert!(note.contains("truncated"));
+        std::fs::write(&path, vec![b' '; LOCAL_MODEL_CACHE_MAX_BYTES as usize + 1]).unwrap();
+        assert!(codex_local_models(&path).0.is_none());
     }
 
     #[test]
