@@ -59,7 +59,7 @@ export function delegationAge(start: number, now: number): string {
 }
 
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
-  if (!isLive(info.state)) return <Tooltip label="Ended"><span className="w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
+  if (!isLive(info.state)) return <Tooltip label="Ended"><span className="agent-dot w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
   return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
 }
 

@@ -33,6 +33,11 @@ describe('settled children', () => {
     act(() => row.querySelector<HTMLButtonElement>('[aria-label="Close 2"]')!.click())
     expect(closeSession).toHaveBeenCalledWith(2)
   })
+  it.each(['done', 'failed'] as const)('exposes a settled %s child\'s ended dot to the state tint', (state) => {
+    children = [{ ...child(2, 'exited'), delegation: { state } as SessionInfo['delegation'] }]
+    render()
+    expect(host.querySelector(`.children-row.settled .children-status[data-state="${state}"] .agent-dot[aria-label="Ended"]`)).not.toBeNull()
+  })
   it.each(['done', 'failed', 'unknown'] as const)('never settles or closes a live %s delegation', (state) => {
     children = [child(2, 'exited'), { ...child(3), delegation: { state } as SessionInfo['delegation'] }]
     expect(childGroup(children[1])).toBe('Working')
