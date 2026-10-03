@@ -1,3 +1,4 @@
+pub mod bitbucket;
 pub(crate) mod github;
 
 use anyhow::{bail, Result};

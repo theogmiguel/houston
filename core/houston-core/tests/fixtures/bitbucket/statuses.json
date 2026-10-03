@@ -1,0 +1,10 @@
+{
+  "pagelen": 100,
+  "page": 1,
+  "size": 3,
+  "values": [
+    { "type": "build", "key": "pipeline-1", "name": "Pipeline #41 for feat/reader", "state": "SUCCESSFUL", "url": "https://bitbucket.org/ws/repo/pipelines/results/41", "description": "Successful in 2m", "refname": "feat/reader", "created_on": "2026-10-01T12:00:00.000000+00:00", "updated_on": "2026-10-01T12:02:00.000000+00:00", "commit": { "type": "commit", "hash": "0123456789abcdef0123456789abcdef01234567" } },
+    { "type": "build", "key": "lint", "name": "lint", "state": "FAILED", "url": "https://ci.example.com/lint/9", "description": "2 errors", "refname": "feat/reader", "created_on": "2026-10-01T12:00:00+00:00", "updated_on": "2026-10-01T12:00:30+00:00" },
+    { "type": "build", "key": "e2e", "name": "e2e", "state": "INPROGRESS", "url": "https://ci.example.com/e2e/3", "refname": "feat/reader", "created_on": "2026-10-01T12:01:00+00:00", "updated_on": "2026-10-01T12:01:00+00:00" }
+  ]
+}

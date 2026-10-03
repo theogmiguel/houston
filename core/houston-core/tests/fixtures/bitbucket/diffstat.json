@@ -1,0 +1,9 @@
+{
+  "pagelen": 500,
+  "size": 2,
+  "page": 1,
+  "values": [
+    { "type": "diffstat", "status": "modified", "lines_added": 30, "lines_removed": 4, "old": { "path": "src/reader.rs", "type": "commit_file" }, "new": { "path": "src/reader.rs", "type": "commit_file" } },
+    { "type": "diffstat", "status": "added", "lines_added": 10, "lines_removed": 0, "old": null, "new": { "path": "README.md", "type": "commit_file" } }
+  ]
+}

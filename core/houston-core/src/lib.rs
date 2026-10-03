@@ -18,6 +18,7 @@ pub mod db;
 pub mod env_hygiene;
 pub mod exe_path;
 pub mod forge;
+pub mod forge_credentials;
 pub mod frame_queue;
 pub mod fs_watch;
 pub mod gh;
