@@ -8,8 +8,8 @@ use zeroize::Zeroizing;
 
 use crate::pull_requests::bitbucket::Credentials;
 
-pub const BITBUCKET_EMAIL_LEN_MAX: usize = 254;
-pub const BITBUCKET_TOKEN_LEN_MAX: usize = 1024;
+pub const BITBUCKET_EMAIL_LEN_MAX: usize = houston_protocol::BITBUCKET_EMAIL_LEN_MAX as usize;
+pub const BITBUCKET_TOKEN_LEN_MAX: usize = houston_protocol::BITBUCKET_TOKEN_LEN_MAX as usize;
 
 const USER: &str = "bitbucket-cloud";
 

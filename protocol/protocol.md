@@ -1,4 +1,4 @@
-# Wire protocol v124
+# Wire protocol v125
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -171,9 +171,9 @@ failure not given a typed refusal comes back as `error`.
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
-| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh` |
-| `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract |
-| `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — a `gh` problem is `gh` + `hint`, a failed read is `message` |
+| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh`. For a remote on a forge known not to be GitHub (Bitbucket, GitLab, Azure DevOps), `gh` is not run: the reply is `gh: missing` with a `hint` naming the forge. Any other host, including GitHub Enterprise Server and SSH host aliases, is left to `gh` |
+| `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract; a remote on a forge known not to be GitHub is refused in `message` by forge and operation |
+| `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — the forge is resolved from the remote first; a forge that cannot read is `access` + `hint`, a failed read is `message`. A Bitbucket Cloud read contacts `api.bitbucket.org` only when `access` is `bitbucket{ready}` |
 | `pr_link` | `dir`, `number` (positive), `request` | `pr_linked` then a fresh `pr_detail` carrying the same `request`; `number: 0` is refused by name |
 | `pr_unlink` | `dir`, `request` | `pr_unlinked` then a fresh `pr_detail` carrying the same `request`; the reply names the number that was removed |
 | `pr_merge` | `dir`, `number`, `method: PrMergeMethod`, `expected_head_sha`, `request` | `pr_merged` then a fresh `pr_detail` on success. The daemon re-reads the pull request, refuses a moved head, re-runs the merge gate, and calls `gh pr merge --match-head-commit`; never `--admin`, `--auto` or branch deletion |
@@ -193,6 +193,8 @@ failure not given a typed refusal comes back as `error`.
 | `pr_diff` | `dir`, `number`, `request` | `pr_diff` (direct) — `gh pr diff --color never`, capped with `truncated` |
 | `pr_stack` | `dir`, `number`, `request` | `pr_stack` (direct) — the host's own stack, `stack: null` where the preview answers 404 |
 | `pr_stack_merge` | `dir`, `number`, `stack_number`, `heads: PrStackHead[]`, `merge_method?`, `request` | `pr_mutation {kind: action}` then a fresh `pr_detail`. Every open layer up to `number` must match `heads` and be open and non-draft; GitHub's async job is polled for up to two minutes |
+
+Every pull-request write (`pr_merge`, `pr_action`, `pr_edit`, `pr_comment`, `pr_comment_edit`, `pr_review`, `pr_thread_*`, `pr_reaction`, `pr_reviewer_set`, `pr_label_set`, `pr_stack_merge`) and every GitHub-only read (`pr_reviewers`, `pr_labels`, `pr_list`, `pr_diff`, `pr_stack`) is refused before any network call when the remote is on a forge known not to be GitHub (Bitbucket, GitLab, Azure DevOps); the refusal names the forge and the operation. Any other host is left to `gh`.
 
 ### History
 
@@ -322,6 +324,17 @@ every refusal names the setting.
 | `voice_model_delete` | `model_id` | `voice_model_state` + `voice_settings` (bcast) |
 | `voice_level_monitor` | `enabled` | `voice_level` every `VOICE_LEVEL_INTERVAL_MS` while anyone is monitoring. Opens the microphone; refcounted per connection as a set, and released on disconnect |
 
+### Forge
+
+| Message | Fields | Reply |
+|---|---|---|
+| `forge_settings_get` | — | `forge_settings` (direct) |
+| `bitbucket_enabled_set` | `enabled` | `forge_settings` (bcast). Off by default; while off, no Bitbucket request is made |
+| `bitbucket_token_set` | `email` (1–`BITBUCKET_EMAIL_LEN_MAX` bytes), `token` (1–`BITBUCKET_TOKEN_LEN_MAX` bytes) | `forge_settings` (bcast). Written to the daemon's keychain entry and **read back** before success; an empty or oversized value is an `error` naming the limit and the length. The token is never echoed by any reply |
+| `bitbucket_token_clear` | — | `forge_settings` (bcast) |
+
+A refused `bitbucket_enabled_set`, `bitbucket_token_set` or `bitbucket_token_clear` replies with `error.context = "forge_settings"` and broadcasts nothing.
+
 ### Host and usage
 
 | Message | Fields | Reply |
@@ -387,7 +400,7 @@ every refusal names the setting.
 | `git_fetch` | `dir`, `summary` | direct reply to `git_fetch` |
 | `pr_status` | `dir`, `gh: GhState`, `has_upstream`, `pr?: PrInfo`, `hint?` | direct reply — a `gh` problem is reported in `gh` + `hint`, never as `error` |
 | `pr_create` | `dir`, `gh: GhState`, `pr?: PrInfo`, `message?` | direct reply — `message` carries `gh`'s own first stderr line on a genuine failure |
-| `pr_detail` | `dir`, `request`, `gh: GhState`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate |
+| `pr_detail` | `dir`, `request`, `access: ForgeAccess`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate; `detail.read_only` names why no write is offered |
 | `pr_linked` | `dir`, `request`, `ok`, `message?` | direct reply to `pr_link`; success is followed by a fresh `pr_detail` with the same `request` |
 | `pr_unlinked` | `dir`, `request`, `number?`, `ok`, `message?` | direct reply to `pr_unlink`; `number` names what was removed |
 | `pr_merged` | `dir`, `request`, `number`, `ok`, `message?` | direct reply to `pr_merge`; `message` carries the refusal (moved head, merge gate, or gh's own stderr line). Success is followed by a fresh `pr_detail` |
@@ -428,6 +441,7 @@ every refusal names the setting.
 | `task_queue_result` | `workspace`, `started: string[]` (task keys, picking order), `refused: TaskQueueRefusal[]` (a ready task that could not start, with the refusal message a direct Start would have given), `ready_count` (what the roster's queue button shows), `free_children` (the orchestrator's remaining slots) | direct reply to `task_queue_run`; the started tasks each broadcast their own `task_changed`/`task_run_changed` |
 | `tasks_access` | `workspace`, `access: TasksAccess` | direct reply to `tasks_access_get`; bcast after `tasks_access_set` |
 | `voice_settings` | `settings: VoiceSettings`, `cloud_key_present`, `keyring_error?`, `models: VoiceModelState[]` | direct reply to `voice_settings_get`; bcast after any settings or key change |
+| `forge_settings` | `bitbucket_enabled`, `bitbucket_account?` (the stored e-mail), `keyring_error?` | direct reply to `forge_settings_get`; bcast after any Bitbucket setting or token change |
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
 | `voice_transcript` | `session`, `text`, `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start` |
@@ -538,6 +552,9 @@ GitFileStatus      path, status: GitFileState, staged, added?, deleted?, is_sens
 GitReviewSection   scope (staged | unstaged | untracked), patch
 GitDiscardKind     staged | unstaged | untracked
 GhState            missing | unauthenticated | ready
+ForgeAccess        tag "forge": github{gh: GhState} | bitbucket{state: BitbucketAccess} | unsupported{host}
+                   — `host` is the remote's host without userinfo, or the forge's name
+BitbucketAccess    off | no_token | keychain_unavailable | ready
 PrChecks           none | running | passing | failing
 PrInfo             number, url, state, review_decision?, checks: PrChecks
 PullRequestState   open | closed | merged
@@ -549,7 +566,8 @@ PrDetail           body?, author?, base_ref?, head_ref?, head_sha, commit_count,
                    created_at, updated_at, mergeable (mergeable | conflicting | unknown),
                    merge_state (clean | behind | blocked | dirty | draft | has_hooks |
                    unstable | unknown), checks: PrCheck[], comments: PrComment[],
-                   reviews: PrReview[], comments_total, reviews_total, merge_disabled_reason?
+                   reviews: PrReview[], comments_total, reviews_total, merge_disabled_reason?,
+                   read_only? (set when Houston cannot write to this forge; no write control is offered)
 PrCheck            name, state (queued | running | passing | failing | skipped | unknown),
                    url?, duration_ms?
 PrComment          author, body, created_at, url?
@@ -1019,6 +1037,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 125 | **The Pull request tab reads a Bitbucket Cloud pull request (opt-in, read-only).** `pr_detail`'s reply replaces `gh: GhState` with `access: ForgeAccess`; `PrDetail` gains `read_only?`. New `forge_settings_get`, `bitbucket_enabled_set`, `bitbucket_token_set` and `bitbucket_token_clear`, answered by `forge_settings`; a refused change is an `error` with `context = "forge_settings"`. Every pull-request write and GitHub-only read refuses a remote on a forge known not to be GitHub by forge and operation |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |
 | 123 | **A local task backlog per workspace.** New `task_snapshot`, `task_get`, `task_save`, `task_comment`, `task_check`, `task_archive`, `tasks_access_get` and `tasks_access_set` client messages and `task_snapshot`, `task_detail`, `task_changed`, `task_refused` and `tasks_access` replies, with `Task`, `TaskSummary`, `TaskPatch`, `TaskStatus`, `TaskPriority`, `TaskAcceptanceItem`, `TaskComment`, `TaskHistoryEntry`, `TaskRun`, `TaskCounts`, `TaskErrorKind` and `TasksAccess`. Tasks live in per-workspace `backlog_*` SQLite tables, get a monotonic `HOU-<n>` number and an integer `revision`, and are gated by a per-workspace Tasks access (`off`/`read`/`write`, default `write`) in Settings ▸ Tasks; the orphan `tasks`/`task_events` tables are unrelated and untouched. Removing a workspace deletes its tasks. No existing message changes |
 | 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |

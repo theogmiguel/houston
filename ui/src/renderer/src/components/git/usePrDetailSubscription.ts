@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
-  GhState,
+  ForgeAccess,
   HoustonClient,
   PrAction,
   PrCommentKind,
@@ -22,7 +22,7 @@ import type {
 } from '../../houston/client'
 
 export interface PrDetailView {
-  gh: GhState
+  access: ForgeAccess
   hasUpstream: boolean
   link: PullRequestLink | null
   detail: PrDetail | null
@@ -241,7 +241,7 @@ export function usePrDetail(
       busyRef.current = false
       setBusy(false)
       setView({
-        gh: msg.gh,
+        access: msg.access,
         hasUpstream: msg.has_upstream,
         link: msg.link ?? null,
         detail: msg.detail ?? null,

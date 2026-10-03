@@ -1106,6 +1106,7 @@ impl DelegationSettleSample {
     }
 }
 
+mod forge_settings;
 mod harness_review;
 pub(crate) mod tasks;
 mod worktree_pass;
@@ -1213,6 +1214,8 @@ pub struct Daemon {
     ssh_prompts: Mutex<HashMap<u32, oneshot::Sender<crate::ssh::HostKeyVerdict>>>,
     known_hosts: PathBuf,
     channel: Option<String>,
+    /// Where the Bitbucket reader sends its requests; only a test changes it.
+    bitbucket_api_base: Mutex<String>,
     started: Instant,
     swarm_mail: Mutex<HashMap<u64, SwarmMailScope>>,
     swarm_mail_wake: Arc<tokio::sync::Notify>,
@@ -2519,6 +2522,7 @@ impl Daemon {
             ssh_prompts: Mutex::new(HashMap::new()),
             known_hosts: state_dir.join("known_hosts"),
             channel: crate::paths::channel_of_state_dir(&state_dir),
+            bitbucket_api_base: Mutex::new(crate::pull_requests::bitbucket::API_BASE.to_string()),
             started: Instant::now(),
             swarm_mail: Mutex::new(HashMap::new()),
             swarm_mail_wake: Arc::clone(&swarm_mail_wake),

@@ -252,6 +252,7 @@ function detail(o: Partial<PrDetail> = {}): PrDetail {
     auto_merge_enabled: null,
     auto_merge_method: null,
     cross_repository: false,
+    read_only: null,
     ...o
   }
 }
@@ -261,7 +262,7 @@ function detailMsg(o: Record<string, unknown> = {}): Record<string, unknown> {
     type: 'pr_detail',
     dir: '/repo',
     request: 1,
-    gh: 'ready',
+    access: { forge: 'github', gh: 'ready' },
     has_upstream: true,
     link: link(),
     detail: detail(),
@@ -633,7 +634,7 @@ describe('PullRequestTab — empty, blocked and failed states', () => {
     emit(
       client,
       detailMsg({
-        gh: 'unauthenticated',
+        access: { forge: 'github', gh: 'unauthenticated' },
         link: null,
         detail: null,
         hint: 'gh is not signed in — run `gh auth login`'
@@ -642,6 +643,106 @@ describe('PullRequestTab — empty, blocked and failed states', () => {
     expect(q('[data-testid="pr-detail-blocked"]')!.textContent).toContain('gh auth login')
     click(q('[data-testid="pr-retry"]'))
     expect(client.prDetailCalls).toHaveLength(2)
+  })
+
+  it.each([
+    [{ forge: 'bitbucket', state: 'off' }, null, 'Bitbucket Cloud pull requests are off', 'Settings ▸ Accounts'],
+    [{ forge: 'bitbucket', state: 'no_token' }, null, 'No Bitbucket API token', 'Add a Bitbucket API token'],
+    [
+      { forge: 'bitbucket', state: 'keychain_unavailable' },
+      'reading the Bitbucket API token from the system keychain failed: locked',
+      'OS keychain unavailable',
+      'locked'
+    ],
+    [{ forge: 'unsupported', host: 'GitLab' }, null, 'Pull requests on GitLab are not supported', 'Bitbucket Cloud'],
+    [{ forge: 'unsupported', host: 'a local path' }, null, 'Pull requests on a local path are not supported', 'Bitbucket Cloud']
+  ])('names a forge that cannot be read: %j', (access, hint, headline, body) => {
+    const client = mount()
+    emit(client, detailMsg({ access, hint, link: null, detail: null }))
+    const blocked = q('[data-testid="pr-detail-blocked"]')!
+    expect(blocked.textContent).toContain(headline)
+    expect(blocked.textContent).toContain(body)
+    expect(q('[data-testid="pr-create"]')).toBeNull()
+    click(q('[data-testid="pr-retry"]'))
+    expect(client.prDetailCalls).toHaveLength(2)
+  })
+
+  it('shows a read-only pull request without any write control', () => {
+    const onOpenUrlInPane = vi.fn()
+    const client = mount({ onOpenUrlInPane })
+    const reason = 'Houston reads Bitbucket Cloud pull requests but does not change them'
+    emit(
+      client,
+      detailMsg({
+        access: { forge: 'bitbucket', state: 'ready' },
+        link: link({ host: 'Bitbucket', url: 'https://bitbucket.org/ws/repo/pull-requests/7', number: 7 }),
+        detail: detail({
+          viewer: null,
+          read_only: reason,
+          merge_disabled_reason: reason,
+          comments: [{ id: '101', author: 'Rui', body: 'Looks close.', created_at: 1, url: null, reactions: [] }],
+          comments_total: 1,
+          reviews: [{ id: null, author: 'Cris', state: 'CHANGES_REQUESTED', body: '', submitted_at: 1, reactions: [] }],
+          reviews_total: 1,
+          threads: [
+            {
+              id: '102',
+              path: 'src/reader.rs',
+              line: 42,
+              resolved: true,
+              outdated: false,
+              comments: [{ id: '102', author: 'Cris', body: 'Rename this?', created_at: 1, url: null, reactions: [] }]
+            }
+          ]
+        })
+      })
+    )
+    expect(q('[data-testid="pr-read-only"]')!.textContent).toContain(reason)
+    expect(q('[data-testid="pr-title"]')!.textContent).toBe('a change')
+    expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
+    expect(q('[data-testid="pr-read-only-discussion"]')!.textContent).toContain('Looks close.')
+    expect(q('[data-testid="pr-read-only-discussion"]')!.textContent).toContain('src/reader.rs:42 · resolved')
+    for (const id of ['pr-merge', 'pr-actions', 'pr-edit-open', 'pr-comment-composer', 'pr-pane-files', 'pr-browse-open', 'pr-review-bar', 'pr-stack-open']) {
+      expect(q(`[data-testid="${id}"]`), id).toBeNull()
+    }
+    expect(qa('textarea')).toHaveLength(0)
+    click(q('[data-testid="pr-open-forge"]'))
+    expect(onOpenUrlInPane).toHaveBeenCalledWith('https://bitbucket.org/ws/repo/pull-requests/7')
+  })
+
+  it.each([
+    [true, 'pr-unlink'],
+    [false, 'pr-link-detected']
+  ])('offers the link reversal on a read-only pull request (linked: %s)', (linked, testId) => {
+    const client = mount()
+    const reason = 'Houston reads Bitbucket Cloud pull requests but does not change them'
+    emit(
+      client,
+      detailMsg({
+        access: { forge: 'bitbucket', state: 'ready' },
+        linked,
+        link: link({ host: 'Bitbucket', number: 7, source: linked ? 'manual' : 'detected' }),
+        detail: detail({ viewer: null, read_only: reason, merge_disabled_reason: reason })
+      })
+    )
+    expect(q('[data-testid="pr-read-only"]')).not.toBeNull()
+    click(q(`[data-testid="${testId}"]`))
+    if (linked) {
+      expect(client.prUnlinkCalls).toEqual([{ dir: '/repo', request: 2 }])
+      expect(q('[data-testid="pr-link-detected"]')).toBeNull()
+    } else {
+      expect(client.prLinkCalls).toEqual([{ dir: '/repo', number: 7, request: 2 }])
+      expect(q('[data-testid="pr-unlink"]')).toBeNull()
+    }
+  })
+
+  it('offers neither Create nor Browse for a read-only forge without a pull request', () => {
+    const client = mount()
+    emit(client, detailMsg({ access: { forge: 'bitbucket', state: 'ready' }, link: null, detail: null }))
+    expect(q('[data-testid="pr-detail-empty"]')!.textContent).toContain('No pull request')
+    expect(q('[data-testid="pr-create"]')).toBeNull()
+    expect(q('[data-testid="pr-browse-open"]')).toBeNull()
+    expect(q('[data-testid="pr-link-number"]')).not.toBeNull()
   })
 
   it('shows a read failure instead of an empty state', () => {

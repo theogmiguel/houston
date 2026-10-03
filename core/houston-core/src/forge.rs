@@ -2,9 +2,11 @@
 //! Reads that every forge answers dispatch here; writes stay GitHub-only.
 
 use anyhow::{bail, Result};
+use houston_protocol as proto;
 use std::path::Path;
 
 use crate::gh::PrLookup;
+use crate::pull_requests::bitbucket::BitbucketClient;
 use crate::pull_requests::{self, PrDetail, PullRequestLink, PullRequestLinkSource};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,50 +128,217 @@ fn parse_remote(url: &str) -> Option<Remote> {
     })
 }
 
-/// Why `dir` has no pull request reader, in the words the tab has always shown.
-fn refusal(dir: &Path, resolution: &ForgeResolution) -> String {
-    let host = match resolution {
-        ForgeResolution::NoRemote => {
-            return format!(
-                "{} has no git remote; a pull request needs one, and only GitHub through `gh` is supported here",
-                dir.display()
+/// What only the daemon knows: whether the user enabled the Bitbucket reader,
+/// where its API lives, and which keychain service holds the token.
+pub struct ForgeContext {
+    pub bitbucket_enabled: bool,
+    pub bitbucket_api_base: String,
+    pub keychain_service: String,
+}
+
+/// What can read a pull request in a workspace.
+pub enum Reader {
+    GitHub,
+    Bitbucket {
+        workspace: String,
+        repo: String,
+        client: Box<BitbucketClient>,
+    },
+}
+
+/// The forge's access state for the tab, and its reader when it has one. A
+/// blocked forge carries the hint the tab shows, a reader that could not be
+/// built the reason; nothing here touches the network.
+pub struct Opened {
+    pub access: proto::ForgeAccess,
+    pub reader: Option<Reader>,
+    pub hint: Option<String>,
+    pub message: Option<String>,
+}
+
+pub fn open(dir: &Path, ctx: &ForgeContext) -> Opened {
+    match resolve(dir) {
+        ForgeResolution::Ready(Forge::GitHub) | ForgeResolution::NoRemote => {
+            let gh = crate::gh::state(dir);
+            Opened {
+                access: proto::ForgeAccess::Github { gh },
+                reader: (gh == proto::GhState::Ready).then_some(Reader::GitHub),
+                hint: crate::gh::hint_for(gh),
+                message: None,
+            }
+        }
+        // An unknown host has never been read here: the GitHub read refuses it.
+        ForgeResolution::Unsupported { host } | ForgeResolution::Unknown { host } => Opened {
+            hint: Some(unsupported_hint(&host)),
+            access: proto::ForgeAccess::Unsupported { host },
+            reader: None,
+            message: None,
+        },
+        ForgeResolution::Ready(Forge::Bitbucket { workspace, repo }) => {
+            open_bitbucket(workspace, repo, ctx)
+        }
+    }
+}
+
+fn open_bitbucket(workspace: String, repo: String, ctx: &ForgeContext) -> Opened {
+    let blocked = |state, hint: String| Opened {
+        access: proto::ForgeAccess::Bitbucket { state },
+        reader: None,
+        hint: Some(hint),
+        message: None,
+    };
+    if !ctx.bitbucket_enabled {
+        return blocked(
+            proto::BitbucketAccess::Off,
+            "Bitbucket Cloud pull requests are off; turn them on in Settings ▸ Accounts"
+                .to_string(),
+        );
+    }
+    let credentials = match crate::forge_credentials::load(&ctx.keychain_service) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return blocked(
+                proto::BitbucketAccess::NoToken,
+                "no Bitbucket API token is stored; add one in Settings ▸ Accounts".to_string(),
             )
         }
-        ForgeResolution::Ready(Forge::GitHub) => "GitHub",
-        ForgeResolution::Ready(Forge::Bitbucket { .. }) => "Bitbucket",
-        ForgeResolution::Unsupported { host } | ForgeResolution::Unknown { host } => host,
+        Err(e) => return blocked(proto::BitbucketAccess::KeychainUnavailable, e.to_string()),
     };
-    format!(
-        "{host} is not supported here: only GitHub through `gh` is, and GitLab, Bitbucket and Azure DevOps are follow-ups"
-    )
+    let ready = proto::ForgeAccess::Bitbucket {
+        state: proto::BitbucketAccess::Ready,
+    };
+    match BitbucketClient::with_base_url(&credentials, &ctx.bitbucket_api_base) {
+        Ok(client) => Opened {
+            access: ready,
+            reader: Some(Reader::Bitbucket {
+                workspace,
+                repo,
+                client: Box::new(client),
+            }),
+            hint: None,
+            message: None,
+        },
+        // The token was read; what failed is Houston's own HTTP client.
+        Err(e) => Opened {
+            access: ready,
+            reader: None,
+            hint: None,
+            message: Some(e.to_string()),
+        },
+    }
+}
+
+fn unsupported_hint(host: &str) -> String {
+    format!("Pull requests on {host} are not supported; Houston reads GitHub through `gh` and Bitbucket Cloud")
 }
 
 /// The branch's own pull request; `Ok(None)` is the forge saying there is none.
-pub fn read_branch(dir: &Path) -> Result<Option<(PullRequestLink, PrDetail)>> {
-    match resolve(dir) {
-        ForgeResolution::Ready(Forge::GitHub) => pull_requests::read_branch(dir),
-        other => bail!("{}", refusal(dir, &other)),
+pub fn read_branch(dir: &Path, reader: &Reader) -> Result<Option<(PullRequestLink, PrDetail)>> {
+    match reader {
+        Reader::GitHub => pull_requests::read_branch(dir),
+        Reader::Bitbucket {
+            workspace,
+            repo,
+            client,
+        } => {
+            let Some(branch) = crate::git::branch(dir) else {
+                return Ok(None);
+            };
+            match client.branch_pull_request(workspace, repo, &branch)? {
+                Some(number) => client
+                    .read(
+                        workspace,
+                        repo,
+                        number,
+                        PullRequestLinkSource::Detected,
+                        pull_requests::now_unix(),
+                    )
+                    .map(Some),
+                None => Ok(None),
+            }
+        }
     }
 }
 
 /// One pull request by number, keeping a persisted link's source and time.
 pub fn read(
     dir: &Path,
+    reader: &Reader,
     number: u32,
     source: PullRequestLinkSource,
     existing: Option<&PullRequestLink>,
 ) -> Result<(PullRequestLink, PrDetail)> {
-    match resolve(dir) {
-        ForgeResolution::Ready(Forge::GitHub) => {
-            pull_requests::read(dir, Some(number), source, existing)
-        }
-        other => bail!("{}", refusal(dir, &other)),
+    match reader {
+        Reader::GitHub => pull_requests::read(dir, Some(number), source, existing),
+        Reader::Bitbucket {
+            workspace,
+            repo,
+            client,
+        } => client.read(
+            workspace,
+            repo,
+            number,
+            source,
+            existing
+                .map(|l| l.linked_at)
+                .unwrap_or_else(pull_requests::now_unix),
+        ),
     }
 }
 
-/// The merged-pull-request question the worktree sweep asks of a checkout.
+/// The merged-pull-request question the worktree sweep asks of a checkout. A
+/// Bitbucket checkout is not asked yet: the sweep runs unattended, and nothing
+/// unattended contacts Bitbucket.
 pub fn merged_facts(dir: &Path) -> PrLookup {
-    crate::gh::pr_for_checkout(dir)
+    match resolve(dir) {
+        ForgeResolution::Ready(Forge::Bitbucket { .. }) => PrLookup::Failed(
+            "Bitbucket pull requests are not read by the worktree check yet".to_string(),
+        ),
+        _ => crate::gh::pr_for_checkout(dir),
+    }
+}
+
+/// The one guard in front of every write and GitHub-only read: a forge known
+/// not to be GitHub is refused by forge and operation before a request is made.
+/// An unknown host or no remote passes, so `gh` answers as it always has.
+pub fn require_github(dir: &Path, op: &str) -> Result<()> {
+    match resolve(dir) {
+        ForgeResolution::Ready(Forge::GitHub)
+        | ForgeResolution::Unknown { .. }
+        | ForgeResolution::NoRemote => Ok(()),
+        ForgeResolution::Ready(Forge::Bitbucket { .. }) => bail!(
+            "Bitbucket Cloud pull requests are read-only in Houston; refusing to {op} — do it on Bitbucket"
+        ),
+        ForgeResolution::Unsupported { host } => {
+            bail!("{host} is not supported here; refusing to {op}")
+        }
+    }
+}
+
+/// The name of a forge known not to be GitHub, for a caller that only asks
+/// `gh`; `None` for GitHub, an unknown host or no remote, which `gh` answers.
+pub fn non_github_forge(dir: &Path) -> Option<String> {
+    match resolve(dir) {
+        ForgeResolution::Ready(Forge::Bitbucket { .. }) => Some("Bitbucket Cloud".to_string()),
+        ForgeResolution::Unsupported { host } => Some(host),
+        ForgeResolution::Ready(Forge::GitHub)
+        | ForgeResolution::Unknown { .. }
+        | ForgeResolution::NoRemote => None,
+    }
+}
+
+/// The Changes pane's PR line for a forge known not to be GitHub, so `gh pr
+/// view` is not run there; `None` lets `gh` answer.
+pub fn status_hint(dir: &Path) -> Option<String> {
+    match resolve(dir) {
+        ForgeResolution::Ready(Forge::GitHub)
+        | ForgeResolution::Unknown { .. }
+        | ForgeResolution::NoRemote => None,
+        ForgeResolution::Ready(Forge::Bitbucket { .. }) => Some(
+            "Bitbucket Cloud pull requests show, read-only, in the Pull request tab".to_string(),
+        ),
+        ForgeResolution::Unsupported { host } => Some(unsupported_hint(&host)),
+    }
 }
 
 #[cfg(test)]
@@ -261,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn no_resolution_or_refusal_carries_a_remotes_userinfo() {
+    fn no_resolution_carries_a_remotes_userinfo() {
         for url in [
             "https://x-token-auth:SECRET@git.example.com/a/b.git",
             "https://user:SECRET@gitlab.com/a/b.git",
@@ -269,12 +438,10 @@ mod tests {
             "https://SECRET@[::1]:8443/a/b.git",
         ] {
             let resolved = resolve_url(url);
-            let refused = refusal(Path::new("/repo"), &resolved);
             assert!(
                 !format!("{resolved:?}").contains("SECRET"),
                 "{url}: {resolved:?}"
             );
-            assert!(!refused.contains("SECRET"), "{url}: {refused}");
         }
     }
 }

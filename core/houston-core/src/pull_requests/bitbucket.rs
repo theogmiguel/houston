@@ -396,6 +396,7 @@ fn map_pull_request(
         auto_merge_enabled: None,
         auto_merge_method: None,
         cross_repository: false,
+        read_only: Some(READ_ONLY_REASON.to_string()),
     };
     Ok((link, detail))
 }
@@ -768,6 +769,7 @@ mod tests {
         assert_eq!(detail.mergeable, PrMergeable::Unknown);
         assert_eq!(detail.merge_state, PrMergeState::Unknown);
         assert!(detail.viewer.is_none());
+        assert_eq!(detail.read_only.as_deref(), Some(READ_ONLY_REASON));
         assert_eq!(
             detail.merge_disabled_reason.as_deref(),
             Some(READ_ONLY_REASON)

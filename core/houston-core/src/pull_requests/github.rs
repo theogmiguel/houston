@@ -111,6 +111,7 @@ pub fn detail_from_json(
             .get("isCrossRepository")
             .and_then(|b| b.as_bool())
             .unwrap_or(false),
+        read_only: None,
     };
     Some((link, detail))
 }

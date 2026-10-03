@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
-  GhState,
   HoustonClient,
   PrCheck,
   PrCheckState,
@@ -30,6 +29,8 @@ import { PrReviewBar } from './PrReviewBar'
 import { PrSummary } from './PrSummary'
 import { PrStackSection } from './PrStack'
 import { PrFooterBar } from './PrFooterBar'
+import { PrReadOnlyDiscussion, PrReadOnlyNotice } from './PrReadOnly'
+import { forgeBlocked, type ForgeBlock } from './forgeAccess'
 import {
   usePrDetail,
   usePrList,
@@ -179,29 +180,16 @@ function PrIdle(): React.JSX.Element {
 }
 
 function PrBlocked({
-  gh,
-  hint,
+  block,
   onRetry
 }: {
-  gh: GhState
-  hint: string | null
+  block: ForgeBlock
   onRetry: () => void
 }): React.JSX.Element {
-  const headline = gh === 'missing' ? 'GitHub CLI not found' : 'GitHub CLI needs authentication'
-  const body =
-    hint ??
-    (gh === 'missing' ? (
-      <>
-        <span className="font-mono">gh</span> is not on PATH, so Houston cannot read pull requests. Install it and press
-        Retry — nothing else in source control depends on it.
-      </>
-    ) : (
-      'gh is not authenticated, so Houston cannot read pull requests.'
-    ))
   return (
-    <div className={EMPTY} data-testid="pr-detail-blocked">
-      <div className={TITLE}>{headline}</div>
-      <p className={HINT}>{body}</p>
+    <div className={EMPTY} data-testid="pr-detail-blocked" data-blocked={block.kind}>
+      <div className={TITLE}>{block.headline}</div>
+      <p className={HINT}>{block.body}</p>
       <button className={`btn ${ACTION} ${BTN_SECONDARY}`} data-testid="pr-retry" onClick={onRetry}>
         Retry
       </button>
@@ -313,6 +301,7 @@ function PrEmpty({
   onBrowse: () => void
   linkMessage: React.ReactNode
 }): React.JSX.Element {
+  const writable = view.access.forge === 'github'
   return (
     <div className={SECTION_HEAD} data-testid="pr-detail-empty">
       {view.message !== null ? (
@@ -330,21 +319,23 @@ function PrEmpty({
               ? 'This branch has no pull request yet.'
               : 'This branch has no upstream, so it cannot have a pull request yet.'}
           </p>
-          <div className="flex items-center gap-2">
-            <Tooltip
-              label={view.hasUpstream ? undefined : 'This branch has no upstream, so it cannot have a pull request yet.'}
-              className="inline-flex"
-            >
-              <button
-                className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-45 disabled:cursor-not-allowed`}
-                data-testid="pr-create"
-                disabled={!view.hasUpstream || pr.createBusy}
-                onClick={pr.create}
+          {writable && (
+            <div className="flex items-center gap-2">
+              <Tooltip
+                label={view.hasUpstream ? undefined : 'This branch has no upstream, so it cannot have a pull request yet.'}
+                className="inline-flex"
               >
-                {pr.createBusy ? 'Creating…' : 'Create pull request'}
-              </button>
-            </Tooltip>
-          </div>
+                <button
+                  className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-45 disabled:cursor-not-allowed`}
+                  data-testid="pr-create"
+                  disabled={!view.hasUpstream || pr.createBusy}
+                  onClick={pr.create}
+                >
+                  {pr.createBusy ? 'Creating…' : 'Create pull request'}
+                </button>
+              </Tooltip>
+            </div>
+          )}
           {!view.hasUpstream && onShowChanges && (
             <div>
               <button
@@ -362,16 +353,18 @@ function PrEmpty({
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`${SMALL} text-[var(--text-muted)]`}>or link an existing one</span>
           <PrLinkForm pr={pr} />
-          <button
-            className={`btn ${ACTION} ${BTN_GHOST}`}
-            data-testid="pr-browse-open"
-            onClick={onBrowse}
-          >
-            Browse…
-          </button>
+          {writable && (
+            <button
+              className={`btn ${ACTION} ${BTN_GHOST}`}
+              data-testid="pr-browse-open"
+              onClick={onBrowse}
+            >
+              Browse…
+            </button>
+          )}
         </div>
       ) : (
-        <button
+        writable && <button
           className={`btn ${ACTION} ${BTN_GHOST}`}
           data-testid="pr-browse-open"
           onClick={onBrowse}
@@ -967,6 +960,78 @@ function PrDetailView({
   )
 }
 
+/** A pull request Houston can only show: no write control is drawn at all. */
+function PrReadOnlyView({
+  link,
+  detail,
+  reason,
+  onOpenUrlInPane,
+  linkMessage,
+  linked,
+  pr
+}: {
+  link: PullRequestLink
+  detail: PrDetail
+  reason: string
+  onOpenUrlInPane?: (url: string) => void
+  linkMessage: React.ReactNode
+  linked: boolean
+  pr: PrDetailController
+}): React.JSX.Element {
+  const head = detail.head_ref ?? null
+  const base = detail.base_ref ?? null
+  return (
+    <div className="flex-1 min-h-0 flex flex-col" data-testid="pr-tab">
+      <PrReadOnlyNotice
+        reason={reason}
+        url={link.url}
+        onOpenUrlInPane={onOpenUrlInPane}
+        link={{ number: link.number, linked, busy: pr.linkBusy, onLink: pr.link, onUnlink: pr.unlink }}
+      />
+      {linkMessage}
+      <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
+        <PrSummary>
+          <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+            <div className="flex items-start gap-2">
+              <span
+                data-testid="pr-state"
+                className={`flex-none px-1.5 rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] leading-4 ${stateTone(link)}`}
+              >
+                {stateLabel(link)}
+              </span>
+              <div className="min-w-0 flex flex-col gap-0.5">
+                <div data-testid="pr-title" className="text-[length:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)] break-words">
+                  {link.title ?? `Pull request #${link.number}`}
+                </div>
+                <div data-testid="pr-sub" className={`font-mono ${SMALL} text-[var(--text-faint)] break-words`}>
+                  #{link.number}
+                  {head !== null && base !== null ? ` · ${head} → ${base}` : ''}
+                  {detail.author ? ` · ${detail.author}` : ''} ·{' '}
+                  {detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`} · +{link.additions} −
+                  {link.deletions} · {link.changed_files} files
+                </div>
+              </div>
+            </div>
+            <PrDescription body={detail.body} />
+          </div>
+          <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+            <div className={SECTION_HEAD_CLS}>Builds</div>
+            <PrChecks checks={detail.checks} />
+            <div className={META_ROW_CLS}>
+              <span className="w-[92px] flex-none text-[var(--text-muted)]">Review</span>
+              <span className="min-w-0 flex-1 text-[var(--text-primary)]">{reviewLabel(link.review_decision)}</span>
+            </div>
+          </div>
+          <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+            {detail.reviews_total > 0 && <PrReviews detail={detail} />}
+            <PrReadOnlyDiscussion detail={detail} />
+          </div>
+        </PrSummary>
+      </div>
+    </div>
+  )
+}
+
 export function PullRequestTab({
   client,
   dir,
@@ -1027,7 +1092,8 @@ export function PullRequestTab({
       </ScmNotice>
     ) : null
 
-  if (view.gh !== 'ready') return <PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} />
+  const block = forgeBlocked(view.access, view.hint)
+  if (block !== null) return <PrBlocked block={block} onRetry={pr.refresh} />
   if (view.message !== null || view.link === null) {
     return (
       <PrEmpty
@@ -1041,6 +1107,19 @@ export function PullRequestTab({
   }
   if (view.detail === null) {
     return <PrReadError view={view} link={view.link} pr={pr} linkMessage={linkMessage} />
+  }
+  if (view.detail.read_only !== null && view.detail.read_only !== undefined) {
+    return (
+      <PrReadOnlyView
+        link={view.link}
+        detail={view.detail}
+        reason={view.detail.read_only}
+        onOpenUrlInPane={onOpenUrlInPane}
+        linkMessage={linkMessage}
+        linked={view.linked}
+        pr={pr}
+      />
+    )
   }
   return (
     <PrDetailView

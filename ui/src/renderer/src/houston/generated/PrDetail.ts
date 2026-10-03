@@ -67,4 +67,8 @@ auto_merge_method?: PrMergeMethod | null,
  * GitHub's `isCrossRepository`: a fork head, which is the only kind whose
  * workflow runs can be waiting on a maintainer's approval.
  */
-cross_repository: boolean, };
+cross_repository: boolean,
+/**
+ * Why Houston offers no write here, when the forge is read-only.
+ */
+read_only?: string | null, };
