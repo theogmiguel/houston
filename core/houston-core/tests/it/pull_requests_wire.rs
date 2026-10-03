@@ -203,3 +203,28 @@ fn a_remote_urls_credentials_never_reach_an_unsupported_host_refusal() {
         Host::Unknown("git.example.com".to_string())
     );
 }
+
+#[test]
+fn a_github_ssh_host_alias_is_github() {
+    for url in [
+        "git@github.com-work:owner/repo.git",
+        "ssh://git@github.com-work/owner/repo.git",
+    ] {
+        assert_eq!(pull_requests::classify_remote(url), Host::GitHub, "{url}");
+    }
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    run_git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "git@github.com-work:owner/repo.git",
+        ],
+    );
+    assert_eq!(
+        pull_requests::ensure_supported(repo.path()).unwrap(),
+        Host::GitHub
+    );
+}
