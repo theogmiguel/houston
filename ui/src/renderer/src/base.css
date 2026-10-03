@@ -35,6 +35,27 @@
     outline-offset: 1px;
   }
 
+  /* Chrome is not copy material: drags across it must not paint a DOM selection.
+     Content regions (editor, markdown, logs, errors, inputs) are not listed. The
+     terminal engine owns its own selection model. */
+  .pane-head,
+  .side-tabs,
+  .term-host {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .pane-head input,
+  .side-tabs input,
+  aside input {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  html.pane-dragging,
+  html.pane-dragging * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+  }
+
   select,
   option {
     background-color: var(--card-bg);
