@@ -201,6 +201,21 @@ impl Db {
             .optional()?)
     }
 
+    /// The request whose thread holds the bot message posted at `ts`.
+    pub fn intake_by_reply(&self, channel: &str, ts: &str) -> Result<Option<IntakeRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                &format!(
+                    "SELECT {INTAKE_COLUMNS} FROM intake_events WHERE channel = ?1 AND id = \
+                     (SELECT intake_id FROM intake_outbox WHERE posted_ts = ?2 LIMIT 1)"
+                ),
+                rusqlite::params![channel, ts],
+                intake_row,
+            )
+            .optional()?)
+    }
+
     pub fn intake_for_task(&self, task_id: i64) -> Result<Option<IntakeRow>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn

@@ -423,6 +423,90 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
 }
 
 #[tokio::test]
+async fn the_owners_check_mark_on_houstons_reply_starts_the_request() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-accept-reply").await;
+    r.fake.send_event(
+        "e1",
+        mention("1800000000.000100", REQUESTER, "rename the button"),
+    );
+    r.await_tasks(1).await;
+    r.fake.await_post("Filed as HOU-").await;
+    let reply_ts: String = r
+        .db()
+        .query_row(
+            "SELECT posted_ts FROM intake_outbox WHERE text LIKE 'Filed as HOU-%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    r.fake.send_event("e2", check_mark(&reply_ts, REQUESTER));
+    r.fake
+        .send_event("e3", check_mark("1900000000.999999", OWNER));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        r.runs().is_empty(),
+        "the requester's mark on the reply and the owner's on an unrelated message start nothing"
+    );
+
+    r.fake.send_event("e4", check_mark(&reply_ts, OWNER));
+    r.await_runs(1).await;
+    r.fake.await_post("Started HOU-").await;
+    r.finish();
+}
+
+#[tokio::test]
+async fn a_task_canceled_before_it_starts_closes_its_request_and_tells_the_thread() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-canceled").await;
+    r.fake.send_event(
+        "e1",
+        mention("1800000000.000100", REQUESTER, "rename the button"),
+    );
+    let tasks = r.await_tasks(1).await;
+    r.fake.await_post("Filed as HOU-").await;
+    let revision: i64 = r
+        .db()
+        .query_row(
+            "SELECT revision FROM backlog_tasks WHERE id = ?1",
+            [tasks[0].0],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let canceled = r
+        .daemon
+        .task_save(
+            &r.workspace(),
+            Some(tasks[0].0),
+            Some(revision),
+            proto::TaskPatch {
+                status: Some(proto::TaskStatus::Canceled),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(canceled, proto::ServerMsg::TaskChanged { .. }),
+        "{canceled:?}"
+    );
+
+    let closed = r.fake.await_post("was closed in Houston").await;
+    assert_eq!(closed["thread_ts"], "1800000000.000100");
+    let state: String = r
+        .db()
+        .query_row("SELECT state FROM intake_events", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(state, "refused");
+
+    r.fake
+        .send_event("e2", check_mark("1800000000.000100", OWNER));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(r.runs().is_empty(), "a closed request does not start");
+    r.finish();
+}
+
+#[tokio::test]
 async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
     let _guard = SERIAL.lock().await;
     let r = rig("slack-ask").await;

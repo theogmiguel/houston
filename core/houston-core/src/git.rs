@@ -779,6 +779,23 @@ pub fn remote_url(dir: &Path) -> Option<String> {
     }
 }
 
+/// The remote branch the checked-out branch tracks, without the remote's
+/// name: `feat/x` for `origin/feat/x`. `None` before the first push.
+pub fn upstream_branch(dir: &Path) -> Option<String> {
+    let out = run_git(
+        dir,
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+    )
+    .ok()?;
+    let (_, branch) = out.trim().split_once('/')?;
+    (!branch.is_empty()).then(|| branch.to_string())
+}
+
 pub fn is_git_repo(dir: &Path) -> bool {
     dir.is_dir() && run_git(dir, &["rev-parse", "--is-inside-work-tree"]).is_ok()
 }

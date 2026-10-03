@@ -107,6 +107,35 @@ fn truncate_chars(text: &str, max: usize) -> String {
     }
 }
 
+/// Where a person opens the pull request for a pushed branch, for the two
+/// forges whose page takes the branch in its URL. `None` for any other host,
+/// or a branch name the URL cannot carry unescaped.
+fn pr_creation_url(remote: &str, branch: &str) -> Option<String> {
+    let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/');
+    if branch.is_empty() || !branch.chars().all(plain) {
+        return None;
+    }
+    let rest = remote
+        .strip_prefix("git@")
+        .or_else(|| remote.strip_prefix("ssh://git@"))
+        .or_else(|| remote.strip_prefix("https://"))?;
+    let (host, path) = rest.split_once([':', '/'])?;
+    let path = path.trim_end_matches('/').trim_end_matches(".git");
+    let (owner, repo) = path.split_once('/')?;
+    if owner.is_empty() || repo.is_empty() || repo.contains('/') || !path.chars().all(plain) {
+        return None;
+    }
+    match host {
+        "bitbucket.org" => Some(format!(
+            "https://bitbucket.org/{owner}/{repo}/pull-requests/new?source={branch}&t=1"
+        )),
+        "github.com" => Some(format!(
+            "https://github.com/{owner}/{repo}/pull/new/{branch}"
+        )),
+        _ => None,
+    }
+}
+
 fn title_of(text: &str, author: &str) -> String {
     let first = text.lines().map(str::trim).find(|l| !l.is_empty());
     match first {
@@ -429,6 +458,14 @@ impl Daemon {
                     .and_then(Value::as_str)
                     .is_some_and(|t| t != identity.team_id)
                 {
+                    let theirs = payload
+                        .get("team_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    tracing::info!(
+                        "slack: dropped an event for team {theirs:?}; the bot belongs to {:?}",
+                        identity.team_id
+                    );
                     return;
                 }
                 let Some(event) = payload.get("event") else {
@@ -444,6 +481,17 @@ impl Daemon {
                     channels: &channels,
                 };
                 let intent = intake::classify(event, &scope);
+                if let intake::Intent::Ignore(why) = &intent {
+                    let kind = event
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("untyped");
+                    let channel = event
+                        .get("channel")
+                        .and_then(Value::as_str)
+                        .unwrap_or("no channel");
+                    tracing::info!("slack: ignored a {kind} event in {channel}: {why}");
+                }
                 self.slack_intent(api, tokens, &config, intent).await;
             }
         }
@@ -766,12 +814,25 @@ impl Daemon {
     }
 
     async fn slack_accept(self: &Arc<Self>, channel: &str, ts: &str) -> Result<()> {
-        let Some(row) = self.db.intake_by_message(SOURCE, channel, ts)? else {
+        let row = match self.db.intake_by_message(SOURCE, channel, ts)? {
+            Some(row) => Some(row),
+            None => self.db.intake_by_reply(channel, ts)?,
+        };
+        let Some(row) = row else {
+            tracing::info!(
+                "slack: accept reaction on {channel} {ts}, which is not a filed request"
+            );
             return Ok(());
         };
         if row.state != INTAKE_PENDING || row.task_id.is_none() {
+            tracing::info!(
+                "slack: accept reaction on request {}, which is {}",
+                row.id,
+                row.state
+            );
             return Ok(());
         }
+        tracing::info!("slack: the owner accepted request {}", row.id);
         let working = self.slack_working_runs()?;
         if working >= proto::SLACK_RUNS_WORKING_MAX {
             let now = now_unix_ms();
@@ -977,6 +1038,7 @@ impl Daemon {
     }
 
     pub async fn slack_tick(self: &Arc<Self>) -> Result<()> {
+        self.slack_close_dropped()?;
         self.slack_follow_runs().await?;
         for row in self.db.intake_queue()? {
             if self.slack_working_runs()? >= proto::SLACK_RUNS_WORKING_MAX {
@@ -986,6 +1048,43 @@ impl Daemon {
         }
         self.slack_deliver_answers();
         self.slack_send_outbox().await
+    }
+
+    /// A request still waiting to start whose task was canceled, finished,
+    /// archived or deleted in Houston stops waiting, and its thread is told.
+    fn slack_close_dropped(&self) -> Result<()> {
+        for row in self.db.intake_by_task()? {
+            if row.state != INTAKE_PENDING && row.state != INTAKE_QUEUED {
+                continue;
+            }
+            let Some(task_id) = row.task_id else { continue };
+            let task = self.db.task(task_id)?;
+            let open = task.as_ref().is_some_and(|t| {
+                t.archived_at_ms.is_none()
+                    && !matches!(
+                        t.status,
+                        proto::TaskStatus::Canceled | proto::TaskStatus::Done
+                    )
+            });
+            if open {
+                continue;
+            }
+            let now = now_unix_ms();
+            self.db.intake_set_state(row.id, INTAKE_REFUSED, now)?;
+            let what = match &task {
+                Some(t) => format!("{} was closed in Houston", Self::task_key(t.number)),
+                None => "The task was deleted in Houston".to_string(),
+            };
+            self.db.intake_outbox_push(
+                row.id,
+                &format!("closed:{}", row.id),
+                &format!("{what} before it started; this request will not run."),
+                None,
+                now,
+            )?;
+            self.slack_broadcast_task(Some(task_id));
+        }
+        Ok(())
     }
 
     /// Turns each intake task's newest run into the replies its thread is
@@ -1036,11 +1135,33 @@ impl Daemon {
                         }
                         (None, None) => None,
                     };
+                    let pushed = match &run.worktree_path {
+                        Some(dir) => {
+                            let dir = PathBuf::from(dir);
+                            tokio::task::spawn_blocking(move || {
+                                crate::git::upstream_branch(&dir)
+                                    .map(|b| (b, crate::git::remote_url(&dir)))
+                            })
+                            .await?
+                        }
+                        None => None,
+                    };
+                    let open_pr = match (&pr_url, &pushed) {
+                        (None, Some((remote_branch, Some(remote)))) => {
+                            pr_creation_url(remote, remote_branch)
+                        }
+                        _ => None,
+                    };
+                    let branch_line = match &pushed {
+                        Some((remote_branch, _)) => format!("Branch: `{remote_branch}` (pushed)"),
+                        None => format!("Branch: `{branch}` (local, not pushed)"),
+                    };
                     let text = Self::slack_result_text(
                         &key,
                         &row.workspace,
-                        &branch,
+                        &branch_line,
                         pr_url.as_deref(),
+                        open_pr.as_deref(),
                         run.summary.as_deref(),
                     );
                     self.db.intake_outbox_push(
@@ -1098,13 +1219,16 @@ impl Daemon {
     fn slack_result_text(
         key: &str,
         workspace: &str,
-        branch: &str,
+        branch_line: &str,
         pr_url: Option<&str>,
+        open_pr: Option<&str>,
         summary: Option<&str>,
     ) -> String {
-        let mut text = format!("{key} is ready for review.\nBranch: `{branch}`");
+        let mut text = format!("{key} is ready for review.\n{branch_line}");
         if let Some(url) = pr_url {
             text.push_str(&format!("\nPull request: {url}"));
+        } else if let Some(url) = open_pr {
+            text.push_str(&format!("\nOpen the pull request: {url}"));
         }
         if let Some(summary) = summary.map(str::trim).filter(|s| !s.is_empty()) {
             let summary = summary.replace(workspace, ".");
@@ -1229,8 +1353,9 @@ mod tests {
         let text = Daemon::slack_result_text(
             "HOU-7",
             "/home/u/repo",
-            "houston/task/hou-7-x",
+            "Branch: `feat/x` (pushed)",
             Some("https://github.com/o/r/pull/9"),
+            None,
             Some("Changed /home/u/repo/src/a.rs; token xoxb-123456789012-abcdefghijkl"),
         );
         assert!(text.contains("HOU-7 is ready for review."));
@@ -1238,5 +1363,39 @@ mod tests {
         assert!(text.contains("./src/a.rs"), "{text}");
         assert!(!text.contains("/home/u/repo"), "{text}");
         assert!(text.contains("[redacted:slack_token]"), "{text}");
+    }
+
+    #[test]
+    fn a_pushed_branch_without_a_pull_request_gets_the_forge_link_to_open_one() {
+        assert_eq!(
+            pr_creation_url("git@bitbucket.org:team/repo.git", "feat/x").as_deref(),
+            Some("https://bitbucket.org/team/repo/pull-requests/new?source=feat/x&t=1")
+        );
+        assert_eq!(
+            pr_creation_url("https://github.com/o/r.git", "fix/y-2").as_deref(),
+            Some("https://github.com/o/r/pull/new/fix/y-2")
+        );
+        assert_eq!(pr_creation_url("git@example.org:o/r.git", "feat/x"), None);
+        assert_eq!(
+            pr_creation_url("git@bitbucket.org:team/repo.git", "feat/x y"),
+            None
+        );
+        assert_eq!(
+            pr_creation_url("git@bitbucket.org:team/a/b.git", "feat/x"),
+            None
+        );
+        let text = Daemon::slack_result_text(
+            "HOU-7",
+            "/home/u/repo",
+            "Branch: `feat/x` (pushed)",
+            None,
+            Some("https://bitbucket.org/team/repo/pull-requests/new?source=feat/x&t=1"),
+            None,
+        );
+        assert!(text.contains("Branch: `feat/x` (pushed)"), "{text}");
+        assert!(
+            text.contains("Open the pull request: https://bitbucket.org/team/repo/"),
+            "{text}"
+        );
     }
 }

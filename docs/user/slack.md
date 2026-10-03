@@ -48,8 +48,10 @@ error stays visible until the next successful connection.
    message are included. Houston reacts with 👀, files a task with the message's permalink
    as its link and replies in the thread with the task key. The task waits in **Backlog**
    with a **Slack · awaiting ✅** chip.
-2. The owner starts it by reacting to the request with ✅, or with **Start** in the Tasks
-   tab. A ✅ from anyone else does nothing. Requests always start with Claude in a new
+2. The owner starts it by reacting with ✅ to the request or to Houston's reply to it, or
+   with **Start** in the Tasks tab. A ✅ from anyone else does nothing. A request whose
+   task is canceled, finished or archived before it starts stops waiting, and the thread
+   says so. Requests always start with Claude in a new
    worktree, as a Start does; the brief tells the agent to follow the repository's own
    factory skill when there is one and to hand the task back when done.
 3. At most two Slack runs work at once. A run waiting for an answer or for a confirmation
@@ -59,9 +61,11 @@ error stays visible until the next successful connection.
    Houston posts it to the thread; the first reply from the requester or the owner is typed
    into the agent's pane as its next prompt once the pane is idle. Replies from anyone else
    are ignored.
-5. When the agent hands the task back, Houston replies with the branch, the pull request
-   `gh` finds for that branch (GitHub only) and the agent's hand-back summary, with the
-   workspace path removed and secrets redacted. A run that stops without handing back is
+5. When the agent hands the task back, Houston replies with the branch the worktree
+   pushed to (or says it was not pushed), the pull request `gh` finds for that branch
+   (GitHub only) or, when there is none, the link that opens one on GitHub or Bitbucket
+   Cloud, and the agent's hand-back summary, with the workspace path removed and secrets
+   redacted. A run that stops without handing back is
    reported as stopped; one that waits for a confirmation in its pane is reported once,
    since the owner answers it in Houston.
 
