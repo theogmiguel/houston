@@ -67,7 +67,7 @@ fn local_write(name: &str, title: &str, description: &str, schema: Value) -> Too
 }
 
 fn id_property() -> Value {
-    json!({ "type": ["integer", "string"], "description": "The task id or key (HOU-42)" })
+    json!({ "type": ["integer", "string"], "description": "Task id or key (HOU-42)" })
 }
 
 fn id_schema() -> Value {
@@ -83,7 +83,7 @@ fn id_schema() -> Value {
 
 fn write_fields() -> serde_json::Map<String, Value> {
     let mut properties = serde_json::Map::new();
-    properties.insert("workspace".into(), json!({ "type": ["string", "null"], "description": "Registered workspace path; null clears assignment." }));
+    properties.insert("workspace".into(), json!({ "type": ["string", "null"], "description": "Registered workspace path; null unassigns." }));
     properties.insert(
         "title".into(),
         json!({ "type": "string", "maxLength": proto::TASK_TITLE_MAX }),
@@ -102,7 +102,7 @@ fn write_fields() -> serde_json::Map<String, Value> {
     );
     properties.insert(
         "parent".into(),
-        json!({ "type": "string", "description": "Parent task key, for example HOU-2. Null clears a parent." }),
+        json!({ "type": "string", "description": "Parent key (HOU-2); null clears." }),
     );
     properties.insert(
         "acceptance".into(),
@@ -110,7 +110,7 @@ fn write_fields() -> serde_json::Map<String, Value> {
             "type": "array",
             "items": { "type": "string" },
             "maxItems": proto::ACCEPTANCE_ITEMS_PER_TASK,
-            "description": "Replaces the whole acceptance list when present.",
+            "description": "Replaces the whole list.",
         }),
     );
     properties
@@ -138,18 +138,18 @@ fn all_specs() -> Vec<ToolSpec> {
     );
     list_properties.insert(
         "ready".into(),
-        json!({ "type": "boolean", "description": "Only todo tasks with no unfinished blocker." }),
+        json!({ "type": "boolean", "description": "Only ready tasks." }),
     );
     list_properties.insert(
         "mine".into(),
         json!({
             "type": "boolean",
-            "description": "Only tasks this pane created, or claimed and is still working on.",
+            "description": "Only tasks this pane created or is working on.",
         }),
     );
     list_properties.insert(
         "query".into(),
-        json!({ "type": "string", "description": "Case-insensitive substring of title or description." }),
+        json!({ "type": "string", "description": "Substring of title or description." }),
     );
     list_properties.insert(
         "limit".into(),
@@ -157,16 +157,15 @@ fn all_specs() -> Vec<ToolSpec> {
             "type": "integer",
             "minimum": 1,
             "maximum": TASK_LIST_MAX,
-            "description": format!("At most {TASK_LIST_MAX} tasks; default {TASK_LIST_DEFAULT}."),
+            "description": format!("Default {TASK_LIST_DEFAULT}."),
         }),
     );
     vec![
         readonly(
             "task_list",
             "List tasks",
-            "List active tasks across every workspace, optionally filtered by status, readiness or \
-             text. Ready means a todo task with no unfinished blocker. Results are newest \
-             first, capped by `limit`.",
+            "List active tasks in every workspace, newest first. Ready means todo with no \
+             unfinished blocker.",
             json!({
                 "type": "object",
                 "properties": list_properties,
@@ -176,22 +175,19 @@ fn all_specs() -> Vec<ToolSpec> {
         readonly(
             "task_get",
             "Read one task",
-            "Read one task by id: its full text, acceptance items and recent comments. \
-             History and runs are on the task's detail in the Tasks tab.",
+            "Read one task: text, acceptance items and recent comments.",
             id_schema(),
         ),
         readonly(
             "task_next",
             "Next ready task",
-            "The highest-priority ready task (todo, no unfinished blocker), or none when the \
-             backlog has nothing ready. Priorities order urgent, high, medium, low, then none.",
+            "The highest-priority ready task, or none.",
             json!({ "type": "object", "properties": {}, "additionalProperties": false }),
         ),
         local_write(
             "task_create",
             "Create task",
-            "Create a task in this workspace. Title is required; the creation is attributed to \
-             this pane. Use `parent` for a child task and `acceptance` for its checks.",
+            "Create a task in your workspace, attributed to this pane.",
             json!({
                 "type": "object",
                 "properties": write_fields(),
@@ -202,15 +198,14 @@ fn all_specs() -> Vec<ToolSpec> {
         local_write(
             "task_update",
             "Update task",
-            "Update a task's fields. `expected_revision` is required and must be the revision \
-             task_get last showed; a stale value is refused with the expected and actual \
-             revisions named. `parent` may be null to clear the parent.",
+            "Update a task. `expected_revision` must be the one task_get showed; a stale one \
+             is refused.",
             update_schema(),
         ),
         local_write(
             "task_comment",
             "Comment on a task",
-            "Add a comment to a task, attributed to this pane.",
+            "Comment on a task as this pane.",
             json!({
                 "type": "object",
                 "properties": {
@@ -224,13 +219,13 @@ fn all_specs() -> Vec<ToolSpec> {
         local_write(
             "task_check",
             "Check an acceptance item",
-            "Tick or untick one acceptance item of a task, by the item id task_get returns.",
+            "Tick or untick an acceptance item by its task_get item id.",
             json!({
                 "type": "object",
                 "properties": {
                     "id": id_property(),
                     "item": { "type": "integer" },
-                    "checked": { "type": "boolean", "description": "Defaults to true." },
+                    "checked": { "type": "boolean", "description": "Default true." },
                 },
                 "required": ["id", "item"],
                 "additionalProperties": false,
@@ -239,15 +234,15 @@ fn all_specs() -> Vec<ToolSpec> {
         local_write(
             "task_claim",
             "Claim task",
-            "Take a task: backlog or todo moves to in_progress and the claim is recorded in \
-             history with this pane's session. Claiming a task already in progress is a no-op.",
+            "Take a task: backlog or todo moves to in_progress under this pane; an unassigned \
+             task joins your workspace.",
             id_schema(),
         ),
         local_write(
             "task_handback",
             "Hand a task back",
-            "Hand a task back when the work is done: the summary becomes a comment and the \
-             task moves to in_review. It never marks a task done.",
+            "Return finished work: the summary becomes a comment and the task moves to \
+             in_review, never done.",
             json!({
                 "type": "object",
                 "properties": {
@@ -261,15 +256,9 @@ fn all_specs() -> Vec<ToolSpec> {
         ToolSpec {
             name: "task_execute".into(),
             title: "Start a task as your child".into(),
-            description: "Start a task as a child of your pane: the task's worktree and branch, a \
-                 delegation, and the task brief; the task moves to in_progress. Offered only \
-                 while you may spawn children (the same rule as pane_spawn), and the child \
-                 counts against orchestration_max_live_children. The child ends its \
-                 pane_submit with a `task_result` JSON line and Houston settles the run from \
-                 it: acceptance items ticked by name, the summary as a comment, the task to \
-                 in_review. With `reviewer`, or the workspace's default, an independent \
-                 read-only reviewer is opened on the same branch once the child settles. If \
-                 the task already has a live implementation run it is refused as busy."
+            description: "Start a task as your child in its own worktree and branch; it counts \
+                 against your live-child cap. The child's `task_result` line settles the run. \
+                 `reviewer` (or the workspace default) opens a read-only reviewer afterwards."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -278,12 +267,12 @@ fn all_specs() -> Vec<ToolSpec> {
                     "agent": {
                         "type": "string",
                         "enum": SPAWNABLE_AGENTS,
-                        "description": "Which agent CLI runs the task.",
+                        "description": "Agent CLI.",
                     },
                     "reviewer": {
                         "type": "string",
                         "enum": SPAWNABLE_AGENTS,
-                        "description": "Optional reviewer CLI; omitted uses the workspace's Settings ▸ Tasks default (none unless set).",
+                        "description": "Reviewer CLI; default from Settings ▸ Tasks.",
                     },
                 },
                 "required": ["id", "agent"],
@@ -294,15 +283,9 @@ fn all_specs() -> Vec<ToolSpec> {
         ToolSpec {
             name: "task_review".into(),
             title: "Review a task's implementation".into(),
-            description: "Open an independent read-only reviewer child for the task's newest \
-                 implementation run: the task text, acceptance list, branch, diff range and \
-                 the implementation summary reach the reviewer as labelled untrusted data; it \
-                 ends its pane_submit with a `task_review` JSON line. A pass leaves a verdict \
-                 comment and the task in review for the user; a fail leaves the findings as a \
-                 comment and marks the run needs_review. Offered only while you may spawn \
-                 children; the reviewer counts against orchestration_max_live_children. It \
-                 reviews in the implementer's worktree once that run settled, or a detached \
-                 tree of the same branch while it is still running."
+            description: "Open a read-only reviewer child on the newest implementation run's \
+                 branch; it counts against your live-child cap. Pass comments; fail records \
+                 findings and marks the run needs_review."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -311,7 +294,7 @@ fn all_specs() -> Vec<ToolSpec> {
                     "agent": {
                         "type": "string",
                         "enum": SPAWNABLE_AGENTS,
-                        "description": "Which agent CLI runs the review.",
+                        "description": "Agent CLI.",
                     },
                 },
                 "required": ["id", "agent"],
