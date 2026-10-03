@@ -16814,12 +16814,31 @@ impl Daemon {
     pub async fn delegation_watch_loop(self: Arc<Self>) {
         let period = Duration::from_millis(orchestrate::DELEGATION_WATCH_POLL_MS);
         loop {
-            if !self.delegation_watch_armed() {
+            let delay = if self.delegation_watch_armed() {
+                Some(period)
+            } else {
+                match self.db.delegations_next_deadline() {
+                    Ok(Some(deadline)) => {
+                        let remaining = deadline.saturating_sub(now_ms());
+                        Some(if remaining == 0 {
+                            period
+                        } else {
+                            Duration::from_millis(remaining)
+                        })
+                    }
+                    Ok(None) => None,
+                    Err(err) => {
+                        tracing::warn!("listing delegation cleanup deadline: {err}");
+                        Some(period)
+                    }
+                }
+            };
+            let Some(delay) = delay else {
                 self.delegation_wake.notified().await;
                 continue;
-            }
+            };
             tokio::select! {
-                _ = tokio::time::sleep(period) => {},
+                _ = tokio::time::sleep(delay) => {},
                 _ = self.delegation_wake.notified() => {},
             }
             self.idle_tick_counts[1].fetch_add(1, Ordering::Relaxed);
@@ -16849,12 +16868,16 @@ impl Daemon {
                 .delegations_no_handback()
                 .map(|rows| !rows.is_empty())
                 .unwrap_or(true)
-            || self.db.delegations_cleanup_pending().unwrap_or(true)
-            || self
-                .db
-                .delegations_retained()
-                .map(|r| !r.is_empty())
-                .unwrap_or(true)
+    }
+
+    #[doc(hidden)]
+    pub fn retain_delegation_for_test(&self, child: u32, until: u64) -> Result<()> {
+        let now = now_ms();
+        self.db
+            .delegation_create(0, child, None, "retained child fixture", now)?;
+        self.db.delegation_finish(child, "done", None, now)?;
+        self.db.delegation_retain(child, now, until)?;
+        Ok(())
     }
 
     pub fn delegation_watch_tick(self: &Arc<Self>) {
