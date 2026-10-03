@@ -2497,6 +2497,7 @@ dependencies = [
  "javascriptcore-rs",
  "libc",
  "libloading 0.7.4",
+ "percent-encoding",
  "png 0.17.16",
  "regex",
  "reqwest",

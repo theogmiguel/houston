@@ -48,7 +48,7 @@ export function TaskRow({
       <TaskStatusGlyph status={task.status} />
       <span className="tk-key">{task.key}</span>
       <span className="tk-title">{task.title}</span>
-      {showWorkspace && <Tooltip label={task.workspace ?? 'No workspace'} className="inline-flex min-w-0"><span className="chip-branch max-w-[140px]" data-testid="task-workspace-chip"><span className="truncate">{task.workspace?.replace(/\/+$/, '').split('/').pop() || 'No workspace'}</span></span></Tooltip>}
+      {showWorkspace && <Tooltip label={task.workspace ?? 'No workspace'} className="inline-flex min-w-0"><span className="chip-branch max-w-[140px]" data-testid="task-workspace-chip"><span className="truncate">{task.workspace?.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'No workspace'}</span></span></Tooltip>}
       {task.open_run ? (
         <TaskRunMark run={task.open_run} />
       ) : (

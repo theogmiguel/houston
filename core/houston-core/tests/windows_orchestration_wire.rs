@@ -16,7 +16,7 @@ fn fixture() -> &'static Path {
         let root = tempfile::tempdir().unwrap();
         let home = root.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
-        let script = "$ErrorActionPreference='Stop'\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
+        let script = "$ErrorActionPreference='Stop'\nif(-not $env:HOUSTON_SESSION){exit 0}\n@{cwd=(Get-Location).Path;session=[int]$env:HOUSTON_SESSION;task=$env:HOUSTON_TASK} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:HOUSTON_WINDOWS_FIXTURE ('pane-'+$env:HOUSTON_SESSION+'.json'))\nWrite-Output 'FIXTURE-READY'\nwhile($true){$line=[Console]::In.ReadLine();if($null -eq $line){Start-Sleep -Milliseconds 50}else{Write-Output $line}}\n";
         std::fs::write(root.path().join("fixture.ps1"), script).unwrap();
         for provider in ["claude", "codex", "agy", "opencode", "cursor-agent", "grok"] {
             std::fs::write(root.path().join(format!("{provider}.cmd")), "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fixture.ps1\" %*\r\n").unwrap();
@@ -25,6 +25,8 @@ fn fixture() -> &'static Path {
         std::env::set_var("PATH", format!("{};{path}", root.path().display()));
         std::env::set_var("HOME", &home);
         std::env::set_var("USERPROFILE", &home);
+        std::env::set_var("CODEX_HOME", home.join(".codex"));
+        std::env::set_var("CLAUDE_CONFIG_DIR", home.join(".claude"));
         std::env::set_var("HOUSTON_WINDOWS_FIXTURE", root.path());
         root
     }).path()
@@ -67,6 +69,7 @@ impl Rig {
     async fn new() -> Self {
         fixture();
         let state = tempfile::tempdir().unwrap();
+        std::env::set_var("HOUSTON_WINDOWS_FIXTURE", state.path());
         let repo = state.path().join("projeto com acentuação");
         std::fs::create_dir_all(&repo).unwrap();
         git(&repo, &["init", "-b", "main"]);
@@ -144,7 +147,7 @@ impl Rig {
     }
 
     async fn child_cwd(&self, session: u32) -> PathBuf {
-        let receipt = fixture().join(format!("pane-{session}.json"));
+        let receipt = self._state.path().join(format!("pane-{session}.json"));
         let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
         loop {
             if let Ok(contents) = std::fs::read_to_string(&receipt) {
@@ -160,11 +163,219 @@ impl Rig {
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
-                "child {session} did not publish its ConPTY cwd"
+                "child {session} did not publish its ConPTY cwd: receipt={:?}, output={:?}",
+                std::fs::read_to_string(&receipt),
+                self.daemon
+                    .scrollback(session, None)
+                    .map(|replay| String::from_utf8_lossy(&replay.data).into_owned())
             );
             tokio::time::sleep(Duration::from_millis(30)).await;
         }
     }
+
+    fn task(&self, title: &str) -> i64 {
+        let reply = self
+            .daemon
+            .task_save(
+                self.repo.to_str().unwrap(),
+                None,
+                None,
+                proto::TaskPatch {
+                    title: Some(title.into()),
+                    status: Some(proto::TaskStatus::Todo),
+                    acceptance: Some(vec!["Windows check passes".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let proto::ServerMsg::TaskChanged { id, .. } = reply else {
+            panic!("expected TaskChanged, got {reply:?}");
+        };
+        id
+    }
+}
+
+#[tokio::test]
+async fn tasks_start_stop_and_resume_in_the_same_windows_worktree_for_each_provider() {
+    let _guard = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    for agent in [
+        proto::AgentKind::Claude,
+        proto::AgentKind::Codex,
+        proto::AgentKind::Antigravity,
+        proto::AgentKind::Opencode,
+        proto::AgentKind::Cursor,
+        proto::AgentKind::Grok,
+    ] {
+        let id = rig.task(&format!("Verify {agent:?}"));
+        let reply = rig.daemon.task_start(id, agent, None).unwrap();
+        assert!(
+            matches!(reply, proto::ServerMsg::TaskChanged { .. }),
+            "{reply:?}"
+        );
+        let first = rig.daemon.task_latest_run(id).unwrap().unwrap();
+        assert_eq!(first.state, proto::TaskRunState::Running);
+        assert_eq!(first.provider, agent);
+        assert_eq!(first.attempt, 1);
+        let session = first.session_id.unwrap();
+        let cwd = rig.child_cwd(session).await;
+        assert_eq!(
+            cwd,
+            Path::new(first.worktree_path.as_ref().unwrap())
+                .canonicalize()
+                .unwrap()
+        );
+        let receipt: Value = serde_json::from_str(
+            std::fs::read_to_string(rig._state.path().join(format!("pane-{session}.json")))
+                .unwrap()
+                .trim_start_matches('\u{feff}'),
+        )
+        .unwrap();
+        assert_eq!(
+            receipt["task"],
+            rig.daemon.task_key_of(id).unwrap().unwrap()
+        );
+        let reply = rig
+            .daemon
+            .task_run_control(first.id, proto::TaskRunAction::Stop)
+            .unwrap();
+        assert!(
+            matches!(reply, proto::ServerMsg::TaskChanged { .. }),
+            "{reply:?}"
+        );
+        assert_eq!(
+            rig.daemon.task_latest_run(id).unwrap().unwrap().state,
+            proto::TaskRunState::Cancelled
+        );
+        let reply = rig
+            .daemon
+            .task_run_control(first.id, proto::TaskRunAction::Resume)
+            .unwrap();
+        assert!(
+            matches!(reply, proto::ServerMsg::TaskChanged { .. }),
+            "{reply:?}"
+        );
+        let resumed = rig.daemon.task_latest_run(id).unwrap().unwrap();
+        assert_eq!(resumed.attempt, 2);
+        assert_eq!(resumed.branch, first.branch);
+        assert_eq!(resumed.worktree_path, first.worktree_path);
+        assert_eq!(rig.child_cwd(resumed.session_id.unwrap()).await, cwd);
+        rig.daemon
+            .task_run_control(resumed.id, proto::TaskRunAction::Stop)
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn windows_task_queue_result_and_independent_review_complete_a_task() {
+    let _guard = SERIAL.lock().await;
+    let rig = Rig::new().await;
+    let parent = rig.parent();
+    let workspace = rig.repo.to_str().unwrap();
+    rig.daemon
+        .tasks_access_set(workspace, proto::TasksAccess::Write)
+        .unwrap();
+    let id = rig.task("Execute and review");
+    let reply = rig
+        .daemon
+        .task_queue_run(parent.id, 1, Some(proto::AgentKind::Codex))
+        .unwrap();
+    let proto::ServerMsg::TaskQueueResult {
+        started, refused, ..
+    } = reply
+    else {
+        panic!("expected TaskQueueResult, got {reply:?}");
+    };
+    assert_eq!(started, vec!["HOU-1"]);
+    assert!(refused.is_empty(), "{refused:?}");
+    let implementation = rig.daemon.task_latest_run(id).unwrap().unwrap();
+    let child = implementation.session_id.unwrap();
+    rig.child_cwd(child).await;
+    rig.daemon
+        .orchestrate_submit(
+            child,
+            json!({"task_result":{"status":"complete","summary":"Windows implementation verified",
+            "checks":[{"name":"Windows check passes","passed":true,"evidence":"fixture"}]}})
+            .to_string()
+            .into(),
+        )
+        .unwrap();
+    rig.daemon.session_kill_checked(child, false).unwrap();
+    let proto::ServerMsg::TaskDetail {
+        task, acceptance, ..
+    } = rig.daemon.task_get(id).unwrap()
+    else {
+        panic!("expected TaskDetail");
+    };
+    assert_eq!(task.status, proto::TaskStatus::InReview);
+    assert!(acceptance[0].checked_at_ms.is_some());
+    let reply = rig
+        .daemon
+        .task_review(
+            workspace,
+            id,
+            parent.id,
+            proto::AgentKind::Grok,
+            "task_review",
+        )
+        .unwrap();
+    assert!(
+        matches!(reply, proto::ServerMsg::TaskChanged { .. }),
+        "{reply:?}"
+    );
+    let review = rig.daemon.task_latest_review_run(id).unwrap().unwrap();
+    let reviewer = review.session_id.unwrap();
+    assert_ne!(reviewer, child);
+    rig.child_cwd(reviewer).await;
+    rig.daemon
+        .orchestrate_submit(
+            reviewer,
+            json!({"task_review":{"verdict":"pass","findings":[],
+            "checks":[{"name":"Windows check passes","passed":true,"evidence":"fixture"}]}})
+            .to_string()
+            .into(),
+        )
+        .unwrap();
+    let proto::ServerMsg::TaskDetail {
+        task,
+        comments,
+        runs,
+        ..
+    } = rig.daemon.task_get(id).unwrap()
+    else {
+        panic!("expected TaskDetail");
+    };
+    assert_eq!(task.status, proto::TaskStatus::InReview);
+    assert_eq!(runs.len(), 2);
+    assert!(runs
+        .iter()
+        .all(|run| run.state == proto::TaskRunState::HandedBack));
+    assert!(comments
+        .iter()
+        .any(|comment| comment.body.contains("Windows implementation verified")));
+    assert!(comments
+        .iter()
+        .any(|comment| comment.body.contains("Review verdict: pass")));
+    let reply = rig
+        .daemon
+        .task_save(
+            workspace,
+            Some(id),
+            Some(task.revision),
+            proto::TaskPatch {
+                status: Some(proto::TaskStatus::Done),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(reply, proto::ServerMsg::TaskChanged { .. }),
+        "{reply:?}"
+    );
+    let proto::ServerMsg::TaskDetail { task, .. } = rig.daemon.task_get(id).unwrap() else {
+        panic!("expected TaskDetail");
+    };
+    assert_eq!(task.status, proto::TaskStatus::Done);
 }
 
 #[tokio::test]
