@@ -43,6 +43,32 @@ pub fn resolve(dir: &Path) -> ForgeResolution {
     }
 }
 
+/// A remote's host without its userinfo or port, which a refusal may show: a
+/// remote URL can embed a token. `None` for a local path or `file://`.
+pub fn remote_host(url: &str) -> Option<String> {
+    let url = url.trim();
+    let authority = match url.split_once("://") {
+        Some((scheme, _)) if scheme.eq_ignore_ascii_case("file") => return None,
+        Some((_, rest)) => rest.split('/').next().unwrap_or(rest),
+        None => {
+            let (authority, _) = url.split_once(':')?;
+            // `C:\repo` and `./a:b` are paths, not hosts.
+            if authority.len() < 2 || authority.contains(['/', '\\']) {
+                return None;
+            }
+            authority
+        }
+    };
+    let host_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let host = match host_port.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(v6),
+        None => host_port.split(':').next().unwrap_or(host_port),
+    };
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+}
+
 /// Why `dir` has no pull request reader, in the words the tab has always shown.
 fn refusal(dir: &Path, resolution: &ForgeResolution) -> String {
     let host = match resolution {

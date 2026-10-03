@@ -169,3 +169,37 @@ fn a_linked_pull_request_is_kept_when_a_different_one_is_unlinked() {
     ));
     assert!(linked.is_none());
 }
+
+#[test]
+fn a_remote_urls_credentials_never_reach_an_unsupported_host_refusal() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    run_git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://x-token-auth:SECRET@git.example.com/a/b.git",
+        ],
+    );
+    let err = pull_requests::ensure_supported(repo.path())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("git.example.com"),
+        "the refusal names the host: {err}"
+    );
+    assert!(
+        !err.contains("SECRET"),
+        "the refusal leaked the remote's credentials: {err}"
+    );
+    assert!(
+        !err.contains("x-token-auth"),
+        "the refusal leaked the remote's user: {err}"
+    );
+    assert_eq!(
+        pull_requests::classify_remote("https://x-token-auth:SECRET@git.example.com/a/b.git"),
+        Host::Unknown("git.example.com".to_string())
+    );
+}

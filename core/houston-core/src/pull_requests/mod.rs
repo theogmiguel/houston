@@ -40,6 +40,8 @@ impl Host {
     }
 }
 
+/// An unknown host is named without the remote's userinfo: a remote URL can
+/// embed a token, and this name reaches refusals on screen.
 pub fn classify_remote(url: &str) -> Host {
     let lower = url.to_lowercase();
     if lower.contains("github.com") {
@@ -51,7 +53,9 @@ pub fn classify_remote(url: &str) -> Host {
     } else if lower.contains("dev.azure.com") || lower.contains("visualstudio.com") {
         Host::AzureDevOps
     } else {
-        Host::Unknown(url.to_string())
+        Host::Unknown(
+            crate::forge::remote_host(url).unwrap_or_else(|| "a local path".to_string()),
+        )
     }
 }
 
