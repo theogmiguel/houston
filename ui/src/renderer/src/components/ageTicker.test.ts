@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { act, renderHook } from '@testing-library/react'
+import { act, render, renderHook } from '@testing-library/react'
+import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useAgeNow } from './ageTicker'
+import { AgeLabel, useAgeNow } from './ageTicker'
 
 describe('age ticker', () => {
   afterEach(() => vi.useRealTimers())
@@ -28,5 +29,17 @@ describe('age ticker', () => {
     const settled = renderHook(() => useAgeNow(false))
     expect(vi.getTimerCount()).toBe(0)
     settled.unmount()
+  })
+
+  it('shows the current age when the first subscriber restarts the ticker', () => {
+    vi.useFakeTimers()
+    const start = Date.now()
+    act(() => vi.advanceTimersByTime(10_000))
+
+    const age = render(createElement(AgeLabel, { start, ticking: true }))
+
+    expect(age.container.textContent).toBe('10s')
+    age.unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

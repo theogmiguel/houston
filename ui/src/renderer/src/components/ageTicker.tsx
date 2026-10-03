@@ -7,6 +7,8 @@ let timer: ReturnType<typeof setInterval> | undefined
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
   if (listeners.size === 1) {
+    now = Date.now()
+    for (const notify of listeners) notify()
     timer = setInterval(() => {
       now = Date.now()
       for (const notify of listeners) notify()
