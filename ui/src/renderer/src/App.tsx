@@ -307,6 +307,7 @@ import {
   type WindowButtonLayout,
 } from "./windowButtonLayout";
 import { stackCapacity } from "./paneCaps";
+import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/Icon";
 
 // lazy() keeps Settings (and everything below) out of the boot chunk
@@ -995,6 +996,7 @@ export function App(): React.JSX.Element {
   sessionsRef.current = sessions;
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
+  const savedLayoutsRef = useRef(layouts);
   const workspacesRef = useRef(workspaces);
   workspacesRef.current = workspaces;
   const voiceSettingsRef = useRef(voiceSettings);
@@ -1810,7 +1812,8 @@ export function App(): React.JSX.Element {
   }, [scmOpen]);
 
   useEffect(() => {
-    for (const [key, st] of layouts) saveLayout(key, st);
+    for (const [key, st] of changedEntries(savedLayoutsRef.current, layouts)) saveLayout(key, st);
+    savedLayoutsRef.current = layouts;
   }, [layouts]);
 
   const mutateTree = useCallback((fn: (t: LayoutNode) => LayoutNode | null) => {
