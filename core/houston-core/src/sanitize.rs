@@ -6,6 +6,7 @@ pub const PATTERN_NAMES: &[&str] = &[
     "private_key",
     "aws_key",
     "github_token",
+    "slack_token",
     "jwt",
     "uuid",
     "high_entropy",
@@ -29,6 +30,15 @@ fn aws_key_re() -> &'static Regex {
 fn github_token_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b").unwrap())
+}
+
+/// Bot, user, refresh and app-level tokens (`xoxb-`, `xoxp-`, `xoxe.xoxp-`,
+/// `xapp-`, ...); none of them has a fixed length.
+fn slack_token_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"\b(?:xox[abeoprs](?:\.xox[abeoprs])?|xapp)-[A-Za-z0-9-]{10,}").unwrap()
+    })
 }
 
 fn jwt_re() -> &'static Regex {
@@ -75,6 +85,7 @@ pub fn redact_secrets(input: &str) -> (String, bool) {
             (private_key_re(), "private_key"),
             (aws_key_re(), "aws_key"),
             (github_token_re(), "github_token"),
+            (slack_token_re(), "slack_token"),
             (jwt_re(), "jwt"),
             (uuid_re(), "uuid"),
         ],
@@ -111,6 +122,7 @@ pub fn redact_command_secrets(input: &str) -> (String, bool) {
         (private_key_re(), "private_key"),
         (aws_key_re(), "aws_key"),
         (github_token_re(), "github_token"),
+        (slack_token_re(), "slack_token"),
         (jwt_re(), "jwt"),
     ] {
         redacted |= apply_pattern(&mut text, re, &format!("[redacted:{name}]"));
@@ -294,6 +306,28 @@ mod tests {
         assert!(hit);
         assert!(out.contains("[redacted:github_token]"));
         assert!(!out.contains("ghp_a1B2"));
+    }
+
+    #[test]
+    fn redacts_slack_bot_and_app_tokens() {
+        let bot = "xoxb-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx";
+        let app = "xapp-1-A0123456789-1234567890123-0123456789abcdef0123456789abcdef";
+        let rotated = "xoxe.xoxp-1-Mi0yLTEyMzQ1Njc4OTAx";
+        for secret in [bot, app, rotated] {
+            let (out, hit) = redact_secrets(&format!("connect with {secret} now"));
+            assert!(hit, "{secret}");
+            assert_eq!(out, "connect with [redacted:slack_token] now");
+            let (out, hit) = redact_command_secrets(&format!("curl -d t={secret}"));
+            assert!(hit, "{secret}");
+            assert!(!out.contains(secret), "{out}");
+        }
+    }
+
+    #[test]
+    fn leaves_slack_like_words_untouched() {
+        let (out, hit) = redact_secrets("the xoxo-gossip and xapp-ish names");
+        assert!(!hit);
+        assert_eq!(out, "the xoxo-gossip and xapp-ish names");
     }
 
     #[test]
