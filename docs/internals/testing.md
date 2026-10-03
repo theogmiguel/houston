@@ -85,7 +85,11 @@ collaborator's contract, not just against its own assertions.
 Windows CI runs core unit tests and selected integration suites. The
 `windows_orchestration_wire` suite uses isolated provider fixtures with ConPTY to check
 worktree spawns through HTTP and MCP, recorded checkout identity and rollback after
-provider preparation fails. The broader orchestration and chaos suites remain Unix-only.
+provider preparation fails. It also checks Tasks start/stop/resume across all six
+providers, queue execution, structured results and independent review. Each rig keeps
+its launch receipts in its own state directory so recycled session IDs cannot mix
+receipts across tests. `tasks_wire` covers the portable backlog protocol on Windows.
+The broader orchestration and chaos suites remain Unix-only.
 
 Run the full core suite under both Git Bash and `pwsh` before landing a change that touches
 the shell/home ladders. `$SHELL` and `$HOME` feed production ladders in `daemon.rs`, `home_dir.rs` and
