@@ -91,7 +91,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
         }
         indent
       >
-        <div className="flex flex-wrap items-center gap-2" data-testid="slack-token-row">
+        <div className="flex flex-col items-end gap-2" data-testid="slack-token-row">
           <input
             type="password"
             className={`${FIELD} font-mono`}
@@ -114,6 +114,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
             value={botToken}
             onChange={(e) => setBotToken(e.target.value)}
           />
+          <div className="flex items-center gap-2">
           <button
             type="button"
             className={`btn ${BTN_GHOST}`}
@@ -135,6 +136,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
           >
             Disconnect
           </button>
+          </div>
         </div>
       </Row>
       <Row
