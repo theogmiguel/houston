@@ -55,6 +55,9 @@ Use the [glossary](docs/internals/glossary.md) consistently:
 3. **One daemon per state directory.** Preserve the advisory `daemon.lock`: competing
    daemons would overwrite discovery state and share a database. Restart development
    through `scripts/dev.sh --fresh`, which refuses to restart its own hosting channel.
+4. **Never touch the host keyring.** Do not run `gnome-keyring-daemon` (least of all
+   `--unlock`) on the host: it re-encrypts the user's real login keyring and locks them
+   out. Tests that need a Secret Service run through `scripts/with-test-keyring.sh`.
 
 ## Cross-surface checklist
 
