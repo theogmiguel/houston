@@ -3340,6 +3340,34 @@ pub enum GhState {
     Ready,
 }
 
+/// Which forge serves a workspace's pull requests, and whether it can be read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "forge", rename_all = "snake_case")]
+pub enum ForgeAccess {
+    Github {
+        gh: GhState,
+    },
+    Bitbucket {
+        state: BitbucketAccess,
+    },
+    /// A remote on a host without a reader; `host` never carries userinfo.
+    Unsupported {
+        host: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum BitbucketAccess {
+    /// The user has not enabled the reader; nothing is sent.
+    Off,
+    NoToken,
+    KeychainUnavailable,
+    Ready,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -3630,6 +3658,10 @@ pub struct PrDetail {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub github_merge: Option<PrGitHubMerge>,
+    /// Why Houston offers no write here, when the forge is read-only.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub read_only: Option<String>,
 }
 
 /// GitHub's own merge tools as one access read saw them. A field GitHub did not
@@ -5423,6 +5455,16 @@ pub enum ClientMsg {
     VoiceKeyClear {
         provider: CloudStt,
     },
+    ForgeSettingsGet,
+    BitbucketEnabledSet {
+        enabled: bool,
+    },
+    /// The token is written to the keychain and never sent back.
+    BitbucketTokenSet {
+        email: String,
+        token: String,
+    },
+    BitbucketTokenClear,
     VoiceDevicesGet,
     VoiceStart {
         session: u32,
@@ -5923,7 +5965,7 @@ pub enum ServerMsg {
         /// Echoes the request; a detail pushed after link/unlink/merge carries
         /// that mutation's id, so a client can drop anything it has superseded.
         request: u32,
-        gh: GhState,
+        access: ForgeAccess,
         has_upstream: bool,
         /// The pull request on screen: the manually linked one when one exists,
         /// else the branch's own. `None` when nothing resolves.
@@ -6496,6 +6538,12 @@ pub enum ServerMsg {
         keyring_error: Option<String>,
         models: Vec<VoiceModelState>,
     },
+    ForgeSettings {
+        bitbucket_enabled: bool,
+        /// The e-mail the stored token belongs to; `None` when none is stored.
+        bitbucket_account: Option<String>,
+        keyring_error: Option<String>,
+    },
     VoiceDevices {
         devices: Vec<VoiceDevice>,
     },
@@ -6934,6 +6982,13 @@ pub const MERGE_QUEUE_TIME_LIMIT_MIN_MINUTES: u32 = 1;
 pub const MERGE_QUEUE_TIME_LIMIT_MAX_MINUTES: u32 = 240;
 /// A command is one line a person types, not a script.
 pub const MERGE_QUEUE_COMMAND_MAX_BYTES: u32 = 1024;
+
+/// RFC 5321's limit on an address; the Atlassian account e-mail is one.
+pub const BITBUCKET_EMAIL_LEN_MAX: u32 = 254;
+
+/// Far above an Atlassian API token's length, low enough to refuse a paste of
+/// something else.
+pub const BITBUCKET_TOKEN_LEN_MAX: u32 = 1024;
 
 pub const ORCHESTRATION_CAP_MAX: u32 = 16;
 
@@ -7463,11 +7518,12 @@ mod tests {
             merge_methods: Vec::new(),
             cross_repository: false,
             github_merge: None,
+            read_only: None,
         };
         let msg = ServerMsg::PrDetail {
             dir: "/work/project".into(),
             request: 4,
-            gh: GhState::Ready,
+            access: ForgeAccess::Github { gh: GhState::Ready },
             has_upstream: true,
             link: Some(link),
             detail: Some(detail),
@@ -7478,6 +7534,10 @@ mod tests {
         let value = serde_json::to_value(&msg).unwrap();
         assert_eq!(value["type"], serde_json::json!("pr_detail"));
         assert_eq!(value["request"], serde_json::json!(4));
+        assert_eq!(
+            value["access"],
+            serde_json::json!({"forge": "github", "gh": "ready"})
+        );
         assert_eq!(value["link"]["number"], serde_json::json!(61));
         assert_eq!(value["linked"], serde_json::json!(false));
         assert_eq!(

@@ -113,6 +113,7 @@ pub fn detail_from_json(
             .and_then(|b| b.as_bool())
             .unwrap_or(false),
         github_merge: None,
+        read_only: None,
     };
     Some((link, detail))
 }

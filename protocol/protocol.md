@@ -220,10 +220,10 @@ stores.
 | `git_checkpoint_create` | `dir`, `label` (suffixed `-2`… on collision) | fresh `git_checkpoints` |
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
-| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh`. After a daemon restart the first reply for a directory may be the previous daemon's stored answer, followed by a second `pr_status` with `gh`'s fresh answer |
+| `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh`. After a daemon restart the first reply for a directory may be the previous daemon's stored answer, followed by a second `pr_status` with `gh`'s fresh answer. For a remote on a forge known not to be GitHub (Bitbucket, GitLab, Azure DevOps), `gh` is not run: the reply is `gh: missing` with a `hint` naming the forge. Any other host, including GitHub Enterprise Server and SSH host aliases, is left to `gh` |
 | `pr_status_batch` | `dirs: string[]` | one `pr_status` reply per directory, each preserving the single-directory reply shape, plus a second reply for each directory first answered from the stored file |
-| `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract |
-| `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — a `gh` problem is `gh` + `hint`, a failed read is `message` |
+| `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract; a remote on a forge known not to be GitHub is refused in `message` by forge and operation |
+| `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — the forge is resolved from the remote first; a forge that cannot read is `access` + `hint`, a failed read is `message`. A Bitbucket Cloud read contacts `api.bitbucket.org` only when `access` is `bitbucket{ready}` |
 | `pr_link` | `dir`, `number` (positive), `request` | `pr_linked` then a fresh `pr_detail` carrying the same `request`; `number: 0` is refused by name |
 | `pr_unlink` | `dir`, `request` | `pr_unlinked` then a fresh `pr_detail` carrying the same `request`; the reply names the number that was removed |
 | `pr_merge` | `dir`, `number`, `method: PrMergeMethod`, `expected_head_sha`, `request` | `pr_merged` then a fresh `pr_detail` on success. The daemon re-reads the pull request, refuses a moved head, re-runs the merge gate, and calls `gh pr merge --match-head-commit`; never `--admin`, `--auto` or branch deletion |
@@ -255,6 +255,8 @@ stores.
 | `merge_queue_revert` | `dir`, `number`, `request` | `merge_queue_reply` naming the revert pull request GitHub opened for that queue merge; a number with no merge row in the log is refused by name. Nothing is pushed to the base |
 | `merge_queue_acknowledge` | `dir` | a `merge_queue` bcast whose `away` is empty: the user saw the unattended merges and parks |
 | `merge_queue_summary_get` | — | `merge_queue_summary` (direct); the renderer sends it to every environment |
+
+Every pull-request write (`pr_merge`, `pr_action`, `pr_edit`, `pr_comment`, `pr_comment_edit`, `pr_review`, `pr_thread_*`, `pr_reaction`, `pr_reviewer_set`, `pr_label_set`, `pr_stack_merge`) and every GitHub-only read (`pr_reviewers`, `pr_labels`, `pr_list`, `pr_diff`, `pr_stack`) is refused before any network call when the remote is on a forge known not to be GitHub (Bitbucket, GitLab, Azure DevOps); the refusal names the forge and the operation. Any other host is left to `gh`.
 
 ### History
 
@@ -438,6 +440,17 @@ every refusal names the setting.
 | `remote_grids_publish` | `grids: RemoteGrid[]` (`{workspace, id, name, sessions: u32[]}`, sessions in the grid's reading order) | none. The renderer sends its saved grids on connect and after a layout save; the daemon keeps them in memory for paired devices and announces a change with the `grids` event. More than `REMOTE_GRIDS_MAX` (256) grids, more than `REMOTE_GRID_SESSIONS_MAX` (64) panes in a grid, a name over `REMOTE_GRID_NAME_MAX` (120) characters or an empty id is an `error` with `context: "remote"` naming the limit and the value, and stores nothing |
 | `desktop_presence` | `active: bool` | none. The renderer sends `true` while someone uses its window or focuses its docked browser (at most every 30 s) and `false` on hiding or on a blur that does not move focus into that browser. Phone notifications that come due wait until `DESKTOP_AWAY_SECS` (180) after the last `true` from any connection; `false` from the connection holding them, or closing it, sends them at once. The daemon applies reports on the connection task, in socket order and outside control admission. A daemon with no report never holds a notification |
 
+### Forge
+
+| Message | Fields | Reply |
+|---|---|---|
+| `forge_settings_get` | — | `forge_settings` (direct) |
+| `bitbucket_enabled_set` | `enabled` | `forge_settings` (bcast). Off by default; while off, no Bitbucket request is made |
+| `bitbucket_token_set` | `email` (1–`BITBUCKET_EMAIL_LEN_MAX` bytes), `token` (1–`BITBUCKET_TOKEN_LEN_MAX` bytes) | `forge_settings` (bcast). Written to the daemon's keychain entry and **read back** before success; an empty or oversized value is an `error` naming the limit and the length. The token is never echoed by any reply |
+| `bitbucket_token_clear` | — | `forge_settings` (bcast) |
+
+A refused `bitbucket_enabled_set`, `bitbucket_token_set` or `bitbucket_token_clear` replies with `error.context = "forge_settings"` and broadcasts nothing.
+
 ### Host and usage
 
 | Message | Fields | Reply |
@@ -531,7 +544,7 @@ every refusal names the setting.
 | `pr_status` | `dir`, `gh: GhState`, `has_upstream`, `pr?: PrInfo`, `hint?` | direct reply — a `gh` problem is reported in `gh` + `hint`, never as `error` |
 | `pr_check_log` | `dir`, `run_id`, `lines: string[]`, `truncated`, `available` | direct reply; bounded to 40 lines and 16 KiB; `available: false` when this check has no fetchable Actions log |
 | `pr_create` | `dir`, `gh: GhState`, `pr?: PrInfo`, `message?` | direct reply — `message` carries `gh`'s own first stderr line on a genuine failure |
-| `pr_detail` | `dir`, `request`, `gh: GhState`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate |
+| `pr_detail` | `dir`, `request`, `access: ForgeAccess`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate; `detail.read_only` names why no write is offered |
 | `pr_watch_list` | `watches: SessionPrWatches[]` | direct reply; contains the watches currently owned by each session |
 | `pr_watch_changed` | `session`, `watches: PrWatchInfo[]` | bcast after a session starts or stops a watch, a watch ends, or a read completes; `PrWatchInfo.last_checked_at_ms?` is the time of the last completed read, including failed reads |
 | `merge_queue` | `workspace`, `dir?`, `entries: MergeQueueEntry[]`, `log: MergeQueueLogEntry[]`, `settings?: MergeQueueSettings`, `global_paused`, `away: MergeQueueAway`, `message?` | direct reply to `merge_queue_get`, which alone carries `dir` and `message`; bcast after every enqueue, dequeue, settings change, pause, retry, verification start and outcome, push and queue merge, after a read changes an entry's answer, when an entry leaves because its pull request merged or closed outside the queue, and when a task run of the workspace changes. `entries` are in queue order: entries in line carry `position` from 1, and parked, fixing and held entries carry 0. Each carries one `status` (`ready`, `blocked`, `verifying` with `verifying_since_ms`, `waiting_for_slot`, `fixing`, `parked`, `paused`, `watching` with `github` while GitHub's merge queue or auto-merge holds the verified head), at most one `reason`, four gates (the fourth is `verification`, which may be `pending`), the `verification` that holds for its head, the `failure` that keeps it out of line, and the `worktree` Houston created on its branch. `log` holds the last day's pushes, merges, parks, restacks (with `fork_sha`), retargets and hand-offs, newest first, at most `MERGE_QUEUE_HISTORY_MAX`; `away` counts unattended merges and parks since the last `merge_queue_acknowledge`. `hand_off` is who merges in this workspace, cached from the pull request reads the queue already makes (never a read of its own): `houston`, GitHub's `merge_queue` where the base requires it, or `auto_merge` where the repository allows auto-merge and the base requires checks; a field GitHub hides from the viewer counts as `houston`. GitHub merging a held head runs the same after-merge steps as a queue merge; GitHub ejecting it, turning its auto-merge off or failing a check on it takes the failure path with GitHub's reason |
@@ -593,6 +606,7 @@ every refusal names the setting.
 | `task_queue_result` | `workspace`, `started: string[]` (task keys, picking order), `refused: TaskQueueRefusal[]` (a ready task that could not start, with the refusal message a direct Start would have given), `ready_count` (what the roster's queue button shows), `free_children` (the orchestrator's remaining slots) | direct reply to `task_queue_run`; the started tasks each broadcast their own `task_changed`/`task_run_changed` |
 | `tasks_access` | `workspace`, `access: TasksAccess` | direct reply to `tasks_access_get`; bcast after `tasks_access_set` |
 | `voice_settings` | `settings: VoiceSettings`, `cloud_key_present`, `keyring_error?`, `models: VoiceModelState[]` | direct reply to `voice_settings_get`; bcast after any settings or key change |
+| `forge_settings` | `bitbucket_enabled`, `bitbucket_account?` (the stored e-mail), `keyring_error?` | direct reply to `forge_settings_get`; bcast after any Bitbucket setting or token change |
 | `voice_devices` | `devices: VoiceDevice[]` | direct reply to `voice_devices_get` |
 | `voice_state` | `state: VoiceState` | bcast on every capture transition, including failures |
 | `voice_transcript` | `session`, `text` (the engine's transcript), `insert` (what to put in the prompt: the trimmed text plus one space, led by the agent preamble on the pane's first dictation when `output_mode` is `english` and `agent_preamble` is on; empty when there is nothing to insert), `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start`. The daemon tracks which panes already received the preamble, for the desktop and paired devices together, and forgets a pane when it is removed |
@@ -759,6 +773,9 @@ GitFileStatus      path, status: GitFileState, staged, added?, deleted?, is_sens
 GitReviewSection   scope (staged | unstaged | untracked), patch
 GitDiscardKind     staged | unstaged | untracked
 GhState            missing | unauthenticated | ready
+ForgeAccess        tag "forge": github{gh: GhState} | bitbucket{state: BitbucketAccess} | unsupported{host}
+                   — `host` is the remote's host without userinfo, or the forge's name
+BitbucketAccess    off | no_token | keychain_unavailable | ready
 PrChecks           none | running | passing | failing
 PrInfo             number, url, state, title, head_ref, additions, deletions, is_draft,
                    review_decision?, checks: PrChecks
@@ -780,6 +797,7 @@ PrDetail           body?, author?, base_ref?, head_ref?, head_sha, commit_count,
 PrGitHubMerge      merge_queue_required?, auto_merge_allowed?, required_checks?,
                    queue_entry?: {state, position?, head_sha?}, removal?: {reason, at_ms}
                    — `None` wherever GitHub did not show the viewer the field
+                   read_only? (set when Houston cannot write to this forge; no write control is offered)
 PrCheck            name, state (queued | running | passing | failing | skipped | unknown),
                    url?, duration_ms?, run_id?
 PrCheckLog         dir, run_id, lines, truncated, available

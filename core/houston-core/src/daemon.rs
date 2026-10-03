@@ -1550,6 +1550,7 @@ impl DelegationSettleSample {
 
 mod child_inputs;
 mod conflict_pass;
+mod forge_settings;
 mod harness_review;
 mod merge_queue;
 mod merge_queue_github;
@@ -1775,6 +1776,8 @@ pub struct Daemon {
     ssh_prompts: Mutex<HashMap<u32, oneshot::Sender<crate::ssh::HostKeyVerdict>>>,
     known_hosts: PathBuf,
     channel: Option<String>,
+    /// Where the Bitbucket reader sends its requests; only a test changes it.
+    bitbucket_api_base: Mutex<String>,
     started: Instant,
     swarm_mail: Mutex<HashMap<u64, SwarmMailScope>>,
     swarm_mail_wake: Arc<tokio::sync::Notify>,
@@ -3575,6 +3578,7 @@ impl Daemon {
             ssh_prompts: Mutex::new(HashMap::new()),
             known_hosts: state_dir.join("known_hosts"),
             channel: crate::paths::channel_of_state_dir(&state_dir),
+            bitbucket_api_base: Mutex::new(crate::pull_requests::bitbucket::API_BASE.to_string()),
             started: Instant::now(),
             swarm_mail: Mutex::new(HashMap::new()),
             swarm_mail_wake: Arc::clone(&swarm_mail_wake),
@@ -4502,6 +4506,16 @@ impl Daemon {
     pub fn pr_status(&self, dir: &Path) -> (crate::gh::PrStatus, bool) {
         if let Some(seed) = self.pr_status_store.take_seed(dir, now_ms()) {
             return (seed, true);
+        }
+        // `gh` cannot answer for a forge known not to be GitHub; nothing is run.
+        if let Some(hint) = crate::forge::status_hint(dir) {
+            let status = crate::gh::PrStatus {
+                gh: proto::GhState::Missing,
+                has_upstream: crate::git::sync(dir).upstream.is_some(),
+                pr: None,
+                hint: Some(hint),
+            };
+            return (status, false);
         }
         let status = crate::gh::pr_status_cached(dir);
         self.pr_status_store.record(dir, &status, now_ms());

@@ -623,7 +623,7 @@ pub fn unlink_pr(
     removed
 }
 
-fn now_unix() -> u64 {
+pub(crate) fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -688,6 +688,7 @@ mod tests {
             cross_repository: false,
             merge_methods: Vec::new(),
             github_merge: None,
+            read_only: None,
         }
     }
 

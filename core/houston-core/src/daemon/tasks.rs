@@ -5400,8 +5400,9 @@ impl Daemon {
     }
 
     /// One `gh pr view` per in-review task with a run branch, unless a pane watch
-    /// read that branch this minute. A merged PR closes the task; an unready `gh`
-    /// or a rate-limit pause leaves it in review with the reason on its run.
+    /// read that branch this minute. A merged PR closes the task; an unready `gh`,
+    /// a forge known not to be GitHub, or a rate-limit pause leaves it in review
+    /// with the reason on its run.
     pub fn task_pr_watch_tick(&self) {
         let rows = match self.db.tasks_in_review_with_runs() {
             Ok(rows) => rows,
@@ -5420,6 +5421,17 @@ impl Daemon {
                     run.id,
                     Some(&format!(
                         "the run's worktree {path:?} is gone; the task stays in review"
+                    )),
+                );
+                continue;
+            }
+            // `gh` cannot answer for a forge known not to be GitHub; nothing is run.
+            if let Some(forge) = crate::forge::non_github_forge(&dir) {
+                self.note_task_run_reason(
+                    run.id,
+                    Some(&format!(
+                        "{forge} pull requests are not watched; the task stays in review until \
+                         you move it"
                     )),
                 );
                 continue;

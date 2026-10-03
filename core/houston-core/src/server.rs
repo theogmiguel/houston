@@ -872,6 +872,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::RoutineList
             | proto::ClientMsg::AgentHooks
             | proto::ClientMsg::VoiceSettingsGet
+            | proto::ClientMsg::ForgeSettingsGet
             | proto::ClientMsg::VoiceDevicesGet
             | proto::ClientMsg::SessionCwd { .. }
             | proto::ClientMsg::SessionCwds { .. }
@@ -2848,6 +2849,25 @@ async fn dispatch(
             }
             Err(e) => Err(e),
         },
+        proto::ClientMsg::ForgeSettingsGet => {
+            let _ = send_msg(sink, &daemon.forge_settings_reply()).await;
+            Ok(())
+        }
+        proto::ClientMsg::BitbucketEnabledSet { enabled } => {
+            let changed = daemon.bitbucket_enabled_set(enabled);
+            forge_settings_changed(daemon, sink, changed).await;
+            Ok(())
+        }
+        proto::ClientMsg::BitbucketTokenSet { email, token } => {
+            let changed = daemon.bitbucket_token_set(&email, &token);
+            forge_settings_changed(daemon, sink, changed).await;
+            Ok(())
+        }
+        proto::ClientMsg::BitbucketTokenClear => {
+            let changed = daemon.bitbucket_token_clear();
+            forge_settings_changed(daemon, sink, changed).await;
+            Ok(())
+        }
         proto::ClientMsg::VoiceDevicesGet => {
             let devices = daemon.voice_devices();
             let _ = send_msg(sink, &proto::ServerMsg::VoiceDevices { devices }).await;
@@ -3383,6 +3403,13 @@ async fn dispatch(
         proto::ClientMsg::PrCreate { dir, title, body } => {
             let d = PathBuf::from(&dir);
             let res = tokio::task::spawn_blocking(move || {
+                if let Err(e) = crate::forge::require_github(&d, "create a pull request") {
+                    return crate::gh::PrCreate {
+                        gh: proto::GhState::Missing,
+                        pr: None,
+                        message: Some(e.to_string()),
+                    };
+                }
                 crate::gh::pr_create(&d, title.as_deref(), body.as_deref())
             })
             .await
@@ -4767,54 +4794,53 @@ async fn send_checkpoints(
     Ok(())
 }
 
-/// One `pr_detail` reading: the persisted association first, then `gh` through
-/// the engine. A `gh` problem is a `gh`+`hint` payload, never an error; `number`
-/// reads one pull request without linking it, absent is the branch's own.
+/// One `pr_detail` reading: the persisted association first, then the forge the
+/// remote names. A forge that cannot read is an `access`+`hint` payload, never an
+/// error; `number` reads one pull request without linking it, absent is the branch's own.
 fn read_pr_detail(
     dir: &Path,
     stored: Option<proto::PullRequestLink>,
     number: Option<u32>,
     request: u32,
+    ctx: &crate::forge::ForgeContext,
 ) -> proto::ServerMsg {
     let dir_string = dir.display().to_string();
-    let gh = crate::gh::state(dir);
+    let opened = crate::forge::open(dir, ctx);
+    let access = opened.access.clone();
     let has_upstream = crate::git::sync(dir).upstream.is_some();
     let linked = match number {
         Some(n) => stored.as_ref().is_some_and(|l| l.number == n),
         None => stored.is_some(),
     };
+    let reply = |link, detail, hint, message| proto::ServerMsg::PrDetail {
+        dir: dir_string.clone(),
+        request,
+        access: access.clone(),
+        has_upstream,
+        link,
+        detail,
+        linked,
+        hint,
+        message,
+    };
     if let Some(0) = number {
-        return proto::ServerMsg::PrDetail {
-            dir: dir_string,
-            request,
-            gh,
-            has_upstream,
-            link: stored,
-            detail: None,
-            linked,
-            hint: None,
-            message: Some("pull request number must be positive; 0 was asked".to_string()),
-        };
+        return reply(
+            stored,
+            None,
+            None,
+            Some("pull request number must be positive; 0 was asked".to_string()),
+        );
     }
-    if gh != proto::GhState::Ready {
-        return proto::ServerMsg::PrDetail {
-            dir: dir_string,
-            request,
-            gh,
-            has_upstream,
-            link: stored,
-            detail: None,
-            linked,
-            hint: crate::gh::hint_for(gh),
-            message: None,
-        };
-    }
+    let Some(reader) = opened.reader else {
+        return reply(stored, None, opened.hint, opened.message);
+    };
     let stored_link = stored
         .as_ref()
         .filter(|l| number.is_none_or(|n| l.number == n));
     let read = match number {
         Some(n) => crate::forge::read(
             dir,
+            &reader,
             n,
             stored_link
                 .map(|l| l.source)
@@ -4823,44 +4849,16 @@ fn read_pr_detail(
         )
         .map(Some),
         None => match stored_link {
-            Some(link) => crate::forge::read(dir, link.number, link.source, Some(link)).map(Some),
-            None => crate::forge::read_branch(dir),
+            Some(link) => {
+                crate::forge::read(dir, &reader, link.number, link.source, Some(link)).map(Some)
+            }
+            None => crate::forge::read_branch(dir, &reader),
         },
     };
     match read {
-        Ok(Some((link, detail))) => proto::ServerMsg::PrDetail {
-            dir: dir_string,
-            request,
-            gh,
-            has_upstream,
-            link: Some(link),
-            detail: Some(detail),
-            linked,
-            hint: None,
-            message: None,
-        },
-        Ok(None) => proto::ServerMsg::PrDetail {
-            dir: dir_string,
-            request,
-            gh,
-            has_upstream,
-            link: None,
-            detail: None,
-            linked,
-            hint: None,
-            message: None,
-        },
-        Err(e) => proto::ServerMsg::PrDetail {
-            dir: dir_string,
-            request,
-            gh,
-            has_upstream,
-            link: stored,
-            detail: None,
-            linked,
-            hint: None,
-            message: Some(e.to_string()),
-        },
+        Ok(Some((link, detail))) => reply(Some(link), Some(detail), None, None),
+        Ok(None) => reply(None, None, None, None),
+        Err(e) => reply(stored, None, None, Some(e.to_string())),
     }
 }
 
@@ -4879,19 +4877,23 @@ async fn send_pr_detail(
         }
     };
     let d = PathBuf::from(&dir);
-    let msg = tokio::task::spawn_blocking(move || read_pr_detail(&d, stored, number, request))
-        .await
-        .unwrap_or_else(|e| proto::ServerMsg::PrDetail {
-            dir,
-            request,
-            gh: proto::GhState::Missing,
-            has_upstream: false,
-            link: None,
-            detail: None,
-            linked: false,
-            hint: Some(crate::gh::MISSING_HINT.to_string()),
-            message: Some(format!("pull request read task panicked: {e}")),
-        });
+    let ctx = daemon.forge_context();
+    let msg =
+        tokio::task::spawn_blocking(move || read_pr_detail(&d, stored, number, request, &ctx))
+            .await
+            .unwrap_or_else(|e| proto::ServerMsg::PrDetail {
+                dir,
+                request,
+                access: proto::ForgeAccess::Github {
+                    gh: proto::GhState::Missing,
+                },
+                has_upstream: false,
+                link: None,
+                detail: None,
+                linked: false,
+                hint: Some(crate::gh::MISSING_HINT.to_string()),
+                message: Some(format!("pull request read task panicked: {e}")),
+            });
     let _ = send_msg(sink, &msg).await;
 }
 
@@ -4916,14 +4918,22 @@ async fn link_pull_request(
         return;
     }
     let d = PathBuf::from(&dir);
+    let ctx = daemon.forge_context();
     let read = tokio::task::spawn_blocking(move || {
-        let gh = crate::gh::state(&d);
-        if gh != proto::GhState::Ready {
-            return Err(crate::gh::hint_for(gh)
-                .unwrap_or_else(|| "gh is not ready to link a pull request".to_string()));
-        }
-        crate::forge::read(&d, number, proto::PullRequestLinkSource::Manual, None)
-            .map_err(|e| e.to_string())
+        let opened = crate::forge::open(&d, &ctx);
+        let Some(reader) = opened.reader else {
+            return Err(opened.message.or(opened.hint).unwrap_or_else(|| {
+                "this workspace's forge cannot link a pull request".to_string()
+            }));
+        };
+        crate::forge::read(
+            &d,
+            &reader,
+            number,
+            proto::PullRequestLinkSource::Manual,
+            None,
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .unwrap_or_else(|e| Err(format!("pull request link task panicked: {e}")));
@@ -5110,6 +5120,7 @@ async fn merge_pull_request(
     let d = PathBuf::from(&dir);
     let sha = expected_head_sha.clone();
     let outcome = tokio::task::spawn_blocking(move || {
+        crate::forge::require_github(&d, "merge").map_err(|e| e.to_string())?;
         let gh = crate::gh::state(&d);
         if gh != proto::GhState::Ready {
             return Err(
@@ -5196,6 +5207,22 @@ async fn send_pr_mutation(
     .await;
 }
 
+/// What a refused write was going to do, in the words its refusal uses.
+fn mutation_op(kind: proto::PrMutationKind) -> &'static str {
+    match kind {
+        proto::PrMutationKind::Edit => "edit the pull request",
+        proto::PrMutationKind::Comment => "comment",
+        proto::PrMutationKind::CommentEdit => "edit a comment",
+        proto::PrMutationKind::Review => "review",
+        proto::PrMutationKind::ThreadReply => "reply to a thread",
+        proto::PrMutationKind::ThreadResolve => "resolve a thread",
+        proto::PrMutationKind::Reaction => "react",
+        proto::PrMutationKind::ReviewerSet => "change reviewers",
+        proto::PrMutationKind::LabelSet => "change labels",
+        proto::PrMutationKind::Action => "run a pull request action",
+    }
+}
+
 /// Run one pull-request write off the async runtime, then answer with the one
 /// mutation reply shape and, on success, a fresh detail read carrying the same
 /// request id — which is what releases the UI's in-flight guard.
@@ -5229,9 +5256,13 @@ async fn run_pr_write<F>(
         }
     };
     let d = PathBuf::from(&target.dir);
-    let outcome = tokio::task::spawn_blocking(move || work(d, stored))
-        .await
-        .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request write task panicked: {e}")));
+    let op = mutation_op(kind);
+    let outcome = tokio::task::spawn_blocking(move || {
+        crate::forge::require_github(&d, op)?;
+        work(d, stored)
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request write task panicked: {e}")));
     match outcome {
         Ok(o) => {
             send_pr_mutation(sink, &target, kind, o.ok, o.message).await;
@@ -5428,6 +5459,7 @@ async fn send_pr_reviewer_candidates(
         if number == 0 {
             anyhow::bail!("pull request number must be positive; 0 was asked");
         }
+        crate::forge::require_github(&d, "list reviewer candidates")?;
         let (link, _detail) = read_target(&d, number, stored.as_ref())?;
         let repository = crate::pull_requests::repository_for(&d, &link)?;
         crate::pull_requests::github::reviewer_candidates(&d, &repository, number)
@@ -5470,6 +5502,7 @@ async fn send_pr_label_candidates(
         if number == 0 {
             anyhow::bail!("pull request number must be positive; 0 was asked");
         }
+        crate::forge::require_github(&d, "list labels")?;
         let (link, _detail) = read_target(&d, number, stored.as_ref())?;
         let repository = crate::pull_requests::repository_for(&d, &link)?;
         crate::pull_requests::github::label_candidates(&d, &repository, number)
@@ -5506,6 +5539,7 @@ async fn send_pr_list(
 ) {
     let d = PathBuf::from(&dir);
     let result = tokio::task::spawn_blocking(move || {
+        crate::forge::require_github(&d, "list pull requests")?;
         crate::gh::pr_list(&d, state, involvement, query.as_deref(), limit, sort)
     })
     .await
@@ -5535,9 +5569,12 @@ async fn send_pr_diff(
     request: u32,
 ) {
     let d = PathBuf::from(&dir);
-    let result = tokio::task::spawn_blocking(move || crate::gh::pr_diff(&d, number))
-        .await
-        .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request diff task panicked: {e}")));
+    let result = tokio::task::spawn_blocking(move || {
+        crate::forge::require_github(&d, "read a pull request's diff")?;
+        crate::gh::pr_diff(&d, number)
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request diff task panicked: {e}")));
     let (patch, truncated, message) = match result {
         Ok((patch, truncated)) => (patch, truncated, None),
         Err(e) => (String::new(), false, Some(e.to_string())),
@@ -5576,9 +5613,12 @@ async fn send_pr_stack(
         return;
     }
     let d = PathBuf::from(&dir);
-    let result = tokio::task::spawn_blocking(move || crate::gh::pr_stack(&d, number))
-        .await
-        .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request stack task panicked: {e}")));
+    let result = tokio::task::spawn_blocking(move || {
+        crate::forge::require_github(&d, "read a pull request stack")?;
+        crate::gh::pr_stack(&d, number)
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request stack task panicked: {e}")));
     let (stack, message) = match result {
         Ok(Some(stack)) => (
             Some(crate::pull_requests::github::stack_to_proto(&stack)),
@@ -5746,6 +5786,23 @@ fn vanished(daemon: &Daemon, session: u32, request: &str) -> bool {
         tracing::debug!("{request} for unknown session {session} ignored");
     }
     gone
+}
+
+/// The new forge settings to every client, or the refusal to this one with
+/// `error.context = "forge_settings"` so the Accounts section can show it.
+async fn forge_settings_changed(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    changed: anyhow::Result<()>,
+) {
+    match changed {
+        Ok(()) => daemon.broadcast_control(&daemon.forge_settings_reply()),
+        Err(e) => {
+            let message = format!("{e:#}");
+            tracing::warn!("forge settings change refused: {message}");
+            send_error(sink, message, Some("forge_settings".to_string())).await;
+        }
+    }
 }
 
 async fn send_error(

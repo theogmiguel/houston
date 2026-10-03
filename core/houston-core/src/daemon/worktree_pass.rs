@@ -617,7 +617,7 @@ fn keep_reason(
         PrLookup::Found(f) => f,
         PrLookup::NoPr => return (None, integrated_keep(ws, row, path, &grace, now, live)),
         PrLookup::Failed(e) => {
-            tracing::warn!("gh pr view in {}: {e}", row.path);
+            tracing::warn!("merged pull request check in {}: {e}", row.path);
             return (None, Some(WorktreeKeep::GhUnavailable { gh }));
         }
     };
