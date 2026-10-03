@@ -480,6 +480,7 @@ async fn client_loop(daemon: Arc<Daemon>, socket: WebSocket) {
 }
 
 async fn flush_frames(sink: &mut (impl SinkExt<Message> + Unpin), taps: &AttachSet) -> bool {
+    let mut fed = false;
     for tap in taps.taps() {
         let Some(session) = tap.session() else {
             continue;
@@ -495,12 +496,13 @@ async fn flush_frames(sink: &mut (impl SinkExt<Message> + Unpin), taps: &AttachS
                     Bytes::from(proto::encode_gap_frame(session, anchor, dropped))
                 }
             };
-            if sink.send(Message::Binary(bytes)).await.is_err() {
+            if sink.feed(Message::Binary(bytes)).await.is_err() {
                 return false;
             }
+            fed = true;
         }
     }
-    true
+    !fed || sink.flush().await.is_ok()
 }
 
 struct AttachSet {
@@ -4687,5 +4689,83 @@ async fn inbox_delivered(
     match daemon.inbox_confirm_stop_hook(scope.session_id, &delivery_id, crate::daemon::now_ms()) {
         Ok(marked) => (StatusCode::OK, axum::Json(json!({ "marked": marked }))).into_response(),
         Err(e) => orch_err_response(e),
+    }
+}
+
+#[cfg(test)]
+mod frame_flush_tests {
+    use super::*;
+    use futures_util::Sink;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    #[derive(Default)]
+    struct RecordingSink {
+        messages: Vec<Message>,
+        flushes: usize,
+    }
+
+    impl Sink<Message> for RecordingSink {
+        type Error = std::io::Error;
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+            self.messages.push(item);
+            Ok(())
+        }
+
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            self.flushes += 1;
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn drained_frames_are_fed_in_order_before_a_single_flush() {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(crate::daemon::DaemonConfig {
+            token: "token".into(),
+            db_path: state.path().join("test.db"),
+        })
+        .unwrap();
+        let mut taps = AttachSet::new(daemon, Arc::new(Notify::new()));
+        taps.insert(7);
+        let tap = taps.taps.get(&7).unwrap();
+        for (offset, payload) in [(0, b"first".as_slice()), (10, b"second".as_slice())] {
+            tap.offer(
+                offset,
+                payload.len(),
+                &Arc::new(proto::encode_output_frame(7, offset, payload)),
+            );
+        }
+
+        let mut sink = RecordingSink::default();
+        assert!(flush_frames(&mut sink, &taps).await);
+        assert_eq!(sink.flushes, 1);
+        let payloads = sink
+            .messages
+            .iter()
+            .map(|message| match message {
+                Message::Binary(bytes) => proto::decode_output_frame(bytes).unwrap().2.to_vec(),
+                other => panic!("expected binary output frame, got {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(payloads, [b"first".to_vec(), b"second".to_vec()]);
     }
 }
