@@ -546,19 +546,32 @@ export function App(): React.JSX.Element {
   const dismissedUpdate = useDismissedUpdate();
   const customChrome = useCustomSurface();
 
-  // Gates every `.loop-anim` via one CSS attribute. Deliberately VISIBILITY,
-  // not focus: Houston is often watched unfocused from a second monitor, and
-  // pausing on blur would freeze exactly the status pulses being glanced at.
+  // A brief blur can be incidental; sustained blur pauses ambient animation.
   useEffect(() => {
+    let blurTimer: ReturnType<typeof setTimeout> | undefined;
     const update = (): void => {
       document.documentElement.toggleAttribute(
         "data-motion-paused",
-        document.visibilityState === "hidden",
+        document.visibilityState === "hidden" || !document.hasFocus(),
       );
+    };
+    const onBlur = (): void => {
+      blurTimer = setTimeout(update, 500);
+    };
+    const onFocus = (): void => {
+      clearTimeout(blurTimer);
+      update();
     };
     update();
     document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearTimeout(blurTimer);
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   const [buttonLayout, setButtonLayout] = useState<WindowButtonLayout>(
@@ -3417,7 +3430,7 @@ export function App(): React.JSX.Element {
               className="fixed top-[calc(var(--h-top)+16px)] left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex items-center gap-2 py-1.5 px-3.5 border border-[var(--status-blocked-text)] rounded-full bg-[var(--card-bg)] text-[var(--status-blocked-text)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] shadow-[var(--shadow-md)] max-w-[70vw]"
               role="status"
             >
-              <span className="loop-anim flex-none w-2 h-2 rounded-[50%] bg-[var(--danger)] [--dot-pulse-opacity:0.25] motion-safe:[animation:dot-pulse_1.2s_ease-in-out_infinite]" />
+              <span className="loop-anim flex-none w-2 h-2 rounded-[50%] bg-[var(--danger)] [--dot-pulse-opacity:0.25] motion-safe:[animation:dot-pulse_1.2s_steps(4,end)_infinite]" />
               <span>
                 daemon connection lost — reconnecting…{" "}
                 {Math.max(0, Math.round((Date.now() - conn.since) / 1000))}s

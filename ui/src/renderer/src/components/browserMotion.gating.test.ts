@@ -22,7 +22,7 @@ describe('motion-k15 — BrowserPane.tsx rbrowser-progress-slide sweep', () => {
 describe('motion-k16 — browserTabs.tsx favicon pulse (shared dot-pulse keyframe)', () => {
   it('gates the pulse behind motion-safe:, never runs it unconditionally', () => {
     expect(browserTabsSrc).toContain(
-      'group-data-[loading]/pop:motion-safe:[animation:dot-pulse_1.2s_ease-in-out_infinite]'
+      'group-data-[loading]/pop:motion-safe:[animation:dot-pulse_1.2s_steps(4,end)_infinite]'
     )
     expect(browserTabsSrc).not.toContain('group-data-[loading]/pop:[animation:dot-pulse')
   })

@@ -238,7 +238,7 @@ export function HandoffOverlay({
                 {SKELETON_WIDTHS.map((w, i) => (
                   <div
                     key={i}
-                    className="loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] motion-safe:[animation:skeleton-shimmer_1.4s_ease-in-out_infinite]"
+                    className="loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] motion-safe:[animation:skeleton-shimmer_1.4s_steps(4,end)_infinite]"
                     style={{ width: `${w}%`, animationDelay: `${i * 60}ms` }}
                   />
                 ))}
@@ -253,12 +253,12 @@ export function HandoffOverlay({
                 {renderMarkdown(state.text)}
                 <span
                   aria-hidden="true"
-                  className="loop-anim inline-block w-2 h-4 mb-[-3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_step-end_infinite]"
+                  className="loop-anim inline-block w-2 h-4 mb-[-3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_steps(2,end)_infinite]"
                 />
               </div>
             )}
             <div className="flex items-center gap-2 text-[var(--text-faint)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]">
-              <span className="loop-anim w-[7px] h-[7px] rounded-full bg-primary [--dot-pulse-opacity:0.25] motion-safe:animate-[dot-pulse_1.2s_ease-in-out_infinite]" />
+              <span className="loop-anim w-[7px] h-[7px] rounded-full bg-primary [--dot-pulse-opacity:0.25] motion-safe:animate-[dot-pulse_1.2s_steps(4,end)_infinite]" />
               <span>generating…</span>
             </div>
           </>
