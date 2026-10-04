@@ -69,7 +69,8 @@ describe('components/ui primitives', () => {
     rerender(<span>Tasks<Count value={12} /></span>)
     expect(container.textContent).toBe('Tasks12')
     expect(container.textContent).not.toMatch(/[().·]/)
-    expect(container.querySelector('span[aria-hidden="true"]')?.className).toBe('w-[var(--space-1-5)]')
+    expect(container.querySelector('span[aria-hidden="true"]')?.className).toBe('inline-block w-[var(--space-1-5)]')
+    expect(container.querySelector('span:not([aria-hidden])')?.className).not.toContain('inline-flex')
     expect(container.querySelector('span:not([aria-hidden])')?.className).not.toContain('gap-')
   })
 

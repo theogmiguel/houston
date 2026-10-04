@@ -9,7 +9,8 @@ export const STATUS_LABELS = [
   'Missing',
   'Open',
   'Fixing',
-  'Not seen'
+  'Not seen',
+  'Ready'
 ] as const
 
 export type StatusLabelValue = (typeof STATUS_LABELS)[number]
@@ -25,7 +26,8 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Missing: 'var(--text-faint)',
   Open: 'var(--warn)',
   Fixing: 'var(--info)',
-  'Not seen': 'var(--text-faint)'
+  'Not seen': 'var(--text-faint)',
+  Ready: 'var(--ok)'
 }
 
 export function StatusLabel({ status }: { status: StatusLabelValue }): React.JSX.Element {

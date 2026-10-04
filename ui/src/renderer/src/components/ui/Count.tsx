@@ -9,9 +9,9 @@ export function Count({ value, showZero = false, from = 'secondary' }: CountProp
 
   return (
     <span
-      className={`inline-flex items-center tabular-nums [font-size:inherit] [font-weight:inherit] ${from === 'primary' ? 'text-[var(--text-secondary)]' : from === 'accent' ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}
+      className={`tabular-nums [font-size:inherit] [font-weight:inherit] ${from === 'accent' ? 'text-[var(--accent)]' : from === 'primary' ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}
     >
-      <span aria-hidden="true" className="w-[var(--space-1-5)]" />
+      <span aria-hidden="true" className="inline-block w-[var(--space-1-5)]" />
       {value}
     </span>
   )

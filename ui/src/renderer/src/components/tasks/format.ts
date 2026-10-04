@@ -98,6 +98,53 @@ export interface TaskGroup {
   tasks: TaskSummary[]
 }
 
+export type QueueGroupKey = 'your-turn' | 'working' | 'stopped' | 'up-next' | 'done' | 'archived'
+export type QueueAction = 'Answer' | 'Open PR' | 'Open pane' | 'Start again' | 'Start' | 'Review changes'
+
+export interface QueueGroup {
+  key: QueueGroupKey
+  label: string
+  tasks: TaskSummary[]
+}
+
+export function queueGroupOf(task: TaskSummary): QueueGroupKey | null {
+  if (task.archived_at_ms != null) return 'archived'
+  if (task.status === 'done') return 'done'
+  if (task.status === 'canceled') return 'stopped'
+  if (task.open_run?.state === 'waiting_for_input') return 'your-turn'
+  if (task.status === 'in_review') return 'your-turn'
+  if (task.open_run != null && ['preparing', 'running', 'validating'].includes(task.open_run.state)) return 'working'
+  if (task.status === 'in_progress') return 'stopped'
+  if (task.status === 'todo' || task.status === 'backlog') return 'up-next'
+  return null
+}
+
+export function queueActionOf(task: TaskSummary): QueueAction {
+  if (task.open_run?.state === 'waiting_for_input') return 'Answer'
+  if (task.status === 'in_review') return task.ref_url ? 'Open PR' : 'Review changes'
+  if (task.open_run?.session_id != null) return 'Open pane'
+  if (task.status === 'in_progress' || task.status === 'canceled') return 'Start again'
+  return 'Start'
+}
+
+export function queueGroups(tasks: readonly TaskSummary[]): QueueGroup[] {
+  const definitions: readonly [QueueGroupKey, string][] = [
+    ['your-turn', 'Your turn'],
+    ['working', 'Agents working'],
+    ['stopped', 'Stopped'],
+    ['up-next', 'Up next']
+  ]
+  const groups: QueueGroup[] = definitions.map(([key, label]) => ({
+    key,
+    label,
+    tasks: tasks.filter((task) => queueGroupOf(task) === key).sort(compareTasks)
+  })).filter((group) => group.tasks.length > 0)
+  const done = tasks.filter((task) => queueGroupOf(task) === 'done').sort(compareTasks)
+  const archived = tasks.filter((task) => queueGroupOf(task) === 'archived').sort(compareTasks)
+  if (done.length + archived.length > 0) groups.push({ key: 'done', label: 'Done and Archived', tasks: [...done, ...archived] })
+  return groups
+}
+
 const ARCHIVED_LABEL = 'Archived'
 
 /// Non-empty groups only, in display order. Archived tasks leave their status

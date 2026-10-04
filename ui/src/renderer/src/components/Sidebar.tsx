@@ -62,12 +62,12 @@ import {
   IconServer,
   IconUser,
   IconTarget,
+  IconTasks,
   IconChartArea,
   IconTerminal,
   IconZap,
   IconGlobe,
   IconClock,
-  IconTasks,
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./Tooltip";
@@ -75,6 +75,7 @@ import logoUrl from "../assets/logo-chrome.svg";
 import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { ICON_ROLE_CLS, Icon } from "./Icon";
+import { Count } from "./ui/Count";
 import {
   RAIL_VIEWS,
   RAIL_VIEW_LABEL,
@@ -90,7 +91,6 @@ import { BTN_ICO_STRUCTURE } from "./buttonChrome";
 import { openUpdateModal } from "../updateModal";
 import { isUpdateInstallRunning, useUpdateInstall, type UpdateInstallState } from "../updateInstall";
 import { CONTROL_SIZE_SQUARE_CLS } from "./controlSize";
-import { Count } from "./ui/Count";
 
 const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   palette: IconPalette,
@@ -338,6 +338,7 @@ interface Props {
   onToggleChromeTheme: () => void;
   updateVersion?: string | null;
   harnessAttention?: number;
+  taskTurnCount?: number;
 
   className?: string;
   onHeadMouseDown?: (e: React.MouseEvent) => void;
@@ -1660,6 +1661,7 @@ function RailHead({
 
 const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Element>> =
   Object.freeze({
+    tasks: IconTasks,
     skills: IconZap,
     routines: IconClock,
     harness: IconTarget,
@@ -1679,6 +1681,7 @@ function RailNav({
   view,
   hidden,
   paletteChord,
+  taskTurnCount,
   onOpenPalette,
   onSelect,
   onRowMenu,
@@ -1687,6 +1690,7 @@ function RailNav({
   view: RailView | null;
   hidden: ReadonlySet<RailView>;
   paletteChord: string | null | undefined;
+  taskTurnCount: number;
   onOpenPalette: (() => void) | undefined;
   onSelect: (v: RailView) => void;
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
@@ -1735,6 +1739,7 @@ function RailNav({
             </span>
             <span className="min-w-0 truncate">{RAIL_VIEW_LABEL[v]}</span>
             {v === "harness" && <Count value={harnessAttention ?? 0} from="accent" />}
+            {v === "tasks" && taskTurnCount > 0 && <Count value={taskTurnCount} from="accent" />}
           </button>
         );
       })}
@@ -2334,6 +2339,7 @@ export function Sidebar({
   onToggleChromeTheme,
   updateVersion,
   harnessAttention,
+  taskTurnCount = 0,
   className = "",
   onHeadMouseDown,
   onHeadDoubleClick,
@@ -2778,6 +2784,7 @@ export function Sidebar({
         view={railView}
         hidden={hiddenRailViews}
         paletteChord={paletteChord}
+        taskTurnCount={taskTurnCount}
         onOpenPalette={onOpenPalette ?? (() => {})}
         onSelect={selectRailView}
         onRowMenu={openNavMenu}

@@ -108,7 +108,16 @@ describe('the rail nav block', () => {
   it('every library shows by default, in RAIL_VIEWS order', () => {
     render()
     expect(rows().map((r) => r.getAttribute('data-view'))).toEqual([...RAIL_VIEWS])
-    expect(rows().map((r) => r.textContent)).toEqual(['Skills', 'Routines', 'Harness', 'Connections'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Skills', 'Routines', 'Harness', 'Connections'])
+  })
+
+  it('shows the task turn count in accent ink and omits zero', () => {
+    render({ taskTurnCount: 2 })
+    const count = rows().find((row) => row.getAttribute('data-view') === 'tasks')?.querySelector('span:last-child')
+    expect(count?.textContent).toBe('2')
+    expect(count?.className).toContain('text-[var(--accent)]')
+    render({ taskTurnCount: 0 })
+    expect(rows().find((row) => row.getAttribute('data-view') === 'tasks')?.textContent).toBe('Tasks')
   })
 
   it('shows the current Harness attention count in the rail row', () => {
@@ -140,7 +149,7 @@ describe('the rail nav block', () => {
     expect(hide.textContent).toContain('Hide from sidebar')
 
     act(() => hide.click())
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['routines', 'harness', 'mcp'])
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'routines', 'harness', 'mcp'])
     expect(localStorage.getItem('tr-rail-views-hidden')).toContain('skills')
   })
 

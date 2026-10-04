@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { waitFor } from '@testing-library/react'
 import { renderReadyApp, resetHarness, type AppHarness } from './test/appTestHarness'
 import { setSettingsNavForTests } from './settingsNav'
 import { RAIL_VIEWS } from './railView'
@@ -34,9 +35,11 @@ describe('the rail nav rows drive the content area', () => {
 
     for (const view of RAIL_VIEWS) {
       act(() => navRow(container, view).click())
-      const el = surface(container)
-      expect(el, `${view} opened no surface`).not.toBeNull()
-      expect(el?.textContent?.trim().length ?? 0, `${view} surface is blank`).toBeGreaterThan(0)
+      await waitFor(() => {
+        const el = surface(container)
+        expect(el, `${view} opened no surface`).not.toBeNull()
+        expect(el?.textContent?.trim().length ?? 0, `${view} surface is blank`).toBeGreaterThan(0)
+      })
       expect(navRow(container, view).getAttribute('aria-current')).toBe('page')
     }
   })

@@ -20,6 +20,7 @@ import {
   IconArchive,
   IconCheck,
   IconChevronLeft,
+  IconClose,
   IconCopy,
   IconCornerDownRight,
   IconEllipsis,
@@ -50,6 +51,7 @@ import {
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
+import { Button, Chip, TaskDetailFrame, TaskDrawerCard, TaskDrawerHeader, TaskDrawerOrigin, TaskAcceptanceRow } from '../ui'
 
 export interface TaskDetailProps {
   detail: TaskDetailData
@@ -70,6 +72,7 @@ export interface TaskDetailProps {
   onRunControl: (runId: number, action: TaskRunAction) => void
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
+  presentation?: 'side' | 'drawer'
 }
 
 export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
@@ -83,6 +86,9 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
   const reviewer = taskReviewer(detail.runs)
   const review = taskReviewOutcome(detail.runs, detail.comments)
+  const drawer = props.presentation === 'drawer'
+
+  if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} />
 
   return (
     <div className="tasks-root" data-testid="task-detail">
@@ -193,18 +199,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             if (description !== task.description) props.onSave(task.id, task.revision, { description })
           }}
         />
-        <SectionHeading
-          heading="Acceptance"
-          trailing={acceptanceText(
-            detail.acceptance.filter((item) => item.checked_at_ms != null).length,
-            detail.acceptance.length
-          )}
-        />
-        <AcceptanceList
-          items={detail.acceptance}
-          readOnly={readOnly}
-          onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
-        />
+
         {latestRun ? (
           <TaskExecutionCard
             run={latestRun}
@@ -217,22 +212,79 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             onRunControl={props.onRunControl}
           />
         ) : (
-          startable && (
-            <TaskStartCard
-              task={task}
-              settings={props.startSettings}
-              workspaceOptions={props.workspaceOptions}
-              readOnly={readOnly}
-              onStart={props.onStart}
-            />
-          )
+          startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={props.onStart} />
         )}
-        <SectionHeading heading="Activity" />
-        <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
-        <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
+        <SectionHeading
+          heading="Acceptance"
+          trailing={acceptanceText(detail.acceptance.filter((item) => item.checked_at_ms != null).length, detail.acceptance.length)}
+        />
+        <AcceptanceList
+          items={detail.acceptance}
+          readOnly={readOnly}
+          presentation="side"
+          onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
+        />
+          <SectionHeading heading="Activity" />
+          <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
+          <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
       </div>
     </div>
   )
+}
+
+function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTitle: string }): React.JSX.Element {
+  const { detail, now } = props
+  const { task } = detail
+  const latestRun = detail.runs[0] ?? null
+  const archived = task.archived_at_ms != null
+  const review = taskReviewOutcome(detail.runs, detail.comments)
+  const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
+
+  return <TaskDetailFrame>
+    {props.refusal && props.refusal.id === task.id && <RefusalBanner refusal={props.refusal} onReload={props.onReload} taskId={task.id} />}
+    <TaskDrawerHeader
+      taskKey={task.key}
+      workspace={task.workspace?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'No workspace'}
+      heading={taskTitle}
+      status={task.status}
+      actions={<>
+        <Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={props.onBack} />
+        <TaskMenu
+          label="Task actions"
+          icon={IconEllipsis}
+          testId="task-detail-menu"
+          sections={[{ items: [
+            ...(latestRun?.session_id != null ? [{ id: 'task-open-session', label: 'Open session', onSelect: () => props.onOpenSession(latestRun.session_id!) }] : []),
+            { id: 'task-copy-key', label: 'Copy task key', onSelect: () => void navigator.clipboard?.writeText(task.key).catch(() => {}) },
+            { id: 'task-archive', label: archived ? 'Restore task' : 'Archive task', onSelect: () => props.onArchive(task.id, !archived, task.revision) }
+          ] }]}
+        />
+      </>}
+    />
+    {latestRun && <TaskExecutionCard
+      run={latestRun}
+      sessions={props.sessions}
+      now={now}
+      readOnly={false}
+      review={review}
+      onOpenSession={props.onOpenSession}
+      onReview={props.onReview}
+      onRunControl={props.onRunControl}
+      presentation="drawer"
+      branchReuse={latestRun.branch ?? null}
+      pullRequestUrl={task.ref_url ?? null}
+    />}
+    <div className="grid gap-[var(--space-2)]">
+      <SectionHeading heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
+      <TaskDrawerCard><AcceptanceList
+        items={detail.acceptance}
+        readOnly={false}
+        presentation="drawer"
+        onCheck={(item, isChecked) => props.onCheck(task.id, item, isChecked)}
+      /></TaskDrawerCard>
+      {task.origin?.kind === 'harness_finding' && <TaskDrawerOrigin><Chip variant="compound" label={`From Harness finding · ${task.origin.key}`} /></TaskDrawerOrigin>}
+    </div>
+  </TaskDetailFrame>
 }
 
 function commitTitle({ title, task, onSave, setTitle }: {
@@ -316,18 +368,25 @@ function RefusalBanner({
 function AcceptanceList({
   items,
   readOnly,
+  presentation,
   onCheck
 }: {
   items: TaskAcceptanceItem[]
   readOnly: boolean
+  presentation: 'side' | 'drawer'
   onCheck: (itemId: number, checked: boolean) => void
 }): React.JSX.Element {
   if (items.length === 0) return <div className="tk-body muted">No acceptance items.</div>
-  return (
-    <div className="tk-body flex flex-col">
-      {items.map((item) => (
+  const rows = items.map((item) => (
         <Tooltip key={item.id} label={readOnly ? READ_ONLY_REASON : undefined} className="flex">
-          <button
+          {presentation === 'drawer' ? <TaskAcceptanceRow
+            testId={`task-acceptance-${item.id}`}
+            checked={item.checked_at_ms != null}
+            text={item.text}
+            by={item.checked_by ? actorLabel(item.checked_by) : null}
+            disabled={readOnly}
+            onToggle={() => onCheck(item.id, item.checked_at_ms == null)}
+          /> : <button
             type="button"
             role="checkbox"
             aria-checked={item.checked_at_ms != null}
@@ -339,9 +398,12 @@ function AcceptanceList({
             <span className="bx">{item.checked_at_ms != null && <Icon glyph={IconCheck} role="small" />}</span>
             <span className="tx">{item.text}</span>
             {item.checked_by && <span className="by">{actorLabel(item.checked_by)}</span>}
-          </button>
+          </button>}
         </Tooltip>
-      ))}
+  ))
+  return presentation === 'drawer' ? <div>{rows}</div> : (
+    <div className="tk-body flex flex-col">
+      {rows}
     </div>
   )
 }

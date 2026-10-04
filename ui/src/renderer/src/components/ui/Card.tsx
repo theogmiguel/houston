@@ -23,6 +23,7 @@ export interface CardRowProps {
   rail?: 'new' | 'still' | 'gone'
   compact?: boolean
   className?: string
+  density?: 'default' | 'compact'
 }
 
 const railClasses = variants('relative before:absolute before:inset-y-[var(--space-1)] before:left-0 before:w-[2px]', {
@@ -33,9 +34,9 @@ const railClasses = variants('relative before:absolute before:inset-y-[var(--spa
   }
 }, { rail: 'new' })
 
-function CardRow({ heading, meta, status, action, rail, compact = false, className = '' }: CardRowProps): React.JSX.Element {
+function CardRow({ heading, meta, status, action, rail, compact = false, className = '', density = 'default' }: CardRowProps): React.JSX.Element {
   return (
-    <div className={`flex min-w-0 flex-wrap items-center gap-[var(--space-2)] px-[var(--space-3)] ${compact ? 'py-[var(--space-1)]' : 'py-[var(--space-2)]'} [&+&]:border-t [&+&]:border-[var(--divider)] hover:bg-[var(--hover-fill)] ${rail ? railClasses({ rail }) : ''} ${rail ? 'pl-[var(--space-4)]' : ''} ${className}`}>
+    <div className={`flex min-w-0 flex-wrap items-center gap-[var(--space-2)] ${density === 'compact' ? 'px-[var(--space-2-5)]' : 'px-[var(--space-3)]'} ${compact ? 'py-[var(--space-1)]' : 'py-[var(--space-2)]'} [&+&]:border-t [&+&]:border-[var(--divider)] hover:bg-[var(--hover-fill)] ${rail ? railClasses({ rail }) : ''} ${rail ? 'pl-[var(--space-4)]' : ''} ${className}`}>
       <div className={compact ? 'flex min-w-0 flex-1 flex-wrap items-baseline gap-x-[var(--space-2)]' : 'grid min-w-0 flex-1 gap-[var(--space-1)]'}>
         <div className="truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{heading}</div>
         {meta && <div className={`text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] ${compact ? 'whitespace-nowrap' : ''}`}>{meta}</div>}
