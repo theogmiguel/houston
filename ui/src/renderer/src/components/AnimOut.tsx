@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useNativeSuppression, useNativeOverlaySuppression, type NativeSuppressionReason } from '../layout/nativeSuppression'
 
-const EXIT_MS = 170
+const EXIT_MS = 120 // Matches the Fast token so the menu unmount follows its exit animation.
 
 export function useExitAnimation(open: boolean): { mounted: boolean; closing: boolean } {
   const [mounted, setMounted] = useState(open)
   useEffect(() => {
     if (open) {
       setMounted(true)
+      return
+    }
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setMounted(false)
       return
     }
     const t = setTimeout(() => setMounted(false), EXIT_MS)
@@ -34,7 +38,7 @@ export function AnimOut({
   const last = useRef<React.ReactNode>(null)
   if (open) last.current = children
   if (!open && !mounted) return null
-  return <div className={`contents ${closing ? 'anim-out' : ''}`}>{open ? children : last.current}</div>
+  return <div aria-hidden={closing || undefined} className={`contents ${closing ? 'anim-out' : ''}`}>{open ? children : last.current}</div>
 }
 
 export function MenuLayer({

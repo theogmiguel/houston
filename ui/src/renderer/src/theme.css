@@ -584,6 +584,7 @@
   --motion-fast-t: 0.12s;
   --motion-fast-ease: cubic-bezier(0.2, 0, 0.38, 1);
   --motion-menu-t: 0.16s;
+  --motion-popover-step: 40ms; /* Keeps the header and body readable in order. */
   --motion-menu-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-panel-t: 0.24s;
   --motion-panel-ease: cubic-bezier(0.32, 0.72, 0, 1);

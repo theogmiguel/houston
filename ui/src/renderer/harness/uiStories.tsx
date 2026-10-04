@@ -18,6 +18,7 @@ import {
   PageFrame,
   PageHeader,
   PaneHeaderButton,
+  PopoverViews,
   SectionHead,
   Select,
   Segmented,
@@ -41,6 +42,9 @@ import {
   UsageShareBar
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
+import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
+import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
+import { AnimOut } from '../src/components/AnimOut'
 
 const noop = (): void => {}
 
@@ -80,6 +84,87 @@ function Caption({ children }: { children: React.ReactNode }): React.JSX.Element
   return <span style={{ color: 'var(--text-muted)', fontSize: 'var(--tr-text-small-size)' }}>{children}</span>
 }
 
+function MotionSpecimens({ reducedMotion }: { reducedMotion: boolean }): React.JSX.Element {
+  const [model, setModel] = useState('codex')
+  const [view, setView] = useState('profile')
+  const [entryOpen, setEntryOpen] = useState(false)
+  const [profile, setProfile] = useState(2)
+  const views = [
+    { id: 'profile', bounds: { width: 320, height: 148 }, content: (
+      <div className="grid gap-[var(--space-2)]">
+        <div className="inline-flex w-fit gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] p-[2px]">
+          <button type="button" onClick={() => setView('profile')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'profile' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Profile</button>
+          <button type="button" onClick={() => setView('specific')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'specific' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Specific model</button>
+        </div>
+        <div className={`grid grid-cols-2 gap-[var(--space-1)] ${POPOVER_BODY_CLS}`}>
+          {[
+            ['Daily · Normal', 'sonnet · medium'], ['Daily · Heavy', 'sonnet · high'],
+            ['Geeky · Normal', 'opus · high'], ['Geeky · Heavy', 'opus · max']
+          ].map(([name, detail], index) => (
+            <button key={name} type="button" onClick={() => setProfile(index)} className={`grid gap-[2px] rounded-[var(--tr-radius-sm)] border border-[var(--border)] p-[var(--space-2)] text-left text-[length:var(--tr-text-small-size)] ${profile === index ? 'border-[var(--accent)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
+              <span>{name}</span><small className="font-mono text-[var(--text-muted)]">{detail}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+    ) },
+    { id: 'specific', bounds: { width: 320, height: 148 }, content: (
+      <div className="grid gap-[var(--space-2)]">
+        <div className="inline-flex w-fit gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] p-[2px]">
+          <button type="button" onClick={() => setView('profile')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'profile' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Profile</button>
+          <button type="button" onClick={() => setView('specific')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'specific' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Specific model</button>
+        </div>
+        <div className="grid gap-[var(--space-1)]">
+          <input aria-label="Search models" placeholder="Search models…" className="h-[var(--h-ctl)] rounded-[var(--tr-radius-sm)] border border-[var(--border-focus)] bg-transparent px-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)]" />
+          {['Haiku 4.5 · low', 'Sonnet 4.6 · medium', 'Opus 4.6 · high'].map((name, index) => <button key={name} type="button" className={`flex items-center justify-between rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] text-[length:var(--tr-text-small-size)] ${index === 1 ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}><span>{name.split(' · ')[0]}</span><small className="font-mono text-[var(--text-muted)]">{name.split(' · ')[1]}</small></button>)}
+        </div>
+      </div>
+    ) }
+  ]
+  const modelOptions = [
+    { value: 'codex', label: 'Codex' },
+    { value: 'claude', label: 'Claude Code · Sonnet profile' }
+  ]
+  return (
+    <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+      <SpecimenRow>
+        <Select value={model} options={modelOptions} onChange={setModel} aria-label="Model" />
+        <Button size="sm" onClick={() => setModel(model === 'codex' ? 'claude' : 'codex')}>Change trigger label</Button>
+        <Caption>Open the menu, then change its label. Its left edge stays anchored.</Caption>
+      </SpecimenRow>
+      <SpecimenRow>
+        <Button size="sm" onClick={() => setView(view === 'profile' ? 'specific' : 'profile')}>Switch view</Button>
+        <div {...OVERLAY_RAISED_ATTRS} className={`${OVERLAY_RAISED_CLS} overflow-hidden p-[var(--space-2)]`}>
+          <PopoverViews activeId={view} reducedMotion={reducedMotion} views={views} />
+        </div>
+      </SpecimenRow>
+      <SpecimenRow>
+        <Button size="sm" onClick={() => setEntryOpen((open) => !open)}>{entryOpen ? 'Close entry sample' : 'Show entry sample'}</Button>
+        <AnimOut open={entryOpen}>
+          <div {...OVERLAY_RAISED_ATTRS} className={`${OVERLAY_RAISED_CLS} grid w-[236px] gap-[var(--space-2)] p-[var(--space-2)]`}>
+            <strong className={POPOVER_HEADER_CLS}>Model · Houston</strong>
+            <div className={`${POPOVER_BODY_CLS} grid gap-[var(--space-2)]`}>
+              <div className="grid gap-[var(--space-1)]">
+                {['Haiku 4.5 · low', 'Sonnet 4.6 · medium', 'Opus 4.6 · high', 'Fable 5.1 · max'].map((name, index) => <div key={name} className={`flex justify-between rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] text-[length:var(--tr-text-small-size)] ${index === 1 ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}><span>{name.split(' · ')[0]}</span><small className="font-mono text-[var(--text-muted)]">{name.split(' · ')[1]}</small></div>)}
+              </div>
+              <span className="border-t border-[var(--border)] pt-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">Routing: builder → opus · high</span>
+            </div>
+          </div>
+        </AnimOut>
+      </SpecimenRow>
+    </div>
+  )
+}
+
+function MotionThemeSpecimens({ theme, reducedMotion }: { theme: 'graphite' | 'paper'; reducedMotion: boolean }): React.JSX.Element {
+  return (
+    <section data-theme={theme} data-motion={reducedMotion ? 'reduced' : 'full'} style={{ display: 'grid', gap: 'var(--space-3)', padding: 'var(--space-3)', border: '1px solid var(--border)', borderRadius: 'var(--tr-radius-md)', background: 'var(--content-bg)', color: 'var(--text-primary)' }}>
+      <h3 style={{ margin: 0 }}>{theme === 'graphite' ? 'Graphite' : 'Paper'} · {reducedMotion ? 'reduced motion' : 'full motion'}</h3>
+      <MotionSpecimens reducedMotion={reducedMotion} />
+    </section>
+  )
+}
+
 export function UiPrimitivesStory(): React.JSX.Element {
   const [selectedRoutine, setSelectedRoutine] = useState<string | null>('nightly')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -88,7 +173,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
       className="ui-primitives-specimen"
       style={{ height: '100%', overflow: 'auto', color: 'var(--text-primary)', background: 'var(--content-bg)' }}
     >
-      <style>{'@media (prefers-reduced-motion: reduce) { .ui-primitives-specimen *, .ui-primitives-specimen *::before, .ui-primitives-specimen *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; } }'}</style>
+      <style>{'@media (prefers-reduced-motion: reduce) { .ui-primitives-specimen *, .ui-primitives-specimen *::before, .ui-primitives-specimen *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; } } [data-motion="reduced"] *, [data-motion="reduced"] *::before, [data-motion="reduced"] *::after { animation: none !important; transition: none !important; }'}</style>
       <div style={{ display: 'grid', gap: 'var(--space-5)', maxWidth: 1180, margin: '0 auto', padding: 24 }}>
         <header style={{ display: 'grid', gap: 'var(--space-1)' }}>
           <h1 style={{ margin: 0, fontSize: 'var(--tr-text-title-size)' }}>UI primitives</h1>
@@ -97,6 +182,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </p>
           <Caption>Motion preference: {window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'}</Caption>
         </header>
+
+        <SpecimenGroup heading="Popover motion">
+          <MotionThemeSpecimens theme="graphite" reducedMotion={false} />
+          <MotionThemeSpecimens theme="graphite" reducedMotion />
+          <MotionThemeSpecimens theme="paper" reducedMotion={false} />
+          <MotionThemeSpecimens theme="paper" reducedMotion />
+        </SpecimenGroup>
 
         <SpecimenGroup heading="Button">
           <SpecimenRow>

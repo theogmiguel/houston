@@ -51,7 +51,7 @@ describe('overlayChrome — tier matrix', () => {
       OVERLAY_GLASS_OVERLAY_CLS
     ]) {
       expect(cls).toMatch(/rounded-\[var\(--tr-radius-md\)\]/)
-      expect(cls).toMatch(/motion-safe:\[animation:menu-in_var\(--animate-t-fast\)_var\(--animate-ease-menu\)\]/)
+      expect(cls).toMatch(/motion-safe:\[animation:menu-in_var\(--motion-menu-t\)_var\(--motion-menu-ease\)\]/)
     }
   })
 

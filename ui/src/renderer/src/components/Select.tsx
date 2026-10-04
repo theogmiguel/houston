@@ -5,6 +5,8 @@ import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
 import { SELECT_CLS } from './selectChrome'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
+import { AnimOut } from './AnimOut'
+import { anchorPopoverStart } from './ui/popoverMotion'
 
 const TRIGGER_LAYOUT_CLS =
   'inline-flex items-center justify-between gap-[var(--space-2)] ' +
@@ -105,7 +107,7 @@ export function Select({
     const above = r.top - MENU_GAP - VIEWPORT_MARGIN
     const flip = below < Math.min(MENU_MAX_H, 160) && above > below
     setPos({
-      left: Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - r.width - VIEWPORT_MARGIN)),
+      left: anchorPopoverStart(r.left, r.width, window.innerWidth, VIEWPORT_MARGIN),
       width: r.width,
       ...(flip
         ? { bottom: window.innerHeight - r.top + MENU_GAP, maxHeight: Math.min(MENU_MAX_H, above) }
@@ -258,58 +260,59 @@ export function Select({
           <Icon glyph={IconChevronDown} role="small" className="flex-none text-[var(--text-muted)]" />
         </button>
       </Tooltip>
-      {open && pos && (
-        <div
-          ref={menuRef}
-          id={listboxId}
-          role="listbox"
-          data-testid={testId ? `${testId}-menu` : undefined}
-          aria-label={ariaLabel}
-          {...OVERLAY_RAISED_ATTRS}
-
-          className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-dropdown)] flex flex-col p-1 overflow-y-auto overscroll-contain`}
-          style={{
-            left: pos.left,
-            top: pos.top,
-            bottom: pos.bottom,
-            minWidth: pos.width,
-            maxWidth: `calc(100vw - ${VIEWPORT_MARGIN * 2}px)`,
-            maxHeight: pos.maxHeight
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {options.map((o, i) => {
-            const isSelected = o.value === value
-            return (
-              <Tooltip key={o.value} label={o.title}>
-              <div
-                id={`${listboxId}-${i}`}
-                role="option"
-                data-index={i}
-                data-value={o.value}
-                aria-selected={isSelected}
-                aria-disabled={o.disabled || undefined}
-                onMouseEnter={() => !o.disabled && setActive(i)}
-                onMouseUp={() => commit(i)}
-                className={`flex items-center gap-[var(--space-2)] min-h-[var(--h-ctl)] px-[var(--space-2)] rounded-[var(--tr-radius-sm)] cursor-pointer text-[length:var(--tr-text-ui-size)] ${
-                  o.disabled
-                    ? 'opacity-45 cursor-not-allowed text-[var(--text-muted)]'
-                    : i === active
-                      ? 'bg-[var(--surface-hover)] text-[var(--text-primary)]'
-                      : 'text-[var(--text-secondary)]'
-                }`}
-              >
-                {}
-                <span className="flex-none w-[12px]">
-                  {isSelected && <Icon glyph={IconCheck} role="small" />}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{o.label}</span>
-              </div>
-              </Tooltip>
-            )
-          })}
-        </div>
-      )}
+      <AnimOut open={open && pos !== null} suppress="popover" scopeRef={menuRef}>
+        {open && pos && (
+          <div
+            ref={menuRef}
+            id={listboxId}
+            role="listbox"
+            data-testid={testId ? `${testId}-menu` : undefined}
+            aria-label={ariaLabel}
+            {...OVERLAY_RAISED_ATTRS}
+            className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-dropdown)] flex flex-col p-1 overflow-y-auto overscroll-contain`}
+            style={{
+              left: pos.left,
+              top: pos.top,
+              bottom: pos.bottom,
+              minWidth: pos.width,
+              maxWidth: `calc(100vw - ${VIEWPORT_MARGIN * 2}px)`,
+              maxHeight: pos.maxHeight
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {options.map((o, i) => {
+              const isSelected = o.value === value
+              return (
+                <Tooltip key={o.value} label={o.title}>
+                  <div
+                    id={`${listboxId}-${i}`}
+                    role="option"
+                    data-index={i}
+                    data-value={o.value}
+                    aria-selected={isSelected}
+                    aria-disabled={o.disabled || undefined}
+                    onMouseEnter={() => !o.disabled && setActive(i)}
+                    onMouseUp={() => commit(i)}
+                    className={`flex items-center gap-[var(--space-2)] min-h-[var(--h-ctl)] px-[var(--space-2)] rounded-[var(--tr-radius-sm)] cursor-pointer text-[length:var(--tr-text-ui-size)] ${
+                      o.disabled
+                        ? 'opacity-45 cursor-not-allowed text-[var(--text-muted)]'
+                        : i === active
+                          ? 'bg-[var(--surface-hover)] text-[var(--text-primary)]'
+                          : 'text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    {}
+                    <span className="flex-none w-[12px]">
+                      {isSelected && <Icon glyph={IconCheck} role="small" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  </div>
+                </Tooltip>
+              )
+            })}
+          </div>
+        )}
+      </AnimOut>
     </>
   )
 }
