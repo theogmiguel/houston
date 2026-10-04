@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnimOut } from './AnimOut'
+import { BTN_GHOST } from './buttonChrome'
 import { ConfirmModal } from './ConfirmModal'
 
 const ANIM_OUT_EXIT_MS = 170
@@ -190,7 +191,7 @@ describe('ConfirmModal — the destructive action is distinguishable at rest (P0
   it('the confirm carries a filled danger background; Cancel stays transparent', () => {
     const { cancel, confirm } = render()
     expect(confirm.className).toContain('bg-[var(--danger)]')
-    expect(cancel.className).toContain('bg-transparent')
+    expect(cancel.className).toContain(BTN_GHOST)
     expect(confirm.className).not.toBe(cancel.className)
   })
 

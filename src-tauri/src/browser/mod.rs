@@ -19,6 +19,9 @@ pub(crate) mod webview2_engine;
 #[cfg(target_os = "windows")]
 pub(crate) mod webview2_host;
 
+#[cfg(windows)]
+pub(crate) mod ipc_transport;
+
 pub mod selftest;
 pub(crate) mod tool_refs;
 
