@@ -160,6 +160,17 @@ describe('AgentStatusSection', () => {
     )
   })
 
+  it('names what ZCode\'s switch also turns on before it is flipped', () => {
+    render({
+      providers: [state({ provider: 'zcode', scope: 'global', path: '~/.zcode/cli/config.json' })]
+    })
+    select('zcode')
+    const detail = container.querySelector<HTMLElement>('[data-testid="agent-status-detail"]')!
+    expect(detail.textContent).toContain(HOOK_COPY.zcode.writes)
+    expect(HOOK_COPY.zcode.writes).toContain('hooks.enabled')
+    expect(detail.textContent).toContain('~/.zcode/cli/config.json')
+  })
+
   it('opens a detail with the consent copy in full, the config path, and both groups', () => {
     render({ providers: [state({ provider: 'grok', scope: 'global', path: '~/.grok/hooks/h.json' })] })
     select('grok')

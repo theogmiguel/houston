@@ -84,7 +84,7 @@ import { PaneTaskChip } from './tasks/PaneTaskChip'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
-export const HANDOFF_PROVIDERS = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const
+export const HANDOFF_PROVIDERS = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'] as const
 export type HandoffProvider = (typeof HANDOFF_PROVIDERS)[number]
 export { endedLabel }
 

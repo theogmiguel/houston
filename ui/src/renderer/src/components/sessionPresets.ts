@@ -7,6 +7,7 @@ export const COMPOSER_AGENTS: readonly AgentKind[] = [
   'antigravity',
   'opencode',
   'grok',
+  'zcode',
   'shell'
 ]
 
@@ -17,6 +18,7 @@ export const AGENT_LABEL: Record<string, string> = {
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
   grok: 'Grok Build',
+  zcode: 'ZCode',
   shell: 'Terminal'
 }
 

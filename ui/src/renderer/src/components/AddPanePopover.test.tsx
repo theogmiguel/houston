@@ -63,7 +63,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('lists the real agent CLIs Houston can spawn, every one brand-tinted', () => {
     const el = mount()
     const buttons = Array.from(el.querySelectorAll('button'))
-    for (const agent of ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok']) {
+    for (const agent of ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode']) {
       expect(el.textContent).toContain(agent)
       const row = buttons.find((b) => b.textContent?.includes(agent))
       expect(
@@ -84,7 +84,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
     const el = mount()
     const buttons = Array.from(el.querySelectorAll('button'))
     const paths = new Set<string>()
-    for (const agent of ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok']) {
+    for (const agent of ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode']) {
       const btn = buttons.find((b) => b.textContent?.includes(agent))!
       const svg = btn.querySelector('svg')
       expect(svg, agent).not.toBeNull()
@@ -114,7 +114,7 @@ describe('AddPanePopover (step 13, reference shape)', () => {
   it('keeps every tooltip-wrapped row full width', () => {
     const el = mount({ hasWorkspace: false, onSplitDown: undefined })
     const rows = Array.from(el.querySelectorAll('button'))
-    const labels = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'Split down', 'New tab']
+    const labels = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode', 'Split down', 'New tab']
 
     for (const label of labels) {
       const row = rows.find((button) => button.textContent?.includes(label))
