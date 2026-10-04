@@ -245,6 +245,11 @@ Tokens are `--tr-text-<step>-{size,weight,tracking,leading,family,transform}`
 (`theme.css`). A parallel numeric scale `--tr-text-{xs…3xl}` exists for older
 sites; new work uses the semantic steps.
 
+`check-type-scale.sh` keeps the legacy `text-[Nunit]` and raw scale rules
+absolute, and scans CSS `font-size` declarations plus `[font-size:Nunit]`
+classes. Its widened and sub-11px per-file baselines only shrink; the semantic
+scale starts at the 11px label step.
+
 **Label rule:** uppercase always pairs with tracking, and never appears below 11px.
 An uppercase run with default tracking is a bug. So is the reverse: the `label`
 step's 0.1em on a title-case run spaces a word out until it reads as a
@@ -288,8 +293,10 @@ never a `mt-`/`mr-`/`mb-`/`ml-` on the children, at any value. `ml-auto` is alig
 a `-0` is a reset of somebody else's margin, and a negative margin is a pull into
 overlap — those three stay legal. Every other directional margin is one element
 deciding a number its parent should own, which is how a row of badges drifts out of
-step with the row it sits in. `check-spacing-tokens.sh` holds the line against a
-per-file ratchet; prose rhythm inside a `[&_…]:` variant is exempt, because
+step with the row it sits in. `check-spacing-tokens.sh` holds the original
+directional-margin rule and tracks CSS padding, margin and gap literals plus
+arbitrary-property classes in a separate per-file ratchet. Token definition
+files are exempt; prose rhythm inside a `[&_…]:` variant is exempt because
 markdown output has no JSX parent to carry a gap and its steps are deliberately
 uneven.
 
@@ -318,9 +325,10 @@ Match the neighbouring primitive rather than introducing a new step.
 the number. `.btn` (base.css) and the icon-button chrome constants read the tokens
 too, so changing one `--tr-radius-*` and rebuilding moves every surface wearing that
 meaning. `check-radius-tokens.sh` refuses a `rounded-[Npx]` literal, a
-`border-radius: Npx` in CSS, and the framework's own `rounded-sm`/`md`/`lg`/`xl`
+`border-radius: Npx` in CSS, the framework's own `rounded-sm`/`md`/`lg`/`xl`
 (unmapped in `tailwind.css`'s `@theme`, so they are the framework's scale, not this
-one), against a per-file ratchet that only shrinks. `rounded-full` and `rounded-none`
+one), and `[border-radius:Nunit]` classes. The old and widened rules have separate
+per-file ratchets that only shrink. `rounded-full` and `rounded-none`
 stay legal: a circle and a zero are shapes, not rungs.
 
 ## Materials
