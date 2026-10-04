@@ -446,6 +446,7 @@ visible rather than silently defaulting to a bordered card.
 | Constant | Use |
 |---|---|
 | `BTN_PRIMARY` | The single affirmative action in a flow |
+| `BTN_SECONDARY` | A neutral, bordered action alongside the primary |
 | `BTN_DANGER_SOLID` | The irreversible action — same *rank* as primary, differing only in consequence. Always paired with a warning icon; colour alone is not a signal |
 | `BTN_GHOST` | The ordinary case: transparent fill, muted label, no border |
 | `BTN_GHOST_BG` | Ghost's background half only, for sites that must inherit their text colour |
@@ -457,7 +458,7 @@ visible rather than silently defaulting to a bordered card.
 Ghost's `border-none` is a real border-*style* reset, so a later `border-color`
 utility paints nothing — danger cues signal through fill + text, never a border.
 **Cancel, Dismiss, Close and Discard are not destructive.** They back the user out
-and stay quiet: `BTN_GHOST`, no colour, no keyboard chip. Save the weight for the
+and stay quiet: `BTN_GHOST`, no colour. Save the weight for the
 affirmative action.
 
 ### Select
@@ -503,14 +504,14 @@ controls means a full focus trap.
 ### Chips, badges and tiles
 
 `Chip` has five variants (`state`, `provider`, `count`, `compound`, `removable`) and
-five tones mapped onto the status pill pairs. Shell: 26px, `--space-2` padding,
+five tones: neutral plus the four status tones. Shell: 26px, `--space-2` padding,
 `small` type. Radius follows the meaning rule — `removable` or clickable → capsule,
-everything else → `--tr-radius-sm`. `selected` is the one place a chip may use
-`--accent-muted` + an accent border, because a chip is a compact affordance rather
-than a full row. A `count` chip distinguishes "no value yet" from a known zero —
+everything else → `--tr-radius-sm`. A selected chip may use `--accent-muted` and an
+accent border. A `count` chip distinguishes "no value yet" from a known zero —
 render an empty-set label, never a bare `0`, for the latter. `IconTile` comes in
-24/32/40px with the same tone map; its interactive variant adds a hover wash and a
-small active scale.
+24/32/40px with six tones, including accent; its interactive variant adds a hover
+surface and a small active scale. A selected tile may also use `--accent-muted` and
+an accent border.
 
 ### Segmented control
 
@@ -544,7 +545,7 @@ tested against and overflows the panel on the next one.
 
 ### Icons
 
-`components/icons.tsx` is a **hand-drawn SVG library** — roughly 92 `Icon*`
+`components/icons.tsx` is a **hand-drawn SVG library** — 126 `Icon*`
 components that reproduce Lucide's geometry (each citing the glyph it copies), with
 no runtime dependency on any icon package. `lucide-react` is never imported.
 
@@ -657,10 +658,10 @@ tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.s
 | State | Treatment |
 |---|---|
 | **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent); outline-offset: 1px` — so no site can forget it. A site with its own ring still wins by utility order. |
-| **Focus (halo)** | The composite ring used on chips and tiles: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
-| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Buttons use `--border-hover` / `--card-hover`. Ghost-danger buttons get a hover-only tint. |
+| **Focus (halo)** | The composite ring used on chips, tiles and segmented options: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
+| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Button hover follows its chrome in `buttonChrome.ts`; ghost-danger buttons get a hover-only tint. |
 | **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
-| **Selected** | `--selected-fill`, an achromatic 10% overlay. Full-row fill, no left bar, no accent tint. `Chip`'s `selected` is the documented exception. |
+| **Selected** | `--selected-fill`, an achromatic 10% overlay. Full-row fill, no left bar, no accent tint. `Chip` and `IconTile` may use an accent border and `--accent-muted` when selected. |
 | **Active pane** | `--border-focus` — a plain luminance-step ring, a header lift to `--raised`, and the pane's own name held at `--text-primary` while every other pane's name steps to `--text-secondary`. **No hue** in any of the three: a coloured stroke or ink would clash with whichever terminal palette the agent underneath is using. The pane body — the terminal itself — never changes on focus. |
 
 ## Motion
