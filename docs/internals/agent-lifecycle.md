@@ -76,6 +76,7 @@ Per-provider event names:
 | OpenCode | `session.created`, root `message.updated`, `session.status` (`busy`/`retry`), `permission.asked`/legacy `permission.updated`, `permission.replied`, `question.*` and `question.v2.*`, `session.idle`, `session.error`; replies resume `Working`, while errors settle with error attention |
 | Cursor | `sessionStart`, `beforeSubmitPrompt`, `stop` — **no `NeedsInput`** — plus `subagentStart`/`subagentStop` and `afterAgentResponse` (last message only, documented not live-verified) |
 | Grok | reuses Claude's PascalCase names verbatim, plus `SubagentStart`/`SubagentStop` (documented, not live-verified) |
+| ZCode | `SessionStart` (once per process, inside the first turn or on resume), `UserPromptSubmit`, `Stop` (successful turns only), `PermissionRequest`; matched `PreToolUse(AskUserQuestion)` reports a question and its `PostToolUse` resumes the turn; a `PostToolUseFailure` with `is_interrupt` settles to `Idle` as an interruption, since ZCode runs no `Stop` after one |
 | Antigravity | `SessionStart`, `PreInvocation`, `Stop`, `PreToolUse` → all four (`PreToolUse` gated by tool name, see below); the matching `PostToolUse` resumes `Working` once no permission episode remains (`PostInvocation` maps to nothing: it fires per step, not per turn) |
 | Droid, Copilot, Aider | **no mapping at all** — identity only, via banner sniffing |
 
@@ -89,7 +90,8 @@ nothing can read.
 The correlation events — installed so the daemon has *evidence*, never unconditional
 transitions — are Claude's `SubagentStart`/`SubagentStop` and matched
 `PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Codex's
-`SubagentStart`/`SubagentStop`/`SessionEnd` and matched `PreToolUse`/`PostToolUse`; Grok's and Cursor's
+`SubagentStart`/`SubagentStop`/`SessionEnd` and matched `PreToolUse`/`PostToolUse`; ZCode's
+`PreToolUse`/`PostToolUse`/`PostToolUseFailure`; Grok's and Cursor's
 `subagentStart`/`subagentStop`; Cursor's `afterAgentResponse` (last-message
 only); Antigravity's `PostToolUse` (correlation evidence that conditionally clears a
 block); and the OpenCode plugin's synthesized
@@ -175,6 +177,7 @@ the other providers use `agent_hooks.rs`:
 | OpenCode | `<config dir>/opencode/plugins/houston-notify.js` |
 | Grok | `~/.grok/hooks/houston.json` |
 | Antigravity | `~/.gemini/config/hooks.json` |
+| ZCode | `~/.zcode/cli/config.json` (also `hooks.enabled` and Houston's plugin directory in `plugins.dirs`) |
 
 Every install is reversible through a managed-marker scheme: a trailing sentinel token
 `--houston-managed[=<channel>]` inside the command string, matched **per whitespace

@@ -29,8 +29,8 @@ that look like secrets — for example anything with "secrets" in the name) are 
 or redacted from the diff Houston builds for review, on the same rules whether the diff
 is read by you or handed to an agent for review.
 
-Review with agent opens a picker with the six engines Houston can spawn — Claude Code,
-Codex, Cursor Agent, Antigravity, OpenCode or Grok — and starts the one you choose in a
+Review with agent opens a picker with the seven engines Houston can spawn — Claude Code,
+Codex, Cursor Agent, Antigravity, OpenCode, Grok or ZCode — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start
 review; Cancel sends nothing at all.
 

@@ -136,13 +136,17 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 ### App-initiated config writes use reversible managed markers
 
 Hook entries in `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
-`~/.grok/hooks/…` and the OpenCode plugin carry `--houston-managed[=<channel>]`
-matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
+`~/.grok/hooks/…`, `~/.zcode/cli/config.json` and the OpenCode plugin carry
+`--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
 matching would let one channel evict the other. Claude preserves unrelated settings and hook
 commands, including user commands within a managed group. Its former `workspace_hooks`
 ownership records identify workspace files to migrate to global installation.
 Codex's `notify` is a single key, so a second channel parks the displaced line as a
-sentinel-carrying comment rather than clobbering it. User-initiated writes into a CLI's
+sentinel-carrying comment rather than clobbering it. ZCode's `hooks.enabled` is a single
+switch shared by every hook in `~/.zcode/cli/config.json`: the value Houston replaced is
+parked in a top-level `houstonParkedHooksEnabled` key and restored once no channel's
+sentinel remains. Its `plugins.dirs` entry is a path inside the channel's own state dir.
+User-initiated writes into a CLI's
 skill directories (`writeSkill`, skill push with backup) are fine.
 
 ### Measured values yes, class strings never

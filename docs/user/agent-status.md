@@ -99,6 +99,12 @@ it off removes exactly what Houston added:
 - **Grok** — writes its own hooks file under `~/.grok/hooks/`, one entry per lifecycle
   event; your own entries in that file stay, and turning Houston's off deletes only what
   it added, removing the file once nothing is left in it.
+- **ZCode** — adds one entry per lifecycle event to `~/.zcode/cli/config.json`, turns on
+  `hooks.enabled` (which also runs any hooks of yours that were switched off) and lists
+  Houston's plugin for the pane tools. Turning it off removes only Houston's entries and
+  restores `hooks.enabled` once no Houston channel has entries left. ZCode reports no hook
+  when you interrupt a turn between tool calls, so such a pane shows Working until its
+  next prompt.
 - **Antigravity** — also installs a hook, into its own config; it has no dedicated
   write-up on this screen beyond the generic "installs a hook for this CLI."
 

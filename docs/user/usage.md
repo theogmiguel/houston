@@ -16,7 +16,7 @@ workspace; sessions outside registered workspaces remain in **All workspaces**.
 ## What it does not cover
 
 Every other CLI Houston can spawn and that spends tokens — Antigravity, OpenCode,
-Cursor and Grok — is not read by this feature and is not included in the totals. Shell,
+Cursor, Grok and ZCode — is not read by this feature and is not included in the totals. Shell,
 SSH and custom sessions spend no tokens, so they're outside the feature by nature, not
 by omission. Droid, Copilot and Aider are absent because Houston cannot spawn them.
 

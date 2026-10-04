@@ -31,7 +31,7 @@ modals) uses `backdrop-filter`.
 │  │  webviews)           │    │                         ┌─────────────▼──────────────────┐
 │  └─────────────────────┘    │                         │ agent CLIs: claude, codex,       │
 │  src-tauri: daemon_host      │                         │ antigravity, opencode,           │
-│  (connect-or-spawn), fs,     │  spawns detached, Linux │ cursor-agent, grok, shell        │
+│  (connect-or-spawn), fs,     │  spawns detached, Linux │ cursor-agent, grok, zcode, shell │
 │  browser/, watchdog/         │  via houston-supervisor │  hooks → drop files              │
 └──────────────────────────────┘                         │  MCP → POST /mcp (per-pane token)│
                                                           └──────────────────────────────────┘
