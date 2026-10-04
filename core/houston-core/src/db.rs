@@ -8,8 +8,9 @@ use std::sync::Mutex;
 
 mod harness;
 pub use harness::{
-    HarnessDecisionRow, HarnessFindingRow, HarnessFindingWrite, HarnessPublication,
-    HarnessReviewRow,
+    HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
+    HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
+    HarnessVerificationRow, HarnessVerificationWrite,
 };
 mod tasks;
 pub use tasks::{
