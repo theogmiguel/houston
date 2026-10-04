@@ -28,7 +28,7 @@ import { SkillItemDistribution } from './SkillDistribution'
 import { SkillInstallDialog } from './SkillInstallDialog'
 import { useCopyFeedback } from './useCopyFeedback'
 import { Tooltip } from './Tooltip'
-import { SectionHead, SettingsList, SettingsRow as Row } from './settingsPrimitives'
+import { SectionHead, SettingsList, SettingsRow as Row, SubHead } from './settingsPrimitives'
 import { StatusIcon, STATUS_ICON_WORD, type StatusIconState } from './StatusIcon'
 import { ListDetail, type ListDetailItem } from './nav/ListDetail'
 import {
@@ -52,7 +52,7 @@ import {
 import { ICON_ROLE_CLS, Icon } from './Icon'
 import { Button } from './ui/Button'
 import { Caption } from './ui/Caption'
-import { skillCliRelations, skillUsageLine } from '../houston/skillSurface'
+import { skillCliRelations, skillRelationLines, skillUsageLine } from '../houston/skillSurface'
 
 const AGENT_LABEL: Record<Skill['agent'], string> = {
   claude: 'Claude Code',
@@ -304,12 +304,12 @@ function SkillAgentRelations({
 }): React.JSX.Element {
   return (
     <section className="flex flex-col gap-[var(--space-2)]" data-testid="skill-agent-relations">
-      <SectionHead title="Where agents find it" />
-      <SettingsList>
-        {skillCliRelations(skill, tools ?? null).map(({ tool, label, relation }) => (
-          <Row key={tool} title={label} desc={relation} />
+      <SubHead>Where agents find it</SubHead>
+      <div className="grid gap-[var(--space-1)]">
+        {skillRelationLines(skillCliRelations(skill, tools ?? null)).map((line) => (
+          <Caption key={line}>{line}</Caption>
         ))}
-      </SettingsList>
+      </div>
       {(usageLine || hasHarnessReview !== undefined) && (
         <p data-testid="skill-usage" className="m-0">
           <Caption tone="faint">

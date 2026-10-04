@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Skill } from '../env'
 import type { SkillToolState } from './generated/SkillToolState'
-import { canUseSkillInFocusedPane, skillCliRelations, skillScopeLabel, skillUsageLine } from './skillSurface'
+import { canUseSkillInFocusedPane, skillCliRelations, skillRelationLines, skillScopeLabel, skillUsageLine } from './skillSurface'
 import type { SessionInfo } from './generated/SessionInfo'
 
 const skill: Skill = {
@@ -76,5 +76,23 @@ describe('skill surface helpers', () => {
     expect(skillUsageLine('ui-tokens', null, false)).toBe(
       'Usage appears after the first Harness review.'
     )
+  })
+})
+
+describe('skillRelationLines', () => {
+  it('joins the CLIs that share a relation into one line, in order', () => {
+    expect(skillRelationLines([
+      { tool: 'claude', label: 'Claude Code', relation: 'source · user' },
+      { tool: 'codex', label: 'Codex', relation: 'copy in sync' },
+      { tool: 'opencode', label: 'OpenCode', relation: 'reads Claude Code’s copy' },
+      { tool: 'cursor', label: 'Cursor', relation: 'reads Claude Code’s copy' },
+      { tool: 'grok', label: 'Grok', relation: 'reads Claude Code’s copy' },
+      { tool: 'antigravity', label: 'Antigravity', relation: 'not managed here' }
+    ])).toEqual([
+      'Claude Code · source · user',
+      'Codex · copy in sync',
+      'OpenCode, Cursor, Grok · reads Claude Code’s copy',
+      'Antigravity · not managed here'
+    ])
   })
 })

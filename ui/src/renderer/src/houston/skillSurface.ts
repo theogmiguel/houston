@@ -83,6 +83,15 @@ export function skillCliRelations(skill: Skill, tools: SkillToolState[] | null):
   })
 }
 
+/** One line per relation, naming every CLI that shares it, in first-appearance order. */
+export function skillRelationLines(relations: SkillCliRelation[]): string[] {
+  const labelsByRelation = new Map<string, string[]>()
+  for (const { label, relation } of relations) {
+    labelsByRelation.set(relation, [...(labelsByRelation.get(relation) ?? []), label])
+  }
+  return [...labelsByRelation].map(([relation, labels]) => `${labels.join(', ')} · ${relation}`)
+}
+
 export function skillUsageLine(skillName: string, digest: string | null, hasReview: boolean): string {
   if (!hasReview) return 'Usage appears after the first Harness review.'
   if (digest === null) return 'Usage is unavailable from the last Harness review.'
