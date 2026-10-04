@@ -1,3 +1,4 @@
+import { useSession, useSessionFamily } from '../sessionsStore'
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useEffect, useContext, useRef, useState } from 'react'
 import { ChildrenRoster, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
@@ -67,6 +68,15 @@ import {
 import { ICON_ROLE_CLS, Icon } from './Icon'
 import { HEAD_BADGE_CLS } from './headBadge'
 import { HeaderDelegationBadge, type PaneRoster } from './DelegationCard'
+import {
+  endedLabel,
+  isGridSession,
+  recentAfterSelection,
+  rosterChildren,
+  rosterSessions,
+  visiblePeek,
+  withSessionFamily
+} from './sessionPaneSubscriptions'
 import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
 import { ContextIndicator } from './ContextIndicator'
@@ -76,19 +86,7 @@ export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
 export const HANDOFF_PROVIDERS = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const
 export type HandoffProvider = (typeof HANDOFF_PROVIDERS)[number]
-
-export function endedLabel(s: SessionInfo['state']): string | null {
-  switch (s) {
-    case 'exited':
-      return 'DONE'
-    case 'killed':
-      return 'KILLED'
-    case 'interrupted':
-      return 'INTERRUPTED'
-    default:
-      return null
-  }
-}
+export { endedLabel }
 
 export function basename(p: string): string {
   const parts = p.replace(/\/+$/, '').split('/')
@@ -180,7 +178,7 @@ function statusLabel(s: AgentStatus): string {
 }
 
 function statusDotClass(status: AgentStatus): string {
-  const pulse = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]'
+  const pulse = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'
   switch (status) {
     case 'working':
       return `bg-[var(--info)] ${pulse}`
@@ -352,7 +350,7 @@ interface Props {
 
 function SessionPaneImpl({
   client,
-  info,
+  info: infoProp,
   theme,
   active,
   connected,
@@ -381,27 +379,30 @@ function SessionPaneImpl({
   onSwapAdjacent,
   onOpenFile,
   onOpenDir,
-  roster,
+  roster: rosterProp,
   gridSessionIds,
   onMoveChildToGrid,
   onReturnChildToRoster,
   onFocusPane
 }: Props): React.JSX.Element {
+  const info = useSession(infoProp.id, infoProp) ?? infoProp
+  const family = useSessionFamily(info.id, rosterSessions(rosterProp))
+  const roster = withSessionFamily(rosterProp, family)
   const [peekId, setPeekId] = useState<number | null>(null)
   const [recent, setRecent] = useState<number[]>([])
   const [collapsed, setCollapsed] = useState(false)
-  const children = [...(roster?.sessions.values() ?? [])].filter((child) => child.spawned_by === info.id).sort((a, b) => a.id - b.id)
-  const peek = children.find((child) => child.id === peekId && !gridSessionIds?.has(child.id))
+  const children = rosterChildren(roster?.sessions, info.id)
+  const peek = visiblePeek(children, peekId, gridSessionIds)
   const selectChild = (id: number | null): void => {
-    if (id != null && gridSessionIds?.has(id)) {
+    if (isGridSession(id, gridSessionIds)) {
       onFocusPane?.(id)
       return
     }
     setPeekId(id)
-    if (id != null) setRecent((prev) => [id, ...prev.filter((other) => other !== id)].slice(0, PEEK_KEEP_MOUNTED))
+    if (id != null) setRecent((prev) => recentAfterSelection(prev, id, PEEK_KEEP_MOUNTED))
   }
   const moveChild = (id: number): void => {
-    if (gridSessionIds?.has(id)) {
+    if (isGridSession(id, gridSessionIds)) {
       onFocusPane?.(id)
       return
     }

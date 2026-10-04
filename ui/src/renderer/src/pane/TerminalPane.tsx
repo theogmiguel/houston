@@ -248,6 +248,9 @@ export function TerminalPane({
   const lastReassertedSizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const resizeReassertTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const skipSnapshotOnceRef = useRef(false)
+  const [documentHidden, setDocumentHidden] = useState(() => document.visibilityState === 'hidden')
+  const documentHiddenRef = useRef(documentHidden)
+  documentHiddenRef.current = documentHidden
   const [find, setFind] = useState(false)
   const [findTerm, setFindTerm] = useState('')
   const [synced, setSynced] = useState(false)
@@ -1116,7 +1119,7 @@ export function TerminalPane({
       },
       clipboardCopied: () => pushToast('Copied', undefined, 'success', 'auto-copy')
     })
-    if (!warmRef.current) {
+    if (!warmRef.current && !documentHiddenRef.current) {
       reportVisibility(true)
       sendAttach(activeAtMountRef.current ? ATTACH_REPLAY_BYTES : ATTACH_REPLAY_BYTES_BACKGROUND)
       attachedRef.current = true
@@ -1267,6 +1270,8 @@ export function TerminalPane({
       runWakeRepaint()
     }
     const onVisibility = (): void => {
+      documentHiddenRef.current = document.visibilityState === 'hidden'
+      setDocumentHidden(document.visibilityState === 'hidden')
       if (document.visibilityState === 'visible') wake()
     }
     window.addEventListener('focus', wake)
@@ -1279,7 +1284,7 @@ export function TerminalPane({
   }, [])
 
   useEffect(() => {
-    if (!warm) {
+    if (!warm && !documentHidden) {
       if (hibernateTimerRef.current !== undefined) {
         clearTimeout(hibernateTimerRef.current)
         hibernateTimerRef.current = undefined
@@ -1303,7 +1308,7 @@ export function TerminalPane({
     if (hibernateTimerRef.current !== undefined) return
     hibernateTimerRef.current = setTimeout(() => {
       hibernateTimerRef.current = undefined
-      if (!warmRef.current || !attachedRef.current) return
+      if ((!warmRef.current && !documentHiddenRef.current) || !attachedRef.current) return
       reportVisibility(false)
       attachedRef.current = false
     }, HIBERNATE_DEBOUNCE_MS)
@@ -1314,7 +1319,7 @@ export function TerminalPane({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [warm])
+  }, [warm, documentHidden])
 
   const prevHiddenRef = useRef(hiddenByExpand)
   useEffect(() => {
@@ -1454,7 +1459,7 @@ export function TerminalPane({
           aria-hidden="true"
         >
           <div
-            className={`loop-anim w-2 h-4 mb-[3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_step-end_infinite] ${
+            className={`loop-anim w-2 h-4 mb-[3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_steps(2,end)_infinite] ${
               synced
                 ? 'transition-opacity duration-[var(--animate-t-fast)] ease-linear opacity-0'
                 : 'motion-reduce:opacity-70'
@@ -1463,7 +1468,7 @@ export function TerminalPane({
           {SKELETON_WIDTHS.map((w, i) => (
             <div
               key={i}
-              className={`loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] transition-opacity duration-[var(--animate-t-fast)] ease-linear motion-safe:[animation:skeleton-shimmer_1.4s_ease-in-out_infinite] ${
+              className={`loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] transition-opacity duration-[var(--animate-t-fast)] ease-linear motion-safe:[animation:skeleton-shimmer_1.4s_steps(4,end)_infinite] ${
                 synced ? 'opacity-0' : 'opacity-100 motion-reduce:opacity-70'
               }`}
               style={{ width: `${w}%`, transitionDelay: `${i * 60}ms` }}

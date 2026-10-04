@@ -463,7 +463,7 @@ export function TabsPopover({
                 >
                   {}
                   <span
-                    className="relative flex-none inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] bg-surface-hover text-text-secondary font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] overflow-hidden uppercase [--dot-pulse-opacity:0.45] group-data-[loading]/pop:loop-anim group-data-[loading]/pop:motion-safe:[animation:dot-pulse_1.2s_ease-in-out_infinite] group-data-[loading]/pop:motion-reduce:opacity-70"
+                    className="relative flex-none inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] bg-surface-hover text-text-secondary font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] overflow-hidden uppercase [--dot-pulse-opacity:0.45] group-data-[loading]/pop:loop-anim group-data-[loading]/pop:motion-safe:[animation:dot-pulse_1.2s_steps(4,end)_infinite] group-data-[loading]/pop:motion-reduce:opacity-70"
                     aria-hidden
                   >
                     {t.url === null ? (

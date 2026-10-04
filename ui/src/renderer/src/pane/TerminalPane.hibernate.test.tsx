@@ -125,6 +125,23 @@ describe('TerminalPane hibernation (02-grid row 17)', () => {
     })
   }
 
+  it('hibernates on document visibilitychange and reattaches when visible', async () => {
+    await render(false)
+    const attaches = vi.mocked(fakeClient.attachSession).mock.calls.length
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      act(() => vi.advanceTimersByTime(250))
+      expect(fakeClient.sessionVisibility).toHaveBeenLastCalledWith(7, false)
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      expect(fakeClient.sessionVisibility).toHaveBeenLastCalledWith(7, true)
+      expect(vi.mocked(fakeClient.attachSession).mock.calls.length).toBe(attaches + 1)
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    }
+  })
+
   it('a pane that mounts warm neither subscribes nor replays', async () => {
     await render(true)
     expect(fakeClient.sessionVisibility).not.toHaveBeenCalled()

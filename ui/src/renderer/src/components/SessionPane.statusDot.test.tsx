@@ -29,7 +29,7 @@ function renderDot(status: AgentStatus): HTMLElement {
   return dot
 }
 
-const PULSE = 'motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]'
+const PULSE = 'motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'
 
 describe('per-pane status dot colour', () => {
   it('working paints informational blue, not completion green', () => {

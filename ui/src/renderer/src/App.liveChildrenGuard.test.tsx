@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type AppHarness,
   currentClient,
   deliverControl,
+  makeSession,
   renderReadyApp,
   resetHarness
 } from './test/appTestHarness'
@@ -54,6 +55,22 @@ describe('child-guard confirm flow on kill/close (v62 D3)', () => {
     expect(client.confirmCloseSession).toHaveBeenCalledTimes(1)
     expect(client.confirmCloseSession).toHaveBeenCalledWith(1)
     expect(client.confirmKillSession).not.toHaveBeenCalled()
+  })
+
+  it('keeps the daemon child guard after a pure live_children update', async () => {
+    harness = await renderReadyApp({ sessions: [makeSession({ id: 1, live_children: 0, children_waiting: 0 })] })
+    const client = currentClient()
+    const closeSession = vi.fn()
+    client.closeSession = closeSession
+    deliverControl({ type: 'live_children_changed', session: 1, live_children: 2, children_waiting: 1 })
+    act(() => harness!.container.querySelector<HTMLButtonElement>('[data-panekey="1"] button[aria-label="Close"]')!.click())
+    expect(closeSession).toHaveBeenCalledWith(1)
+    ;(client.takeRecentDestroyIntent as unknown as { mockReturnValueOnce: (v: unknown) => void }).mockReturnValueOnce({ session: 1, kind: 'close' })
+    deliverControl({ type: 'error', message: REFUSAL, context: null })
+    expect(harness.container.querySelector('#confirm-modal-msg')?.textContent).toContain('2 live children')
+    expect(client.confirmCloseSession).not.toHaveBeenCalled()
+    act(() => findButton(harness!, 'Kill anyway').click())
+    expect(client.confirmCloseSession).toHaveBeenCalledExactlyOnceWith(1)
   })
 
   it('re-sends a kill when the refused action was a kill', async () => {

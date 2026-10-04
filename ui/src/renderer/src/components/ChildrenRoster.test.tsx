@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createSessionsStore, SessionsStoreContext } from '../sessionsStore'
 import { ChildrenRoster, childGroup, delegationAge, glyphLabel } from './ChildrenRoster'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 
@@ -138,4 +139,16 @@ describe('glyph labels', () => {
     expect(glyphLabel(cursor)).toBe('scout · Working · cursor: needs-input not reported by this provider')
     expect(glyphLabel(child(4))).toBe('worker 4 · Working')
   })
+})
+
+it('regroups a child after a pure status update while its input props remain unchanged', () => {
+  children = [child(4)]
+  const parent = { ...child(1), spawned_by: null }
+  const sessions = new Map([[1, parent], [4, children[0]]])
+  const store = createSessionsStore(sessions)
+  act(() => root.render(<SessionsStoreContext.Provider value={store}><ChildrenRoster {...props()} parent={parent} roster={{ sessions, maxLiveChildren: null }} /></SessionsStoreContext.Provider>))
+  expect(host.querySelector('[aria-label="Answer 4"]')).toBeNull()
+  act(() => store.set((previous) => new Map(previous).set(4, { ...children[0], status: 'needs-input' })))
+  expect(host.querySelector('[aria-label="Answer 4"]')).not.toBeNull()
+  expect(host.querySelector('.children-list [aria-label="needs your input"]')).not.toBeNull()
 })

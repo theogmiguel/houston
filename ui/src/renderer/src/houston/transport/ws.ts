@@ -252,7 +252,7 @@ export class WsTerminalTransport implements TerminalTransport {
   }
 
   handleBinaryMessage(buf: ArrayBuffer): void {
-    if (buf.byteLength >= 1 && new DataView(buf).getUint8(0) === 3) {
+    if (buf.byteLength >= 1 && new Uint8Array(buf, 0, 1)[0] === 3) {
       const gap = decodeGapFrame(buf)
       if (gap) {
         wsGapStats.gaps++

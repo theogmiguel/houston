@@ -42,6 +42,7 @@ pub struct TrayHost {
     availability: Mutex<TrayAvailability>,
     keep_in_tray: AtomicBool,
     payload: Mutex<TrayPayload>,
+    last_painted_payload: Mutex<Option<TrayPayload>>,
     icon: Mutex<Option<TrayIcon<Wry>>>,
     painted: Mutex<Option<TrayIconState>>,
     base_icon_size: AtomicU32,
@@ -55,6 +56,7 @@ impl TrayHost {
             availability: Mutex::new(availability),
             keep_in_tray: AtomicBool::new(stored.keep_in_tray),
             payload: Mutex::new(TrayPayload::connecting()),
+            last_painted_payload: Mutex::new(None),
             icon: Mutex::new(None),
             painted: Mutex::new(None),
             base_icon_size: AtomicU32::new(base_icon_size(None)),
@@ -354,6 +356,13 @@ pub fn install(app: &AppHandle, host: &Arc<TrayHost>) {
 
 fn repaint(app: &AppHandle, host: &Arc<TrayHost>) {
     let payload = host.payload.lock().expect("tray payload mutex").clone();
+    let mut last_painted = host
+        .last_painted_payload
+        .lock()
+        .expect("tray painted payload mutex");
+    if !tray_payload_needs_repaint(last_painted.as_ref(), &payload) {
+        return;
+    }
     let guard = host.icon.lock().expect("tray icon mutex");
     let Some(icon) = guard.as_ref() else {
         return;
@@ -372,26 +381,30 @@ fn repaint(app: &AppHandle, host: &Arc<TrayHost>) {
     }
     let state = model::icon_state(&payload);
     let mut painted = host.painted.lock().expect("tray painted mutex");
-    if *painted == Some(state) {
-        return;
-    }
-    let size = icon_size_for(
-        host.base_icon_size.load(Ordering::SeqCst),
-        app.primary_monitor()
-            .ok()
-            .flatten()
-            .map(|m| m.scale_factor()),
-    );
-    match Image::from_bytes(icon_bytes(state, size)) {
-        Ok(image) => {
-            if let Err(err) = icon.set_icon(Some(image)) {
-                eprintln!("houston-tauri: tray icon update failed: {err}");
-            } else {
-                *painted = Some(state);
+    if *painted != Some(state) {
+        let size = icon_size_for(
+            host.base_icon_size.load(Ordering::SeqCst),
+            app.primary_monitor()
+                .ok()
+                .flatten()
+                .map(|m| m.scale_factor()),
+        );
+        match Image::from_bytes(icon_bytes(state, size)) {
+            Ok(image) => {
+                if let Err(err) = icon.set_icon(Some(image)) {
+                    eprintln!("houston-tauri: tray icon update failed: {err}");
+                } else {
+                    *painted = Some(state);
+                }
             }
+            Err(err) => eprintln!("houston-tauri: tray icon {size}px failed to decode: {err}"),
         }
-        Err(err) => eprintln!("houston-tauri: tray icon {size}px failed to decode: {err}"),
     }
+    *last_painted = Some(payload);
+}
+
+fn tray_payload_needs_repaint(last: Option<&TrayPayload>, current: &TrayPayload) -> bool {
+    last != Some(current)
 }
 
 #[tauri::command]
@@ -486,6 +499,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn equal_tray_payloads_are_recognized_as_already_painted() {
+        let payload = TrayPayload::connecting();
+        assert!(!tray_payload_needs_repaint(Some(&payload), &payload));
+        assert!(tray_payload_needs_repaint(None, &payload));
+        let mut changed = payload.clone();
+        changed.connection = model::TrayConnection::Ready;
+        assert!(tray_payload_needs_repaint(Some(&payload), &changed));
     }
 
     #[test]

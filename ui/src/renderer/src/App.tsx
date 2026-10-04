@@ -1,3 +1,4 @@
+import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
 import { registerOwned } from './pane/registration';
 import {
@@ -115,7 +116,6 @@ import { tabsStorageKey } from "./components/browserTabsKey";
 import { recordAndReload } from "./reloadBudget";
 import { AnimOut } from "./components/AnimOut";
 import {
-  BTN_GHOST_BG,
   BTN_ICO,
   BTN_PRIMARY,
 } from "./components/buttonChrome";
@@ -307,6 +307,7 @@ import {
   type WindowButtonLayout,
 } from "./windowButtonLayout";
 import { stackCapacity } from "./paneCaps";
+import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/Icon";
 
 // lazy() keeps Settings (and everything below) out of the boot chunk
@@ -368,47 +369,6 @@ const PANE_GROW_TTL_MS = 1_000;
 const REVIEW_INTENT_TTL_MS = 10_000;
 
 type SessionStateMessage = Extract<ServerMsg, { type: "session_state" }>;
-
-type GridLifecycle =
-  | "starting"
-  | "working"
-  | "needs-input"
-  | "idle"
-  | "unavailable"
-  | "stopped";
-
-function gridLifecycle(sessions: SessionInfo[]): {
-  state: GridLifecycle;
-  label: string;
-} {
-  const live = sessions.filter((session) => isLive(session.state));
-  if (live.length === 0) return { state: "stopped", label: "No live panes" };
-
-  const count = (status: SessionInfo["status"]): number =>
-    live.filter((session) => session.status === status).length;
-  const needsInput = live.filter((session) => session.status === "needs-input" || session.children_waiting > 0).length;
-  const working = count("working");
-  const starting = count("spawning");
-  const idle = count("idle");
-  const unavailable = count("unavailable") + count(null) + count(undefined);
-  const state: GridLifecycle = needsInput
-    ? "needs-input"
-    : working
-      ? "working"
-      : starting
-        ? "starting"
-        : unavailable
-          ? "unavailable"
-          : "idle";
-  const parts = [
-    needsInput ? `${needsInput} need input` : "",
-    working ? `${working} working` : "",
-    starting ? `${starting} starting` : "",
-    idle ? `${idle} ready` : "",
-    unavailable ? `${unavailable} status unavailable` : "",
-  ].filter(Boolean);
-  return { state, label: parts.join(" · ") };
-}
 
 type RosterPatchMsg = Extract<
   ServerMsg,
@@ -522,6 +482,7 @@ function offeredUpdate(
 }
 
 const RECONNECT_MS = 1000;
+const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -541,24 +502,30 @@ function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, a
   return focusedPaneOwnsKey(event);
 }
 
+function SessionEffects({ connection, workspaces, onFocusPane }: {
+  connection: Parameters<typeof useTrayBridge>[0]["connection"];
+  workspaces: Workspace[];
+  onFocusPane: (id: number) => void;
+}): null {
+  const sessions = useSessions();
+  useOrchestrationNotifications(sessions);
+  useTrayBridge({ connection, sessions, workspaces, onFocusPane });
+  return null;
+}
+
 export function App(): React.JSX.Element {
   const [conn, setConn] = useState<Conn>({ kind: "connecting" });
   const dismissedUpdate = useDismissedUpdate();
   const customChrome = useCustomSurface();
 
-  // Gates every `.loop-anim` via one CSS attribute. Deliberately VISIBILITY,
-  // not focus: Houston is often watched unfocused from a second monitor, and
-  // pausing on blur would freeze exactly the status pulses being glanced at.
+  // A brief blur can be incidental; sustained blur pauses ambient animation.
   useEffect(() => {
-    const update = (): void => {
-      document.documentElement.toggleAttribute(
-        "data-motion-paused",
-        document.visibilityState === "hidden",
-      );
-    };
-    update();
-    document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
+    let mounted = true;
+    let dispose: (() => void) | undefined;
+    void import("./motionPause").then(({ watchMotionPause }) => {
+      if (mounted) dispose = watchMotionPause();
+    });
+    return () => { mounted = false; dispose?.(); };
   }, []);
 
   const [buttonLayout, setButtonLayout] = useState<WindowButtonLayout>(
@@ -595,7 +562,9 @@ export function App(): React.JSX.Element {
       window.removeEventListener("resize", onResize);
     };
   }, []);
-  const [sessions, setSessions] = useState<Map<number, SessionInfo>>(new Map());
+  const [sessionsStore] = useState(createSessionsStore);
+  const sessions = useLayoutSessions(sessionsStore);
+  const setSessions = sessionsStore.set;
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const appNotices = useNotices();
@@ -969,17 +938,15 @@ export function App(): React.JSX.Element {
   }, [lastWorkspace, selectWorkspaceFromKeyboard]);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-  const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
+  const sessionsRef = useMemo(() => ({ get current() { return sessionsStore.getSnapshot(); } }), [sessionsStore]);
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
+  const savedLayoutsRef = useRef(layouts);
   const workspacesRef = useRef(workspaces);
   workspacesRef.current = workspaces;
   const voiceSettingsRef = useRef(voiceSettings);
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
-
-  useOrchestrationNotifications(sessions);
 
   const paneRoster = useMemo<PaneRoster>(() => ({
     sessions,
@@ -1004,13 +971,6 @@ export function App(): React.JSX.Element {
     setSelectedWs(target.project_dir);
     setActiveId(session);
   };
-
-  useTrayBridge({
-    connection: conn.kind,
-    sessions,
-    workspaces,
-    onFocusPane: focusPane,
-  });
 
   const [focusBrowserUrl, setFocusBrowserUrl] = useState(0);
   const [reviewSessions, setReviewSessions] = useState<
@@ -1202,10 +1162,9 @@ export function App(): React.JSX.Element {
             break;
           case "agent_status":
             setSessions((prev) => {
-              const next = new Map(prev);
-              const s = next.get(msg.session);
-              if (s) next.set(msg.session, { ...s, status: msg.status });
-              return next;
+              const s = prev.get(msg.session);
+              if (!s || s.status === msg.status) return prev;
+              return new Map(prev).set(msg.session, { ...s, status: msg.status });
             });
             break;
           case "session_context":
@@ -1571,8 +1530,6 @@ export function App(): React.JSX.Element {
         id: string;
         name: string;
         count?: number;
-        state?: GridLifecycle;
-        statusLabel?: string;
         sessionIds?: number[];
         tagIds?: number[];
         paneTagIds?: number[];
@@ -1584,10 +1541,6 @@ export function App(): React.JSX.Element {
         const tagIds = gridTagIds(g);
         if (!st) return { id: g.id, name: g.name, tagIds };
         const ids = preorderSessions(st.tree);
-        const gridSessions = ids
-          .map((id) => sessions.get(id))
-          .filter((session): session is SessionInfo => session !== undefined);
-        const lifecycle = gridLifecycle(gridSessions);
         const paneTagIds = [
           ...new Set(
             ids.flatMap((id) => sessions.get(id)?.tags ?? []),
@@ -1597,8 +1550,6 @@ export function App(): React.JSX.Element {
           id: g.id,
           name: g.name,
           count: ids.length,
-          state: lifecycle.state,
-          statusLabel: lifecycle.label,
           sessionIds: ids,
           tagIds,
           paneTagIds,
@@ -1788,7 +1739,8 @@ export function App(): React.JSX.Element {
   }, [scmOpen]);
 
   useEffect(() => {
-    for (const [key, st] of layouts) saveLayout(key, st);
+    for (const [key, st] of changedEntries(savedLayoutsRef.current, layouts)) saveLayout(key, st);
+    savedLayoutsRef.current = layouts;
   }, [layouts]);
 
   const mutateTree = useCallback((fn: (t: LayoutNode) => LayoutNode | null) => {
@@ -2844,13 +2796,6 @@ export function App(): React.JSX.Element {
     return () => configureDictation(null);
   }, [voiceClient, voiceEnabled, voiceCaptureMode]);
 
-  const [, forceReconnectTick] = useState(0);
-  useEffect(() => {
-    if (conn.kind !== "reconnecting") return;
-    const t = setInterval(() => forceReconnectTick((x) => x + 1), 1000);
-    return () => clearInterval(t);
-  }, [conn.kind]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement;
@@ -3230,6 +3175,8 @@ export function App(): React.JSX.Element {
   };
 
   return (
+    <SessionsStoreContext.Provider value={sessionsStore}>
+      <SessionEffects connection={conn.kind} workspaces={workspaces} onFocusPane={focusPane} />
     <TerminalTuningContext.Provider value={terminalTuning}>
       <KeymapOverridesContext.Provider value={keymapOverrides}>
       <TagsContext.Provider value={tags}>
@@ -3413,26 +3360,16 @@ export function App(): React.JSX.Element {
           </header>
 
           {conn.kind === "reconnecting" && (
-            <div
-              className="fixed top-[calc(var(--h-top)+16px)] left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex items-center gap-2 py-1.5 px-3.5 border border-[var(--status-blocked-text)] rounded-full bg-[var(--card-bg)] text-[var(--status-blocked-text)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] shadow-[var(--shadow-md)] max-w-[70vw]"
-              role="status"
-            >
-              <span className="loop-anim flex-none w-2 h-2 rounded-[50%] bg-[var(--danger)] [--dot-pulse-opacity:0.25] motion-safe:[animation:dot-pulse_1.2s_ease-in-out_infinite]" />
-              <span>
-                daemon connection lost — reconnecting…{" "}
-                {Math.max(0, Math.round((Date.now() - conn.since) / 1000))}s
-                {conn.error ? ` (${conn.error})` : ""}
-              </span>
-              <button
-                className={`btn ${BTN_GHOST_BG} text-inherit border border-current py-px px-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]`}
-                onClick={() => {
+            <Suspense fallback={null}>
+              <ReconnectBanner
+                since={conn.since}
+                error={conn.error}
+                onRetry={() => {
                   clearTimeout(retryTimerRef.current);
                   reconnectRef.current();
                 }}
-              >
-                Retry now
-              </button>
-            </div>
+              />
+            </Suspense>
           )}
 
           {}
@@ -4218,5 +4155,6 @@ export function App(): React.JSX.Element {
       </TagsContext.Provider>
       </KeymapOverridesContext.Provider>
     </TerminalTuningContext.Provider>
+    </SessionsStoreContext.Provider>
   );
 }
