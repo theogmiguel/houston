@@ -1,11 +1,11 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use tauri::{AppHandle, Emitter, EventTarget};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2, ICoreWebView2Controller, ICoreWebView2NavigationCompletedEventArgs,
-    ICoreWebView2NewWindowRequestedEventArgs, ICoreWebView2PermissionRequestedEventArgs,
-    ICoreWebView2_4, COREWEBVIEW2_PERMISSION_STATE_DENY,
+    ICoreWebView2NavigationStartingEventArgs, ICoreWebView2NewWindowRequestedEventArgs,
+    ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2_4, COREWEBVIEW2_PERMISSION_STATE_DENY,
     COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT, COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
     COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
     COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED,
@@ -33,7 +33,19 @@ pub(crate) fn web_error_status_text(status: i32) -> String {
     }
 }
 
-type Cells = (Rc<Cell<bool>>, Rc<Cell<f64>>);
+#[derive(Default)]
+struct Navigation {
+    url: Option<String>,
+    id: u64,
+}
+
+type Cells = (Rc<Cell<bool>>, Rc<Cell<f64>>, Rc<RefCell<Navigation>>);
+
+fn reported_url(source: Option<String>, navigation: &Option<String>) -> Option<String> {
+    source
+        .filter(|url| !url.is_empty())
+        .or_else(|| navigation.clone())
+}
 
 fn live_props(core: &ICoreWebView2, cells: &Cells) -> LiveProps {
     // SAFETY: callers run inside a with_webview closure on the UI thread,
@@ -51,7 +63,7 @@ fn live_props(core: &ICoreWebView2, cells: &Cells) -> LiveProps {
         let mut can_fwd = Default::default();
         core.CanGoForward(&mut can_fwd).ok();
         LiveProps {
-            url,
+            url: reported_url(url, &cells.2.borrow().url),
             title,
             favicon: None,
             loading: cells.0.get(),
@@ -112,7 +124,11 @@ pub(crate) fn wire_signals(
             .controller()
             .CoreWebView2()
             .map_err(|err| format!("browser: CoreWebView2(): {err}"))?;
-        let cells: Cells = (Rc::new(Cell::new(false)), Rc::new(Cell::new(0.0_f64)));
+        let cells: Cells = (
+            Rc::new(Cell::new(false)),
+            Rc::new(Cell::new(0.0_f64)),
+            Rc::new(RefCell::new(Navigation::default())),
+        );
 
         macro_rules! wire {
             ($label:literal, $add:ident, $handler:ty, $body:expr) => {{
@@ -135,7 +151,20 @@ pub(crate) fn wire_signals(
                 "add_NavigationStarting",
                 add_NavigationStarting,
                 NavigationStartingEventHandler,
-                Box::new(move |core: Option<ICoreWebView2>, _args| {
+                Box::new(move |core: Option<ICoreWebView2>, args: Option<ICoreWebView2NavigationStartingEventArgs>| {
+                    if let Some(args) = args {
+                        let mut navigation_id = 0;
+                        if args.NavigationId(&mut navigation_id).is_ok() {
+                            cells.2.borrow_mut().id = navigation_id;
+                        }
+                        let mut uri = PWSTR(std::ptr::null_mut());
+                        if args.Uri(&mut uri).is_ok() {
+                            let uri = webview2_com::take_pwstr(uri);
+                            if crate::browser::webkit::url_scheme_is_allowed(&uri) {
+                                cells.2.borrow_mut().url = Some(uri.chars().take(state::MAX_URL_CHARS).collect());
+                            }
+                        }
+                    }
                     cells.1.set(0.02);
                     cells.0.set(true);
                     update_and_emit(&app_h, &id_h, &host_h, &core, &cells, |s| s.load_started());
@@ -174,6 +203,14 @@ pub(crate) fn wire_signals(
                 NavigationCompletedEventHandler,
                 Box::new(move |core: Option<ICoreWebView2>,
                                args: Option<ICoreWebView2NavigationCompletedEventArgs>| {
+                    if let Some(args) = &args {
+                        let mut navigation_id = 0;
+                        let active_id = cells.2.borrow().id;
+                        if args.NavigationId(&mut navigation_id).is_ok()
+                            && active_id != 0 && navigation_id != active_id {
+                            return Ok(());
+                        }
+                    }
                     cells.0.set(false);
                     cells.1.set(1.0);
                     if let Some(args) = args.as_ref() {
@@ -195,14 +232,15 @@ pub(crate) fn wire_signals(
                                 return Ok(());
                             }
                             let text = web_error_status_text(status.0);
-                            let failing: Option<String> = core.as_ref().map(|c| {
+                            let failing: Option<String> = cells.2.borrow().url.clone().or_else(|| core.as_ref().map(|c| {
                                 let mut fail_url = PWSTR(std::ptr::null_mut());
                                 if c.Source(&mut fail_url).is_ok() {
                                     webview2_com::take_pwstr(fail_url)
                                 } else {
                                     String::new()
                                 }
-                            });
+                            }));
+                            let failing = reported_url(failing, &cells.2.borrow().url);
                             let shown = failing.as_deref().unwrap_or("<unknown url>");
                             eprintln!("browser: child {id_h:?} navigation failed: {text} ({shown})");
                             update_and_emit(&app_h, &id_h, &host_h, &core, &cells, |s| {
@@ -398,4 +436,27 @@ pub(crate) fn wire_signals(
 
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::reported_url;
+
+    #[test]
+    fn empty_source_preserves_the_native_navigation_url() {
+        let navigation = Some("data:text/html,%3Ctitle%3Efixture%3C/title%3E".into());
+        assert_eq!(reported_url(Some(String::new()), &navigation), navigation);
+        assert_eq!(reported_url(None, &navigation), navigation);
+    }
+
+    #[test]
+    fn current_source_takes_precedence_over_navigation_intent() {
+        assert_eq!(
+            reported_url(
+                Some("https://example.invalid/redirect".into()),
+                &Some("https://example.invalid/start".into())
+            ),
+            Some("https://example.invalid/redirect".into())
+        );
+    }
 }

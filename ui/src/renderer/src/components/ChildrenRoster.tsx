@@ -63,7 +63,7 @@ export function delegationAge(start: number, now: number): string {
 }
 
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
-  if (!isLive(info.state)) return <Tooltip label="Ended"><span className="w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
+  if (!isLive(info.state)) return <Tooltip label="Ended"><span className="agent-dot w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
   return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
 }
 
@@ -114,6 +114,8 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
     timer.current = undefined
     setPending([])
   }
+  // The toggle lives on the Needs you heading, so it must not outlast that group.
+  if (filter && !children.some((child) => childGroup(child) === 'Needs you')) setFilter(false)
   const grouped = ['Needs you', 'Working', 'Settled'] as const
   const ordered = grouped.flatMap((group) => children.filter((child) => childGroup(child) === group).sort((a, b) => group === 'Settled' ? Number(a.delegation?.state === 'failed') - Number(b.delegation?.state === 'failed') : 0))
   const [view, setView] = useState<'children' | 'queue'>(defaultView)
@@ -142,7 +144,6 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
           onChange={setView}
         />
         <span className="flex-1" />
-        {view === 'children' && <Tooltip label="Filter to needs you"><button className={ROSTER_ICON} aria-label="Filter children" aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="ui" /></button></Tooltip>}
         <Tooltip label="Collapse children"><button className={ROSTER_ICON} aria-label="Collapse children" onClick={onCollapse}><Icon glyph={IconChevronLeft} role="ui" /></button></Tooltip>
       </div>
       {view === 'queue' ? (
@@ -164,7 +165,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
         {grouped.map((group) => {
           const items = ordered.filter((child) => childGroup(child) === group && (!filter || group === 'Needs you'))
           return items.length > 0 && <div key={group}>
-            <div className="children-group"><span>{group}</span><span>{items.length}</span></div>
+            <div className="children-group"><span>{group}</span>{group === 'Needs you' && <button className="children-group-toggle" aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="small" />Show only</button>}<span>{items.length}</span></div>
             {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
               <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span>{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
               <span className="children-slot"><span className="children-state"><Suspense fallback={delegationAge(child.delegation?.started_at ?? Date.now(), child.delegation?.settled_at ?? Date.now())}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={ageTicks(child)} /></Suspense></span>

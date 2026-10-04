@@ -267,9 +267,17 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-(Wrap `cargo test` in `dbus-run-session` with `gnome-keyring-daemon
---unlock` if `voice::cloud`'s Secret Service tests need a private session
-bus locally.)
+Locally, run `cargo test` through `scripts/with-test-keyring.sh` when
+`voice::cloud`'s Secret Service tests need a keyring:
+`scripts/oom-shield.sh scripts/with-test-keyring.sh cargo test`. Never run
+`gnome-keyring-daemon --unlock` directly on a desktop host, even inside
+`dbus-run-session`: the daemon opens the host's real
+`~/.local/share/keyrings/login.keyring`, and once anything prompts it
+re-encrypts that keyring with the password read from stdin (empty or `\n`).
+The user's login password then no longer unlocks it. The wrapper avoids this
+by pointing `XDG_DATA_HOME` and `XDG_RUNTIME_DIR` at a temporary directory.
+The bare `--unlock` recipe is only safe in CI and the testbed VM, which have
+no user keyring to damage.
 
 **`ui/`** (order matters):
 
@@ -317,7 +325,7 @@ present the proc macro panics.
 
 ### The safety scripts
 
-Hermetic, sub-second, text-search invariants. Twenty-five of these run on every
+Hermetic, sub-second, text-search invariants. Twenty-six of these run on every
 push and every PR, in `ci.yml`'s `safety-checks` job — one of four CI now
 runs; see "What CI runs" below for the other three, and the Cadence section
 above for what still runs only locally. The last row,
@@ -339,16 +347,16 @@ committed inventory and runs in its own `licence-inventory` job.
 | `check-menu-descriptions.sh` | a menu item's description line wraps or truncates on purpose, never an unbounded `whitespace-nowrap`/`truncate` or no wrapping class at all | scans each `role="menuitem"` block for a `<strong>` label followed by a `<span>`/`<small>`/`<p>` description, checked against its own `className` |
 | `check-doc-hygiene.sh` | the docs tree keeps its shape: Markdown only in the allowed set, with no dates, phase numbers, other product names or dead pointers | `git ls-files` against an allowlist regex, then `grep` per rule |
 | `check-comment-hygiene.sh` | a comment block is at most three lines, and names no date, plan number, other app or person | perl scan of comment text only (string literals excluded); also runs per edited file from `.claude/settings.json`'s `PostToolUse` hook, so the agent sees the failure while the edit is in front of it |
-| `check-type-scale.sh` | text sizes come from the eight-step ladder: no file names a size at all, and no raw `text-xs`/`sm`/`base` utility | perl scan of `ui/src` for any bare `text-[N<unit>]` literal and the raw utility; no ratchet and no exceptions — `text-[length:var(--tr-text-*)]` is the destination, and `text-[var(--colour)]` stays legal because the utility is overloaded |
+| `check-type-scale.sh` | text sizes come from the eight-step ladder, including in CSS and arbitrary-property classes | scans TS/TSX for the absolute legacy `text-[N<unit>]` and raw scale rules, plus CSS `font-size` literals and `[font-size:N<unit>]`; widened counts and sub-11px counts use separate shrink-only arrays in `check-type-scale-widened-baseline.sh` |
 | `check-label-tracking.sh` | the `label` step's 0.1em tracking (`--tr-text-label-tracking`) always pairs with its own uppercase transform in the same class string — a tracked run with no transform nearby is sentence/title-case text wearing the wrong step | `git ls-files` + `grep` over `ui/src/renderer/src/**/*.{ts,tsx}` for `tr-text-label-tracking`, checking a small line window around each hit for `tr-text-label-transform`/`uppercase`; no ratchet — the fix is always to move the run to the `small` step |
 | `check-control-metrics.sh` | a control's height comes from a `--h-*` token, not a hand-typed pixel | perl scan in three scopes: dimension literals inside `<button>`/`<input>`/`<select>`/`<textarea>`/`<a>` attributes and heights in `*Chrome.ts` files, both against a per-file ratchet that only shrinks; plus an absolute rule with no baseline — a height literal spelling a control-ladder value (22/26/28) anywhere under `ui/src`. Width and 44 are excluded so a coincidence does not become a coupling; `components/hitTarget.ts`'s density floor is exempt by name |
-| `check-radius-tokens.sh` | a corner radius comes from a `--tr-radius-*` rung, not a hand-typed pixel and not the framework's own `rounded-sm`/`md`/`lg`/`xl` | perl scan of `ui/src` `.ts`/`.tsx`/`.css` (comments stripped) for `rounded-[Nunit]` on any corner, `border-radius: Nunit` in CSS, and the framework utilities — the last conditional on `tailwind.css`'s `@theme`, which the script reads: a `--radius-<step>` mapped onto a `--tr-radius-*` token stands the rule down for that step, unmapped it is a fourth source of truth. Per-file ratchet that only shrinks. `rounded-full`/`-[50%]`/`-none` are exempt — a circle is a shape, not a rung, and zero cannot drift |
-| `check-spacing-tokens.sh` | a stack's rhythm comes from the container's `gap-*`, not a directional margin on the children | perl scan of `ui/src` for `mt-`/`mr-`/`mb-`/`ml-` at any value — bare step, arbitrary length or `[var(--space-*)]` token — against a per-file ratchet that only shrinks. Four exemptions by construction rather than by baseline: `-auto` (alignment, which no gap expresses), a zero value (a reset of somebody else's margin), a negative value (a pull into overlap) and the `[&_…]:` descendant variant (markdown output we did not author, whose rhythm is deliberately non-uniform). `m-`/`mx-`/`my-` are excluded on the evidence: every one in the tree is an inset, a separator's own air, centring or a nudge, never sibling rhythm |
+| `check-radius-tokens.sh` | a corner radius comes from a `--tr-radius-*` rung, not a hand-typed pixel and not the framework's own `rounded-sm`/`md`/`lg`/`xl` | scans TS/TSX/CSS for `rounded-[Nunit]`, CSS `border-radius: Nunit`, and framework utilities (the last conditional on `tailwind.css`'s `@theme` mapping). The original per-file ratchet remains in the script; `[border-radius:Nunit]` uses a separate shrink-only array in `check-radius-tokens-widened-baseline.sh`. `rounded-full`/`-[50%]`/`-none` are exempt |
+| `check-spacing-tokens.sh` | a stack's rhythm comes from the container's `gap-*`, not a directional margin on the children | the original `mt-`/`mr-`/`mb-`/`ml-` per-file ratchet remains in the script with its existing exemptions; a separate shrink-only array covers raw CSS padding/margin/gap lengths and arbitrary-property forms such as `[padding:...]` and `[gap:...]` in `check-spacing-tokens-widened-baseline.sh` |
 | `check-icon-metrics.sh` | a glyph's size and stroke come from its type rung, not a hand-typed number: no `size=`/`strokeWidth=` prop on any glyph | perl scan of `ui/src` for glyph-named JSX tags carrying either prop, plus props objects that spell one; no ratchet and no allowlist — `components/icons.tsx` (the defaults that DEFINE the set) and `IconTile` (a container with a named tile scale) are the only exemptions |
 | `check-shadow-recipes.sh` | a shadow recipe comes from a token or a named constant in `components/shadowChrome.ts`, never a hand-typed px length or colour | perl scan of `ui/src` for every `shadow-[...]`; strips `var()` references (with or without a fallback) and `${CONSTANT}` interpolations, and fails if anything is left over; no ratchet and no allowlist |
 | `check-ellipsis.sh` | user-facing text uses the real ellipsis character (`…`), never ASCII `...` | perl scan of `ui/src` `.ts`/`.tsx` (comments and test files stripped) plus `index.html`, for a `...` not immediately followed by an identifier char / `(` / `[` / `{` / `)` (the spread/rest shapes); no ratchet and no allowlist |
 | `check-focus-visible.sh` | a class string that kills the default `outline` (`outline-none`, any variant) repaints its own `focus-visible:` state — never left with no visible focus indicator | perl scan of `ui/src` (comments stripped) for every class-string literal containing `outline-none`, failing unless it also carries a `focus-visible:` (direct, `after:`, or `[&_…:focus-visible]:`) declaration painting `shadow-`/`ring-`/`border`/`bg-`/a real `outline`; per-file exemption count, ratchets down only |
-| `check-ratchets-only-tighten.sh` | a baseline pin may fall, never rise: the shrink-only ratchets (`check-radius-tokens`, `check-control-metrics`, `check-spacing-tokens`, `check-focus-visible`, `ui/complexity-baseline.json`) cannot be loosened to make a gate green | extracts every `path N` pin from each `BASELINE=(…)`/`EXEMPT_COUNTS=(…)` block and each JSON `{count, worst}`, then diffs against a ref — `origin/$GITHUB_BASE_REF` on a PR, `HEAD~1` on a push, `HEAD` locally (so an uncommitted pin edit is caught while it is still in the working tree). The root commit records the first baseline because it has no parent. A raised number or an unpinned path fails; a fall or a deletion passes; an added entry that pairs with a removed one of the same value is read as a rename. Every other unresolvable ref fails rather than skipping the check |
+| `check-ratchets-only-tighten.sh` | a baseline pin may fall, never rise: existing and widened value-guard arrays cannot be loosened to make a gate green | extracts every `path N` pin from each `BASELINE=(…)`, widened baseline, `EXEMPT_COUNTS=(…)` block and each JSON `{count, worst}`, then diffs against a ref — `origin/$GITHUB_BASE_REF` on a PR, `HEAD~1` on a push, `HEAD` locally. Widened arrays live in new baseline files so the first commit records newly covered debt while later changes compare against those pins. A raised number or an unpinned path fails; a fall or a deletion passes; an added entry that pairs with a removed one of the same value is read as a rename |
 | `check-mutations.sh` | every covered check proves it fires: a guard whose regex stopped matching reports "ok" forever, and the failure mode is silence | runs `scripts/mutations/<check>.sh` for each covered gate; each points the real check at a broken fixture under `scripts/mutations/fixtures/` (through its `SCAN_ROOT` override) and asserts the check failed **and named the planted violation** — a bare non-zero exit would also come from a stale baseline and prove nothing. Coverage is an inverse ratchet (`MIN_COVERED`) that must be raised when a mutation is added; the uncovered checks are printed on every run |
 | `check-empty-state-action.sh` | an empty state offers the action its copy names — copy that says "Start a chat" while the control lives in some other chrome fails | scans `ui/src` for elements with an empty-ish `data-testid` (`*empty*`/`*no-matches*`/`*unselected*`), requires `<button`, `<a `, or an `<EmptyState` render in the subtree whenever the copy opens with an imperative; `EmptyState`'s own `action` is required BY TYPE so tsc guards that half; three reasoned testid exemptions |
 | `check-third-party-licenses.sh` | the committed inventory of every third-party package in the binaries (`src-tauri/resources/third-party-licenses.json`) matches the dependency graphs the tree resolves to | runs `scripts/gen-third-party-licenses.mjs --out <tmp>` and diffs the deterministic output against the committed file; a difference names the differing line count and only the first diff lines, never the whole 1.4 MB file |
@@ -357,17 +365,20 @@ committed inventory and runs in its own `licence-inventory` job.
 
 | Job | Runs on | What it does |
 |---|---|---|
-| `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | The twenty-five hermetic, sub-second text-search scripts above |
+| `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | The twenty-six hermetic, sub-second text-search scripts above |
 | `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
 | `core-checks` | every PR, and every push to `main` except a docs-only change | `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --lib`, all against `core/Cargo.toml` |
 | `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
-| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus Git, management, shutdown, environment, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
+| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus Git, management, shutdown, environment, Tasks wire, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
 | `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
 
 The remaining integration suites (`core/houston-core/tests/`, which need a real
 PTY, a keyring or an unlocked session), Linux `src-tauri` gates and load-sensitive
 gates stay local. Windows renderer and Rust checks run in parallel; the native
-job builds its own fresh frontend assets and covers portable ConPTY regressions.
+job builds its own fresh frontend assets and covers portable ConPTY regressions,
+including Tasks start/stop/resume for all six providers and queue execution with
+structured results and independent review. Provider CLIs are simulated; PTYs and
+Git worktrees are real. The Unix-only Tasks suites still require local Linux gates.
 These gates do not establish interactive browser or installer parity.
 
 Two more freshness gates exist outside this set — they need build output CI's
@@ -380,13 +391,11 @@ hermetic job doesn't have, and run only at build/install time:
   `core/houston-protocol/src`, `src-tauri/src`, both `Cargo.toml`/`Cargo.lock`,
   and `tauri.conf.json`.
 
-Three more scripts exist as standalone, on-demand guards — hermetic and
-sub-second, but not wired into the CI job and not run automatically:
-`check-button-recipes.sh` (button-recipe overlays depend on the shared
-`.btn` base class), `check-ghostty-vt-pin.sh` (the vendored terminal-engine
-WASM matches its build pin), and `check-icon-tight-cuts.sh` (prints, never
-fails, the icon set's tight-cut coverage). Run any of them by hand when
-touching the area they cover.
+Two scripts remain standalone, on-demand checks — hermetic and sub-second, but
+not wired into the CI job: `check-ghostty-vt-pin.sh` (the vendored
+terminal-engine WASM matches its build pin) and `check-icon-tight-cuts.sh`
+(prints, never fails, the icon set's tight-cut coverage). `check-button-recipes.sh`
+runs in `safety-checks` with the other UI guards.
 
 ## Maintainer-only: load-sensitive gates
 

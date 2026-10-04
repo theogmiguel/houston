@@ -34,6 +34,11 @@ describe('settled children', () => {
     act(() => row.querySelector<HTMLButtonElement>('[aria-label="Close 2"]')!.click())
     expect(closeSession).toHaveBeenCalledWith(2)
   })
+  it.each(['done', 'failed'] as const)('exposes a settled %s child\'s ended dot to the state tint', (state) => {
+    children = [{ ...child(2, 'exited'), delegation: { state } as SessionInfo['delegation'] }]
+    render()
+    expect(host.querySelector(`.children-row.settled .children-status[data-state="${state}"] .agent-dot[aria-label="Ended"]`)).not.toBeNull()
+  })
   it.each(['done', 'failed', 'unknown'] as const)('never settles or closes a live %s delegation', (state) => {
     children = [child(2, 'exited'), { ...child(3), delegation: { state } as SessionInfo['delegation'] }]
     expect(childGroup(children[1])).toBe('Working')
@@ -91,6 +96,29 @@ describe('settled children', () => {
     expect(delegationAge(1000, 0)).toBe('0s')
     expect(delegationAge(0, 65000)).toBe('1m')
     expect(delegationAge(0, 3600000)).toBe('1h')
+  })
+})
+
+describe('needs-you filter', () => {
+  const needy = (id: number): SessionInfo => ({ ...child(id), status: 'needs-input' })
+  it('lives on the Needs you heading, not the roster head', () => {
+    children = [needy(2), child(3)]
+    render()
+    expect(host.querySelector('.children-head [aria-pressed]')).toBeNull()
+    click('Show only')
+    expect(host.textContent).not.toContain('worker 3')
+    click('Show only')
+    expect(host.textContent).toContain('worker 3')
+  })
+  it('clears itself once nothing needs you, so the list cannot stay empty', () => {
+    children = [needy(2), child(3)]
+    render(); click('Show only')
+    children = [child(2), child(3)]
+    render()
+    expect(host.textContent).toContain('worker 3')
+    children = [needy(2), child(3)]
+    render()
+    expect(host.textContent).toContain('worker 3')
   })
 })
 

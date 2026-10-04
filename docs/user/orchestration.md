@@ -225,7 +225,8 @@ child to inspect its terminal inside the orchestrator pane; return to Orchestrat
 see the parent. Move to grid gives a child its own cell, and Return to roster reverses
 that placement. A headless child stays in the roster without consuming a grid cell.
 Needs you includes blocked and stalled children; Answer focuses their terminal prompt.
-Houston never answers a child's question for you.
+Show only on the Needs you heading hides the other groups until you select it again, or
+until no child needs you. Houston never answers a child's question for you.
 
 Overview opens a closable side-panel tab for that orchestrator. Group its children by
 status or worktree, select a terminal, or review changes in the child's checkout.

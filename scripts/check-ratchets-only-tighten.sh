@@ -13,6 +13,10 @@ RATCHETS=(
   "scripts/check-radius-tokens.sh BASELINE bash"
   "scripts/check-control-metrics.sh BASELINE bash"
   "scripts/check-spacing-tokens.sh BASELINE bash"
+  "scripts/check-type-scale-widened-baseline.sh WIDENED_BASELINE bash"
+  "scripts/check-type-scale-widened-baseline.sh FLOOR_BASELINE bash"
+  "scripts/check-radius-tokens-widened-baseline.sh WIDENED_BASELINE bash"
+  "scripts/check-spacing-tokens-widened-baseline.sh WIDENED_BASELINE bash"
   "scripts/check-focus-visible.sh EXEMPT_COUNTS bash"
   "ui/complexity-baseline.json files json"
 )

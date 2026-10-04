@@ -85,7 +85,18 @@ collaborator's contract, not just against its own assertions.
 Windows CI runs core unit tests and selected integration suites. The
 `windows_orchestration_wire` suite uses isolated provider fixtures with ConPTY to check
 worktree spawns through HTTP and MCP, recorded checkout identity and rollback after
-provider preparation fails. The broader orchestration and chaos suites remain Unix-only.
+provider preparation fails. It also checks Tasks start/stop/resume across all six
+providers, queue execution, structured results and independent review. Each rig keeps
+its launch receipts in its own state directory so recycled session IDs cannot mix
+receipts across tests. `tasks_wire` covers the portable backlog protocol on Windows.
+The broader orchestration and chaos suites remain Unix-only.
+
+The native `--browser-selftest` also runs on Windows with an isolated development
+channel. It checks WebView2 navigation, history, captures, cookie persistence, host
+and child focus, and denial of child IPC over both HTTP and data URLs. The main
+renderer must retain its large-response channel transport. Unsupported picker,
+cache-bypass reload and crash-injection operations require explicit refusals; GTK
+corner-paint metrics are Linux-only.
 
 Run the full core suite under both Git Bash and `pwsh` before landing a change that touches
 the shell/home ladders. `$SHELL` and `$HOME` feed production ladders in `daemon.rs`, `home_dir.rs` and
