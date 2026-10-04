@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildCommands, type Command } from '../commandRegistry'
-import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './commandPalette'
+import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './paletteHelpers'
 
 const command = (id: string, group: Command['group'] = 'View'): Command => ({ id, title: id, group, enabled: true, run: () => {} })
 

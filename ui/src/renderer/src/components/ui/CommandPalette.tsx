@@ -13,7 +13,7 @@ import type { ThemeName } from '../../theme'
 import { Icon } from '../Icon'
 import { FOCUS_HALO } from '../shadowChrome'
 import { MATERIAL_CLS, materialAttrs } from '../material'
-import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './commandPalette'
+import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './paletteHelpers'
 import { variants } from './variants'
 
 export interface AppearanceEmbed {

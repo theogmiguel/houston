@@ -3,7 +3,7 @@ import type { PaletteActions } from '../src/components/commandRegistry'
 import type { SessionInfo } from '../src/houston/generated/SessionInfo'
 import { KeymapOverridesContext } from '../src/layout/keymapOverridesContext'
 import { THEMES } from '../src/theme'
-import { PALETTE_RECENTS_KEY } from '../src/components/ui/commandPalette'
+import { PALETTE_RECENTS_KEY } from '../src/components/ui/paletteHelpers'
 
 const noop = (): void => {}
 localStorage.setItem(PALETTE_RECENTS_KEY, JSON.stringify(['panes.toggle-git']))
