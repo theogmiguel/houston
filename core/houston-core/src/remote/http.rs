@@ -651,10 +651,9 @@ async fn decide(
     }
 }
 
-/// Server-sent events: `session` when a pane's status or card changes, `feed`
-/// when its feed grows, `resync` when this reader fell behind. Comments keep
-/// the connection inside the idle timeout. The stream ends when the listener
-/// stops or the device is revoked.
+/// Server-sent events: `session` (status or card), `feed` (growth), `resync`
+/// (reader fell behind); comments keep it inside the idle timeout. It ends when
+/// the listener stops or the device is revoked.
 async fn events(
     State(daemon): State<Arc<Daemon>>,
     ConnectInfo(peer): ConnectInfo<Peer>,

@@ -708,10 +708,9 @@ impl Store {
         })
     }
 
-    /// Records a question's answers and clears its card when it is the pending
-    /// one. The card is often gone by then (the answer's status transition
-    /// retires it first), so the latest unanswered question takes the answers:
-    /// the one with the hook's `tool_use_id`, or any when the hook carries none.
+    /// Records a question's answers on the latest unanswered question with the
+    /// hook's `tool_use_id` (any, without one), clearing its card if pending; the
+    /// answer's status transition has usually retired the card already.
     pub fn answer_question(
         &self,
         session: u32,
