@@ -60,7 +60,7 @@ describe('shared table, list-detail, drawer and notice primitives', () => {
     const onClose = vi.fn()
     function Example(): React.JSX.Element {
       const [open, setOpen] = React.useState(false)
-      return <><button onClick={() => setOpen(true)}>Open drawer</button><Drawer open={open} title="Task details" onClose={() => { onClose(); setOpen(false) }}><button>First action</button><button>Last action</button></Drawer></>
+      return <><button onClick={() => setOpen(true)}>Open drawer</button><Drawer open={open} heading="Task details" onClose={() => { onClose(); setOpen(false) }}><button>First action</button><button>Last action</button></Drawer></>
     }
     render(<Example />)
     const opener = screen.getByRole('button', { name: 'Open drawer' })
