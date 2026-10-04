@@ -4425,8 +4425,9 @@ pub const SLACK_IMAGE_BYTES_MAX: u64 = 10 * 1024 * 1024;
 /// How far back a reconnect replays a channel; older mentions are not
 /// turned into tasks after a long absence.
 pub const SLACK_CATCHUP_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
-/// A question an agent posts to the request's thread.
-pub const SLACK_QUESTION_MAX: usize = 2_000;
+/// Text a person types into one of Houston's Slack dialogs: a refusal reason
+/// or an answer in their own words.
+pub const SLACK_DIALOG_TEXT_MAX: usize = 2_000;
 /// Channels the intake listens to.
 pub const SLACK_CHANNELS_MAX: usize = 16;
 /// Comments one task may hold; keeps `task_get` bounded.

@@ -12,6 +12,7 @@ use axum::routing::{any, get};
 use axum::{Json, Router};
 use common::start_daemon_with_handle;
 use houston_core::daemon::Daemon;
+use houston_core::slack::form::QuestionForm;
 use houston_protocol as proto;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -776,6 +777,144 @@ async fn a_task_canceled_before_it_starts_closes_its_request() {
     r.finish();
 }
 
+fn label_question() -> QuestionForm {
+    QuestionForm {
+        context: Some("The form's main button gets a new label.".into()),
+        question: "Which label?".into(),
+        options: vec!["Save".into(), "Submit".into()],
+        recommended: Some(2),
+    }
+}
+
+async fn await_answer(r: &Rig, question_id: i64) -> (String, String) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let got: Option<(String, String)> = r
+            .db()
+            .query_row(
+                "SELECT answer, answered_by FROM intake_questions WHERE id = ?1 AND answer IS NOT NULL",
+                [question_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+        if let Some(a) = got {
+            return a;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "question {question_id} was never answered"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+fn last_question_id(r: &Rig) -> i64 {
+    r.db()
+        .query_row("SELECT MAX(id) FROM intake_questions", [], |row| row.get(0))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_question_has_a_button_per_option_and_only_the_requester_or_owner_answers() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-buttons").await;
+    r.fake.send_event(
+        "q1",
+        mention("1800000001.000100", REQUESTER, "rename the button"),
+    );
+    r.await_tasks(1).await;
+    r.fake
+        .send_event("q2", check_mark("1800000001.000100", OWNER));
+    let session = r.await_runs(1).await[0].1;
+
+    let err = r
+        .daemon
+        .slack_task_ask(
+            session,
+            QuestionForm {
+                options: vec!["only one".into()],
+                ..label_question()
+            },
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("1 options given, expected 2 to 4"), "{err}");
+
+    r.daemon.slack_task_ask(session, label_question()).unwrap();
+    let id = last_question_id(&r);
+    let asked = r.fake.await_post("Which label?").await;
+    let blocks = asked["blocks"].to_string();
+    assert!(
+        blocks.contains("The form's main button gets a new label.")
+            && blocks.contains("*Which label?*")
+            && blocks.contains("Submit _(recomendado)_")
+            && blocks.contains(&format!("\"{id}:1\""))
+            && blocks.contains(&format!("\"{id}:2\""))
+            && blocks.contains("Outra resposta…"),
+        "context, question, a button per option with the recommended one marked, and an own-words button: {blocks}"
+    );
+    assert!(
+        !asked.to_string().contains("HOU-"),
+        "the question names no task key: {asked}"
+    );
+    r.fake
+        .await_reactions("1800000001.000100", &["question"])
+        .await;
+
+    let mut bystander = click("USOMEONE", "houston_answer", &format!("{id}:1"));
+    bystander["channel"]["id"] = json!(CHANNEL);
+    r.fake.send_interactive("c1", bystander);
+    let told = r.fake.await_call("chat.postEphemeral", "USOMEONE").await;
+    assert!(
+        told["text"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("<@{REQUESTER}>")),
+        "{told}"
+    );
+    assert_eq!(told["thread_ts"], "1800000001.000100");
+
+    let mut chosen = click(REQUESTER, "houston_answer", &format!("{id}:2"));
+    chosen["container"] = json!({"message_ts": asked["ts"]});
+    r.fake.send_interactive("c2", chosen);
+    assert_eq!(
+        await_answer(&r, id).await,
+        ("Submit".to_string(), "requester".to_string())
+    );
+    let edited = r.fake.await_call("chat.update", "*Resposta:* Submit").await;
+    assert!(
+        edited
+            .to_string()
+            .contains(&format!("Respondido por <@{REQUESTER}>"))
+            && !edited.to_string().contains("houston_answer"),
+        "the answered question shows the choice and loses its buttons: {edited}"
+    );
+    r.fake
+        .send_interactive("c3", click(OWNER, "houston_answer", &format!("{id}:1")));
+    r.fake
+        .await_call("chat.postEphemeral", "já foi respondida")
+        .await;
+    r.fake.await_reactions("1800000001.000100", &["gear"]).await;
+
+    r.daemon.slack_task_ask(session, label_question()).unwrap();
+    let id = last_question_id(&r);
+    r.fake
+        .send_interactive("c4", click(OWNER, "houston_other", &id.to_string()));
+    let view = r.fake.await_call("views.open", "Sua resposta").await;
+    assert_eq!(view["view"]["private_metadata"], id.to_string());
+    r.fake.send_interactive(
+        "c5",
+        json!({"type": "view_submission", "team": {"id": "T1"}, "user": {"id": OWNER},
+            "view": {"callback_id": "houston_answer", "private_metadata": id.to_string(),
+                "state": {"values": {"answer": {"answer": {"type": "plain_text_input", "value": "Neither: use Send"}}}}}}),
+    );
+    assert_eq!(
+        await_answer(&r, id).await,
+        ("Neither: use Send".to_string(), "owner".to_string())
+    );
+    r.finish();
+}
+
 #[tokio::test]
 async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
     let _guard = SERIAL.lock().await;
@@ -789,23 +928,16 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
         .send_event("q2", check_mark("1800000001.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
 
-    let posted = r
-        .daemon
-        .slack_task_ask(session, "Which label: Save or Submit?")
-        .unwrap();
+    let posted = r.daemon.slack_task_ask(session, label_question()).unwrap();
     assert!(posted.contains("End your turn"), "{posted}");
     let err = r
         .daemon
-        .slack_task_ask(session, "and a second one?")
+        .slack_task_ask(session, label_question())
         .unwrap_err()
         .to_string();
     assert!(err.contains("already has a question waiting"), "{err}");
-    let asked = r
-        .fake
-        .await_post("asks: Which label: Save or Submit?")
-        .await;
+    let asked = r.fake.await_post("Which label?").await;
     assert_eq!(asked["thread_ts"], "1800000001.000100");
-
     let reply = |user: &str, text: &str, ts: &str| {
         json!({"type": "message", "channel": CHANNEL, "user": user, "team": "T1", "ts": ts,
             "thread_ts": "1800000001.000100", "text": text})
@@ -814,30 +946,13 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
         .send_event("q3", reply("USOMEONE", "Cancel", "1900000009.000001"));
     r.fake
         .send_event("q4", reply(REQUESTER, "Submit", "1900000009.000002"));
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    let answer = loop {
-        let got: Option<(String, String)> = r
-            .db()
-            .query_row(
-                "SELECT answer, answered_by FROM intake_questions WHERE answer IS NOT NULL",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .ok();
-        if let Some(a) = got {
-            break a;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "the requester's reply never answered the question"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    };
+    let answer = await_answer(&r, last_question_id(&r)).await;
     assert_eq!(
         answer,
         ("Submit".to_string(), "requester".to_string()),
         "a bystander's reply is not the answer"
     );
+    r.fake.await_call("chat.update", "*Resposta:* Submit").await;
 
     let handed = r
         .daemon

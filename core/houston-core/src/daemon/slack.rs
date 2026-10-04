@@ -16,6 +16,7 @@ use crate::db::{
     IntakeRow, IntakeWrite, OutboxTarget, Outgoing, Posted, INTAKE_PENDING, INTAKE_QUEUED,
     INTAKE_REFUSED, INTAKE_STARTED,
 };
+use crate::slack::form::QuestionForm;
 use crate::slack::text::Text;
 use crate::slack::{api, credentials, intake, socket};
 
@@ -54,6 +55,9 @@ const ACTION_REFUSE: &str = "houston_refuse";
 /// A link button: Slack still sends the click, and it needs no handling.
 const ACTION_LINK: &str = "houston_link";
 const VIEW_REFUSE: &str = "houston_refuse";
+const ACTION_ANSWER: &str = "houston_answer";
+const ACTION_OTHER: &str = "houston_other";
+const VIEW_ANSWER: &str = "houston_answer";
 
 pub(crate) struct SlackRuntime {
     state: Mutex<RuntimeState>,
@@ -254,10 +258,88 @@ fn refuse_view(t: Text, intake_id: i64) -> Value {
                 "type": "plain_text_input",
                 "action_id": "reason",
                 "multiline": true,
-                "max_length": proto::SLACK_QUESTION_MAX,
+                "max_length": proto::SLACK_DIALOG_TEXT_MAX,
             },
         }],
     })
+}
+
+/// An answer in the person's own words; required, unlike a refusal reason.
+fn answer_view(t: Text, question_id: i64) -> Value {
+    json!({
+        "type": "modal",
+        "callback_id": VIEW_ANSWER,
+        "private_metadata": question_id.to_string(),
+        "title": {"type": "plain_text", "text": t.other_title()},
+        "submit": {"type": "plain_text", "text": t.send()},
+        "close": {"type": "plain_text", "text": t.cancel()},
+        "blocks": [{
+            "type": "input",
+            "block_id": "answer",
+            "label": {"type": "plain_text", "text": t.other_label()},
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "answer",
+                "multiline": true,
+                "max_length": proto::SLACK_DIALOG_TEXT_MAX,
+            },
+        }],
+    })
+}
+
+/// Slack renders this in each reader's own time zone; the fallback is UTC.
+fn slack_time(ms: i64) -> String {
+    let secs = ms / 1000;
+    format!(
+        "<!date^{secs}^{{time}}|{:02}:{:02} UTC>",
+        (secs / 3600) % 24,
+        (secs / 60) % 60
+    )
+}
+
+/// The question as the thread shows it: the buttons while it is open, the
+/// answer and who gave it once it is not.
+fn question_blocks(
+    t: Text,
+    id: i64,
+    form: &QuestionForm,
+    answered: Option<(&str, &str, i64)>,
+) -> Value {
+    let mut blocks = Vec::new();
+    if let Some(c) = &form.context {
+        blocks.push(section(&escape(c)));
+    }
+    blocks.push(section(&format!("*{}*", escape(&form.question))));
+    match answered {
+        None => {
+            for (i, option) in form.options.iter().enumerate() {
+                let recommended = form.recommended == Some(i + 1);
+                let label = if recommended {
+                    format!("{} _({})_", escape(option), t.recommended())
+                } else {
+                    escape(option)
+                };
+                let style = recommended.then_some("primary");
+                let mut block = section(&label);
+                block["accessory"] =
+                    button(t.choose(), ACTION_ANSWER, &format!("{id}:{}", i + 1), style);
+                blocks.push(block);
+            }
+            blocks.push(json!({"type": "actions", "elements": [
+                button(t.other_answer(), ACTION_OTHER, &id.to_string(), None),
+            ]}));
+            blocks.push(context(t.question_hint()));
+        }
+        Some((answer, user, at_ms)) => {
+            blocks.push(section(&format!(
+                "*{}:* {}",
+                t.answer_label(),
+                escape(answer)
+            )));
+            blocks.push(context(&t.answered_by(user, &slack_time(at_ms))));
+        }
+    }
+    Value::Array(blocks)
 }
 
 impl Daemon {
@@ -450,9 +532,11 @@ impl Daemon {
         };
         Some(format!(
             "This task was filed from a Slack request. Follow this repository's factory skill if \
-             it has one. Ask a question only with `hs-task ask \"...\"` (or the `task_ask` MCP \
-             tool): it goes to the request's thread, and the answer arrives as your next prompt, \
-             so end your turn after asking. Write everything the requester reads (the question \
+             it has one. Ask a question only with `hs-task ask --context \"one sentence\" \
+             --question \"...\" --option \"...\" --option \"...\" --recommended N` (2 to 4 \
+             options; or the `task_ask` MCP tool): it goes to the request's thread with a button \
+             per option, and the answer arrives as your next prompt, so end your turn after \
+             asking. Write everything the requester reads (the question \
              and the hand-back) in {language}, in product words: no task keys, branches or file \
              paths."
         ))
@@ -1156,6 +1240,11 @@ impl Daemon {
                 if action_id == ACTION_LINK {
                     return Ok(());
                 }
+                if action_id == ACTION_ANSWER || action_id == ACTION_OTHER {
+                    return self
+                        .slack_question_click(api, tokens, t, payload, action_id, value, user)
+                        .await;
+                }
                 if !from_owner {
                     tracing::info!(
                         "slack: ignored {action_id} from {user:?}, who is not the owner"
@@ -1185,6 +1274,25 @@ impl Daemon {
                     }
                 }
             }
+            "view_submission" if str_at("/view/callback_id") == VIEW_ANSWER => {
+                let Some(question) = str_at("/view/private_metadata")
+                    .parse::<i64>()
+                    .ok()
+                    .map(|id| self.db.intake_question(id))
+                    .transpose()?
+                    .flatten()
+                else {
+                    return Ok(());
+                };
+                let Some(row) = self.db.intake(question.intake_id)? else {
+                    return Ok(());
+                };
+                let answer = str_at("/view/state/values/answer/answer/value").trim();
+                if (user == row.author || from_owner) && !answer.is_empty() {
+                    self.slack_answer(&row, &question, answer, user, "dialog")?;
+                }
+                Ok(())
+            }
             "view_submission" => {
                 let callback = str_at("/view/callback_id");
                 if callback != VIEW_REFUSE || !from_owner {
@@ -1204,6 +1312,78 @@ impl Daemon {
             }
             _ => Ok(()),
         }
+    }
+
+    /// A click on a question's option or on its own-words button. Only the
+    /// requester and the owner answer; anyone else is told so privately.
+    #[allow(clippy::too_many_arguments)]
+    async fn slack_question_click(
+        &self,
+        api: &api::Api,
+        tokens: &credentials::Tokens,
+        t: Text,
+        payload: &Value,
+        action_id: &str,
+        value: &str,
+        user: &str,
+    ) -> Result<()> {
+        let mut parts = value.split(':');
+        let question = parts
+            .next()
+            .and_then(|id| id.parse::<i64>().ok())
+            .map(|id| self.db.intake_question(id))
+            .transpose()?
+            .flatten();
+        let Some(question) = question else {
+            tracing::info!("slack: {action_id} names no question ({value:?})");
+            return Ok(());
+        };
+        let Some(row) = self.db.intake(question.intake_id)? else {
+            return Ok(());
+        };
+        let owner = self.slack_config().owner;
+        let eligible = user == row.author || owner.as_deref() == Some(user);
+        let refusal = if !eligible {
+            Some(t.only_requester_answers(&row.author))
+        } else if question.answer.is_some() {
+            Some(t.already_answered().to_string())
+        } else {
+            None
+        };
+        if let Some(text) = refusal {
+            return api
+                .post_ephemeral(&tokens.bot, &row.channel, user, Some(&row.ts), &text)
+                .await;
+        }
+        if action_id == ACTION_OTHER {
+            let trigger = payload
+                .get("trigger_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            return api
+                .open_view(&tokens.bot, trigger, &answer_view(t, question.id))
+                .await;
+        }
+        let form: QuestionForm = serde_json::from_str(question.form.as_deref().unwrap_or("{}"))
+            .context("the question's stored form does not parse")?;
+        let chosen = parts
+            .next()
+            .and_then(|n| n.parse::<usize>().ok())
+            .and_then(|n| n.checked_sub(1))
+            .and_then(|i| form.options.get(i));
+        let Some(chosen) = chosen else {
+            tracing::info!(
+                "slack: {value:?} names no option of question {}",
+                question.id
+            );
+            return Ok(());
+        };
+        let ts = payload
+            .pointer("/container/message_ts")
+            .and_then(Value::as_str)
+            .unwrap_or("click");
+        self.slack_answer(&row, &question, chosen, user, ts)?;
+        Ok(())
     }
 
     fn slack_text(&self) -> Text {
@@ -1365,30 +1545,52 @@ impl Daemon {
         if ts_ms(ts) <= question.created_at_ms || text.trim().is_empty() {
             return Ok(());
         }
-        let by = if author == row.author {
+        self.slack_answer(&row, &question, text.trim(), author, ts)?;
+        Ok(())
+    }
+
+    /// Records an answer from the requester or the owner and edits the
+    /// question to show it. `Ok(false)` when the question was already answered.
+    fn slack_answer(
+        &self,
+        row: &IntakeRow,
+        question: &crate::db::QuestionRow,
+        answer: &str,
+        user: &str,
+        ts: &str,
+    ) -> Result<bool> {
+        let by = if user == row.author {
             "requester"
         } else {
             "owner"
         };
-        self.db
-            .intake_answer(question.id, text.trim(), by, ts, now_unix_ms())?;
-        Ok(())
+        let now = now_unix_ms();
+        if !self.db.intake_answer(question.id, answer, by, ts, now)? {
+            return Ok(false);
+        }
+        let Some(form) = question
+            .form
+            .as_deref()
+            .and_then(|f| serde_json::from_str::<QuestionForm>(f).ok())
+        else {
+            return Ok(true);
+        };
+        let t = self.slack_text();
+        let blocks = question_blocks(t, question.id, &form, Some((answer, user, now)));
+        let key = format!("question:{}", question.id);
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("{key}:answered"),
+            &Outgoing::update(&key, form.question.clone(), Some(blocks.to_string())),
+            now,
+        )?;
+        Ok(true)
     }
 
     /// `hs-task ask` / `task_ask`: posts the question to the request's thread
     /// and returns at once; the answer arrives later as the pane's next prompt.
-    pub fn slack_task_ask(&self, session: u32, question: &str) -> Result<String> {
-        let question = question.trim();
-        if question.is_empty() {
-            bail!("task_ask needs a question (got an empty one)");
-        }
-        if question.chars().count() > proto::SLACK_QUESTION_MAX {
-            bail!(
-                "the question is {} characters, over the {}-character limit; ask something shorter",
-                question.chars().count(),
-                proto::SLACK_QUESTION_MAX
-            );
-        }
+    pub fn slack_task_ask(&self, session: u32, form: QuestionForm) -> Result<String> {
+        let form = form.normalized()?;
         let run = self.db.open_task_run_for_session(session)?.ok_or_else(|| {
             anyhow!(
                 "pane {session} is not running a task; task_ask only works inside a Started task"
@@ -1405,28 +1607,34 @@ impl Daemon {
             bail!("{key} already has a question waiting in its thread (question {}); end your turn and wait for its answer", open.id);
         }
         let now = now_unix_ms();
-        let (question, _) = crate::sanitize::redact_secrets(question);
-        let id = self
-            .db
-            .intake_question_insert(row.id, run.id, session, &question, now)?;
-        let owner = self
-            .slack_config()
-            .owner
-            .map(|o| format!(" or <@{o}>"))
-            .unwrap_or_default();
+        let redact = |text: &str| crate::sanitize::redact_secrets(text).0;
+        let form = QuestionForm {
+            context: form.context.as_deref().map(redact),
+            question: redact(&form.question),
+            options: form.options.iter().map(|o| redact(o)).collect(),
+            recommended: form.recommended,
+        };
+        let id = self.db.intake_question_insert(
+            row.id,
+            run.id,
+            session,
+            &form.question,
+            &serde_json::to_string(&form)?,
+            now,
+        )?;
+        let blocks = question_blocks(self.slack_text(), id, &form, None);
         self.db.intake_outbox_push(
             row.id,
             &format!("question:{id}"),
             &Outgoing::message(
                 OutboxTarget::Thread,
-                format!(
-                    "{key} asks: {question}\nReply in this thread, <@{}>{owner}.",
-                    row.author
-                ),
-                None,
+                form.question.clone(),
+                Some(blocks.to_string()),
             ),
             now,
         )?;
+        self.db.intake_set_status(row.id, R_ASKING, now)?;
+        self.slack.wake.notify_waiters();
         Ok(format!(
             "Question posted to {key}'s Slack thread. End your turn now; the answer will arrive as your next prompt."
         ))

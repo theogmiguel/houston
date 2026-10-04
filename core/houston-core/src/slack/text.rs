@@ -162,6 +162,66 @@ impl Text {
         }
     }
 
+    pub fn choose(self) -> &'static str {
+        self.pick("Escolher", "Choose")
+    }
+
+    pub fn recommended(self) -> &'static str {
+        self.pick("recomendado", "recommended")
+    }
+
+    pub fn other_answer(self) -> &'static str {
+        self.pick("Outra resposta…", "Another answer…")
+    }
+
+    /// The own-words dialog; Slack caps a modal title at 24 characters.
+    pub fn other_title(self) -> &'static str {
+        self.pick("Outra resposta", "Another answer")
+    }
+
+    pub fn other_label(self) -> &'static str {
+        self.pick("Sua resposta", "Your answer")
+    }
+
+    pub fn send(self) -> &'static str {
+        self.pick("Enviar", "Send")
+    }
+
+    pub fn question_hint(self) -> &'static str {
+        self.pick(
+            "Escolha uma opção ou responda nesta thread com as suas palavras.",
+            "Pick an option or reply in this thread in your own words.",
+        )
+    }
+
+    pub fn answer_label(self) -> &'static str {
+        self.pick("Resposta", "Answer")
+    }
+
+    /// `when` is Slack date markup, rendered in each reader's time zone.
+    pub fn answered_by(self, user: &str, when: &str) -> String {
+        if self.pt() {
+            format!("Respondido por <@{user}> {when}")
+        } else {
+            format!("Answered by <@{user}> {when}")
+        }
+    }
+
+    pub fn only_requester_answers(self, requester: &str) -> String {
+        if self.pt() {
+            format!("Só <@{requester}>, que fez o pedido, ou o dono do Houston pode responder esta pergunta.")
+        } else {
+            format!("Only <@{requester}>, who made the request, or Houston's owner can answer this question.")
+        }
+    }
+
+    pub fn already_answered(self) -> &'static str {
+        self.pick(
+            "Esta pergunta já foi respondida.",
+            "This question was already answered.",
+        )
+    }
+
     pub fn images_over_count(self, max: usize, attached: usize) -> String {
         if self.pt() {
             format!("Só as {max} primeiras imagens entraram ({attached} anexadas).")

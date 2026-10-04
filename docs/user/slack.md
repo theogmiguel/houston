@@ -80,10 +80,16 @@ error stays visible until the next successful connection.
    **Slack · queued #n**, the owner's message shows its place, and it starts when a slot
    frees.
 
-4. The agent can ask one question at a time with `hs-task ask "…"` (or the `task_ask` tool).
-   Houston posts it to the thread; the first reply from the requester or the owner is typed
-   into the agent's pane as its next prompt once the pane is idle. Replies from anyone else
-   are ignored.
+4. The agent can ask one question at a time with
+   `hs-task ask --context … --question … --option … --option … --recommended N` (or the
+   `task_ask` tool): one sentence of context, the question, two to four options and the
+   one it recommends. Houston posts it to the thread with a button per option and an
+   **Another answer…** button that opens a text box; replying in the thread in one's own
+   words works too. The first answer from the requester or the owner counts, the question
+   is edited to show it, and it is typed into the agent's pane as its next prompt once the
+   pane is idle. Anyone else who clicks is told privately that only the requester or the
+   owner answers; their replies are ignored. The owner gets no direct message for a
+   question: the ❓ on the request shows it.
 5. When the agent hands the task back, Houston replies with the branch the worktree
    pushed to (or says it was not pushed), the pull request `gh` finds for that branch
    (GitHub only) or, when there is none, the link that opens one on GitHub or Bitbucket
@@ -110,18 +116,21 @@ it is mapped.
 - Images: four per request, 10 MiB each, PNG, JPEG, GIF or WebP checked by their content.
   Others are named in the owner's message and left out. Images are saved under the workspace's
   `.houston/intake/<id>/`, which git ignores.
-- Channels: 16. Questions: 2,000 characters.
+- Channels: 16. A question's context: 500 characters; the question: 300; each of its two to
+  four options: 200. Text typed into Houston's dialogs: 2,000 characters.
 
 ## What leaves the machine
 
 - **Slack → Houston**: Slack delivers every event of the channels the bot is in, not only
   mentions; Houston acts only on mentions, ✅ reactions and thread replies in mapped
   channels, and ignores bots, edits and members of other organisations. Clicks on
-  Houston's buttons and the refusal reason typed in its dialog arrive over the same
-  connection; only the owner's count. On reconnect it reads the mapped channels' recent
+  Houston's buttons and the text typed in its dialogs arrive over the same connection:
+  the owner's for a request, the requester's or the owner's for a question; anyone
+  else's click only gets a private notice. On reconnect it reads the mapped channels' recent
   history. It downloads the images of a filed request.
 - **Houston → Slack, in the thread**: the status reactions on the request, the owner's
-  refusal reason, the agent's questions and the hand-back reply. Everyone in the channel
+  refusal reason, the agent's questions with their options and the answer chosen, and the
+  hand-back reply. Everyone in the channel
   can read them.
 - **Houston → Slack, to the owner only**: direct messages naming the channel, the
   requester and the first 280 characters of the request, with the start outlook and,

@@ -257,13 +257,22 @@ fn all_specs() -> Vec<ToolSpec> {
             "task_ask",
             "Ask in the request's thread",
             "For a task filed from Slack: post one question to the request's thread and end \
-             your turn; the requester's or owner's answer arrives as your next prompt.",
+             your turn; the requester's or owner's answer arrives as your next prompt. Houston \
+             shows each option as a button and offers an answer in the person's own words.",
             json!({
                 "type": "object",
                 "properties": {
+                    "context": { "type": "string", "description": "One sentence the question needs, in product words." },
                     "question": { "type": "string" },
+                    "options": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": crate::slack::form::QUESTION_OPTIONS_MIN,
+                        "maxItems": crate::slack::form::QUESTION_OPTIONS_MAX,
+                    },
+                    "recommended": { "type": "integer", "description": "The 1-based option you recommend." },
                 },
-                "required": ["question"],
+                "required": ["question", "options", "recommended"],
                 "additionalProperties": false,
             }),
         ),
@@ -581,8 +590,9 @@ fn dispatch(
             Ok(with_status(output, "in_review"))
         }
         "task_ask" => {
-            let question = required_string(args, "question")?;
-            let text = daemon.slack_task_ask(session, &question)?;
+            let form: crate::slack::form::QuestionForm = serde_json::from_value(args.clone())
+                .map_err(|e| anyhow::anyhow!("task_ask arguments do not parse: {e}"))?;
+            let text = daemon.slack_task_ask(session, form)?;
             Ok(task_output(json!({ "posted": true, "next": text })))
         }
         "task_execute" => {

@@ -3,6 +3,7 @@
 
 pub mod api;
 pub mod credentials;
+pub mod form;
 pub mod intake;
 pub mod socket;
 pub mod text;

@@ -15,7 +15,8 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task comment [HOU-n] TEXT
   hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
   hs-task handback [HOU-n] --summary T
-  hs-task ask QUESTION                (a Slack-filed task: asks in its thread)
+  hs-task ask --question Q --option A --option B [--option …] --recommended N
+             [--context T]           (a Slack-filed task: asks in its thread)
 
 The task key defaults to $HOUSTON_TASK when set; otherwise pass HOU-n.
 Statuses: backlog, todo, in_progress, in_review, done, canceled.
@@ -160,11 +161,23 @@ fn cli(args: &[String]) -> Result<()> {
             )?)
         }
         "ask" => {
-            let question = rest.join(" ");
-            if question.trim().is_empty() {
-                bail!("ask needs the question; expected `hs-task ask \"QUESTION\"`");
-            }
-            let reply = call("POST", "/task/ask", Some(json!({ "question": question })))?;
+            let options = repeated(&args, "--option");
+            let recommended = match flag("recommended") {
+                Some(raw) => Some(raw.parse::<usize>().map_err(|e| {
+                    anyhow::anyhow!("--recommended {raw:?} is not an option number: {e}")
+                })?),
+                None => None,
+            };
+            let question = flag("question")
+                .map(str::to_string)
+                .unwrap_or_else(|| rest.join(" "));
+            let body = json!({
+                "context": flag("context"),
+                "question": question,
+                "options": options,
+                "recommended": recommended,
+            });
+            let reply = call("POST", "/task/ask", Some(body))?;
             println!(
                 "{}",
                 reply
@@ -176,6 +189,15 @@ fn cli(args: &[String]) -> Result<()> {
         }
         other => bail!("unknown hs-task command {other:?}\n\n{USAGE}"),
     }
+}
+
+/// Every value of a flag that may repeat, in order; the shared parser keeps
+/// only the last.
+fn repeated(args: &[String], name: &str) -> Vec<String> {
+    args.windows(2)
+        .filter(|w| w[0] == name)
+        .map(|w| w[1].clone())
+        .collect()
 }
 
 /// `-p` is the short spelling of `--priority`; the shared flag parser only
@@ -273,4 +295,27 @@ fn query_escape(text: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repeated;
+
+    #[test]
+    fn a_repeated_flag_keeps_every_value_in_order() {
+        let args: Vec<String> = [
+            "ask",
+            "--option",
+            "Save",
+            "--question",
+            "Which?",
+            "--option",
+            "Submit",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(repeated(&args, "--option"), ["Save", "Submit"]);
+        assert!(repeated(&args, "--step").is_empty());
+    }
 }

@@ -57,6 +57,7 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "status_reaction",
         "status_reaction TEXT",
     )?;
+    super::add_column_if_missing(conn, "intake_questions", "form", "form TEXT")?;
     for (column, def) in [
         ("target", "target TEXT NOT NULL DEFAULT 'thread'"),
         ("blocks", "blocks TEXT"),
@@ -121,10 +122,12 @@ pub struct QuestionRow {
     pub answer: Option<String>,
     pub answered_by: Option<String>,
     pub created_at_ms: i64,
+    /// The agent's fields as JSON; absent on a question asked as one line.
+    pub form: Option<String>,
 }
 
 const QUESTION_COLUMNS: &str =
-    "id, intake_id, run_id, session_id, question, answer, answered_by, created_at";
+    "id, intake_id, run_id, session_id, question, answer, answered_by, created_at, form";
 
 fn question_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRow> {
     Ok(QuestionRow {
@@ -136,6 +139,7 @@ fn question_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRow> {
         answer: r.get(5)?,
         answered_by: r.get(6)?,
         created_at_ms: r.get(7)?,
+        form: r.get(8)?,
     })
 }
 
@@ -376,15 +380,27 @@ impl Db {
         run_id: i64,
         session_id: u32,
         question: &str,
+        form: &str,
         now_ms: i64,
     ) -> Result<i64> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "INSERT INTO intake_questions (intake_id, run_id, session_id, question, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![intake_id, run_id, session_id, question, now_ms],
+            "INSERT INTO intake_questions (intake_id, run_id, session_id, question, form, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![intake_id, run_id, session_id, question, form, now_ms],
         )?;
         Ok(conn.last_insert_rowid())
+    }
+
+    pub fn intake_question(&self, id: i64) -> Result<Option<QuestionRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                &format!("SELECT {QUESTION_COLUMNS} FROM intake_questions WHERE id = ?1"),
+                [id],
+                question_row,
+            )
+            .optional()?)
     }
 
     /// The question of `intake_id` still waiting for an answer, if any.
