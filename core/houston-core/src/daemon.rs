@@ -7877,8 +7877,9 @@ impl Daemon {
         if session.acp.is_some() {
             self.acp_tick(id, session, chunk);
         }
-        let frame = Arc::new(proto::encode_output_frame(id, offset, chunk));
-        self.frame_taps.offer(id, offset, chunk.len(), &frame);
+        self.frame_taps.offer_lazy(id, offset, chunk.len(), || {
+            Arc::new(proto::encode_output_frame(id, offset, chunk))
+        });
         true
     }
 
@@ -12881,25 +12882,11 @@ impl Daemon {
 
     fn swarm_activity_tick(&self, session: u32, agent_id: u64, chunk: &[u8]) {
         let now = now_ms();
-        {
-            let map = self.swarm_activity.lock().expect("swarm_activity lock");
-            if map
-                .get(&agent_id)
-                .is_some_and(|(_, at)| now.saturating_sub(*at) < 1000)
-            {
-                return;
-            }
-        }
-        let Some(text) = Self::extract_activity(chunk) else {
-            return;
-        };
-        {
+        let text = {
             let mut map = self.swarm_activity.lock().expect("swarm_activity lock");
-            if map.get(&agent_id).is_some_and(|(prev, _)| *prev == text) {
-                return;
-            }
-            map.insert(agent_id, (text, now));
-        }
+            Self::extract_activity_if_due(&mut map, agent_id, now, || Self::extract_activity(chunk))
+        };
+        let Some(_text) = text else { return };
         if let Err(e) = self.db.swarm_agent_touch_activity(agent_id, now) {
             tracing::warn!("persisting activity timestamp for swarm agent {agent_id}: {e}");
         }
@@ -12919,6 +12906,29 @@ impl Daemon {
                 agent: self.swarm_overlay(agent),
             });
         }
+    }
+
+    fn extract_activity_if_due(
+        activity: &mut HashMap<u64, (String, u64)>,
+        agent_id: u64,
+        now: u64,
+        extract: impl FnOnce() -> Option<String>,
+    ) -> Option<String> {
+        if activity
+            .get(&agent_id)
+            .is_some_and(|(_, at)| now.saturating_sub(*at) < 1000)
+        {
+            return None;
+        }
+        let text = extract()?;
+        if let Some((previous, at)) = activity.get_mut(&agent_id) {
+            if *previous == text {
+                *at = now;
+                return None;
+            }
+        }
+        activity.insert(agent_id, (text.clone(), now));
+        Some(text)
     }
 
     fn extract_activity(chunk: &[u8]) -> Option<String> {
@@ -16804,12 +16814,31 @@ impl Daemon {
     pub async fn delegation_watch_loop(self: Arc<Self>) {
         let period = Duration::from_millis(orchestrate::DELEGATION_WATCH_POLL_MS);
         loop {
-            if !self.delegation_watch_armed() {
+            let delay = if self.delegation_watch_armed() {
+                Some(period)
+            } else {
+                match self.db.delegations_next_deadline() {
+                    Ok(Some(deadline)) => {
+                        let remaining = deadline.saturating_sub(now_ms());
+                        Some(if remaining == 0 {
+                            period
+                        } else {
+                            Duration::from_millis(remaining)
+                        })
+                    }
+                    Ok(None) => None,
+                    Err(err) => {
+                        tracing::warn!("listing delegation cleanup deadline: {err}");
+                        Some(period)
+                    }
+                }
+            };
+            let Some(delay) = delay else {
                 self.delegation_wake.notified().await;
                 continue;
-            }
+            };
             tokio::select! {
-                _ = tokio::time::sleep(period) => {},
+                _ = tokio::time::sleep(delay) => {},
                 _ = self.delegation_wake.notified() => {},
             }
             self.idle_tick_counts[1].fetch_add(1, Ordering::Relaxed);
@@ -16839,12 +16868,16 @@ impl Daemon {
                 .delegations_no_handback()
                 .map(|rows| !rows.is_empty())
                 .unwrap_or(true)
-            || self.db.delegations_cleanup_pending().unwrap_or(true)
-            || self
-                .db
-                .delegations_retained()
-                .map(|r| !r.is_empty())
-                .unwrap_or(true)
+    }
+
+    #[doc(hidden)]
+    pub fn retain_delegation_for_test(&self, child: u32, until: u64) -> Result<()> {
+        let now = now_ms();
+        self.db
+            .delegation_create(0, child, None, "retained child fixture", now)?;
+        self.db.delegation_finish(child, "done", None, now)?;
+        self.db.delegation_retain(child, now, until)?;
+        Ok(())
     }
 
     pub fn delegation_watch_tick(self: &Arc<Self>) {
@@ -18037,6 +18070,25 @@ mod windows_helper_wrapper_tests {
             "a literal % in the exe path must be doubled, not left singly \
              (which cmd.exe would try to expand as a variable): {content:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod swarm_activity_throttle_tests {
+    use super::Daemon;
+    use std::collections::HashMap;
+
+    #[test]
+    fn identical_activity_refreshes_the_throttle_without_reextracting_each_chunk() {
+        let mut activity = HashMap::new();
+        let mut extracts = 0;
+        for now in [0, 1000, 1001, 1002] {
+            let _ = Daemon::extract_activity_if_due(&mut activity, 7, now, || {
+                extracts += 1;
+                Some("same activity".to_owned())
+            });
+        }
+        assert_eq!(extracts, 2);
     }
 }
 

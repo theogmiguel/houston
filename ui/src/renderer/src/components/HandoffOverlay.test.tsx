@@ -68,7 +68,8 @@ describe('HandoffOverlay streaming polish — skeleton, trailing cursor, copy fe
     expect(container.querySelector('h2')?.textContent).toBe('Summary')
     expect(container.textContent).toContain('Work in progress')
 
-    const cursor = container.querySelector('[aria-hidden="true"].motion-safe\\:\\[animation\\:skeleton-cursor-blink_1s_step-end_infinite\\]')
+    const cursor = [...container.querySelectorAll('[aria-hidden="true"]')].find((node) =>
+      node.className.includes('skeleton-cursor-blink_1s_steps(2,end)_infinite'))
     expect(cursor).not.toBeNull()
   })
 
@@ -87,9 +88,8 @@ describe('HandoffOverlay streaming polish — skeleton, trailing cursor, copy fe
         />
       )
     })
-    expect(
-      container.querySelector('[aria-hidden="true"].motion-safe\\:\\[animation\\:skeleton-cursor-blink_1s_step-end_infinite\\]')
-    ).toBeNull()
+    expect([...container.querySelectorAll('[aria-hidden="true"]')].some((node) =>
+      node.className.includes('skeleton-cursor-blink_1s_steps(2,end)_infinite'))).toBe(false)
   })
 
   it('flashes a checkmark confirmation after copy, then reverts after 2000ms', async () => {

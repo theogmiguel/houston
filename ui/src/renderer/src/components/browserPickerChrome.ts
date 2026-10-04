@@ -7,7 +7,7 @@ export const PICKER_HINT_CLS =
 export const PICKER_DOT_CLS =
   'loop-anim w-1.5 h-1.5 rounded-full bg-[var(--accent)] ' +
   `shadow-[${GLOW_ACCENT}] flex-none [--dot-pulse-opacity:0.45] [--dot-pulse-scale:0.82] ` +
-  'motion-safe:animate-[dot-pulse-scale_1.8s_ease-in-out_infinite]'
+  'motion-safe:animate-[dot-pulse-scale_1.8s_steps(4,end)_infinite]'
 
 export const PICKER_HINT_TEXT_CLS = 'flex-1 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis'
 

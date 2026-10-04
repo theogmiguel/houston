@@ -115,7 +115,6 @@ import { tabsStorageKey } from "./components/browserTabsKey";
 import { recordAndReload } from "./reloadBudget";
 import { AnimOut } from "./components/AnimOut";
 import {
-  BTN_GHOST_BG,
   BTN_ICO,
   BTN_PRIMARY,
 } from "./components/buttonChrome";
@@ -307,6 +306,7 @@ import {
   type WindowButtonLayout,
 } from "./windowButtonLayout";
 import { stackCapacity } from "./paneCaps";
+import { changedEntries } from "./layout/changedEntries";
 import { Icon } from "./components/Icon";
 
 // lazy() keeps Settings (and everything below) out of the boot chunk
@@ -522,6 +522,7 @@ function offeredUpdate(
 }
 
 const RECONNECT_MS = 1000;
+const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -546,19 +547,14 @@ export function App(): React.JSX.Element {
   const dismissedUpdate = useDismissedUpdate();
   const customChrome = useCustomSurface();
 
-  // Gates every `.loop-anim` via one CSS attribute. Deliberately VISIBILITY,
-  // not focus: Houston is often watched unfocused from a second monitor, and
-  // pausing on blur would freeze exactly the status pulses being glanced at.
+  // A brief blur can be incidental; sustained blur pauses ambient animation.
   useEffect(() => {
-    const update = (): void => {
-      document.documentElement.toggleAttribute(
-        "data-motion-paused",
-        document.visibilityState === "hidden",
-      );
-    };
-    update();
-    document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
+    let mounted = true;
+    let dispose: (() => void) | undefined;
+    void import("./motionPause").then(({ watchMotionPause }) => {
+      if (mounted) dispose = watchMotionPause();
+    });
+    return () => { mounted = false; dispose?.(); };
   }, []);
 
   const [buttonLayout, setButtonLayout] = useState<WindowButtonLayout>(
@@ -973,6 +969,7 @@ export function App(): React.JSX.Element {
   sessionsRef.current = sessions;
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
+  const savedLayoutsRef = useRef(layouts);
   const workspacesRef = useRef(workspaces);
   workspacesRef.current = workspaces;
   const voiceSettingsRef = useRef(voiceSettings);
@@ -1788,7 +1785,8 @@ export function App(): React.JSX.Element {
   }, [scmOpen]);
 
   useEffect(() => {
-    for (const [key, st] of layouts) saveLayout(key, st);
+    for (const [key, st] of changedEntries(savedLayoutsRef.current, layouts)) saveLayout(key, st);
+    savedLayoutsRef.current = layouts;
   }, [layouts]);
 
   const mutateTree = useCallback((fn: (t: LayoutNode) => LayoutNode | null) => {
@@ -2844,13 +2842,6 @@ export function App(): React.JSX.Element {
     return () => configureDictation(null);
   }, [voiceClient, voiceEnabled, voiceCaptureMode]);
 
-  const [, forceReconnectTick] = useState(0);
-  useEffect(() => {
-    if (conn.kind !== "reconnecting") return;
-    const t = setInterval(() => forceReconnectTick((x) => x + 1), 1000);
-    return () => clearInterval(t);
-  }, [conn.kind]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement;
@@ -3413,26 +3404,16 @@ export function App(): React.JSX.Element {
           </header>
 
           {conn.kind === "reconnecting" && (
-            <div
-              className="fixed top-[calc(var(--h-top)+16px)] left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex items-center gap-2 py-1.5 px-3.5 border border-[var(--status-blocked-text)] rounded-full bg-[var(--card-bg)] text-[var(--status-blocked-text)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] shadow-[var(--shadow-md)] max-w-[70vw]"
-              role="status"
-            >
-              <span className="loop-anim flex-none w-2 h-2 rounded-[50%] bg-[var(--danger)] [--dot-pulse-opacity:0.25] motion-safe:[animation:dot-pulse_1.2s_ease-in-out_infinite]" />
-              <span>
-                daemon connection lost — reconnecting…{" "}
-                {Math.max(0, Math.round((Date.now() - conn.since) / 1000))}s
-                {conn.error ? ` (${conn.error})` : ""}
-              </span>
-              <button
-                className={`btn ${BTN_GHOST_BG} text-inherit border border-current py-px px-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]`}
-                onClick={() => {
+            <Suspense fallback={null}>
+              <ReconnectBanner
+                since={conn.since}
+                error={conn.error}
+                onRetry={() => {
                   clearTimeout(retryTimerRef.current);
                   reconnectRef.current();
                 }}
-              >
-                Retry now
-              </button>
-            </div>
+              />
+            </Suspense>
           )}
 
           {}

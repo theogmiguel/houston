@@ -31,7 +31,7 @@ export function VoiceMicChip({
         className={`inline-flex ${CONTROL_SIZE_SQUARE_CLS.mini} flex-none items-center justify-center rounded-full ${
           listening
             ?
-              'loop-anim text-[var(--danger)] [--dot-pulse-opacity:0.4] [animation:dot-pulse_1.1s_ease-in-out_infinite] motion-reduce:[animation:none]'
+              'loop-anim text-[var(--danger)] [--dot-pulse-opacity:0.4] [animation:dot-pulse_1.1s_steps(4,end)_infinite] motion-reduce:[animation:none]'
             : 'text-[var(--text-muted)]'
         }`}
       >
