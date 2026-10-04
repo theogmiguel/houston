@@ -282,7 +282,7 @@ no user keyring to damage.
 **`ui/`** (order matters):
 
 ```
-bun run typecheck         # tsc --noEmit && tsc --noEmit -p p5-harness
+bun run typecheck         # tsc --noEmit
 bun run test              # vitest run
 bun run check:complexity  # the .tsx cyclomatic-complexity ratchet
 bun run build             # vite build
