@@ -5,17 +5,20 @@ export function Toggle({
   on,
   disabled,
   onChange,
+  'aria-label': ariaLabel,
   'data-testid': testId
 }: {
   on: boolean
   disabled?: boolean
   onChange: (v: boolean) => void
+  'aria-label'?: string
   'data-testid'?: string
 }): React.JSX.Element {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={ariaLabel}
       aria-checked={on}
       disabled={disabled}
       data-testid={testId}

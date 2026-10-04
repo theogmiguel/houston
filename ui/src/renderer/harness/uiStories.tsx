@@ -6,6 +6,7 @@ import {
   Caption as UiCaption,
   Chip,
   Count,
+  ConnectionCell,
   DoneDisclosure,
   Drawer,
   EmptyState,
@@ -21,6 +22,7 @@ import {
   Segmented,
   STATUS_LABELS,
   StatusLabel,
+  RoutineDetail,
   Table,
   TaskProgress,
   TaskAcceptanceRow,
@@ -161,6 +163,31 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="StatusLabel">
           <SpecimenRow>{STATUS_LABELS.map((status) => <StatusLabel key={status} status={status} />)}</SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="RoutineDetail and ConnectionCell">
+          <SpecimenRow>
+            <ConnectionCell status="Failed" reason="npx was not found on PATH" server="github" agent="Claude Code" onClick={noop} />
+            <ConnectionCell status="Differs" server="postgres-local" agent="OpenCode" onClick={noop} />
+            <ConnectionCell status="Off" server="linear" agent="Cursor" onClick={noop} />
+          </SpecimenRow>
+          <RoutineDetail
+            routine={{ id: 1, name: 'Nightly dependency check', prompt: 'Check packages', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), last_run_at_ms: null, permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
+            runs={[]}
+            runsLoading={false}
+            now={Date.now()}
+            running={false}
+            pending={false}
+            atLimit={{ running: 3, limit: 3 }}
+            waitingForSlot
+            onRunNow={noop}
+            onToggleEnabled={noop}
+            onEdit={noop}
+            onDelete={noop}
+            onUpdateSchedule={noop}
+            onUpdateEngine={noop}
+            onOpenSession={noop}
+          />
         </SpecimenGroup>
 
         <SpecimenGroup heading="PageFrame, PageHeader and SectionHead">

@@ -12,6 +12,7 @@ import type { HarnessState } from '../src/houston/useHarness'
 import type { McpServer } from '../src/houston/generated/McpServer'
 import type { McpToolState } from '../src/houston/generated/McpToolState'
 import type { Routine } from '../src/houston/routineTypes'
+import type { RoutineRun } from '../src/houston/generated/RoutineRun'
 import type { SkillToolState } from '../src/houston/generated/SkillToolState'
 import type { Skill } from '../src/env'
 
@@ -44,32 +45,22 @@ function routine(o: Partial<Routine> = {}): Routine {
 }
 
 export function NavRoutines(): React.JSX.Element {
+  const routines = [
+    routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW + 60_000, last_run_at_ms: NOW - 60_000 }),
+    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000 }),
+    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: NOW + 3 * 24 * 3600_000, last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok' }),
+    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: '/home/dev/code/api', next_run_at_ms: NOW + 3600_000 })
+  ]
+  const run = (id: number, status: RoutineRun['status'], started: number, sessionId: number | null, error?: string): RoutineRun => ({
+    id, routine_id: 2, trigger: 'schedule', status, started_at_ms: started, ended_at_ms: status === 'running' ? null : started + 4 * 60_000,
+    session_id: sessionId, error
+  })
   return (
     <Frame>
       <RoutinesSurface
-        routines={[
-          routine({ id: 1, next_run_at_ms: NOW + 900_000, last_run_at_ms: NOW - 3600_000 }),
-          routine({
-            id: 2,
-            name: 'Morning review',
-            cadence: { type: 'clock', hour: 9, minute: 0, weekdays: null },
-            permission_mode: 'accept_edits',
-            isolate: false,
-            next_run_at_ms: NOW + 9 * 3600_000
-          }),
-          routine({
-            id: 3,
-            name: 'Cert sweep',
-            cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2, 3, 4, 5, 6] },
-            last_error: 'cwd no longer exists',
-            permission_mode: 'accept_edits',
-            isolate: false,
-            next_run_at_ms: NOW + 20 * 3600_000
-          }),
-          routine({ id: 4, name: 'Docs drift', enabled: false, next_run_at_ms: NOW + 3600_000 })
-        ]}
-        running={[]}
-        runs={{}}
+        routines={routines}
+        running={[1, 91, 92]}
+        runs={{ 2: [run(30, 'running', NOW - 60_000, 42), run(29, 'ok', NOW - 86_400_000, 41), run(28, 'failed', NOW - 2 * 86_400_000, 40, 'npx was not found on PATH')] }}
         runsLoading={null}
         workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
         error={null}
@@ -82,6 +73,7 @@ export function NavRoutines(): React.JSX.Element {
         onOpenSession={noop}
         onRequest={noop}
         now={NOW}
+        selectedRoutineId={2}
       />
     </Frame>
   )

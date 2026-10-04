@@ -6,6 +6,9 @@ export const STATUS_LABELS = [
   'Failed',
   'Paused',
   'In sync',
+  'Waiting for a slot',
+  'Differs',
+  'Off',
   'Missing',
   'Open',
   'Fixing',
@@ -24,6 +27,9 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Failed: 'var(--stop)',
   Paused: 'var(--text-muted)',
   'In sync': 'var(--ok)',
+  'Waiting for a slot': 'var(--warn)',
+  Differs: 'var(--warn)',
+  Off: 'var(--text-faint)',
   Missing: 'var(--text-faint)',
   Open: 'var(--warn)',
   Fixing: 'var(--info)',
@@ -33,7 +39,7 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
 }
 
 export function StatusLabel({ status }: { status: StatusLabelValue }): React.JSX.Element {
-  const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen'
+  const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off'
   return (
     <span aria-label={status} className="inline-flex items-center gap-[var(--space-1-5)] text-[var(--text-secondary)]">
       <span

@@ -110,7 +110,7 @@ BASELINE=(
   "ui/src/renderer/src/components/nav/McpSurface.tsx 2"
   "ui/src/renderer/src/components/nav/RoutineEditor.tsx 65"
   "ui/src/renderer/src/components/nav/RoutineRow.tsx 33"
-  "ui/src/renderer/src/components/nav/RoutinesSurface.tsx 5"
+  "ui/src/renderer/src/components/nav/RoutinesSurface.tsx 0"
   "ui/src/renderer/src/components/nav/SkillsSurface.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 68"
   "ui/src/renderer/src/components/overlayChrome.ts 10"
