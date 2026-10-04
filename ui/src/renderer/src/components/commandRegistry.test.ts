@@ -76,7 +76,7 @@ describe('commandRegistry — buildCommands', () => {
     expect(editor?.enabled).toBe(false)
     expect(editor?.disabledReason).toMatch(/no blank state/i)
     expect(skills?.enabled).toBe(false)
-    expect(skills?.disabledReason).toMatch(/settings/i)
+    expect(skills?.disabledReason).toBe('Open Skills from the navigation rail')
     expect(commands.find((c) => c.id === 'panes.new-review')).toBeUndefined()
   })
 

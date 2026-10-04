@@ -105,6 +105,7 @@ import { Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { MATERIAL_CLS, materialAttrs } from "./components/material";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
+import { canUseSkillInFocusedPane } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
@@ -3686,6 +3687,16 @@ export function App(): React.JSX.Element {
                     </Suspense>
                   ) : railView === "skills" ? (
                     <SkillsSurface
+                      client={conn.kind === "ready" ? conn.client : null}
+                      workspace={selectedWs === "all" ? null : selectedWs}
+                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
+                      canRunSkillInFocusedPane={canUseSkillInFocusedPane(
+                        sessions,
+                        activeId,
+                        selectedWs,
+                        conn.kind
+                      )}
+                      onRunSkill={runSkill}
                       tools={skills}
                       pushes={skillPushes}
                       autoPushEnabled={skillAutoPush}

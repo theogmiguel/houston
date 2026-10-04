@@ -60,7 +60,7 @@ BASELINE=(
   "ui/src/renderer/src/components/SkillDistribution.tsx 123"
   "ui/src/renderer/src/components/SkillInstallDialog.tsx 140"
   "ui/src/renderer/src/components/SkillsLeaf.tsx 36"
-  "ui/src/renderer/src/components/SkillsView.tsx 323"
+  "ui/src/renderer/src/components/SkillsView.tsx 322"
   "ui/src/renderer/src/components/Slider.tsx 6"
   "ui/src/renderer/src/components/SourceControlPanel.tsx 32"
   "ui/src/renderer/src/components/SshConnectModal.tsx 35"

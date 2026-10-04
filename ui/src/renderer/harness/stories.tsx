@@ -141,6 +141,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/routines-empty': () => <NavRoutinesEmpty />,
   'nav/routine-editor': () => <NavRoutineEditor />,
   'nav/skills': () => <NavSkills />,
+  'nav/skills/graphite': () => <NavSkills />,
+  'nav/skills/paper': () => <NavSkills />,
   'nav/mcp': () => <NavMcp />,
   'nav/mcp-detail': () => <NavMcpDetail />,
   'nav/hooks': () => <NavHooks />,

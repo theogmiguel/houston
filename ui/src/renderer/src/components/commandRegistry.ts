@@ -117,7 +117,7 @@ export const APPEARANCE_PICKER_COMMAND_ID = 'go-to.appearance-picker'
 
 const PANE_DISABLED_REASON: Partial<Record<PaneTypeKind, string>> = {
   editor: 'Editor has no blank state — open a file, a diff, or a terminal link instead',
-  skills: 'Skills moved into Settings — open it from Settings › Capabilities › Skills'
+  skills: 'Open Skills from the navigation rail'
 }
 
 const PANE_KEYWORDS: Partial<Record<PaneTypeKind, string[]>> = {
