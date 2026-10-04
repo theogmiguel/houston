@@ -65,12 +65,13 @@ const FIXTURE_DIRS: Record<string, { name: string; dir: boolean }[]> = {
   [FIXTURE_DIR_ROOT]: [
     { name: 'src', dir: true },
     { name: 'README.md', dir: false },
+    { name: 'large.ts', dir: false },
     { name: 'broken.txt', dir: false }
   ],
   [`${FIXTURE_DIR_ROOT}/src`]: [{ name: 'index.ts', dir: false }]
 }
 const FIXTURE_FILES: Record<string, string> = {
-  [`${FIXTURE_DIR_ROOT}/README.md`]: '# Houston\n\nFixture file for the P5 Wave B harness.\n',
+  [`${FIXTURE_DIR_ROOT}/README.md`]: '# Houston\n\nFixture file for the P5 Wave B harness with a deliberately long line that demonstrates the Files editor word wrap control in both chrome themes.\n',
   [`${FIXTURE_DIR_ROOT}/src/index.ts`]: "export const fixture = 'p5-harness'\n"
 }
 
@@ -96,6 +97,8 @@ window.houston = {
   readFile: (path: string) =>
     path in FIXTURE_FILES
       ? Promise.resolve(FIXTURE_FILES[path])
+      : path === `${FIXTURE_DIR_ROOT}/large.ts`
+        ? Promise.reject(new Error(`file too large to edit: ${path} is 3000000 bytes (max 2097152)`))
       : Promise.reject(new Error(`p5-harness readFile: no fixture content for ${JSON.stringify(path)}`)),
   writeFile: () => Promise.resolve(),
   statFile: () => Promise.resolve({ mtimeMs: FROZEN_NOW }),
@@ -1081,7 +1084,7 @@ const CASES: Case[] = [
   },
 
   {
-    id: 'files-proposed',
+    id: 'files-menu',
     w: 980,
     h: 620,
     surface: 'files',
@@ -1089,6 +1092,21 @@ const CASES: Case[] = [
       { role: '[role="treeitem"]', name: 'README.md' },
       { role: '[role="treeitem"]', name: 'README.md', contextMenu: true }
     ]
+  },
+  {
+    id: 'files-wrap',
+    w: 980,
+    h: 620,
+    surface: 'files',
+    localStorageSeed: { 'tr-files-word-wrap': 'true' },
+    prep: [{ role: '[role="treeitem"]', name: 'README.md' }]
+  },
+  {
+    id: 'files-oversized',
+    w: 980,
+    h: 620,
+    surface: 'files',
+    prep: [{ role: '[role="treeitem"]', name: 'large.ts' }]
   },
 
 ]
@@ -1119,8 +1137,9 @@ function Surface({
   switch (surface) {
     case 'files':
       return (
-        <div className="h-full w-full flex" style={{ background: 'var(--content-bg)' }}>
+        <div data-theme={document.documentElement.dataset.theme ?? 'graphite'} className="side-card h-full w-full flex" style={{ background: 'var(--content-bg)' }}>
           <FilesPane
+            panel
             node={{ kind: 'files', id: 'files-proposed', root: FIXTURE_DIR_ROOT }}
             workspaceDir={FIXTURE_DIR_ROOT}
             onClose={() => {}}
