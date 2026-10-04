@@ -211,6 +211,7 @@ fn reopening_the_daemon_fails_interrupted_harness_reviews_and_keeps_published_on
             cost_usd: None,
             summary: "published before restart",
             findings: &[],
+            verifications: &[],
         },
         3,
     )

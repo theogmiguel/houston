@@ -28,6 +28,10 @@ these; changes save when a field loses focus. Only one revision is saved at a ti
 task changed elsewhere first, a **This task changed elsewhere** banner appears with **Reload**
 before you overwrite anything.
 
+A task created from a Harness finding keeps its source finding key and review. Tasks made from
+Harness show that origin in their details and list rows. A finding can have several linked fix
+tasks over time; only one linked task may remain open at once.
+
 Tick an acceptance item to check it. Comments appear in the same chronological activity feed
 as the recorded changes, with a composer below. The task menu in the detail header archives
 the task; an archived task shows the same menu with **Restore task**.

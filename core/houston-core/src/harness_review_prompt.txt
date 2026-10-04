@@ -10,8 +10,9 @@ You are reviewing the agent harness of this workspace: its instruction files (CL
 2. Run `hs-harness digest`. It picks the window itself (the first review reads 14 days; later reviews read from the previous review's end, between 7 and 30 days) and writes `digest.jsonl` (one JSON object per session) and `digest-meta.json` beside the inventory. If it refuses, report the refusal text as your result and stop.
 3. Read `digest-meta.json` first: the window, `available_from` (the oldest transcript still on disk; if it is later than the window's start, say so in the report), and the counts of sessions skipped and why.
 4. Read `digest.jsonl` in full. Each line has the session's human prompts, skills and which copy of each skill loaded (`skill_sources`), subagents with their model, tool counts and failures, permission denials with the denied command and the classifier's reason (`denied`), interrupts, compactions, forks, friction matches, re-asks, the last assistant text, counters of machine messages, and the automatic messages the harness injected (`automatic`) with how many the assistant answered with prose instead of acting (`automatic_answered_with_text`, with sample replies). A line with `truncated` lost that many entries of the named collections to the per-session size cap.
-5. Read `decisions.json` in this run's directory: every finding earlier reviews raised in this workspace, with the user's decision (`open`, `dismissed` or `resolved`) and when it was taken. Do not re-propose a dismissed or resolved finding unless this window has new evidence for it after that decision; when a finding recurs, keep its `key`. The earlier run directories under `.houston/harness/` hold their full `findings.json`.
+5. Read `decisions.json` in this run's directory: every finding earlier reviews raised in this workspace, with the user's decision (`open`, `dismissed` or `resolved`) and when it was taken, plus any linked fix tasks, their landing time and the count of sessions started afterward. Do not re-propose a dismissed or resolved finding unless this window has new evidence for it after that decision; when a finding recurs, keep its `key`. The earlier run directories under `.houston/harness/` hold their full `findings.json`.
 6. Cross-check what the sessions show against the inventory and the harness files themselves. Open the files you cite. Ask: is there a rule or skill for this? Is it loaded from the directory the sessions ran in? Does it say the opposite? Is a skill never used, or shadowed by the user's own copy?
+7. For each linked task, return one entry in `verifications` with its finding `key`, the linked task key exactly as listed, `verdict` (`gone`, `still_present` or `inconclusive`), `sessions_after` and up to five short `quotes`. Count only sessions that started after `landed_at_ms`, and never use the task's own session (digest lines marked `task: HOU-n`) as evidence for its verdict. If fewer than `minimum_sessions_after_landing` sessions are available, use `inconclusive`. Do not include transcript quotes in a fix task description. A `gone` verdict and a finding with the same key cannot appear together.
 
 ## What counts as a finding
 
@@ -66,6 +67,15 @@ End with the findings you considered and rejected, one line each.
       "confidence": "high | medium | low",
       "source": "digest",
       "recurrence_of": null
+    }
+  ],
+  "verifications": [
+    {
+      "key": "short-stable-kebab-case-name",
+      "task": "HOU-123",
+      "verdict": "gone | still_present | inconclusive",
+      "sessions_after": 0,
+      "quotes": ["<short quote>"]
     }
   ]
 }

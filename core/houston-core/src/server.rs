@@ -1129,6 +1129,30 @@ async fn dispatch(
             key,
             state,
         } => daemon.harness_decide(&workspace, &key, state),
+        proto::ClientMsg::HarnessFixTask {
+            workspace,
+            key,
+            agent,
+            start,
+            prompt,
+        } => match daemon.harness_fix_task(&workspace, &key, agent, start, prompt.as_deref())? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::HarnessOverviewGet => {
+            let _ = send_msg(sink, &daemon.harness_overview()?).await;
+            Ok(())
+        }
+        proto::ClientMsg::HarnessSeen {
+            workspace,
+            review_id,
+        } => daemon.harness_seen(&workspace, review_id),
         proto::ClientMsg::TaskSnapshot { scope } => {
             let msg = daemon.task_snapshot(&scope)?;
             let _ = send_msg(sink, &msg).await;

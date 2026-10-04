@@ -71,6 +71,10 @@ function finding(overrides: Partial<HarnessFinding> = {}): HarnessFinding {
     state: 'open',
     decided_at_ms: null,
     recurred: false,
+    phase: 'open',
+    task: null,
+    verification: null,
+    last_seen_review_id: 3,
     ...overrides
   }
 }
