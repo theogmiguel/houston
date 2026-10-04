@@ -277,6 +277,11 @@ function UsageBreakdown({
   )
 }
 
+function activityTotalLabel(metric: 'cost' | 'tokens', activity: UsageActivityDay[]): string {
+  if (metric === 'cost') return `$${Math.round(activity.reduce((sum, day) => sum + day.cost_usd, 0)).toLocaleString('en-US')}`
+  return formatTokens(activity.reduce((sum, day) => sum + day.totals.uncached_input_tokens + day.totals.cached_input_tokens + day.totals.cache_creation_tokens + day.totals.output_tokens, 0))
+}
+
 function usageRangeLabel(
   stale: boolean,
   summary: UsageSummaryMsg | null,
@@ -466,7 +471,7 @@ export function UsageSection({
 
         <section className="mt-[var(--space-2)] grid gap-[var(--space-2)]" data-testid="usage-calendar-section">
           <div className="flex items-center justify-between gap-[var(--space-3)]">
-            <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{metric === 'cost' ? `$${Math.round(activity.reduce((sum, day) => sum + day.cost_usd, 0)).toLocaleString('en-US')}` : formatTokens(activity.reduce((sum, day) => sum + day.totals.uncached_input_tokens + day.totals.cached_input_tokens + day.totals.cache_creation_tokens + day.totals.output_tokens, 0))} in the last year</h2>
+            <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{activityTotalLabel(metric, activity)} in the last year</h2>
             <span className="text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">Follows Cost | Tokens</span>
           </div>
           <UsageCalendar days={activity} metric={metric} selectedDay={selectedDay} caption="Houston keeps one total per day, so days older than the transcripts still count. Click a day to see its breakdown." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />

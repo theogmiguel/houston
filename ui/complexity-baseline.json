@@ -25,8 +25,8 @@
   "max": 20,
   "files": {
     "src/renderer/src/App.tsx": {
-      "total": 959,
-      "worst": 87,
+      "total": 983,
+      "worst": 84,
       "over": 3
     },
     "src/renderer/src/components/BrowserPane.tsx": {

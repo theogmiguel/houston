@@ -509,6 +509,27 @@ function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, a
   return focusedPaneOwnsKey(event);
 }
 
+const ZOOM_STEPS: readonly (readonly [typeof zoomIn, "zoom" | "font", -1 | 0 | 1])[] = [
+  [zoomIn, "zoom", 1],
+  [zoomOut, "zoom", -1],
+  [zoomReset, "zoom", 0],
+  [fontZoomIn, "font", 1],
+  [fontZoomOut, "font", -1],
+  [fontZoomReset, "font", 0],
+];
+
+function matchZoomStep(e: KeyboardEvent, overrides: KeymapOverrides): { target: "zoom" | "font"; step: -1 | 0 | 1 } | null {
+  for (const [entry, target, step] of ZOOM_STEPS) {
+    if (resolveGlobalMatch(entry, overrides)(e)) return { target, step };
+  }
+  return null;
+}
+
+function harnessAttentionFor(overview: readonly { workspace: string; attention: number }[], workspace: string): number {
+  if (workspace === "all") return overview.reduce((total, row) => total + row.attention, 0);
+  return overview.find((row) => row.workspace === workspace)?.attention ?? 0;
+}
+
 function SessionEffects({ connection, workspaces, onFocusPane }: {
   connection: Parameters<typeof useTrayBridge>[0]["connection"];
   workspaces: Workspace[];
@@ -577,9 +598,7 @@ export function App(): React.JSX.Element {
   const appNotices = useNotices();
   const [selectedWs, setSelectedWs] = useState("all");
   const harnessOverview = useHarnessSignals(conn.kind === "ready" ? conn.client : null);
-  const harnessAttention = selectedWs === "all"
-    ? harnessOverview.reduce((total, row) => total + row.attention, 0)
-    : harnessOverview.find((row) => row.workspace === selectedWs)?.attention ?? 0;
+  const harnessAttention = harnessAttentionFor(harnessOverview, selectedWs);
   const [taskTurnCount, setTaskTurnCount] = useState(0);
   const {
     activeId,
@@ -2868,34 +2887,10 @@ export function App(): React.JSX.Element {
         setPaneHandoff(null);
         return;
       }
-      if (resolveGlobalMatch(zoomIn, keymapOverrides)(e)) {
+      const zoomStep = matchZoomStep(e, keymapOverrides);
+      if (zoomStep) {
         e.preventDefault();
-        changeZoom(1);
-        return;
-      }
-      if (resolveGlobalMatch(zoomOut, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeZoom(-1);
-        return;
-      }
-      if (resolveGlobalMatch(zoomReset, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeZoom(0);
-        return;
-      }
-      if (resolveGlobalMatch(fontZoomIn, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeFont(1);
-        return;
-      }
-      if (resolveGlobalMatch(fontZoomOut, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeFont(-1);
-        return;
-      }
-      if (resolveGlobalMatch(fontZoomReset, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeFont(0);
+        (zoomStep.target === "zoom" ? changeZoom : changeFont)(zoomStep.step);
         return;
       }
       if (focusedSurfaceOwnsKey(activeSurface, e, activeId, layerArmed)) return;
