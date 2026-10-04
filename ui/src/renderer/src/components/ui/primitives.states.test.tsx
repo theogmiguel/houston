@@ -2,6 +2,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel } from './index'
+import { ThemeRevealSpecimen } from './ThemeRevealSpecimen'
 import { variants } from './variants'
 
 const textClass = variants('base', { tone: { quiet: 'muted', loud: 'strong' } }, { tone: 'quiet' })
@@ -22,6 +23,14 @@ void unlabeledButton
 void unknownStatus
 
 describe('components/ui primitives', () => {
+  it('shows the theme reveal with the corrected Paper terminal and all palette contrast rows', () => {
+    render(<ThemeRevealSpecimen />)
+
+    expect(screen.getByRole('table', { name: 'Terminal palette contrast ratios' }).querySelectorAll('tbody tr')).toHaveLength(24)
+    expect(screen.getByRole('button', { name: 'Switch to Paper' })).toBeTruthy()
+    expect(screen.getByTestId('theme-reveal-specimen').getAttribute('data-theme')).toBe('graphite')
+  })
+
   it('variants applies defaults and chosen axis classes', () => {
     expect(textClass()).toBe('base muted')
     expect(textClass({ tone: 'loud' })).toBe('base strong')

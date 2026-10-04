@@ -419,6 +419,16 @@
   --terminal-skeleton-bg: var(--tool-code-bg);
 }
 
+::view-transition-group(root) {
+  animation-duration: 0s;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 [data-custom='on'] {
   --pane-gutter: 16px;
   --material-shell-bg: var(--custom-chrome-scrim);

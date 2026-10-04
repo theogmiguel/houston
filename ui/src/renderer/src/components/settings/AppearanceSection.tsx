@@ -52,7 +52,7 @@ const ZOOM_STOPS: { pct: '90' | '100' | '110' | '125'; factor: number }[] = [
 
 export interface AppearanceSectionProps {
   chromeTheme: ChromeTheme
-  onChromeTheme: (t: ChromeTheme) => void
+  onChromeTheme: (t: ChromeTheme, origin: HTMLElement) => void
   theme: TerminalPaletteChoice
   onTheme: (t: TerminalPaletteChoice) => void
   uiZoom: number
@@ -130,7 +130,7 @@ export function AppearanceSection({
                 aria-checked={on}
                 data-testid="chrome-theme-tile"
                 data-chrome-theme={t}
-                onClick={() => onChromeTheme(t)}
+                onClick={(event) => onChromeTheme(t, event.currentTarget)}
                 className={`btn flex flex-col p-0 overflow-hidden rounded-[var(--tr-radius-card)] border text-left whitespace-normal [transition:border-color_.12s_ease,transform_.12s_ease] motion-safe:hover:-translate-y-px focus-visible:outline-none ${
                   on
                     ? `border-[var(--accent)] shadow-[${RING_ACCENT_SOLID}] bg-[var(--card-bg)] focus-visible:shadow-[${RING_ACCENT_SOLID},${FOCUS_HALO}]`

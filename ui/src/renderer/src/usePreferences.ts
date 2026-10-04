@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   applyChromeTheme,
   applyTheme,
@@ -191,7 +191,7 @@ export function usePreferences(): {
 
   useEffect(() => applyTheme(theme), [theme])
   useEffect(() => saveTerminalPaletteChoice(themeChoice), [themeChoice])
-  useEffect(() => applyChromeTheme(chromeTheme), [chromeTheme])
+  useLayoutEffect(() => applyChromeTheme(chromeTheme), [chromeTheme])
   useEffect(() => localStorage.setItem(FONT_KEY, String(fontSize)), [fontSize])
   useEffect(
     () => localStorage.setItem(TERMINAL_LINE_HEIGHT_KEY, String(terminalLineHeight)),

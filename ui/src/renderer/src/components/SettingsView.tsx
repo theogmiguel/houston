@@ -66,7 +66,7 @@ interface Props {
   daemonClient?: HoustonClient | null
 
   chromeTheme: ChromeTheme
-  onChromeTheme: (t: ChromeTheme) => void
+  onChromeTheme: (t: ChromeTheme, origin: HTMLElement) => void
   theme: TerminalPaletteChoice
   onTheme: (t: TerminalPaletteChoice) => void
   shellIntegration: boolean
