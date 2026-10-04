@@ -53,7 +53,8 @@ const R_ATTENTION: &str = "warning";
 
 const ACTION_ACCEPT: &str = "houston_accept";
 const ACTION_REFUSE: &str = "houston_refuse";
-/// A link button: Slack still sends the click, and it needs no handling.
+/// Link buttons: Slack still sends the click, and it needs no handling. An
+/// `action_id` must be unique within its block, or Slack refuses the message.
 const ACTION_LINK: &str = "houston_link";
 const VIEW_REFUSE: &str = "houston_refuse";
 const ACTION_ANSWER: &str = "houston_answer";
@@ -238,11 +239,11 @@ fn button(label: &str, action_id: &str, value: &str, style: Option<&str>) -> Val
     b
 }
 
-fn link_button(label: &str, url: &str) -> Value {
+fn link_button(label: &str, url: &str, name: &str) -> Value {
     json!({
         "type": "button",
         "text": {"type": "plain_text", "text": label},
-        "action_id": ACTION_LINK,
+        "action_id": format!("{ACTION_LINK}_{name}"),
         "url": url,
     })
 }
@@ -1353,7 +1354,7 @@ impl Daemon {
                     .get("value")
                     .and_then(Value::as_str)
                     .unwrap_or_default();
-                if action_id == ACTION_LINK {
+                if action_id.starts_with(ACTION_LINK) {
                     return Ok(());
                 }
                 if action_id == ACTION_ANSWER || action_id == ACTION_OTHER {
@@ -1572,7 +1573,7 @@ impl Daemon {
                     button(t.refuse(), ACTION_REFUSE, &id, Some("danger")),
                 ];
                 if let Some(link) = &row.permalink {
-                    buttons.push(link_button(t.view_message(), link));
+                    buttons.push(link_button(t.view_message(), link, "message"));
                 }
                 blocks.push(json!({"type": "actions", "elements": buttons}));
                 blocks.push(context(&format!("{} · {outlook}", escape(&place))));
@@ -1616,7 +1617,7 @@ impl Daemon {
         let mut blocks = vec![section(&text)];
         if let Some(link) = &row.permalink {
             blocks.push(
-                json!({"type": "actions", "elements": [link_button(t.view_message(), link)]}),
+                json!({"type": "actions", "elements": [link_button(t.view_message(), link, "message")]}),
             );
         }
         self.db.intake_outbox_push(
@@ -1803,7 +1804,7 @@ impl Daemon {
                     button(t.refuse(), ACTION_ADJUST_REFUSE, id, Some("danger")),
                 ];
                 if let Some(link) = &row.permalink {
-                    buttons.push(link_button(t.view_thread(), link));
+                    buttons.push(link_button(t.view_thread(), link, "thread"));
                 }
                 blocks.push(json!({"type": "actions", "elements": buttons}));
             }
@@ -2232,12 +2233,12 @@ impl Daemon {
         blocks.push(context(&line.join(" · ")));
         let mut buttons = Vec::new();
         if let Some(url) = facts.pr_url.as_deref().or(facts.open_pr.as_deref()) {
-            let mut b = link_button(t.open_pr(), url);
+            let mut b = link_button(t.open_pr(), url, "pull_request");
             b["style"] = json!("primary");
             buttons.push(b);
         }
         if let Some(link) = &row.permalink {
-            buttons.push(link_button(t.view_thread(), link));
+            buttons.push(link_button(t.view_thread(), link, "thread"));
         }
         if !buttons.is_empty() {
             blocks.push(json!({"type": "actions", "elements": buttons}));
@@ -2433,7 +2434,11 @@ impl Daemon {
                     );
                     self.db.intake_outbox_failed(out.id, &message)?;
                     if out.attempts + 1 >= OUTBOX_ATTEMPTS_MAX {
-                        self.db.intake_outbox_sent(out.id, None, None, now)?;
+                        tracing::warn!(
+                            "slack: dropping outbox row {} after {OUTBOX_ATTEMPTS_MAX} attempts: {message}",
+                            out.id
+                        );
+                        self.db.intake_outbox_dropped(out.id, now)?;
                     }
                 }
             }

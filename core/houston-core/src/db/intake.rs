@@ -623,6 +623,16 @@ impl Db {
         Ok(())
     }
 
+    /// Gives up on a row Slack kept refusing; its `last_error` stays.
+    pub fn intake_outbox_dropped(&self, id: i64, now_ms: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE intake_outbox SET sent_at = ?2 WHERE id = ?1",
+            rusqlite::params![id, now_ms],
+        )?;
+        Ok(())
+    }
+
     pub fn intake_outbox_failed(&self, id: i64, error: &str) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(

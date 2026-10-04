@@ -223,6 +223,11 @@ async fn api(
     } else {
         serde_json::from_slice(&body).unwrap_or(Value::Null)
     };
+    if let Some(error) = invalid_blocks(&args) {
+        rec.calls
+            .push(("refused".into(), json!({"method": method, "error": error})));
+        return Json(json!({"ok": false, "error": "invalid_blocks"}));
+    }
     Json(match method.as_str() {
         "auth.test" => json!({"ok": true, "team_id": "T1", "team": "Test team", "user_id": "UBOT"}),
         "apps.connections.open" => json!({"ok": true, "url": format!("ws://{}/socket", fake.addr)}),
@@ -249,6 +254,33 @@ async fn api(
         "conversations.replies" => json!({"ok": true, "messages": []}),
         other => json!({"ok": false, "error": format!("unknown_method:{other}")}),
     })
+}
+
+/// The Block Kit rules real Slack enforces that Houston's messages could
+/// break: an action_id unique within its block, section text under 3,000.
+fn invalid_blocks(args: &Value) -> Option<String> {
+    let blocks = args.get("blocks")?.as_array()?;
+    for block in blocks {
+        if let Some(text) = block.pointer("/text/text").and_then(Value::as_str) {
+            if text.chars().count() > 3_000 {
+                return Some(format!(
+                    "section text of {} characters",
+                    text.chars().count()
+                ));
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        let elements = block["elements"].as_array().into_iter().flatten();
+        let accessory = block.get("accessory").into_iter();
+        for el in elements.chain(accessory) {
+            if let Some(id) = el["action_id"].as_str() {
+                if !seen.insert(id.to_string()) {
+                    return Some(format!("action_id {id:?} twice in one block"));
+                }
+            }
+        }
+    }
+    None
 }
 
 async fn socket(State(fake): State<Fake>, ws: WebSocketUpgrade) -> axum::response::Response {
@@ -473,8 +505,12 @@ impl Rig {
             .collect()
     }
 
+    /// Ends a test; every message Houston sent must have passed Slack's
+    /// Block Kit checks.
     fn finish(&self) {
         self.daemon.slack_disconnect();
+        let refused = self.fake.calls("refused");
+        assert!(refused.is_empty(), "Slack refused messages: {refused:?}");
     }
 }
 
@@ -1035,6 +1071,12 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
     git(&worktree, &["add", "-A"]);
     git(&worktree, &["commit", "-m", "rename the button"]);
 
+    r.db()
+        .execute(
+            "UPDATE backlog_task_runs SET pr_url = 'https://github.com/o/r/pull/9' WHERE task_id = ?1",
+            [task_id],
+        )
+        .unwrap();
     let handed = r
         .daemon
         .task_handback_from(
@@ -1094,7 +1136,8 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
             && dm.contains("⚠️ A revisão automática não rodou")
             && dm.contains("Testes verdes · tela não conferida · ")
             && dm.contains("min de trabalho")
-            && dm.contains("Ver thread"),
+            && dm.contains("Ver thread")
+            && dm.contains("https://github.com/o/r/pull/9"),
         "{dm}"
     );
     let comment: String = r
