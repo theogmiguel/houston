@@ -77,10 +77,6 @@ impl Text {
         }
     }
 
-    pub fn refused_by_owner(self) -> &'static str {
-        self.pick("Recusado por você", "Refused by you")
-    }
-
     pub fn closed_in_houston(self) -> &'static str {
         self.pick(
             "Fechado no Houston antes de começar",
@@ -515,10 +511,29 @@ impl Text {
 
     pub fn adjustment_busy(self, working: usize, cap: usize) -> String {
         if self.pt() {
-            format!("tem {working} em andamento (limite {cap}); aceite o ajuste de novo quando um terminar")
+            format!("o ajuste não começou: já há {working} trabalhos em andamento (limite {cap}). Aceite de novo quando um terminar.")
         } else {
-            format!("has {working} working (limit {cap}); accept the adjustment again when one finishes")
+            format!("the adjustment did not start: {working} runs are working (limit {cap}). Accept it again when one finishes.")
         }
+    }
+
+    /// An adjustment the owner sets aside: a thank-you is the usual one.
+    pub fn ignore(self) -> &'static str {
+        self.pick("Ignorar", "Ignore")
+    }
+
+    pub fn ignored(self) -> &'static str {
+        self.pick(
+            "Ignorado: não era pedido de ajuste",
+            "Ignored: not an adjustment",
+        )
+    }
+
+    pub fn adjustment_closed(self) -> &'static str {
+        self.pick(
+            "A tarefa foi fechada sem este ajuste",
+            "The task was closed without this adjustment",
+        )
     }
 
     pub fn images_over_count(self, max: usize, attached: usize) -> String {

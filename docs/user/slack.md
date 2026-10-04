@@ -127,11 +127,12 @@ five attempts, and the status line names it.
    deploy of its own: the task's state is the signal.
 
 7. A reply from the requester in the thread after the hand-back, while the task is in
-   review, is a request for an adjustment: it gets 👀 and the owner gets a direct message
-   quoting it with **Accept** and **Refuse**. Accepting (the button, or the owner's ✅ on
+   review, may ask for an adjustment: it gets 👀 and the owner gets a direct message
+   quoting it with **Accept** and **Ignore**. Accepting (the button, or the owner's ✅ on
    the reply) starts a new attempt on the same worktree with the reply in its brief, within
-   the same limit of two working runs; refusing marks the reply 🚫. The new attempt hands
-   back again, and its notes replace the earlier ones.
+   the same limit of two working runs. **Ignore**, for a thank-you or a comment, removes
+   the 👀 and nothing else. A reply still pending when the task is closed loses its 👀 as
+   well. The new attempt hands back again, and its notes replace the earlier ones.
 
 The request shows its state as one reaction at a time, beside the owner's ✅: 👀 received,
 ⚙️ working, ❓ waiting for an answer, 🏁 ready for review, 🚀 live, 🚫 not going ahead

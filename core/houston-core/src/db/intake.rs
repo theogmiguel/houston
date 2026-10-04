@@ -796,6 +796,18 @@ impl Db {
             .optional()?)
     }
 
+    pub fn intake_pending_adjustments(&self, intake_id: i64) -> Result<Vec<AdjustmentRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {ADJUSTMENT_COLUMNS} FROM intake_adjustments a \
+             WHERE a.intake_id = ?1 AND a.state = 'pending' ORDER BY a.id"
+        ))?;
+        let rows = stmt
+            .query_map([intake_id], adjustment_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Moves a pending adjustment on; `Ok(false)` when it was already decided.
     pub fn intake_adjustment_decide(&self, id: i64, state: &str) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");

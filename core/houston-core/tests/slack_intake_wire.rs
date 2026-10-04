@@ -1637,9 +1637,22 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
         .unwrap();
     r.fake
         .send_interactive("a7", click(OWNER, "houston_adjust_refuse", &id.to_string()));
-    r.fake.await_reactions(&second_ts, &["no_entry_sign"]).await;
+    r.fake.await_reactions(&second_ts, &[]).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(r.runs().len(), 2, "a refused adjustment starts nothing");
+    assert_eq!(r.runs().len(), 2, "an ignored adjustment starts nothing");
+    r.fake
+        .await_call("chat.update", "Ignorado: não era pedido de ajuste")
+        .await;
+
+    let pending_ts = later(5);
+    r.fake
+        .send_event("a8", reply(REQUESTER, "Obrigada!", &pending_ts));
+    r.fake.await_reactions(&pending_ts, &["eyes"]).await;
+    close_task(&r, task_id, proto::TaskStatus::Done);
+    r.fake.await_reactions(&pending_ts, &[]).await;
+    r.fake
+        .await_call("chat.update", "A tarefa foi fechada sem este ajuste")
+        .await;
     r.finish();
 }
 

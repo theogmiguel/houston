@@ -1909,7 +1909,7 @@ impl Daemon {
             Footer::Buttons(id) => {
                 let mut buttons = vec![
                     button(t.accept(), ACTION_ADJUST_ACCEPT, id, Some("primary")),
-                    button(t.refuse(), ACTION_ADJUST_REFUSE, id, Some("danger")),
+                    button(t.ignore(), ACTION_ADJUST_REFUSE, id, None),
                 ];
                 if let Some(link) = &row.permalink {
                     buttons.push(link_button(t.view_thread(), link, "thread"));
@@ -2006,13 +2006,14 @@ impl Daemon {
         if !self.db.intake_adjustment_decide(adjustment.id, "refused")? {
             return Ok(());
         }
+        // Most replies after a result are thanks: they lose the 👀, never get 🚫.
         self.db.intake_outbox_push(
             row.id,
             &format!("adjust-dropped:{}", adjustment.id),
-            &Outgoing::react(Some(&adjustment.ts), Some(R_DROPPED), Some(R_SEEN)),
+            &Outgoing::react(Some(&adjustment.ts), None, Some(R_SEEN)),
             now_unix_ms(),
         )?;
-        self.slack_dm_adjustment_status(&row, adjustment, self.slack_text().refused_by_owner())
+        self.slack_dm_adjustment_status(&row, adjustment, self.slack_text().ignored())
     }
 
     /// `hs-task ask` / `task_ask`: posts the question to the request's thread
@@ -2192,6 +2193,18 @@ impl Daemon {
                 }
             }
             self.db.intake_set_status(row.id, status, now)?;
+            for adjustment in self.db.intake_pending_adjustments(row.id)? {
+                if self.db.intake_adjustment_decide(adjustment.id, "closed")? {
+                    self.db.intake_outbox_push(
+                        row.id,
+                        &format!("adjust-closed:{}", adjustment.id),
+                        &Outgoing::react(Some(&adjustment.ts), None, Some(R_SEEN)),
+                        now,
+                    )?;
+                    let closed = self.slack_text().adjustment_closed();
+                    self.slack_dm_adjustment_status(&row, &adjustment, closed)?;
+                }
+            }
         }
         Ok(())
     }
