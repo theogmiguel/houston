@@ -489,6 +489,15 @@ signal through fill + text, never a border.
 and stay quiet: `BTN_GHOST`, no colour. Save the weight for the
 affirmative action.
 
+### Component boundary
+
+Renderer UI composes from `ui/src/renderer/src/components/ui/`. Outside that directory,
+`className` carries layout only: `flex`, `grid`, `gap-[var(--space-*)]`, `items-*`,
+`justify-*`, `self-*`, `min-w-0`, `flex-1`, `truncate`, `col-*`, `row-*` and `hidden`.
+Add a missing visual role as a variant in `components/ui/` and include a specimen case
+in the `ui-primitives` story. Existing feature files are migrating; a guard will enforce
+the boundary.
+
 ### Select
 
 Every dropdown is `components/Select.tsx`. **Native `<select>` is banned** — its
@@ -899,13 +908,10 @@ than from this list.
 
 ## When this guide is silent
 
-1. Look at the **nearest sibling component** in `ui/src/renderer/src/components/`
-   and follow its lead — same icons, same heights, same submit semantics.
-2. Check the **chrome constants** (`buttonChrome.ts`, `overlayChrome.ts`,
-   `selectChrome.ts`, `panelChrome.ts`) for a recipe that already encodes the
-   pattern.
-3. If it's a token question, **`theme.css` is canonical** — use what's there, or add
-   a new token to both theme blocks and expose it in `tailwind.css`'s `@theme`.
-4. If two existing patterns contradict, prefer the one with tests and the one that
-   landed more recently, and flag the other.
-5. If none of those resolve it, **ask before inventing.**
+1. Use `components/ui`. If the role is missing, add it there as a variant with a specimen
+   case in `ui-primitives`; never write a visual class in a feature file.
+2. Copy a sibling for behaviour, never for chrome.
+3. For tokens, `theme.css` is canonical.
+4. When patterns contradict, prefer the tested one, then the more recent one, and flag
+   the other.
+5. Ask before inventing.
