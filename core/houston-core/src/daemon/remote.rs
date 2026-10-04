@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use super::{now_ms, Daemon};
 use crate::db::RemoteDeviceRow;
+use crate::remote::feed::{self, Card, Change, FeedItem, HookFeed, Pending};
 use crate::remote::{self, ApiError, Config, ConfigPatch, ListenState, NotifyDetail};
 
 const BIND_BACKOFF_START: Duration = Duration::from_secs(1);
@@ -47,6 +48,21 @@ pub struct RemoteSession {
     pub status: Option<proto::AgentStatus>,
     pub reason: Option<String>,
     pub status_since: Option<u64>,
+    /// The decision card the pane waits on, while it needs input.
+    pub pending: Option<feed::PendingView>,
+    pub waiting_since: Option<u64>,
+    pub last_reply_excerpt: Option<String>,
+    pub last_step: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteFeed {
+    pub id: u32,
+    pub entries: Vec<feed::FeedEntry>,
+    pub first_seq: u64,
+    pub last_seq: u64,
+    pub truncated: bool,
+    pub pending: Option<feed::PendingView>,
 }
 
 impl Daemon {
@@ -322,6 +338,7 @@ impl Daemon {
 
     pub fn remote_sessions(&self) -> Vec<RemoteSession> {
         let workspaces = self.db.list_workspaces().unwrap_or_default();
+        let now = now_ms();
         let mut out: Vec<RemoteSession> = self
             .list()
             .into_iter()
@@ -345,6 +362,9 @@ impl Daemon {
                     .remote
                     .seen(info.id)
                     .filter(|s| Some(s.status) == info.status);
+                let summary = self.remote.feed.summary(info.id, now);
+                let waiting =
+                    info.state.is_live() && info.status == Some(proto::AgentStatus::NeedsInput);
                 RemoteSession {
                     id: info.id,
                     title: info.title.clone(),
@@ -354,6 +374,10 @@ impl Daemon {
                     status: info.status,
                     reason: None,
                     status_since: seen.map(|s| s.since_ms),
+                    pending: summary.pending.filter(|_| waiting),
+                    waiting_since: seen.filter(|_| waiting).map(|s| s.since_ms),
+                    last_reply_excerpt: summary.last_reply_excerpt,
+                    last_step: summary.last_step,
                 }
             })
             .collect();
@@ -477,12 +501,290 @@ impl Daemon {
     }
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {
-        self.remote.note_status(id, status, now_ms());
-        let mut seen = self.remote.seen.lock().expect("remote seen lock");
-        if seen.len() > remote::SEEN_PRUNE_AT {
-            let live = self.sessions.lock().expect("sessions lock");
-            seen.retain(|id, _| live.contains_key(id));
+        let now = now_ms();
+        self.remote.note_status(id, status, now);
+        {
+            let mut seen = self.remote.seen.lock().expect("remote seen lock");
+            if seen.len() > remote::SEEN_PRUNE_AT {
+                let live = self.sessions.lock().expect("sessions lock");
+                seen.retain(|id, _| live.contains_key(id));
+            }
         }
+        if !self.remote_config().enabled {
+            return;
+        }
+        if status == proto::AgentStatus::NeedsInput {
+            self.remote.feed.set_pending(
+                id,
+                Pending {
+                    seq: 0,
+                    card: Card::Input,
+                    title: feed::card_title(&Card::Input, None),
+                    detail: String::new(),
+                    provider: self.remote_provider(id),
+                    since_ms: now,
+                    sent_at_ms: None,
+                },
+            );
+        } else {
+            self.remote.feed.resolve_pending(id);
+        }
+        self.remote_emit(id, Change::Session(id));
+    }
+
+    fn remote_provider(&self, id: u32) -> proto::AgentKind {
+        self.get(id)
+            .map(|s| s.info.detected_agent.unwrap_or(s.info.agent))
+            .unwrap_or(proto::AgentKind::Custom)
+    }
+
+    /// Hidden panes are not served remotely, so their changes are not announced.
+    fn remote_emit(&self, id: u32, change: Change) {
+        if self.get(id).is_ok_and(|s| !s.info.hidden) {
+            self.remote.emit(change);
+        }
+    }
+
+    fn remote_push(&self, id: u32, item: FeedItem, now: u64) -> u64 {
+        let seq = self.remote.feed.push(id, item, now);
+        self.remote_emit(id, Change::Feed(id, seq));
+        seq
+    }
+
+    /// Feeds an applied hook drop into the pane's activity feed. Only while
+    /// remote access is on: nothing is collected for a listener that is off.
+    pub(crate) fn remote_feed_hook(&self, d: &crate::hook_drop::HookDrop) {
+        if !self.remote_config().enabled || self.get(d.session).is_err() {
+            return;
+        }
+        let provider = match d.agent.as_deref() {
+            None => proto::AgentKind::Claude,
+            Some(slug) => match crate::agent_hooks::provider_from_slug(slug) {
+                Ok(kind) => kind,
+                Err(_) => return,
+            },
+        };
+        let id = d.session;
+        let now = now_ms();
+        match &d.feed {
+            Some(HookFeed::Prompt { text }) if !d.internal_prompt => {
+                self.remote_push(id, FeedItem::Prompt { text: text.clone() }, now);
+            }
+            Some(HookFeed::Question {
+                tool_use_id,
+                questions,
+            }) => {
+                let seq = self.remote_push(
+                    id,
+                    FeedItem::Question {
+                        questions: questions.clone(),
+                        answers: None,
+                    },
+                    now,
+                );
+                let card = Card::Question {
+                    tool_use_id: tool_use_id.clone(),
+                    questions: questions.clone(),
+                };
+                self.remote_set_card(
+                    id,
+                    Pending {
+                        seq,
+                        title: feed::card_title(&card, None),
+                        card,
+                        detail: String::new(),
+                        provider,
+                        since_ms: now,
+                        sent_at_ms: None,
+                    },
+                );
+            }
+            Some(HookFeed::Answered {
+                tool_use_id,
+                answers,
+            }) => {
+                if self
+                    .remote
+                    .feed
+                    .answer_question(id, tool_use_id.as_deref(), answers.clone())
+                {
+                    self.remote_push(
+                        id,
+                        FeedItem::Answer {
+                            answers: answers.clone(),
+                        },
+                        now,
+                    );
+                    self.remote_emit(id, Change::Session(id));
+                }
+            }
+            Some(HookFeed::Permission {
+                tool,
+                target,
+                always,
+            }) => {
+                let seq = self.remote_push(
+                    id,
+                    FeedItem::Permission {
+                        tool: tool.clone(),
+                        target: target.clone(),
+                        always: *always,
+                        outcome: None,
+                    },
+                    now,
+                );
+                let card = Card::Permission { always: *always };
+                self.remote_set_card(
+                    id,
+                    Pending {
+                        seq,
+                        title: feed::card_title(&card, Some(tool)),
+                        card,
+                        detail: target.clone(),
+                        provider,
+                        since_ms: now,
+                        sent_at_ms: None,
+                    },
+                );
+            }
+            Some(HookFeed::Step { tool, target }) => {
+                self.remote_push(
+                    id,
+                    FeedItem::Step {
+                        tool: tool.clone(),
+                        target: target.clone(),
+                    },
+                    now,
+                );
+            }
+            Some(HookFeed::Prompt { .. }) | None => {}
+        }
+        let event = crate::agent_events::AgentEvent::from_provider(provider, &d.event);
+        let turn_ended = event == Some(crate::agent_events::AgentEvent::TurnEnded)
+            && d.fully_idle != Some(false)
+            && d.subagent_type.is_none()
+            && d.agent_id.is_none();
+        let speaks =
+            turn_ended || (provider == proto::AgentKind::Cursor && d.event == "afterAgentResponse");
+        if speaks {
+            if let Some(text) = d
+                .last_message
+                .as_deref()
+                .map(feed::reply_text)
+                .filter(|t| !t.is_empty())
+            {
+                self.remote_push(id, FeedItem::Reply { text }, now);
+            }
+        }
+        if turn_ended {
+            self.remote_push(id, FeedItem::Status { status: "finished" }, now);
+        }
+        if self.remote.feed.session_count() > remote::SEEN_PRUNE_AT {
+            let live: std::collections::HashSet<u32> = self
+                .sessions
+                .lock()
+                .expect("sessions lock")
+                .keys()
+                .copied()
+                .collect();
+            self.remote
+                .feed
+                .prune(remote::SEEN_PRUNE_AT, |id| live.contains(&id));
+        }
+    }
+
+    fn remote_set_card(&self, id: u32, pending: Pending) {
+        self.remote.feed.set_pending(id, pending);
+        self.remote_emit(id, Change::Session(id));
+    }
+
+    pub(crate) fn remote_note_exit(&self, id: u32) {
+        if !self.remote_config().enabled {
+            return;
+        }
+        self.remote.feed.resolve_pending(id);
+        self.remote_push(id, FeedItem::Status { status: "exited" }, now_ms());
+        self.remote_emit(id, Change::Session(id));
+    }
+
+    pub fn remote_feed(&self, id: u32, after: u64) -> Result<RemoteFeed, ApiError> {
+        self.remote_target(id)?;
+        let page = self.remote.feed.page(id, after, now_ms());
+        let waiting =
+            self.session_status(id).ok().flatten() == Some(proto::AgentStatus::NeedsInput);
+        Ok(RemoteFeed {
+            id,
+            entries: page.entries,
+            first_seq: page.first_seq,
+            last_seq: page.last_seq,
+            truncated: page.truncated,
+            pending: page.pending.filter(|_| waiting),
+        })
+    }
+
+    /// Answers the pane's pending card with the keys its provider's prompt takes,
+    /// through the same stdin path as typed input.
+    pub fn remote_decide(
+        &self,
+        id: u32,
+        entry_seq: u64,
+        choice: &str,
+        text: Option<&str>,
+    ) -> Result<(), ApiError> {
+        let choice = feed::Choice::parse(choice, text).map_err(ApiError::BadRequest)?;
+        let s = self.remote_target(id)?;
+        if !s.state.lock().expect("state lock").is_live() {
+            return Err(ApiError::Conflict(format!(
+                "pane {id} is not running: a decision needs a live pane"
+            )));
+        }
+        let now = now_ms();
+        let waiting =
+            *s.status.lock().expect("status lock") == Some(proto::AgentStatus::NeedsInput);
+        let pending = self.remote.feed.pending(id).filter(|_| waiting);
+        let pending = match pending {
+            Some(p) if p.seq == entry_seq && p.seq != 0 => p,
+            Some(p) if p.seq != 0 => return Err(ApiError::Conflict(format!(
+                "entry {entry_seq} is not pane {id}'s pending decision: it now waits on entry {}",
+                p.seq
+            ))),
+            _ => {
+                return Err(ApiError::Conflict(format!(
+                    "entry {entry_seq} is not pending: pane {id} has no decision Houston can answer"
+                )))
+            }
+        };
+        feed::decision_support(pending.provider, &pending.card).map_err(ApiError::Conflict)?;
+        if let Some(at) = pending
+            .sent_at_ms
+            .filter(|at| now.saturating_sub(*at) < feed::SENT_HOLD_MS)
+        {
+            return Err(ApiError::Conflict(format!(
+                "entry {entry_seq} was answered {} s ago and the agent has not moved on yet: wait \
+                 for it, or use the terminal",
+                now.saturating_sub(at) / 1000
+            )));
+        }
+        let plan = feed::decision_keys(pending.provider, &pending.card, &choice)
+            .map_err(ApiError::BadRequest)?;
+        let Some(_claim) = self.remote.claim_input(id) else {
+            return Err(ApiError::Conflict(format!(
+                "input for pane {id} is still being written: wait for it to finish, then send again"
+            )));
+        };
+        self.remote.feed.mark_sent(id, entry_seq, now);
+        for (i, bytes) in plan.writes.iter().enumerate() {
+            if i > 0 {
+                std::thread::sleep(Duration::from_millis(plan.settle_ms));
+            }
+            self.note_operator_keystroke(id, bytes);
+            if let Err(e) = self.write_stdin_from_renderer(id, bytes) {
+                self.remote.feed.clear_sent(id, entry_seq);
+                return Err(ApiError::Conflict(format!("writing to pane {id}: {e}")));
+            }
+        }
+        self.remote_emit(id, Change::Session(id));
+        Ok(())
     }
 
     /// Idle until Settings > Remote access turns the listener on; re-binds when

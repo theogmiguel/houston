@@ -94,6 +94,10 @@ pub struct HookDrop {
     // digest so command contents never enter daemon state or hook drops.
     #[serde(default)]
     pub tool_input_fingerprint: Option<String>,
+    // The remote feed's masked, truncated summary: the one exception to the
+    // digest rule above, read only by the in-memory feed.
+    #[serde(default)]
+    pub feed: Option<crate::remote::feed::HookFeed>,
 }
 
 impl Default for HookDrop {
@@ -126,6 +130,7 @@ impl Default for HookDrop {
             subagent_type: None,
             tool_name: None,
             tool_input_fingerprint: None,
+            feed: None,
         }
     }
 }

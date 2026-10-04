@@ -380,6 +380,15 @@ pub fn run_hook_client(args: &[String]) {
     let carries_prompt = crate::agent_events::AgentEvent::from_provider(provider, event)
         == Some(crate::agent_events::AgentEvent::PromptSubmitted)
         || (provider == proto::AgentKind::Codex && event == "notify");
+    let feed = crate::remote::feed::from_hook(
+        provider,
+        event,
+        &input,
+        payload
+            .prompt
+            .as_deref()
+            .filter(|_| carries_prompt && !payload.internal_prompt),
+    );
     let prompt = carries_prompt
         .then_some(payload.prompt)
         .flatten()
@@ -439,6 +448,7 @@ pub fn run_hook_client(args: &[String]) {
         fully_idle: payload.fully_idle,
         subagent_type: payload.subagent_type,
         tool_name: payload.tool_name,
+        feed,
     };
     let root = crate::paths::config_dir();
     let drop_dir = match &root {

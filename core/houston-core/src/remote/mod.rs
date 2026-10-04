@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use houston_protocol as proto;
 use sha2::{Digest, Sha256};
 
+pub mod feed;
 pub mod http;
 pub mod ntfy;
 pub mod qr;
@@ -47,6 +48,12 @@ const LIMITER_SOURCES_MAX: usize = 1024;
 pub const MAX_CONNECTIONS: usize = 64;
 pub const CONNECTION_IDLE: Duration = Duration::from_secs(30);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+// A phone and a desktop browser or two; each stream holds a connection slot.
+pub const EVENT_STREAMS_MAX: usize = 8;
+// Under `CONNECTION_IDLE`, so an idle stream is never cut by the idle timeout.
+pub const EVENT_HEARTBEAT: Duration = Duration::from_secs(15);
+// Events are a few per turn per pane; a reader this far behind resynchronises.
+const EVENT_QUEUE: usize = 256;
 
 /// Keys beyond the orchestration set (`orchestrate::SENDABLE_KEYS`) that a
 /// person answering from a phone needs.
@@ -563,6 +570,9 @@ pub struct Runtime {
     /// Taken by the notifier loop; transitions before it starts wait in the channel.
     pub(crate) status_rx: Mutex<Option<tokio::sync::mpsc::Receiver<StatusEvent>>>,
     next_epoch: std::sync::atomic::AtomicU64,
+    pub(crate) feed: feed::Store,
+    events: tokio::sync::broadcast::Sender<feed::Change>,
+    pub(crate) event_streams: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 impl Default for Runtime {
@@ -587,6 +597,9 @@ impl Runtime {
             status_tx,
             status_rx: Mutex::new(Some(status_rx)),
             next_epoch: std::sync::atomic::AtomicU64::new(1),
+            feed: feed::Store::default(),
+            events: tokio::sync::broadcast::Sender::new(EVENT_QUEUE),
+            event_streams: std::sync::Arc::new(tokio::sync::Semaphore::new(EVENT_STREAMS_MAX)),
         }
     }
 
@@ -665,7 +678,20 @@ impl Runtime {
         claimed.then(|| InputClaim { runtime: self, id })
     }
 
-    pub(crate) fn note_status(&self, session: u32, status: proto::AgentStatus, now_ms: u64) {
+    pub(crate) fn emit(&self, change: feed::Change) {
+        let _ = self.events.send(change);
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<feed::Change> {
+        self.events.subscribe()
+    }
+
+    pub(crate) fn note_status(
+        &self,
+        session: u32,
+        status: proto::AgentStatus,
+        now_ms: u64,
+    ) -> Option<proto::AgentStatus> {
         let epoch = self
             .next_epoch
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -688,6 +714,7 @@ impl Runtime {
             to: status,
             epoch,
         });
+        from
     }
 
     pub(crate) fn seen(&self, session: u32) -> Option<SeenStatus> {

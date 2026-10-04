@@ -8484,6 +8484,7 @@ impl Daemon {
         self.swarm_session_finished(id, final_state, exit_code);
         self.reap_reevaluate();
         self.task_run_session_ended(id);
+        self.remote_note_exit(id);
         final_state
     }
 
@@ -11495,8 +11496,13 @@ impl Daemon {
         let (mut applied, mut all_listed) = (0usize, true);
         for dir in &dirs {
             let state = states.entry(dir.clone()).or_default();
-            let out =
-                crate::hook_drop::run_pass(dir, state, now, pass, |d| self.apply_hook_drop(d));
+            let out = crate::hook_drop::run_pass(dir, state, now, pass, |d| {
+                let verdict = self.apply_hook_drop(d);
+                if verdict == crate::hook_drop::DropVerdict::Applied {
+                    self.remote_feed_hook(d);
+                }
+                verdict
+            });
             applied += out.applied;
             all_listed &= out.listed_ok;
             if out.collected > 0 {

@@ -24,9 +24,12 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+use axum::response::sse::{Event, KeepAlive, Sse};
+
+use super::feed::Change;
 use super::{
-    ApiError, BODY_LIMIT, CONNECTION_IDLE, MAX_CONNECTIONS, REQUEST_TIMEOUT, SCREEN_LINES_DEFAULT,
-    SCREEN_LINES_MAX,
+    ApiError, BODY_LIMIT, CONNECTION_IDLE, EVENT_HEARTBEAT, EVENT_STREAMS_MAX, MAX_CONNECTIONS,
+    REQUEST_TIMEOUT, SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX,
 };
 use crate::daemon::Daemon;
 use crate::db::RemoteDeviceRow;
@@ -186,6 +189,9 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/api/sessions", get(sessions))
         .route("/api/sessions/{id}/screen", get(screen))
         .route("/api/sessions/{id}/input", post(input))
+        .route("/api/sessions/{id}/feed", get(feed))
+        .route("/api/sessions/{id}/decide", post(decide))
+        .route("/api/events", get(events))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn_with_state(daemon.clone(), guard))
@@ -565,6 +571,126 @@ async fn input(
         Ok(()) => Json(json!({ "ok": true })).into_response(),
         Err(refused) => refused.into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct FeedQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+async fn feed(
+    State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    Path(id): Path<u32>,
+    headers: HeaderMap,
+    query: Result<Query<FeedQuery>, QueryRejection>,
+) -> Response {
+    let Ok(Query(query)) = query else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "query is not valid: expected ?after=<sequence number, 0 for everything held>",
+        );
+    };
+    let result = blocking(move || {
+        authenticate(&daemon, &headers, peer.0.ip())?;
+        daemon.remote_feed(id, query.after).map_err(Refused::from)
+    })
+    .await;
+    match result {
+        Ok(feed) => Json(feed).into_response(),
+        Err(refused) => refused.into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct DecideBody {
+    entry_seq: u64,
+    choice: String,
+    text: Option<String>,
+}
+
+async fn decide(
+    State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    Path(id): Path<u32>,
+    headers: HeaderMap,
+    body: Result<Json<DecideBody>, JsonRejection>,
+) -> Response {
+    let body = match body {
+        Ok(Json(body)) => body,
+        Err(rej) => {
+            return error(
+                rej.status(),
+                format!(
+                    "decision body is not valid ({}): expected JSON {{\"entry_seq\": number, \
+                     \"choice\": string, \"text\"?: string}}",
+                    rej.body_text()
+                ),
+            )
+        }
+    };
+    let result = blocking(move || {
+        authenticate(&daemon, &headers, peer.0.ip())?;
+        daemon
+            .remote_decide(id, body.entry_seq, &body.choice, body.text.as_deref())
+            .map_err(Refused::from)
+    })
+    .await;
+    match result {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(refused) => refused.into_response(),
+    }
+}
+
+/// Server-sent events: `session` when a pane's status or card changes, `feed`
+/// when its feed grows, `resync` when this reader fell behind. Comments keep
+/// the connection inside the idle timeout.
+async fn events(
+    State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    headers: HeaderMap,
+) -> Response {
+    let auth = {
+        let daemon = Arc::clone(&daemon);
+        blocking(move || authenticate(&daemon, &headers, peer.0.ip())).await
+    };
+    if let Err(refused) = auth {
+        return refused.into_response();
+    }
+    let Ok(permit) = Arc::clone(&daemon.remote.event_streams).try_acquire_owned() else {
+        return error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!(
+                "too many live event streams: the limit is {EVENT_STREAMS_MAX}; close another \
+                 device's page or poll /api/sessions instead"
+            ),
+        );
+    };
+    let rx = daemon.remote.subscribe();
+    let ready =
+        futures_util::stream::once(async { Ok(Event::default().event("ready").data("{}")) });
+    let changes = futures_util::stream::unfold((rx, permit), |(mut rx, permit)| async move {
+        let event = match rx.recv().await {
+            Ok(Change::Session(id)) => Event::default()
+                .event("session")
+                .data(json!({ "id": id }).to_string()),
+            Ok(Change::Feed(id, seq)) => Event::default()
+                .event("feed")
+                .data(json!({ "id": id, "seq": seq }).to_string()),
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                Event::default().event("resync").data("{}")
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+        };
+        Some((Ok::<_, std::convert::Infallible>(event), (rx, permit)))
+    });
+    let mut resp = Sse::new(futures_util::StreamExt::chain(ready, changes))
+        .keep_alive(KeepAlive::new().interval(EVENT_HEARTBEAT))
+        .into_response();
+    resp.headers_mut()
+        .insert("x-accel-buffering", HeaderValue::from_static("no"));
+    resp
 }
 
 #[cfg(test)]
