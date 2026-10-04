@@ -228,6 +228,22 @@ Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
 banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
 be delegated to, via #3 — identity is still not status.
 
+### The remote feed comes from hook payloads and lives in memory
+
+The conversation a paired remote-access device reads (`remote/feed.rs`) is built only from
+hook payload fields: the prompt, the turn's last message, `AskUserQuestion`'s questions and
+answers, and a permission request's or finished tool call's name and one target (a command,
+path, URL or pattern). It never reads a transcript or the screen. Its decision card follows
+status transitions; it never sets one.
+
+This is the one exception to the rule that hook drops carry only a digest of `tool_input`:
+the hook client masks that single target with the credential redactor, cuts it to one line of
+at most 300 characters, and writes it into the drop under `feed`. The daemon keeps it in a
+per-session ring (200 entries, 512 KiB, 32 MiB across sessions) only while remote access is
+on, serves it only to paired devices, and never writes it to SQLite or the log; it is gone
+when the daemon exits. A decision a device makes is typed into the PTY as the provider's own
+keys, through the same stdin path as typed input, never through a hook reply.
+
 ### The daemon owns a terminal emulator; it never reads it for status
 
 **What it is.** Each session has one libghostty-vt terminal (`vt.rs`), the same library the

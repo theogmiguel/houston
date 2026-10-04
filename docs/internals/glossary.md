@@ -40,6 +40,8 @@ named.
 | **stack** | A tabbed group of panes in one grid slot, capped at 4. | `StackTabs.tsx` |
 | **remote access** | The opt-in second listener that serves a web client and `/api/*` to paired devices, plus optional ntfy notifications. Separate from the loopback control endpoint. | `remote/`, `daemon/remote.rs` |
 | **paired device** | A browser that redeemed a pairing code and holds a remote-access token. It reads and types into panes; it cannot pair, configure, spawn or kill. Revoking deletes its `remote_devices` row. | `db/remote.rs` |
+| **remote feed** | A pane's conversation for paired devices: prompts, replies, questions, permission requests, tool steps and turn ends, built from hook payloads into a bounded in-memory ring while remote access is on. Never persisted. | `remote/feed.rs` |
+| **decision card** | The request a pane waits on, as a device shows it: a permission, a question, or `input` when the CLI reported none. A device answers it with `decide`, which types the provider's keys into the PTY. | `remote::feed::Pending` |
 | **pairing code** | A single-use, ten-minute, 128-bit code carried in a pairing link's URL fragment. Starting a new pairing invalidates the previous code. | `remote::Runtime::start_pairing` |
 | **codename** | A pane's auto-generated name, from a fixed pool, replaced by a better name as one arrives. | `pane_name.rs` |
 | **title source** | Where a pane's current name came from — codename, first prompt, the CLI's own window title, or the user. A weaker source never overwrites a stronger one. | `daemon.rs`, `osc_title.rs` |

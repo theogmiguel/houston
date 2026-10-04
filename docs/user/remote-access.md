@@ -1,10 +1,12 @@
 # Remote access
 
 Remote access lets you follow and answer your panes from a phone or another computer. A
-paired device sees every pane with its reported status (panes waiting for your input come
-first), reads a pane's screen as text, and types an answer or presses keys such as Enter,
-Esc, the arrow keys, Tab and Ctrl+C. Optionally, Houston sends a push notification through
-[ntfy](https://ntfy.sh) when an agent has been waiting for input for a while.
+paired device lists every pane with its reported status, panes that need you first, and
+shows each pane as a conversation: your prompts, the agent's replies, its tool steps, and
+the questions and permission requests it is waiting on, which you answer with a tap. A
+Terminal tab shows the pane's screen, and you can type a message or press keys such as
+Enter, Esc, the arrow keys, Tab and Ctrl+C. Optionally, Houston sends a push notification
+through [ntfy](https://ntfy.sh) when an agent has been waiting for input for a while.
 
 Remote access is off by default. While it is off, nothing listens and nothing is sent.
 
@@ -15,8 +17,15 @@ panes. That is as much access as a shell on this computer as your user: treat a 
 device, and the link it was paired with, like an unlocked terminal. A device cannot pair
 other devices, change settings, open or close panes. Revoke a device you lose straight away.
 
-The screen a device sees is a text snapshot that refreshes every two seconds; it is not an
+The Terminal tab is a text snapshot that refreshes while the tab is open; it is not an
 interactive terminal, and it never resizes or takes over the pane on your desktop.
+
+The conversation comes only from what each agent CLI reports through its hooks while remote
+access is on: prompts, final replies, questions and their options, and for each permission
+request or tool step the tool's name and one target (a command, file path, URL or pattern).
+Secrets that match Houston's credential patterns are masked, long text is shortened, and
+nothing of it is saved: it is kept in memory and is gone when the daemon stops. Activity from
+before remote access was turned on is only in the Terminal tab.
 
 ## Turn it on
 
@@ -61,11 +70,34 @@ site data) asks to be paired again.
 
 ## Answer an agent
 
-Tap a pane to see its screen. Type an answer and choose **Send** to type it and press
-Enter, or use the key buttons: **1**, **2** and **3** pick a numbered option, **y** and
-**n** answer yes/no prompts, and **Ctrl+C** asks for a second tap before it interrupts the
-agent. A multi-line answer works only when the program in the pane accepts pasted text;
-otherwise send one line at a time.
+The home screen groups panes into **Needs you**, **Working** (with the agent's latest step)
+and **Idle** (with the start of its last reply); with panes in more than one workspace, the
+chips at the top filter by workspace. The page title counts the panes that need you, and an
+Android phone vibrates briefly when a new request arrives while Houston is open. The dot
+next to the title shows whether updates are live or reconnecting.
+
+A permission request in **Needs you** shows the tool and its target with **Approve** and
+**Deny**, so you can answer without opening the pane. Inside a pane, the request waiting on
+you is a card above the message box:
+
+- **Permission:** **Approve**, **Deny**, and **Always** when the CLI offers to stop asking
+  for similar requests.
+- **Question:** tap an option, or **Other…** to type your own answer in the message box.
+
+After a tap the card shows **Sent** until the agent moves on. Houston answers by typing the
+same keys you would press in the terminal, so an answer you give on the desktop meanwhile is
+just as valid; if the request changed before your tap arrived, Houston refuses the tap
+instead of answering the wrong request.
+
+Cards you can answer with a tap are available for Claude Code permission requests and
+single questions with one answer. Questions with several parts or several answers, and
+requests from Codex, Cursor, Grok, OpenCode and Antigravity, show a **Needs you** card with
+**Open terminal** and the key row; replies and status still appear in their conversation.
+
+The message box sends your text and presses Enter. Multi-line text works only when the
+program in the pane accepts pasted text; otherwise send one line at a time. **+** shows the
+key row: **Esc**, the arrow keys, **Tab**, **Enter**, and **Ctrl+C**, which asks for a second
+tap before it interrupts the agent.
 
 ## Notifications with ntfy
 

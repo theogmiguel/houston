@@ -171,10 +171,16 @@ Trust model:
   ten-minute pairing code from the URL fragment. Only the token's SHA-256 is stored
   (`remote_devices`); revoking deletes the row. The daemon token and pane tokens are never
   accepted.
-- **Scope.** The API lists panes, reads a pane's screen as text and writes input through the
-  desktop's stdin path. Writing to any pane, shell panes included, makes a device equivalent
-  to a shell as the user; it cannot pair, configure, spawn or kill. One input request per
-  pane runs at a time.
+- **Scope.** The API lists panes, reads a pane's screen as text and its remote feed, and
+  writes input through the desktop's stdin path, either as typed text and keys or as a
+  decision that the per-provider table in `remote/feed.rs` turns into the CLI's own keys.
+  Writing to any pane, shell panes included, makes a device equivalent to a shell as the
+  user; it cannot pair, configure, spawn or kill. One input request per pane runs at a time,
+  and a decision names the feed entry it answers so a stale tap is refused.
+- **Feed and events.** The feed is filled from applied hook drops and status transitions
+  only while remote access is on (see [invariants](invariants.md)). `/api/events` is a
+  server-sent event stream of change notices without content; the web client reads it
+  through `fetch` so the bearer token stays in a header, and falls back to polling.
 - **Transport.** TLS is delegated to `tailscale serve` in front of the loopback bind. A bind
   on every interface needs a public URL; Settings warns when a token would cross the network
   over plain HTTP.

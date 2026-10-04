@@ -1028,12 +1028,24 @@ Errors are `{"error": "<message naming the value and the expected shape>"}`.
 
 | Route | Auth | Body / query | Reply |
 |---|---|---|---|
-| `GET /`, `/manifest.webmanifest`, `/icon.svg` | none | — | the embedded web client; `/` carries a CSP that admits only its own inline script |
+| `GET /`, `/app.js`, `/app.css`, `/manifest.webmanifest`, `/icon.svg` | none | — | the embedded web client; `/` carries a CSP that admits scripts and styles only from this listener and no inline code |
 | `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
 | `GET /api/me` | device | — | `{device_id, name}` |
-| `GET /api/sessions` | device | — | `{sessions: [{id, title, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?}]}`, needs-input first, then working, idle, others, and panes that are not running |
+| `GET /api/sessions` | device | — | `{sessions: [{id, title, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?, pending?: Pending, waiting_since?, last_reply_excerpt? (≤ 160 characters), last_step? (≤ 120)}]}`, needs-input first, then working, idle, others, and panes that are not running. `pending` and `waiting_since` are set only while the pane needs input |
+| `GET /api/sessions/{id}/feed` | device | `?after=` a sequence number, default 0 | `{id, entries: FeedEntry[], first_seq, last_seq, truncated, pending?: Pending}`: the entries after `after` still held. `truncated` means some entries after `after` were already evicted. Sequence numbers start at 1 per pane and restart with the daemon |
+| `POST /api/sessions/{id}/decide` | device | `{entry_seq, choice, text?}`; `choice` is `approve`, `always` or `deny` for a permission, an option number (`"1"`…) or `other` with `text` for a question | `{ok: true}` once the provider's keys for that choice were written to the PTY. 409 when `entry_seq` is not the pane's pending card, the card was answered less than 10 s ago, or Houston has no key mapping for the provider or the card's shape (the message names which); 400 for a choice the card does not offer |
+| `GET /api/events` | device | — | `text/event-stream`: `ready` once, then `session` `{id}` when a pane's status or card changes, `feed` `{id, seq}` when its feed grows, and `resync` when this reader fell behind; a comment every 15 s. At most `EVENT_STREAMS_MAX` (8) streams at once, else 503 |
 | `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[], source}`. `source: "screen"` is the same text extraction as `pane_read`; where the build has no terminal emulator (Windows) it is `"scrollback"`, the raw output tail with escape sequences removed. It never attaches or resizes |
 | `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters, no control characters but newline), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Multi-line text is sent as a bracketed paste only when the pane's program enabled paste mode (2004), else refused with 409. One request per pane at a time; a concurrent one gets 409. Keys: `esc enter up down tab ctrl+c y n left right backspace space` |
+
+`FeedEntry` is `{seq, at (epoch ms), type, …}` with `type` one of `prompt {text}`,
+`reply {text}` (markdown, ≤ 16 KiB), `question {questions: [{header, question, options:
+[{label, description}], multi_select, previews}], answers?}`, `answer {answers}`,
+`permission {tool, target, always, outcome?}`, `step {tool, target}` and
+`status {status: finished | exited}`. Text is masked by the credential redactor before it
+leaves the hook client. `Pending` is `{seq, type: question | permission | input, title,
+detail, since, decidable, sent}`; `input` is a pane waiting without a structured request,
+which a device answers through `input`.
 
 Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
 an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's
@@ -1044,9 +1056,9 @@ Neither refusal lists the allowed names. A bind on every interface (`0.0.0.0`,
 
 Statuses: 400 invalid input, 401 missing or unknown token or pairing code, 404
 unknown pane, 408 a request ran past 20 s, 409 pane not running, input already
-in flight or multi-line text the program cannot take as a paste, 413 body too
-large, 429 locked out (with `Retry-After`), 503 the daemon could not read its
-paired devices. Ten wrong tokens or pairing codes from one source within 60 s
+in flight, multi-line text the program cannot take as a paste or a decision that
+no longer applies, 413 body too large, 429 locked out (with `Retry-After`), 503
+the daemon could not read its paired devices or too many event streams are open. Ten wrong tokens or pairing codes from one source within 60 s
 lock that source out of token checks and pairing for 60 s; loopback callers
 (everything behind `tailscale serve`) are one source; a valid token is never
 locked out. The listener holds at most 64 connections and closes one that is
