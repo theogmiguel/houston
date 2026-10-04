@@ -373,6 +373,7 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
         fully_idle: Some(true),
         tool_name: Some("ask_question".into()),
         tool_input_fingerprint: Some("sha256:command".into()),
+        interrupted: true,
     };
     let text = serde_json::to_string(&full).expect("serialize");
     let back: HookDrop = serde_json::from_str(&text).expect("parse");

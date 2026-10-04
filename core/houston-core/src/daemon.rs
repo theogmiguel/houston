@@ -6710,11 +6710,29 @@ impl Daemon {
         let sentinel = self.hook_sentinel();
         if enabled {
             let launcher = crate::claude_hooks::launcher_path(&self.state_dir);
-            crate::agent_hooks::install(provider, &home, &launcher, &sentinel)?;
+            self.install_agent_hooks(provider, &home, &launcher, &sentinel)?;
         } else {
             crate::agent_hooks::uninstall(provider, &home, &sentinel)?;
+            if provider == proto::AgentKind::Zcode {
+                crate::zcode_config::remove_plugin(&self.state_dir)?;
+            }
         }
         Ok(())
+    }
+
+    /// ZCode's entry names the plugin directory that carries Houston's MCP server, so
+    /// the plugin is written first.
+    fn install_agent_hooks(
+        &self,
+        provider: proto::AgentKind,
+        home: &crate::agent_hooks::ConfigHome,
+        launcher: &Path,
+        sentinel: &str,
+    ) -> Result<PathBuf> {
+        if provider == proto::AgentKind::Zcode {
+            crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())?;
+        }
+        crate::agent_hooks::install(provider, home, launcher, sentinel)
     }
 
     pub fn install_consented_agent_hooks(&self) {
@@ -6728,7 +6746,7 @@ impl Daemon {
             if !self.hook_consent(provider) {
                 continue;
             }
-            if let Err(e) = crate::agent_hooks::install(provider, &home, &launcher, &sentinel) {
+            if let Err(e) = self.install_agent_hooks(provider, &home, &launcher, &sentinel) {
                 tracing::warn!("refreshing {provider:?} hooks: {e:#}");
             }
         }
@@ -12244,7 +12262,14 @@ impl Daemon {
             session_id: id,
             workspace_id: project_dir.to_string_lossy().into_owned(),
         });
-        crate::mcp_launch::launch_for(agent, &endpoint, &token)
+        let mut launch = crate::mcp_launch::launch_for(agent, &endpoint, &token);
+        if agent == proto::AgentKind::Zcode {
+            launch.env.push((
+                crate::zcode_config::url_env(self.channel.as_deref()),
+                endpoint,
+            ));
+        }
+        launch
     }
 
     pub fn bound_port(&self) -> Option<u16> {
@@ -12588,7 +12613,10 @@ impl Daemon {
         provider: proto::AgentKind,
     ) -> Option<crate::hook_drop::DropVerdict> {
         let ev = crate::agent_events::AgentEvent::from_provider(provider, &d.event);
-        let correlates = matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex);
+        let correlates = matches!(
+            provider,
+            proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode
+        );
         let now = crate::hook_drop::now_ms();
 
         if ev == Some(crate::agent_events::AgentEvent::PromptSubmitted) {
@@ -12744,6 +12772,7 @@ impl Daemon {
                     .as_deref()
                     .is_some_and(|name| Self::CLAUDE_INTERACTIVE_TOOLS.contains(&name)),
                 proto::AgentKind::Codex => d.tool_name.as_deref() == Some("request_user_input"),
+                proto::AgentKind::Zcode => d.tool_name.as_deref() == Some("AskUserQuestion"),
                 _ => false,
             };
             if !blocks {
@@ -12781,6 +12810,18 @@ impl Daemon {
         if correlates && matches!(d.event.as_str(), "PostToolUse" | "PostToolUseFailure") {
             if !self.note_hook_seen(d.session, provider, &d.event, d.cwd.as_deref()) {
                 return Some(crate::hook_drop::DropVerdict::NoSession);
+            }
+            // ZCode runs no Stop after an interrupt; a tool aborted by it is the only signal.
+            if provider == proto::AgentKind::Zcode && d.interrupted {
+                self.resolve_permission_episodes(d.session, &orchestrate::EpisodeEnd::TurnEnded);
+                self.apply_agent_event(
+                    d.session,
+                    &d.event,
+                    crate::agent_events::AgentEvent::TurnInterrupted,
+                    false,
+                    true,
+                );
+                return Some(crate::hook_drop::DropVerdict::Applied);
             }
             let resumed = self.resolve_permission_episodes(
                 d.session,

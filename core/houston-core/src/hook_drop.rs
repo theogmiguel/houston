@@ -102,6 +102,9 @@ pub struct HookDrop {
     pub tool_input_fingerprint: Option<String>,
     #[serde(default)]
     pub resume_evidence: Option<ResumeHookEvidence>,
+    // ZCode's PostToolUseFailure.is_interrupt: the operator aborted the turn mid-tool.
+    #[serde(default)]
+    pub interrupted: bool,
 }
 
 impl Default for HookDrop {
@@ -135,6 +138,7 @@ impl Default for HookDrop {
             tool_name: None,
             tool_input_fingerprint: None,
             resume_evidence: None,
+            interrupted: false,
         }
     }
 }

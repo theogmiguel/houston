@@ -15,7 +15,7 @@ pub fn hook_events() -> Vec<&'static str> {
         .collect()
 }
 
-const SENTINEL: &str = "--houston-managed";
+pub(crate) const SENTINEL: &str = "--houston-managed";
 
 /// The sentinel is tagged per channel: untagged, a dev daemon and the installed
 /// one would evict each other's group on every boot. Matching is per
@@ -487,6 +487,7 @@ pub fn run_hook_client(args: &[String]) {
         agent_id: payload.agent_id,
         tool_use_id: payload.tool_use_id,
         tool_input_fingerprint: payload.tool_input_fingerprint,
+        interrupted: payload.interrupted,
         request_id: payload.request_id,
         resume_evidence: if matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
             && matches!(
@@ -721,6 +722,7 @@ pub(crate) struct HookPayload {
     pub tool_name: Option<String>,
     pub tool_input_fingerprint: Option<String>,
     pub transcript_path: Option<String>,
+    pub interrupted: bool,
 }
 
 const TASK_NOTIFICATION_TAG: &str = "<task-notification>";
@@ -895,11 +897,14 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
             .flatten(),
         tool_name,
         tool_input_fingerprint,
-        transcript_path: if provider == proto::AgentKind::Antigravity {
-            field("transcriptPath")
-        } else {
-            field("transcript_path")
+        // ZCode's transcript_path is a per-hook temporary file it deletes afterwards.
+        transcript_path: match provider {
+            proto::AgentKind::Antigravity => field("transcriptPath"),
+            proto::AgentKind::Zcode => None,
+            _ => field("transcript_path"),
         },
+        interrupted: provider == proto::AgentKind::Zcode
+            && field_bool("is_interrupt").unwrap_or(false),
         prompt: clean(prompt),
     }
 }
@@ -1908,6 +1913,55 @@ mod tests {
         );
         assert_eq!(p.last_message, None);
         assert!(!p.stop_hook_active);
+    }
+
+    fn zcode_fixture(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/hooks/zcode")
+            .join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading the fixture {}: {e}", path.display()))
+    }
+
+    #[test]
+    fn zcode_payloads_keep_ids_and_drop_the_temporary_transcript() {
+        let z = proto::AgentKind::Zcode;
+        let start = parse_hook_payload(&zcode_fixture("zcode-src-01-SessionStart.json"), z);
+        assert_eq!(
+            start.session_id.as_deref(),
+            Some("sess_01J9ZCDEMO0000000000000000")
+        );
+        assert_eq!(
+            start.transcript_path, None,
+            "ZCode deletes it after the hook"
+        );
+        let stop = parse_hook_payload(&zcode_fixture("zcode-src-03-Stop.json"), z);
+        assert_eq!(
+            stop.last_message.as_deref(),
+            Some("Added the regression test; cargo test passes.")
+        );
+        let ask = parse_hook_payload(
+            &zcode_fixture("zcode-src-04-PreToolUse-AskUserQuestion.json"),
+            z,
+        );
+        assert_eq!(ask.tool_name.as_deref(), Some("AskUserQuestion"));
+        assert_eq!(ask.tool_use_id.as_deref(), Some("call_ask_01"));
+        let aborted = parse_hook_payload(
+            &zcode_fixture("zcode-src-08-PostToolUseFailure-interrupt.json"),
+            z,
+        );
+        assert!(aborted.interrupted);
+        assert_eq!(
+            aborted.error.as_deref(),
+            Some("Tool execution aborted by user")
+        );
+        let plain = parse_hook_payload(&zcode_fixture("zcode-src-07-PostToolUse-Bash.json"), z);
+        assert!(!plain.interrupted);
+        let claude = parse_hook_payload(
+            &zcode_fixture("zcode-src-08-PostToolUseFailure-interrupt.json"),
+            proto::AgentKind::Claude,
+        );
+        assert!(!claude.interrupted, "is_interrupt is read for ZCode only");
     }
 
     #[test]

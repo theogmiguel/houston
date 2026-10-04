@@ -151,6 +151,18 @@ const ANTIGRAVITY_EVENTS: [(&str, AgentEvent); 4] = [
 
 pub const ANTIGRAVITY_CORRELATION_EVENTS: [&str; 1] = ["PostToolUse"];
 
+// ZCode fires SessionStart once per process, inside its first turn or on resume.
+// Its Stop runs only after a successful turn; an interrupt surfaces as a
+// PostToolUseFailure carrying is_interrupt, which the daemon reads.
+const ZCODE_EVENTS: [(&str, AgentEvent); 4] = [
+    ("SessionStart", AgentEvent::SessionStarted),
+    ("UserPromptSubmit", AgentEvent::PromptSubmitted),
+    ("Stop", AgentEvent::TurnEnded),
+    ("PermissionRequest", AgentEvent::NeedsInput),
+];
+
+pub const ZCODE_CORRELATION_EVENTS: [&str; 3] = ["PreToolUse", "PostToolUse", "PostToolUseFailure"];
+
 pub fn events_for(provider: proto::AgentKind) -> &'static [(&'static str, AgentEvent)] {
     match provider {
         proto::AgentKind::Claude => &CLAUDE_EVENTS,
@@ -159,6 +171,7 @@ pub fn events_for(provider: proto::AgentKind) -> &'static [(&'static str, AgentE
         proto::AgentKind::Cursor => &CURSOR_EVENTS,
         proto::AgentKind::Grok => &GROK_EVENTS,
         proto::AgentKind::Antigravity => &ANTIGRAVITY_EVENTS,
+        proto::AgentKind::Zcode => &ZCODE_EVENTS,
         _ => &[],
     }
 }

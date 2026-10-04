@@ -1,0 +1,45 @@
+{
+  "_note": "reconstructed from zai-org/ZCode apps/zcode-cli packages/core/src/hooks/configured-runner-input.ts (createCompatibleHookStdin) and packages/contracts/src/hooks \u2014 not captured live. camelCase fields are ZCode's own; snake_case ones are its Claude-compatible aliases.",
+  "agentName": "zcode-agent",
+  "cwd": "/tmp/example",
+  "hookEventName": "PreToolUse",
+  "mode": "build",
+  "sessionId": "sess_01J9ZCDEMO0000000000000000",
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "traceId": "trace-zcode-01",
+  "turnId": "turn-zcode-01",
+  "toolName": "AskUserQuestion",
+  "toolCallId": "call_ask_01",
+  "toolInput": {
+    "questions": [
+      {
+        "question": "Which database should the migration target?",
+        "options": [
+          "sqlite",
+          "postgres"
+        ]
+      }
+    ]
+  },
+  "riskLevel": "low",
+  "sideEffectScope": "none",
+  "agent_type": "zcode-agent",
+  "hook_event_name": "PreToolUse",
+  "permission_mode": "build",
+  "session_id": "sess_01J9ZCDEMO0000000000000000",
+  "transcript_path": "/tmp/zcode-hook-Ab12Cd/transcript.jsonl",
+  "transcriptPath": "/tmp/zcode-hook-Ab12Cd/transcript.jsonl",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "Which database should the migration target?",
+        "options": [
+          "sqlite",
+          "postgres"
+        ]
+      }
+    ]
+  },
+  "tool_use_id": "call_ask_01"
+}
