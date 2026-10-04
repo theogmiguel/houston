@@ -732,6 +732,12 @@ async fn the_owner_refuses_with_a_reason_that_reaches_the_thread_as_written() {
         .await;
     assert_eq!(posted["thread_ts"], "1800000000.000100");
     assert_eq!(posted["text"], "Isso precisa passar pelo time de dados.");
+    let blocks = posted["blocks"].to_string();
+    assert!(
+        blocks.contains("*Não vai seguir*")
+            && blocks.contains(&format!("Motivo escrito por <@{OWNER}>")),
+        "the reason reads as the owner's: {posted}"
+    );
     r.fake
         .await_reactions("1800000000.000100", &["no_entry_sign"])
         .await;
@@ -793,9 +799,11 @@ async fn a_request_over_the_text_limit_is_marked_and_the_owner_is_told_why() {
         .await;
     assert!(dm.to_string().contains("Atenção"), "{dm}");
     assert!(r.tasks().is_empty(), "nothing was filed");
+    let told = r.fake.await_post("longo demais").await;
+    assert_eq!(told["thread_ts"], "1800000000.000100");
     assert!(
-        r.fake.thread_posts().is_empty(),
-        "the requester reads no text"
+        told["text"].as_str().unwrap().contains("<@UBOT>"),
+        "the requester learns how to fix it: {told}"
     );
     r.finish();
 }
@@ -1118,7 +1126,17 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
     assert!(matches!(handed, proto::ServerMsg::TaskChanged { .. }));
     let result = r.fake.await_post("Pronto, aguardando revisão").await;
     assert_eq!(result["channel"], CHANNEL);
+    assert_eq!(
+        result["text"],
+        "Pronto, aguardando revisão: Botão do formulário com o rótulo Enviar. Ainda não está no ar.",
+        "the notification says what is ready and that it is not live yet"
+    );
     let thread = result.to_string();
+    assert!(
+        thread.contains("*Decidido sem perguntar.* Só na tela de cadastro.")
+            && thread.contains("Responda aqui descrevendo o ajuste"),
+        "{thread}"
+    );
     assert!(
         thread.contains("*O que muda.* O botão principal passa a dizer Enviar.")
             && thread.contains("1. Abrir o formulário.")
@@ -1170,6 +1188,12 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
         .await_post("Está no ar: o botão já diz Enviar.")
         .await;
     assert_eq!(live["thread_ts"], "1800000001.000100");
+    assert!(
+        live["blocks"]
+            .to_string()
+            .contains("Para outra mudança, mencione <@UBOT>"),
+        "{live}"
+    );
     r.fake
         .await_reactions("1800000001.000100", &["rocket"])
         .await;

@@ -74,8 +74,9 @@ five attempts, and the status line names it.
 2. The owner starts it with **Accept**, by reacting with ✅ to the request, or with
    **Start** in the Tasks tab. A ✅ or a click
    from anyone else does nothing. **Refuse** asks for an optional reason: the reason is
-   posted in the thread exactly as written, the task is canceled and the request gets 🚫;
-   without a reason only the 🚫 appears. A request whose task is canceled, finished or
+   posted in the thread exactly as written, under "Not going ahead" and the owner's name,
+   the task is canceled and the request gets 🚫; without a reason only the 🚫 appears, which
+   sends the requester no notification. A request whose task is canceled, finished or
    archived in Houston before it starts gets 🚫 too. Requests always start with Claude in
    a new worktree, as a Start does; the brief tells the agent to follow the repository's
    own factory skill when there is one and to hand the task back when done.
@@ -115,7 +116,7 @@ five attempts, and the status line names it.
    and 600 changed lines is medium; anything larger is large.
 
 6. When the owner moves a handed-back task to **Done**, Houston posts the agent's "live"
-   note to the thread and the request gets 🚀; on GitHub, the merge watch moves the task to
+   note to the thread, with how to ask for another change, and the request gets 🚀; on GitHub, the merge watch moves the task to
    Done by itself. Moving it to **Canceled** posts the "dropped" note and 🚫. A request
    refused at triage gets no second note. Houston watches no forge for a merge or a
    deploy of its own: the task's state is the signal.
@@ -145,7 +146,8 @@ it is mapped.
 
 ## Limits
 
-- Request text: 8,192 bytes. A longer request gets ⚠️ and is not filed; the owner is told.
+- Request text: 8,192 bytes. A longer request, or a mention with no request in it, gets ⚠️
+  and is not filed; the thread says how to fix it and the owner is told.
 - Images: four per request, 10 MiB each, PNG, JPEG, GIF or WebP checked by their content.
   Others are named in the owner's message and left out. Images are saved under the workspace's
   `.houston/intake/<id>/`, which git ignores.

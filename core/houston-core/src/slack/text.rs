@@ -99,9 +99,64 @@ impl Text {
 
     pub fn refuse_hint(self) -> &'static str {
         self.pick(
-            "Vai para a thread do pedido como você escrever. Sem motivo, o pedido recebe só 🚫.",
-            "Goes to the request's thread as you write it. Without one, the request only gets 🚫.",
+            "Vai para a thread do pedido como você escrever. Quem pediu só fica sabendo do motivo por aqui: sem ele, o pedido recebe só 🚫, que não gera notificação.",
+            "Goes to the request's thread as you write it. It is the only way the requester learns why: without it the request only gets 🚫, which sends no notification.",
         )
+    }
+
+    /// Under the owner's reason in the thread, so it reads as theirs.
+    pub fn reason_by(self, owner: &str) -> String {
+        if self.pt() {
+            format!("Motivo escrito por <@{owner}>")
+        } else {
+            format!("Reason written by <@{owner}>")
+        }
+    }
+
+    pub fn caveats_label(self) -> &'static str {
+        self.pick("*Decidido sem perguntar.*", "*Decided without asking.*")
+    }
+
+    /// The thread's notification text for a result; the blocks carry the rest.
+    pub fn ready_fallback(self, subject: &str) -> String {
+        if self.pt() {
+            format!("Pronto, aguardando revisão: {subject}. Ainda não está no ar.")
+        } else {
+            format!("Ready, waiting for review: {subject}. Not live yet.")
+        }
+    }
+
+    pub fn refused_fallback(self, subject: &str) -> String {
+        if self.pt() {
+            format!("Não vai seguir: {subject}")
+        } else {
+            format!("Not going ahead: {subject}")
+        }
+    }
+
+    pub fn another_change(self, bot: &str) -> String {
+        if self.pt() {
+            format!("Para outra mudança, mencione {bot} numa mensagem nova no canal.")
+        } else {
+            format!("For another change, mention {bot} in a new message in the channel.")
+        }
+    }
+
+    /// What the requester can fix alone, said in the thread.
+    pub fn empty_request_reply(self, bot: &str) -> String {
+        if self.pt() {
+            format!("Faltou o pedido: escreva numa mesma mensagem o que você quer mudar, mencionando {bot}.")
+        } else {
+            format!("The request is missing: write what you want changed in one message that mentions {bot}.")
+        }
+    }
+
+    pub fn too_long_reply(self, bot: &str) -> String {
+        if self.pt() {
+            format!("O pedido ficou longo demais para registrar; resuma e mencione {bot} de novo numa mensagem nova.")
+        } else {
+            format!("The request is too long to file; shorten it and mention {bot} again in a new message.")
+        }
     }
 
     pub fn attention(self) -> &'static str {
@@ -189,8 +244,8 @@ impl Text {
 
     pub fn question_hint(self) -> &'static str {
         self.pick(
-            "Escolha uma opção ou responda nesta thread com as suas palavras.",
-            "Pick an option or reply in this thread in your own words.",
+            "Escolha uma opção acima ou escreva a resposta aqui na thread: sua próxima mensagem aqui vale como resposta.",
+            "Pick an option above or write the answer here in the thread: your next message here counts as the answer.",
         )
     }
 
@@ -209,9 +264,9 @@ impl Text {
 
     pub fn only_requester_answers(self, requester: &str) -> String {
         if self.pt() {
-            format!("Só <@{requester}>, que fez o pedido, ou o dono do Houston pode responder esta pergunta.")
+            format!("Esta pergunta é para <@{requester}>, que fez o pedido. Se tiver uma sugestão, fale com essa pessoa.")
         } else {
-            format!("Only <@{requester}>, who made the request, or Houston's owner can answer this question.")
+            format!("This question is for <@{requester}>, who made the request. If you have a suggestion, talk to them.")
         }
     }
 
@@ -246,8 +301,8 @@ impl Text {
 
     pub fn review_note(self) -> &'static str {
         self.pick(
-            "Uma pessoa do time de desenvolvimento ainda revisa a mudança e confere a tela antes de ela ir ao ar.",
-            "A developer still reviews the change and checks the screen before it goes live.",
+            "Uma pessoa do time de desenvolvimento ainda revisa a mudança e confere a tela antes de ela ir ao ar. Quer mudar algo? Responda aqui descrevendo o ajuste.",
+            "A developer still reviews the change and checks the screen before it goes live. Want something different? Reply here describing the adjustment.",
         )
     }
 

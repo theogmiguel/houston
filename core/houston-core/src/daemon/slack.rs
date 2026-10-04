@@ -359,7 +359,11 @@ fn result_blocks(t: Text, form: &ResultForm) -> Value {
         )));
     }
     if let Some(c) = &form.caveats {
-        blocks.push(section(&escape(c)));
+        if refused {
+            blocks.push(section(&escape(c)));
+        } else {
+            blocks.push(section(&format!("{} {}", t.caveats_label(), escape(c))));
+        }
     }
     if !refused {
         blocks.push(context(t.review_note()));
@@ -1026,10 +1030,15 @@ impl Daemon {
             return Ok(());
         };
         let t = Text(config.language);
+        let bot = self.slack_bot_mention();
+        // (why, for the owner) and what the requester reads: both fixes are theirs.
         let refusal = if text.len() > proto::SLACK_REQUEST_TEXT_MAX {
-            Some(t.too_long(text.len(), proto::SLACK_REQUEST_TEXT_MAX))
+            Some((
+                t.too_long(text.len(), proto::SLACK_REQUEST_TEXT_MAX),
+                t.too_long_reply(&bot),
+            ))
         } else if text.is_empty() && files.is_empty() {
-            Some(t.empty_request().to_string())
+            Some((t.empty_request().to_string(), t.empty_request_reply(&bot)))
         } else {
             None
         };
@@ -1050,8 +1059,14 @@ impl Daemon {
         else {
             return Ok(());
         };
-        if let Some(refusal) = refusal {
+        if let Some((refusal, reply)) = refusal {
             self.db.intake_set_status(row.id, R_ATTENTION, now)?;
+            self.db.intake_outbox_push(
+                row.id,
+                &format!("refused-reply:{}", row.id),
+                &Outgoing::message(OutboxTarget::Thread, reply, None),
+                now,
+            )?;
             self.slack_dm_notice(&row, &format!("refused:{}", row.id), &t.not_filed(&refusal))?;
             return Ok(());
         }
@@ -1297,10 +1312,21 @@ impl Daemon {
         self.db.intake_set_status(row.id, R_DROPPED, now)?;
         let reason = reason.trim();
         if !reason.is_empty() {
+            let t = self.slack_text();
+            let owner = self.slack_config().owner.unwrap_or_default();
+            let blocks = json!([
+                section(t.refused_title()),
+                section(&quote(reason)),
+                context(&t.reason_by(&owner)),
+            ]);
             self.db.intake_outbox_push(
                 row.id,
                 &format!("owner-refusal:{}", row.id),
-                &Outgoing::message(OutboxTarget::Thread, reason.to_string(), None),
+                &Outgoing::message(
+                    OutboxTarget::Thread,
+                    reason.to_string(),
+                    Some(blocks.to_string()),
+                ),
                 now,
             )?;
         }
@@ -1538,6 +1564,15 @@ impl Daemon {
             .unwrap_or("click");
         self.slack_answer(&row, &question, chosen, user, ts)?;
         Ok(())
+    }
+
+    /// How Houston names its own bot in the thread: a mention while connected.
+    fn slack_bot_mention(&self) -> String {
+        let st = self.slack.state.lock().expect("slack state lock");
+        match &st.identity {
+            Some(identity) => format!("<@{}>", identity.bot_user_id),
+            None => "@houston".to_string(),
+        }
     }
 
     fn slack_text(&self) -> Text {
@@ -2088,7 +2123,17 @@ impl Daemon {
                         &Outgoing::message(
                             OutboxTarget::Thread,
                             note.clone(),
-                            Some(json!([section(&escape(note))]).to_string()),
+                            Some(
+                                json!([
+                                    section(&escape(note)),
+                                    context(
+                                        &self
+                                            .slack_text()
+                                            .another_change(&self.slack_bot_mention())
+                                    ),
+                                ])
+                                .to_string(),
+                            ),
                         ),
                         now,
                     )?;
@@ -2196,19 +2241,15 @@ impl Daemon {
                 ])
             }
         };
-        let title = if refused {
-            t.refused_title()
-        } else {
-            t.ready_title()
+        let title = match (&form, refused) {
+            (Some(f), true) => t.refused_fallback(&f.subject),
+            (Some(f), false) => t.ready_fallback(&f.subject),
+            (None, _) => strip_mrkdwn(t.ready_title()),
         };
         self.db.intake_outbox_push(
             row.id,
             &format!("handback:{}", run.id),
-            &Outgoing::message(
-                OutboxTarget::Thread,
-                strip_mrkdwn(title),
-                Some(thread.to_string()),
-            ),
+            &Outgoing::message(OutboxTarget::Thread, title, Some(thread.to_string())),
             now,
         )?;
 
