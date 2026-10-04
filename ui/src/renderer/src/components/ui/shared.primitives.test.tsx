@@ -85,6 +85,26 @@ describe('shared table, list-detail, drawer and notice primitives', () => {
     expect(document.activeElement).toBe(opener)
   })
 
+  it('supports a headerless drawer labelled by its dialog purpose', () => {
+    const onClose = vi.fn()
+    function Example(): React.JSX.Element {
+      const [open, setOpen] = React.useState(false)
+      return <><button onClick={() => setOpen(true)}>Open task</button><Drawer open={open} heading="Task details" hideHeader tone="content" onClose={() => { onClose(); setOpen(false) }}><button>Close task details</button></Drawer></>
+    }
+    render(<Example />)
+    const opener = screen.getByRole('button', { name: 'Open task' })
+    opener.focus()
+    fireEvent.click(opener)
+    const drawer = screen.getByRole('dialog', { name: 'Task details' })
+    expect(drawer.className).toContain('bg-[var(--content-bg)]')
+    expect(within(drawer).queryByRole('button', { name: 'Close drawer' })).toBeNull()
+    const close = within(drawer).getByRole('button', { name: 'Close task details' })
+    expect(document.activeElement).toBe(close)
+    fireEvent.keyDown(close, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('closes when the backdrop is pressed and renders tone and optional action', () => {
     const onClick = vi.fn()
     render(<Notice tone="warn" action={{ label: 'Settings', onClick }}>3 of 3 running.</Notice>)

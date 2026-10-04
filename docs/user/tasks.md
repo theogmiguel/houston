@@ -15,9 +15,11 @@ fold or unfold it. **Archived** tasks sit in a final collapsed group.
 Choose **Tasks** in the rail to see the queue. **Your turn** contains runs waiting for input
 and tasks handed back for review; **Agents working** contains live runs; **Stopped** contains
 interrupted or stopped work; **Up next** contains ready tasks. Done and archived tasks stay
-folded below the queue. The count beside Tasks is the number in **Your turn**. Select a task
-to open its detail in a drawer over the queue. The Tasks side panel remains available as a
-shortcut.
+folded below the queue. The count beside Tasks is the number in **Your turn**. A ready task
+shows its pull request number, and a waiting run shows the agent's question when Houston has
+received one. Select a task to open its detail in a drawer over the queue. The drawer keeps
+acceptance items toggleable; its **…** menu includes **Open session** and task actions. The
+Tasks side panel remains available as a shortcut.
 
 ## Creating and editing
 

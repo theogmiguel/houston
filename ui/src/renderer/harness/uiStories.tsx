@@ -4,6 +4,7 @@ import {
   Card,
   Chip,
   Count,
+  DoneDisclosure,
   Drawer,
   EmptyState,
   Field,
@@ -20,6 +21,12 @@ import {
   StatusLabel,
   Table,
   TaskProgress,
+  TaskAcceptanceRow,
+  TaskDetailFrame,
+  TaskDrawerCard,
+  TaskDrawerExecutionPanel,
+  TaskDrawerHeader,
+  TaskDrawerOrigin,
   Tooltip
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
@@ -118,6 +125,15 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Task progress">
           <div style={{ maxWidth: 560 }}><TaskProgress status="in_progress" /></div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Task page primitives">
+          <TaskDetailFrame>
+            <TaskDrawerHeader taskKey="HOU-42" workspace="houston" heading="Block bun test in agent settings" status="in_progress" actions={<Button variant="icon" icon={IconClose} aria-label="Task actions" />} />
+            <TaskDrawerCard><TaskAcceptanceRow checked text="bun test is denied in .claude/settings.json" onToggle={noop} /><TaskAcceptanceRow checked={false} text="AGENTS.md points to bun run test" onToggle={noop} /></TaskDrawerCard>
+          </TaskDetailFrame>
+          <TaskDrawerOrigin><Chip variant="compound" label="From Harness finding · bun-test" /></TaskDrawerOrigin>
+          <DoneDisclosure count={3}><Card><Card.Row heading="Completed task" meta="HOU-41 · From Harness" /></Card></DoneDisclosure>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Count">
@@ -227,13 +243,14 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Drawer — Tasks detail">
           <SpecimenRow><Button variant="secondary" onClick={() => setDrawerOpen(true)}>Open task detail</Button></SpecimenRow>
-          <Drawer open={drawerOpen} heading="Block bun test in agent settings" onClose={() => setDrawerOpen(false)}>
+          <Drawer open={drawerOpen} heading="Task details" onClose={() => setDrawerOpen(false)} hideHeader tone="content">
             <div className="grid gap-[var(--space-3)]">
-              <Caption>HOU-42 · houston</Caption>
-              <p className="m-0 text-[length:var(--tr-text-ui-size)] text-[var(--text-secondary)]">Idle · stopped 14m ago · Attempt 1 · Claude Code</p>
-              <SpecimenRow><Button>Start again</Button><Button variant="secondary">Review changes</Button></SpecimenRow>
+              <TaskDrawerHeader taskKey="HOU-42" workspace="houston" heading="Block bun test in agent settings" status="in_progress" actions={<Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={() => setDrawerOpen(false)} />} />
+              <TaskDrawerExecutionPanel tone="idle" status="Idle" metadata="Stopped 14m ago · Attempt 1 · Claude Code" reuse="Reuses houston/task/hou-42-bun-test · no pull request yet">
+                <SpecimenRow><Button variant="secondary">Start again</Button><Button variant="secondary">Review changes</Button></SpecimenRow>
+              </TaskDrawerExecutionPanel>
               <SectionHead title="Acceptance" count={2} />
-              <Card><Card.Row heading="bun test is denied in .claude/settings.json" /><Card.Row heading="AGENTS.md points to bun run test" /></Card>
+              <TaskDrawerCard><TaskAcceptanceRow checked text="bun test is denied in .claude/settings.json" onToggle={noop} /><TaskAcceptanceRow checked={false} text="AGENTS.md points to bun run test" onToggle={noop} /></TaskDrawerCard>
             </div>
           </Drawer>
         </SpecimenGroup>

@@ -41,7 +41,7 @@ const DETAIL: TaskDetailData = {
   task: {
     id: 42, workspace: WORKSPACE, number: 42, key: 'HOU-42', title: 'Block bun test in agent settings',
     description: 'Use bun run test for the renderer suite.', status: 'in_progress', priority: 'medium', parent_id: null,
-    ref_url: null, revision: 1, created_by: 'user', created_at_ms: NOW - 60 * MINUTE,
+    ref_url: null, revision: 1, created_by: 'user', origin: { kind: 'harness_finding', workspace: WORKSPACE, key: 'bun-test', review_id: 7 }, created_at_ms: NOW - 60 * MINUTE,
     updated_at_ms: NOW - 14 * MINUTE, archived_at_ms: null
   },
   acceptance: [
@@ -69,7 +69,12 @@ function fixtureClient(): HoustonClient {
     taskSnapshot: (scope: string) => emit('task_snapshot', { type: 'task_snapshot', scope, tasks: TASKS, counts: { ready: 2, backlog: 1, todo: 1, in_progress: 3, in_review: 1, done: 1, canceled: 0 } }),
     taskGet: (id: number) => emit('task_detail', { type: 'task_detail', ...DETAIL, task: { ...DETAIL.task, id, number: id, key: `HOU-${id}` } }),
     tasksAccessGet: (workspace: string) => emit('tasks_access', { type: 'tasks_access', workspace, access: 'write' }),
-    taskStartSettingsGet: (workspace: string) => emit('task_start_settings', { type: 'task_start_settings', workspace, agent: 'claude', delivery: 'send' })
+    taskStartSettingsGet: (workspace: string) => emit('task_start_settings', { type: 'task_start_settings', workspace, agent: 'claude', delivery: 'send' }),
+    inboxList: (workspace: string) => emit('inbox_rows', { type: 'inbox_rows', workspace, rows: [{
+      id: 1n, to_session: 0, original_to: 0, workspace, from_session: 445, kind: 'needs_input', urgent: true,
+      summary: 'tests is blocked', body: 'this child needs input: Keep the old name in the palette as an alias? Inspect it (`pane_read`) and answer it (`pane_send_keys`), or escalate — it will sit there until somebody does.',
+      artifacts: [], superseded: 0, provisional: false, created_at: BigInt(NOW - 2 * MINUTE), resolved_at: null, attempts: 0
+    }] })
   }
   return new Proxy(client, { get(target, prop, receiver) {
     if (prop in target) return Reflect.get(target, prop, receiver)
