@@ -358,7 +358,13 @@ function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
 
 export function HarnessPageStory(): React.JSX.Element {
   const latest = harnessReview(13, 38, 7)
-  const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12)), harnessReview(11, 42, 13), harnessReview(10, 39, 16)]
+  const reviews = Array.from({ length: 13 }, (_, index) => {
+    const id = 13 - index
+    if (id === 13) return latest
+    return id === 12
+      ? harnessReview(id, 41, 10, Date.UTC(2026, 8, 22, 12))
+      : harnessReview(id, 42, 13)
+  })
   const findings = [
     harnessFinding({ key: 'HOU-47', title: 'Agents re-read the styleguide on every UI change', count: 9, target: 'AGENTS.md', review_id: 13 }),
     harnessFinding({ key: 'HOU-42', count: 11, task: { task_id: 42, key: 'HOU-42', status: 'in_progress', landed_at_ms: null }, phase: 'fixing' }),
