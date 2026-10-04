@@ -9,6 +9,7 @@ function NewSession(): React.JSX.Element {
     <NewSessionComposer
       workspaceName="acme"
       workspacePath="~/Desktop/acme"
+      gridName="Improve Orchestration"
       onLaunch={() => {}}
       onCancel={() => {}}
     />
@@ -66,6 +67,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
       <NewSessionComposer
         workspaceName="acme"
         workspacePath="~/Desktop/acme"
+        gridName="Improve Orchestration"
         onPreviewChange={updatePreview}
         onLaunch={() => {}}
         onCancel={() => {}}

@@ -26,6 +26,7 @@ describe('NewSessionComposer — state matrix', () => {
         <NewSessionComposer
           workspaceName="Houston"
           workspacePath="/home/dev/projects/houston"
+          gridName="Improve Orchestration"
           onPreviewChange={(slots, target) => { previews.push({ slots, target }) }}
           onLaunch={(slots, target) => { launched.push(slots); destinations.push(target) }}
           onCancel={() => {
@@ -167,7 +168,10 @@ describe('NewSessionComposer — state matrix', () => {
       setter.call(input, 'custom-model')
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    expect(q('[data-testid="slot-model-source-0"]').textContent).toContain('user override')
+    expect(q('[data-slot="0"]').textContent).toContain('edited')
+    expect(q('[aria-label="Model override for slot 1"]').className).toContain('border-[color-mix')
+    click('[aria-label="Reset slot 1"]')
+    expect(q('[data-slot="0"]').textContent).not.toContain('edited')
   })
 
   it('Invalid slot — unsupported per-run effort shows the reason and blocks launch', () => {

@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import logoUrl from '../assets/logo-chrome.svg'
 import type { HoustonClient } from '../houston/client'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { RoleRoute } from '../houston/generated/RoleRoute'
 import { BTN_PRIMARY } from './buttonChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { IconClose } from './icons'
 import {
   AGENT_LABEL,
   COMPOSER_AGENTS,
@@ -18,16 +15,15 @@ import {
   type SessionSlot
 } from './sessionPresets'
 import type { SlotOverrides } from './sessionPresets'
-import { Icon } from './Icon'
 import { PICKER_LABEL_CLS } from './pickerChrome'
-import { Tooltip } from './Tooltip'
 import { Select } from './Select'
 import { MATERIAL_CLS, materialAttrs } from './material'
-import { Chip, LaunchComposerHeader, LaunchPresetCard, LaunchSlotCard, LaunchWorkspaceBadge, Segmented } from './ui'
+import { Chip, LaunchComposerHeader, LaunchPresetCard, LaunchSlotCard, Segmented } from './ui'
 
 export interface NewSessionComposerProps {
   workspaceName: string
   workspacePath: string
+  gridName: string
   client?: HoustonClient | null
   initialTarget?: 'this-grid' | 'new-grid'
   onPreviewChange?: (slots: SessionSlot[], target: 'this-grid' | 'new-grid') => void
@@ -40,6 +36,7 @@ const LABEL_CLS = PICKER_LABEL_CLS
 export function NewSessionComposer({
   workspaceName,
   workspacePath,
+  gridName,
   client = null,
   initialTarget = 'this-grid',
   onPreviewChange,
@@ -117,27 +114,7 @@ export function NewSessionComposer({
       {...materialAttrs('base')}
       className={`flex-none min-w-0 h-full w-[560px] max-w-[48vw] grid grid-rows-[44px_minmax(0,1fr)_56px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
-      <LaunchComposerHeader>
-        <LaunchWorkspaceBadge logoUrl={logoUrl} workspaceName={workspaceName} />
-        <span className="flex-none [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]">
-          New sessions
-        </span>
-        <Tooltip label={workspacePath}>
-          <span className="min-w-0 truncate font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
-            {workspacePath}
-          </span>
-        </Tooltip>
-        <span className="flex-1" />
-        <button
-          type="button"
-          aria-label="Close"
-          data-testid="new-session-close"
-          onClick={onCancel}
-          className={`inline-flex ${CONTROL_SIZE_SQUARE_CLS.small} flex-none items-center justify-center rounded-[var(--tr-radius-sm)] border-none bg-transparent text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]`}
-        >
-          <Icon glyph={IconClose} role="small" />
-        </button>
-      </LaunchComposerHeader>
+      <LaunchComposerHeader workspaceName={workspaceName} workspacePath={workspacePath} gridName={gridName} target={target} onClose={onCancel} />
 
       <div className="min-h-0 overflow-y-auto px-5">
         <div className="mx-auto flex w-full max-w-[556px] flex-col gap-[var(--space-3)] pb-8 pt-[14px]">
@@ -190,7 +167,8 @@ export function NewSessionComposer({
                 <LaunchSlotCard key={s.index} slot={s} workspaceName={workspaceName} override={overrides[s.index] ?? {}}
                   onAgentChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], agent: value } }))}
                   onModelChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], model: value } }))}
-                  onEffortChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], effort: value } }))} />
+                  onEffortChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], effort: value } }))}
+                  onReset={() => setOverrides((current) => { const next = { ...current }; delete next[s.index]; return next })} />
               ))}
             </div>
           </section>

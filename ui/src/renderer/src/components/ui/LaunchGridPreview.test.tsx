@@ -3,6 +3,7 @@ import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { SessionInfo } from '../../houston/client'
 import type { LayoutNode } from '../../layout/tree'
+import { computeRects, launchPreviewTree, tidy } from '../../layout/tree'
 import type { SessionSlot } from '../sessionPresets'
 import { LaunchGridPreview } from './LaunchGridPreview'
 
@@ -31,6 +32,7 @@ describe('LaunchGridPreview', () => {
     const { container } = render(<div className="relative"><LaunchGridPreview tree={tree} slots={slots} target="this-grid" sessions={sessions} /></div>)
     const panes = Array.from(container.querySelectorAll<HTMLElement>('[data-layout-slot]'))
     expect(panes).toHaveLength(4)
+    expect(Array.from(container.querySelectorAll('[data-layout-slot]:not([data-new])')).map((pane) => pane.textContent?.match(/Session · (?:Claude Code|Codex)/g)?.length ?? 0)).toEqual([1, 1])
     expect(panes.filter((pane) => pane.dataset.new === undefined).map((pane) => pane.textContent)).toEqual(['Session · Claude Code', 'Session · Codex'])
     expect(panes.filter((pane) => pane.dataset.new === 'true').map((pane) => pane.textContent)).toEqual([
       'builderagent default · default effort · this checkout',
@@ -42,6 +44,10 @@ describe('LaunchGridPreview', () => {
       'calc(0% + var(--pane-gutter))',
       'calc(50% + calc(var(--pane-gutter) / 2))'
     ])
+    const layout = tidy(launchPreviewTree(tree, slots.length, 'this-grid'))
+    if (!layout) throw new Error('expected a tidy preview layout')
+    const rects = computeRects(layout).leaves.map(({ rect }) => `${rect.x},${rect.y},${rect.w},${rect.h}`)
+    expect(panes.map((pane) => pane.dataset.previewRect)).toEqual(rects)
   })
 
   it('shows only new slots when the target is a new grid', () => {

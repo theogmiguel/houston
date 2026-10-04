@@ -12,9 +12,11 @@ import {
   Drawer,
   EmptyState,
   Field,
+  FieldLabel,
   IconTile,
   ListDetail,
   LaunchGridPreviewSpecimen,
+  LaunchComposerHeaderSpecimen,
   LaunchPresetOutlineSpecimen,
   LaunchSlotCardSpecimen,
   Notice,
@@ -240,11 +242,15 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Launch grid preview">
           <LaunchGridPreviewSpecimen />
         </SpecimenGroup>
+        <SpecimenGroup heading="Launch composer header">
+          <LaunchComposerHeaderSpecimen />
+        </SpecimenGroup>
         <SpecimenGroup heading="Launch preset outline">
           <LaunchPresetOutlineSpecimen />
         </SpecimenGroup>
         <SpecimenGroup heading="Launch slot card">
           <LaunchSlotCardSpecimen />
+          <FieldLabel size="compact">Compact field label</FieldLabel>
         </SpecimenGroup>
 
         <SpecimenGroup heading="BarSparkline">

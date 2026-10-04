@@ -55,7 +55,8 @@ export function LaunchGridPreview({ tree, slots, target, sessions }: LaunchGridP
             data-layout-slot={node.kind === 'leaf' ? node.session : node.id}
             data-new={newSlot ? 'true' : undefined}
             style={slotGeometry(rect)}
-            className={`absolute flex flex-col items-center justify-center overflow-hidden rounded-[var(--tr-radius-md)] ${newSlot ? 'border border-dashed border-[var(--border-hover)] bg-[var(--material-base-bg)] text-[var(--text-secondary)]' : 'border border-[var(--border)] bg-[var(--tool-code-bg)] text-[var(--text-secondary)]'}`}
+            data-preview-rect={`${rect.x},${rect.y},${rect.w},${rect.h}`}
+            className={`absolute flex flex-col items-center justify-center overflow-hidden rounded-[var(--tr-radius-md)] ${newSlot ? 'border border-dashed border-[var(--border-hover)] bg-[color-mix(in_srgb,var(--accent)_7%,var(--card-bg))] text-[var(--text-secondary)]' : 'border border-[var(--border)] bg-[var(--tool-code-bg)] text-[var(--text-secondary)]'}`}
           >
             {newSlot ? (
               <div className="flex min-w-0 flex-col items-center gap-[var(--space-1)] px-[var(--space-3)] text-center [font-size:var(--tr-text-small-size)]">

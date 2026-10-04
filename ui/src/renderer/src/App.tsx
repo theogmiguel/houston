@@ -3666,6 +3666,7 @@ export function App(): React.JSX.Element {
                   <NewSessionComposer
                     workspaceName={basename(selectedWs)}
                     workspacePath={selectedWs}
+                    gridName={gridsFor(selectedWs).find((grid) => grid.id === activeGridId(selectedWs))?.name ?? 'Grid'}
                     client={conn.kind === "ready" ? conn.client : null}
                     initialTarget={composer === "new-grid" ? "new-grid" : "this-grid"}
                     onPreviewChange={handleLaunchPreview}
