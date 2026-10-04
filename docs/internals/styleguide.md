@@ -446,10 +446,27 @@ accent remains reserved for focus and the affirmative action.
 
 ### Buttons
 
-There is no `<Button>` wrapper. Buttons compose the `.btn` base class (28px box,
-`--tr-radius-button`, 12px/500 label) with a chrome constant from `buttonChrome.ts`.
-A `<button>` with no `.btn` renders **bare on purpose**, so a forgotten opt-in is
-visible rather than silently defaulting to a bordered card.
+New buttons use `components/ui/Button`. Its `md` and `sm` sizes use `--h-ctl`
+(28px) and `--h-ctl-mini` (22px). Keep `className` for layout; add visual
+differences as a variant in the registry.
+
+| Role | Hover |
+|---|---|
+| `primary` | `--accent-hover` |
+| `secondary` | `--card-hover` and `--border-hover` |
+| `ghost` | `btn-ghost` owns the existing `--hover-fill` and `--text-primary` hover |
+| `danger` | Ghost with the danger tint on hover; `armed` adds its standing danger cue |
+| `danger-solid` | `BTN_DANGER_SOLID`; always paired with a warning icon |
+| `icon` | `BTN_ICO`'s box and hover |
+
+Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
+`SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY` is flagged for removal:
+its white label misses the contrast check on Graphite, while `PRIMARY_BUTTON` uses
+the theme's contrast-paired `--accent-ink` in both Graphite and Paper.
+`SECONDARY_BUTTON` is the selected secondary look: it has broader current use
+(55 references versus 47) and its neutral label and fill pass contrast in both
+themes. Neither secondary recipe has a direct test, and both date to the initial
+release. `BTN_SECONDARY` is flagged for removal during migration.
 
 | Constant | Use |
 |---|---|
@@ -619,7 +636,7 @@ the page title. Use `PAGE_COLUMN_CLS` (720px) for forms and lists and
 
 ### Section heading and count
 
-Put a count immediately after its label on the same line, with a 6px gap, tabular
+Use `Count` immediately after its label on the same line, with a 6px gap, tabular
 numerals, the label's size and one softer ink step. Do not use parentheses, a
 middle dot, monospace numerals or right alignment; the right end of a heading is
 for its action. Omit zero in tabs and headings; disable an action instead of
@@ -642,8 +659,10 @@ chips only for multi-select filters.
 
 ### Status
 
-Choose one status word per row from this vocabulary: Working, Needs input, Idle,
-Done, Failed, Paused, In sync and Missing. Do not rely on colour alone. “Ok” and
+Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
+uses `--text-secondary`. Choose one status word from this vocabulary: Working,
+Needs input, Idle, Done, Failed, Paused, In sync and Missing. Do not rely on colour
+alone. “Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
 
