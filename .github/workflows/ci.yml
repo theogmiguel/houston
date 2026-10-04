@@ -73,7 +73,7 @@ jobs:
         run: bash scripts/check-doc-hygiene.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
-      - name: check-type-scale.sh (no sub-11px, fractional or raw-utility text sizes)
+      - name: check-type-scale.sh (semantic text tokens and a ratcheted 11px floor)
         run: bash scripts/check-type-scale.sh
       - name: check-label-tracking.sh (label step's uppercase tracking never leaks onto other text)
         run: bash scripts/check-label-tracking.sh
