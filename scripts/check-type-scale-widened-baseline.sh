@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 WIDENED_BASELINE=(
-  "ui/src/renderer/src/components/McpManager.tsx 2"
+  "ui/src/renderer/src/components/McpManager.tsx 1"
   "ui/src/renderer/src/components/Sidebar.tsx 2"
   "ui/src/renderer/src/components/SkillsView.tsx 2"
   "ui/src/renderer/src/components/browserPane.css 4"

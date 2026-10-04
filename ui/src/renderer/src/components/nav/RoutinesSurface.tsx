@@ -1,10 +1,8 @@
-import { useState } from 'react'
-import { IconClock } from '../icons'
-import { Group, SectionHead } from '../settingsPrimitives'
-import { formatRoutineError, nextUpBucket } from './routineFormat'
-import { NavColumn, NavEmpty, NavFeedback, PRIMARY_BUTTON } from './navChrome'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { Button, EmptyState, ListDetail, Notice, PageFrame, PageHeader, StatusLabel, type ListDetailItem } from '../ui'
+import { IconClock, IconPlus } from '../icons'
+import { formatRoutineError, nextUpTimeLabel } from './routineFormat'
 import { RoutineEditor, type RoutineFormValue } from './RoutineEditor'
-import { RoutineRow } from './RoutineRow'
 import type {
   Routine,
   RoutineDraft,
@@ -13,8 +11,10 @@ import type {
   RoutineRun,
   RoutineWorkspaceOption
 } from '../../houston/routineTypes'
-import { Icon } from '../Icon'
+import { ROUTINE_RUNS_CONCURRENT } from '../../houston/generated/DEFAULTS'
 import { MATERIAL_CLS, materialAttrs } from '../material'
+
+const RoutineDetail = lazy(() => import('../ui/RoutineDetail').then((module) => ({ default: module.RoutineDetail })))
 
 export function sortRoutines(routines: Routine[]): Routine[] {
   return [...routines].sort((a, b) => {
@@ -24,6 +24,13 @@ export function sortRoutines(routines: Routine[]): Routine[] {
 }
 
 type Panel = { mode: 'create' } | { mode: 'edit'; routine: Routine } | null
+
+function routineStatus(routine: Routine, running: boolean, waiting: boolean, now: number): React.JSX.Element {
+  if (running) return <StatusLabel status="Working" />
+  if (waiting) return <StatusLabel status="Waiting for a slot" />
+  if (!routine.enabled) return <StatusLabel status="Paused" />
+  return <span className="flex min-w-0 items-center gap-[var(--space-2)]"><StatusLabel status="Idle" /><span className="truncate">{nextUpTimeLabel(routine.next_run_at_ms, now)}</span></span>
+}
 
 export function RoutinesSurface(props: {
   routines: Routine[]
@@ -41,36 +48,58 @@ export function RoutinesSurface(props: {
   onOpenSession: (sessionId: number) => void
   onRequest: (request: { attemptedName?: string; routineName?: string }) => void
   now: number
+  selectedRoutineId?: number | null
+  onRoutineSelect?: (id: number | null) => void
 }): React.JSX.Element {
   const {
-    routines,
-    running,
-    runs,
-    runsLoading,
-    workspaces,
-    error,
-    onDismissError,
-    onCreate,
-    onUpdate,
-    onDelete,
-    onRunNow,
-    onLoadRuns,
-    onOpenSession,
-    onRequest,
-    now
+    routines, running, runs, runsLoading, workspaces, error, onDismissError, onCreate,
+    onUpdate, onDelete, onRunNow, onLoadRuns, onOpenSession, onRequest, now,
+    selectedRoutineId, onRoutineSelect
   } = props
   const [panel, setPanel] = useState<Panel>(null)
-  const [historyOpen, setHistoryOpen] = useState<number | null>(null)
-  const workspaceById = new Map(workspaces.map((w) => [w.id, w]))
-  const enabled = routines.filter((r) => r.enabled)
-  const paused = sortRoutines(routines.filter((r) => !r.enabled))
-  const today = sortRoutines(enabled.filter((r) => nextUpBucket(r.next_run_at_ms, now) === 'today'))
-  const thisWeek = sortRoutines(enabled.filter((r) => nextUpBucket(r.next_run_at_ms, now) === 'week'))
-  const later = sortRoutines(enabled.filter((r) => nextUpBucket(r.next_run_at_ms, now) === 'later'))
+  const [localSelection, setLocalSelection] = useState<string | null>(null)
+  const [pendingRuns, setPendingRuns] = useState<Set<number>>(() => new Set())
+  const selectedId = selectedRoutineId === undefined ? localSelection : selectedRoutineId == null ? null : String(selectedRoutineId)
+  const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]))
+  const slotsFull = running.length >= ROUTINE_RUNS_CONCURRENT
+  const waitingIds = new Set(sortRoutines(routines)
+    .filter((routine) => routine.enabled && !running.includes(routine.id) && routine.next_run_at_ms <= now)
+    .map((routine) => routine.id))
+  const items: Array<ListDetailItem & { routine: Routine }> = sortRoutines(routines).map((routine) => ({
+    id: String(routine.id),
+    title: <>{routine.name}{routine.workspace_id && workspaceById.get(routine.workspace_id) ? ` · ${workspaceById.get(routine.workspace_id)?.name}` : ''}</>,
+    sub: routineStatus(routine, running.includes(routine.id), slotsFull && waitingIds.has(routine.id), now),
+    routine
+  }))
+  const selected = items.find((item) => item.id === selectedId)?.routine ?? null
 
-  function openEditor(r: Routine): void {
-    onDismissError()
-    setPanel({ mode: 'edit', routine: r })
+  useEffect(() => {
+    if (selectedRoutineId !== undefined) return
+    if (localSelection && !routines.some((routine) => String(routine.id) === localSelection)) {
+      setLocalSelection(routines[0] ? String(routines[0].id) : null)
+    } else if (localSelection === null && routines.length > 0) {
+      setLocalSelection(String(sortRoutines(routines)[0].id))
+    }
+  }, [localSelection, routines, selectedRoutineId])
+
+  useEffect(() => {
+    if (selected && runs[selected.id] === undefined && runsLoading !== selected.id) onLoadRuns(selected.id)
+  }, [onLoadRuns, runs, runsLoading, selected])
+
+  useEffect(() => {
+    setPendingRuns((current) => {
+      const next = new Set(current)
+      for (const id of current) {
+        if (running.includes(id) || runs[id]?.some((run) => run.status === 'running')) next.delete(id)
+      }
+      if (error) next.clear()
+      return next.size === current.size ? current : next
+    })
+  }, [error, runs, running])
+
+  function selectRoutine(value: string | null): void {
+    setLocalSelection(value)
+    onRoutineSelect?.(value === null ? null : Number(value))
   }
 
   function submit(value: RoutineFormValue): void {
@@ -108,157 +137,88 @@ export function RoutinesSurface(props: {
 
   if (panel) {
     return (
-      <div
-        data-testid="nav-surface"
-        {...materialAttrs('base')}
-        className={`flex-1 min-w-0 h-full min-h-0 flex flex-col overflow-hidden rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-      >
-        <RoutineEditor
-          mode={panel.mode}
-          workspaces={workspaces}
-          error={error ? formatRoutineError(error) : null}
-          initial={
-            panel.mode === 'edit'
-              ? {
-                  engine: panel.routine.engine,
-                  model: panel.routine.model ?? null,
-                  effort: panel.routine.effort ?? null,
-                  name: panel.routine.name,
-                  prompt: panel.routine.prompt,
-                  cadence: panel.routine.cadence,
-                  workspaceId: panel.routine.workspace_id ?? null,
-                  permissionMode: panel.routine.permission_mode,
-                  isolate: panel.routine.isolate
-                }
-              : { engine: 'claude', model: null, effort: null, ...EMPTY_DRAFT }
-          }
-          onSubmit={submit}
-          onCancel={() => {
-            onDismissError()
-            setPanel(null)
-          }}
-        />
+      <div data-testid="nav-surface" {...materialAttrs('base')} className={`flex flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
+        <PageFrame width="wide" className="flex-1 min-w-0">
+          <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane." />
+          {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
+          <RoutineEditor
+            mode={panel.mode}
+            workspaces={workspaces}
+            error={error ? formatRoutineError(error) : null}
+            initial={panel.mode === 'edit' ? {
+              engine: panel.routine.engine,
+              model: panel.routine.model ?? null,
+              effort: panel.routine.effort ?? null,
+              name: panel.routine.name,
+              prompt: panel.routine.prompt,
+              cadence: panel.routine.cadence,
+              workspaceId: panel.routine.workspace_id ?? null,
+              permissionMode: panel.routine.permission_mode,
+              isolate: panel.routine.isolate
+            } : { engine: 'claude', model: null, effort: null, ...EMPTY_DRAFT }}
+            onSubmit={submit}
+            onCancel={() => { onDismissError(); setPanel(null) }}
+          />
+        </PageFrame>
       </div>
     )
   }
 
-  function toggleHistory(id: number): void {
-    if (historyOpen === id) {
-      setHistoryOpen(null)
-      return
-    }
-    setHistoryOpen(id)
-    if (runs[id] === undefined) onLoadRuns(id)
-  }
-
-  function renderRow(r: Routine): React.JSX.Element {
-    const live = running.includes(r.id)
-    return (
-      <RoutineRow
-        key={r.id}
-        routine={r}
-        workspace={r.workspace_id != null ? workspaceById.get(r.workspace_id) : undefined}
-        now={now}
-        running={live}
-        historyOpen={historyOpen === r.id}
-        runs={runs[r.id]}
-        runsLoading={runsLoading === r.id}
-        onToggleHistory={() => toggleHistory(r.id)}
-        onOpenSession={onOpenSession}
-        onRunNow={() => {
-          onRequest({ routineName: r.name })
-          onRunNow(r.id)
-        }}
-        onEdit={() => openEditor(r)}
-        onToggleEnabled={() => {
-          onRequest({ routineName: r.name })
-          onUpdate({
-            id: r.id,
-            expected_revision: r.revision,
-            enabled: !r.enabled
-          })
-        }}
-        onDelete={() => {
-          onRequest({ routineName: r.name })
-          onDelete(r.id, r.revision)
+  return (
+    <div data-testid="nav-surface" {...materialAttrs('base')} className={`flex flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
+    <PageFrame width="wide" className="flex-1 min-w-0">
+      <PageHeader
+        heading="Routines"
+        description="Prompts that run on a schedule, each in its own pane."
+        actions={<Button variant="primary" icon={IconPlus} data-testid="routine-create" onClick={() => { onDismissError(); setPanel({ mode: 'create' }) }}>New routine</Button>}
+      />
+      {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
+      <ListDetail
+        items={items}
+        selectedId={selectedId}
+        onSelect={selectRoutine}
+        backLabel="Routines"
+        listEmpty={<EmptyState icon={IconClock} heading="No routines" description="Create a routine to run prompts on a schedule." />}
+        renderDetail={(item) => {
+          if (!item) return <EmptyState icon={IconClock} heading="Select a routine" description="Choose a routine to see its schedule and runs." />
+          const routine = item.routine
+          const waitingForSlot = slotsFull && waitingIds.has(routine.id)
+          return (
+            <Suspense fallback={<p role="status">Loading routine details…</p>}>
+              <RoutineDetail
+                routine={routine}
+                runs={runs[routine.id]}
+                runsLoading={runsLoading === routine.id}
+                now={now}
+                running={running.includes(routine.id)}
+                pending={pendingRuns.has(routine.id)}
+                atLimit={slotsFull ? { running: running.length, limit: ROUTINE_RUNS_CONCURRENT } : null}
+                waitingForSlot={waitingForSlot}
+                onRunNow={() => {
+                  onRequest({ routineName: routine.name })
+                  setPendingRuns((current) => new Set(current).add(routine.id))
+                  onRunNow(routine.id)
+                }}
+                onToggleEnabled={() => {
+                  onRequest({ routineName: routine.name })
+                  onUpdate({ id: routine.id, expected_revision: routine.revision, enabled: !routine.enabled })
+                }}
+                onEdit={() => { onDismissError(); setPanel({ mode: 'edit', routine }) }}
+                onDelete={() => { onRequest({ routineName: routine.name }); onDelete(routine.id, routine.revision) }}
+                onUpdateSchedule={(cadence) => onUpdate({ id: routine.id, expected_revision: routine.revision, cadence })}
+                onUpdateEngine={(engine) => onUpdate({ id: routine.id, expected_revision: routine.revision, engine })}
+                onOpenSession={onOpenSession}
+              />
+            </Suspense>
+          )
         }}
       />
-    )
-  }
-
-  const nothingScheduled = today.length + thisWeek.length + later.length + paused.length === 0
-
-  return (
-    <div
-      data-testid="nav-surface"
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
-      <NavColumn>
-        <SectionHead
-          title="Next up"
-          lede="Every routine's clock, soonest first. Each run is independent: its own engine, prompt and directory, and its own pane you can open."
-        />
-        {error && (
-          <NavFeedback tone="error" testId="routine-error" onDismiss={onDismissError}>
-            {formatRoutineError(error)}
-          </NavFeedback>
-        )}
-        <div className="flex items-center gap-[8px]">
-          <span className="mr-auto [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
-            {routines.length === 0
-              ? 'Nothing scheduled.'
-              : `${routines.length} routine${routines.length === 1 ? '' : 's'}`}
-          </span>
-          <button
-            type="button"
-            data-testid="routine-create"
-            className={`${PRIMARY_BUTTON} min-w-[120px]`}
-            onClick={() => {
-              onDismissError()
-              setPanel({ mode: 'create' })
-            }}
-          >
-            New routine
-          </button>
-        </div>
-        {nothingScheduled ? (
-          <NavEmpty
-            testId="routines-empty"
-            title="Nothing scheduled."
-            icon={<Icon glyph={IconClock} role="display" />}
-            action={
-              <button
-                type="button"
-                data-testid="routine-create-cta"
-                className={`${PRIMARY_BUTTON} w-[160px]`}
-                onClick={() => setPanel({ mode: 'create' })}
-              >
-                New routine
-              </button>
-            }
-          >
-            A routine is a prompt with a cadence, its own engine, prompt and working directory.
-            Every run starts fresh in its own terminal pane.
-          </NavEmpty>
-        ) : (
-          <>
-            {today.length > 0 && <Group heading="Today">{today.map(renderRow)}</Group>}
-            {thisWeek.length > 0 && <Group heading="This week">{thisWeek.map(renderRow)}</Group>}
-            {later.length > 0 && <Group heading="Later">{later.map(renderRow)}</Group>}
-            {paused.length > 0 && <Group heading="Paused">{paused.map(renderRow)}</Group>}
-          </>
-        )}
-      </NavColumn>
+    </PageFrame>
     </div>
   )
 }
 
 const EMPTY_DRAFT = {
-  name: '',
-  prompt: '',
-  cadence: { type: 'interval', seconds: 900 } as const,
-  workspaceId: null,
-  permissionMode: 'accept_edits' as const,
-  isolate: false
+  name: '', prompt: '', workspaceId: null, permissionMode: 'accept_edits' as const,
+  isolate: false, cadence: { type: 'interval' as const, seconds: 900 }
 }

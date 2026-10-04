@@ -692,8 +692,9 @@ chips only for multi-select filters.
 
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Idle, Done, Failed, Paused, In sync, Missing, Open, Fixing, Not seen, Ready and Verified.
-Do not rely on colour alone. Idle, Paused, Missing and Not seen use a hollow ring. “Ok” and
+Needs input, Waiting for a slot, Idle, Done, Failed, Paused, In sync, Differs, Off, Missing,
+Open, Fixing, Not seen, Ready and Verified.
+Do not rely on colour alone. Idle, Paused, Off, Missing and Not seen use a hollow ring. “Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
 
@@ -726,6 +727,10 @@ existing 280px split at the 720px container threshold; on narrow containers it s
 one side at a time with a back button. Pass `selectedId` and `onSelect` when selection
 must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
 new selection.
+
+Use `RoutineDetail` for the selected routine's schedule, unattended provider and run history.
+`ConnectionCell` keeps an MCP destination's state and any failure reason together inside its
+matrix cell; the cell action updates that server's destination and syncs the matching CLI.
 
 ### Drawer
 

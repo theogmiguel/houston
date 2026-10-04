@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import { Button, Count, STATUS_LABELS, StatusLabel } from './index'
+import { describe, expect, it, vi } from 'vitest'
+import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel } from './index'
 import { variants } from './variants'
 
 const textClass = variants('base', { tone: { quiet: 'muted', loud: 'strong' } }, { tone: 'quiet' })
@@ -85,5 +85,14 @@ describe('components/ui primitives', () => {
       }
       unmount()
     }
+  })
+
+  it('shows connection state and a test failure inline, with a working cell action', () => {
+    const onClick = vi.fn()
+    render(<ConnectionCell status="Failed" reason="npx was not found on PATH" server="github" agent="Claude Code" onClick={onClick} />)
+    expect(screen.getByLabelText('Failed')).toBeTruthy()
+    expect(screen.getByText('npx was not found on PATH')).toBeTruthy()
+    screen.getByRole('button', { name: 'turn off github for Claude Code' }).click()
+    expect(onClick).toHaveBeenCalledOnce()
   })
 })

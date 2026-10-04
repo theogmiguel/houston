@@ -25,11 +25,13 @@ The isolated worktree keeps that run away from the tree you are editing.
 
 ## Running and reviewing
 
-Use **Run now** to start the same execution path used by the schedule. Pause a routine to
-keep its definition and stop future scheduled runs.
+Select a routine to see its schedule and run history. Use **Run now** to start the same
+execution path used by the schedule; the button shows **Starting…** until Houston reports
+the run. Pause a routine to keep its definition and stop future scheduled runs. The detail
+view shows when all three run slots are occupied and a due routine is waiting.
 
-Expand a routine's history to see each run's trigger, status, time and error. A run with a
-session link can reopen its pane. Runs do not reuse a previous conversation or context.
+The run table shows each run's start time, result and duration. A run with a session link can
+reopen its pane. Runs do not reuse a previous conversation or context.
 
 A workspace's [harness review](harness-review.md) is also a routine. It is created from the
 **Harness** view and listed here too, where it can be edited, paused or deleted like any other.
