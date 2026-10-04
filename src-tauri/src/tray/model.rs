@@ -94,6 +94,7 @@ pub fn agent_label(kind: &str) -> String {
         "opencode" => "OpenCode".into(),
         "cursor" => "Cursor".into(),
         "grok" => "Grok".into(),
+        "zcode" => "ZCode".into(),
         "droid" => "Droid".into(),
         "copilot" => "Copilot".into(),
         "aider" => "Aider".into(),
