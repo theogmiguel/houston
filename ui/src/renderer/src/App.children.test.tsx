@@ -52,9 +52,9 @@ describe('orchestrator children', () => {
     act(() => row!.click())
     expect(storedSessions('/tmp/project')).not.toContain(2)
   })
-  it('waiting children roll up to the parent header and its workspace', async () => {
+  it('waiting children roll up to the parent header without changing workspace rows', async () => {
     harness = await renderReadyApp({ sessions: [makeSession({ id: 1, status: 'working', children_waiting: 1 }), makeSession({ id: 2, spawned_by: 1, project_dir: '/tmp/other', status: 'needs-input' })], workspaces: [makeWorkspace()] })
     expect(harness.container.querySelector('.pane-head .agent-dot')?.className).toContain('var(--warn)')
-    expect(harness.container.querySelector('[aria-label="Children need input"]')).not.toBeNull()
+    expect(harness.container.querySelector('[aria-label="Children need input"]')).toBeNull()
   })
 })

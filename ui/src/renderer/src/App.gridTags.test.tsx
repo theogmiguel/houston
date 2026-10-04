@@ -64,7 +64,7 @@ describe('grid tags stand apart from pane tags', () => {
       [1, []],
       [2, []]
     ])
-    expect(gridChipNames()[0]).toContain('code review')
+    expect(gridChipNames()).toEqual([])
   })
 
   it('a grid with its own tag list is never migrated, and a pane tag stays on the pane', async () => {
@@ -101,7 +101,7 @@ describe('grid tags stand apart from pane tags', () => {
     deliverControl({ type: 'tag_deleted', tag: 1 })
     await settle()
     expect(storedGrids()[0].tags).toEqual([2])
-    expect(gridChipNames()[0]).toContain('wait-human')
+    expect(gridChipNames()).toEqual([])
   })
 
   it('an authoritative hello removes deleted ids from saved and closed-workspace grids', async () => {
@@ -145,6 +145,6 @@ describe('grid tags stand apart from pane tags', () => {
     deliverControl({ type: 'tag_list', tags: [TAGS[1]] })
     await settle()
     expect(storedGrids()[0].tags).toEqual([2])
-    expect(gridChipNames()[0]).toContain('wait-human')
+    expect(gridChipNames()).toEqual([])
   })
 })

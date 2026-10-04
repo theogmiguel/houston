@@ -49,8 +49,24 @@ import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { UiPrimitivesStory } from './uiStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
+import { GridRailRow } from '../src/components/ui/GridRailRow'
+import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 
 const noop = (): void => {}
+
+function RailGridRowStory({ theme, width }: { theme: 'graphite' | 'paper'; width: number }): React.JSX.Element {
+  React.useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
+  const sessions = [
+    { id: 11, agent: 'claude', project_dir: '/work/houston', cwd: '/work/houston', checkout_root: '/work/houston', state: 'running', status: 'working', status_since_ms: Date.now() - 14 * 60_000, title: 'Rail implementation', codename: 'Rail', hidden: false, live_children: 1, children_waiting: 0, context: { used_percent: 63 }, task: { key: 'HOU-411' }, spawned_by: null },
+    { id: 12, agent: 'codex', project_dir: '/work/houston', cwd: '/work/houston-wt', worktree: { path: '/work/houston-wt', branch: 'ui/p4-rail' }, state: 'running', status: 'needs-input', status_since_ms: Date.now() - 4 * 60_000, title: 'Review rail states', codename: 'Review', hidden: false, live_children: 0, children_waiting: 0, context: { used_percent: 91 }, task: { key: 'HOU-412' }, spawned_by: 11 }
+  ] as unknown as SessionInfo[]
+  const store = React.useMemo(() => createSessionsStore(new Map(sessions.map((session) => [session.id, session]))), [])
+  return <div style={{ width, height: '100%', padding: 18, background: 'var(--background)' }}>
+    <SessionsStoreContext.Provider value={store}>
+      <GridRailRow name="Rail implementation" selected paneIds={[11, 12]} fallbackSessions={sessions} branches={new Map([[11, 'ui/p4-rail'], [12, 'ui/p4-rail']])} diffByDir={new Map([['/work/houston', { added: 142, deleted: 39, ahead: 2, behind: 0, changedFiles: 5 }], ['/work/houston-wt', { added: 24, deleted: 8, ahead: 0, behind: 1, changedFiles: 2 }]])} prByDir={new Map([['/work/houston', { gh: 'ready', pr: { number: 411, url: 'https://github.com/example/houston/pull/411', state: 'OPEN', review_decision: 'REVIEW_REQUIRED', checks: 'running' } }]])} width={width} jumpNumber={1} onSelect={noop} onOpenInspector={noop} onOpenExternal={noop} />
+    </SessionsStoreContext.Provider>
+  </div>
+}
 
 function RailWorkspacesMulti(): React.JSX.Element {
   const ws = (path: string, name: string): Workspace => ({ path, name }) as Workspace
@@ -128,6 +144,12 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'palette/paper': () => <PalettePaperStory />,
   'harness/page': () => <HarnessPageStory />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
+  'rail/grid-row-graphite-200': () => <RailGridRowStory theme="graphite" width={200} />,
+  'rail/grid-row-graphite-240': () => <RailGridRowStory theme="graphite" width={240} />,
+  'rail/grid-row-graphite-420': () => <RailGridRowStory theme="graphite" width={420} />,
+  'rail/grid-row-paper-200': () => <RailGridRowStory theme="paper" width={200} />,
+  'rail/grid-row-paper-240': () => <RailGridRowStory theme="paper" width={240} />,
+  'rail/grid-row-paper-420': () => <RailGridRowStory theme="paper" width={420} />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
   'settings/appearance': () => <SettingsAppearance />,
   'settings/terminal': () => <SettingsTerminal />,

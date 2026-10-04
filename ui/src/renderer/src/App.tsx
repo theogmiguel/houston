@@ -1073,7 +1073,7 @@ export function App(): React.JSX.Element {
       setSessions((prev) => {
         const next = new Map(prev);
         const s = next.get(msg.session);
-        if (s) next.set(msg.session, { ...s, state: msg.state });
+        if (s) next.set(msg.session, { ...s, state: msg.state, status_since_ms: Date.now() });
         return next;
       });
       if (!isLive(msg.state)) {
@@ -1218,7 +1218,7 @@ export function App(): React.JSX.Element {
             setSessions((prev) => {
               const s = prev.get(msg.session);
               if (!s || s.status === msg.status) return prev;
-              return new Map(prev).set(msg.session, { ...s, status: msg.status });
+              return new Map(prev).set(msg.session, { ...s, status: msg.status, status_since_ms: Date.now() });
             });
             break;
           case "session_context":
@@ -2353,6 +2353,13 @@ export function App(): React.JSX.Element {
     },
     [openEditorFile],
   );
+  const openRailInspector = useCallback((paneId: number, tab: ScmTab): void => {
+    setActiveId(paneId);
+    setScmTab(tab);
+    setScmOpen(true);
+    setSideExpanded(true);
+    setActiveSurface("side");
+  }, [setActiveId, setActiveSurface, setSideExpanded]);
   const openTerminalDir = useCallback(
     (path: string, session?: number): void => {
       const root = session == null ? selectedWs : sessionsRef.current.get(session)?.project_dir ?? selectedWs;
@@ -3290,6 +3297,9 @@ export function App(): React.JSX.Element {
                 setWsColors((prev) => ({ ...prev, [path]: color }))
               }
               onSshConnect={openSshConnect}
+              railClient={conn.kind === "ready" ? conn.client : null}
+              checkoutBranches={checkout.chips}
+              onOpenInspector={openRailInspector}
               gridsByWorkspace={gridsByWorkspace}
               tags={tags}
               onSetGridTags={(path, gridId, tagIds) =>

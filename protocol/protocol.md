@@ -479,6 +479,8 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    `title`; parent-facing labels read this. Empty from an older daemon —
                    read `title` instead),
                    detected_agent?, hidden, ssh_host?, restore_deferred?: RestoreReason, status?: AgentStatus,
+                   status_since_ms?: number | null (runtime-only epoch time for the current agent
+                   status; absent until a provider status is known and reset on status changes),
                    context?: SessionContext (v111: runtime-only occupancy; absent or `unknown` hides
                    the indicator; never persisted, so it resets on respawn),
                    swarm_agent?, spawned_by?, acp? (slug), live_children, children_waiting, profile_label?,

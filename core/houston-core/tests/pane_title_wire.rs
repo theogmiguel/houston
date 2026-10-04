@@ -72,6 +72,7 @@ fn stored_session(id: u32, ws: &Path, title: &str) -> proto::SessionInfo {
         ssh_host: None,
         restore_deferred: None,
         status: None,
+        status_since_ms: None,
         context: None,
         swarm_agent: None,
         spawned_by: None,
@@ -178,6 +179,28 @@ async fn a_clis_own_window_title_becomes_the_panes_name_and_is_broadcast() {
             _ => continue,
         }
     }
+
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn reported_agent_status_has_a_runtime_timestamp_in_session_info() {
+    shim_dir();
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let ws = state.path().join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+
+    let info = spawn(&daemon, &ws, proto::AgentKind::Claude, None);
+    let since = info
+        .status_since_ms
+        .expect("reported status has a timestamp");
+    assert!(since > 0);
+    let listed = daemon
+        .list()
+        .into_iter()
+        .find(|session| session.id == info.id)
+        .unwrap();
+    assert_eq!(listed.status_since_ms, Some(since));
 
     daemon.kill(info.id).ok();
 }

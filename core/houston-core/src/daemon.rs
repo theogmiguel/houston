@@ -486,6 +486,7 @@ pub struct Session {
     vt_refused: AtomicBool,
     last_output: AtomicU64,
     status: Mutex<Option<proto::AgentStatus>>,
+    status_since_ms: Mutex<Option<u64>>,
     context: Mutex<Option<proto::SessionContext>>,
     removed: AtomicBool,
     backend_exited: AtomicBool,
@@ -983,6 +984,7 @@ impl Session {
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
         info.detected_agent = *self.detected.lock().expect("detected lock");
         info.status = *self.status.lock().expect("status lock");
+        info.status_since_ms = *self.status_since_ms.lock().expect("status since lock");
         info.context = *self.context.lock().expect("context lock");
         info.tags = self.tags.lock().expect("tags lock").clone();
         info
@@ -3867,6 +3869,7 @@ impl Daemon {
             ssh_host: None,
             restore_deferred: None,
             status: m.status,
+            status_since_ms: m.status.map(|_| now_ms()),
             context: None,
             swarm_agent: m.swarm_agent,
             spawned_by: None,
@@ -3913,6 +3916,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(0),
             status: Mutex::new(m.status),
+            status_since_ms: Mutex::new(info.status_since_ms),
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
@@ -6308,6 +6312,8 @@ impl Daemon {
                         false
                     } else {
                         *current = Some(status);
+                        *session.status_since_ms.lock().expect("status since lock") =
+                            Some(now_ms());
                         true
                     }
                 }
@@ -6556,6 +6562,7 @@ impl Daemon {
                 false
             } else {
                 *current = Some(ev.status());
+                *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
                 true
             }
         };
@@ -8247,6 +8254,7 @@ impl Daemon {
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
         let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
+        let status_since_ms = initial_status.map(|_| now_ms());
         let mut info = proto::SessionInfo {
             id,
             agent,
@@ -8260,6 +8268,7 @@ impl Daemon {
             ssh_host: None,
             restore_deferred: None,
             status: initial_status,
+            status_since_ms,
             context: None,
             swarm_agent,
             spawned_by,
@@ -8316,6 +8325,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
             status: Mutex::new(initial_status),
+            status_since_ms: Mutex::new(status_since_ms),
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
@@ -8654,6 +8664,7 @@ impl Daemon {
             ssh_host: Some(display),
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             spawned_by: None,
@@ -8698,6 +8709,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
             status: Mutex::new(None),
+            status_since_ms: Mutex::new(None),
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
@@ -9440,6 +9452,7 @@ impl Daemon {
         self.forget_resume_handle(id);
         self.cancel_delegation(id);
         *session.state.lock().expect("state lock") = proto::SessionState::Killed;
+        *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.db
             .update_session_state(id, proto::SessionState::Killed, None)?;
         let result = session.backend.kill(id, session.pid);
@@ -16114,6 +16127,7 @@ impl Daemon {
             }
             let was_live = session.state.lock().expect("state lock").is_live();
             *session.state.lock().expect("state lock") = proto::SessionState::Exited;
+            *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
             if was_live {
                 let _ = session.backend.kill(child, session.pid);
             }

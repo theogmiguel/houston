@@ -39,19 +39,26 @@ beforeEach(() => {
   for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] = 0
 })
 afterEach(() => { app?.unmount(); app = undefined })
+async function waitForGridRail(): Promise<void> {
+  await vi.waitFor(() => {
+    const rows = [...app!.container.querySelectorAll('[data-testid="grid-row"]')]
+    expect(rows.some((row) => row.getAttribute('aria-label')?.includes(', '))).toBe(true)
+  })
+}
 it('isolates a status event from App and unrelated pane containers', async () => {
   app = await renderReadyApp({ sessions: [makeSession({ id: 1, status: 'working' }), makeSession({ id: 2, project_dir: '/tmp/other', cwd: '/tmp/other', status: 'working' })], workspaces: [makeWorkspace(), makeWorkspace({ path: '/tmp/other', name: 'other' })] })
+  await waitForGridRail()
   expect(counts.unrelatedSessionPane).toBeGreaterThan(0)
-  expect(counts.SidebarRowB).toBeGreaterThan(0)
+  expect(counts.SidebarRowB).toBe(0)
   for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] = 0
   deliverControl({ type: 'agent_status', session: 1, status: 'idle' })
-  console.log('Status event render counts:', JSON.stringify(counts))
   expect(app.container.querySelector('[data-panekey="1"] .agent-dot')?.className).toContain('text-muted')
   expect(counts).toEqual({ App: 0, Sidebar: 0, LayoutView: 0, unrelatedSessionPane: 0, SidebarRowB: 0 })
 })
 
 it('skips duplicate status updates and isolates roster fields while preserving structural updates', async () => {
   app = await renderReadyApp({ sessions: [makeSession({ id: 1, status: 'working' }), makeSession({ id: 2, project_dir: '/tmp/other', cwd: '/tmp/other', status: 'working' })], workspaces: [makeWorkspace(), makeWorkspace({ path: '/tmp/other', name: 'other' })] })
+  await waitForGridRail()
   for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] = 0
   sessionRenders.a = 0
   deliverControl({ type: 'agent_status', session: 1, status: 'working' })
@@ -65,7 +72,7 @@ it('skips duplicate status updates and isolates roster fields while preserving s
   expect(sessionRenders.a).toBeGreaterThan(0)
   expect(counts).toEqual({ App: 0, Sidebar: 0, LayoutView: 0, unrelatedSessionPane: 0, SidebarRowB: 0 })
   expect(app.container.querySelector('[data-panekey="1"] .agent-dot')?.className).toContain('--warn')
-  expect(app.container.querySelector('[aria-label="Children need input"]')).not.toBeNull()
+  expect(app.container.querySelector('[aria-label="Children need input"]')).toBeNull()
   deliverControl({ type: 'session_renamed', session: 1, title: 'Renamed' })
   expect(counts.App).toBeGreaterThan(0)
   expect(app.container.querySelector('[data-panekey="1"]')?.textContent).toContain('Renamed')

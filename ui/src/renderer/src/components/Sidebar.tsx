@@ -1,8 +1,7 @@
-import { useSessionsSelector, shallowArrayEqual, useWorkspaceWaiting } from '../sessionsStore';
+import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
 import { MAX_TAGS_PER_GRID } from "../layout/tree";
 import type { TagUsage } from "./TagManager";
-import { TagChipRow } from "./tags";
 import type { TagEditorState } from "./tagEditing";
 import { FOCUS_HALO } from "./shadowChrome";
 import {
@@ -15,9 +14,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import type { SessionInfo, Workspace } from "../houston/client";
+import type { HoustonClient, PrInfo, SessionInfo, Workspace } from "../houston/client";
 import { isLive } from "../houston/client";
-import { RAIL_TAG_DOT_AT, useRailWidth } from "../railWidth";
+import { useRailWidth } from "../railWidth";
 import type { ChromeTheme } from "../theme";
 import {
   setSettingsOpen,
@@ -72,7 +71,7 @@ import {
 } from "./icons";
 import { Tooltip } from "./Tooltip";
 import logoUrl from "../assets/logo-chrome.svg";
-import { showItemInFolder } from "../houston/bridge";
+import { openExternal, showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { ICON_ROLE_CLS, Icon } from "./Icon";
 import { Count } from "./ui/Count";
@@ -91,6 +90,11 @@ import { BTN_ICO_STRUCTURE } from "./buttonChrome";
 import { openUpdateModal } from "../updateModal";
 import { isUpdateInstallRunning, useUpdateInstall, type UpdateInstallState } from "../updateInstall";
 import { CONTROL_SIZE_SQUARE_CLS } from "./controlSize";
+import { useRailGitCache } from "./git/railGitCache";
+import { useRailPrCache } from "./git/railPrCache";
+import type { RailDiffTotals } from "./git/useRailGitFacts";
+import type { RailPrState } from "./git/railPrCache";
+import { GridRailRowFallback } from "./ui/GridRailRowFallback";
 
 const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   palette: IconPalette,
@@ -109,15 +113,16 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   server: IconServer,
 };
 
+const GridRailContextActions = lazy(() => import("./ui/GridRailContextActions").then((module) => ({ default: module.GridRailContextActions })));
+const GridRailGitSubscription = lazy(() => import("./git/GridRailGitSubscription").then((module) => ({ default: module.GridRailGitSubscription })));
+const LazyGridRailRow = lazy(() => import("./ui/GridRailRow").then((module) => ({ default: module.GridRailRow })));
+
 export const RAIL_SELECTED_CLS = "bg-selected-fill text-[var(--text-primary)]";
 
 const WS_SUBGROUP_LABEL_CLS =
   "px-2 pt-2 pb-1 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tracking-[0.1em] uppercase text-[var(--text-faint)] select-none";
 
 const WS_SUBGROUP_RULE_CLS = "mx-2 pt-[var(--space-2)]";
-
-const COUNT_CHIP_CLS =
-  "flex-none min-w-[17px] h-[17px] leading-[17px] rounded-[6px] px-[5px] font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-center tabular-nums bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] text-[var(--text-faint)]";
 
 const CHEVRON_HIT_CLS = `flex-none -ml-[3px] flex items-center justify-center w-[18px] h-[18px] rounded-[var(--tr-radius-input)] text-current hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] ${HIT_TARGET_28}`;
 
@@ -303,6 +308,9 @@ interface Props {
   pinnedWorkspaces: ReadonlySet<string>;
   onTogglePinWorkspace: (path: string) => void;
   onSshConnect: () => void;
+  railClient?: HoustonClient | null;
+  checkoutBranches?: ReadonlyMap<number, string>;
+  onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
 
   gridsByWorkspace?: Record<
     string,
@@ -343,51 +351,6 @@ interface Props {
   className?: string;
   onHeadMouseDown?: (e: React.MouseEvent) => void;
   onHeadDoubleClick?: (e: React.MouseEvent) => void;
-}
-
-function liveCount(sessions: SessionInfo[]): number {
-  return sessions.filter((s) => isLive(s.state)).length;
-}
-
-function WorkspacePaneCount({
-  panes,
-  live,
-  tagMatched,
-  tagTotal,
-}: {
-  panes: number;
-  live: number;
-  tagMatched?: number;
-  tagTotal?: number;
-}): React.JSX.Element | null {
-  if (tagMatched !== undefined && tagTotal !== undefined) {
-    return (
-      <Tooltip
-        label={
-          tagMatched === 0
-            ? `none of ${tagTotal} panes carry the filter`
-            : `${tagMatched} of ${tagTotal} panes carry the filter`
-        }
-      >
-        <span data-testid="nav-count" className={COUNT_CHIP_CLS}>
-          {tagMatched}/{tagTotal}
-        </span>
-      </Tooltip>
-    );
-  }
-  if (panes <= 1) return null;
-  return (
-    <Tooltip
-      label={live === 0 ? `${panes} panes, none running` : `${panes} panes`}
-    >
-      <span
-        data-testid="nav-count"
-        className={`${COUNT_CHIP_CLS} ${live === 0 ? "opacity-[0.55]" : ""}`}
-      >
-        {panes > 99 ? "99+" : panes}
-      </span>
-    </Tooltip>
-  );
 }
 
 function RenameInput({
@@ -450,6 +413,40 @@ interface GridCtxMenu {
   name: string;
   canRemove: boolean;
   tagIds: number[];
+  paneId: number | null;
+  branch: string | null;
+  checkoutPath: string;
+  worktreePath: string | null;
+  pr: PrInfo | null;
+  gh: string | null;
+}
+
+function railGridContextFacts(
+  grid: GridItem,
+  workspacePath: string,
+  sessions: SessionInfo[],
+  branches: ReadonlyMap<number, string>,
+  prs: ReadonlyMap<string, RailPrState>,
+): Pick<GridCtxMenu, "paneId" | "branch" | "checkoutPath" | "worktreePath" | "pr" | "gh"> {
+  const orValue = <T,>(value: T | null | undefined, fallback: T): T => value ?? fallback;
+  const nullable = <T,>(value: T | undefined): T | null => value ?? null;
+  const paneIds = orValue(grid.sessionIds, []);
+  let pane: SessionInfo | undefined;
+  for (const session of sessions) {
+    if (!paneIds.includes(session.id)) continue;
+    pane = session;
+    break;
+  }
+  const checkoutPath = orValue(pane?.worktree?.path, orValue(pane?.checkout_root, orValue(pane?.cwd, workspacePath)));
+  const prStatus = prs.get(checkoutPath);
+  return {
+    paneId: nullable(pane?.id),
+    branch: pane ? orValue(branches.get(pane.id), orValue(pane.worktree?.branch, null)) : null,
+    checkoutPath,
+    worktreePath: nullable(pane?.worktree?.path),
+    pr: nullable(prStatus?.pr),
+    gh: nullable(prStatus?.gh),
+  };
 }
 
 const CTXMENU_CLS =
@@ -695,6 +692,8 @@ function GridContextMenu({
   onFilterByTags,
   onNewTag,
   onManageTags,
+  onOpenInspector,
+  onError,
 }: {
   gridMenu: GridCtxMenu;
   workspaces: Workspace[];
@@ -706,6 +705,8 @@ function GridContextMenu({
   onFilterByTags: (tagIds: number[]) => void;
   onNewTag: (e: React.MouseEvent) => void;
   onManageTags: () => void;
+  onOpenInspector?: (paneId: number, tab: "pull-request") => void;
+  onError?: (message: string) => void;
 }): React.JSX.Element {
   const workspaceName =
     workspaces.find((w) => w.path === gridMenu.path)?.name ?? gridMenu.path;
@@ -723,6 +724,20 @@ function GridContextMenu({
     >
       {ctxHeader(gridMenu.name, workspaceName)}
       <div className={CTX_ITEMS_CLS}>
+        <Suspense fallback={null}>
+          <GridRailContextActions
+            paneId={gridMenu.paneId}
+            branch={gridMenu.branch}
+            checkoutPath={gridMenu.checkoutPath}
+            worktreePath={gridMenu.worktreePath}
+            pr={gridMenu.pr}
+            gh={gridMenu.gh}
+            onClose={onClose}
+            onOpenInspector={onOpenInspector}
+            onError={onError}
+          />
+        </Suspense>
+        <div className="ctx-sep" />
         <button
           className="btn ctx-item"
           role="menuitem"
@@ -861,10 +876,6 @@ function tagsOf(s: SessionInfo): number[] {
   return s.tags ?? [];
 }
 
-function tagByIdOf(tags: TagInfo[], id: number): TagInfo | undefined {
-  return tags.find((t) => t.id === id);
-}
-
 function PinIndicator(): React.JSX.Element {
   return (
     <Tooltip label="Pinned">
@@ -887,11 +898,6 @@ function CollapsedGridsRow({
   onRenameSubmit,
   onRenameCancel,
   on,
-  panes,
-  waiting: waitingProp,
-  tagMatched,
-  tagTotal,
-  live,
   pinned,
   dragPath,
   dropBefore,
@@ -906,11 +912,6 @@ function CollapsedGridsRow({
   i: number;
   color: string;
   on: boolean;
-  panes: number;
-  waiting: boolean;
-  tagMatched?: number;
-  tagTotal?: number;
-  live: number;
   pinned: boolean;
   dragPath: string | null;
   dropBefore: React.ReactNode;
@@ -924,7 +925,6 @@ function CollapsedGridsRow({
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
 }): React.JSX.Element {
-  const waiting = useWorkspaceWaiting(w.path, waitingProp);
   if (renamingThis) {
     return (
       <Fragment>
@@ -996,14 +996,7 @@ function CollapsedGridsRow({
             {w.name}
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
-            {waiting && <Tooltip label="Children need input"><span role="img" aria-label="Children need input" className="w-[7px] h-[7px] flex-none rounded-full bg-[var(--warn)]" /></Tooltip>}
             {pinned && <PinIndicator />}
-            <WorkspacePaneCount
-              panes={panes}
-              live={live}
-              tagMatched={tagMatched}
-              tagTotal={tagTotal}
-            />
           </span>
         </div>
       </Tooltip>
@@ -1131,44 +1124,10 @@ function workspaceCarriesTag(
   );
 }
 
-// A pane matches through its own tags or through the tags of the grid holding it.
-function carriesActiveTag(
-  s: SessionInfo,
-  grids: GridItem[] | undefined,
-  activeTagIds: number[],
-): boolean {
-  const hit = (ids: number[] | undefined): boolean =>
-    ids?.some((id) => activeTagIds.includes(id)) ?? false;
-  if (hit(tagsOf(s))) return true;
-  return grids?.some((g) => g.sessionIds?.includes(s.id) && hit(g.tagIds)) ?? false;
-}
-
 function filterLabelFor(activeTagCount: number): string {
   return activeTagCount > 0
     ? `Filter by tag (${activeTagCount} active)`
     : "Filter by tag";
-}
-
-function GridTagChips({
-  tagIds,
-  tags,
-  onToggle,
-}: {
-  tagIds: number[] | undefined;
-  tags: TagInfo[];
-  onToggle: (tag: TagInfo) => void;
-}): React.JSX.Element | null {
-  const railWidth = useRailWidth();
-  if (tagIds === undefined) return null;
-  return (
-    <TagChipRow
-      compact={railWidth < RAIL_TAG_DOT_AT}
-      tags={tagIds
-        .map((id) => tagByIdOf(tags, id))
-        .filter((t): t is TagInfo => t !== undefined)}
-      onToggle={onToggle}
-    />
-  );
 }
 
 function ExpandedGridsRow({
@@ -1179,16 +1138,9 @@ function ExpandedGridsRow({
   onRenameSubmit,
   onRenameCancel,
   on,
-  panes,
-  waiting: waitingProp,
-  tagMatched,
-  tagTotal,
-  live,
   pinned,
   grids,
-  tags,
   activeTagIds,
-  onToggleTagFilter,
   dragPath,
   dropBefore,
   dragActiveRef,
@@ -1205,21 +1157,20 @@ function ExpandedGridsRow({
   onSelectGrid,
   openGridMenu,
   setGridRenaming,
+  checkoutBranches,
+  sessions,
+  railDiffByDir,
+  railPrByDir,
+  railWidth,
+  onOpenInspector,
 }: {
   w: Workspace;
   i: number;
   color: string;
   on: boolean;
-  panes: number;
-  waiting: boolean;
-  tagMatched?: number;
-  tagTotal?: number;
-  live: number;
   pinned: boolean;
   grids: GridItem[];
-  tags: TagInfo[];
   activeTagIds: number[];
-  onToggleTagFilter: (id: number) => void;
   dragPath: string | null;
   dropBefore: React.ReactNode;
   dragActiveRef: React.RefObject<boolean>;
@@ -1240,12 +1191,17 @@ function ExpandedGridsRow({
     grid: GridItem,
     canRemove: boolean,
   ) => void;
+  checkoutBranches: ReadonlyMap<number, string>;
+  sessions: SessionInfo[];
+  railDiffByDir: ReadonlyMap<string, RailDiffTotals>;
+  railPrByDir: ReadonlyMap<string, RailPrState>;
+  railWidth: number;
+  onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
   setGridRenaming: (v: { path: string; gridId: string } | null) => void;
   renamingThis: boolean;
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
 }): React.JSX.Element {
-  const waiting = useWorkspaceWaiting(w.path, waitingProp);
   return (
     <Fragment>
       {dropBefore}
@@ -1312,14 +1268,7 @@ function ExpandedGridsRow({
             {w.name}
           </span>
           <span className="ml-auto flex items-center gap-1 flex-none">
-            {waiting && <Tooltip label="Children need input"><span role="img" aria-label="Children need input" className="w-[7px] h-[7px] flex-none rounded-full bg-[var(--warn)]" /></Tooltip>}
             {pinned && <PinIndicator />}
-            <WorkspacePaneCount
-              panes={panes}
-              live={live}
-              tagMatched={tagMatched}
-              tagTotal={tagTotal}
-            />
           </span>
           {onNewWorkspaceSession && (
             <Tooltip label="New session">
@@ -1379,73 +1328,24 @@ function ExpandedGridsRow({
             </div>
           );
         }
-        return (
-          <div
-            key={g.id}
-            role="button"
-            tabIndex={0}
-            data-testid="grid-row"
-            data-selected={gridOn ? "true" : undefined}
-            aria-current={gridOn ? "true" : undefined}
-            className={`treerow child relative flex items-center gap-2 h-[var(--h-row)] pl-8 pr-2 rounded-md border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full group hover:bg-hover-fill hover:text-[var(--text-primary)] ${gridOn ? RAIL_SELECTED_CLS : "bg-transparent text-[var(--text-secondary)]"}`}
-            onClick={() => {
-              onSelectGrid?.(w.path, g.id);
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter" && e.key !== " ") return;
-              e.preventDefault();
-              onSelectGrid?.(w.path, g.id);
-            }}
-            onContextMenu={
-              onRenameGrid || onRemoveGrid
-                ? (e) =>
-                    openGridMenu(
-                      e,
-                      w.path,
-                      g,
-                      Boolean(onRemoveGrid) && grids.length > 1,
-                    )
-                : undefined
-            }
-          >
-            {stateDot}
-            <span aria-hidden className="flex-none opacity-70">
-              <Icon glyph={IconGrid} role="ui" />
-            </span>
-            <span
-              data-testid="grid-name"
-              className="flex-1 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis"
-            >
-              {g.name}
-            </span>
-            <GridTagChips
-              tagIds={g.tagIds}
-              tags={tags}
-              onToggle={(t) => onToggleTagFilter(t.id)}
-            />
-            {g.count !== undefined && g.count > 1 && (
-              <span data-testid="nav-count" className={COUNT_CHIP_CLS}>
-                {g.count}
-              </span>
-            )}
-            {onRemoveGrid && grids.length > 1 && (
-              <Tooltip label="Close tab">
-                <button
-                  type="button"
-                  aria-label="Close tab"
-                  data-testid="grid-close"
-                  className="hidden group-hover:inline-flex focus-visible:inline-flex items-center justify-center w-5 h-5 flex-none rounded-[var(--tr-radius-input)] text-[var(--text-faint)] hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] hover:text-[var(--danger)]"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemoveGrid(w.path, g.id);
-                  }}
-                >
-                  <Icon glyph={IconClose} role="small" />
-                </button>
-              </Tooltip>
-            )}
-          </div>
-        );
+        const onRemove = onRemoveGrid && grids.length > 1 ? () => onRemoveGrid(w.path, g.id) : undefined;
+        return <Suspense key={g.id} fallback={<GridRailRowFallback name={g.name} selected={gridOn} jumpNumber={grids.indexOf(g) + 1} onSelect={() => onSelectGrid?.(w.path, g.id)} onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)} onRemove={onRemove} />}><LazyGridRailRow
+          key={g.id}
+          name={g.name}
+          selected={gridOn}
+          paneIds={g.sessionIds ?? []}
+          fallbackSessions={sessions}
+          branches={checkoutBranches}
+          diffByDir={railDiffByDir}
+          prByDir={railPrByDir}
+          width={railWidth}
+          jumpNumber={grids.indexOf(g) + 1}
+          onSelect={() => onSelectGrid?.(w.path, g.id)}
+          onRemove={onRemove}
+          onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)}
+          onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
+          onOpenExternal={(url) => { void openExternal(url); }}
+        /></Suspense>;
       })}
     </Fragment>
   );
@@ -1522,10 +1422,6 @@ function PlainWorkspaceRow({
   i,
   color,
   on,
-  allCount,
-  ownCount,
-  tagMatched,
-  tagTotal,
   pinned,
   dragPath,
   dropBefore,
@@ -1539,10 +1435,6 @@ function PlainWorkspaceRow({
   i: number;
   color: string;
   on: boolean;
-  allCount: number;
-  ownCount: number;
-  tagMatched?: number;
-  tagTotal?: number;
   pinned: boolean;
   dragPath: string | null;
   dropBefore: React.ReactNode;
@@ -1591,12 +1483,6 @@ function PlainWorkspaceRow({
           </span>
           <span className="ml-auto flex gap-1">
             {pinned && <PinIndicator />}
-            <WorkspacePaneCount
-              panes={allCount}
-              live={ownCount}
-              tagMatched={tagMatched}
-              tagTotal={tagTotal}
-            />
             <Tooltip label="Close workspace (stops its agents)">
               <button
                 type="button"
@@ -2057,9 +1943,7 @@ function RailTree({
   sessions,
   colorOf,
   gridsByWorkspace,
-  tags,
   activeTagIds,
-  onToggleTagFilter,
   dropIndex,
   dragPath,
   isWsOpen,
@@ -2080,6 +1964,11 @@ function RailTree({
   onRenameSubmit,
   onRenameCancel,
   onRemoveWorkspace,
+  onOpenInspector,
+  checkoutBranches,
+  railDiffByDir,
+  railPrByDir,
+  railWidth,
 }: {
   treeLabel: string;
   filterOpen: boolean;
@@ -2096,9 +1985,7 @@ function RailTree({
   sessions: SessionInfo[];
   colorOf: (path: string) => string;
   gridsByWorkspace: Record<string, GridItem[]>;
-  tags: TagInfo[];
   activeTagIds: number[];
-  onToggleTagFilter: (id: number) => void;
   dropIndex: number | null;
   dragPath: string | null;
   isWsOpen: (path: string) => boolean;
@@ -2124,6 +2011,11 @@ function RailTree({
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
   onRemoveWorkspace: (path: string) => void;
+  checkoutBranches: ReadonlyMap<number, string>;
+  railDiffByDir: ReadonlyMap<string, RailDiffTotals>;
+  railPrByDir: ReadonlyMap<string, RailPrState>;
+  railWidth: number;
+  onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
 }): React.JSX.Element {
   return (
     <div
@@ -2146,16 +2038,6 @@ function RailTree({
           className={`wlist flex flex-col gap-1 p-2 overflow-y-auto ${dragPath !== null ? "cursor-grabbing" : ""}`}
         >
           {filteredWorkspaces.map((w, i) => {
-            const placed = new Set((gridsByWorkspace[w.path] ?? []).flatMap((grid) => grid.sessionIds ?? []));
-            const all = sessions.filter((s) => (s.project_dir === w.path && s.spawned_by == null) || placed.has(s.id));
-            const waiting = sessions.some((s) => s.project_dir === w.path && s.children_waiting > 0);
-            const own = liveCount(all);
-            const matched =
-              activeTagIds.length > 0
-                ? all.filter((s) =>
-                    carriesActiveTag(s, gridsByWorkspace[w.path], activeTagIds),
-                  ).length
-                : 0;
             const color = colorOf(w.path);
             const on = selected === w.path;
             const grids = gridsByWorkspace[w.path];
@@ -2194,11 +2076,6 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
-                    waiting={waiting}
-                    panes={all.length}
-                    tagMatched={activeTagIds.length > 0 ? matched : undefined}
-                    tagTotal={all.length}
-                    live={own}
                     pinned={pinned}
                     dragPath={dragPath}
                     dropBefore={dropBefore}
@@ -2220,16 +2097,9 @@ function RailTree({
                     onRenameSubmit={onRenameSubmit}
                     onRenameCancel={onRenameCancel}
                     on={on}
-                    waiting={waiting}
-                    panes={all.length}
-                    tagMatched={activeTagIds.length > 0 ? matched : undefined}
-                    tagTotal={all.length}
-                    live={own}
                     pinned={pinned}
                     grids={grids}
-                    tags={tags}
                     activeTagIds={activeTagIds}
-                    onToggleTagFilter={onToggleTagFilter}
                     dragPath={dragPath}
                     dropBefore={dropBefore}
                     dragActiveRef={dragActiveRef}
@@ -2246,6 +2116,12 @@ function RailTree({
                     onSelectGrid={onSelectGrid}
                     openGridMenu={openGridMenu}
                     setGridRenaming={setGridRenaming}
+                    checkoutBranches={checkoutBranches}
+                    sessions={sessions}
+                    railDiffByDir={railDiffByDir}
+                    railPrByDir={railPrByDir}
+                    railWidth={railWidth}
+                    onOpenInspector={onOpenInspector}
                   />
                 );
               }
@@ -2267,10 +2143,6 @@ function RailTree({
                   i={i}
                   color={color}
                   on={on}
-                  allCount={all.length}
-                  ownCount={own}
-                  tagMatched={activeTagIds.length > 0 ? matched : undefined}
-                  tagTotal={all.length}
                   pinned={pinned}
                   dragPath={dragPath}
                   dropBefore={dropBefore}
@@ -2325,6 +2197,9 @@ export function Sidebar({
   pinnedWorkspaces,
   onTogglePinWorkspace,
   onSshConnect,
+  railClient,
+  checkoutBranches = new Map(),
+  onOpenInspector,
   gridsByWorkspace = {},
   onSelectGrid,
   selectedGridId = null,
@@ -2379,6 +2254,9 @@ export function Sidebar({
   const [tagJustMade, setTagJustMade] = useState<string | null>(null);
 
   const settingsOpen = useSettingsOpen();
+  const railWidth = useRailWidth();
+  const railPrByDir = useRailPrCache();
+  const railDiffByDir = useRailGitCache();
   const railView = useRailView();
   const hiddenRailViews = useHiddenRailViews();
   const { custom, dataCustom } = useCustomSurface();
@@ -2608,6 +2486,7 @@ export function Sidebar({
       name: grid.name,
       canRemove,
       tagIds: grid.tagIds ?? [],
+      ...railGridContextFacts(grid, path, sessions, checkoutBranches, railPrByDir),
     });
   };
 
@@ -2706,6 +2585,8 @@ export function Sidebar({
         setTagJustMade(null);
         setTagManagerOpen(true);
       }}
+      onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
+      onError={onOpenExternalError}
     />
   );
 
@@ -2780,6 +2661,7 @@ export function Sidebar({
         onHeadDoubleClick={onHeadDoubleClick}
         onHideRail={onHideRail}
       />
+      <Suspense fallback={null}><GridRailGitSubscription client={railClient ?? null} sessions={sessions} /></Suspense>
       {}
       <RailNav
         view={railView}
@@ -2807,6 +2689,11 @@ export function Sidebar({
             filterLabel={filterLabel}
             onToggleFilter={onToggleFilter}
             onSshConnect={onSshConnect}
+            onOpenInspector={onOpenInspector}
+            checkoutBranches={checkoutBranches}
+            railDiffByDir={railDiffByDir}
+            railPrByDir={railPrByDir}
+            railWidth={railWidth}
             onAddWorkspace={onAddWorkspace}
             selected={selected}
             filteredWorkspaces={filteredWorkspaces}
@@ -2816,9 +2703,7 @@ export function Sidebar({
             sessions={sessions}
             colorOf={colorOf}
             gridsByWorkspace={gridsByWorkspace}
-            tags={tags}
             activeTagIds={activeTagIds}
-            onToggleTagFilter={toggleTagFilter}
             dropIndex={dropIndex}
             dragPath={dragPath}
             isWsOpen={isWsOpen}
