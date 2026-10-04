@@ -62,14 +62,23 @@ describe('Connections matrix', () => {
     expect(onSync).toHaveBeenCalledWith('claude')
   })
 
-  it('keeps a server check failure off absent agent destinations', () => {
+  it('shows absent agent destinations as off while keeping server check failures scoped', () => {
     render(<McpManager {...props({
       tools: [tool('claude'), tool('codex', []), tool('opencode', []), tool('cursor', [])],
       checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]]
     })} />)
     expect(screen.getByTestId('mcp-cell-claude-github').textContent).toContain('Failed')
-    expect(screen.getByTestId('mcp-cell-codex-github').textContent).toBe('')
+    expect(screen.getByTestId('mcp-cell-codex-github').textContent).toBe('Off')
     expect(screen.getByText('npx').tagName).toBe('CODE')
+  })
+
+  it('puts a bordered row action beside the overflow menu', () => {
+    render(<McpManager {...props({
+      source: [server('github'), server('linear')],
+      checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]]
+    })} />)
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'More actions for linear' })).toBeTruthy()
   })
 
   it('uses the page Add server action for an empty state', () => {

@@ -14,7 +14,8 @@ export function HarnessReviewHistory({
   reportError,
   onLoadReport,
   onOpenFile,
-  onReveal
+  onReveal,
+  deltaOverrides
 }: {
   state: HarnessState
   report: Parameters<typeof HarnessReportView>[0]['report']
@@ -22,6 +23,7 @@ export function HarnessReviewHistory({
   onLoadReport: (reviewId: number) => void
   onOpenFile: (path: string) => void
   onReveal: (path: string) => void
+  deltaOverrides?: Record<number, { new: number; gone: number }>
 }): React.JSX.Element {
   const [reportId, setReportId] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
@@ -65,7 +67,7 @@ export function HarnessReviewHistory({
         <Card key={review.id}>
           <Card.Row
               heading={`Review #${review.id}`}
-              meta={`${formatHarnessDate(review.started_at_ms)} · ${review.sessions ?? 0} sessions · ${review.finding_count} findings`}
+              meta={`${formatHarnessDate(review.started_at_ms)} · ${review.sessions ?? 0} sessions · ${reviewDelta(review, state.findings, deltaOverrides?.[review.id])}`}
               compact
               action={
                 <Button
@@ -98,6 +100,14 @@ function ReviewGroups({ review, findings }: { review: HarnessReview; findings: H
       {related.length === 0 && <p>No finding details are available for this review.</p>}
     </Card.Content>
   )
+}
+
+function reviewDelta(review: HarnessReview, findings: HarnessFinding[], override?: { new: number; gone: number }): string {
+  if (override) return `${override.new} new · ${override.gone} gone`
+  const related = findings.filter((finding) => finding.review_id === review.id || finding.verification?.review_id === review.id)
+  const gone = related.filter((finding) => finding.verification?.review_id === review.id && finding.verification.verdict === 'gone')
+  const fresh = related.filter((finding) => !gone.includes(finding) && !finding.recurred && !finding.task)
+  return `${review.sessions ?? 0} sessions · ${fresh.length} new · ${gone.length} gone`
 }
 
 function ReviewGroup({

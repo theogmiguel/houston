@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { ActionMenu, UsageModelCell, UsageProviderRow, UsageSectionHeading } from './index'
+import { ActionMenu, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar } from './index'
 
 describe('fidelity primitives', () => {
   it('opens an accessible action menu and invokes the selected row action', () => {
@@ -26,5 +26,11 @@ describe('fidelity primitives', () => {
     expect(screen.getByRole('heading', { name: 'Breakdown' }).className).toContain('tr-text-ui-size')
     expect(screen.getByText('gpt-5.5-codex').className).not.toContain('font-mono')
     expect(container.querySelector('span[aria-hidden="true"] span')?.getAttribute('style')).toContain('linear-gradient')
+  })
+
+  it('formats share amounts with grouped currency and square swatches', () => {
+    const { container } = render(<UsageShareBar heading="Cost by type" segments={[{ id: 'cache-read', label: 'Cache read', value: 1021.7 }]} />)
+    expect(container.textContent).toContain('$1,021.70')
+    expect(container.querySelector('[data-testid="usage-share-cost-by-type"] span[aria-hidden="true"]')?.className).not.toContain('rounded-full')
   })
 })

@@ -47,8 +47,14 @@ function bucket(over: Partial<UsageBucket> & { hour_start_ms: number }): UsageBu
 }
 
 describe('formatting', () => {
-  it('keeps three significant digits so two models stay comparable', () => {
-    expect(formatTokens(3_340_000_000)).toBe('3.34B')
+  it('uses compact two-significant-digit tokens for every usage value', () => {
+    expect(formatTokens(4_610_000_000)).toBe('4.6B')
+    expect(formatTokens(4_300_000_000)).toBe('4.3B')
+    expect(formatTokens(61_000_000)).toBe('61M')
+    expect(formatTokens(9_800_000)).toBe('9.8M')
+    expect(formatTokens(2_900_000_000)).toBe('2.9B')
+    expect(formatTokens(1_200_000_000)).toBe('1.2B')
+    expect(formatTokens(14_000_000)).toBe('14M')
     expect(formatTokens(148_000_000)).toBe('148M')
     expect(formatTokens(10_700_000)).toBe('10.7M')
     expect(formatTokens(234_000)).toBe('234K')
@@ -60,6 +66,8 @@ describe('formatting', () => {
 
   it('prints money to the cent, with separators', () => {
     expect(formatUsd(12_101.15)).toBe('$12,101.15')
+    expect(formatUsd(1_021.70)).toBe('$1,021.70')
+    expect(formatUsd(2_301.10)).toBe('$2,301.10')
     expect(formatUsd(0)).toBe('$0.00')
   })
 

@@ -6,7 +6,7 @@ export function BarSparkline({ values, label }: { values: number[]; label: strin
         <span
           key={index}
           aria-hidden="true"
-          className="w-[var(--space-1-5)] rounded-t-[var(--tr-radius-xs)] bg-[var(--warn)]"
+          className="w-[var(--space-1-5)] rounded-t-[var(--tr-radius-xs)] bg-[color-mix(in_srgb,var(--warn)_45%,var(--content-bg))]"
           style={{ height: `${Math.max(4, (value / max) * 24)}px` }}
         />
       ))}

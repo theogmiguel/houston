@@ -95,7 +95,7 @@ export function UsageCalendar({
         {caption && <span>{caption}</span>}
         <span className="ml-auto inline-flex items-center gap-[var(--space-1-5)]">
         <span>Less</span>
-        {LEVELS.map((level, index) => <span key={index} aria-hidden="true" data-level={index} className={`h-[10px] w-[10px] rounded-[var(--tr-radius-input)] border border-[var(--divider)] ${level}`} />)}
+        {LEVELS.map((level, index) => <span key={index} aria-hidden="true" data-level={index} className={`h-[10px] w-[10px] border border-[var(--divider)] ${level}`} />)}
         <span>More</span>
         </span>
       </div>
