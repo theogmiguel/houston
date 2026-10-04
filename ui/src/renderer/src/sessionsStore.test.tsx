@@ -17,7 +17,7 @@ describe('sessions selectors', () => {
     const counts = { a: 0, b: 0, ids: 0, layout: 0 }
     let ids: number[] = []
     let selectedB: SessionInfo | undefined
-    function Row({ id }: { id: 1 | 2 }) {
+    function SessionRow({ id }: { id: 1 | 2 }) {
       const info = useSession(id)
       counts[id === 1 ? 'a' : 'b']++
       if (id === 2) selectedB = info
@@ -26,7 +26,7 @@ describe('sessions selectors', () => {
     function Membership() { ids = useSessionIds(); counts.ids++; return null }
     function Layout() { useLayoutSessions(store); counts.layout++; return null }
     const root = createRoot(document.createElement('div'))
-    act(() => root.render(<SessionsStoreContext.Provider value={store}><Row id={1} /><Row id={2} /><Membership /><Layout /></SessionsStoreContext.Provider>))
+    act(() => root.render(<SessionsStoreContext.Provider value={store}><SessionRow id={1} /><SessionRow id={2} /><Membership /><Layout /></SessionsStoreContext.Provider>))
     const initialIds = ids
     act(() => store.set((previous) => new Map(previous).set(1, { ...a, status: 'idle' })))
     expect(counts).toEqual({ a: 2, b: 1, ids: 1, layout: 1 })
