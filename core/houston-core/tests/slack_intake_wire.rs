@@ -1393,6 +1393,18 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
         ),
     );
     r.fake.await_reactions(&adjust_ts, &["eyes"]).await;
+    let older_ts = later(4);
+    r.fake
+        .send_event("a4b", reply(REQUESTER, "E se for verde?", &older_ts));
+    r.fake.await_reactions(&older_ts, &["eyes"]).await;
+    let older_id: i64 = r
+        .db()
+        .query_row(
+            "SELECT id FROM intake_adjustments WHERE ts = ?1",
+            [&older_ts],
+            |row| row.get(0),
+        )
+        .unwrap();
     let dm = r.fake.await_dm("Pedido de ajuste").await.to_string();
     assert!(
         dm.contains("Rótulo do botão")
@@ -1444,6 +1456,16 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
         )
         .unwrap();
     r.fake.await_reactions(request, &["checkered_flag"]).await;
+    r.fake.send_interactive(
+        "a5b",
+        click(OWNER, "houston_adjust_accept", &older_id.to_string()),
+    );
+    r.fake.await_call("chat.update", "Desatualizado").await;
+    assert_eq!(
+        r.runs().len(),
+        2,
+        "an adjustment about an earlier result starts nothing"
+    );
     let second_ts = later(3);
     r.fake
         .send_event("a6", reply(REQUESTER, "E a cor também?", &second_ts));

@@ -75,11 +75,16 @@ fn plain_message(event: &Value) -> bool {
     )
 }
 
+/// The text as the person typed it: Slack sends `&`, `<` and `>` escaped,
+/// and Houston escapes again wherever it writes text back.
 pub fn strip_mention(text: &str, bot_user_id: &str) -> String {
     text.replace(&format!("<@{bot_user_id}>"), " ")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
 }
 
 fn files(event: &Value) -> Vec<FileRef> {
@@ -227,7 +232,7 @@ mod tests {
     fn a_top_level_mention_is_a_request_with_the_mention_stripped() {
         let ch = mapped();
         let ev = json!({"type": "app_mention", "channel": "C1", "user": "U2", "team": "T1",
-            "ts": "10.1", "text": "<@UBOT>  fix the   footer",
+            "ts": "10.1", "text": "<@UBOT>  fix the   footer &amp; the &lt;h1&gt;",
             "files": [{"name": "a.png", "size": 12, "url_private_download": "https://files.slack.com/a.png"}]});
         assert_eq!(
             classify(&ev, &scope(&ch)),
@@ -235,7 +240,7 @@ mod tests {
                 channel: "C1".into(),
                 ts: "10.1".into(),
                 author: "U2".into(),
-                text: "fix the footer".into(),
+                text: "fix the footer & the <h1>".into(),
                 files: vec![FileRef {
                     name: "a.png".into(),
                     size: 12,

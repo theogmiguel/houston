@@ -75,6 +75,12 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
         "status_reaction TEXT",
     )?;
     super::add_column_if_missing(conn, "intake_questions", "form", "form TEXT")?;
+    // Requests filed before status reactions carry the 👀 their first reply added.
+    conn.execute(
+        "UPDATE intake_events SET status_reaction = 'eyes' WHERE status_reaction IS NULL \
+         AND id IN (SELECT intake_id FROM intake_outbox WHERE dedupe_key LIKE 'seen:%')",
+        [],
+    )?;
     for (column, def) in [
         ("target", "target TEXT NOT NULL DEFAULT 'thread'"),
         ("blocks", "blocks TEXT"),

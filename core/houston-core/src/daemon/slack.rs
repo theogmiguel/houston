@@ -212,8 +212,13 @@ fn strip_mrkdwn(text: &str) -> String {
     text.replace('*', "")
 }
 
+/// Slack refuses a whole message whose section text passes 3,000 characters;
+/// the margin leaves room for the ellipsis.
+const SECTION_TEXT_MAX: usize = 2_900;
+
 fn section(mrkdwn: &str) -> Value {
-    json!({"type": "section", "text": {"type": "mrkdwn", "text": mrkdwn}})
+    let text = truncate_chars(mrkdwn, SECTION_TEXT_MAX);
+    json!({"type": "section", "text": {"type": "mrkdwn", "text": text}})
 }
 
 fn context(mrkdwn: &str) -> Value {
@@ -754,7 +759,7 @@ impl Daemon {
     async fn slack_signal(
         self: &Arc<Self>,
         api: &api::Api,
-        tokens: &credentials::Tokens,
+        tokens: &Arc<credentials::Tokens>,
         identity: &api::Identity,
         signal: socket::Signal,
     ) {
@@ -775,12 +780,28 @@ impl Daemon {
             }
             socket::Signal::Interactive(payload) => {
                 self.slack_update(|st| st.last_event_at_ms = Some(now_unix_ms()));
-                if let Err(e) = self
-                    .slack_interactive(api, tokens, identity, &payload)
-                    .await
-                {
-                    tracing::warn!("slack: interaction: {e:#}");
-                    self.slack_update(|st| st.error = Some(format!("{e:#}")));
+                // A click that opens a dialog must call views.open within the
+                // trigger's three seconds, so it does not queue behind a slow
+                // event such as an image download. It only reads the database.
+                let opens_dialog = payload
+                    .pointer("/actions/0/action_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|a| a == ACTION_REFUSE || a == ACTION_OTHER);
+                let (this, api, tokens, identity) =
+                    (self.clone(), api.clone(), tokens.clone(), identity.clone());
+                let handle = async move {
+                    if let Err(e) = this
+                        .slack_interactive(&api, &tokens, &identity, &payload)
+                        .await
+                    {
+                        tracing::warn!("slack: interaction: {e:#}");
+                        this.slack_update(|st| st.error = Some(format!("{e:#}")));
+                    }
+                };
+                if opens_dialog {
+                    tokio::spawn(handle);
+                } else {
+                    handle.await;
                 }
             }
             socket::Signal::Event(payload) => {
@@ -1805,7 +1826,9 @@ impl Daemon {
         let Some(row) = self.db.intake(adjustment.intake_id)? else {
             return Ok(());
         };
-        if adjustment.state != "pending" || self.slack_adjustable_run(&row)?.is_none() {
+        let t = self.slack_text();
+        let adjustable = self.slack_adjustable_run(&row)?;
+        if adjustment.state != "pending" || adjustable.is_none() {
             tracing::info!(
                 "slack: accept of adjustment {}, which is {} or no longer adjustable",
                 adjustment.id,
@@ -1813,11 +1836,21 @@ impl Daemon {
             );
             return Ok(());
         }
-        let t = self.slack_text();
+        // A reply about an earlier result: a newer attempt has handed back since.
+        if adjustable.is_some_and(|run| run.id != adjustment.run_id) {
+            if self
+                .db
+                .intake_adjustment_decide(adjustment.id, "outdated")?
+            {
+                self.slack_dm_adjustment_status(&row, adjustment, t.adjustment_outdated())?;
+            }
+            return Ok(());
+        }
         let working = self.slack_working_runs()?;
         if working >= proto::SLACK_RUNS_WORKING_MAX {
             let busy = t.adjustment_busy(working, proto::SLACK_RUNS_WORKING_MAX);
-            return self.slack_dm_adjustment_status(&row, adjustment, &busy);
+            let key = format!("adjust-busy:{}:{}", adjustment.id, now_unix_ms());
+            return self.slack_dm_notice(&row, &key, &busy);
         }
         let this = self.clone();
         let (run_id, text) = (adjustment.run_id, adjustment.text.clone());
@@ -1988,16 +2021,27 @@ impl Daemon {
             else {
                 continue;
             };
-            let (status, live) = match task.status {
-                proto::TaskStatus::Done => (R_LIVE, true),
-                proto::TaskStatus::Canceled => (R_DROPPED, false),
+            let live = match task.status {
+                proto::TaskStatus::Done => true,
+                proto::TaskStatus::Canceled => false,
                 _ => continue,
             };
-            let Some(run) = self.db.latest_implementation_run(task.id)? else {
-                continue;
-            };
             let now = now_unix_ms();
-            if let Some(form) = self.slack_result_of(run.id)? {
+            // The newest hand-back speaks for the request even when a later
+            // attempt never handed back.
+            let latest = self
+                .db
+                .intake_latest_result(row.id)?
+                .and_then(|(run_id, raw)| {
+                    serde_json::from_str::<ResultForm>(&raw)
+                        .ok()
+                        .map(|f| (run_id, f))
+                });
+            let refused = latest
+                .as_ref()
+                .is_some_and(|(_, f)| f.outcome == Outcome::Refused);
+            let status = if live && !refused { R_LIVE } else { R_DROPPED };
+            if let Some((run_id, form)) = &latest {
                 let note = if live {
                     &form.live_note
                 } else {
@@ -2006,8 +2050,12 @@ impl Daemon {
                 if let (Outcome::Ready, Some(note)) = (form.outcome, note) {
                     self.db.intake_outbox_push(
                         row.id,
-                        &format!("final:{}", run.id),
-                        &Outgoing::message(OutboxTarget::Thread, note.clone(), None),
+                        &format!("final:{run_id}"),
+                        &Outgoing::message(
+                            OutboxTarget::Thread,
+                            note.clone(),
+                            Some(json!([section(&escape(note))]).to_string()),
+                        ),
                         now,
                     )?;
                 }
@@ -2273,7 +2321,10 @@ impl Daemon {
                     warnings: form.warnings.iter().map(|s| redact(s)).collect(),
                     ..form
                 };
-                if let Some(run) = self.db.open_task_run_for_task(id)? {
+                // Stored before the hand-back so the tick never sees the run handed
+                // back without its fields; only the pane holding the run may store.
+                let run = self.db.open_task_run_for_task(id)?;
+                if let Some(run) = run.filter(|r| r.session_id == Some(session)) {
                     self.db.intake_result_set(
                         run.id,
                         row.id,
@@ -2507,6 +2558,15 @@ mod tests {
         assert_eq!(title_of("", "U1"), "Slack request from U1");
         let long = "é".repeat(100);
         assert_eq!(title_of(&long, "U1").chars().count(), TITLE_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn a_section_never_passes_slacks_text_limit() {
+        let long = "a".repeat(5_000);
+        let block = section(&long);
+        let text = block["text"]["text"].as_str().unwrap();
+        assert_eq!(text.chars().count(), SECTION_TEXT_MAX + 1);
+        assert!(text.ends_with('…'));
     }
 
     #[test]

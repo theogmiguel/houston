@@ -67,8 +67,8 @@ error stays visible until the next successful connection.
    start of the request, whether it would start now or wait, and **Accept**, **Refuse** and
    **View message** buttons. Nothing is written in the thread. The task waits in **Backlog**
    with a **Slack · awaiting ✅** chip.
-2. The owner starts it with **Accept**, by reacting with ✅ to the request or to one of
-   Houston's messages in its thread, or with **Start** in the Tasks tab. A ✅ or a click
+2. The owner starts it with **Accept**, by reacting with ✅ to the request, or with
+   **Start** in the Tasks tab. A ✅ or a click
    from anyone else does nothing. **Refuse** asks for an optional reason: the reason is
    posted in the thread exactly as written, the task is canceled and the request gets 🚫;
    without a reason only the 🚫 appears. A request whose task is canceled, finished or
@@ -134,7 +134,9 @@ repository's own instructions tell it, and merging is yours.
 
 If Houston was not running or the connection dropped, it replays the mapped channels'
 messages since the last one it saw, up to 24 hours back, when it reconnects; a ✅ the owner
-added meanwhile is honoured. A channel mapped for the first time starts from the moment
+added to a request meanwhile is honoured, and so are answers and adjustment replies in the
+threads that were waiting for one. A ✅ on an adjustment reply added while offline is not;
+use **Accept** in the direct message. A channel mapped for the first time starts from the moment
 it is mapped.
 
 ## Limits

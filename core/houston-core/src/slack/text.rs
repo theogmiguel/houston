@@ -333,11 +333,18 @@ impl Text {
         )
     }
 
+    pub fn adjustment_outdated(self) -> &'static str {
+        self.pick(
+            "Desatualizado: houve outra entrega depois deste pedido de ajuste",
+            "Outdated: another result was handed back after this adjustment",
+        )
+    }
+
     pub fn adjustment_busy(self, working: usize, cap: usize) -> String {
         if self.pt() {
-            format!("{working} em andamento (limite {cap}); aceite de novo quando um terminar")
+            format!("tem {working} em andamento (limite {cap}); aceite o ajuste de novo quando um terminar")
         } else {
-            format!("{working} working (limit {cap}); accept again when one finishes")
+            format!("has {working} working (limit {cap}); accept the adjustment again when one finishes")
         }
     }
 
