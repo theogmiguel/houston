@@ -795,6 +795,7 @@ should reach past them for a new site.
 | Menu | 160ms | `cubic-bezier(.16, 1, .3, 1)` | Menus, dropdowns, popovers |
 | Panel | 240ms | `cubic-bezier(.32, .72, 0, 1)` | Panels sliding from an edge |
 | Scrim | 90ms | `linear` | Backdrops — always the fastest thing on screen |
+| Reveal | 400ms | Panel easing | Chrome theme changes revealed from the clicked control with a View Transition snapshot and a WAAPI `clip-path` circle. This is the named exception to rule 1. Changes without a click, under reduced motion, or without runtime `startViewTransition` support are instant. The native browser pane is a separate webview and switches instantly. |
 
 The `--animate-*` names are back-compat aliases; each points at whichever curve its
 site's *purpose* is, not at whatever its old literal happened to compute to.
@@ -865,6 +866,9 @@ never seams against its canvas:
 
 Any palette pairs with any chrome theme, so never assume the terminal background
 matches a chrome token — that is why the active-pane ring is achromatic.
+The shipped foreground and twelve chromatic ANSI colours in every palette keep at
+least 3:1 contrast against that palette's own background. This is a property of the
+definitions; terminal output is never repainted at runtime.
 
 ## Guards
 
