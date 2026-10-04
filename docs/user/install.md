@@ -41,9 +41,9 @@ See `docs/operations/development.md` for building and running Houston from the r
 
 ## Providers
 
-Houston hosts nine agent CLIs. Six are spawnable — you can open a pane running them
+Houston hosts ten agent CLIs. Seven are spawnable — you can open a pane running them
 directly from Houston: **Claude Code**, **Codex**, **Antigravity**, **OpenCode**,
-**Cursor**, and **Grok**. Three more are identity-only — Houston recognizes them from
+**Cursor**, **Grok** and **ZCode**. Three more are identity-only — Houston recognizes them from
 their own startup banner if you run them yourself in a shell pane, but cannot spawn or
 drive them: **Droid**, **Copilot**, **Aider**.
 
@@ -120,6 +120,46 @@ off removes Houston's marked entries and deletes the file if nothing is left in 
 
 Houston also registers an MCP server under `[mcp_servers.houston]` in
 `~/.grok/config.toml`. There is no automatic removal for this entry yet.
+
+### ZCode
+
+ZCode is Z.ai's coding agent for GLM models. Houston runs its terminal interface, the
+`zcode` command. Z.ai publishes no installer for that command: build it from the official
+source repository (`zai-org/ZCode`, `pnpm build:zcode`), or install the community package
+with `npm install -g zcode-app-cli`. The runtime bundled with the ZCode desktop app has no
+terminal interface (it stops with `Cannot find package '@zcode/tui'`) and cannot run in a
+pane.
+
+Sign in with ZCode itself: `zcode login zai` for the international Z.ai service, or
+`zcode login bigmodel` for BigModel in mainland China. ZCode has no command-line model
+option, so Houston refuses a model named for a ZCode pane, for example in `pane_spawn`;
+choose the model inside ZCode with `/model`. ZCode takes no prompt on its command line
+either: Houston pastes a pane's first prompt into ZCode's input once its interface has
+drawn.
+
+What is transmitted: ZCode sends prompts, code and tool results to the service you signed
+in to — Z.ai, which processes data in Singapore, or BigModel, in China. For GLM Coding Plan
+requests ZCode routes the call, credential included, through its own gateway at
+`zcode.z.ai`. None of this traffic passes through Houston, and Houston sends nothing to
+Z.ai. Houston panes run ZCode with `ZCODE_DISABLE_UPDATE_CHECK=1`, so ZCode does not check
+for updates on its own.
+
+Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits
+`~/.zcode/cli/config.json`:
+
+- one hook entry per lifecycle event, each carrying the `--houston-managed` marker;
+- `hooks.enabled` set to `true`. ZCode runs no hook without it, and the switch covers every
+  hook in the file: hooks of your own that were switched off run while Houston's are
+  installed. Houston records the previous value and restores it once no Houston channel
+  has entries left;
+- the path of a plugin directory Houston owns (`~/.houston/zcode-plugin`) in
+  `plugins.dirs`. The plugin gives ZCode Houston's pane tools. Its address and token come
+  from variables Houston sets only in its own panes, so no token is written to disk and,
+  outside a Houston pane, the plugin's server stays unregistered.
+
+Turning the toggle off removes only Houston's entries and its plugin directory. ZCode
+accepts strict JSON only; if the file does not parse, Houston refuses and names the
+problem without changing it.
 
 ### Droid, Copilot, Aider
 

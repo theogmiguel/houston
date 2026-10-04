@@ -68,7 +68,7 @@ Routine status checks and terminal reads are unnecessary; reserve them for a rep
 blocker, a timeout, or an explicit request to inspect the child.
 
 Waits are capped by the parent provider: Claude uses 90 seconds; Cursor and Antigravity
-use 30 seconds; Codex and Houston-configured OpenCode use ten minutes. Grok uses up to
+use 30 seconds; Codex, Houston-configured OpenCode and ZCode use ten minutes. Grok uses up to
 ten minutes, shortened by its effective per-tool timeout. Requests above the cap are
 clamped and the response names the requested value and cap. A timeout asks the parent
 to wait again. Starting another wait replaces the previous one;
@@ -132,7 +132,7 @@ on the new generation. Pending results remain available for that wait.
 Claude and Grok children receive a launch-only permission rule for Houston's
 `pane_submit` tool, including when automatic approval is disabled. Other tools keep
 the selected approval mode. No handback-only launch rule is
-configured for Codex, Antigravity, OpenCode or Cursor; their capability note names
+configured for Codex, Antigravity, OpenCode, Cursor or ZCode; their capability note names
 this limitation, and their selected approval mode still applies to handback.
 
 ## Handing work off to a new pane
@@ -179,7 +179,7 @@ parent transcript; temporary review panes clean up after their final handback.
 Steer writes into the PTY immediately, including during a working turn; the CLI
 controls how it uses that input. Restart interrupts a working turn and delivers
 the prompt after the child reports idle. It supports Codex with its default Escape
-binding and Grok with Ctrl+C. Claude, OpenCode, Cursor and Antigravity are refused
+binding and Grok with Ctrl+C. Claude, OpenCode, Cursor, Antigravity and ZCode are refused
 by name because a reliable interrupt-to-idle path is not verified. Keep the
 supported provider's default interrupt binding.
 

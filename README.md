@@ -38,6 +38,7 @@ Houston can start and manage these CLIs when their executable is available on `P
 | OpenCode | `opencode` |
 | Cursor | `cursor-agent` |
 | Grok | `grok` |
+| ZCode | `zcode` |
 
 Droid, Copilot and Aider are recognised when launched manually in a shell pane, but Houston
 does not start or configure them. Provider installation and authentication remain the

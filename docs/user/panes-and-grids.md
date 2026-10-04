@@ -3,7 +3,7 @@
 ## The model
 
 A **session** is one PTY running an agent CLI — Claude Code, Codex, Antigravity,
-OpenCode, Cursor or Grok — or a plain shell, in a project directory. A
+OpenCode, Cursor, Grok or ZCode — or a plain shell, in a project directory. A
 **pane** is its cell in the grid: the place you see and type into that session. A
 **workspace** is a project directory Houston knows about; every session belongs to one.
 A **grid** is a named layout of panes under a workspace, so a workspace can hold several
