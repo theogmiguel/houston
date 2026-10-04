@@ -1,3 +1,4 @@
+import { useSession, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
 import { Icon } from './Icon'
 import { Segmented } from './Segmented'
 import { Tooltip } from './Tooltip'
@@ -20,8 +21,12 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   onClose: () => void
   onReview: (child: SessionInfo) => void
 }): React.JSX.Element {
-  const parent = sessions.get(parentId)
-  const children = [...sessions.values()].filter((child) => child.spawned_by === parentId)
+  const parent = useSession(parentId, sessions.get(parentId))
+  const children = useSessionsSelector(
+    (snapshot) => [...snapshot.values()].filter((child) => child.spawned_by === parentId),
+    shallowArrayEqual,
+    [...sessions.values()].filter((child) => child.spawned_by === parentId),
+  )
   const [results, setResults] = useState<DelegationResult[]>([])
   const [rows, setRows] = useState<InboxRow[]>([])
   const [counts, setCounts] = useState(new Map<string, number>())
