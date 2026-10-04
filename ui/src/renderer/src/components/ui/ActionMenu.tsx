@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconMoreHorizontal } from '../icons'
-import { MATERIAL_CLS, materialAttrs } from '../material'
 import { Button } from './Button'
+import { AnimOut } from '../AnimOut'
+import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from '../overlayChrome'
 
 export interface ActionMenuItem {
   label: string
@@ -42,9 +43,31 @@ export function ActionMenu({
       {iconOnly
         ? <Button variant="icon" icon={IconMoreHorizontal} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} />
         : <Button variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{label}</Button>}
-      {open && <div {...materialAttrs('raised')} role="menu" className={`absolute right-0 top-[calc(100%+var(--space-1))] z-50 grid min-w-[140px] gap-[var(--space-1)] p-[var(--space-1)] ${MATERIAL_CLS.raised}`}>
-        {items.map((item) => <Button key={item.label} role="menuitem" variant={item.tone === 'danger' ? 'danger' : 'ghost'} size="sm" className="justify-start" onClick={() => { setOpen(false); item.onSelect() }}>{item.label}</Button>)}
-      </div>}
+      <AnimOut open={open} suppress="popover">
+        {open && (
+          <div
+            {...OVERLAY_RAISED_ATTRS}
+            role="menu"
+            className={`absolute left-0 top-[calc(100%+var(--space-1))] z-50 grid min-w-[140px] gap-[var(--space-1)] p-[var(--space-1)] ${OVERLAY_RAISED_CLS}`}
+          >
+            {items.map((item) => (
+              <Button
+                key={item.label}
+                role="menuitem"
+                variant={item.tone === 'danger' ? 'danger' : 'ghost'}
+                size="sm"
+                className="justify-start"
+                onClick={() => {
+                  setOpen(false)
+                  item.onSelect()
+                }}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+        )}
+      </AnimOut>
     </div>
   )
 }

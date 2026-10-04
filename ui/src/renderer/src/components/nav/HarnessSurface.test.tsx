@@ -225,4 +225,17 @@ describe('HarnessSurface', () => {
     render({ report: { reviewId: 3, markdown: '# Report', truncated: true } })
     expect(container.textContent).toContain('open report.md to read all of it')
   })
+
+  it('renders the harness story trend and compact older-review delta', () => {
+    const latest = review({ id: 13, sessions: 38, finding_count: 7 })
+    const older = review({ id: 12, sessions: 41, finding_count: 10 })
+    render({
+      state: harnessState({ reviews: [latest, older] }),
+      trendValues: [41, 33, 25, 18],
+      trendReviewCount: 4,
+      historyDeltaOverrides: { 12: { new: 2, gone: 1 } }
+    })
+    expect(container.textContent).toContain('Repeated mistakes per 100 sessions: 41 → 18 over 4 reviews')
+    expect(container.textContent).toContain('41 sessions · 2 new · 1 gone')
+  })
 })

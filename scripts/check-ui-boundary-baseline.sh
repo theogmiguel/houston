@@ -72,7 +72,7 @@ BASELINE=(
   "ui/src/renderer/src/components/Timeline.tsx 22"
   "ui/src/renderer/src/components/Tooltip.tsx 17"
   "ui/src/renderer/src/components/UpdateInstallModal.tsx 144"
-  "ui/src/renderer/src/components/UsageSection.tsx 79"
+  "ui/src/renderer/src/components/UsageSection.tsx 72"
   "ui/src/renderer/src/components/WindowControls.tsx 11"
   "ui/src/renderer/src/components/WindowResizeGrips.tsx 3"
   "ui/src/renderer/src/components/WorkspaceEmpty.tsx 22"

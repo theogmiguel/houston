@@ -75,7 +75,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         : current.kind === 'in-sync' || (current.kind === 'drifted' && row.source && row.byTool[tool]?.fingerprint === row.source.fingerprint)
           ? 'In sync'
           : 'Off'
-    return <ConnectionCell status={status} reason={reason} showStatus={current.kind !== 'absent' || !!reason} server={row.name} agent={label(tool)} data-testid={`mcp-cell-${tool}-${row.name}`} onClick={() => toggleCell(row, tool)} />
+    return <ConnectionCell status={status} reason={reason} server={row.name} agent={label(tool)} data-testid={`mcp-cell-${tool}-${row.name}`} onClick={() => toggleCell(row, tool)} />
   }
 
   const displayRows: ConnectionDisplayRow[] = listed.map((row) => ({
@@ -87,11 +87,11 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
     cursor: cell(row, 'cursor')
   }))
   const columns: TableColumn<ConnectionDisplayRow>[] = [
-    { key: 'name', header: 'Server', render: (name) => <strong>{name}</strong> },
-    { key: 'claude', header: 'Claude Code', render: (value) => value },
-    { key: 'codex', header: 'Codex', render: (value) => value },
-    { key: 'opencode', header: 'OpenCode', render: (value) => value },
-    { key: 'cursor', header: 'Cursor', render: (value) => value }
+    { key: 'name', header: 'Server', width: '18%', render: (name) => <strong>{name}</strong> },
+    { key: 'claude', header: 'Claude Code', width: '16%', render: (value) => value },
+    { key: 'codex', header: 'Codex', width: '16%', render: (value) => value },
+    { key: 'opencode', header: 'OpenCode', width: '16%', render: (value) => value },
+    { key: 'cursor', header: 'Cursor', width: '16%', render: (value) => value }
   ]
   const selectedDiff = diffRow ? rows.find((row) => row.name === diffRow) : undefined
   const unmanaged = TASK_AGENTS.filter((agent) => !DESTINATIONS.includes(agent)).reverse().map(label).join(', ')
@@ -113,19 +113,22 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         <Table
           aria-label="MCP server connections"
           variant="framed"
+          layout="fixed"
           rows={displayRows}
           getRowId={(row) => row.id}
           columns={columns}
           rowAction={(display) => {
             const row = rows.find((item) => item.name === display.id)!
             const failed = DESTINATIONS.some((tool) => cellFor(row, tool).kind !== 'absent' && checkFor(row.name, props.checks).state === 'failed') || DESTINATIONS.some((tool) => props.tools.find((item) => item.tool === tool)?.error)
-            const label = row.hasDrift ? 'Show diff' : failed ? 'Edit' : 'More actions'
+            const label = row.hasDrift ? 'Show diff' : failed ? 'Edit' : null
             const items = [
               ...(row.hasDrift ? [{ label: diffRow === row.name ? 'Hide diff' : 'Show diff', onSelect: () => setDiffRow(diffRow === row.name ? null : row.name) }] : []),
               ...(!row.hasDrift ? [{ label: 'Edit', onSelect: () => setForm({ previousName: row.name }) }] : []),
               { label: 'Remove', onSelect: () => setConfirmRemove(row.name), tone: 'danger' as const }
             ]
-            return <ActionMenu label={label} iconOnly={label === 'More actions'} items={items} />
+            return label
+              ? <Button variant="secondary" size="sm" onClick={() => row.hasDrift ? setDiffRow(diffRow === row.name ? null : row.name) : setForm({ previousName: row.name })}>{label}</Button>
+              : <ActionMenu label={`More actions for ${row.name}`} iconOnly items={items} />
           }}
           empty={{ heading: 'No MCP servers', description: 'Add an MCP server to connect it to your agents.' }}
         />
@@ -134,7 +137,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         <DetailCard title="Houston's list" server={selectedDiff.source} />
         {DESTINATIONS.filter((tool) => selectedDiff.byTool[tool] && selectedDiff.byTool[tool]!.fingerprint !== selectedDiff.source!.fingerprint).map((tool) => <DetailCard key={tool} title={label(tool)} server={selectedDiff.byTool[tool]!} />)}
       </Card></section>}
-      <Caption>Not managed here: {unmanaged}. Click a cell to turn a server on or off for that agent.</Caption>
+      <Caption tone="faint">Not managed here: {unmanaged}. Click a cell to turn a server on or off for that agent.</Caption>
       <Drawer open={form !== null} heading={form?.previousName ? `Edit ${form.previousName}` : 'Add server'} onClose={() => setForm(null)}>
         {form && <McpServerForm
           previousName={form.previousName}

@@ -419,6 +419,16 @@
   --terminal-skeleton-bg: var(--tool-code-bg);
 }
 
+::view-transition-group(root) {
+  animation-duration: 0s;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 [data-custom='on'] {
   --pane-gutter: 16px;
   --material-shell-bg: var(--custom-chrome-scrim);
@@ -584,6 +594,7 @@
   --motion-fast-t: 0.12s;
   --motion-fast-ease: cubic-bezier(0.2, 0, 0.38, 1);
   --motion-menu-t: 0.16s;
+  --motion-popover-step: 40ms; /* Keeps the header and body readable in order. */
   --motion-menu-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-panel-t: 0.24s;
   --motion-panel-ease: cubic-bezier(0.32, 0.72, 0, 1);

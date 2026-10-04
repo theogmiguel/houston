@@ -91,6 +91,7 @@ import { BrowserActConfirmModal } from "./components/BrowserActConfirm";
 import { useBrowserConfirm } from "./houston/browserConfirm";
 import { TerminalTuningContext, type OutputSink } from "./pane/TerminalPane";
 import { CHROME_THEME_LABELS, THEME_LABELS } from "./theme";
+import { revealThemeFromClick } from "./themeReveal";
 import {
   FONT_DEFAULT,
   FONT_MIN,
@@ -3269,8 +3270,10 @@ export function App(): React.JSX.Element {
                 void addWorkspaceFromPicker();
               }}
               chromeTheme={chromeTheme}
-              onToggleChromeTheme={() =>
-                setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite")
+              onToggleChromeTheme={(origin) =>
+                revealThemeFromClick(origin, () =>
+                  setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite"),
+                )
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
               harnessAttention={harnessAttention}
@@ -3819,7 +3822,9 @@ export function App(): React.JSX.Element {
                     <SettingsView
                       daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
-                      onChromeTheme={setChromeTheme}
+                      onChromeTheme={(theme, origin) =>
+                        revealThemeFromClick(origin, () => setChromeTheme(theme))
+                      }
                       theme={themeChoice}
                       onTheme={setTheme}
                       shellIntegration={shellIntegration}

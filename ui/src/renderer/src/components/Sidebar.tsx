@@ -335,7 +335,7 @@ interface Props {
   paletteChord?: string | null;
   onHideRail?: () => void;
   chromeTheme: ChromeTheme;
-  onToggleChromeTheme: () => void;
+  onToggleChromeTheme: (origin: HTMLElement) => void;
   updateVersion?: string | null;
   harnessAttention?: number;
   taskTurnCount?: number;
@@ -2861,7 +2861,7 @@ export function Sidebar({
             type="button"
             aria-label={chromeTheme === "paper" ? "Switch to dark theme" : "Switch to light theme"}
             className={FOOT_ICON_BTN}
-            onClick={onToggleChromeTheme}
+            onClick={(event) => onToggleChromeTheme(event.currentTarget)}
           >
             <Icon glyph={chromeTheme === "paper" ? IconSun : IconMoon} role="ui" />
           </button>

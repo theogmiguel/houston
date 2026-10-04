@@ -12,7 +12,7 @@ export function UsageModelCell({
   color: string
 }): React.JSX.Element {
   return (
-    <span className="grid min-w-0 max-w-[220px] gap-[var(--space-1)]">
+    <span className="grid w-[220px] min-w-0 max-w-full gap-[var(--space-1)]">
       <span className="flex min-w-0 items-center gap-[var(--space-1-5)] text-[length:var(--tr-text-ui-size)] text-[var(--text-primary)]">
         <span className="shrink-0" style={{ color }}>{mark}</span>
         <span className="truncate">{name}</span>
