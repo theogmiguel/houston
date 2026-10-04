@@ -242,53 +242,21 @@ fn all_specs() -> Vec<ToolSpec> {
             "task_handback",
             "Hand a task back",
             "Return finished work: the summary becomes a comment and the task moves to \
-             in_review, never done. A task filed from Slack hands back `result` instead: the \
-             fields the requester and the owner read.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "id": id_property(),
-                    "summary": { "type": "string" },
-                    "result": {
-                        "type": "object",
-                        "properties": {
-                            "outcome": { "type": "string", "enum": ["ready", "refused"] },
-                            "subject": { "type": "string", "description": "A short title for the request, at most 60 characters." },
-                            "changes": { "type": "string", "description": "What changes, in product words; for a refusal, why and what would make it executable." },
-                            "steps": { "type": "array", "items": { "type": "string" }, "maxItems": crate::slack::form::RESULT_STEPS_MAX, "description": "How to see the change once it is live." },
-                            "caveats": { "type": "string" },
-                            "live_note": { "type": "string", "description": "Posted to the thread when the task is Done." },
-                            "dropped_note": { "type": "string", "description": "Posted to the thread when the task is Canceled." },
-                            "size": { "type": "string", "enum": ["small", "medium", "large"] },
-                            "notes": { "type": "array", "items": { "type": "string" }, "description": "Short facts for the owner only." },
-                            "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings for the owner only." },
-                        },
-                        "required": ["subject", "changes"],
-                        "additionalProperties": false,
-                    },
-                },
-                "required": ["id"],
-                "additionalProperties": false,
-            }),
+             in_review, never done. A Slack-filed task gives `result` (fields in its brief).",
+            handback_schema(true),
         ),
         local_write(
             "task_ask",
             "Ask in the request's thread",
-            "For a task filed from Slack: post one question to the request's thread and end \
-             your turn; the requester's or owner's answer arrives as your next prompt. Houston \
-             shows each option as a button and offers an answer in the person's own words.",
+            "Slack-filed task: post one question to its thread, one button per option, then \
+             end your turn; the answer arrives as your next prompt.",
             json!({
                 "type": "object",
                 "properties": {
-                    "context": { "type": "string", "description": "One sentence the question needs, in product words." },
+                    "context": { "type": "string" },
                     "question": { "type": "string" },
-                    "options": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "minItems": crate::slack::form::QUESTION_OPTIONS_MIN,
-                        "maxItems": crate::slack::form::QUESTION_OPTIONS_MAX,
-                    },
-                    "recommended": { "type": "integer", "description": "The 1-based option you recommend." },
+                    "options": { "type": "array", "items": { "type": "string" } },
+                    "recommended": { "type": "integer" },
                 },
                 "required": ["question", "options", "recommended"],
                 "additionalProperties": false,
@@ -436,7 +404,45 @@ fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
     if !daemon.spawnable_by(scope.session_id) {
         specs.retain(|spec| spec.name != "task_execute" && spec.name != "task_review");
     }
+    // The Slack verbs cost every other pane advertisement bytes, so only a
+    // pane running a Slack-filed task sees them.
+    if !daemon.slack_task_session(scope.session_id) {
+        specs.retain(|spec| spec.name != "task_ask");
+        for spec in specs.iter_mut().filter(|s| s.name == "task_handback") {
+            spec.description = HANDBACK_DESCRIPTION.to_string();
+            spec.input_schema = handback_schema(false);
+        }
+    }
     specs
+}
+
+const HANDBACK_DESCRIPTION: &str = "Return finished work: the summary becomes a comment and \
+     the task moves to in_review, never done.";
+
+/// `result` carries a Slack-filed task's fields instead of the summary.
+fn handback_schema(slack: bool) -> Value {
+    if slack {
+        json!({
+            "type": "object",
+            "properties": {
+                "id": id_property(),
+                "summary": { "type": "string" },
+                "result": { "type": "object" },
+            },
+            "required": ["id"],
+            "additionalProperties": false,
+        })
+    } else {
+        json!({
+            "type": "object",
+            "properties": {
+                "id": id_property(),
+                "summary": { "type": "string" },
+            },
+            "required": ["id", "summary"],
+            "additionalProperties": false,
+        })
+    }
 }
 
 fn dispatch(

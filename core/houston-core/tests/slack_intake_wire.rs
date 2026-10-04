@@ -295,6 +295,7 @@ async fn serve_socket(fake: Fake, mut socket: WebSocket) {
 }
 
 struct Rig {
+    addr: std::net::SocketAddr,
     daemon: Arc<Daemon>,
     state: tempfile::TempDir,
     ws_dir: PathBuf,
@@ -305,7 +306,7 @@ async fn rig(name: &str) -> Rig {
     shim_dir();
     let fake = Fake::start().await;
     std::env::set_var(houston_core::slack::api::BASE_ENV, fake.base());
-    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let (addr, state, daemon) = start_daemon_with_handle().await;
     let ws_dir = state.path().join(name);
     std::fs::create_dir_all(&ws_dir).unwrap();
     git(&ws_dir, &["init", "-b", "main"]);
@@ -318,6 +319,7 @@ async fn rig(name: &str) -> Rig {
     daemon.workspace_add(&ws_dir.display().to_string()).unwrap();
     tokio::spawn(daemon.clone().slack_loops());
     let r = Rig {
+        addr,
         daemon,
         state,
         ws_dir,
@@ -440,6 +442,35 @@ impl Rig {
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+    }
+
+    /// The task tools a pane's MCP `tools/list` advertises.
+    async fn task_tools(&self, session: u32) -> Vec<Value> {
+        let token = self
+            .daemon
+            .mcp_creds
+            .issue(houston_core::mcp_creds::McpScope {
+                session_id: session,
+                workspace_id: self.workspace(),
+            });
+        let body: Value = reqwest::Client::new()
+            .post(format!("http://{}/mcp", self.addr))
+            .bearer_auth(token)
+            .header("Accept", "application/json, text/event-stream")
+            .json(&json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        body["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["name"].as_str().is_some_and(|n| n.starts_with("task_")))
+            .cloned()
+            .collect()
     }
 
     fn finish(&self) {
@@ -839,6 +870,25 @@ async fn a_question_has_a_button_per_option_and_only_the_requester_or_owner_answ
         .unwrap_err()
         .to_string();
     assert!(err.contains("1 options given, expected 2 to 4"), "{err}");
+
+    let tools = r.task_tools(session).await;
+    let handback = tools.iter().find(|t| t["name"] == "task_handback").unwrap();
+    assert!(
+        tools.iter().any(|t| t["name"] == "task_ask")
+            && handback["inputSchema"]["properties"]
+                .get("result")
+                .is_some(),
+        "the Slack run's pane is offered task_ask and the hand-back fields: {tools:?}"
+    );
+    let other = r.task_tools(session + 1000).await;
+    let handback = other.iter().find(|t| t["name"] == "task_handback").unwrap();
+    assert!(
+        !other.iter().any(|t| t["name"] == "task_ask")
+            && handback["inputSchema"]["properties"]
+                .get("result")
+                .is_none(),
+        "any other pane is not: {other:?}"
+    );
 
     r.daemon.slack_task_ask(session, label_question()).unwrap();
     let id = last_question_id(&r);

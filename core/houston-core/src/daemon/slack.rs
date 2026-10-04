@@ -601,6 +601,16 @@ impl Daemon {
         Ok(())
     }
 
+    /// Whether `session` holds the open run of a task filed from Slack.
+    pub(crate) fn slack_task_session(&self, session: u32) -> bool {
+        self.db
+            .open_task_run_for_session(session)
+            .ok()
+            .flatten()
+            .and_then(|run| self.db.intake_for_task(run.task_id).ok().flatten())
+            .is_some()
+    }
+
     /// The brief's paragraph for a task filed from Slack. Its first sentence is
     /// what the repository's factory skill recognises, so it never changes.
     pub(super) fn slack_brief_note(&self, row: &crate::db::TaskRow) -> Option<String> {
@@ -623,7 +633,9 @@ impl Daemon {
              goes live\" --dropped-note \"posted if it is dropped\" [--size small] [--note \
              \"fact for the owner\"] [--warning \"warning for the owner\"]`, or `--refused \
              --subject ... --changes \"why, and what would make it executable\"` when it should \
-             not go ahead (or `task_handback` with `result`). Write everything the requester \
+             not go ahead (or `task_handback` with a `result` object of the same fields: \
+             outcome ready|refused, subject, changes, steps, caveats, live_note, dropped_note, \
+             size, notes, warnings). Write everything the requester \
              reads (the question, the subject, changes, steps, caveats and both notes) in \
              {language}, in product words: no task keys, branches or file paths."
         ))
