@@ -203,6 +203,7 @@ export class GhosttyTerminalCore {
   private style = 0;
   private scrollbar = 0;
   private rows: GhosttyRow[] = [];
+  private snapshotCols = 0;
   private disposed = false;
   private keyboardLayoutMap: GhosttyKeyboardLayoutMap | undefined;
   private defaultCursorBlink = true;
@@ -866,7 +867,8 @@ export class GhosttyTerminalCore {
     const cursorX = cursorInViewport ? this.getU16(RENDER_DATA.cursorX) : -1;
     const cursorY = cursorInViewport ? this.getU16(RENDER_DATA.cursorY) : -1;
 
-    if (this.rows.length !== rowCount || this.rows.some((row) => row.cells.length !== cols)) {
+    if (this.rows.length !== rowCount || this.snapshotCols !== cols) {
+      this.snapshotCols = cols;
       this.rows = Array.from({ length: rowCount }, () => ({
         cells: Array.from({ length: cols }, () => this.emptyCell(foreground, background)),
         text: null,
@@ -890,7 +892,7 @@ export class GhosttyTerminalCore {
       while (rowIndex < rowCount && this.runtime.renderStateRowIteratorNext(iterator) !== 0) {
         const rowDirty = dirty === 2 || this.getRowBool(iterator, ROW_DATA.dirty);
         if (rowDirty) {
-          this.rows[rowIndex] = this.readRow(iterator, cols, foreground, background);
+          this.rows[rowIndex] = this.readRow(iterator, cols, foreground, background, this.rows[rowIndex]!);
           dirtyRows.add(rowIndex);
           this.runtime.bytes(this.scratch, 1)[0] = 0;
           this.runtime.renderStateRowSet(iterator, 0, this.scratch);
@@ -1047,6 +1049,7 @@ export class GhosttyTerminalCore {
     cols: number,
     defaultForeground: GhosttyColor,
     defaultBackground: GhosttyColor,
+    row: GhosttyRow,
   ): GhosttyRow {
     this.assertSuccess(
       "ghostty_render_state_row_get(raw)",
@@ -1071,10 +1074,11 @@ export class GhosttyTerminalCore {
       this.runtime.renderStateRowGet(iterator, ROW_DATA.cells, this.rowCellsSlot),
     );
     const cellsIterator = this.runtime.readPointer(this.rowCellsSlot);
-    const cells: GhosttyCell[] = [];
+    const cells = row.cells;
+    let column = 0;
     const sf = this.styleFields();
     const styleSize = sf.size;
-    while (cells.length < cols && this.runtime.renderStateRowCellsNext(cellsIterator) !== 0) {
+    while (column < cols && this.runtime.renderStateRowCellsNext(cellsIterator) !== 0) {
       let foreground = this.getCellColor(cellsIterator, CELL_DATA.foreground, defaultForeground);
       let background = this.getCellColor(cellsIterator, CELL_DATA.background, defaultBackground);
       this.runtime.zero(this.style, styleSize);
@@ -1100,16 +1104,16 @@ export class GhosttyTerminalCore {
           if (graphemeLength === 1) {
             text = String.fromCodePoint(codepointView.getUint32(codepoints, true));
           } else {
-            const codes: number[] = [];
+
             for (let index = 0; index < graphemeLength; index += 1) {
-              codes.push(codepointView.getUint32(codepoints + index * 4, true));
+              text += String.fromCodePoint(codepointView.getUint32(codepoints + index * 4, true));
             }
-            text = String.fromCodePoint(...codes);
+
           }
         }
       }
       let wide = 0;
-      if (text.length === 0 && cells.at(-1)?.text.length) {
+      if (text.length === 0 && column > 0 && cells[column - 1]?.text.length) {
         this.assertSuccess(
           "ghostty_render_state_row_cells_get(raw)",
           this.runtime.renderStateRowCellsGet(cellsIterator, CELL_DATA.raw, this.scratch),
@@ -1122,22 +1126,25 @@ export class GhosttyTerminalCore {
         );
         wide = this.runtime.view(this.scratch + 8, 4).getUint32(0, true);
       }
-      cells.push({
-        text,
-        wide,
-        foreground,
-        background,
-        bold: this.runtime.readFieldAt(this.style, sf.bold) !== 0,
-        italic: this.runtime.readFieldAt(this.style, sf.italic) !== 0,
-        invisible: this.runtime.readFieldAt(this.style, sf.invisible) !== 0,
-        strikethrough: this.runtime.readFieldAt(this.style, sf.strikethrough) !== 0,
-        overline: this.runtime.readFieldAt(this.style, sf.overline) !== 0,
-        underline: this.runtime.readFieldAt(this.style, sf.underline) !== 0,
-        selected: this.getCellBool(cellsIterator, CELL_DATA.selected),
-      });
+      const cell = cells[column] as { -readonly [K in keyof GhosttyCell]: GhosttyCell[K] };
+      cell.text = text;
+      cell.wide = wide;
+      cell.foreground = foreground;
+      cell.background = background;
+      cell.bold = this.runtime.readFieldAt(this.style, sf.bold) !== 0;
+      cell.italic = this.runtime.readFieldAt(this.style, sf.italic) !== 0;
+      cell.invisible = this.runtime.readFieldAt(this.style, sf.invisible) !== 0;
+      cell.strikethrough = this.runtime.readFieldAt(this.style, sf.strikethrough) !== 0;
+      cell.overline = this.runtime.readFieldAt(this.style, sf.overline) !== 0;
+      cell.underline = this.runtime.readFieldAt(this.style, sf.underline) !== 0;
+      cell.selected = this.getCellBool(cellsIterator, CELL_DATA.selected);
+      column += 1;
     }
-    while (cells.length < cols) cells.push(this.emptyCell(defaultForeground, defaultBackground));
-    return { cells, text: null, isWrapContinuation, wrapsToNext };
+    while (column < cols) {
+      Object.assign(cells[column++], this.emptyCell(defaultForeground, defaultBackground));
+    }
+    Object.assign(row, { text: null, isWrapContinuation, wrapsToNext });
+    return row;
   }
 
   private styleFieldCache: {
