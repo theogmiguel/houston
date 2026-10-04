@@ -31,7 +31,10 @@ import {
   TaskDrawerExecutionPanel,
   TaskDrawerHeader,
   TaskDrawerOrigin,
-  Tooltip
+  Tooltip,
+  UsageCalendar,
+  UsageChart,
+  UsageShareBar
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
 
@@ -258,6 +261,17 @@ export function UiPrimitivesStory(): React.JSX.Element {
               { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '64px' }
             ]}
           />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Usage chart, calendar and shares">
+          <div style={{ maxWidth: 900 }}><UsageChart metric="cost" points={[
+            { startMs: 0, key: 'Mon', byProvider: { claude: { cost: 120, tokens: 0 }, codex: { cost: 45, tokens: 0 } } },
+            { startMs: 1, key: 'Tue', byProvider: { claude: { cost: 180, tokens: 0 }, codex: { cost: 90, tokens: 0 } } },
+            { startMs: 2, key: 'Wed', byProvider: { claude: { cost: 130, tokens: 0 }, codex: { cost: 60, tokens: 0 } } },
+            { startMs: 3, key: 'Thu', byProvider: { claude: { cost: 230, tokens: 0 }, codex: { cost: 110, tokens: 0 } } }
+          ]} series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--accent)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} labelFor={(point) => point.key} /></div>
+          <UsageCalendar days={[]} metric="cost" selectedDay={null} onSelect={noop} />
+          <UsageShareBar heading="Cost by type" segments={[{ id: 'input', label: 'Input', value: 58 }, { id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'output', label: 'Output', value: 18 }]} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="ListDetail — Routines">

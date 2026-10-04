@@ -1282,3 +1282,15 @@ describe('HoustonClient SSH connection', () => {
     client.close()
   })
 })
+
+describe('HoustonClient usage filters', () => {
+  it('sends the workspace on both usage summary requests', async () => {
+    const { client, ws } = await connectFakeClient()
+    client.usageSummaryGet(10, 20, false, '/work/project')
+    client.usageActivitySummaryGet(30, 40, '/work/project')
+    const messages = ws.sent.filter((message): message is string => typeof message === 'string').map((message) => JSON.parse(message))
+    expect(messages).toContainEqual({ type: 'usage_summary_get', since_ms: 10, until_ms: 20, refresh_pricing: false, workspace: '/work/project' })
+    expect(messages).toContainEqual({ type: 'usage_activity_summary_get', since_ms: 30, until_ms: 40, workspace: '/work/project' })
+    client.close()
+  })
+})

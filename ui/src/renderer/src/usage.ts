@@ -125,9 +125,19 @@ export function foldSeries(
 
   const slots = new Map<string, SeriesPoint>()
   const step = hourly ? HOUR_MS : DAY_MS
-  for (let ms = Math.floor(sinceMs / step) * step; ms <= untilMs; ms += step) {
-    const key = keyOf(ms)
-    if (!slots.has(key)) slots.set(key, { startMs: ms, key, byProvider: emptyAmounts() })
+  if (hourly) {
+    for (let ms = Math.floor(sinceMs / step) * step; ms <= untilMs; ms += step) {
+      const key = keyOf(ms)
+      if (!slots.has(key)) slots.set(key, { startMs: ms, key, byProvider: emptyAmounts() })
+    }
+  } else {
+    const endKey = toDay(untilMs)
+    const cursor = new Date(`${toDay(sinceMs)}T00:00:00Z`)
+    while (cursor.toISOString().slice(0, 10) <= endKey) {
+      const key = cursor.toISOString().slice(0, 10)
+      slots.set(key, { startMs: cursor.getTime() + 12 * HOUR_MS, key, byProvider: emptyAmounts() })
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
+    }
   }
 
   for (const b of buckets) {

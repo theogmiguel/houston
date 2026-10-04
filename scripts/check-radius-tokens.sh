@@ -44,7 +44,7 @@ BASELINE=(
   "ui/src/renderer/src/components/Sidebar.tsx 12"
   "ui/src/renderer/src/components/SkillsView.tsx 8"
   "ui/src/renderer/src/components/SshConnectModal.tsx 2"
-  "ui/src/renderer/src/components/UsageSection.tsx 2"
+  "ui/src/renderer/src/components/UsageSection.tsx 1"
   "ui/src/renderer/src/components/WindowControls.tsx 1"
   "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
   "ui/src/renderer/src/editor/editorChrome.ts 1"

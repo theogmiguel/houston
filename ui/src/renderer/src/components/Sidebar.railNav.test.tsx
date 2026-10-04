@@ -108,7 +108,7 @@ describe('the rail nav block', () => {
   it('every library shows by default, in RAIL_VIEWS order', () => {
     render()
     expect(rows().map((r) => r.getAttribute('data-view'))).toEqual([...RAIL_VIEWS])
-    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Skills', 'Routines', 'Harness', 'Connections'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Skills', 'Routines', 'Harness', 'Connections', 'Usage'])
   })
 
   it('shows the task turn count in accent ink and omits zero', () => {
@@ -149,7 +149,7 @@ describe('the rail nav block', () => {
     expect(hide.textContent).toContain('Hide from sidebar')
 
     act(() => hide.click())
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'routines', 'harness', 'mcp'])
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'routines', 'harness', 'mcp', 'usage'])
     expect(localStorage.getItem('tr-rail-views-hidden')).toContain('skills')
   })
 

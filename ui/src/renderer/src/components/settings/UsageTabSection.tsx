@@ -1,31 +1,10 @@
-import { UsageSection, type UsageSummaryMsg } from '../UsageSection'
-import { SectionHead } from './shared'
+import { setRailView } from '../../railView'
+import { setSettingsOpen } from '../../settingsNav'
+import { Button, PageFrame, PageHeader } from '../ui'
 
-export interface UsageTabSectionProps {
-  usage: UsageSummaryMsg | null
-  usageLoading: boolean
-  usageError: string | null
-  onUsageRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
-}
-
-export function UsageTabSection({
-  usage,
-  usageLoading,
-  usageError,
-  onUsageRequest
-}: UsageTabSectionProps): React.JSX.Element {
-  return (
-    <>
-      <SectionHead
-        title="Usage"
-        lede="What the agents you run here have spent, read from each CLI's own session files. Counts only — no prompt or reply text is read, kept or sent anywhere."
-      />
-      <UsageSection
-        summary={usage}
-        loading={usageLoading}
-        error={usageError}
-        onRequest={onUsageRequest}
-      />
-    </>
-  )
+export function UsageTabSection(): React.JSX.Element {
+  return <PageFrame width="form">
+    <PageHeader heading="Usage" description="View token totals, cost estimates and activity across workspaces." />
+    <Button variant="primary" onClick={() => { setSettingsOpen(false); setRailView('usage') }}>Open usage</Button>
+  </PageFrame>
 }

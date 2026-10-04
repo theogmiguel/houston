@@ -136,6 +136,23 @@ describe('foldSeries', () => {
     expect(points[0].byProvider.codex.cost).toBe(7)
   })
 
+  it('keeps daily slots aligned to the selected timezone across UTC midnight', () => {
+    const points = foldSeries(
+      [
+        bucket({ hour_start_ms: Date.parse('2026-10-01T05:00:00Z'), cost_usd: 2 }),
+        bucket({ hour_start_ms: Date.parse('2026-10-02T02:00:00Z'), cost_usd: 3 })
+      ],
+      {
+        sinceMs: Date.parse('2026-10-01T03:00:00Z'),
+        untilMs: Date.parse('2026-10-02T02:59:59Z'),
+        hourly: false,
+        timeZone: 'America/Sao_Paulo'
+      }
+    )
+    expect(points.map((point) => point.key)).toEqual(['2026-10-01'])
+    expect(points[0].byProvider.claude.cost).toBe(5)
+  })
+
   it('plots hours when the window is hourly', () => {
     const points = foldSeries([bucket({ hour_start_ms: day0 + HOUR_MS, cost_usd: 4 })], {
       sinceMs: day0,

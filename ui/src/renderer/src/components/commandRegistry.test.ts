@@ -197,12 +197,14 @@ describe('commandRegistry — buildCommands', () => {
     const commands = buildCommands({ actions: makeActions({ selectNavRow }), hasWorkspace: true, workspaces: [] })
     const rows = commands.filter((c) => c.id.startsWith('go-to.nav.'))
     expect(rows.map((r) => r.id).sort()).toEqual(
-      ['go-to.nav.routines', 'go-to.nav.skills', 'go-to.nav.harness', 'go-to.nav.mcp'].sort()
+      ['go-to.nav.routines', 'go-to.nav.skills', 'go-to.nav.harness', 'go-to.nav.mcp', 'go-to.nav.usage'].sort()
     )
     rows.find((r) => r.id === 'go-to.nav.mcp')?.run()
     expect(selectNavRow).toHaveBeenCalledWith('mcp')
     rows.find((r) => r.id === 'go-to.nav.harness')?.run()
     expect(selectNavRow).toHaveBeenCalledWith('harness')
+    rows.find((r) => r.id === 'go-to.nav.usage')?.run()
+    expect(selectNavRow).toHaveBeenCalledWith('usage')
   })
 
   it('any pending Settings section is offered but disabled, with a reason', () => {
