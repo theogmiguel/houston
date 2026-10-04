@@ -86,6 +86,8 @@ request waiting on you is a card above the message box:
 - **Permission:** **Approve**, **Deny**, and **Always** when the CLI offers to stop asking
   for similar requests.
 - **Question:** tap an option, or **Other…** to type your own answer in the message box.
+  Questions whose options carry previews offer no **Other…**; type that answer in the
+  terminal.
 
 After a tap the card shows **Sent** and takes no further tap until the agent moves on, which
 for an approved command can be when the command finishes. Houston answers by typing the same

@@ -312,6 +312,9 @@ pub fn from_hook(
                 answers,
             })
         }
+        // Its own question card answers it; a permission card would map Approve
+        // to the digit 1, which picks the first option.
+        "PermissionRequest" if is_question => None,
         "PermissionRequest" => {
             let (target, truncated) = tool_target(tool_input(&v), SUMMARY_MAX_CHARS, true);
             Some(HookFeed::Permission {
@@ -1017,6 +1020,11 @@ pub fn decision_keys(
                 vec![digit]
             }))
         }
+        (Card::Question { questions, .. }, Choice::Other(_)) if questions[0].previews => Err(
+            "with option previews, a digit only moves the focus and the free-text field was not \
+             verified: answer it in the terminal"
+                .to_string(),
+        ),
         (Card::Question { questions, .. }, Choice::Other(text)) => {
             let q = &questions[0];
             let other = q.options.len() + 1;
@@ -1190,6 +1198,21 @@ mod tests {
         assert!(
             decision_keys(CLAUDE, &card(question(3, true, false)), &Choice::Option(1)).is_err()
         );
+    }
+
+    #[test]
+    fn a_question_never_becomes_a_permission_and_other_skips_previews() {
+        let payload = serde_json::json!({
+            "tool_name": "AskUserQuestion",
+            "tool_input": {"questions": [{"question": "Which?", "options": []}]}
+        })
+        .to_string();
+        assert_eq!(from_hook(CLAUDE, "PermissionRequest", &payload, None), None);
+        let card = Card::Question {
+            tool_use_id: None,
+            questions: vec![question(2, false, true)],
+        };
+        assert!(decision_keys(CLAUDE, &card, &Choice::Other("x".into())).is_err());
     }
 
     #[test]

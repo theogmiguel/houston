@@ -656,7 +656,7 @@
           b.disabled = sent || !p.decidable;
           opts.appendChild(b);
         });
-        if (p.decidable && !sent && q.options.length < 9) {
+        if (p.decidable && !sent && !q.previews && q.options.length < 9) {
           var other = button("option", null, function () { setOther({ seq: p.seq, question: q.question }); });
           other.appendChild(el("span", "option-n", String(q.options.length + 1)));
           var ob = el("span", "option-body");
