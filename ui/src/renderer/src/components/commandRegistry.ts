@@ -5,6 +5,7 @@ import { requestSettingsRowJump } from '../settingsRowJump'
 import { PANE_TYPES, paneTypeButtonState, type PaneTypeKind } from '../layout/paneTypes'
 import type { AgentKind } from '../houston/client'
 import type { Workspace } from '../houston/generated/Workspace'
+import type { SessionInfo } from '../houston/generated/SessionInfo'
 import { gridRecency, gridRecencyKey } from '../gridRecency'
 import {
   newTerminal as newTerminalShortcut,
@@ -26,6 +27,8 @@ import {
 } from '../keymap'
 
 export type CommandGroup =
+  | 'Sessions'
+  | 'Recent'
   | 'Panes'
   | 'Agents'
   | 'Grid'
@@ -46,6 +49,8 @@ export interface Command {
   enabled: boolean
   disabledReason?: string
   run: () => void
+  session?: SessionInfo
+  subtitle?: string
 }
 
 export interface PaletteActions {
@@ -80,6 +85,8 @@ export interface PaletteActions {
   switchWorkspace: (path: string | 'all') => void
 
   switchGrid: (path: string, gridId: string) => void
+  focusPane?: (id: number) => void
+  restartPane?: (id: number) => void
 
   stepWorkspace?: (offset: 1 | -1) => void
   selectLastWorkspace?: () => void
@@ -521,6 +528,8 @@ export interface BuildCommandsInput {
   hasWorkspace: boolean
   workspaces: readonly Workspace[]
   grids?: readonly GridTarget[]
+  sessions?: readonly SessionInfo[]
+  activeSessionId?: number | null
 }
 
 export interface GridTarget {
@@ -531,8 +540,27 @@ export interface GridTarget {
 }
 
 export function buildCommands(input: BuildCommandsInput): Command[] {
-  const { actions, hasWorkspace, workspaces, grids } = input
+  const { actions, hasWorkspace, workspaces, grids, sessions = [], activeSessionId } = input
   return [
+    ...sessions.filter((session) => session.state === 'running' && !session.hidden).map((session) => ({
+      id: `session.focus.${session.id}`,
+      title: session.title || session.codename || `Pane ${session.id}`,
+      group: 'Sessions' as const,
+      keywords: [session.codename, session.cwd, session.project_dir, session.agent].filter((value): value is string => typeof value === 'string'),
+      enabled: Boolean(actions.focusPane),
+      session,
+      subtitle: workspaces.find((workspace) => workspace.path === session.project_dir)?.name ?? session.project_dir,
+      run: () => actions.focusPane?.(session.id)
+    })),
+    {
+      id: 'pane.restart-focused',
+      title: 'Restart pane',
+      group: 'Recent',
+      keywords: ['restart', 'pane', 'session'],
+      enabled: activeSessionId !== null && activeSessionId !== undefined && Boolean(actions.restartPane) && Boolean(sessions.find((session) => session.id === activeSessionId)?.resumable),
+      disabledReason: activeSessionId == null ? 'No pane is focused' : sessions.find((session) => session.id === activeSessionId)?.resumable ? undefined : 'This pane cannot be restarted',
+      run: () => { if (activeSessionId != null) actions.restartPane?.(activeSessionId) }
+    },
     ...buildOpenTabCommands(actions, grids ?? []),
     ...buildPaneCommands(actions, hasWorkspace),
     ...buildAgentCommands(actions, hasWorkspace),

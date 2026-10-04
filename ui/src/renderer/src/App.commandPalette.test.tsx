@@ -30,6 +30,20 @@ function palette(h: AppHarness): HTMLElement | null {
   return h.container.querySelector('[data-testid="command-palette"]')
 }
 
+async function waitForPalette(h: AppHarness): Promise<void> {
+  await vi.waitFor(() => expect(palette(h)).not.toBeNull())
+}
+
+function searchFor(h: AppHarness, query: string): void {
+  const input = h.container.querySelector<HTMLInputElement>('[data-testid="command-palette-search"]')
+  if (!input) throw new Error('Command palette search input is missing')
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+  act(() => {
+    setter.call(input, query)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 describe('command palette mount (palette-01, Ctrl+K)', () => {
   let harness: AppHarness | null = null
 
@@ -47,12 +61,14 @@ describe('command palette mount (palette-01, Ctrl+K)', () => {
     harness = await renderReadyApp()
     expect(palette(harness)).toBeNull()
     pressCtrlK()
+    await waitForPalette(harness)
     expect(palette(harness)).not.toBeNull()
   })
 
   it('Escape closes it', async () => {
     harness = await renderReadyApp()
     pressCtrlK()
+    await waitForPalette(harness)
     expect(palette(harness)).not.toBeNull()
     vi.useFakeTimers()
     try {
@@ -67,6 +83,8 @@ describe('command palette mount (palette-01, Ctrl+K)', () => {
   it('lists real registry commands, not an empty shell — e.g. "New terminal"', async () => {
     harness = await renderReadyApp()
     pressCtrlK()
+    await waitForPalette(harness)
+    searchFor(harness, 'new terminal')
     const rows = Array.from(harness!.container.querySelectorAll('[data-testid="command-palette-row"]'))
     expect(rows.some((r) => r.textContent?.includes('New terminal'))).toBe(true)
   })
@@ -77,6 +95,8 @@ describe('command palette mount (palette-01, Ctrl+K)', () => {
     const createSession = currentClient().createSession as unknown as import('vitest').Mock
     createSession.mockClear()
     pressCtrlK()
+    await waitForPalette(harness)
+    searchFor(harness, 'new terminal')
     const row = Array.from(harness!.container.querySelectorAll('[data-testid="command-palette-row"]')).find(
       (r) => r.textContent?.includes('New terminal')
     )

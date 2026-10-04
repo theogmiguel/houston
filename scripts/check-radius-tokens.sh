@@ -21,7 +21,6 @@ BASELINE=(
   "ui/src/renderer/src/components/browserPickerChrome.ts 3"
   "ui/src/renderer/src/components/BrowserPicker.tsx 1"
   "ui/src/renderer/src/components/browserTabs.tsx 3"
-  "ui/src/renderer/src/components/CommandPalette.tsx 1"
   "ui/src/renderer/src/components/FirstRun.tsx 1"
   "ui/src/renderer/src/components/HandoffOverlay.tsx 1"
   "ui/src/renderer/src/components/HostKeyModal.tsx 2"

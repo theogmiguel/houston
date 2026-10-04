@@ -189,7 +189,6 @@ import {
 } from "./keymap";
 import { prefixLayer } from "./prefixLayer";
 import { PrefixHint } from "./components/PrefixHint";
-import { CommandPalette } from "./components/CommandPalette";
 import {
   paletteNavActions,
   type GridTarget,
@@ -324,6 +323,9 @@ const SettingsView = lazy(() =>
 );
 const UsageSection = lazy(() =>
   import("./components/UsageSection").then((m) => ({ default: m.UsageSection })),
+);
+const CommandPalette = lazy(() =>
+  import("./components/ui/CommandPalette").then((m) => ({ default: m.CommandPalette })),
 );
 
 const SshConnectModal = lazy(() =>
@@ -3205,6 +3207,8 @@ export function App(): React.JSX.Element {
       setShowLauncher(false);
     },
     switchGrid: handleSelectGrid,
+    focusPane,
+    restartPane: (id) => client.respawnSession(id, undefined, null, undefined, undefined, false),
     ...paletteNavActions({
       workspaceCount: orderedWorkspaces.length,
       lastWorkspace: lastWorkspace(),
@@ -4120,18 +4124,22 @@ export function App(): React.JSX.Element {
 
           <AnimOut open={paletteOpen} suppress="modal">
             {paletteOpen && (
-              <CommandPalette
-                onClose={() => setPaletteOpen(false)}
-                actions={paletteActions}
-                hasWorkspace={selectedWs !== "all"}
-                workspaces={orderedWorkspaces}
-                grids={paletteGrids}
-                appearance={{
-                  currentTheme: theme,
-                  onPreview: setTheme,
-                  onCommit: setTheme,
-                }}
-              />
+              <Suspense fallback={null}>
+                <CommandPalette
+                  onClose={() => setPaletteOpen(false)}
+                  actions={paletteActions}
+                  hasWorkspace={selectedWs !== "all"}
+                  workspaces={orderedWorkspaces}
+                  grids={paletteGrids}
+                  sessions={[...sessions.values()]}
+                  activeSessionId={activeId}
+                  appearance={{
+                    currentTheme: theme,
+                    onPreview: setTheme,
+                    onCommit: setTheme,
+                  }}
+                />
+              </Suspense>
             )}
           </AnimOut>
 

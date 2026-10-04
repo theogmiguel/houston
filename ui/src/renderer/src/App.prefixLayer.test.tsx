@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { prefixLayer } from './prefixLayer'
 import {
   type AppHarness,
@@ -68,6 +68,7 @@ async function runFromPalette(h: AppHarness, id: number | null, title: string): 
     })
   }
   await settle()
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="command-palette"]')).not.toBeNull())
   typeSearch(title)
   const first = document.querySelector('[data-testid="command-palette-row"][aria-selected="true"]')
   if (first?.textContent?.startsWith(title) !== true) throw new Error(`palette did not rank "${title}" first`)
@@ -210,6 +211,7 @@ describe('prefix layer from a focused terminal', () => {
     termKey({ code: 'Space', key: ' ', ctrlKey: true })
     expect(termKey({ code: 'Space', key: ' ' })).toBe(false)
     await settle()
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="command-palette"]')).not.toBeNull())
     expect(document.querySelector('[data-testid="command-palette"]')).not.toBeNull()
   })
 

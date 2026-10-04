@@ -48,6 +48,7 @@ import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, Ta
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { UiPrimitivesStory } from './uiStories'
+import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 
 const noop = (): void => {}
 
@@ -123,6 +124,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
     </div>
   ),
   'ui-primitives': () => <UiPrimitivesStory />,
+  'palette/graphite': () => <PaletteGraphiteStory />,
+  'palette/paper': () => <PalettePaperStory />,
   'harness/page': () => <HarnessPageStory />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
