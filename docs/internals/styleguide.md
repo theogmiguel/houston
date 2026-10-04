@@ -690,8 +690,8 @@ chips only for multi-select filters.
 
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Idle, Done, Failed, Paused, In sync and Missing. Do not rely on colour
-alone. Idle, Paused and Missing use a hollow ring. “Ok” and
+Needs input, Idle, Done, Failed, Paused, In sync, Missing, Open, Fixing and Not seen.
+Do not rely on colour alone. Idle, Paused, Missing and Not seen use a hollow ring. “Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
 
@@ -706,7 +706,15 @@ states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
 ### Grouped rows
 
 Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
-places its title and metadata on the left and status or action on the right.
+places its title and metadata on the left and status or action on the right. Its
+`compact` variant keeps history rows on one line. The `rail` variant marks New,
+Still there and Gone review groups with warn, stop and ok rules. Keep the rule to
+this primitive; feature files supply the group content.
+
+`BarSparkline` shows a short sequence of comparable values with an accessible text
+summary. `Caption` carries supporting information in the small, secondary text step.
+Use the `accent` Count source for attention totals in navigation. Use the `link` Button
+variant for inline actions that open related content, such as a linked task key.
 
 ### List and detail
 
@@ -726,7 +734,8 @@ scrim motion tokens and is disabled by reduced-motion preferences.
 ### Inline notice
 
 Use `Notice` for a single inline info, warn or danger sentence, with an optional
-`Button` action. A concurrency limit names the limit, current value and settings path,
+`Button` action. Set `indicator="dot"` when it represents an event, such as a newly
+published Harness review. A concurrency limit names the limit, current value and settings path,
 for example: “3 of 3 running. Routines run 3 at a time (Settings › Routines)”.
 
 ### Pane header actions

@@ -90,6 +90,7 @@ import { BTN_ICO_STRUCTURE } from "./buttonChrome";
 import { openUpdateModal } from "../updateModal";
 import { isUpdateInstallRunning, useUpdateInstall, type UpdateInstallState } from "../updateInstall";
 import { CONTROL_SIZE_SQUARE_CLS } from "./controlSize";
+import { Count } from "./ui/Count";
 
 const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   palette: IconPalette,
@@ -336,6 +337,7 @@ interface Props {
   chromeTheme: ChromeTheme;
   onToggleChromeTheme: () => void;
   updateVersion?: string | null;
+  harnessAttention?: number;
 
   className?: string;
   onHeadMouseDown?: (e: React.MouseEvent) => void;
@@ -1680,6 +1682,7 @@ function RailNav({
   onOpenPalette,
   onSelect,
   onRowMenu,
+  harnessAttention,
 }: {
   view: RailView | null;
   hidden: ReadonlySet<RailView>;
@@ -1687,6 +1690,7 @@ function RailNav({
   onOpenPalette: (() => void) | undefined;
   onSelect: (v: RailView) => void;
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
+  harnessAttention?: number;
 }): React.JSX.Element {
   const shown = RAIL_VIEWS.filter((v) => !hidden.has(v));
   return (
@@ -1730,6 +1734,7 @@ function RailNav({
               <Icon glyph={RAIL_VIEW_ICON[v]} role="ui" />
             </span>
             <span className="min-w-0 truncate">{RAIL_VIEW_LABEL[v]}</span>
+            {v === "harness" && <Count value={harnessAttention ?? 0} from="accent" />}
           </button>
         );
       })}
@@ -2328,6 +2333,7 @@ export function Sidebar({
   chromeTheme,
   onToggleChromeTheme,
   updateVersion,
+  harnessAttention,
   className = "",
   onHeadMouseDown,
   onHeadDoubleClick,
@@ -2775,6 +2781,7 @@ export function Sidebar({
         onOpenPalette={onOpenPalette ?? (() => {})}
         onSelect={selectRailView}
         onRowMenu={openNavMenu}
+        harnessAttention={harnessAttention}
       />
       <div className="railscroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
         {settingsOpen ? (

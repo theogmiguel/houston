@@ -41,7 +41,8 @@ import {
   NavRoutineEditor,
   NavRoutines,
   NavRoutinesEmpty,
-  NavSkills
+  NavSkills,
+  HarnessPageStory
 } from './navStories'
 import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory } from './tasksStories'
 import { UiPrimitivesStory } from './uiStories'
@@ -120,6 +121,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
     </div>
   ),
   'ui-primitives': () => <UiPrimitivesStory />,
+  'harness/page': () => <HarnessPageStory />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
   'settings/appearance': () => <SettingsAppearance />,

@@ -8,6 +8,7 @@ import { formatDay, formatWindow } from './harnessFormat'
 
 export function HarnessReportView({
   reviews,
+  initialReviewId,
   report,
   reportError,
   onLoadReport,
@@ -15,6 +16,7 @@ export function HarnessReportView({
   onReveal
 }: {
   reviews: HarnessReview[]
+  initialReviewId?: number
   report: HarnessReport | null
   reportError: HarnessReportError | null
   onLoadReport: (reviewId: number) => void
@@ -22,7 +24,7 @@ export function HarnessReportView({
   onReveal: (path: string) => void
 }): React.JSX.Element {
   const published = reviews.filter((r) => r.status === 'published')
-  const [selected, setSelected] = useState<number | null>(published[0]?.id ?? null)
+  const [selected, setSelected] = useState<number | null>(initialReviewId ?? published[0]?.id ?? null)
   const current = published.find((r) => r.id === selected) ?? published[0] ?? null
 
   useEffect(() => {

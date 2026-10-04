@@ -3,6 +3,7 @@ import type { HoustonClient } from './client'
 import type { HarnessFinding } from './generated/HarnessFinding'
 import type { HarnessReview } from './generated/HarnessReview'
 import type { HarnessModelOption } from './generated/HarnessModelOption'
+import type { HarnessProviderCoverage } from './generated/HarnessProviderCoverage'
 import type { Routine } from './generated/Routine'
 
 export interface HarnessState {
@@ -11,6 +12,7 @@ export interface HarnessState {
   reviews: HarnessReview[]
   findings: HarnessFinding[]
   models: HarnessModelOption[]
+  providerCoverage: HarnessProviderCoverage[]
 }
 
 export interface HarnessReport {
@@ -56,7 +58,8 @@ export function useHarness(
         routine: msg.routine ?? null,
         reviews: msg.reviews,
         findings: msg.findings,
-        models: msg.models
+        models: msg.models,
+        providerCoverage: msg.provider_coverage
       })
     })
     const offChanged = client.subscribe('harness_changed', (msg) => {

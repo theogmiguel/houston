@@ -75,7 +75,7 @@ export interface PaletteActions {
   windowClose?: () => void
   quitAndStopDaemon?: () => void
 
-  selectNavRow: (row: 'routines' | 'skills' | 'mcp') => void
+  selectNavRow: (row: 'routines' | 'skills' | 'harness' | 'mcp') => void
 
   switchWorkspace: (path: string | 'all') => void
 
@@ -169,12 +169,13 @@ function buildSettingsRowCommands(): Command[] {
 
 function buildRailNavCommands(actions: PaletteActions): Command[] {
   const rows: {
-    id: 'routines' | 'skills' | 'mcp'
+    id: 'routines' | 'skills' | 'harness' | 'mcp'
     title: string
     keywords: string[]
   }[] = [
     { id: 'routines', title: 'Go to Routines', keywords: ['schedule', 'cron'] },
     { id: 'skills', title: 'Go to Skills', keywords: ['library', 'commands'] },
+    { id: 'harness', title: 'Go to Harness', keywords: ['review', 'findings', 'mistakes'] },
     { id: 'mcp', title: 'Go to Connections', keywords: ['mcp', 'servers', 'plugins', 'model context protocol'] }
   ]
   return rows.map((r) => ({

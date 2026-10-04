@@ -3,7 +3,7 @@ import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOV
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-solid' | 'icon'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -52,6 +52,7 @@ const buttonClasses = variants(
       primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:enabled:bg-[var(--accent-hover)]',
       secondary: 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
       ghost: BTN_GHOST,
+      link: 'border-transparent bg-transparent px-0 text-[var(--accent)] hover:enabled:bg-transparent hover:enabled:underline',
       danger: BTN_GHOST + ' ' + BTN_GHOST_DANGER_HOVER,
       'danger-solid': BTN_DANGER_SOLID,
       icon: BTN_ICO

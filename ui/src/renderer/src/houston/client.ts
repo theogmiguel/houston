@@ -1414,6 +1414,18 @@ export class HoustonClient {
     this.send({ type: 'harness_decide', workspace, key, state })
   }
 
+  harnessFixTask(workspace: string, key: string, agent: AgentKind, prompt: string): void {
+    this.send({ type: 'harness_fix_task', workspace, key, agent, start: false, prompt })
+  }
+
+  harnessOverviewGet(): void {
+    this.send({ type: 'harness_overview_get' })
+  }
+
+  harnessSeen(workspace: string, reviewId: number): void {
+    this.send({ type: 'harness_seen', workspace, review_id: reviewId })
+  }
+
   taskSnapshot(scope: string): void {
     this.send({ type: 'task_snapshot', scope })
   }

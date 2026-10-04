@@ -111,6 +111,15 @@ describe('the rail nav block', () => {
     expect(rows().map((r) => r.textContent)).toEqual(['Skills', 'Routines', 'Harness', 'Connections'])
   })
 
+  it('shows the current Harness attention count in the rail row', () => {
+    render({ harnessAttention: 4 })
+    const harness = rows().find((r) => r.getAttribute('data-view') === 'harness')!
+    expect(harness.textContent).toContain('Harness')
+    expect(harness.textContent).toContain('4')
+    render({ harnessAttention: 0 })
+    expect(rows().find((r) => r.getAttribute('data-view') === 'harness')?.textContent).not.toContain('0')
+  })
+
   it('the open one is marked, and only it', () => {
     setRailViewForTests({ view: 'routines' })
     render()
