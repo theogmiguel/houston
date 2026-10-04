@@ -560,8 +560,11 @@ slide a thumb.**
 
 Use `Table` for content tables. Define columns with row keys, mark numeric columns
 `numeric`, and render model-specific content through a column renderer. Numeric cells
-and their headings right-align; cells use tabular figures, 28px rows and `--divider`
-hairlines. Row actions remain in their own trailing column. A clickable row supports
+and their headings right-align with tabular figures. Rows are separated by `--divider`
+hairlines with `--space-2-5` vertical padding. Cell ink defaults to primary; set a
+column's `tone` to `muted` for secondary figures or `faint` for ranks. `plain` tables sit
+directly on the page; `framed` tables sit inside a hairline frame when they share a
+panel with other content. Rows highlight on hover. Row actions remain in their own trailing column. A clickable row supports
 Enter and Space and ignores events from nested controls. Empty results use
 `EmptyState`; failures use `Notice` with an optional retry action. `DataTable` remains
 for existing callers that need its loading state, sticky head and bounded body scroll;
