@@ -50,11 +50,12 @@ export function RoutinesSurface(props: {
   now: number
   selectedRoutineId?: number | null
   onRoutineSelect?: (id: number | null) => void
+  showLimitNotice?: boolean
 }): React.JSX.Element {
   const {
     routines, running, runs, runsLoading, workspaces, error, onDismissError, onCreate,
     onUpdate, onDelete, onRunNow, onLoadRuns, onOpenSession, onRequest, now,
-    selectedRoutineId, onRoutineSelect
+    selectedRoutineId, onRoutineSelect, showLimitNotice = true
   } = props
   const [panel, setPanel] = useState<Panel>(null)
   const [localSelection, setLocalSelection] = useState<string | null>(null)
@@ -191,7 +192,7 @@ export function RoutinesSurface(props: {
                 now={now}
                 running={running.includes(routine.id)}
                 pending={pendingRuns.has(routine.id)}
-                atLimit={slotsFull ? { running: running.length, limit: ROUTINE_RUNS_CONCURRENT } : null}
+                atLimit={showLimitNotice && slotsFull ? { running: running.length, limit: ROUTINE_RUNS_CONCURRENT } : null}
                 onRunNow={() => {
                   onRequest({ routineName: routine.name })
                   setPendingRuns((current) => new Set(current).add(routine.id))

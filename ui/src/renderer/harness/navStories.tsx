@@ -71,9 +71,9 @@ export function NavRoutines(): React.JSX.Element {
   ]
   const routines = [
     routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW - 120_000, last_run_at_ms: NOW - 60_000 }),
-    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000 }),
-    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: NOW + 6 * 24 * 3600_000, last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok' }),
-    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: '/home/dev/code/api', next_run_at_ms: NOW + 7 * 24 * 3600_000 })
+    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000, workspace_id: null }),
+    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: new Date(2026, 9, 9, 17).getTime(), last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok', workspace_id: null }),
+    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: null, next_run_at_ms: NOW + 7 * 24 * 3600_000 })
   ]
   return (
     <Frame active="Routines">
@@ -94,6 +94,7 @@ export function NavRoutines(): React.JSX.Element {
         onRequest={noop}
         now={NOW}
         selectedRoutineId={2}
+        showLimitNotice={false}
       />
     </Frame>
   )
@@ -358,13 +359,7 @@ function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
 
 export function HarnessPageStory(): React.JSX.Element {
   const latest = harnessReview(13, 38, 7)
-  const reviews = Array.from({ length: 13 }, (_, index) => {
-    const id = 13 - index
-    if (id === 13) return latest
-    return id === 12
-      ? harnessReview(id, 41, 10, Date.UTC(2026, 8, 22, 12))
-      : harnessReview(id, 42, 13)
-  })
+  const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]
   const findings = [
     harnessFinding({ key: 'HOU-47', title: 'Agents re-read the styleguide on every UI change', count: 9, target: 'AGENTS.md', review_id: 13 }),
     harnessFinding({ key: 'HOU-42', count: 11, task: { task_id: 42, key: 'HOU-42', status: 'in_progress', landed_at_ms: null }, phase: 'fixing' }),
@@ -387,7 +382,6 @@ export function HarnessPageStory(): React.JSX.Element {
       task: { task_id: 41, key: 'HOU-41', status: 'done', landed_at_ms: Date.UTC(2026, 8, 24) },
       verification: { review_id: 13, verdict: 'gone', sessions_after: 0, quotes: [] }
     }),
-    harnessFinding({ key: 'HOU-38', title: 'Old preference name remains in the guide', review_id: 10, phase: 'dismissed', state: 'dismissed' })
   ]
   const state: HarnessState = {
     workspace: HARNESS_WS,
@@ -417,14 +411,14 @@ export function HarnessPageStory(): React.JSX.Element {
         <aside style={{ width: 140, flex: 'none', padding: 8, background: 'var(--rail-bg)', color: 'var(--text-secondary)' }}>
           <div style={{ padding: 8, color: 'var(--text-faint)', fontSize: 11 }}>HOUSTON</div>
           <div style={{ display: 'grid', gap: 2, marginBottom: 8 }}>
-            {['auth-refactor', 'migrate-db', 'shell'].map((item) => (
-              <div key={item} style={{ padding: '5px 8px', fontSize: 12 }}>{item}</div>
+            {['auth-refactor', 'migrate-db', 'shell'].map((item, index) => (
+              <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', fontSize: 12 }}><i style={{ width: 6, height: 6, borderRadius: '50%', background: index === 0 ? 'var(--info)' : index === 1 ? 'var(--warn)' : 'transparent', border: index === 2 ? '1px solid var(--text-faint)' : undefined }} />{item}</div>
             ))}
           </div>
           <div style={{ height: 1, background: 'var(--divider)', margin: '0 8px 8px' }} />
           <div style={{ display: 'grid', gap: 2 }}>
-            {['Tasks　2', 'Routines', 'Skills', 'Harness　1', 'Connections', 'Usage'].map((item) => (
-              <div key={item} style={{ padding: '5px 8px', borderRadius: 6, background: item.startsWith('Harness') ? 'var(--hover-fill)' : 'transparent' }}>{item}</div>
+            {['Tasks', 'Routines', 'Skills', 'Harness', 'Connections', 'Usage'].map((item) => (
+              <div key={item} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 6, background: item === 'Harness' ? 'var(--hover-fill)' : 'transparent' }}><span>{item}</span>{item === 'Tasks' ? <span style={{ color: 'var(--warn)' }}>2</span> : item === 'Harness' ? <span style={{ color: 'var(--warn)' }}>1</span> : null}</div>
             ))}
           </div>
         </aside>
@@ -456,6 +450,9 @@ export function HarnessPageStory(): React.JSX.Element {
         onLoadReport={noop}
         onOpenFile={noop}
         onReveal={noop}
+        trendValues={[41, 33, 25, 18]}
+        trendReviewCount={4}
+        historyDeltaOverrides={{ 12: { new: 2, gone: 1 } }}
         />
       </div>
     </div>

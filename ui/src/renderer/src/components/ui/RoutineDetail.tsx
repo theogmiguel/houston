@@ -34,7 +34,7 @@ function runResult(run: RoutineRun): React.JSX.Element {
     : run.status === 'ok'
       ? 'Done'
       : 'Failed'
-  return <StatusLabel status={state} />
+  return <StatusLabel status={state} size="small" />
 }
 
 function runRows(runs: RoutineRun[] | undefined, now: number): RunRow[] {
@@ -80,15 +80,15 @@ export function RoutineDetail({
 }): React.JSX.Element {
   const rows = runRows(runs, now)
   const columns: TableColumn<RunRow>[] = [
-    { key: 'started', header: 'Started' },
+    { key: 'started', header: 'Started', weight: 'regular' },
     { key: 'result', header: 'Result', render: (result) => result },
-    { key: 'took', header: 'Took', numeric: true }
+    { key: 'took', header: 'Took', numeric: true, weight: 'regular' }
   ]
 
   return (
     <div className="grid min-w-0 gap-[var(--space-3)]" data-testid="routine-detail">
       <div className="flex min-w-0 items-center gap-[var(--space-2)]">
-        <h2 className="m-0 min-w-0 flex-1 truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{routine.name}</h2>
+        <h2 className="m-0 min-w-0 flex-1 truncate text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] text-[var(--text-primary)]">{routine.name}</h2>
         <Button variant="secondary" size="sm" data-testid="routine-run-now" disabled={running || pending} onClick={onRunNow}>{pending ? 'Starting…' : 'Run now'}</Button>
         <Toggle on={routine.enabled} onChange={onToggleEnabled} data-testid="routine-enabled" aria-label={`Enable ${routine.name}`} />
         <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: onEdit }, { label: 'Delete', onSelect: onDelete, tone: 'danger' }]} />
@@ -124,6 +124,7 @@ export function RoutineDetail({
         <Table
           aria-label="Routine runs"
           variant="framed"
+          density="compact"
           rows={rows}
           getRowId={(row) => row.id}
           columns={columns}
