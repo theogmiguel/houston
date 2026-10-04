@@ -116,6 +116,13 @@ error stays visible until the next successful connection.
    refused at triage gets no second note. Houston watches no forge for a merge or a
    deploy of its own: the task's state is the signal.
 
+7. A reply from the requester in the thread after the hand-back, while the task is in
+   review, is a request for an adjustment: it gets 👀 and the owner gets a direct message
+   quoting it with **Accept** and **Refuse**. Accepting (the button, or the owner's ✅ on
+   the reply) starts a new attempt on the same worktree with the reply in its brief, within
+   the same limit of two working runs; refusing marks the reply 🚫. The new attempt hands
+   back again, and its notes replace the earlier ones.
+
 The request shows its state as one reaction at a time, beside the owner's ✅: 👀 received,
 ⚙️ working, ❓ waiting for an answer, 🏁 ready for review, 🚀 live, 🚫 not going ahead
 and ⚠️ attention. ⚠️ means something no agent can explain to the requester, such as a request
@@ -152,13 +159,14 @@ it is mapped.
   history. It downloads the images of a filed request.
 - **Houston → Slack, in the thread**: the status reactions on the request, the owner's
   refusal reason, the agent's questions with their options and the answer chosen, the
-  hand-back reply and the note posted when the task is closed. Everyone in the channel
+  hand-back reply, the note posted when the task is closed, and the 👀 or 🚫 on a reply
+  asking for an adjustment. Everyone in the channel
   can read them.
 - **Houston → Slack, to the owner only**: direct messages naming the channel, the
   requester and the first 280 characters of the request, with the start outlook; at
   hand-back, the subject, the size, the branch name, the pull request link, the agent's
-  facts and warnings and the time worked; and, when something needs attention, Houston's
-  reason.
-- **Houston → the agent's provider**: the request text and images reach the agent as task
-  data, so they are sent to the provider like any prompt.
+  facts and warnings and the time worked; a requester's adjustment, quoted; and, when
+  something needs attention, Houston's reason.
+- **Houston → the agent's provider**: the request text, images, answers and adjustments
+  reach the agent as task data, so they are sent to the provider like any prompt.
 - Nothing goes to Houston's authors or any other service. Disconnecting stops all of it.

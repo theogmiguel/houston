@@ -13,7 +13,7 @@ pub use harness::{
     HarnessReviewRow,
 };
 pub use intake::{
-    IntakeRow, IntakeWrite, OutboxRow, OutboxTarget, Outgoing, Posted, QuestionRow,
+    AdjustmentRow, IntakeRow, IntakeWrite, OutboxRow, OutboxTarget, Outgoing, Posted, QuestionRow,
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };

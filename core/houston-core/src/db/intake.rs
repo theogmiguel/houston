@@ -56,7 +56,17 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             form       TEXT    NOT NULL,
             created_at INTEGER NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS idx_intake_results_intake ON intake_results(intake_id, run_id);",
+        CREATE INDEX IF NOT EXISTS idx_intake_results_intake ON intake_results(intake_id, run_id);
+        CREATE TABLE IF NOT EXISTS intake_adjustments (
+            id         INTEGER PRIMARY KEY,
+            intake_id  INTEGER NOT NULL,
+            run_id     INTEGER NOT NULL,
+            ts         TEXT    NOT NULL,
+            text       TEXT    NOT NULL,
+            state      TEXT    NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(intake_id, ts)
+        );",
     )?;
     super::add_column_if_missing(
         conn,
@@ -230,6 +240,31 @@ pub struct OutboxRow {
     pub intake_id: i64,
     pub attempts: u32,
     pub item: Outgoing,
+}
+
+/// A requester's reply after a hand-back, waiting for the owner's decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdjustmentRow {
+    pub id: i64,
+    pub intake_id: i64,
+    pub run_id: i64,
+    pub ts: String,
+    pub text: String,
+    /// `pending`, `accepted` or `refused`.
+    pub state: String,
+}
+
+const ADJUSTMENT_COLUMNS: &str = "a.id, a.intake_id, a.run_id, a.ts, a.text, a.state";
+
+fn adjustment_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<AdjustmentRow> {
+    Ok(AdjustmentRow {
+        id: r.get(0)?,
+        intake_id: r.get(1)?,
+        run_id: r.get(2)?,
+        ts: r.get(3)?,
+        text: r.get(4)?,
+        state: r.get(5)?,
+    })
 }
 
 /// Where an earlier outbox row's message landed, once Slack accepted it.
@@ -686,6 +721,62 @@ impl Db {
             rusqlite::params![run_id, now_ms],
             |r| r.get(0),
         )?)
+    }
+
+    /// `Ok(None)` when this reply was already recorded (a replay).
+    pub fn intake_adjustment_insert(
+        &self,
+        intake_id: i64,
+        run_id: i64,
+        ts: &str,
+        text: &str,
+        now_ms: i64,
+    ) -> Result<Option<i64>> {
+        let conn = self.conn.lock().expect("db lock");
+        let inserted = conn.execute(
+            "INSERT OR IGNORE INTO intake_adjustments (intake_id, run_id, ts, text, state, created_at) \
+             VALUES (?1, ?2, ?3, ?4, 'pending', ?5)",
+            rusqlite::params![intake_id, run_id, ts, text, now_ms],
+        )?;
+        Ok((inserted > 0).then(|| conn.last_insert_rowid()))
+    }
+
+    pub fn intake_adjustment(&self, id: i64) -> Result<Option<AdjustmentRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                &format!("SELECT {ADJUSTMENT_COLUMNS} FROM intake_adjustments a WHERE a.id = ?1"),
+                [id],
+                adjustment_row,
+            )
+            .optional()?)
+    }
+
+    pub fn intake_adjustment_by_ts(
+        &self,
+        channel: &str,
+        ts: &str,
+    ) -> Result<Option<AdjustmentRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                &format!(
+                    "SELECT {ADJUSTMENT_COLUMNS} FROM intake_adjustments a WHERE a.ts = ?2 AND \
+                     (SELECT channel FROM intake_events WHERE id = a.intake_id) = ?1"
+                ),
+                rusqlite::params![channel, ts],
+                adjustment_row,
+            )
+            .optional()?)
+    }
+
+    /// Moves a pending adjustment on; `Ok(false)` when it was already decided.
+    pub fn intake_adjustment_decide(&self, id: i64, state: &str) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.execute(
+            "UPDATE intake_adjustments SET state = ?2 WHERE id = ?1 AND state = 'pending'",
+            rusqlite::params![id, state],
+        )? > 0)
     }
 
     pub fn task_run_set_pr_url(&self, run_id: i64, pr_url: Option<&str>) -> Result<()> {

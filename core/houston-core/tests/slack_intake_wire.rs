@@ -1331,3 +1331,133 @@ async fn configuration_refuses_bad_ids_and_unknown_workspaces_by_name() {
         "{off:?}"
     );
 }
+
+fn ready_result(subject: &str) -> ResultForm {
+    ResultForm {
+        subject: subject.into(),
+        changes: "O botão diz Enviar.".into(),
+        steps: vec!["Abrir o formulário.".into()],
+        live_note: Some("Está no ar.".into()),
+        dropped_note: Some("Não vai seguir.".into()),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_attempt() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-adjust").await;
+    let request = "1800000005.000100";
+    r.fake
+        .send_event("a1", mention(request, REQUESTER, "rename the button"));
+    let task_id = r.await_tasks(1).await[0].0;
+    r.fake.send_event("a2", check_mark(request, OWNER));
+    let session = r.await_runs(1).await[0].1;
+    r.daemon
+        .task_handback_from(
+            &r.workspace(),
+            task_id,
+            None,
+            Some(ready_result("Rótulo do botão")),
+            session,
+            "agent:one (operator)",
+            "task_handback",
+        )
+        .unwrap();
+    r.fake.await_reactions(request, &["checkered_flag"]).await;
+
+    let reply = |user: &str, text: &str, ts: &str| {
+        json!({"type": "message", "channel": CHANNEL, "user": user, "team": "T1", "ts": ts,
+            "thread_ts": request, "text": text})
+    };
+    let later = |n: u64| {
+        format!(
+            "{}.{n:06}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 5
+        )
+    };
+    let bystander_ts = later(1);
+    r.fake
+        .send_event("a3", reply("USOMEONE", "make it red", &bystander_ts));
+    let adjust_ts = later(2);
+    r.fake.send_event(
+        "a4",
+        reply(
+            REQUESTER,
+            "Pode ser Confirmar em vez de Enviar?",
+            &adjust_ts,
+        ),
+    );
+    r.fake.await_reactions(&adjust_ts, &["eyes"]).await;
+    let dm = r.fake.await_dm("Pedido de ajuste").await.to_string();
+    assert!(
+        dm.contains("Rótulo do botão")
+            && dm.contains("> Pode ser Confirmar em vez de Enviar?")
+            && dm.contains("houston_adjust_accept"),
+        "the owner's message names the request by its subject and quotes the reply: {dm}"
+    );
+    assert!(
+        r.fake.reactions_on(&bystander_ts).is_empty(),
+        "a bystander's reply is not an adjustment"
+    );
+
+    r.fake.send_event("a5", check_mark(&adjust_ts, OWNER));
+    let runs = r.await_runs(2).await;
+    assert_eq!(
+        runs[1].0, task_id,
+        "the new attempt belongs to the same task"
+    );
+    r.await_output(runs[1].1, "Pode ser Confirmar em vez de Enviar?")
+        .await;
+    r.fake
+        .await_call("chat.update", "Aceito · nova tentativa começou")
+        .await;
+    r.fake.await_reactions(request, &["gear"]).await;
+    let worktrees: Vec<String> = {
+        let conn = r.db();
+        let mut stmt = conn
+            .prepare("SELECT worktree_path FROM backlog_task_runs WHERE task_id = ?1 ORDER BY id")
+            .unwrap();
+        stmt.query_map([task_id], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(
+        worktrees[0], worktrees[1],
+        "the same worktree: {worktrees:?}"
+    );
+
+    r.daemon
+        .task_handback_from(
+            &r.workspace(),
+            task_id,
+            None,
+            Some(ready_result("Rótulo do botão")),
+            runs[1].1,
+            "agent:one (operator)",
+            "task_handback",
+        )
+        .unwrap();
+    r.fake.await_reactions(request, &["checkered_flag"]).await;
+    let second_ts = later(3);
+    r.fake
+        .send_event("a6", reply(REQUESTER, "E a cor também?", &second_ts));
+    r.fake.await_reactions(&second_ts, &["eyes"]).await;
+    let id: i64 = r
+        .db()
+        .query_row("SELECT MAX(id) FROM intake_adjustments", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    r.fake
+        .send_interactive("a7", click(OWNER, "houston_adjust_refuse", &id.to_string()));
+    r.fake.await_reactions(&second_ts, &["no_entry_sign"]).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(r.runs().len(), 2, "a refused adjustment starts nothing");
+    r.finish();
+}

@@ -57,6 +57,8 @@ const ACTION_REFUSE: &str = "houston_refuse";
 const ACTION_LINK: &str = "houston_link";
 const VIEW_REFUSE: &str = "houston_refuse";
 const ACTION_ANSWER: &str = "houston_answer";
+const ACTION_ADJUST_ACCEPT: &str = "houston_adjust_accept";
+const ACTION_ADJUST_REFUSE: &str = "houston_adjust_refuse";
 const ACTION_OTHER: &str = "houston_other";
 const VIEW_ANSWER: &str = "houston_answer";
 
@@ -931,17 +933,15 @@ impl Daemon {
                 if row.channel != map.channel_id {
                     continue;
                 }
-                let Some(question) = self.db.intake_open_question(row.id)? else {
-                    continue;
+                let since = match self.db.intake_open_question(row.id)? {
+                    Some(question) => question.created_at_ms,
+                    None => match self.slack_adjustable_run(&row)?.and_then(|r| r.ended_at_ms) {
+                        Some(ended) => ended,
+                        None => continue,
+                    },
                 };
                 let page = api
-                    .replies(
-                        &tokens.bot,
-                        &row.channel,
-                        &row.ts,
-                        &ms_ts(question.created_at_ms),
-                        None,
-                    )
+                    .replies(&tokens.bot, &row.channel, &row.ts, &ms_ts(since), None)
                     .await?;
                 for msg in &page.messages {
                     for intent in intake::classify_history(&row.channel, msg, &scope) {
@@ -1114,6 +1114,9 @@ impl Daemon {
 
     /// The owner's ✅ on the request (or on one of Houston's messages in its thread).
     async fn slack_accept(self: &Arc<Self>, channel: &str, ts: &str) -> Result<()> {
+        if let Some(adjustment) = self.db.intake_adjustment_by_ts(channel, ts)? {
+            return self.slack_accept_adjustment(&adjustment).await;
+        }
         let row = match self.db.intake_by_message(SOURCE, channel, ts)? {
             Some(row) => Some(row),
             None => self.db.intake_by_reply(channel, ts)?,
@@ -1330,6 +1333,22 @@ impl Daemon {
                         "slack: ignored {action_id} from {user:?}, who is not the owner"
                     );
                     return Ok(());
+                }
+                if action_id == ACTION_ADJUST_ACCEPT || action_id == ACTION_ADJUST_REFUSE {
+                    let Some(adjustment) = value
+                        .parse::<i64>()
+                        .ok()
+                        .map(|id| self.db.intake_adjustment(id))
+                        .transpose()?
+                        .flatten()
+                    else {
+                        return Ok(());
+                    };
+                    return if action_id == ACTION_ADJUST_ACCEPT {
+                        self.slack_accept_adjustment(&adjustment).await
+                    } else {
+                        self.slack_refuse_adjustment(&adjustment)
+                    };
                 }
                 let Some(row) = value
                     .parse::<i64>()
@@ -1623,7 +1642,7 @@ impl Daemon {
             return Ok(());
         };
         let Some(question) = self.db.intake_open_question(row.id)? else {
-            return Ok(());
+            return self.slack_adjustment(&row, ts, author, text);
         };
         let from_owner = config.owner.as_deref() == Some(author);
         if author != row.author && !from_owner {
@@ -1672,6 +1691,174 @@ impl Daemon {
             now,
         )?;
         Ok(true)
+    }
+
+    /// The run a reply after a hand-back would adjust: the newest one, handed
+    /// back before `ts`, on a task still in review.
+    fn slack_adjustable_run(&self, row: &IntakeRow) -> Result<Option<crate::db::TaskRunRow>> {
+        let Some(task) = row
+            .task_id
+            .map(|id| self.db.task(id))
+            .transpose()?
+            .flatten()
+        else {
+            return Ok(None);
+        };
+        if task.status != proto::TaskStatus::InReview {
+            return Ok(None);
+        }
+        Ok(self
+            .db
+            .latest_implementation_run(task.id)?
+            .filter(|run| run.state == proto::TaskRunState::HandedBack))
+    }
+
+    /// The requester's reply after a hand-back asks for an adjustment: 👀 on
+    /// the reply, and the owner decides in a direct message.
+    fn slack_adjustment(&self, row: &IntakeRow, ts: &str, author: &str, text: &str) -> Result<()> {
+        let text = text.trim();
+        if author != row.author || text.is_empty() {
+            return Ok(());
+        }
+        let Some(run) = self.slack_adjustable_run(row)? else {
+            return Ok(());
+        };
+        if run.ended_at_ms.is_some_and(|ended| ts_ms(ts) <= ended) {
+            return Ok(());
+        }
+        let now = now_unix_ms();
+        let text = for_slack(&row.workspace, text);
+        let Some(id) = self
+            .db
+            .intake_adjustment_insert(row.id, run.id, ts, &text, now)?
+        else {
+            return Ok(());
+        };
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("adjust-seen:{id}"),
+            &Outgoing::react(Some(ts), Some(R_SEEN), None),
+            now,
+        )?;
+        let blocks = self.slack_adjustment_blocks(row, &text, Footer::Buttons(&id.to_string()));
+        let t = self.slack_text();
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("dm-adjust:{id}"),
+            &Outgoing::message(
+                OutboxTarget::Dm,
+                strip_mrkdwn(&t.adjustment_title(&self.slack_ident(row))),
+                Some(blocks.to_string()),
+            ),
+            now,
+        )?;
+        Ok(())
+    }
+
+    /// The owner's message about an adjustment; `Footer::Buttons` carries the
+    /// adjustment id for the buttons.
+    fn slack_adjustment_blocks(&self, row: &IntakeRow, text: &str, footer: Footer<'_>) -> Value {
+        let t = self.slack_text();
+        let mut blocks = vec![
+            section(&t.adjustment_title(&self.slack_ident(row))),
+            section(&quote(text)),
+        ];
+        match footer {
+            Footer::Buttons(id) => {
+                let mut buttons = vec![
+                    button(t.accept(), ACTION_ADJUST_ACCEPT, id, Some("primary")),
+                    button(t.refuse(), ACTION_ADJUST_REFUSE, id, Some("danger")),
+                ];
+                if let Some(link) = &row.permalink {
+                    buttons.push(link_button(t.view_thread(), link));
+                }
+                blocks.push(json!({"type": "actions", "elements": buttons}));
+            }
+            Footer::Status(status) => blocks.push(context(&escape(status))),
+        }
+        Value::Array(blocks)
+    }
+
+    fn slack_dm_adjustment_status(
+        &self,
+        row: &IntakeRow,
+        adjustment: &crate::db::AdjustmentRow,
+        status: &str,
+    ) -> Result<()> {
+        let key = format!("dm-adjust:{}", adjustment.id);
+        let blocks = self.slack_adjustment_blocks(row, &adjustment.text, Footer::Status(status));
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("{key}:{status}"),
+            &Outgoing::update(&key, strip_mrkdwn(status), Some(blocks.to_string())),
+            now_unix_ms(),
+        )?;
+        Ok(())
+    }
+
+    /// The owner accepted an adjustment: a new attempt on the same worktree,
+    /// its brief carrying the requester's words. The working cap applies.
+    async fn slack_accept_adjustment(
+        self: &Arc<Self>,
+        adjustment: &crate::db::AdjustmentRow,
+    ) -> Result<()> {
+        let Some(row) = self.db.intake(adjustment.intake_id)? else {
+            return Ok(());
+        };
+        if adjustment.state != "pending" || self.slack_adjustable_run(&row)?.is_none() {
+            tracing::info!(
+                "slack: accept of adjustment {}, which is {} or no longer adjustable",
+                adjustment.id,
+                adjustment.state
+            );
+            return Ok(());
+        }
+        let t = self.slack_text();
+        let working = self.slack_working_runs()?;
+        if working >= proto::SLACK_RUNS_WORKING_MAX {
+            let busy = t.adjustment_busy(working, proto::SLACK_RUNS_WORKING_MAX);
+            return self.slack_dm_adjustment_status(&row, adjustment, &busy);
+        }
+        let this = self.clone();
+        let (run_id, text) = (adjustment.run_id, adjustment.text.clone());
+        let retried =
+            tokio::task::spawn_blocking(move || this.task_retry_with_adjustment(run_id, &text))
+                .await??;
+        let now = now_unix_ms();
+        match &retried {
+            proto::ServerMsg::TaskChanged { .. } => {
+                self.db
+                    .intake_adjustment_decide(adjustment.id, "accepted")?;
+                self.db.intake_set_status(row.id, R_WORKING, now)?;
+                self.slack_dm_adjustment_status(&row, adjustment, t.adjustment_started())?;
+                self.broadcast_control(&retried);
+            }
+            proto::ServerMsg::TaskRefused { message, .. } => {
+                self.slack_dm_notice(
+                    &row,
+                    &format!("adjust-refused:{}:{now}", adjustment.id),
+                    &t.could_not_start(message),
+                )?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn slack_refuse_adjustment(&self, adjustment: &crate::db::AdjustmentRow) -> Result<()> {
+        let Some(row) = self.db.intake(adjustment.intake_id)? else {
+            return Ok(());
+        };
+        if !self.db.intake_adjustment_decide(adjustment.id, "refused")? {
+            return Ok(());
+        }
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("adjust-dropped:{}", adjustment.id),
+            &Outgoing::react(Some(&adjustment.ts), Some(R_DROPPED), Some(R_SEEN)),
+            now_unix_ms(),
+        )?;
+        self.slack_dm_adjustment_status(&row, adjustment, self.slack_text().refused_by_owner())
     }
 
     /// `hs-task ask` / `task_ask`: posts the question to the request's thread

@@ -318,6 +318,29 @@ impl Text {
         }
     }
 
+    pub fn adjustment_title(self, subject: &str) -> String {
+        if self.pt() {
+            format!("*Pedido de ajuste:* {subject}")
+        } else {
+            format!("*Adjustment requested:* {subject}")
+        }
+    }
+
+    pub fn adjustment_started(self) -> &'static str {
+        self.pick(
+            "Aceito · nova tentativa começou",
+            "Accepted · a new attempt started",
+        )
+    }
+
+    pub fn adjustment_busy(self, working: usize, cap: usize) -> String {
+        if self.pt() {
+            format!("{working} em andamento (limite {cap}); aceite de novo quando um terminar")
+        } else {
+            format!("{working} working (limit {cap}); accept again when one finishes")
+        }
+    }
+
     pub fn images_over_count(self, max: usize, attached: usize) -> String {
         if self.pt() {
             format!("Só as {max} primeiras imagens entraram ({attached} anexadas).")
