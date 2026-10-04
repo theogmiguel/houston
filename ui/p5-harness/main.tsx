@@ -11,6 +11,7 @@ import type { LayoutNode } from '../src/renderer/src/layout/tree'
 import { SettingsView } from '../src/renderer/src/components/SettingsView'
 import { ShortcutSheet } from '../src/renderer/src/components/ShortcutSheet'
 import { PaneHandoff } from '../src/renderer/src/components/PaneHandoff'
+import { FilesPane } from '../src/renderer/src/components/FilesPane'
 import { HandoffOverlay, type HandoffUiState } from '../src/renderer/src/components/HandoffOverlay'
 import { AnimOut } from '../src/renderer/src/components/AnimOut'
 import { ConfirmModal } from '../src/renderer/src/components/ConfirmModal'
@@ -559,6 +560,7 @@ type Surface =
   | 'sidebar'
   | 'session-pane'
   | 'layout'
+  | 'files'
 
 type Assert = {
   sel: string
@@ -1078,6 +1080,17 @@ const CASES: Case[] = [
     assert: [{ sel: '[data-testid="pane-sub"], .pane-sub', prop: 'display', is: 'none' }]
   },
 
+  {
+    id: 'files-proposed',
+    w: 980,
+    h: 620,
+    surface: 'files',
+    prep: [
+      { role: '[role="treeitem"]', name: 'README.md' },
+      { role: '[role="treeitem"]', name: 'README.md', contextMenu: true }
+    ]
+  },
+
 ]
 
 declare global {
@@ -1104,6 +1117,19 @@ function Surface({
   appShell?: Case['appShell']
 }): React.JSX.Element {
   switch (surface) {
+    case 'files':
+      return (
+        <div className="h-full w-full flex" style={{ background: 'var(--content-bg)' }}>
+          <FilesPane
+            node={{ kind: 'files', id: 'files-proposed', root: FIXTURE_DIR_ROOT }}
+            workspaceDir={FIXTURE_DIR_ROOT}
+            onClose={() => {}}
+            onHeaderPointerDown={() => {}}
+            onSendToTerminal={() => {}}
+            sendToTerminalLabel="auth-refactor"
+          />
+        </div>
+      )
     case 'modal':
       if (!modal) throw new Error(`Surface: surface 'modal' needs a \`modal\` kind, got ${JSON.stringify(modal)}`)
       return <ModalHost kind={modal} closing={!!closing} />
