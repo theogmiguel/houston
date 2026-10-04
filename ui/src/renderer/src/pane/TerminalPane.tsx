@@ -1454,7 +1454,7 @@ export function TerminalPane({
           aria-hidden="true"
         >
           <div
-            className={`loop-anim w-2 h-4 mb-[3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_step-end_infinite] ${
+            className={`loop-anim w-2 h-4 mb-[3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_steps(2,end)_infinite] ${
               synced
                 ? 'transition-opacity duration-[var(--animate-t-fast)] ease-linear opacity-0'
                 : 'motion-reduce:opacity-70'
@@ -1463,7 +1463,7 @@ export function TerminalPane({
           {SKELETON_WIDTHS.map((w, i) => (
             <div
               key={i}
-              className={`loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] transition-opacity duration-[var(--animate-t-fast)] ease-linear motion-safe:[animation:skeleton-shimmer_1.4s_ease-in-out_infinite] ${
+              className={`loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] transition-opacity duration-[var(--animate-t-fast)] ease-linear motion-safe:[animation:skeleton-shimmer_1.4s_steps(4,end)_infinite] ${
                 synced ? 'opacity-0' : 'opacity-100 motion-reduce:opacity-70'
               }`}
               style={{ width: `${w}%`, transitionDelay: `${i * 60}ms` }}

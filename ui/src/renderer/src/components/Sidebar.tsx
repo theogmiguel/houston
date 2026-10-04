@@ -1021,7 +1021,7 @@ function GridStateDot({
         aria-label={label}
         data-testid="grid-state-dot"
         data-state={state}
-        className={`w-[6px] h-[6px] rounded-full flex-none ${active ? "loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]" : ""}`}
+        className={`w-[6px] h-[6px] rounded-full flex-none ${active ? "loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]" : ""}`}
         style={{
           background:
             state === "working"

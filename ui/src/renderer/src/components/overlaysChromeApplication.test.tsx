@@ -222,7 +222,7 @@ describe('motion-r5 / motion-k9: HandoffOverlay reconnect dot-pulse is motion-sa
       )
     })
     const dot = container.querySelector('.bg-primary')
-    expect(dot?.className).toContain('motion-safe:animate-[dot-pulse_1.2s_ease-in-out_infinite]')
+    expect(dot?.className).toContain('motion-safe:animate-[dot-pulse_1.2s_steps(4,end)_infinite]')
     expect(dot?.className).not.toMatch(/(?<!motion-safe:)animate-\[dot-pulse/)
   })
 })

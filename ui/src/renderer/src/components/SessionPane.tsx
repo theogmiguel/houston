@@ -180,7 +180,7 @@ function statusLabel(s: AgentStatus): string {
 }
 
 function statusDotClass(status: AgentStatus): string {
-  const pulse = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_ease-in-out_infinite]'
+  const pulse = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'
   switch (status) {
     case 'working':
       return `bg-[var(--info)] ${pulse}`

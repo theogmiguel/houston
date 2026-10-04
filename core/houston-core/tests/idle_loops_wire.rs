@@ -31,6 +31,57 @@ async fn a_fully_idle_daemon_does_not_tick_beyond_the_routine_loops_boot_pass() 
     assert_eq!(delegation, 0, "delegation_watch_loop must never tick idle");
 }
 
+#[tokio::test]
+async fn retained_children_sleep_until_deadlines_and_still_expire() {
+    let (daemon, _state) = test_daemon();
+    let project = tempfile::tempdir().unwrap();
+    let expiring = create_sleeping_session(&daemon, project.path());
+    let now = houston_core::daemon::now_ms();
+    daemon
+        .retain_delegation_for_test(expiring, now + 7_000)
+        .expect("retain expiring child");
+
+    houston_core::boot::spawn_background_loops(&daemon);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let (_, settled_ticks) = daemon.idle_tick_counts_for_test();
+    tokio::time::sleep(Duration::from_millis(5_300)).await;
+
+    let (_, delegation) = daemon.idle_tick_counts_for_test();
+    assert_eq!(
+        delegation, settled_ticks,
+        "a future retention must not poll every 5 s"
+    );
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(
+        daemon.session_status(expiring).ok().flatten(),
+        None,
+        "the child must close when its retention deadline expires"
+    );
+}
+
+fn create_sleeping_session(daemon: &std::sync::Arc<Daemon>, project: &std::path::Path) -> u32 {
+    #[cfg(unix)]
+    let cmd = vec!["sh", "-c", "exec sleep 60"];
+    #[cfg(windows)]
+    let cmd = vec!["powershell", "-NoProfile", "-Command", "Start-Sleep 60"];
+    daemon
+        .create_session(houston_core::daemon::CreateParams {
+            agent: proto::AgentKind::Custom,
+            project_dir: project.to_path_buf(),
+            cmd: Some(cmd.into_iter().map(str::to_owned).collect()),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+        })
+        .expect("create child session")
+        .id
+}
+
 fn context_switches() -> u64 {
     let mut total = 0u64;
     let Ok(entries) = std::fs::read_dir("/proc/self/task") else {
