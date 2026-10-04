@@ -49,6 +49,32 @@ html[data-motion-paused] .loop-anim {
   }
 }
 
+@keyframes popover-view-out {
+  to { opacity: 0; }
+}
+
+@keyframes popover-view-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popover-part-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.popover-view-out { animation: popover-view-out var(--motion-fast-t) var(--motion-fast-ease) forwards; }
+.popover-view-in { animation: popover-view-in var(--motion-menu-t) var(--motion-menu-ease) both; }
+.popover-header-in { animation: popover-part-in var(--motion-menu-t) var(--motion-menu-ease) both; animation-delay: var(--motion-popover-step); }
+.popover-body-in { animation: popover-part-in var(--motion-menu-t) var(--motion-menu-ease) both; animation-delay: calc(var(--motion-popover-step) * 2); }
+.anim-out { pointer-events: none; }
+.anim-out > [role='menu'], .anim-out > [role='listbox'] { animation: menu-out var(--motion-fast-t) var(--motion-fast-ease) forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .popover-view-out, .popover-view-in, .popover-header-in, .popover-body-in,
+  .anim-out > [role='menu'], .anim-out > [role='listbox'] { animation: none; }
+}
+
 @keyframes dot-pulse {
   0%,
   100% {

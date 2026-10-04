@@ -817,6 +817,13 @@ The rules:
    physics are exactly what rules 1–4 forbid; there is no Framer/Motion dependency.
 8. **Panes get no drop shadow, no per-pane accent hue, and no animated entry.**
 
+Popover anchors use the trigger's start edge and clamp only to the viewport; a trigger label
+changing width never recentres an open menu. Houston does not use RTL. A popover with multiple
+views keeps the largest view's bounds and crossfades the outgoing view in Fast (120ms) before
+the incoming view in Menu (160ms). Its container enters in Menu with `menu-in`; header and body
+rise 4px with opacity, 40ms apart. The complete popover exits once with `menu-out` in Fast.
+Reduced motion removes the stagger and view crossfade and shows each settled state immediately.
+
 Keyframes live in `keyframes.css` — global and unlayered by necessity, since Tailwind
 utilities name them directly.
 
