@@ -581,6 +581,11 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
     );
     r.fake.await_reactions("1800000000.000100", &["eyes"]).await;
     let dm = r.fake.await_dm("Novo pedido").await;
+    assert_eq!(
+        dm["text"],
+        format!("Novo pedido de <@{REQUESTER}> em <#{CHANNEL}>: “fix the footer it overlaps”"),
+        "the phone notification says what was asked"
+    );
     let dm_text = dm.to_string();
     assert!(
         dm_text.contains(&format!("<@{REQUESTER}>"))
@@ -1257,6 +1262,7 @@ async fn a_task_canceled_after_its_hand_back_posts_the_dropped_note() {
                 steps: vec!["Abrir o formulário.".into()],
                 live_note: Some("Está no ar.".into()),
                 dropped_note: Some("Este pedido não vai seguir; o rótulo continua Salvar.".into()),
+                blockers: vec!["Gates vermelhos: lint. Não mergear antes de corrigir.".into()],
                 ..Default::default()
             }),
             session,
@@ -1267,6 +1273,15 @@ async fn a_task_canceled_after_its_hand_back_posts_the_dropped_note() {
     r.fake
         .await_reactions("1800000004.000100", &["checkered_flag"])
         .await;
+    let dm = r
+        .fake
+        .await_dm("Entregue com bloqueio: Rótulo do botão")
+        .await;
+    let blocks = dm["blocks"].as_array().unwrap();
+    assert!(
+        blocks[1].to_string().contains("⛔ Gates vermelhos: lint."),
+        "the blocker comes right under the title: {dm}"
+    );
     close_task(&r, task_id, proto::TaskStatus::Canceled);
     r.fake
         .await_post("Este pedido não vai seguir; o rótulo continua Salvar.")
@@ -1311,9 +1326,15 @@ async fn a_refusal_at_triage_tells_the_thread_why_and_marks_the_request() {
     r.fake
         .await_reactions("1800000003.000100", &["no_entry_sign"])
         .await;
-    r.fake
+    let dm = r
+        .fake
         .await_dm("Recusado na triagem: E-mail para todos os clientes")
         .await;
+    assert!(
+        dm.to_string()
+            .contains("> Enviar mensagens a clientes precisa de uma pessoa"),
+        "the owner reads why: {dm}"
+    );
     close_task(&r, task_id, proto::TaskStatus::Canceled);
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(
@@ -1584,6 +1605,16 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
         )
         .unwrap();
     r.fake.await_reactions(request, &["checkered_flag"]).await;
+    let again = r
+        .fake
+        .await_dm("Ajuste pronto para revisão: Rótulo do botão")
+        .await;
+    assert!(
+        again
+            .to_string()
+            .contains("Mesma branch da entrega anterior"),
+        "{again}"
+    );
     r.fake.send_interactive(
         "a5b",
         click(OWNER, "houston_adjust_accept", &older_id.to_string()),

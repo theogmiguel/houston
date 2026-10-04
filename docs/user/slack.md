@@ -109,9 +109,14 @@ five attempts, and the status line names it.
    The owner gets a direct message named by the subject, with the size in one word
    (small, medium or large) and the files and lines changed since the run's base, the
    pushed branch (or that it was not pushed), the warnings and facts, the time worked
-   without the time spent waiting for an answer, and an **Open pull request** button: the
-   pull request `gh` finds for the branch (GitHub only) or, when there is none, the page
-   that opens one on GitHub or Bitbucket Cloud. Small is the agent's call, following the
+   without the time spent waiting for an answer, and a pull request button: **Open pull
+   request** for the one `gh` finds for the branch (GitHub only), or **Create pull request**
+   for the page that opens one on GitHub or Bitbucket Cloud, with a reminder that the
+   description is ready in the task. What the agent marks as blocking a merge
+   (`--blocker`) comes first, under the title "Delivered with a blocker". A refusal at
+   triage quotes the agent's reason. A later delivery of the same request says it is an
+   adjustment on the same branch. Notifications carry the request's start, the size and
+   the number of warnings, so the phone shows what arrived. Small is the agent's call, following the
    repository's own rule; without it, three files or fewer count as small. Up to 15 files
    and 600 changed lines is medium; anything larger is large.
 

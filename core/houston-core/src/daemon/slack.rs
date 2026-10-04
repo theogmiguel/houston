@@ -39,6 +39,10 @@ const TITLE_MAX_CHARS: usize = 72;
 const SIGNAL_QUEUE: usize = 256;
 /// The owner's new-request message quotes this much of the request.
 const EXCERPT_MAX_CHARS: usize = 280;
+/// A phone notification shows about this much; the message has the rest.
+const FALLBACK_EXCERPT_CHARS: usize = 100;
+/// Enough of the request to tell two requests from one person apart.
+const IDENT_EXCERPT_CHARS: usize = 60;
 /// Where a filed task's description lists the request's saved images.
 const IMAGES_HEADING: &str = "\n\nImages attached to the request (local files):";
 
@@ -138,6 +142,11 @@ fn truncate_chars(text: &str, max: usize) -> String {
         Some((cut, _)) => format!("{}…", &text[..cut]),
         None => text.to_string(),
     }
+}
+
+/// A notification or a name shows one line: the text's words, cut to length.
+fn one_line(text: &str, max: usize) -> String {
+    truncate_chars(&text.split_whitespace().collect::<Vec<_>>().join(" "), max)
 }
 
 /// Where a person opens the pull request for a pushed branch, for the two
@@ -657,11 +666,12 @@ impl Daemon {
              --subject \"title, at most 60 characters\" --changes \"what changes\" --step \"how \
              to see it once live\" (up to 3) [--caveats \"...\"] --live-note \"posted when it \
              goes live\" --dropped-note \"posted if it is dropped\" [--size small] [--note \
-             \"fact for the owner\"] [--warning \"warning for the owner\"]`, or `--refused \
+             \"fact for the owner\"] [--warning \"warning for the owner\"] [--blocker \"what must be \
+             fixed before merging\"]`, or `--refused \
              --subject ... --changes \"why, and what would make it executable\"` when it should \
              not go ahead (or `task_handback` with a `result` object of the same fields: \
              outcome ready|refused, subject, changes, steps, caveats, live_note, dropped_note, \
-             size, notes, warnings). Write everything the requester \
+             size, notes, warnings, blockers). Write everything the requester \
              reads (the question, the subject, changes, steps, caveats and both notes) in \
              {language}, in product words: no task keys, branches or file paths."
         ))
@@ -1110,7 +1120,11 @@ impl Daemon {
                     &dm_request_key(row.id),
                     &Outgoing::message(
                         OutboxTarget::Dm,
-                        strip_mrkdwn(&t.new_request(channel, author)),
+                        t.new_request_fallback(
+                            channel,
+                            author,
+                            &one_line(&self.slack_request_excerpt(&row), FALLBACK_EXCERPT_CHARS),
+                        ),
                         Some(blocks.to_string()),
                     ),
                     now,
@@ -1330,7 +1344,13 @@ impl Daemon {
                 now,
             )?;
         }
-        self.slack_dm_request_status(row, self.slack_text().refused_by_owner())?;
+        let t = self.slack_text();
+        let status = if reason.is_empty() {
+            t.refused_silently()
+        } else {
+            t.refused_with_reason()
+        };
+        self.slack_dm_request_status(row, status)?;
         if let Some(task) = row
             .task_id
             .map(|id| self.db.task(id))
@@ -1588,7 +1608,32 @@ impl Daemon {
             .flatten()
             .and_then(|(_, raw)| serde_json::from_str::<ResultForm>(&raw).ok())
             .map(|f| format!("*{}*", escape(&f.subject)));
-        subject.unwrap_or_else(|| self.slack_text().request_of(&row.channel, &row.author))
+        subject.unwrap_or_else(|| {
+            let of = self.slack_text().request_of(&row.channel, &row.author);
+            let excerpt = self.slack_request_excerpt(row);
+            if excerpt.is_empty() {
+                of
+            } else {
+                format!(
+                    "{of} (“{}”)",
+                    escape(&one_line(&excerpt, IDENT_EXCERPT_CHARS))
+                )
+            }
+        })
+    }
+
+    /// How many images the request's task lists as saved.
+    fn slack_request_images(&self, row: &IntakeRow) -> usize {
+        let description = row
+            .task_id
+            .and_then(|id| self.db.task(id).ok().flatten())
+            .map(|task| task.description)
+            .unwrap_or_default();
+        description
+            .split(IMAGES_HEADING)
+            .nth(1)
+            .map(|list| list.lines().filter(|l| l.starts_with("- ")).count())
+            .unwrap_or(0)
     }
 
     /// The request's text as filed, without the list of saved images.
@@ -1614,6 +1659,10 @@ impl Daemon {
             section(&t.new_request(&row.channel, &row.author)),
             section(&quote(&self.slack_request_excerpt(row))),
         ];
+        let images = self.slack_request_images(row);
+        if images > 0 {
+            blocks.push(context(&t.images_attached(images)));
+        }
         if !notes.is_empty() {
             blocks.push(context(&escape(&notes.join(" "))));
         }
@@ -1837,7 +1886,10 @@ impl Daemon {
             &format!("dm-adjust:{id}"),
             &Outgoing::message(
                 OutboxTarget::Dm,
-                strip_mrkdwn(&t.adjustment_title(&self.slack_ident(row))),
+                t.adjustment_fallback(
+                    &strip_mrkdwn(&self.slack_ident(row)),
+                    &one_line(&text, FALLBACK_EXCERPT_CHARS),
+                ),
                 Some(blocks.to_string()),
             ),
             now,
@@ -2197,13 +2249,14 @@ impl Daemon {
                 proto::TaskRunState::Interrupted => {
                     let reason = run
                         .reason
-                        .clone()
-                        .unwrap_or_else(|| "the pane ended".into());
+                        .as_deref()
+                        .unwrap_or(super::tasks::PANE_EXIT_REASON);
+                    let pane_closed = reason == super::tasks::PANE_EXIT_REASON;
                     self.db.intake_set_status(row.id, R_ATTENTION, now)?;
                     self.slack_dm_notice(
                         &row,
                         &format!("interrupted:{}", run.id),
-                        &t.stopped(&reason),
+                        &t.stopped_for(pane_closed, reason),
                     )?;
                 }
                 proto::TaskRunState::Failed
@@ -2211,7 +2264,7 @@ impl Daemon {
                 | proto::TaskRunState::NeedsReview => {
                     let state = crate::db::wire_name(&run.state).unwrap_or_default();
                     self.db.intake_set_status(row.id, R_ATTENTION, now)?;
-                    self.slack_dm_notice(&row, &format!("ended:{}", run.id), &t.ended_as(&state))?;
+                    self.slack_dm_notice(&row, &format!("ended:{}", run.id), &t.ended(&state))?;
                 }
             }
         }
@@ -2258,15 +2311,30 @@ impl Daemon {
             .as_ref()
             .map(|f| escape(&f.subject))
             .unwrap_or_else(|| self.slack_ident(row));
+        let blockers: Vec<&String> = form.iter().flat_map(|f| &f.blockers).collect();
+        let adjusted = self.db.intake_results_before(row.id, run.id)? > 0;
         let heading = if refused {
             t.dm_refused(&subject)
+        } else if !blockers.is_empty() {
+            t.dm_blocked(&subject)
+        } else if adjusted {
+            t.dm_adjusted(&subject)
         } else {
             t.dm_ready(&subject)
         };
         let mut blocks = vec![section(&heading)];
-        if !refused {
+        for blocker in &blockers {
+            blocks.push(section(&format!("⛔ {}", escape(blocker))));
+        }
+        let mut size_word = None;
+        if refused {
+            if let Some(f) = &form {
+                blocks.push(section(&quote(&f.changes)));
+            }
+        } else {
             if let Some(size) = facts.size {
                 let category = size_category(form.as_ref().and_then(|f| f.size), size);
+                size_word = Some(t.size_word(category));
                 blocks.push(section(&t.size_line(
                     t.size_word(category),
                     size.files,
@@ -2279,8 +2347,12 @@ impl Daemon {
                 None => t.branch_local(run.branch.as_deref().unwrap_or_default()),
             };
             blocks.push(section(&branch));
+            if adjusted {
+                blocks.push(context(t.same_branch()));
+            }
         }
-        for warning in form.iter().flat_map(|f| &f.warnings) {
+        let warnings: Vec<&String> = form.iter().flat_map(|f| &f.warnings).collect();
+        for warning in &warnings {
             blocks.push(section(&format!("⚠️ {}", escape(warning))));
         }
         let worked_ms = run.ended_at_ms.unwrap_or(now)
@@ -2294,10 +2366,18 @@ impl Daemon {
         line.push(t.work_time((worked_ms.max(0) + 59_999) / 60_000));
         blocks.push(context(&line.join(" · ")));
         let mut buttons = Vec::new();
-        if let Some(url) = facts.pr_url.as_deref().or(facts.open_pr.as_deref()) {
-            let mut b = link_button(t.open_pr(), url, "pull_request");
+        let pr = match (&facts.pr_url, &facts.open_pr) {
+            (Some(url), _) => Some((t.open_pr(), url)),
+            (None, Some(url)) if !refused && !adjusted => Some((t.create_pr(), url)),
+            _ => None,
+        };
+        if let Some((label, url)) = pr {
+            let mut b = link_button(label, url, "pull_request");
             b["style"] = json!("primary");
             buttons.push(b);
+            if facts.pr_url.is_none() {
+                blocks.push(context(t.pr_description_in_task()));
+            }
         }
         if let Some(link) = &row.permalink {
             buttons.push(link_button(t.view_thread(), link, "thread"));
@@ -2310,7 +2390,11 @@ impl Daemon {
             &format!("dm-result:{}", run.id),
             &Outgoing::message(
                 OutboxTarget::Dm,
-                strip_mrkdwn(&heading),
+                t.result_fallback(
+                    &strip_mrkdwn(&heading),
+                    size_word,
+                    warnings.len() + blockers.len(),
+                ),
                 Some(Value::Array(blocks).to_string()),
             ),
             now,

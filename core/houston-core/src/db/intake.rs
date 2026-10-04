@@ -727,6 +727,16 @@ impl Db {
             .optional()?)
     }
 
+    /// Hand-backs of the same request before `run_id`: a later one is an adjustment.
+    pub fn intake_results_before(&self, intake_id: i64, run_id: i64) -> Result<i64> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM intake_results WHERE intake_id = ?1 AND run_id < ?2",
+            rusqlite::params![intake_id, run_id],
+            |r| r.get(0),
+        )?)
+    }
+
     /// How long a run's questions waited for a person, up to `now_ms` for one
     /// still open.
     pub fn intake_question_wait_ms(&self, run_id: i64, now_ms: i64) -> Result<i64> {

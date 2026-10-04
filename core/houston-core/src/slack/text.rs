@@ -209,14 +209,6 @@ impl Text {
         }
     }
 
-    pub fn ended_as(self, state: &str) -> String {
-        if self.pt() {
-            format!("terminou como {state} no Houston.")
-        } else {
-            format!("ended as {state} in Houston.")
-        }
-    }
-
     pub fn choose(self) -> &'static str {
         self.pick("Escolher", "Choose")
     }
@@ -361,6 +353,132 @@ impl Text {
         self.pick("Abrir pull request", "Open pull request")
     }
 
+    /// The forge's page for a pull request that does not exist yet.
+    pub fn create_pr(self) -> &'static str {
+        self.pick("Criar pull request", "Create pull request")
+    }
+
+    pub fn pr_description_in_task(self) -> &'static str {
+        self.pick(
+            "A descrição do PR está pronta na tarefa, no Houston: copie e cole no formulário.",
+            "The PR description is ready in the task, in Houston: paste it into the form.",
+        )
+    }
+
+    pub fn dm_blocked(self, subject: &str) -> String {
+        if self.pt() {
+            format!("*Entregue com bloqueio: {subject}*")
+        } else {
+            format!("*Delivered with a blocker: {subject}*")
+        }
+    }
+
+    pub fn dm_adjusted(self, subject: &str) -> String {
+        if self.pt() {
+            format!("*Ajuste pronto para revisão: {subject}*")
+        } else {
+            format!("*Adjustment ready for review: {subject}*")
+        }
+    }
+
+    pub fn same_branch(self) -> &'static str {
+        self.pick(
+            "Mesma branch da entrega anterior: o PR aberto antes recebe os commits novos.",
+            "Same branch as the earlier delivery: the pull request opened before gets the new commits.",
+        )
+    }
+
+    /// The owner's notification for a result: what, how big, how many warnings.
+    pub fn result_fallback(self, heading: &str, size: Option<&str>, warnings: usize) -> String {
+        let mut extra = Vec::new();
+        if let Some(size) = size {
+            extra.push(size.to_string());
+        }
+        match (self.pt(), warnings) {
+            (_, 0) => {}
+            (true, 1) => extra.push("1 aviso".into()),
+            (true, n) => extra.push(format!("{n} avisos")),
+            (false, 1) => extra.push("1 warning".into()),
+            (false, n) => extra.push(format!("{n} warnings")),
+        }
+        if extra.is_empty() {
+            heading.to_string()
+        } else {
+            format!("{heading} ({})", extra.join(", "))
+        }
+    }
+
+    pub fn new_request_fallback(self, channel: &str, author: &str, excerpt: &str) -> String {
+        if self.pt() {
+            format!("Novo pedido de <@{author}> em <#{channel}>: “{excerpt}”")
+        } else {
+            format!("New request from <@{author}> in <#{channel}>: “{excerpt}”")
+        }
+    }
+
+    pub fn adjustment_fallback(self, subject: &str, excerpt: &str) -> String {
+        if self.pt() {
+            format!("Pedido de ajuste em {subject}: “{excerpt}”")
+        } else {
+            format!("Adjustment requested on {subject}: “{excerpt}”")
+        }
+    }
+
+    pub fn images_attached(self, n: usize) -> String {
+        match (self.pt(), n) {
+            (true, 1) => "📎 1 imagem anexada".into(),
+            (true, n) => format!("📎 {n} imagens anexadas"),
+            (false, 1) => "📎 1 image attached".into(),
+            (false, n) => format!("📎 {n} images attached"),
+        }
+    }
+
+    pub fn refused_with_reason(self) -> &'static str {
+        self.pick(
+            "Recusado por você · motivo publicado na thread",
+            "Refused by you · reason posted in the thread",
+        )
+    }
+
+    pub fn refused_silently(self) -> &'static str {
+        self.pick(
+            "Recusado por você · só 🚫, sem motivo",
+            "Refused by you · only 🚫, no reason",
+        )
+    }
+
+    pub fn stopped_pane_closed(self) -> &'static str {
+        self.pick(
+            "parou antes de entregar: o pane fechou. Retome ou tente de novo no Houston.",
+            "stopped before handing back: the pane closed. Resume or retry it in Houston.",
+        )
+    }
+
+    /// Why a run stopped, without the daemon's English reason in a pt-BR message.
+    pub fn stopped_for(self, pane_closed: bool, raw: &str) -> String {
+        match (self.pt(), pane_closed) {
+            (true, true) => self.stopped_pane_closed().to_string(),
+            (true, false) => {
+                "parou antes de entregar; o motivo está no Houston. Retome ou tente de novo por lá."
+                    .into()
+            }
+            (false, _) => self.stopped(raw),
+        }
+    }
+
+    /// A run that ended without a hand-back, by its state's wire name.
+    pub fn ended(self, state: &str) -> String {
+        if !self.pt() {
+            return format!("ended as {state} in Houston.");
+        }
+        match state {
+            "failed" => "falhou no Houston.".into(),
+            "cancelled" => "foi cancelado no Houston.".into(),
+            "needs_review" => "terminou pedindo revisão no Houston.".into(),
+            other => format!("terminou como {other} no Houston."),
+        }
+    }
+
     pub fn view_thread(self) -> &'static str {
         self.pick("Ver thread", "View thread")
     }
@@ -451,6 +569,19 @@ mod tests {
             "2 em andamento (limite 2); entra na fila"
         );
         assert_eq!(en.start_outlook(1, 2), "1 working; it starts right away");
+        assert_eq!(
+            pt.result_fallback("Pronto para revisão: X", Some("médio"), 2),
+            "Pronto para revisão: X (médio, 2 avisos)"
+        );
+        assert_eq!(
+            pt.result_fallback("Recusado na triagem: X", None, 0),
+            "Recusado na triagem: X"
+        );
+        assert!(pt.stopped_for(true, "ignored").contains("o pane fechou"));
+        assert!(!pt
+            .stopped_for(false, "the daemon restarted")
+            .contains("daemon"));
+        assert_eq!(pt.ended("failed"), "falhou no Houston.");
         assert!(pt.refuse_title().chars().count() <= 24);
         assert!(pt.other_title().chars().count() <= 24);
         assert_eq!(

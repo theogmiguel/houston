@@ -137,11 +137,15 @@ pub struct ResultForm {
     pub notes: Vec<String>,
     #[serde(default)]
     pub warnings: Vec<String>,
+    /// What must be fixed before merging (red gates, a failed verifier, a
+    /// conflict); the owner reads these first.
+    #[serde(default)]
+    pub blockers: Vec<String>,
 }
 
 const HANDBACK_SHAPE: &str = "expected `hs-task handback --subject \"…\" --changes \"…\" \
      --step \"…\" [--step …] [--caveats \"…\"] --live-note \"…\" --dropped-note \"…\" \
-     [--size small|medium|large] [--note \"…\"] [--warning \"…\"]`, or `--refused --subject \
+     [--size small|medium|large] [--note \"…\"] [--warning \"…\"] [--blocker \"…\"]`, or `--refused --subject \
      \"…\" --changes \"why, and what would make it executable\"`";
 
 fn trimmed(v: Option<String>) -> Option<String> {
@@ -166,6 +170,7 @@ impl ResultForm {
         self.dropped_note = trimmed(self.dropped_note);
         self.notes = trimmed_all(self.notes);
         self.warnings = trimmed_all(self.warnings);
+        self.blockers = trimmed_all(self.blockers);
         if self.subject.is_empty() || self.changes.is_empty() {
             bail!("{op} needs --subject and --changes for a Slack-filed task; {HANDBACK_SHAPE}");
         }
@@ -200,7 +205,11 @@ impl ResultForm {
                 bail!("{op}: give --live-note (posted when the task is Done) and --dropped-note (posted when it is Canceled); {HANDBACK_SHAPE}");
             }
         }
-        for (name, lines) in [("--note", &self.notes), ("--warning", &self.warnings)] {
+        for (name, lines) in [
+            ("--note", &self.notes),
+            ("--warning", &self.warnings),
+            ("--blocker", &self.blockers),
+        ] {
             if lines.len() > RESULT_OWNER_LINES_MAX {
                 bail!(
                     "{op}: {} {name} lines given, over the limit of {RESULT_OWNER_LINES_MAX}",
@@ -232,7 +241,12 @@ impl ResultForm {
                 out.push_str(&format!("\n\n{label}: {v}"));
             }
         }
-        for line in self.notes.iter().chain(&self.warnings) {
+        for line in self
+            .blockers
+            .iter()
+            .chain(&self.notes)
+            .chain(&self.warnings)
+        {
             out.push_str(&format!("\n- {line}"));
         }
         out

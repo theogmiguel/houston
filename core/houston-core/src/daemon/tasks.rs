@@ -70,7 +70,7 @@ const PANE_WORKING_ACTOR: &str = "houston:pane-working";
 const PR_MERGED_ACTOR: &str = "houston:pr-merged";
 
 /// The pane exit reason recorded on a run that was never handed back.
-const PANE_EXIT_REASON: &str = "the pane exited without handing the task back";
+pub(super) const PANE_EXIT_REASON: &str = "the pane exited without handing the task back";
 
 /// The reason recorded on a run the daemon restart interrupted.
 const RESTART_REASON: &str =
