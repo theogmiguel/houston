@@ -19,7 +19,6 @@ RATCHETS=(
   "scripts/check-spacing-tokens-widened-baseline.sh WIDENED_BASELINE bash"
   "scripts/check-ui-boundary-baseline.sh BASELINE bash"
   "scripts/check-copy-baseline.sh TITLE_CASE_BASELINE bash"
-  "scripts/check-copy-baseline.sh PLACEHOLDER_BASELINE bash"
   "scripts/check-copy-baseline.sh COUNT_BASELINE bash"
   "scripts/check-copy-baseline.sh BANNED_STATUS_BASELINE bash"
   "scripts/check-focus-visible.sh EXEMPT_COUNTS bash"

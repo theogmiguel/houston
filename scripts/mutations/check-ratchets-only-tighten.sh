@@ -30,7 +30,6 @@ printf 'WIDENED_BASELINE=()\n' > "$tmp/work/scripts/check-spacing-tokens-widened
 printf 'BASELINE=(\n  "ui/src/A.tsx 1"\n)\n' > "$tmp/work/scripts/check-ui-boundary-baseline.sh"
 cat > "$tmp/work/scripts/check-copy-baseline.sh" <<'EOF'
 TITLE_CASE_BASELINE=("ui/src/A.tsx 1")
-PLACEHOLDER_BASELINE=()
 COUNT_BASELINE=()
 BANNED_STATUS_BASELINE=()
 EOF

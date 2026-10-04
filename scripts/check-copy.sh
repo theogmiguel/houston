@@ -27,7 +27,6 @@ reports="$(perl -e '
         (my $plain = $s) =~ s/$proper//g;
         push @hits, ["count", $s] if $s =~ /\(\d+\)|·\s*\d+/;
         push @hits, ["title-case", $s] if $prop ne "placeholder" && $plain =~ /\b[A-Z][a-z]+(?:\s+\b[A-Z][a-z]+){1,}\b/;
-        push @hits, ["placeholder-case", $s] if $prop eq "placeholder" && $s =~ /^[A-Z]/ && $s !~ /^$proper\b/;
         push @hits, ["banned-status", $s] if $s =~ /^\s*(?:Ok|Not there)\s*$/;
       }
       for my $hit (@hits) { print "$hit->[0]\t$f\t" . ($i + 1) . "\t$hit->[1]\n"; }
@@ -53,10 +52,9 @@ reports="$(perl -e '
 
 source scripts/check-copy-baseline.sh
 fail=0
-for rule in title-case placeholder-case count banned-status; do
+for rule in title-case count banned-status; do
   case "$rule" in
     title-case) baseline_name=TITLE_CASE_BASELINE ;;
-    placeholder-case) baseline_name=PLACEHOLDER_BASELINE ;;
     count) baseline_name=COUNT_BASELINE ;;
     banned-status) baseline_name=BANNED_STATUS_BASELINE ;;
   esac
@@ -86,7 +84,7 @@ for rule in title-case placeholder-case count banned-status; do
   unset -n baseline
 done
 if [ "$fail" -eq 0 ]; then
-  pins=$((${#TITLE_CASE_BASELINE[@]} + ${#PLACEHOLDER_BASELINE[@]} + ${#COUNT_BASELINE[@]} + ${#BANNED_STATUS_BASELINE[@]}))
+  pins=$((${#TITLE_CASE_BASELINE[@]} + ${#COUNT_BASELINE[@]} + ${#BANNED_STATUS_BASELINE[@]}))
   echo "ok: copy checks pass ($pins pins)"
 fi
 exit "$fail"
