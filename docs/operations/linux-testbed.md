@@ -93,7 +93,9 @@ the first `FAIL`.
 - **Secret Service / gnome-keyring**: `voice::cloud`'s tests talk to a Secret
   Service; `gate`'s core test step runs under `dbus-run-session` with
   `gnome-keyring-daemon --unlock` for this reason — same fix CI's `core` job
-  uses. Order matters: the shield (`oom-shield.sh`, needs the **real**
+  uses. That recipe is safe only inside the VM or CI; on a desktop host use
+  `scripts/with-test-keyring.sh` (see the development runbook's full gate
+  commands). Order matters: the shield (`oom-shield.sh`, needs the **real**
   session bus via `systemd-run --user`) wraps `dbus-run-session` (which
   replaces the bus with a private one), never the reverse — the reverse
   cannot reach the user manager.

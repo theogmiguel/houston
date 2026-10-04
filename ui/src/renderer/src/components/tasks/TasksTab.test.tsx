@@ -78,6 +78,19 @@ describe('global Tasks viewer', () => {
     expect(container.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe('This workspace')
   })
 
+  it.each([
+    ['C:\\Programação\\Houston', 'Houston'],
+    ['C:\\Programação\\Houston\\', 'Houston'],
+    ['\\\\server\\projects\\Houston', 'Houston'],
+    ['/projects/Houston/', 'Houston']
+  ])('shows the folder name for workspace %s', (workspace, name) => {
+    const snapshot = state()
+    snapshot.snapshot.tasks[1].workspace = workspace
+    mocks.useTasks.mockReturnValue(snapshot)
+    act(() => root.render(<TasksTab client={null} workspace={workspace} />))
+    expect(container.querySelector('[data-testid="task-workspace-chip"]')?.textContent).toBe(name)
+  })
+
   it('keeps scope controls usable when localStorage refuses writes', () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
     act(() => root.render(<TasksTab client={null} workspace="/project" />))

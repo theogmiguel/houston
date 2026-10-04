@@ -2,7 +2,8 @@
 
 Tasks are one global local backlog, visible from every workspace. **All** is the default
 view; **This workspace** filters to the current workspace, and each viewer remembers its
-choice. In All, rows show the workspace or **No workspace**. Open the **Tasks** tab in the side
+choice. In All, rows show the workspace folder name or **No workspace**; hover over the
+workspace name to see its full path. Open the **Tasks** tab in the side
 panel beside **Source control** and **Files**. The list is grouped by status with a count
 per group: **In progress**, **In review**, **Todo**, **Backlog**, **Done** and **Canceled**.
 Each row carries a priority glyph, the task key (`HOU-1`), its title and the time since it
