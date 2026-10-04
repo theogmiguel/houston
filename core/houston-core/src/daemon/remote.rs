@@ -744,14 +744,14 @@ impl Daemon {
         let pending = self.remote.feed.pending(id).filter(|_| waiting);
         let pending = match pending {
             Some(p) if p.seq == entry_seq && p.seq != 0 => p,
-            Some(p) if p.seq != 0 => return Err(ApiError::Conflict(format!(
-                "entry {entry_seq} is not pane {id}'s pending decision: it now waits on entry {}",
-                p.seq
-            ))),
-            _ => {
+            other => {
+                let now_waits = match other.map(|p| p.seq).filter(|seq| *seq != 0) {
+                    Some(seq) => format!("it now waits on entry {seq}"),
+                    None => "it has no decision Houston can answer".to_string(),
+                };
                 return Err(ApiError::Conflict(format!(
-                    "entry {entry_seq} is not pending: pane {id} has no decision Houston can answer"
-                )))
+                    "entry {entry_seq} is not pane {id}'s pending decision: {now_waits}"
+                )));
             }
         };
         feed::decision_support(pending.provider, &pending.card).map_err(ApiError::Conflict)?;
