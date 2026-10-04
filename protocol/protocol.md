@@ -1,4 +1,4 @@
-# Wire protocol v124
+# Wire protocol v125
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -266,6 +266,9 @@ failure not given a typed refusal comes back as `error`.
 | `harness_routine_create` | `workspace`, `engine`, `model?`, `effort?`, `cadence`, `enabled` | the preset review routine for that workspace, with these fields; `routines` (bcast) and `harness_changed` (bcast) on success, `routine_refused` (direct) for a cap or name; `error` when the workspace is not a directory or already has its review routine. It is changed, run and deleted with the `routine_*` messages |
 | `harness_report` | `review_id` | `harness_report` (direct); `error` when the review has no `report.md` |
 | `harness_decide` | `workspace`, `key`, `state: HarnessFindingState` (`open` withdraws the decision) | `harness_changed` (bcast); `error` when no review of that workspace raised `key` |
+| `harness_fix_task` | `workspace`, `key`, `agent?`, `start` (default false), `prompt?` (edited apply prompt) | `task_changed` and `harness_changed` (bcast); `task_refused` for access off, the task cap, invalid key or an existing open linked task (names its `HOU-n`) |
+| `harness_overview_get` | — | `harness_overview` (direct), one row per workspace with Harness reviews |
+| `harness_seen` | `workspace`, `review_id` | `harness_changed` (bcast); the stored cursor advances monotonically and is capped at the latest published review |
 
 ### Tasks
 
@@ -415,9 +418,10 @@ every refusal names the setting.
 | `routine_refused` | `id?` (`null` for a refused create), `kind: RoutineErrorKind`, `limit?`, `requested?` | direct reply only; nothing changed |
 | `routine_runs` | `runs: RoutineRun[]` | direct reply to `routine_runs` |
 | `routine_run_event` | `run: RoutineRun` | bcast — one run changed state: opened, refused before it spawned, or ended with an outcome |
-| `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability) | direct reply to `harness_state` |
+| `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability), `provider_coverage: HarnessProviderCoverage[]` | direct reply to `harness_state` |
+| `harness_overview` | `rows: HarnessAttention[]` | direct reply to `harness_overview_get` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
-| `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, or a decision changed; a client showing it asks for `harness_state` again |
+| `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, a finding decision or task link changed, or the seen cursor advanced; clients refresh Harness state and overview |
 | `task_snapshot` | `scope`, `tasks: TaskSummary[]` (newest number first, at most `TASKS_PER_WORKSPACE`; archived tasks stay in the list with `archived_at_ms` set), `counts: TaskCounts` (non-archived only) | direct reply to `task_snapshot` |
 | `task_detail` | `task: Task`, `acceptance: TaskAcceptanceItem[]` (by position), `comments: TaskComment[]` (newest first, at most `COMMENTS_PER_TASK`), `history: TaskHistoryEntry[]` (newest first, at most `TASK_HISTORY_PAGE`), `runs: TaskRun[]` (newest first, at most `RUNS_PER_TASK`) | direct reply to `task_get` |
 | `task_changed` | `workspace?` (null = unassigned), `id`, `revision` | bcast after any task write — a client refreshes its scoped snapshot and open detail |
@@ -608,8 +612,16 @@ HarnessModelOption provider: AgentKind (Claude or Codex), id (native model id)
 HarnessFinding     review_id, key, title, category, confidence, sessions, count, quotes,
                    recommendation_kind, target, recommendation, apply_prompt,
                    state: HarnessFindingState, decided_at_ms?,
-                   recurred (a review published after the decision raised it again, so it is open)
+                   recurred (a review published after the decision raised it again, so it is open),
+                   phase: HarnessFindingPhase, task?, verification?, last_seen_review_id
 HarnessFindingState open | dismissed | resolved
+HarnessFindingPhase open | fixing | awaiting_verification | not_seen | resolved | dismissed
+HarnessFindingTask task_id, key (`HOU-<number>`), status: TaskStatus, landed_at_ms?
+HarnessVerification review_id, verdict: HarnessVerdict, sessions_after, quotes
+HarnessVerdict gone | still_present | inconclusive
+HarnessAttention workspace, counts for each finding phase, latest_published_review_id?,
+                 seen_review_id, attention
+HarnessProviderCoverage agent: AgentKind (OpenCode, Cursor, Grok or Antigravity), sessions
 
 TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number>`), title,
                    status: TaskStatus, priority: TaskPriority,
@@ -617,8 +629,10 @@ TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number
                    created_by ('user' or an agent's provenance), created_at_ms, updated_at_ms,
                    archived_at_ms?, acceptance_checked, acceptance_total,
                    open_run? (the newest run still in preparing/running/waiting_for_input/
-                   validating, so the list can draw the execution card without a detail fetch)
+                   validating, so the list can draw the execution card without a detail fetch),
+                   origin?: TaskOrigin
 Task               as TaskSummary plus description (≤ `TASK_DESCRIPTION_MAX`)
+TaskOrigin         harness_finding: workspace, key, review_id
 TaskStatus         backlog | todo | in_progress | in_review | done | canceled
 TaskPriority       none | urgent | high | medium | low (stored 0..4)
 TaskAcceptanceItem id, position, text, checked_at_ms?, checked_by?
@@ -1019,6 +1033,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 125 | **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. No other message changes |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |
 | 123 | **A local task backlog per workspace.** New `task_snapshot`, `task_get`, `task_save`, `task_comment`, `task_check`, `task_archive`, `tasks_access_get` and `tasks_access_set` client messages and `task_snapshot`, `task_detail`, `task_changed`, `task_refused` and `tasks_access` replies, with `Task`, `TaskSummary`, `TaskPatch`, `TaskStatus`, `TaskPriority`, `TaskAcceptanceItem`, `TaskComment`, `TaskHistoryEntry`, `TaskRun`, `TaskCounts`, `TaskErrorKind` and `TasksAccess`. Tasks live in per-workspace `backlog_*` SQLite tables, get a monotonic `HOU-<n>` number and an integer `revision`, and are gated by a per-workspace Tasks access (`off`/`read`/`write`, default `write`) in Settings ▸ Tasks; the orphan `tasks`/`task_events` tables are unrelated and untouched. Removing a workspace deletes its tasks. No existing message changes |
 | 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |

@@ -91,7 +91,8 @@ describe('HarnessView', () => {
       workspace: WS,
       routine: null,
       reviews: [],
-      findings: []
+      findings: [],
+      provider_coverage: []
     })
     expect(container.querySelector('[data-testid="harness-first-run"]')).not.toBeNull()
     act(() =>
@@ -113,7 +114,7 @@ describe('HarnessView', () => {
     render(asClient)
     emit({
       type: 'harness_state', workspace: WS, routine: null, reviews: [], findings: [],
-      models: [{ provider: 'codex', id: 'gpt-catalog-model' }]
+      models: [{ provider: 'codex', id: 'gpt-catalog-model' }], provider_coverage: []
     })
     pickOption(container, 'harness-provider', 'codex')
     pickOption(container, 'harness-model', 'gpt-catalog-model')
@@ -160,9 +161,12 @@ describe('HarnessView', () => {
           recommendation: '',
           apply_prompt: '',
           state: 'open',
-          recurred: false
+          recurred: false,
+          phase: 'open',
+          last_seen_review_id: 1
         }
-      ]
+      ],
+      provider_coverage: []
     })
     act(() => container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')!.click())
     act(() =>
