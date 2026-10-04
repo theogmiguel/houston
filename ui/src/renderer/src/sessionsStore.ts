@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useSyncExternalStore } from 'react'
+import { createContext, useContext, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { SessionInfo } from './houston/client'
 
 export type SessionsSnapshot = Map<number, SessionInfo>
@@ -38,6 +38,7 @@ export function useSessionsSelector<T>(
 ): T {
   const contextStore = useContext(SessionsStoreContext)
   const store = explicitStore ?? contextStore
+  const cache = useRef<{ value: T } | null>(null)
   const getSelection = useMemo(() => {
     let previousSnapshot: SessionsSnapshot | undefined
     let selection: T
@@ -48,7 +49,8 @@ export function useSessionsSelector<T>(
       if (initialized && previousSnapshot === snapshot) return selection
       const next = select(snapshot)
       previousSnapshot = snapshot
-      if (!initialized || !equal(selection, next)) selection = next
+      if (!cache.current || !equal(cache.current.value, next)) cache.current = { value: next }
+      selection = cache.current.value
       initialized = true
       return selection
     }
@@ -75,17 +77,29 @@ export function useSessionIds(filter?: (session: SessionInfo) => boolean): numbe
   )
 }
 
-// App owns layout and actions, but live status belongs to the subscribed leaves.
+export function useWorkspaceWaiting(path: string, fallback: boolean): boolean {
+  return useSessionsSelector(
+    (sessions) => [...sessions.values()].some((session) => session.project_dir === path && session.children_waiting > 0),
+    Object.is,
+    fallback,
+  )
+}
+
+const leafFields = new Set<keyof SessionInfo>(['status', 'context', 'compactions', 'delegation', 'live_children', 'children_waiting'])
+
+// App owns layout and actions; these fields only affect subscribed leaves.
 export function layoutSessionsEqual(previous: SessionsSnapshot, next: SessionsSnapshot): boolean {
   if (previous.size !== next.size) return false
+  const nextIds = next.keys()
   for (const [id, session] of previous) {
+    if (nextIds.next().value !== id) return false
     const other = next.get(id)
     if (!other) return false
     if (session === other) continue
     const keys = Object.keys(session) as (keyof SessionInfo)[]
     const otherKeys = Object.keys(other) as (keyof SessionInfo)[]
-    if (keys.some((key) => key !== 'status' && !Object.is(session[key], other[key])) ||
-        otherKeys.some((key) => key !== 'status' && !Object.is(session[key], other[key]))) return false
+    if (keys.some((key) => !leafFields.has(key) && !Object.is(session[key], other[key])) ||
+        otherKeys.some((key) => !leafFields.has(key) && !Object.is(session[key], other[key]))) return false
   }
   return true
 }

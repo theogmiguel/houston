@@ -39,6 +39,34 @@ describe('sessions selectors', () => {
     act(() => root.unmount())
   })
 
+  it('preserves selector results across parent renders and updates changed filters', () => {
+    const store = createSessionsStore(new Map([[1, session(1)], [2, session(2)]]))
+    let ids: number[] = []
+    let info: SessionInfo | undefined
+    function Selection({ id }: { id: number }) {
+      ids = useSessionIds((item) => item.id === id)
+      info = useSession(id)
+      return null
+    }
+    const root = createRoot(document.createElement('div'))
+    const render = (id: number) => act(() => root.render(<SessionsStoreContext.Provider value={store}><Selection id={id} /></SessionsStoreContext.Provider>))
+    render(1)
+    const first = ids
+    render(1)
+    expect(ids).toBe(first)
+    render(2)
+    expect(ids).toEqual([2])
+    expect(info).toBe(store.getSnapshot().get(2))
+    act(() => store.set((previous) => new Map(previous).set(1, { ...previous.get(1)!, title: 'renamed' })))
+    const second = ids
+    expect(ids).toEqual([2])
+    act(() => store.set((previous) => { const next = new Map(previous); next.delete(2); return next }))
+    expect(info).toBeUndefined()
+    expect(ids).toEqual([])
+    expect(ids).not.toBe(second)
+    act(() => root.unmount())
+  })
+
   it('applies sequential updates immediately and releases subscriptions', () => {
     const store = createSessionsStore(new Map([[1, session(1)]]))
     const seen: string[] = []
