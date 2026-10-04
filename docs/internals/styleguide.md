@@ -491,12 +491,19 @@ affirmative action.
 
 ### Component boundary
 
-Renderer UI composes from `ui/src/renderer/src/components/ui/`. Outside that directory,
-`className` carries layout only: `flex`, `grid`, `gap-[var(--space-*)]`, `items-*`,
-`justify-*`, `self-*`, `min-w-0`, `flex-1`, `truncate`, `col-*`, `row-*` and `hidden`.
-Add a missing visual role as a variant in `components/ui/` and include a specimen case
-in the `ui-primitives` story. Existing feature files are migrating; a guard will enforce
-the boundary.
+Renderer UI composes from `ui/src/renderer/src/components/ui/`. Outside that directory, class
+strings contain layout utilities only:
+`flex`, `inline-flex`, `grid`, `col-*`, `row-*`, `gap-[var(--space-*)]`, `items-*`, `justify-*`,
+`self-*`, `place-*`, `min-w-0`, `min-h-0`, `flex-1`, `flex-none`, `shrink-*`, `grow`, `truncate`,
+`hidden`, `relative`, `absolute`, `inset-*`, `w-full`, `h-full` and `overflow-*`. Responsive and
+state prefixes may qualify these utilities. Colour, borders, radius, typography, padding, margin,
+shadows, literal sizes, arbitrary properties and button recipes belong in `components/ui/` as a
+primitive or variant, with a specimen case in the `ui-primitives` story.
+
+`scripts/check-ui-boundary.sh` reads literal JSX `className` values, string literals in
+`className` expressions and string values in same-file `*_CLS` declarations, including template
+literals. Imported constants are covered where they are declared; computed strings without a
+statically visible literal are outside its scan. Each non-layout token reports its source line.
 
 ### Select
 
@@ -699,9 +706,8 @@ the shared recipe preserves the 28px hit target inside the 28px pane header.
 
 ## Voice and copy
 
-Use sentence case for buttons, headings, field labels, menu items and tooltips. Start placeholders
-with lowercase. The copy guard checks these contexts and the `title`, `label`, `placeholder` and
-`aria-label` string props; its proper-noun allowlist covers product/provider names and common
+Use sentence case for buttons, headings, field labels, menu items and tooltips. The copy guard
+checks these contexts and the `title`, `label`, `placeholder` and `aria-label` string props; its proper-noun allowlist covers product/provider names and common
 acronyms.
 Render uppercase section labels through the `label` text role; do not type their
 copy in capitals. Counts follow [Section heading and count](#section-heading-and-count).
@@ -709,21 +715,6 @@ Use “New” for creation and “Add” for registering an existing item. Cance
 Dismiss, Close and Discard are quiet ghost actions. A limit error names the limit,
 the actual value and the requested operation. Keep the existing ellipsis and label
 tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.sh`).
-
-## Component boundary
-
-Outside `ui/src/renderer/src/components/ui/`, class strings contain layout utilities only:
-`flex`, `inline-flex`, `grid`, `col-*`, `row-*`, `gap-[var(--space-*)]`, `items-*`, `justify-*`,
-`self-*`, `place-*`, `min-w-0`, `min-h-0`, `flex-1`, `flex-none`, `shrink-*`, `grow`, `truncate`,
-`hidden`, `relative`, `absolute`, `inset-*`, `w-full`, `h-full` and `overflow-*`. Responsive and
-state prefixes may qualify these utilities. Colour, borders, radius, typography, padding, margin,
-shadows, literal sizes, arbitrary properties and button recipes belong in `components/ui/` as a
-primitive or variant.
-
-`scripts/check-ui-boundary.sh` reads literal JSX `className` values, string literals in
-`className` expressions and string values in same-file `*_CLS` declarations, including template
-literals. Imported constants are covered where they are declared; computed strings without a
-statically visible literal are outside its scan. Each non-layout token reports its source line.
 
 ## States
 
@@ -837,7 +828,7 @@ something no text search can count (see "A closure is not a fix").
 | `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`). Per-file exemption count, ratchets down only. |
 | `scripts/check-empty-state-action.sh` | An empty state must contain the control its copy names. Copy pointing at a button that lives elsewhere fails; a bare statement of fact ("No results.") passes. Three reasoned testid exemptions. |
 | `scripts/check-ui-boundary.sh` | Outside `components/ui/`, literal `className` strings and same-file `*_CLS` constants may use layout utilities only. Per-file baseline, ratchets down only; computed strings with no visible literal are outside the scan. |
-| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; lowercase-first placeholders; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Per-file baseline, ratchets down only. |
+| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Per-file baseline, ratchets down only. |
 | `bun run check:complexity` | Ratchets each component's cyclomatic complexity against `ui/complexity-baseline.json` (`worst` and `over`; `total` recorded beside them). Needs `bun install` — it shells out to a pinned `oxlint`, so it is not one of the hermetic scripts. See "A closure is not a fix" below. |
 
 `check:css` needs a `bun run build` first; the rest are standalone and instant.
