@@ -73,7 +73,7 @@ jobs:
         run: bash scripts/check-doc-hygiene.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
-      - name: check-type-scale.sh (no sub-11px, fractional or raw-utility text sizes)
+      - name: check-type-scale.sh (semantic text tokens and a ratcheted 11px floor)
         run: bash scripts/check-type-scale.sh
       - name: check-label-tracking.sh (label step's uppercase tracking never leaks onto other text)
         run: bash scripts/check-label-tracking.sh
@@ -83,6 +83,8 @@ jobs:
         run: bash scripts/check-radius-tokens.sh
       - name: check-spacing-tokens.sh (a stack's rhythm is the container's gap)
         run: bash scripts/check-spacing-tokens.sh
+      - name: check-button-recipes.sh (button overlays keep the shared .btn base)
+        run: bash scripts/check-button-recipes.sh
       - name: check-icon-metrics.sh (icon size/stroke come from --tr-icon-* rungs)
         run: bash scripts/check-icon-metrics.sh
       - name: check-shadow-recipes.sh (shadow recipes come from tokens/shadowChrome.ts, never a literal)
