@@ -231,13 +231,13 @@ export function NavMcp(): React.JSX.Element {
       <McpSurface
         source={[mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]}
         tools={[
-          { ...mcpColumn('claude', [mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]), error: 'npx was not found on PATH' },
+          mcpColumn('claude', [mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]),
           mcpColumn('codex', [mcpServer('linear', 'L')]),
           mcpColumn('opencode', [mcpServer('linear', 'L'), mcpServer('postgres-local', 'OP')]),
           mcpColumn('cursor', [mcpServer('postgres-local', 'P')])
         ]}
         results={[]}
-        checks={[]}
+        checks={[["github", { state: 'failed', message: 'npx was not found on PATH' }]]}
         loaded
         onRefresh={noop}
         onSync={noop}

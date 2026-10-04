@@ -67,7 +67,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
     const syncResult = props.results.find((result) => result.tool === tool)
     const check = checkFor(row.name, props.checks)
     const current = cellFor(row, tool)
-    const reason = check.state === 'failed' ? check.message : toolState?.error ?? syncResult?.error ?? undefined
+    const reason = (current.kind !== 'absent' && check.state === 'failed' ? check.message : undefined) ?? toolState?.error ?? syncResult?.error ?? undefined
     const status = reason
       ? 'Failed'
       : current.kind === 'drifted' && row.source && row.byTool[tool]?.fingerprint !== row.source.fingerprint
