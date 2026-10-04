@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Houston">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Houston</title>
+<style>
+:root {
+  --bg: #f6f6f4; --surface: #ffffff; --surface-2: #efefec; --border: #dcdcd7;
+  --text: #1b1c1f; --muted: #6a6c72; --accent: #2f6fde; --accent-text: #ffffff;
+  --attention: #b45309; --attention-bg: #fdf0dd; --ok: #2f7d4f; --danger: #b42318;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16171a; --surface: #1f2024; --surface-2: #2a2b30; --border: #34363c;
+    --text: #e8e8ea; --muted: #9a9ca3; --accent: #6b9bf0; --accent-text: #0e1116;
+    --attention: #f2b35b; --attention-bg: #3a2c16; --ok: #6cc28f; --danger: #f07a6b;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-text-size-adjust: 100%;
+}
+header {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--border);
+}
+header h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+main { padding: 12px 16px 24px; max-width: 760px; margin: 0 auto; }
+button {
+  font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; min-height: 40px; cursor: pointer;
+}
+button:active { filter: brightness(0.92); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+button.danger { color: var(--danger); }
+button.armed { background: var(--danger); color: var(--accent-text); border-color: transparent; }
+button.icon { min-width: 40px; padding: 8px; }
+input, textarea {
+  font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 10px; width: 100%;
+}
+textarea { resize: vertical; min-height: 44px; max-height: 40vh; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.stack > * + * { margin-top: 12px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.error { color: var(--danger); }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 18px 0 8px; }
+h2:first-child { margin-top: 4px; }
+ul.panes { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+ul.panes li + li { border-top: 1px solid var(--border); }
+ul.panes button {
+  display: flex; width: 100%; align-items: center; gap: 10px; text-align: left; border: 0; border-radius: 0;
+  background: transparent; padding: 12px 14px; min-height: 52px;
+}
+.pane-main { flex: 1; min-width: 0; }
+.pane-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.pane-sub { display: block; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { flex: none; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.badge.needs-input { background: var(--attention-bg); color: var(--attention); }
+.badge.working { color: var(--accent); }
+.badge.idle { color: var(--ok); }
+.screen {
+  margin: 0; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  font: 12px/1.35 var(--mono); white-space: pre; overflow: auto; max-height: 52vh; min-height: 30vh;
+}
+.keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 6px; }
+.keys button { padding: 8px 4px; font-size: 14px; }
+.composer { display: flex; gap: 8px; align-items: flex-end; }
+.composer textarea { flex: 1; }
+.status-line { min-height: 20px; font-size: 13px; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <button id="back" class="icon hidden" aria-label="Back to panes">&#8592;</button>
+  <h1 id="heading">Houston</h1>
+  <span id="pane-badge" class="badge hidden"></span>
+</header>
+<main>
+  <section id="view-pair" class="hidden">
+    <div class="card stack">
+      <h1 style="font-size:20px;margin:0">Pair this device</h1>
+      <p id="pair-help" class="muted" style="margin:0">On the computer running Houston, open Settings &gt; Remote access and choose Pair a device, then scan the code or open its link here.</p>
+      <form id="pair-form" class="stack hidden">
+        <label class="small muted" for="device-name">Device name</label>
+        <input id="device-name" maxlength="64" autocomplete="off" required>
+        <button class="primary" type="submit">Pair</button>
+      </form>
+      <p id="pair-error" class="error small" role="alert"></p>
+    </div>
+  </section>
+  <section id="view-list" class="hidden">
+    <div id="list"></div>
+    <p id="list-empty" class="muted hidden">No panes are open.</p>
+    <p id="list-status" class="status-line muted"></p>
+  </section>
+  <section id="view-pane" class="hidden stack">
+    <p id="pane-sub" class="muted small" style="margin:0"></p>
+    <pre id="screen" class="screen" aria-label="Pane screen" tabindex="0"></pre>
+    <div class="composer">
+      <textarea id="text" rows="1" placeholder="Type an answer" aria-label="Answer"></textarea>
+      <button id="send" class="primary">Send</button>
+    </div>
+    <div class="keys" id="keys"></div>
+    <p id="pane-status" class="status-line muted" role="status"></p>
+  </section>
+</main>
+<script>
+"use strict";
+(function () {
+  var TOKEN_KEY = "houston.remote.token";
+  var LIST_MS = 3000, SCREEN_MS = 2000, SCREEN_LINES = 80;
+  var LABELS = { "needs-input": "Needs input", working: "Working", idle: "Idle", spawning: "Starting", unavailable: "No status" };
+  var KEYS = [
+    ["Enter", { keys: ["enter"] }], ["Esc", { keys: ["esc"] }], ["↑", { keys: ["up"] }],
+    ["↓", { keys: ["down"] }], ["Tab", { keys: ["tab"] }], ["1", { text: "1" }],
+    ["2", { text: "2" }], ["3", { text: "3" }], ["y", { keys: ["y"] }], ["n", { keys: ["n"] }],
+    ["Ctrl+C", { keys: ["ctrl+c"] }, true]
+  ];
+  var $ = function (id) { return document.getElementById(id); };
+  var token = null, current = null, timer = null, pendingPair = null, lastSessions = [];
+
+  function store(get, value) {
+    try {
+      if (get) return localStorage.getItem(TOKEN_KEY);
+      if (value) localStorage.setItem(TOKEN_KEY, value); else localStorage.removeItem(TOKEN_KEY);
+    } catch (e) { return null; }
+    return null;
+  }
+
+  function api(method, path, body) {
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = "Bearer " + token;
+    return fetch(path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined, cache: "no-store" })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (data) {
+          if (r.status === 401 && token && path !== "/api/pair") { unpair("This device is no longer paired. Pair it again from Houston."); }
+          if (!r.ok) { var err = new Error(data.error || ("Request failed with status " + r.status)); err.status = r.status; throw err; }
+          return data;
+        });
+      });
+  }
+
+  function show(view) {
+    ["pair", "list", "pane"].forEach(function (v) { $("view-" + v).classList.toggle("hidden", v !== view); });
+    $("back").classList.toggle("hidden", view !== "pane");
+    $("pane-badge").classList.toggle("hidden", view !== "pane");
+  }
+
+  function stop() { if (timer) { clearTimeout(timer); timer = null; } }
+
+  function schedule(fn, ms) { stop(); if (!document.hidden) timer = setTimeout(fn, ms); }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function ago(ms) {
+    if (!ms) return "";
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 60) return s + " s";
+    if (s < 3600) return Math.round(s / 60) + " min";
+    return Math.round(s / 3600) + " h";
+  }
+
+  function label(s) {
+    if (s.state !== "running") return "Exited";
+    return LABELS[s.status] || "No status";
+  }
+
+  function badge(s) {
+    var b = el("span", "badge " + (s.state === "running" && s.status ? s.status : ""), label(s));
+    return b;
+  }
+
+  function showPair(message) {
+    stop(); current = null;
+    $("heading").textContent = "Houston";
+    $("pair-error").textContent = message || "";
+    $("pair-form").classList.toggle("hidden", !pendingPair);
+    show("pair");
+  }
+
+  function unpair(message) {
+    token = null; store(false, null); showPair(message);
+  }
+
+  function renderList(sessions) {
+    lastSessions = sessions;
+    var waiting = sessions.filter(function (s) { return s.state === "running" && s.status === "needs-input"; });
+    document.title = waiting.length ? "(" + waiting.length + ") Houston" : "Houston";
+    $("heading").textContent = waiting.length ? waiting.length + " need" + (waiting.length === 1 ? "s" : "") + " input" : "Houston";
+    var root = $("list");
+    root.replaceChildren();
+    $("list-empty").classList.toggle("hidden", sessions.length > 0);
+    var groups = [];
+    if (waiting.length) groups.push(["Needs input", waiting, true]);
+    var byWs = {};
+    sessions.forEach(function (s) {
+      if (waiting.indexOf(s) >= 0) return;
+      var key = s.workspace.path;
+      if (!byWs[key]) { byWs[key] = [s.workspace.name, []]; groups.push([s.workspace.name, byWs[key][1], false]); }
+      byWs[key][1].push(s);
+    });
+    groups.forEach(function (g) {
+      root.appendChild(el("h2", null, g[0]));
+      var ul = el("ul", "panes");
+      g[1].forEach(function (s) {
+        var li = el("li"), b = el("button"), main = el("span", "pane-main");
+        b.type = "button";
+        main.appendChild(el("span", "pane-title", s.title || ("Pane " + s.id)));
+        var sub = (g[2] ? s.workspace.name + " · " : "") + s.kind + (s.status_since ? " · " + ago(s.status_since) : "");
+        main.appendChild(el("span", "pane-sub", sub));
+        b.appendChild(main); b.appendChild(badge(s));
+        b.addEventListener("click", function () { openPane(s.id); });
+        li.appendChild(b); ul.appendChild(li);
+      });
+      root.appendChild(ul);
+    });
+  }
+
+  function loadList() {
+    api("GET", "/api/sessions").then(function (d) {
+      $("list-status").textContent = "";
+      renderList(d.sessions || []);
+    }).catch(function (e) { if (token) $("list-status").textContent = e.message; })
+      .then(function () { if (token && !current) schedule(loadList, LIST_MS); });
+  }
+
+  function openList() {
+    current = null; location.hash = ""; show("list"); loadList();
+  }
+
+  function paneInfo() {
+    var s = lastSessions.filter(function (x) { return x.id === current; })[0];
+    if (!s) return;
+    $("heading").textContent = s.title || ("Pane " + s.id);
+    var b = $("pane-badge");
+    b.className = "badge " + (s.state === "running" && s.status ? s.status : "");
+    b.textContent = label(s);
+    $("pane-sub").textContent = s.workspace.name + " · " + s.kind;
+  }
+
+  function loadPane() {
+    var id = current;
+    if (id == null) return;
+    Promise.all([
+      api("GET", "/api/sessions/" + id + "/screen?lines=" + SCREEN_LINES),
+      api("GET", "/api/sessions").catch(function () { return null; })
+    ]).then(function (r) {
+      if (current !== id) return;
+      var pre = $("screen"), atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+      pre.textContent = (r[0].lines || []).join("\n");
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+      if (r[1]) { lastSessions = r[1].sessions || []; paneInfo(); }
+    }).catch(function (e) { if (current === id) $("pane-status").textContent = e.message; })
+      .then(function () { if (token && current === id) schedule(loadPane, SCREEN_MS); });
+  }
+
+  function openPane(id) {
+    current = id; location.hash = "session=" + id;
+    $("screen").textContent = ""; $("pane-status").textContent = ""; $("text").value = "";
+    show("pane"); paneInfo(); loadPane();
+  }
+
+  function send(body, what) {
+    var id = current;
+    $("pane-status").textContent = "Sending…";
+    return api("POST", "/api/sessions/" + id + "/input", body).then(function () {
+      $("pane-status").textContent = "Sent " + what;
+      setTimeout(loadPane, 300);
+      return true;
+    }).catch(function (e) { $("pane-status").textContent = e.message; return false; });
+  }
+
+  function buildKeys() {
+    var root = $("keys");
+    KEYS.forEach(function (k) {
+      var b = el("button", k[2] ? "danger" : null, k[0]), armed = null;
+      b.type = "button";
+      b.addEventListener("click", function () {
+        if (k[2] && !armed) {
+          b.classList.add("armed"); b.textContent = "Tap again";
+          armed = setTimeout(function () { armed = null; b.classList.remove("armed"); b.textContent = k[0]; }, 2500);
+          return;
+        }
+        if (armed) { clearTimeout(armed); armed = null; b.classList.remove("armed"); b.textContent = k[0]; }
+        send(k[1], k[0]);
+      });
+      root.appendChild(b);
+    });
+  }
+
+  function route() {
+    var h = location.hash.replace(/^#/, ""), m;
+    if ((m = /^pair=([0-9a-fA-F]+)$/.exec(h))) {
+      pendingPair = m[1];
+      history.replaceState(null, "", location.pathname);
+      showPair("");
+      return;
+    }
+    if (!token) { showPair(""); return; }
+    if ((m = /^session=(\d+)$/.exec(h))) { openPane(Number(m[1])); return; }
+    openList();
+  }
+
+  $("pair-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var name = $("device-name").value.trim();
+    if (!name || !pendingPair) return;
+    $("pair-error").textContent = "";
+    api("POST", "/api/pair", { code: pendingPair, device_name: name }).then(function (d) {
+      token = d.token; store(false, token); pendingPair = null;
+      $("pair-form").classList.add("hidden");
+      openList();
+    }).catch(function (e) { $("pair-error").textContent = e.message; });
+  });
+
+  $("send").addEventListener("click", function () {
+    var text = $("text").value;
+    if (!text.trim()) { send({ keys: ["enter"] }, "Enter"); return; }
+    send({ text: text, keys: ["enter"] }, "answer").then(function (ok) { if (ok) $("text").value = ""; });
+  });
+
+  $("back").addEventListener("click", openList);
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stop(); return; }
+    if (!token) return;
+    if (current != null) loadPane(); else loadList();
+  });
+
+  window.addEventListener("hashchange", function () {
+    var h = location.hash;
+    if (/^#pair=/.test(h)) { route(); return; }
+    var m = /^#session=(\d+)$/.exec(h);
+    if (token && m && Number(m[1]) !== current) openPane(Number(m[1]));
+  });
+
+  $("device-name").value = /iPhone|iPad/.test(navigator.userAgent) ? "iPhone" : /Android/.test(navigator.userAgent) ? "Android phone" : "Browser";
+  buildKeys();
+  token = store(true);
+  if (token && !/^#pair=/.test(location.hash)) {
+    api("GET", "/api/me").then(route).catch(function (e) {
+      if (e.status !== 401) { route(); $("list-status").textContent = e.message; }
+    });
+  } else {
+    route();
+  }
+})();
+</script>
+</body>
+</html>

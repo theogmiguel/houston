@@ -11,6 +11,8 @@ pub use harness::{
     HarnessDecisionRow, HarnessFindingRow, HarnessFindingWrite, HarnessPublication,
     HarnessReviewRow,
 };
+mod remote;
+pub use remote::RemoteDeviceRow;
 mod tasks;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
@@ -1548,6 +1550,7 @@ impl Db {
         )?;
         harness::migrate(&conn)?;
         tasks::migrate(&conn)?;
+        remote::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",

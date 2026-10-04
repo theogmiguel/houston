@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Houston">
+  <rect width="512" height="512" rx="112" fill="#0b0d14" />
+  <defs>
+    <linearGradient id="c-jet" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0" />
+      <stop offset="27%" stop-color="#00F0FF" stop-opacity="0.9" />
+      <stop offset="39%" stop-color="#FFFFFF" />
+      <stop offset="61%" stop-color="#FFFFFF" />
+      <stop offset="73%" stop-color="#00F0FF" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="c-disk" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="50%" stop-color="#7000FF" />
+      <stop offset="100%" stop-color="#3A86FF" />
+    </linearGradient>
+
+    <radialGradient id="c-halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.5" />
+      <stop offset="55%" stop-color="#00F0FF" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <g transform="translate(256, 256) scale(0.78)">
+    <polygon points="-38,-256 38,-256 16,-12 16,12 38,256 -38,256 -16,12 -16,-12"
+             fill="url(#c-jet)" />
+
+    <circle r="180" fill="url(#c-halo)" />
+    <g transform="rotate(-15)">
+      <ellipse rx="196" ry="54" fill="none" stroke="url(#c-disk)" stroke-width="42" />
+    </g>
+
+    <circle r="96" fill="#010308" />
+    <circle r="96" fill="none" stroke="#BDF3FF" stroke-width="11" opacity="0.9" />
+    <g transform="rotate(-15)">
+      <path d="M -189.3 14.0 A 196 54 0 0 0 189.3 14.0" fill="none"
+            stroke="#9BEDFF" stroke-width="38" stroke-linecap="round" />
+    </g>
+  </g>
+</svg>

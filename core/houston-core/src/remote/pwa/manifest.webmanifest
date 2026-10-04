@@ -1,0 +1,13 @@
+{
+  "name": "Houston",
+  "short_name": "Houston",
+  "description": "Follow and answer Houston panes from another device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#16171a",
+  "theme_color": "#16171a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

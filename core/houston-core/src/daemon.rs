@@ -1107,8 +1107,10 @@ impl DelegationSettleSample {
 }
 
 mod harness_review;
+mod remote;
 pub(crate) mod tasks;
 mod worktree_pass;
+pub use remote::{RemotePairing, RemoteSession, RemoteWorkspace};
 
 type TranscriptLink = (Option<String>, Option<String>);
 
@@ -1189,6 +1191,7 @@ pub struct Daemon {
     pub mcp_tools: crate::mcp_server::ToolRegistry,
     pub browser_relay: Arc<crate::browser_relay::BrowserRelayState>,
     pub voice: crate::voice::runtime::Runtime,
+    pub remote: crate::remote::Runtime,
     mcp_progress_tick_ms: AtomicU64,
     handoff_batch_ms: AtomicU64,
     last_inbox_retention: AtomicU64,
@@ -2496,6 +2499,7 @@ impl Daemon {
             cli_probes: Mutex::new(crate::cli_probe::ProbeCache::default()),
             model_catalog: Arc::new(crate::model_catalog::ModelCatalog::new(&state_dir)),
             voice: crate::voice::runtime::Runtime::new(),
+            remote: crate::remote::Runtime::new(),
             mcp_progress_tick_ms: AtomicU64::new(
                 crate::mcp_server::PROGRESS_TICK_DEFAULT.as_millis() as u64,
             ),
@@ -6319,6 +6323,7 @@ impl Daemon {
                 session: id,
                 status,
             });
+            self.remote_note_status(id, status);
             self.tasks_on_session_status(id, status);
             if orchestrate::settled(status) {
                 if let Some(this) = self.self_arc() {
@@ -6564,6 +6569,7 @@ impl Daemon {
                 session: id,
                 status: ev.status(),
             });
+            self.remote_note_status(id, ev.status());
             if orchestrate::settled(ev.status()) {
                 self.drain_pending_inbox(id);
             }
