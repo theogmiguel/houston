@@ -160,7 +160,7 @@ pub fn redact_review_secrets(input: &str) -> (String, bool) {
 const ENTROPY_MIN_LEN: usize = 32;
 const ENTROPY_MIN_BITS: f64 = 3.5;
 
-fn redact_high_entropy(input: &str) -> (String, bool) {
+pub(crate) fn redact_high_entropy(input: &str) -> (String, bool) {
     let mut out = String::with_capacity(input.len());
     let mut redacted = false;
     let mut run_start: Option<usize> = None;

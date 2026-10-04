@@ -3,7 +3,7 @@
 //! or agent routes; see docs/internals/overview.md for the trust model.
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use houston_protocol as proto;
@@ -522,6 +522,29 @@ impl Drop for InputClaim<'_> {
     }
 }
 
+/// Open event streams by device; dropping an entry's sender ends its stream.
+#[derive(Default)]
+struct StreamRegistry {
+    next: u64,
+    open: HashMap<u64, (i64, tokio::sync::oneshot::Sender<()>)>,
+}
+
+/// Held by one event stream; dropping it unregisters the stream.
+pub(crate) struct StreamTicket {
+    registry: Arc<Mutex<StreamRegistry>>,
+    id: u64,
+}
+
+impl Drop for StreamTicket {
+    fn drop(&mut self) {
+        self.registry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .open
+            .remove(&self.id);
+    }
+}
+
 pub fn lockout_message(retry_secs: u64) -> String {
     format!(
         "too many failed remote authentication attempts: the limit is {AUTH_FAILURE_LIMIT} per \
@@ -573,6 +596,7 @@ pub struct Runtime {
     pub(crate) feed: feed::Store,
     events: tokio::sync::broadcast::Sender<feed::Change>,
     pub(crate) event_streams: std::sync::Arc<tokio::sync::Semaphore>,
+    streams: Arc<Mutex<StreamRegistry>>,
 }
 
 impl Default for Runtime {
@@ -600,6 +624,7 @@ impl Runtime {
             feed: feed::Store::default(),
             events: tokio::sync::broadcast::Sender::new(EVENT_QUEUE),
             event_streams: std::sync::Arc::new(tokio::sync::Semaphore::new(EVENT_STREAMS_MAX)),
+            streams: Arc::new(Mutex::new(StreamRegistry::default())),
         }
     }
 
@@ -684,6 +709,45 @@ impl Runtime {
 
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<feed::Change> {
         self.events.subscribe()
+    }
+
+    /// Registers an event stream for `device`; the receiver resolves when the
+    /// listener stops or the device is revoked.
+    pub(crate) fn open_stream(
+        &self,
+        device: i64,
+    ) -> (StreamTicket, tokio::sync::oneshot::Receiver<()>) {
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let mut registry = self
+            .streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        registry.next += 1;
+        let id = registry.next;
+        registry.open.insert(id, (device, stop));
+        let ticket = StreamTicket {
+            registry: Arc::clone(&self.streams),
+            id,
+        };
+        (ticket, stopped)
+    }
+
+    /// Ends every event stream.
+    pub(crate) fn stop_streams(&self) {
+        self.streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .open
+            .clear();
+    }
+
+    /// Ends the event streams of a revoked device.
+    pub(crate) fn stop_device_streams(&self, device: i64) {
+        self.streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .open
+            .retain(|_, (d, _)| *d != device);
     }
 
     pub(crate) fn note_status(

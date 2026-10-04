@@ -17426,6 +17426,7 @@ impl Daemon {
         if is_terminal_report_only(payload) {
             return;
         }
+        self.remote_note_keystroke(session);
         self.composer_occupied
             .lock()
             .expect("composer lock")

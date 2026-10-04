@@ -9,13 +9,17 @@ use serde::Serialize;
 
 use super::{now_ms, Daemon};
 use crate::db::RemoteDeviceRow;
-use crate::remote::feed::{self, Card, Change, FeedItem, HookFeed, Pending};
+use crate::remote::feed::{self, Answered, Card, Change, FeedItem, HookFeed, Pending, Refusal};
 use crate::remote::{self, ApiError, Config, ConfigPatch, ListenState, NotifyDetail};
 
 const BIND_BACKOFF_START: Duration = Duration::from_secs(1);
 // A retiring generation releases the port within seconds; 30 s bounds the
 // retry cost when another program holds it for good.
 const BIND_BACKOFF_MAX: Duration = Duration::from_secs(30);
+// Once the listener is told to stop, event streams end at once and other
+// requests finish within a second; one that takes longer is left to finish on
+// its own connection rather than hold up a re-bind.
+const LISTENER_DRAIN: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
 pub struct RemotePairing {
@@ -58,6 +62,9 @@ pub struct RemoteSession {
 #[derive(Debug, Clone, Serialize)]
 pub struct RemoteFeed {
     pub id: u32,
+    /// Changes when the daemon restarts or remote access is turned off and on;
+    /// sequence numbers from another epoch do not continue this one.
+    pub epoch: String,
     pub entries: Vec<feed::FeedEntry>,
     pub first_seq: u64,
     pub last_seq: u64,
@@ -73,6 +80,7 @@ impl Daemon {
             return cfg.clone();
         }
         let cfg = self.remote_config_from_db();
+        self.remote.feed.set_collecting(cfg.enabled);
         *slot = Some(cfg.clone());
         cfg
     }
@@ -163,7 +171,12 @@ impl Daemon {
                 next.ntfy_server.as_deref().unwrap_or(""),
             ),
         ])?;
+        let enabled = next.enabled;
         *self.remote.config.lock().expect("remote config lock") = Some(next);
+        self.remote.feed.set_collecting(enabled);
+        if !enabled {
+            self.remote.stop_streams();
+        }
         self.remote.reconfigured.send_modify(|n| *n += 1);
         self.remote_broadcast_state();
         Ok(())
@@ -267,6 +280,7 @@ impl Daemon {
             .lock()
             .expect("remote last-seen lock")
             .remove(&id);
+        self.remote.stop_device_streams(id);
         self.remote_broadcast_state();
         Ok(())
     }
@@ -338,7 +352,6 @@ impl Daemon {
 
     pub fn remote_sessions(&self) -> Vec<RemoteSession> {
         let workspaces = self.db.list_workspaces().unwrap_or_default();
-        let now = now_ms();
         let mut out: Vec<RemoteSession> = self
             .list()
             .into_iter()
@@ -362,7 +375,7 @@ impl Daemon {
                     .remote
                     .seen(info.id)
                     .filter(|s| Some(s.status) == info.status);
-                let summary = self.remote.feed.summary(info.id, now);
+                let summary = self.remote.feed.summary(info.id);
                 let waiting =
                     info.state.is_live() && info.status == Some(proto::AgentStatus::NeedsInput);
                 RemoteSession {
@@ -510,6 +523,11 @@ impl Daemon {
                 seen.retain(|id, _| live.contains_key(id));
             }
         }
+        // Every transition retires the card, even with remote access off, so a
+        // card can never outlive the request it was built from.
+        if status != proto::AgentStatus::NeedsInput {
+            self.remote.feed.resolve_pending(id);
+        }
         if !self.remote_config().enabled {
             return;
         }
@@ -522,14 +540,21 @@ impl Daemon {
                     title: feed::card_title(&Card::Input, None),
                     detail: String::new(),
                     provider: self.remote_provider(id),
+                    truncated: false,
                     since_ms: now,
-                    sent_at_ms: None,
+                    answered: None,
                 },
             );
-        } else {
-            self.remote.feed.resolve_pending(id);
         }
         self.remote_emit(id, Change::Session(id));
+    }
+
+    /// A keystroke reached pane `id` from the desktop or a device: a card still
+    /// open was answered there, so a device can no longer answer it with a tap.
+    pub(crate) fn remote_note_keystroke(&self, id: u32) {
+        if self.remote.feed.note_keystroke(id) {
+            self.remote_emit(id, Change::Session(id));
+        }
     }
 
     fn remote_provider(&self, id: u32) -> proto::AgentKind {
@@ -545,10 +570,10 @@ impl Daemon {
         }
     }
 
-    fn remote_push(&self, id: u32, item: FeedItem, now: u64) -> u64 {
-        let seq = self.remote.feed.push(id, item, now);
+    fn remote_push(&self, id: u32, item: FeedItem, now: u64) -> Option<u64> {
+        let seq = self.remote.feed.push(id, item, now)?;
         self.remote_emit(id, Change::Feed(id, seq));
-        seq
+        Some(seq)
     }
 
     /// Feeds an applied hook drop into the pane's activity feed. Only while
@@ -574,14 +599,17 @@ impl Daemon {
                 tool_use_id,
                 questions,
             }) => {
-                let seq = self.remote_push(
+                let Some(seq) = self.remote_push(
                     id,
                     FeedItem::Question {
+                        tool_use_id: tool_use_id.clone(),
                         questions: questions.clone(),
                         answers: None,
                     },
                     now,
-                );
+                ) else {
+                    return;
+                };
                 let card = Card::Question {
                     tool_use_id: tool_use_id.clone(),
                     questions: questions.clone(),
@@ -593,9 +621,10 @@ impl Daemon {
                         title: feed::card_title(&card, None),
                         card,
                         detail: String::new(),
+                        truncated: false,
                         provider,
                         since_ms: now,
-                        sent_at_ms: None,
+                        answered: None,
                     },
                 );
             }
@@ -622,17 +651,21 @@ impl Daemon {
                 tool,
                 target,
                 always,
+                truncated,
             }) => {
-                let seq = self.remote_push(
+                let Some(seq) = self.remote_push(
                     id,
                     FeedItem::Permission {
                         tool: tool.clone(),
                         target: target.clone(),
                         always: *always,
+                        truncated: *truncated,
                         outcome: None,
                     },
                     now,
-                );
+                ) else {
+                    return;
+                };
                 let card = Card::Permission { always: *always };
                 self.remote_set_card(
                     id,
@@ -641,9 +674,10 @@ impl Daemon {
                         title: feed::card_title(&card, Some(tool)),
                         card,
                         detail: target.clone(),
+                        truncated: *truncated,
                         provider,
                         since_ms: now,
-                        sent_at_ms: None,
+                        answered: None,
                     },
                 );
             }
@@ -709,11 +743,12 @@ impl Daemon {
 
     pub fn remote_feed(&self, id: u32, after: u64) -> Result<RemoteFeed, ApiError> {
         self.remote_target(id)?;
-        let page = self.remote.feed.page(id, after, now_ms());
+        let page = self.remote.feed.page(id, after);
         let waiting =
             self.session_status(id).ok().flatten() == Some(proto::AgentStatus::NeedsInput);
         Ok(RemoteFeed {
             id,
+            epoch: page.epoch,
             entries: page.entries,
             first_seq: page.first_seq,
             last_seq: page.last_seq,
@@ -727,6 +762,7 @@ impl Daemon {
     pub fn remote_decide(
         &self,
         id: u32,
+        epoch: &str,
         entry_seq: u64,
         choice: &str,
         text: Option<&str>,
@@ -738,41 +774,19 @@ impl Daemon {
                 "pane {id} is not running: a decision needs a live pane"
             )));
         }
-        let now = now_ms();
         let waiting =
             *s.status.lock().expect("status lock") == Some(proto::AgentStatus::NeedsInput);
-        let pending = self.remote.feed.pending(id).filter(|_| waiting);
-        let pending = match pending {
-            Some(p) if p.seq == entry_seq && p.seq != 0 => p,
-            other => {
-                let now_waits = match other.map(|p| p.seq).filter(|seq| *seq != 0) {
-                    Some(seq) => format!("it now waits on entry {seq}"),
-                    None => "it has no decision Houston can answer".to_string(),
-                };
-                return Err(ApiError::Conflict(format!(
-                    "entry {entry_seq} is not pane {id}'s pending decision: {now_waits}"
-                )));
-            }
-        };
-        feed::decision_support(pending.provider, &pending.card).map_err(ApiError::Conflict)?;
-        if let Some(at) = pending
-            .sent_at_ms
-            .filter(|at| now.saturating_sub(*at) < feed::SENT_HOLD_MS)
-        {
-            return Err(ApiError::Conflict(format!(
-                "entry {entry_seq} was answered {} s ago and the agent has not moved on yet: wait \
-                 for it, or use the terminal",
-                now.saturating_sub(at) / 1000
-            )));
-        }
-        let plan = feed::decision_keys(pending.provider, &pending.card, &choice)
-            .map_err(ApiError::BadRequest)?;
+        let plan = self
+            .remote
+            .feed
+            .begin_decision(id, epoch, entry_seq, &choice, waiting)
+            .map_err(|r| decision_refused(id, entry_seq, r))?;
         let Some(_claim) = self.remote.claim_input(id) else {
+            self.remote.feed.clear_sent(id, entry_seq);
             return Err(ApiError::Conflict(format!(
                 "input for pane {id} is still being written: wait for it to finish, then send again"
             )));
         };
-        self.remote.feed.mark_sent(id, entry_seq, now);
         for (i, bytes) in plan.writes.iter().enumerate() {
             if i > 0 {
                 std::thread::sleep(Duration::from_millis(plan.settle_ms));
@@ -829,6 +843,7 @@ impl Daemon {
                     let this = Arc::clone(&self);
                     let mut watch = changes.clone();
                     let bind = cfg.bind;
+                    let (stopping, stopped) = tokio::sync::oneshot::channel::<()>();
                     let shutdown = async move {
                         loop {
                             if watch.changed().await.is_err() {
@@ -836,12 +851,32 @@ impl Daemon {
                             }
                             let now = this.remote_config();
                             if !now.enabled || now.bind != bind {
-                                return;
+                                break;
                             }
                         }
+                        // Event streams never end on their own; graceful shutdown
+                        // waits for every connection, so they are ended here.
+                        this.remote.stop_streams();
+                        let _ = stopping.send(());
                     };
-                    if let Err(e) = remote::http::serve(Arc::clone(&self), listener, shutdown).await
-                    {
+                    let drained = async {
+                        match stopped.await {
+                            Ok(()) => tokio::time::sleep(LISTENER_DRAIN).await,
+                            Err(_) => std::future::pending::<()>().await,
+                        }
+                    };
+                    let served = tokio::select! {
+                        served = remote::http::serve(Arc::clone(&self), listener, shutdown) => served,
+                        () = drained => {
+                            tracing::warn!(
+                                "remote access: requests on {bind} were still open {} s after the \
+                                 listener stopped; leaving them to finish",
+                                LISTENER_DRAIN.as_secs()
+                            );
+                            Ok(())
+                        }
+                    };
+                    if let Err(e) = served {
                         self.remote_set_listen(ListenState {
                             listening: None,
                             error: Some(format!("the listener on {bind} stopped: {e}")),
@@ -978,6 +1013,36 @@ impl Daemon {
                 }
             });
         }
+    }
+}
+
+fn decision_refused(id: u32, entry_seq: u64, refusal: Refusal) -> ApiError {
+    match refusal {
+        Refusal::Epoch => ApiError::Conflict(format!(
+            "entry {entry_seq} is from an earlier feed: the daemon restarted or remote access was \
+             turned off and on since it was shown; reload pane {id}"
+        )),
+        Refusal::NotPending(now) => ApiError::Conflict(format!(
+            "entry {entry_seq} is not pane {id}'s pending decision: {}",
+            match now {
+                Some(seq) => format!("it now waits on entry {seq}"),
+                None => "it has no decision Houston can answer".to_string(),
+            }
+        )),
+        Refusal::Answered(Answered::Sent) => ApiError::Conflict(format!(
+            "entry {entry_seq} was already answered from a device and the agent has not moved on \
+             yet: wait for it, or use the terminal"
+        )),
+        Refusal::Answered(Answered::Elsewhere) => ApiError::Conflict(format!(
+            "entry {entry_seq} was answered in pane {id}'s terminal: a key reached the pane after \
+             the request arrived; check the Terminal tab"
+        )),
+        Refusal::Unsupported(why) => ApiError::Conflict(why),
+        Refusal::Partial => ApiError::Conflict(format!(
+            "entry {entry_seq} shows only part of what the tool runs (it was cut, or invisible \
+             characters were removed): read it in pane {id}'s terminal and approve there, or deny"
+        )),
+        Refusal::Choice(why) => ApiError::BadRequest(why),
     }
 }
 

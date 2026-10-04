@@ -375,6 +375,7 @@ fn a_drop_file_round_trips_every_field_it_can_carry() {
             tool: "Bash".into(),
             target: "cargo test".into(),
             always: true,
+            truncated: true,
         }),
     };
     let text = serde_json::to_string(&full).expect("serialize");

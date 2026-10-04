@@ -223,8 +223,25 @@ async fn session_row(addr: SocketAddr, token: &str, id: u32) -> serde_json::Valu
         .unwrap_or_else(|| panic!("pane {id} is not listed: {}", reply.body))
 }
 
+/// A decision in the feed's current epoch, read the way a device learns it.
 async fn decide(addr: SocketAddr, token: &str, id: u32, seq: u64, choice: &str) -> Reply {
-    let body = serde_json::json!({ "entry_seq": seq, "choice": choice }).to_string();
+    let epoch = feed(addr, token, id, u64::MAX).await["epoch"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    decide_in(addr, token, id, &epoch, seq, choice).await
+}
+
+async fn decide_in(
+    addr: SocketAddr,
+    token: &str,
+    id: u32,
+    epoch: &str,
+    seq: u64,
+    choice: &str,
+) -> Reply {
+    let body =
+        serde_json::json!({ "epoch": epoch, "entry_seq": seq, "choice": choice }).to_string();
     request(
         addr,
         "POST",
@@ -547,5 +564,159 @@ async fn nothing_is_collected_while_remote_access_is_off() {
     let page = feed(addr, &token, info.id, 0).await;
     assert_eq!(page["entries"].as_array().unwrap().len(), 0, "{page}");
     assert_eq!(page["last_seq"], 0);
+    daemon.kill(info.id).ok();
+}
+
+/// Reads an event stream until the server ends it: the last chunk or EOF.
+async fn read_to_end(stream: &mut tokio::net::TcpStream, seen: &mut String) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    let mut buf = [0u8; 4096];
+    loop {
+        if seen.ends_with("\r\n0\r\n\r\n") {
+            return;
+        }
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let n = tokio::time::timeout(left, stream.read(&mut buf))
+            .await
+            .unwrap_or_else(|_| panic!("the event stream is still open: {seen:?}"))
+            .unwrap_or(0);
+        if n == 0 {
+            return;
+        }
+        seen.push_str(&String::from_utf8_lossy(&buf[..n]));
+    }
+}
+
+async fn listening(daemon: &Daemon, want: bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    while daemon.remote_listen_state().listening.is_some() != want {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the listener never became {}: {:?}",
+            if want { "active" } else { "idle" },
+            daemon.remote_listen_state()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+async fn permission_card(addr: SocketAddr, token: &str, state: &Path, id: u32) -> u64 {
+    let permission = fixture("claude-2.1.263-08-PermissionRequest.json");
+    apply(state, &hook(None, "PermissionRequest", id, &permission)).await;
+    session_row(addr, token, id).await["pending"]["seq"]
+        .as_u64()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn an_approved_card_takes_no_second_tap_while_the_tool_runs() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "60"]);
+    let id = info.id;
+    let seq = permission_card(addr, &token, state.path(), id).await;
+    assert_eq!(decide(addr, &token, id, seq, "approve").await.status, 200);
+    // The pane keeps needing input until the approved tool finishes; no hook
+    // reports the grant, so the card must not reopen on a timer.
+    tokio::time::sleep(Duration::from_millis(10_500)).await;
+    let again = decide(addr, &token, id, seq, "deny").await;
+    assert_eq!(again.status, 409, "{}", again.body);
+    let row = session_row(addr, &token, id).await;
+    assert_eq!(row["pending"]["sent"], true, "{row}");
+    daemon.kill(id).ok();
+}
+
+#[tokio::test]
+async fn a_card_answered_in_the_terminal_takes_no_tap() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    let id = info.id;
+    let seq = permission_card(addr, &token, state.path(), id).await;
+    daemon.note_operator_keystroke(id, b"1");
+    let row = session_row(addr, &token, id).await;
+    assert_eq!(row["pending"]["answered_elsewhere"], true, "{row}");
+    assert_eq!(row["pending"]["sent"], false, "{row}");
+    let refused = decide(addr, &token, id, seq, "deny").await;
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    assert!(refused.body.contains("terminal"), "{}", refused.body);
+    daemon.kill(id).ok();
+}
+
+#[tokio::test]
+async fn turning_remote_access_off_ends_streams_rebinds_and_forgets_the_feed() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    let id = info.id;
+    let seq = permission_card(addr, &token, state.path(), id).await;
+    let epoch = feed(addr, &token, id, 0).await["epoch"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (mut stream, mut seen) = open_events(addr, &token).await;
+    read_until(&mut stream, &mut seen, "event: ready").await;
+
+    daemon
+        .remote_configure(ConfigPatch {
+            enabled: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+    read_to_end(&mut stream, &mut seen).await;
+    listening(&daemon, false).await;
+
+    // A hook applied while off is not collected.
+    let prompt = serde_json::json!({"hook_event_name": "UserPromptSubmit", "prompt": "private"});
+    apply(state.path(), &hook(None, "UserPromptSubmit", id, &prompt)).await;
+
+    let addr = enable(&daemon).await;
+    let page = feed(addr, &token, id, 0).await;
+    assert_eq!(page["entries"].as_array().unwrap().len(), 0, "{page}");
+    assert!(page["pending"].is_null(), "{page}");
+    assert_ne!(page["epoch"], epoch.as_str());
+    let stale = decide_in(addr, &token, id, &epoch, seq, "approve").await;
+    assert_eq!(stale.status, 409, "{}", stale.body);
+    assert!(stale.body.contains("earlier feed"), "{}", stale.body);
+    daemon.kill(id).ok();
+}
+
+#[tokio::test]
+async fn revoking_a_device_ends_its_event_stream() {
+    let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let me = request(addr, "GET", "/api/me", Some(&token), None).await;
+    let device = me.json()["device_id"].as_i64().unwrap();
+    let (mut stream, mut seen) = open_events(addr, &token).await;
+    read_until(&mut stream, &mut seen, "event: ready").await;
+    daemon.remote_device_revoke(device).unwrap();
+    read_to_end(&mut stream, &mut seen).await;
+}
+
+#[tokio::test]
+async fn a_feed_page_after_the_largest_sequence_is_empty() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    tokio::spawn(daemon.clone().remote_loops());
+    let addr = enable(&daemon).await;
+    let token = pair(&daemon, addr).await;
+    let (info, _dir) = pane(&daemon, &["sleep", "30"]);
+    let prompt = serde_json::json!({"hook_event_name": "UserPromptSubmit", "prompt": "hi"});
+    apply(
+        state.path(),
+        &hook(None, "UserPromptSubmit", info.id, &prompt),
+    )
+    .await;
+    let page = feed(addr, &token, info.id, u64::MAX).await;
+    assert_eq!(page["entries"].as_array().unwrap().len(), 0, "{page}");
+    // The feed still serves after that request.
+    assert_eq!(feed(addr, &token, info.id, 0).await["last_seq"], 1);
     daemon.kill(info.id).ok();
 }

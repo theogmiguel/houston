@@ -623,12 +623,17 @@
     return "Answer it in the terminal.";
   }
 
+  function epochOf(id) {
+    var s = session(id);
+    return (id === S.pane && S.pending && S.pending.epoch) || (s && s.pending && s.pending.epoch) || "";
+  }
+
   function decide(id, seq, choice, text) {
     if (S.busy) return Promise.resolve(false);
     S.busy = true;
     setDockStatus("Sending…");
     var key = id + ":" + seq;
-    return api("POST", "/api/sessions/" + id + "/decide", { entry_seq: seq, choice: choice, text: text })
+    return api("POST", "/api/sessions/" + id + "/decide", { epoch: epochOf(id), entry_seq: seq, choice: choice, text: text })
       .then(function () {
         S.sent[key] = true;
         setTimeout(function () { delete S.sent[key]; renderCard(); if (S.view === "list") renderList(); }, SENT_HOLD_MS);
