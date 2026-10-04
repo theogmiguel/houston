@@ -17,6 +17,16 @@ EOF
 for stub in check-control-metrics check-spacing-tokens; do
   printf 'BASELINE=(\n  "ui/src/A.tsx 1"\n)\n' > "$tmp/work/scripts/$stub.sh"
 done
+cat > "$tmp/work/scripts/check-type-scale-widened-baseline.sh" <<'EOF'
+WIDENED_BASELINE=(
+  "ui/src/A.tsx 2"
+)
+FLOOR_BASELINE=(
+  "ui/src/A.tsx 1"
+)
+EOF
+printf 'WIDENED_BASELINE=()\n' > "$tmp/work/scripts/check-radius-tokens-widened-baseline.sh"
+printf 'WIDENED_BASELINE=()\n' > "$tmp/work/scripts/check-spacing-tokens-widened-baseline.sh"
 printf 'EXEMPT_COUNTS=(\n  "ui/src/A.tsx 1"\n)\n' > "$tmp/work/scripts/check-focus-visible.sh"
 cat > "$tmp/work/ui/complexity-baseline.json" <<'EOF'
 {
