@@ -110,9 +110,15 @@ error stays visible until the next successful connection.
    repository's own rule; without it, three files or fewer count as small. Up to 15 files
    and 600 changed lines is medium; anything larger is large.
 
+6. When the owner moves a handed-back task to **Done**, Houston posts the agent's "live"
+   note to the thread and the request gets 🚀; on GitHub, the merge watch moves the task to
+   Done by itself. Moving it to **Canceled** posts the "dropped" note and 🚫. A request
+   refused at triage gets no second note. Houston watches no forge for a merge or a
+   deploy of its own: the task's state is the signal.
+
 The request shows its state as one reaction at a time, beside the owner's ✅: 👀 received,
-⚙️ working, ❓ waiting for an answer, 🏁 ready for review, 🚫 not going ahead and ⚠️
-attention. ⚠️ means something no agent can explain to the requester, such as a request
+⚙️ working, ❓ waiting for an answer, 🏁 ready for review, 🚀 live, 🚫 not going ahead
+and ⚠️ attention. ⚠️ means something no agent can explain to the requester, such as a request
 over the size limit, a start Houston refused, a run that stopped or one waiting for a
 confirmation in its pane; the owner gets a direct message saying which.
 
@@ -145,8 +151,8 @@ it is mapped.
   else's click only gets a private notice. On reconnect it reads the mapped channels' recent
   history. It downloads the images of a filed request.
 - **Houston → Slack, in the thread**: the status reactions on the request, the owner's
-  refusal reason, the agent's questions with their options and the answer chosen, and the
-  hand-back reply. Everyone in the channel
+  refusal reason, the agent's questions with their options and the answer chosen, the
+  hand-back reply and the note posted when the task is closed. Everyone in the channel
   can read them.
 - **Houston → Slack, to the owner only**: direct messages naming the channel, the
   requester and the first 280 characters of the request, with the start outlook; at

@@ -1059,6 +1059,93 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
         comment.contains("Botão do formulário") && comment.contains("Live note: Está no ar"),
         "the task keeps every field: {comment}"
     );
+
+    close_task(&r, task_id, proto::TaskStatus::Done);
+    let live = r
+        .fake
+        .await_post("Está no ar: o botão já diz Enviar.")
+        .await;
+    assert_eq!(live["thread_ts"], "1800000001.000100");
+    r.fake
+        .await_reactions("1800000001.000100", &["rocket"])
+        .await;
+    assert!(
+        !r.fake
+            .posts()
+            .iter()
+            .any(|p| p.to_string().contains("Este pedido não vai seguir.")),
+        "only the note for the state the task reached is posted"
+    );
+    r.finish();
+}
+
+fn close_task(r: &Rig, task_id: i64, status: proto::TaskStatus) {
+    let revision: i64 = r
+        .db()
+        .query_row(
+            "SELECT revision FROM backlog_tasks WHERE id = ?1",
+            [task_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let closed = r
+        .daemon
+        .task_save(
+            &r.workspace(),
+            Some(task_id),
+            Some(revision),
+            proto::TaskPatch {
+                status: Some(status),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(closed, proto::ServerMsg::TaskChanged { .. }),
+        "{closed:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_task_canceled_after_its_hand_back_posts_the_dropped_note() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-dropped").await;
+    r.fake.send_event(
+        "d1",
+        mention("1800000004.000100", REQUESTER, "rename the button"),
+    );
+    let task_id = r.await_tasks(1).await[0].0;
+    r.fake
+        .send_event("d2", check_mark("1800000004.000100", OWNER));
+    let session = r.await_runs(1).await[0].1;
+    r.daemon
+        .task_handback_from(
+            &r.workspace(),
+            task_id,
+            None,
+            Some(ResultForm {
+                subject: "Rótulo do botão".into(),
+                changes: "O botão diz Enviar.".into(),
+                steps: vec!["Abrir o formulário.".into()],
+                live_note: Some("Está no ar.".into()),
+                dropped_note: Some("Este pedido não vai seguir; o rótulo continua Salvar.".into()),
+                ..Default::default()
+            }),
+            session,
+            "agent:one (operator)",
+            "task_handback",
+        )
+        .unwrap();
+    r.fake
+        .await_reactions("1800000004.000100", &["checkered_flag"])
+        .await;
+    close_task(&r, task_id, proto::TaskStatus::Canceled);
+    r.fake
+        .await_post("Este pedido não vai seguir; o rótulo continua Salvar.")
+        .await;
+    r.fake
+        .await_reactions("1800000004.000100", &["no_entry_sign"])
+        .await;
     r.finish();
 }
 
@@ -1099,6 +1186,14 @@ async fn a_refusal_at_triage_tells_the_thread_why_and_marks_the_request() {
     r.fake
         .await_dm("Recusado na triagem: E-mail para todos os clientes")
         .await;
+    close_task(&r, task_id, proto::TaskStatus::Canceled);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        r.fake.thread_posts().len(),
+        1,
+        "a refusal already said why; canceling it adds nothing: {:?}",
+        r.fake.thread_posts()
+    );
     r.finish();
 }
 

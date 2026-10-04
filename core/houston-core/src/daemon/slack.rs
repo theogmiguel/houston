@@ -47,6 +47,7 @@ const R_SEEN: &str = "eyes";
 const R_WORKING: &str = "gear";
 const R_ASKING: &str = "question";
 const R_READY: &str = "checkered_flag";
+const R_LIVE: &str = "rocket";
 const R_DROPPED: &str = "no_entry_sign";
 const R_ATTENTION: &str = "warning";
 
@@ -1742,6 +1743,7 @@ impl Daemon {
 
     pub async fn slack_tick(self: &Arc<Self>) -> Result<()> {
         self.slack_close_dropped()?;
+        self.slack_close_finished()?;
         self.slack_follow_runs().await?;
         for row in self.db.intake_queue()? {
             if self.slack_working_runs()? >= proto::SLACK_RUNS_WORKING_MAX {
@@ -1779,6 +1781,51 @@ impl Daemon {
             self.db.intake_set_status(row.id, R_DROPPED, now)?;
             self.slack_dm_request_status(&row, t.closed_in_houston())?;
             self.slack_broadcast_task(Some(task_id));
+        }
+        Ok(())
+    }
+
+    /// A started request whose task the owner closes gets its final mark:
+    /// Done posts the agent's "live" note with 🚀, Canceled its "dropped"
+    /// note with 🚫. A refusal at triage already said why, so it gets no note.
+    fn slack_close_finished(&self) -> Result<()> {
+        for row in self.db.intake_by_task()? {
+            if row.state != INTAKE_STARTED {
+                continue;
+            }
+            let Some(task) = row
+                .task_id
+                .map(|id| self.db.task(id))
+                .transpose()?
+                .flatten()
+            else {
+                continue;
+            };
+            let (status, live) = match task.status {
+                proto::TaskStatus::Done => (R_LIVE, true),
+                proto::TaskStatus::Canceled => (R_DROPPED, false),
+                _ => continue,
+            };
+            let Some(run) = self.db.latest_implementation_run(task.id)? else {
+                continue;
+            };
+            let now = now_unix_ms();
+            if let Some(form) = self.slack_result_of(run.id)? {
+                let note = if live {
+                    &form.live_note
+                } else {
+                    &form.dropped_note
+                };
+                if let (Outcome::Ready, Some(note)) = (form.outcome, note) {
+                    self.db.intake_outbox_push(
+                        row.id,
+                        &format!("final:{}", run.id),
+                        &Outgoing::message(OutboxTarget::Thread, note.clone(), None),
+                        now,
+                    )?;
+                }
+            }
+            self.db.intake_set_status(row.id, status, now)?;
         }
         Ok(())
     }
