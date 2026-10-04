@@ -1,6 +1,7 @@
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import { IconAgent } from '../icons'
+import { Chip } from '../Chip'
 import { Tooltip } from '../Tooltip'
 import { formatAge, runStateLabel, runStateTone, taskAgentLabel } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
@@ -60,8 +61,8 @@ export function TaskRow({
       <span className="tk-title">{task.title}</span>
       {showWorkspace && <Tooltip label={task.workspace ?? 'No workspace'} className="inline-flex min-w-0"><span className="chip-branch max-w-[140px]" data-testid="task-workspace-chip"><span className="truncate">{task.workspace?.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'No workspace'}</span></span></Tooltip>}
       {intakeLabel(task) && (
-        <span className="chip-branch" data-testid="task-intake-chip">
-          <span className="truncate">{intakeLabel(task)}</span>
+        <span data-testid="task-intake-chip">
+          <Chip variant="state" tone="info" label={intakeLabel(task) ?? undefined} />
         </span>
       )}
       {task.open_run ? (

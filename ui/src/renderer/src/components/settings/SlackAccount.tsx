@@ -5,13 +5,9 @@ import type { SlackChannelMap } from '../../houston/generated/SlackChannelMap'
 import type { SlackInfo } from '../../houston/generated/SlackInfo'
 import type { SlackLanguage } from '../../houston/generated/SlackLanguage'
 import type { Workspace } from '../../houston/generated/Workspace'
-import { BTN_GHOST } from '../buttonChrome'
-import { Select } from '../Select'
+import { Button, Notice, Select, TextInput } from '../ui'
 import { Row, SubHead } from './shared'
 
-const FIELD =
-  'w-[200px] bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-input)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2'
-const NOTE = 'pt-[var(--space-1-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]'
 
 const CONNECTION_LABEL: Record<SlackInfo['connection'], string> = {
   off: 'Off',
@@ -81,13 +77,11 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
         title="Slack intake"
         desc="Off by default. When connected, Houston keeps a Socket Mode connection to your own Slack app: a mention of the bot in a mapped channel becomes a pending task, and the owner accepts it from a direct message or with a ✅ reaction. The request shows its state as a reaction, and the agent's questions and hand-back go to its thread. See the Slack page of the user guide for what is sent."
       >
-        <span data-testid="slack-status" className={`${NOTE} text-[var(--text-secondary)]`}>
-          {info ? statusLine(info) : 'Loading'}
-        </span>
+        <span data-testid="slack-status">{info ? statusLine(info) : 'Loading'}</span>
       </Row>
       {info?.error && (
-        <div role="status" data-testid="slack-error" className={`${NOTE} text-[var(--danger)]`}>
-          {info.error}
+        <div data-testid="slack-error">
+          <Notice tone="danger">{info.error}</Notice>
         </div>
       )}
       <Row
@@ -99,10 +93,10 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
         }
         indent
       >
-        <div className="flex flex-col items-end gap-2" data-testid="slack-token-row">
-          <input
+        <div className="grid justify-items-end gap-[var(--space-2)]" data-testid="slack-token-row">
+          <TextInput
             type="password"
-            className={`${FIELD} font-mono`}
+            mono
             spellCheck={false}
             autoComplete="off"
             aria-label="Slack app-level token"
@@ -111,9 +105,9 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
             value={appToken}
             onChange={(e) => setAppToken(e.target.value)}
           />
-          <input
+          <TextInput
             type="password"
-            className={`${FIELD} font-mono`}
+            mono
             spellCheck={false}
             autoComplete="off"
             aria-label="Slack bot token"
@@ -122,10 +116,9 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
             value={botToken}
             onChange={(e) => setBotToken(e.target.value)}
           />
-          <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className={`btn ${BTN_GHOST}`}
+          <div className="flex items-center gap-[var(--space-2)]">
+          <Button
+            variant="ghost"
             disabled={!canConnect}
             data-testid="slack-connect"
             onClick={() => {
@@ -134,16 +127,15 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
             }}
           >
             Connect
-          </button>
-          <button
-            type="button"
-            className={`btn ${BTN_GHOST}`}
+          </Button>
+          <Button
+            variant="ghost"
             disabled={!info || (!info.enabled && !info.has_tokens)}
             data-testid="slack-disconnect"
             onClick={() => client?.slackDisconnect()}
           >
             Disconnect
-          </button>
+          </Button>
           </div>
         </div>
       </Row>
@@ -152,9 +144,9 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
         desc="The owner is the only person whose ✅ starts a request (a member ID, U…, from the Slack profile's “Copy member ID”). The language applies to everything Houston writes in Slack and to what the agent is asked to write in the thread. Each channel ID (C…, from the channel's details) files its requests under one workspace."
         indent
       >
-        <div className="flex flex-col gap-2" data-testid="slack-config">
-          <input
-            className={`${FIELD} font-mono`}
+        <div className="grid gap-[var(--space-2)]" data-testid="slack-config">
+          <TextInput
+            mono
             spellCheck={false}
             aria-label="Owner's Slack member ID"
             placeholder="U…"
@@ -174,9 +166,9 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
             }}
           />
           {channels.map((c, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2">
-              <input
-                className={`${FIELD} font-mono`}
+            <div key={i} className="flex items-center gap-[var(--space-2)]">
+              <TextInput
+                mono
                 spellCheck={false}
                 aria-label="Slack channel ID"
                 placeholder="C…"
@@ -191,27 +183,24 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
                 aria-label="Workspace for this channel"
                 onChange={(workspace) => setChannels(channels.map((x, j) => (j === i ? { ...x, workspace } : x)))}
               />
-              <button
-                type="button"
-                className={`btn ${BTN_GHOST}`}
+              <Button
+                variant="ghost"
                 onClick={() => setChannels(channels.filter((_, j) => j !== i))}
               >
                 Remove
-              </button>
+              </Button>
             </div>
           ))}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={`btn ${BTN_GHOST}`}
+          <div className="flex items-center gap-[var(--space-2)]">
+            <Button
+              variant="ghost"
               disabled={workspaceOptions.length === 0}
               onClick={() => setChannels([...channels, { channel_id: '', workspace: workspaceOptions[0]?.value ?? '' }])}
             >
               Add channel
-            </button>
-            <button
-              type="button"
-              className={`btn ${BTN_GHOST}`}
+            </Button>
+            <Button
+              variant="ghost"
               disabled={client === null}
               data-testid="slack-save"
               onClick={() => {
@@ -220,12 +209,12 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
               }}
             >
               Save
-            </button>
+            </Button>
           </div>
         </div>
         {refusal !== null && (
-          <div role="alert" data-testid="slack-refusal" className={`${NOTE} text-[var(--danger)]`}>
-            {refusal}
+          <div data-testid="slack-refusal">
+            <Notice tone="danger">{refusal}</Notice>
           </div>
         )}
       </Row>
