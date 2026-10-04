@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 /// digest read transcripts at all.
 pub const RUN_ENV: &str = "HOUSTON_ROUTINE_RUN";
 const READABLE: [&str; 2] = ["claude", "codex"];
-const REFUSED: [&str; 4] = ["opencode", "cursor", "grok", "antigravity"];
+const REFUSED: [&str; 5] = ["opencode", "cursor", "grok", "antigravity", "zcode"];
 
 const USAGE: &str = "usage: hs-harness <command> [flags]
 

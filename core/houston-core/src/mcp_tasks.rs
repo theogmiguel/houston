@@ -305,8 +305,8 @@ fn all_specs() -> Vec<ToolSpec> {
     ]
 }
 
-/// The providers a task child or reviewer can be launched as; the same six
-/// `pane_spawn` accepts.
+/// The providers a task child or reviewer can be launched as: `pane_spawn`'s,
+/// except ZCode, whose first prompt waits for its TUI.
 const SPAWNABLE_AGENTS: [&str; 6] = [
     "claude",
     "codex",

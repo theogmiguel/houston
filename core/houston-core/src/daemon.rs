@@ -31,6 +31,10 @@ const SPAWN_GRACE: Duration = Duration::from_secs(20);
 const RESUME_EARLY_EXIT: Duration = Duration::from_secs(10);
 
 const SWARM_WAKE_SETTLE: Duration = Duration::from_millis(40);
+// A TUI that has drawn and then stayed quiet this long is reading its composer.
+const FIRST_PROMPT_QUIET_MS: u64 = 1_000;
+// Covers a cold Node start on a loaded machine; past it the paste goes in regardless.
+const FIRST_PROMPT_DEADLINE: Duration = Duration::from_secs(60);
 const SWARM_WAKE_LANE_MAX: usize = 16;
 // Held text must not keep a polling thread alive indefinitely; durable inbox rows stay waitable.
 const SWARM_WAKE_HOLD_MAX: Duration = Duration::from_secs(30);
@@ -1760,8 +1764,9 @@ fn restore_priority(agent: proto::AgentKind) -> u8 {
         proto::AgentKind::Opencode => 3,
         proto::AgentKind::Cursor => 4,
         proto::AgentKind::Grok => 5,
-        proto::AgentKind::Shell => 6,
-        _ => 7,
+        proto::AgentKind::Zcode => 6,
+        proto::AgentKind::Shell => 7,
+        _ => 8,
     }
 }
 
@@ -6892,7 +6897,21 @@ impl Daemon {
         let title = self.next_codename();
         let prompt = p.prompt.as_deref().unwrap_or("");
         let prompt_label = prompt_label.unwrap_or_else(|| format!("session-{id}"));
-        let mut extra_args = if !prompt.trim().is_empty() {
+        let mut first_prompt = None;
+        let mut extra_args = if !prompt.trim().is_empty()
+            && !crate::launch::prompt_in_argv(p.agent)
+            && p.cmd.is_none()
+        {
+            let prompts_dir = init_prompts_dir(&p.project_dir)?;
+            let (text, prompt_file) =
+                crate::launch::prompt_text(prompt, Some(&prompts_dir), &prompt_label)?;
+            if let Some((path, contents)) = prompt_file {
+                std::fs::write(&path, contents)
+                    .with_context(|| format!("writing prompt file {}", path.display()))?;
+            }
+            first_prompt = Some(text);
+            crate::launch::launch_args(p.agent, p.auto_approve, false, None, "", None, "")?.0
+        } else if !prompt.trim().is_empty() {
             let prompts_dir = init_prompts_dir(&p.project_dir)?;
             let (args, prompt_file) = crate::launch::launch_args(
                 p.agent,
@@ -6913,7 +6932,7 @@ impl Daemon {
                 Some(args) => args,
                 None => bail!(
                     "agent {:?} has no approval-bypass flag, so auto_approve cannot be honoured \
-                     (expected claude, codex, antigravity, opencode, cursor or grok)",
+                     (expected claude, codex, antigravity, opencode, cursor, grok or zcode)",
                     p.agent
                 ),
             }
@@ -6976,6 +6995,9 @@ impl Daemon {
             scrollback_seed: None,
         })?;
         self.record_approval_mode(info.id, approval);
+        if let Some(text) = first_prompt {
+            self.deliver_first_prompt(info.id, text, None);
+        }
         Ok(info)
     }
 
@@ -7570,15 +7592,17 @@ impl Daemon {
                 cwd.display()
             ));
         }
-        let Some(transcript) = transcript else {
-            return Err(format!(
-                "no transcript was reported for conversation {conversation}"
-            ));
-        };
-        match std::fs::metadata(transcript) {
-            Err(_) => return Err(format!("transcript {transcript} is missing")),
-            Ok(m) if m.len() == 0 => return Err(format!("transcript {transcript} is empty")),
-            Ok(_) => {}
+        if crate::launch::resume_needs_transcript(agent) {
+            let Some(transcript) = transcript else {
+                return Err(format!(
+                    "no transcript was reported for conversation {conversation}"
+                ));
+            };
+            match std::fs::metadata(transcript) {
+                Err(_) => return Err(format!("transcript {transcript} is missing")),
+                Ok(m) if m.len() == 0 => return Err(format!("transcript {transcript} is empty")),
+                Ok(_) => {}
+            }
         }
         let holders = self
             .db
@@ -8101,6 +8125,7 @@ impl Daemon {
                 (proto::AgentKind::Opencode, _) => ("opencode".to_string(), Vec::new()),
                 (proto::AgentKind::Cursor, _) => ("cursor-agent".to_string(), Vec::new()),
                 (proto::AgentKind::Grok, _) => ("grok".to_string(), Vec::new()),
+                (proto::AgentKind::Zcode, _) => ("zcode".to_string(), Vec::new()),
                 (proto::AgentKind::Custom, _) => {
                     bail!("agent \"custom\" requires a non-empty cmd argv")
                 }
@@ -8140,6 +8165,7 @@ impl Daemon {
         let resumed = match agent {
             proto::AgentKind::Claude => extra_args.iter().any(|a| a == "--resume"),
             proto::AgentKind::Codex => extra_args.first().is_some_and(|a| a == "resume"),
+            proto::AgentKind::Zcode => extra_args.iter().any(|a| a == "--resume"),
             _ => false,
         };
         let preassigned = (agent == proto::AgentKind::Claude
@@ -8170,6 +8196,10 @@ impl Daemon {
         cmd.env("COLORTERM", "truecolor");
         // A launcher may disable its own log colours; each pane is a new colour-capable terminal.
         cmd.env_remove("NO_COLOR");
+        if agent == proto::AgentKind::Zcode {
+            // Updates require an explicit user action, never a CLI's own check.
+            cmd.env("ZCODE_DISABLE_UPDATE_CHECK", "1");
+        }
         for (k, v) in &extra_env {
             cmd.env(k, v);
         }
@@ -9935,11 +9965,21 @@ impl Daemon {
                 ],
                 "grok".into(),
             ),
+            (proto::AgentKind::Zcode, _) => (
+                vec![
+                    "sh".into(),
+                    "-c".into(),
+                    r#"exec "$0" -p "$(cat "$1")""#.into(),
+                    "zcode".into(),
+                    path_arg,
+                ],
+                "zcode".into(),
+            ),
             (other, _) => {
                 let _ = std::fs::remove_file(&prompt_path);
                 bail!(
                     "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
-                     cursor or grok"
+                     cursor, grok or zcode"
                 )
             }
         };
@@ -9983,11 +10023,15 @@ impl Daemon {
                     vec!["grok".into(), "-p".into(), read_the_file(&path_arg)],
                     "grok".into(),
                 ),
+                (proto::AgentKind::Zcode, _) => (
+                    vec!["zcode".into(), "-p".into(), read_the_file(&path_arg)],
+                    "zcode".into(),
+                ),
                 (other, _) => {
                     let _ = std::fs::remove_file(&prompt_path);
                     bail!(
                         "{other:?} cannot generate a handoff; pick claude, codex, antigravity, opencode, \
-                         cursor or grok"
+                         cursor, grok or zcode"
                     )
                 }
             }
@@ -13188,6 +13232,66 @@ impl Daemon {
         }
         Ok(true)
     }
+
+    /// Pastes the first prompt of a CLI that takes none in argv once its TUI has drawn
+    /// and gone quiet. This times input delivery only; no status is read from output.
+    fn deliver_first_prompt(self: &Arc<Self>, session: u32, text: String, sender: Option<u32>) {
+        let daemon = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name(format!("first-prompt-{session}"))
+            .spawn(move || {
+                let outcome = daemon.first_prompt_paste(session, &text);
+                if let Err(why) = outcome {
+                    let why = format!(
+                        "first prompt for pane {session} was not delivered: {why}. Pending \
+                         prompt:\n{text}"
+                    );
+                    match sender {
+                        Some(sender) => {
+                            daemon.note_to_sender(session, sender, "prompt_failed", &why)
+                        }
+                        None => tracing::warn!("{why}"),
+                    }
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("starting first-prompt delivery for pane {session}: {e}");
+        }
+    }
+
+    fn first_prompt_paste(self: &Arc<Self>, session: u32, text: &str) -> Result<()> {
+        let deadline = Instant::now() + FIRST_PROMPT_DEADLINE;
+        loop {
+            let Ok(s) = self.get(session) else {
+                bail!("the pane closed first");
+            };
+            if !s.state.lock().expect("state lock").is_live() {
+                bail!("the pane's process exited first");
+            }
+            let drawn = s.raw_output_bytes.load(Ordering::Relaxed) > 0;
+            let now = self.started.elapsed().as_millis() as u64;
+            let quiet = now.saturating_sub(s.last_output.load(Ordering::Relaxed));
+            drop(s);
+            let late = Instant::now() >= deadline;
+            let held = self.immediate_paste_hold_reason(session);
+            if drawn && held.is_none() && (quiet >= FIRST_PROMPT_QUIET_MS || late) {
+                break;
+            }
+            if late {
+                bail!(
+                    "{} within {} s",
+                    held.unwrap_or_else(|| "the CLI drew nothing".to_string()),
+                    FIRST_PROMPT_DEADLINE.as_secs()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
+        }
+        self.write_stdin_counting(session, &bracketed_paste(text))
+            .map_err(|e| anyhow!("pasting: {e}"))?;
+        std::thread::sleep(SWARM_WAKE_SETTLE);
+        self.write_stdin_counting(session, b"\r")
+            .map_err(|e| anyhow!("submitting Enter: {e}; the text remains in its composer"))
+    }
 }
 
 struct WakeLane {
@@ -13569,7 +13673,7 @@ impl Daemon {
 
     fn orchestration_provider_catalog(&self) -> Vec<serde_json::Value> {
         use proto::AgentKind::*;
-        [Claude, Codex, Antigravity, Opencode, Cursor, Grok].into_iter().map(|provider| {
+        [Claude, Codex, Antigravity, Opencode, Cursor, Grok, Zcode].into_iter().map(|provider| {
             let binary = crate::cli_probe::binary_name(provider).expect("spawnable provider binary");
             let cli = self.cli_probes.lock().expect("cli probe cache").cached_presence(binary);
             let caps = orchestrate::provider_capabilities(provider);
@@ -14080,7 +14184,7 @@ impl Daemon {
             bail!(
                 "spawn refused: kind `custom` cannot be spawned as a child — a custom command \
                  has no hooks, so Houston could never tell its parent when it finished; pick \
-                 one of claude, codex, opencode, cursor, grok, antigravity"
+                 one of claude, codex, opencode, cursor, grok, antigravity, zcode"
             );
         }
         let role = match role.as_deref() {
@@ -14193,15 +14297,22 @@ impl Daemon {
             bail!("{msg}");
         }
         let mode_args = requested_mode.args(kind).unwrap_or_default();
-        let (mut extra_args, prompt_file) = crate::launch::launch_args(
+        let (argv_prompt, first_prompt, prompt_file) = if crate::launch::prompt_in_argv(kind) {
+            (prompt.as_str(), None, None)
+        } else {
+            let (text, file) = crate::launch::prompt_text(&prompt, Some(&prompts_dir), "spawned")?;
+            ("", Some(text), file)
+        };
+        let (mut extra_args, argv_prompt_file) = crate::launch::launch_args(
             kind,
             false,
             false,
             model.as_deref(),
-            &prompt,
+            argv_prompt,
             Some(&prompts_dir),
             "spawned",
         )?;
+        let prompt_file = prompt_file.or(argv_prompt_file);
         extra_args.extend(mode_args);
         if !handoff {
             extra_args.extend(crate::launch::handback_permission_args(kind));
@@ -14405,6 +14516,9 @@ impl Daemon {
             }
         };
         self.record_approval_mode(sid, requested_mode);
+        if let Some(text) = first_prompt {
+            self.deliver_first_prompt(sid, text, Some(caller));
+        }
         if handoff {
             if let Err(e) = self.db.session_mark_handed_off(caller, now_ms()) {
                 tracing::warn!("recording that pane {caller} handed off to {sid}: {e:#}");

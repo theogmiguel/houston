@@ -19,6 +19,8 @@ pub const CODEX_WAIT_CAP_MS: u64 = 600_000;
 pub const OPENCODE_WAIT_CAP_MS: u64 = 600_000;
 // Grok's effective per-tool timeout must also cover a transport margin.
 pub const GROK_WAIT_CAP_MS: u64 = 600_000;
+// Houston's ZCode plugin sets a 630-second tool timeout.
+pub const ZCODE_WAIT_CAP_MS: u64 = 600_000;
 // Unknown client limits get a provisional thirty-second ceiling.
 pub const UNKNOWN_WAIT_CAP_MS: u64 = 30_000;
 // Five minutes allows ordinary reviewer delays before reporting a diagnostic heuristic.
@@ -32,6 +34,7 @@ pub fn provider_wait_cap(provider: proto::AgentKind, grok_timeout_ms: Option<u64
         proto::AgentKind::Cursor => CURSOR_WAIT_CAP_MS,
         proto::AgentKind::Codex => CODEX_WAIT_CAP_MS,
         proto::AgentKind::Opencode => OPENCODE_WAIT_CAP_MS,
+        proto::AgentKind::Zcode => ZCODE_WAIT_CAP_MS,
         proto::AgentKind::Grok => grok_timeout_ms.map_or(UNKNOWN_WAIT_CAP_MS, |timeout| {
             timeout
                 .saturating_sub(GROK_WAIT_MARGIN_MS)
@@ -333,6 +336,7 @@ pub fn prompt_interrupt_key(provider: proto::AgentKind) -> anyhow::Result<&'stat
         Grok => Ok(b"\x03"),
         Claude => anyhow::bail!("mode restart refused for provider Claude: Stop does not run after user interrupts; no verified post-interrupt idle signal; accepted modes: queue, steer"),
         Opencode => anyhow::bail!("mode restart refused for provider OpenCode: no captured or documented post-interrupt idle contract for its interrupt sequence; accepted modes: queue, steer"),
+        Zcode => anyhow::bail!("mode restart refused for provider ZCode: Stop does not run after an interrupt and an interrupt between tool calls reports nothing; accepted modes: queue, steer"),
         other => anyhow::bail!("mode restart refused for provider {other:?}: no verified interrupt key; accepted modes: queue, steer"),
     }
 }
@@ -342,8 +346,8 @@ pub fn prompt_mode_supported(provider: proto::AgentKind, mode: PromptMode) -> an
     if mode == PromptMode::Queue {
         return Ok(());
     }
-    anyhow::ensure!(matches!(provider, Claude | Codex | Antigravity | Opencode | Cursor | Grok),
-        "mode {mode:?} refused for provider {provider:?}: expected Claude, Codex, Antigravity, OpenCode, Cursor or Grok");
+    anyhow::ensure!(matches!(provider, Claude | Codex | Antigravity | Opencode | Cursor | Grok | Zcode),
+        "mode {mode:?} refused for provider {provider:?}: expected Claude, Codex, Antigravity, OpenCode, Cursor, Grok or ZCode");
     if mode == PromptMode::Restart {
         prompt_interrupt_key(provider)?;
     }
@@ -732,12 +736,13 @@ pub struct ProviderCapabilities {
     pub door2: bool,
 }
 
-const LAST_MESSAGE_PROVIDERS: [proto::AgentKind; 5] = [
+const LAST_MESSAGE_PROVIDERS: [proto::AgentKind; 6] = [
     proto::AgentKind::Claude,
     proto::AgentKind::Codex,
     proto::AgentKind::Opencode,
     proto::AgentKind::Cursor,
     proto::AgentKind::Antigravity,
+    proto::AgentKind::Zcode,
 ];
 
 pub fn provider_capabilities(agent: proto::AgentKind) -> ProviderCapabilities {
@@ -795,6 +800,7 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
             | proto::AgentKind::Antigravity
             | proto::AgentKind::Opencode
             | proto::AgentKind::Cursor
+            | proto::AgentKind::Zcode
     ) {
         notes.push(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode"));
     }
@@ -891,7 +897,8 @@ pub fn status_source(agent: proto::AgentKind) -> StatusSource {
         | proto::AgentKind::Codex
         | proto::AgentKind::Grok
         | proto::AgentKind::Opencode
-        | proto::AgentKind::Antigravity => StatusSource::HooksFull,
+        | proto::AgentKind::Antigravity
+        | proto::AgentKind::Zcode => StatusSource::HooksFull,
         proto::AgentKind::Cursor => StatusSource::HooksPartial,
         _ => StatusSource::ProcessOnly,
     }
@@ -1757,7 +1764,7 @@ pub const UNCONFIRMED_PASTE_MAX_MS: u64 = 7 * 24 * 60 * 60_000;
 // return None, and their message waits for the next idle instead.
 pub fn door2_continue_json(provider: proto::AgentKind, text: &str) -> Option<String> {
     match provider {
-        proto::AgentKind::Claude | proto::AgentKind::Codex => {
+        proto::AgentKind::Claude | proto::AgentKind::Codex | proto::AgentKind::Zcode => {
             Some(serde_json::json!({"decision": "block", "reason": text}).to_string())
         }
         proto::AgentKind::Antigravity => {
@@ -2620,7 +2627,7 @@ const USAGE: &str = "\
 hs-pane — a Houston pane controlling sibling agent panes
 
   hs-pane whoami
-  hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok> --prompt \"…\" [--client-request-id KEY]
+  hs-pane spawn --kind <claude|codex|antigravity|opencode|cursor|grok|zcode> --prompt \"…\" [--client-request-id KEY]
                 [--model M] [--cwd DIR] [--ask | --bypass] [--profile LABEL]
                 [--role NAME]          (unique among your live children)
                 [--target-workspace DIR] [--reusable]
@@ -2804,7 +2811,7 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
         "spawn" => {
             let kind = flags.get("kind").ok_or_else(|| {
                 anyhow::anyhow!(
-                    "spawn needs --kind <claude|codex|antigravity|opencode|cursor|grok>"
+                    "spawn needs --kind <claude|codex|antigravity|opencode|cursor|grok|zcode>"
                 )
             })?;
             let prompt = flags.get("prompt").ok_or_else(|| {
