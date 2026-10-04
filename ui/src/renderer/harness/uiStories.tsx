@@ -10,6 +10,8 @@ import {
   IconTile,
   ListDetail,
   Notice,
+  QrImage,
+  TextInput,
   PageFrame,
   PageHeader,
   PaneHeaderButton,
@@ -139,6 +141,20 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Field label="Required field" error="A value is required."><input value="" readOnly aria-invalid="true" /></Field>
             <Field label="Disabled field" hint="This value is managed elsewhere."><input value="Managed" readOnly disabled /></Field>
           </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="TextInput">
+          <SpecimenRow>
+            <TextInput aria-label="Listen address" mono value="127.0.0.1:47823" readOnly />
+            <TextInput aria-label="Public URL" width="lg" placeholder="https://machine.tailnet.ts.net" />
+            <TextInput aria-label="Secret" type="password" value="hidden" readOnly />
+            <TextInput aria-label="Invalid" aria-invalid="true" value="not-an-address" readOnly />
+            <TextInput aria-label="Disabled" value="Managed" disabled />
+          </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="QrImage">
+          <QrImage label="Pairing code" svg={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1z" fill="#000"/></svg>'} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">
