@@ -245,6 +245,11 @@ Tokens are `--tr-text-<step>-{size,weight,tracking,leading,family,transform}`
 (`theme.css`). A parallel numeric scale `--tr-text-{xs…3xl}` exists for older
 sites; new work uses the semantic steps.
 
+`check-type-scale.sh` keeps the legacy `text-[Nunit]` and raw scale rules
+absolute, and scans CSS `font-size` declarations plus `[font-size:Nunit]`
+classes. Its widened and sub-11px per-file baselines only shrink; the semantic
+scale starts at the 11px label step.
+
 **Label rule:** uppercase always pairs with tracking, and never appears below 11px.
 An uppercase run with default tracking is a bug. So is the reverse: the `label`
 step's 0.1em on a title-case run spaces a word out until it reads as a
@@ -288,8 +293,10 @@ never a `mt-`/`mr-`/`mb-`/`ml-` on the children, at any value. `ml-auto` is alig
 a `-0` is a reset of somebody else's margin, and a negative margin is a pull into
 overlap — those three stay legal. Every other directional margin is one element
 deciding a number its parent should own, which is how a row of badges drifts out of
-step with the row it sits in. `check-spacing-tokens.sh` holds the line against a
-per-file ratchet; prose rhythm inside a `[&_…]:` variant is exempt, because
+step with the row it sits in. `check-spacing-tokens.sh` holds the original
+directional-margin rule and tracks CSS padding, margin and gap literals plus
+arbitrary-property classes in a separate per-file ratchet. Token definition
+files are exempt; prose rhythm inside a `[&_…]:` variant is exempt because
 markdown output has no JSX parent to carry a gap and its steps are deliberately
 uneven.
 
@@ -318,9 +325,10 @@ Match the neighbouring primitive rather than introducing a new step.
 the number. `.btn` (base.css) and the icon-button chrome constants read the tokens
 too, so changing one `--tr-radius-*` and rebuilding moves every surface wearing that
 meaning. `check-radius-tokens.sh` refuses a `rounded-[Npx]` literal, a
-`border-radius: Npx` in CSS, and the framework's own `rounded-sm`/`md`/`lg`/`xl`
+`border-radius: Npx` in CSS, the framework's own `rounded-sm`/`md`/`lg`/`xl`
 (unmapped in `tailwind.css`'s `@theme`, so they are the framework's scale, not this
-one), against a per-file ratchet that only shrinks. `rounded-full` and `rounded-none`
+one), and `[border-radius:Nunit]` classes. The old and widened rules have separate
+per-file ratchets that only shrink. `rounded-full` and `rounded-none`
 stay legal: a circle and a zero are shapes, not rungs.
 
 ## Materials
@@ -438,27 +446,64 @@ accent remains reserved for focus and the affirmative action.
 
 ### Buttons
 
-There is no `<Button>` wrapper. Buttons compose the `.btn` base class (28px box,
-`--tr-radius-button`, 12px/500 label) with a chrome constant from `buttonChrome.ts`.
-A `<button>` with no `.btn` renders **bare on purpose**, so a forgotten opt-in is
-visible rather than silently defaulting to a bordered card.
+New buttons use `components/ui/Button`. Its `md` and `sm` sizes use `--h-ctl`
+(28px) and `--h-ctl-mini` (22px). Keep `className` for layout; add visual
+differences as a variant in the registry.
+
+| Role | Hover |
+|---|---|
+| `primary` | `--accent-hover` |
+| `secondary` | `--card-hover` and `--border-hover` |
+| `ghost` | `btn-ghost` owns the existing `--hover-fill` and `--text-primary` hover |
+| `danger` | Ghost with the danger tint on hover; `armed` adds its standing danger cue |
+| `danger-solid` | `BTN_DANGER_SOLID`; always paired with a warning icon |
+| `icon` | `BTN_ICO`'s box and hover |
+
+Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
+`SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY` is flagged for removal:
+its white label misses the contrast check on Graphite, while `PRIMARY_BUTTON` uses
+the theme's contrast-paired `--accent-ink` in both Graphite and Paper.
+`SECONDARY_BUTTON` is the selected secondary look: it has broader current use
+(55 references versus 47) and its neutral label and fill pass contrast in both
+themes. Neither secondary recipe has a direct test, and both date to the initial
+release. `BTN_SECONDARY` is flagged for removal during migration.
 
 | Constant | Use |
 |---|---|
 | `BTN_PRIMARY` | The single affirmative action in a flow |
+| `BTN_SECONDARY` | A neutral, bordered action alongside the primary |
 | `BTN_DANGER_SOLID` | The irreversible action — same *rank* as primary, differing only in consequence. Always paired with a warning icon; colour alone is not a signal |
-| `BTN_GHOST` | The ordinary case: transparent fill, muted label, no border |
+| `BTN_GHOST` | The ordinary case: transparent fill, muted label, no border. Hover fills with `--hover-fill` and lifts the label to `--text-primary` |
 | `BTN_GHOST_BG` | Ghost's background half only, for sites that must inherit their text colour |
 | `BTN_GHOST_DANGER_HOVER` | Hover-only danger cue: a destructive click with no standing risk before it |
 | `BTN_GHOST_DANGER_ARM` | Standing danger cue: an armed, click-again-to-confirm control |
 | `BTN_ICO` | Full icon-button chrome (24×22 box, `--tr-radius-sm`, muted→primary on hover) |
 | `BTN_ICO_STRUCTURE` | Bare structure only, for sites that bring their own size and colour |
 
-Ghost's `border-none` is a real border-*style* reset, so a later `border-color`
-utility paints nothing — danger cues signal through fill + text, never a border.
+`BTN_GHOST` is a component-layer class (`btn-ghost` in `base.css`), so any utility a
+site adds — its own text colour, `BTN_GHOST_DANGER_HOVER`, `BTN_GHOST_DANGER_ARM` —
+wins over it by layer, not by class order. Ghost's `border: none` is a real
+border-*style* reset, so a later `border-color` utility paints nothing — danger cues
+signal through fill + text, never a border.
 **Cancel, Dismiss, Close and Discard are not destructive.** They back the user out
-and stay quiet: `BTN_GHOST`, no colour, no keyboard chip. Save the weight for the
+and stay quiet: `BTN_GHOST`, no colour. Save the weight for the
 affirmative action.
+
+### Component boundary
+
+Renderer UI composes from `ui/src/renderer/src/components/ui/`. Outside that directory, class
+strings contain layout utilities only:
+`flex`, `inline-flex`, `grid`, `col-*`, `row-*`, `gap-[var(--space-*)]`, `items-*`, `justify-*`,
+`self-*`, `place-*`, `min-w-0`, `min-h-0`, `flex-1`, `flex-none`, `shrink-*`, `grow`, `truncate`,
+`hidden`, `relative`, `absolute`, `inset-*`, `w-full`, `h-full` and `overflow-*`. Responsive and
+state prefixes may qualify these utilities. Colour, borders, radius, typography, padding, margin,
+shadows, literal sizes, arbitrary properties and button recipes belong in `components/ui/` as a
+primitive or variant, with a specimen case in the `ui-primitives` story.
+
+`scripts/check-ui-boundary.sh` reads literal JSX `className` values, string literals in
+`className` expressions and string values in same-file `*_CLS` declarations, including template
+literals. Imported constants are covered where they are declared; computed strings without a
+statically visible literal are outside its scan. Each non-layout token reports its source line.
 
 ### Select
 
@@ -503,14 +548,14 @@ controls means a full focus trap.
 ### Chips, badges and tiles
 
 `Chip` has five variants (`state`, `provider`, `count`, `compound`, `removable`) and
-five tones mapped onto the status pill pairs. Shell: 26px, `--space-2` padding,
+five tones: neutral plus the four status tones. Shell: 26px, `--space-2` padding,
 `small` type. Radius follows the meaning rule — `removable` or clickable → capsule,
-everything else → `--tr-radius-sm`. `selected` is the one place a chip may use
-`--accent-muted` + an accent border, because a chip is a compact affordance rather
-than a full row. A `count` chip distinguishes "no value yet" from a known zero —
+everything else → `--tr-radius-sm`. A selected chip may use `--accent-muted` and an
+accent border. A `count` chip distinguishes "no value yet" from a known zero —
 render an empty-set label, never a bare `0`, for the latter. `IconTile` comes in
-24/32/40px with the same tone map; its interactive variant adds a hover wash and a
-small active scale.
+24/32/40px with six tones, including accent; its interactive variant adds a hover
+surface and a small active scale. A selected tile may also use `--accent-muted` and
+an accent border.
 
 ### Segmented control
 
@@ -520,13 +565,22 @@ slide a thumb.**
 
 ### Tables
 
-`DataTable`: sticky opaque `thead` on `--surface`, row hairlines on `--divider`
-(never `--border`), 28px rows, numeric columns right-aligned with `tabular-nums`,
-default body height cap 360px, and empty/loading/error states rendered inline in
-`tbody` rather than replacing the table. `DefinitionTable` is a lookup surface, not a
-form: a 160px label column on `--panel` with a small muted icon tile, a mono value
-column with optional middle-truncation, and masked rows for secrets — the masked
-value never touches the DOM in full and there is no reveal control.
+Use `Table` for content tables. Define columns with row keys, mark numeric columns
+`numeric`, and render model-specific content through a column renderer. Numeric cells
+and their headings right-align with tabular figures. Rows are separated by `--divider`
+hairlines with `--space-2-5` vertical padding. Cell ink defaults to primary; set a
+column's `tone` to `muted` for secondary figures or `faint` for ranks. `plain` tables sit
+directly on the page; `framed` tables sit inside a hairline frame when they share a
+panel with other content. Rows highlight on hover. Row actions remain in their own trailing column. A clickable row supports
+Enter and Space and ignores events from nested controls. Empty results use
+`EmptyState`; failures use `Notice` with an optional retry action. `DataTable` remains
+for existing callers that need its loading state, sticky head and bounded body scroll;
+it does not provide the row keyboard and action-column behaviour of `Table`.
+
+`DefinitionTable` is a lookup surface, not a form: a 160px label column on `--panel`
+with a small muted icon tile, a mono value column with optional middle-truncation, and
+masked rows for secrets — the masked value never touches the DOM in full and there is
+no reveal control.
 
 ### Menus
 
@@ -544,7 +598,7 @@ tested against and overflows the panel on the next one.
 
 ### Icons
 
-`components/icons.tsx` is a **hand-drawn SVG library** — roughly 92 `Icon*`
+`components/icons.tsx` is a **hand-drawn SVG library** — 126 `Icon*`
 components that reproduce Lucide's geometry (each citing the glyph it copies), with
 no runtime dependency on any icon package. `lucide-react` is never imported.
 
@@ -595,15 +649,112 @@ above the pane's own chrome. Fading the element itself fades its text and
 borders along with it, and a pane you are placing is one you still want to
 recognise.
 
+## Patterns
+
+### Page header
+
+Every destination page uses `PageFrame`; choose its `form` (720px) or `wide` (1040px)
+width from the content shape. Compose its heading with `PageHeader`. Use the `heading`
+text role for page titles, as Settings does. Reserve the larger
+`title` role for onboarding and About. A one-sentence description is optional.
+Place page actions at the end of the title row, and use the rail label verbatim as
+the page title. Use `PAGE_COLUMN_CLS` (720px) for forms and lists and
+`PAGE_COLUMN_WIDE_CLS` (1040px) for tables and list-detail views.
+
+### Section heading and count
+
+Use `SectionHead` with `Count` immediately after its label on the same line, with
+a 6px gap, tabular
+numerals, the label's size and one softer ink step. Do not use parentheses, a
+middle dot, monospace numerals or right alignment; the right end of a heading is
+for its action. Omit zero in tabs and headings; disable an action instead of
+showing `(0)`. Put phrases such as “1 routine” in descriptions. Keep `Chip` counts
+for metrics.
+
+### Primary action
+
+Show one primary action per view in the page header, using `Button` with the
+`primary` variant. Use “New <noun>” when Houston creates the item and “Add <noun>”
+when Houston registers an existing item. Repeat the action in an empty state only
+when the page header does not show it.
+
+### Field
+
+Use `Field` with a sentence-case label in the `small` text step, weight 600 and
+secondary ink, 6px above a 28px control. A hint is optional; an error replaces it.
+Use `Segmented`
+for two to four exclusive options and `Select` for more than four. Use pressed
+chips only for multi-select filters.
+
+### Status
+
+Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
+uses `--text-secondary`. Choose one status word from this vocabulary: Working,
+Needs input, Idle, Done, Failed, Paused, In sync and Missing. Do not rely on colour
+alone. Idle, Paused and Missing use a hollow ring. “Ok” and
+“Not there” are not status words. A PR that introduces a status word adds it to
+this list.
+
+### Empty state
+
+Use `EmptyState`: a 32px icon tile with the surface's own glyph, a `ui`-step title,
+one sentence and at most one action, centred in its region. Use a magnifier only
+when a search has no results. Reserve the serif display step for whole-window
+states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
+`BrowserPane.tsx`'s empty state are absorbed during their later screen migrations.
+
+### Grouped rows
+
+Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
+places its title and metadata on the left and status or action on the right.
+
+### List and detail
+
+Compose `ListDetail` inside `PageFrame width="wide"`. The list column uses the
+existing 280px split at the 720px container threshold; on narrow containers it shows
+one side at a time with a back button. Pass `selectedId` and `onSelect` when selection
+must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
+new selection.
+
+### Drawer
+
+Use `Drawer` for a detail panel over the current page. It has a right-aligned 720px
+maximum width, a labelled title row and a close button. It traps Tab focus, closes on
+Escape or a backdrop press, and returns focus to the opener. Entry uses the panel and
+scrim motion tokens and is disabled by reduced-motion preferences.
+
+### Inline notice
+
+Use `Notice` for a single inline info, warn or danger sentence, with an optional
+`Button` action. A concurrency limit names the limit, current value and settings path,
+for example: “3 of 3 running. Routines run 3 at a time (Settings › Routines)”.
+
+### Pane header actions
+
+Use `PaneHeaderButton` for pane-header icon actions. Its `aria-label` is required;
+the shared recipe preserves the 28px hit target inside the 28px pane header.
+
+## Voice and copy
+
+Use sentence case for buttons, headings, field labels, menu items and tooltips. The copy guard
+checks these contexts and the `title`, `label`, `placeholder` and `aria-label` string props; its proper-noun allowlist covers product/provider names and common
+acronyms.
+Render uppercase section labels through the `label` text role; do not type their
+copy in capitals. Counts follow [Section heading and count](#section-heading-and-count).
+Use “New” for creation and “Add” for registering an existing item. Cancel,
+Dismiss, Close and Discard are quiet ghost actions. A limit error names the limit,
+the actual value and the requested operation. Keep the existing ellipsis and label
+tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.sh`).
+
 ## States
 
 | State | Treatment |
 |---|---|
 | **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent); outline-offset: 1px` — so no site can forget it. A site with its own ring still wins by utility order. |
-| **Focus (halo)** | The composite ring used on chips and tiles: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
-| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Buttons use `--border-hover` / `--card-hover`. Ghost-danger buttons get a hover-only tint. |
+| **Focus (halo)** | The composite ring used on chips, tiles and segmented options: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
+| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
 | **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
-| **Selected** | `--selected-fill`, an achromatic 10% overlay. Full-row fill, no left bar, no accent tint. `Chip`'s `selected` is the documented exception. |
+| **Selected** | `--selected-fill`, an achromatic 10% overlay. Full-row fill, no left bar, no accent tint. `Chip` and `IconTile` may use an accent border and `--accent-muted` when selected. |
 | **Active pane** | `--border-focus` — a plain luminance-step ring, a header lift to `--raised`, and the pane's own name held at `--text-primary` while every other pane's name steps to `--text-secondary`. **No hue** in any of the three: a coloured stroke or ink would clash with whichever terminal palette the agent underneath is using. The pane body — the terminal itself — never changes on focus. |
 
 ## Motion
@@ -690,7 +841,7 @@ matches a chrome token — that is why the active-pane ring is achromatic.
 
 ## Guards
 
-Eleven checks enforce this guide mechanically. The idiom is hermetic, sub-second checks
+Thirteen checks enforce this guide mechanically. The idiom is hermetic, sub-second checks
 wired into CI; `check:complexity` is the one exception, and it earns it by measuring
 something no text search can count (see "A closure is not a fix").
 
@@ -706,6 +857,8 @@ something no text search can count (see "A closure is not a fix").
 | `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |
 | `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`). Per-file exemption count, ratchets down only. |
 | `scripts/check-empty-state-action.sh` | An empty state must contain the control its copy names. Copy pointing at a button that lives elsewhere fails; a bare statement of fact ("No results.") passes. Three reasoned testid exemptions. |
+| `scripts/check-ui-boundary.sh` | Outside `components/ui/`, literal `className` strings and same-file `*_CLS` constants may use layout utilities only. Per-file baseline, ratchets down only; computed strings with no visible literal are outside the scan. |
+| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Per-file baseline, ratchets down only. |
 | `bun run check:complexity` | Ratchets each component's cyclomatic complexity against `ui/complexity-baseline.json` (`worst` and `over`; `total` recorded beside them). Needs `bun install` — it shells out to a pinned `oxlint`, so it is not one of the hermetic scripts. See "A closure is not a fix" below. |
 
 `check:css` needs a `bun run build` first; the rest are standalone and instant.
@@ -796,13 +949,10 @@ than from this list.
 
 ## When this guide is silent
 
-1. Look at the **nearest sibling component** in `ui/src/renderer/src/components/`
-   and follow its lead — same icons, same heights, same submit semantics.
-2. Check the **chrome constants** (`buttonChrome.ts`, `overlayChrome.ts`,
-   `selectChrome.ts`, `panelChrome.ts`) for a recipe that already encodes the
-   pattern.
-3. If it's a token question, **`theme.css` is canonical** — use what's there, or add
-   a new token to both theme blocks and expose it in `tailwind.css`'s `@theme`.
-4. If two existing patterns contradict, prefer the one with tests and the one that
-   landed more recently, and flag the other.
-5. If none of those resolve it, **ask before inventing.**
+1. Use `components/ui`. If the role is missing, add it there as a variant with a specimen
+   case in `ui-primitives`; never write a visual class in a feature file.
+2. Copy a sibling for behaviour, never for chrome.
+3. For tokens, `theme.css` is canonical.
+4. When patterns contradict, prefer the tested one, then the more recent one, and flag
+   the other.
+5. Ask before inventing.

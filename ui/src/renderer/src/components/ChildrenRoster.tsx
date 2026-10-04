@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useSession, useSessionFamily, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { openSideOverview } from '../sidePanel'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
@@ -16,6 +17,7 @@ import { Segmented } from './Segmented'
 // demand so the Tasks modules stay off the boot path.
 const RosterQueue = lazy(() => import('./tasks/RosterQueue').then((module) => ({ default: module.RosterQueue })))
 const TaskChip = lazy(() => import('./tasks/TaskChip').then((module) => ({ default: module.TaskChip })))
+export const DelegationAge = lazy(() => import('./ageTicker').then((module) => ({ default: module.AgeLabel })))
 
 /// The Queue segment's ready count: a snapshot subscription light enough for
 /// boot, so the segment is honest before the view (and its full hook) loads.
@@ -50,6 +52,8 @@ export function childStateWord(info: SessionInfo): string {
   return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'working'
 }
 
+const ageTicks = (info: SessionInfo): boolean => isLive(info.state) && info.delegation?.settled_at == null
+
 // A missing provider signal is named, so an absent badge is not read as proof of work.
 export const glyphLabel = (info: SessionInfo) => [info.delegation?.role ?? info.title, childGroup(info), info.delegation?.capability_note].filter(Boolean).join(' · ')
 
@@ -63,7 +67,7 @@ export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Eleme
   return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
 }
 
-export function ChildrenRoster({ parent, children, roster, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
+export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
   parent: SessionInfo
   children: SessionInfo[]
   roster?: PaneRoster
@@ -76,17 +80,20 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
   /// Which segment starts selected; the harness stories open the queue with it.
   defaultView?: 'children' | 'queue'
 }): React.JSX.Element {
+  const parent = useSession(parentProp.id, parentProp) ?? parentProp
+  const children = useSessionsSelector(
+    (sessions) => [...sessions.values()].filter((child) => child.spawned_by === parent.id).sort((a, b) => a.id - b.id),
+    shallowArrayEqual,
+    childrenProp,
+  )
+  const fallbackRoster = useMemo(() => rosterProp?.sessions ?? new Map([parentProp, ...childrenProp].map((session) => [session.id, session])), [rosterProp?.sessions, parentProp, childrenProp])
+  const family = useSessionFamily(parent.id, fallbackRoster)
+  const roster = rosterProp ? { ...rosterProp, sessions: family } : undefined
   const [filter, setFilter] = useState(false)
   const [pending, setPending] = useState<number[]>([])
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const latest = useRef(children)
   latest.current = children
-  const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    // Ages only need second resolution, independent of terminal rendering.
-    const tick = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(tick)
-  }, [])
   useEffect(() => () => clearTimeout(timer.current), [])
   const settled = children.filter((child) => childGroup(child) === 'Settled')
   const closeSettled = (): void => {
@@ -161,7 +168,7 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
             <div className="children-group"><span>{group}</span>{group === 'Needs you' && <button className="children-group-toggle" aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="small" />Show only</button>}<span>{items.length}</span></div>
             {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
               <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span>{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
-              <span className="children-slot"><span className="children-state">{delegationAge(child.delegation?.started_at ?? now, child.delegation?.settled_at ?? now)}</span>
+              <span className="children-slot"><span className="children-state"><Suspense fallback={delegationAge(child.delegation?.started_at ?? Date.now(), child.delegation?.settled_at ?? Date.now())}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={ageTicks(child)} /></Suspense></span>
                 <span className="children-actions">
                   {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><button className={ROSTER_ICON} aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>}
                   <Tooltip label="Open"><button className={ROSTER_ICON} aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>

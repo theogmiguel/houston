@@ -88,3 +88,20 @@ describe("daemon snapshot → renderer engine (P9)", () => {
     expect(core.importSnapshot(new Uint8Array(0))).toBe(false);
   });
 });
+
+it("reuses rows and cells while matching a fresh snapshot after edits", async () => {
+  const reused = await createCore();
+  const fresh = await createCore();
+  const initial = "hello\r\n界e\u0301";
+  const edit = "\u001b[1;1H\u001b[31mnew\u001b[0m\u001b[2;1Hchanged\u001b[K";
+  reused.write(initial);
+  const before = reused.snapshot();
+  const row = before.rowData[0];
+  const cell = row.cells[0];
+  reused.write(edit);
+  fresh.write(initial + edit);
+  const after = reused.snapshot();
+  expect(after.rowData[0]).toBe(row);
+  expect(after.rowData[0].cells[0]).toBe(cell);
+  expect(after.rowData).toEqual(fresh.snapshot().rowData);
+});

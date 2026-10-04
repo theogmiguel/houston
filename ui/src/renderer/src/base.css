@@ -73,3 +73,18 @@
     margin: 0;
   }
 }
+
+/* Ghost buttons live below `utilities` so every utility a call site adds (its
+   own text colour, a danger hover tint, an armed fill) wins by layer rather
+   than by Tailwind's alphabetical tie-break. */
+@layer components {
+  .btn-ghost {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--hover-fill);
+    color: var(--text-primary);
+  }
+}

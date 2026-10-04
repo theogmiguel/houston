@@ -581,6 +581,8 @@ export class GhosttyTerminalSurface {
   private focused = false
   private resizeNotified = false
   private canvasConfigured = false
+  private fitFrame = 0
+  private fitted = false
   private theme: GhosttyTheme
   private readonly suppressedKeyCodes = new Set<string>()
   private pasteShortcutToken = 0
@@ -619,7 +621,7 @@ export class GhosttyTerminalSurface {
     this.requestedFontFamily = options.font?.family
     this.fontSize = terminalFontSize(options.font?.size)
     this.lineHeight = terminalLineHeight(options.font?.lineHeight)
-    this.resizeObserver = new ResizeObserver(() => this.fit())
+    this.resizeObserver = new ResizeObserver(() => this.requestFit())
     this.installEvents()
     this.watchDevicePixelRatio()
     this.reducedMotionMedia?.addEventListener('change', this.onReducedMotionChange)
@@ -869,6 +871,14 @@ export class GhosttyTerminalSurface {
     this.applyFontMetrics()
   }
 
+  private requestFit(): void {
+    if (this.disposed || this.fitFrame !== 0) return
+    this.fitFrame = window.requestAnimationFrame(() => {
+      this.fitFrame = 0
+      this.fit()
+    })
+  }
+
   fit(): boolean {
     if (this.disposed) return false
     const box = measureMountBox(this.mount, this.canvas)
@@ -890,8 +900,8 @@ export class GhosttyTerminalSurface {
       this.canvas.height !== pixelHeight ||
       !this.canvasConfigured
     ) {
-      this.canvas.width = pixelWidth
-      this.canvas.height = pixelHeight
+      if (this.canvas.width !== pixelWidth) this.canvas.width = pixelWidth
+      if (this.canvas.height !== pixelHeight) this.canvas.height = pixelHeight
       this.context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0)
       this.canvasConfigured = true
       this.forceFullRender = true
@@ -909,7 +919,11 @@ export class GhosttyTerminalSurface {
       this.scrollbarDirty = true
       shouldRender = true
     }
-    if (shouldRender) this.renderFrame()
+    if (shouldRender) {
+      if (!this.fitted) this.renderFrame()
+      else this.requestRender()
+    }
+    this.fitted = true
     return true
   }
 
@@ -1108,6 +1122,7 @@ export class GhosttyTerminalSurface {
     this.disposed = true
     this.synchronizedOutput.dispose()
     this.resizeObserver.disconnect()
+    if (this.fitFrame !== 0) window.cancelAnimationFrame(this.fitFrame)
     document.fonts.removeEventListener('loadingdone', this.onFontsLoaded)
     this.dprMedia?.removeEventListener('change', this.onDevicePixelRatioChange)
     this.dprMedia = null

@@ -378,6 +378,20 @@ describe('PaneWriteQueue', () => {
     expect(written).toContain('real output here')
   })
 
+  it('shares the merged buffer while a large remainder is queued', () => {
+    const calls: Uint8Array[] = []
+    const pending: (() => void)[] = []
+    const q = new PaneWriteQueue({
+      batchWindowMs: 0, chunkBytes: 256, smallWriteBytes: 0,
+      write: (payload, cb) => { calls.push(payload); pending.push(cb) }
+    })
+    q.enqueue(bytes('x'.repeat(1024)))
+    pending.shift()!()
+    expect(calls[1].buffer).toBe(calls[0].buffer)
+    while (pending.length > 0) pending.shift()!()
+    expect(dec.decode(concat(calls))).toBe('x'.repeat(1024))
+  })
+
   it('does not pin the merged buffer behind a small residual carried to the next chunk', () => {
     const calls: Uint8Array[] = []
     const q = new PaneWriteQueue({

@@ -1,3 +1,4 @@
+import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
 import type { SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import type { PaneNode, PaneKey, StackNode } from '../layout/tree'
@@ -35,10 +36,16 @@ interface Props {
 export function StackTabs({
   stack,
   displayedIndex,
-  sessions,
+  sessions: sessionsProp,
   onSelect,
   onUnstack
 }: Props): React.JSX.Element {
+  const members = useSessionsSelector(
+    (sessions) => stack.children.flatMap((child) => child.kind === 'leaf' ? sessions.get(child.session) ?? [] : []),
+    shallowArrayEqual,
+    [...sessionsProp.values()],
+  )
+  const sessions = new Map(members.map((session) => [session.id, session]))
   const cap = useStackCapacity()
   const full = stack.children.length >= cap
   return (

@@ -7,6 +7,7 @@ cd "$repo_root"
 
 ui_src="${SCAN_ROOT:-ui/src}"
 fail=0
+source scripts/check-spacing-tokens-widened-baseline.sh
 
 BASELINE=(
   "ui/src/renderer/src/App.tsx 2"
@@ -43,104 +44,90 @@ BASELINE=(
   "ui/src/renderer/src/pane/TerminalPane.tsx 1"
 )
 
-mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \
+mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) \
   -not -name '*.test.ts' -not -name '*.test.tsx' \
   -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
 
-counts="$(perl -e '
+reports="$(perl -e '
+  my $LENGTH = qr/(?<![\w.-])((?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)(?:px|rem|em|pt))\b/;
+  my $CSS = qr/(?:^|[;{]\s*|\n\s*)(padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|gap|row-gap|column-gap)\s*:\s*[^;{}]*?$LENGTH/m;
+  my $ARBITRARY = qr/(\[&[^\]]*\]:)?\[(padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|gap|row-gap|column-gap)\s*:\s*[^\]]*?$LENGTH[^\]]*\]/;
   for my $f (@ARGV) {
     open my $fh, "<", $f or next;
     local $/ = undef;
     my $src = <$fh>;
     close $fh;
-    my $n = 0;
+    my @old;
     while ($src =~ /(\[&[^\]]*\]:)?(?<![\w-])(-?)(?:mt|mr|mb|ml)-(\[[^\]]+\]|[\w.]+)/g) {
       my ($variant, $sign, $value) = ($1 // "", $2, $3);
       next if $variant =~ /^\[&_/;            # 4. prose we did not author
       next if $value eq "auto";               # 1. alignment
       next if $sign eq "-" || $value =~ /^\[-/;  # 3. a pull, not a gap
       next if $value =~ /^(?:0|\[0(?:px|rem|em)?\])$/;  # 2. a reset
-      $n++;
+      push @old, [pos($src), $&];
     }
-    print "$n\t$f\n" if $n > 0;
+    my @wide;
+    while ($src =~ /$ARBITRARY/g) {
+      my ($variant, $property, $value) = ($1 // "", $2, $3);
+      next if $variant =~ /^\[&_/;
+      push @wide, [pos($src), "[$property:$value]"];
+    }
+    if ($f =~ /\.css$/ && $f !~ m{/(?:theme|tailwind)\.css$}) {
+      while ($src =~ /$CSS/g) { push @wide, [pos($src), "$1: $2"]; }
+    }
+    for my $entry ([OLD => \@old], [WIDE => \@wide]) {
+      my ($kind, $hits) = @$entry;
+      for my $hit (@$hits) {
+        my $line = 1 + (substr($src, 0, $hit->[0]) =~ tr/\n//);
+        print "$kind\t$f\t$line\t$hit->[1]\n";
+      }
+    }
   }
 ' "${sources[@]}")"
 
 if [ "${1:-}" = "--baseline" ]; then
-  echo "BASELINE=("
-  while IFS=$'\t' read -r n f; do
-    [ -n "$f" ] && echo "  \"$f $n\""
-  done <<< "$counts"
+  echo "WIDENED_BASELINE=("
+  awk -F '\t' '$1 == "WIDE" { count[$2]++ } END { for (f in count) printf "  \"%s %d\"\n", f, count[f] }' <<< "$reports" | sort
   echo ")"
   exit 0
 fi
 
-declare -A actual=()
-while IFS=$'\t' read -r n f; do
-  [ -n "$f" ] && actual["$f"]="$n"
-done <<< "$counts"
+check_category() {
+  local kind="$1" array="$2" label="$3"
+  declare -n baseline="$array"
+  declare -A pinned=() actual=() locations=()
+  for entry in "${baseline[@]}"; do pinned["${entry% *}"]="${entry##* }"; done
+  while IFS=$'\t' read -r report_kind file line value; do
+    [ "$report_kind" = "$kind" ] || continue
+    actual["$file"]=$(( ${actual[$file]:-0} + 1 ))
+    locations["$file"]+="${file}:$line '$value'; "
+  done <<< "$reports"
+  for file in "${!actual[@]}"; do
+    if [ "${actual[$file]}" -gt "${pinned[$file]:-0}" ]; then
+      echo "FAIL: $label ${locations[$file]} expected --space-* tokens for padding, margin and gap (found ${actual[$file]}, pin ${pinned[$file]:-0})" >&2
+      fail=1
+    fi
+  done
+  for file in "${!pinned[@]}"; do
+    if [ "${actual[$file]:-0}" -lt "${pinned[$file]}" ]; then
+      echo "FAIL: $array pins ${pinned[$file]} in $file, but only ${actual[$file]:-0} remain; lower or delete the pin" >&2
+      fail=1
+    fi
+  done
+  unset pinned actual locations
+}
 
-declare -A pinned=()
-for entry in "${BASELINE[@]}"; do
-  pinned["${entry% *}"]="${entry##* }"
-done
+check_category OLD BASELINE spacing-token
+check_category WIDE WIDENED_BASELINE spacing-token-widened
 
-regressions=()
-for f in "${!actual[@]}"; do
-  have="${actual[$f]}"
-  want="${pinned[$f]:-0}"
-  [ "$have" -gt "$want" ] && regressions+=("$f $have $want")
-done
-if [ "${#regressions[@]}" -gt 0 ]; then
-  echo "FAIL: directional margins above the pinned baseline:" >&2
-  while read -r f have want; do
-    echo "  $f -- $have margin(s), baseline pins $want" >&2
-    perl -e '
-      my %seen;
-      open my $fh, "<", $ARGV[0] or exit;
-      my $ln = 0;
-      while (my $line = <$fh>) {
-        $ln++;
-        while ($line =~ /(\[&[^\]]*\]:)?(?<![\w-])(-?)((?:mt|mr|mb|ml)-(?:\[[^\]]+\]|[\w.]+))/g) {
-          my ($variant, $sign, $util) = ($1 // "", $2, $3);
-          next if $variant =~ /^\[&_/;
-          next if $util =~ /-auto$/;
-          next if $sign eq "-" || $util =~ /-\[-/;
-          next if $util =~ /-(?:0|\[0(?:px|rem|em)?\])$/;
-          next if $seen{$util}++;
-          print "        $ARGV[0]:$ln  $util\n";
-        }
-      }
-    ' "$f" >&2
-  done < <(printf '%s\n' "${regressions[@]}" | sort)
+if [ "$fail" -ne 0 ]; then
   echo "      A stack's rhythm belongs to its container: delete the margin and" >&2
   echo "      put gap-* on the flex/grid parent (gap-2, gap-[var(--space-2)])." >&2
   echo "      STYLEGUIDE, 'Spacing & control metrics'. ml-auto/mr-auto are" >&2
   echo "      alignment and a -0 value is a reset; neither is counted." >&2
   echo "      The baseline only shrinks; it is not somewhere to add a line." >&2
-  fail=1
 else
-  echo "ok: no directional margin above the baseline (${#pinned[@]} files pinned)"
-fi
-
-stale=()
-for f in "${!pinned[@]}"; do
-  have="${actual[$f]:-0}"
-  [ "$have" -lt "${pinned[$f]}" ] && stale+=("$f $have ${pinned[$f]}")
-done
-if [ "${#stale[@]}" -gt 0 ]; then
-  echo "FAIL: baseline entry pins more than the file has -- lower or delete it:" >&2
-  while read -r f have want; do
-    if [ "$have" -eq 0 ]; then
-      echo "  $f -- now clean, delete the entry" >&2
-    else
-      echo "  $f -- now $have, pin says $want" >&2
-    fi
-  done < <(printf '%s\n' "${stale[@]}" | sort)
-  echo "      ./scripts/check-spacing-tokens.sh --baseline prints the new block." >&2
-  fail=1
-else
-  echo "ok: every baseline entry still pins a real margin count"
+  echo "ok: spacing guards pass (old ${#BASELINE[@]} pins, widened ${#WIDENED_BASELINE[@]} pins)"
 fi
 
 exit "$fail"

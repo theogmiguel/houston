@@ -1,3 +1,4 @@
+import { useSession } from '../../sessionsStore'
 import { useState } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionInfo } from '../../houston/client'
@@ -191,7 +192,7 @@ export function TaskExecutionCard({
   onRunControl: (runId: number, action: TaskRunAction) => void
 }): React.JSX.Element {
   const tone = runStateTone(run.state)
-  const session = run.session_id != null ? sessions.get(run.session_id) : undefined
+  const session = useSession(run.session_id ?? -1, run.session_id != null ? sessions.get(run.session_id) : undefined)
   const reason = run.reason ?? null
   const outcome = review ?? null
   const retryRunId = outcome?.retryRunId ?? null

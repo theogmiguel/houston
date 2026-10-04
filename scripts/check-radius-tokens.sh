@@ -8,6 +8,7 @@ cd "$repo_root"
 ui_src="${SCAN_ROOT:-ui/src}"
 tailwind_css="ui/src/renderer/src/tailwind.css"
 fail=0
+source scripts/check-radius-tokens-widened-baseline.sh
 
 BASELINE=(
   "ui/src/renderer/src/App.tsx 1"
@@ -106,33 +107,75 @@ counts="$(BANNED="$banned_alt" perl -e '
     $src =~ s{/\*.*?\*/}{}gs;
     $src =~ s{//.*}{}g unless $f =~ /\.css$/;
     my (%hit, %val);
-    while ($src =~ /$LIT/g) { $hit{pos($src)} = 1; $val{$&} = 1; }
-    if (defined $UTIL) {
-      while ($src =~ /$UTIL/g) { $hit{pos($src)} = 1; $val{$&} = 1; }
+    while ($src =~ /$LIT/g) { $hit{pos($src)} = $&; $val{$&} = 1; }
+    while ($src =~ /\[border-radius\s*:\s*([0-9][0-9.]*(?:px|rem|em|pt|%))[^\]]*\]/g) {
+      $hit{pos($src)} = $&; $val{$&} = 1;
     }
-    if ($f =~ /\.css$/) {
-      while ($src =~ /$CSS/g) { $hit{pos($src)} = 1; my $m = $&; $m =~ s/\s+/ /g; $val{$m} = 1; }
+    if (defined $UTIL) {
+      while ($src =~ /$UTIL/g) { $hit{pos($src)} = $&; $val{$&} = 1; }
+    }
+    if ($f =~ /\.css$/ && $f !~ m{/(?:theme|tailwind)\.css$}) {
+      while ($src =~ /$CSS/g) { my $m = $&; $m =~ s/\s+/ /g; $hit{pos($src)} = $m; $val{$m} = 1; }
     }
     my $n = scalar keys %hit;
     next unless $n > 0;
     my @v = sort keys %val;
     @v = (@v[0..3], "…") if @v > 5;
-    print "$n\t$f\t" . join(", ", @v) . "\n";
+    my @where;
+    for my $offset (sort {$a <=> $b} keys %hit) {
+      my $line = 1 + (substr($src, 0, $offset) =~ tr/\n//);
+      push @where, "$line:$hit{$offset}";
+    }
+    print "$n\t$f\t" . join(", ", @v) . "\t" . join(";", @where) . "\n";
+  }
+' "${sources[@]}")"
+
+widened_report="$(perl -e '
+  for my $f (@ARGV) {
+    open my $fh, "<", $f or next;
+    local $/ = undef;
+    my $src = <$fh>;
+    close $fh;
+    $src =~ s{/\*.*?\*/}{}gs;
+    $src =~ s{//.*}{}g unless $f =~ /\.css$/;
+    while ($src =~ /\[border-radius\s*:\s*([0-9][0-9.]*(?:px|rem|em|pt|%))[^\]]*\]/g) {
+      my $line = 1 + (substr($src, 0, pos($src)) =~ tr/\n//);
+      print "$f\t$line\t$&\n";
+    }
   }
 ' "${sources[@]}")"
 
 if [ "${1:-}" = "--baseline" ]; then
-  echo "BASELINE=("
-  while IFS=$'\t' read -r n f _; do
-    [ -n "$f" ] && echo "  \"$f $n\""
-  done <<< "$counts"
+  echo "WIDENED_BASELINE=("
+  awk -F '\t' 'NF { count[$1]++ } END { for (f in count) printf "  \"%s %d\"\n", f, count[f] }' <<< "$widened_report" | sort
   echo ")"
   exit 0
 fi
 
-declare -A actual=() offending=()
-while IFS=$'\t' read -r n f v; do
-  [ -n "$f" ] && actual["$f"]="$n" && offending["$f"]="$v"
+declare -A widened_actual=() widened_locations=()
+while IFS=$'\t' read -r f line value; do
+  [ -n "$f" ] || continue
+  widened_actual["$f"]=$(( ${widened_actual[$f]:-0} + 1 ))
+  widened_locations["$f"]+="${f}:$line '$value'; "
+done <<< "$widened_report"
+declare -A widened_pinned=()
+for entry in "${WIDENED_BASELINE[@]}"; do widened_pinned["${entry% *}"]="${entry##* }"; done
+for f in "${!widened_actual[@]}"; do
+  if [ "${widened_actual[$f]}" -gt "${widened_pinned[$f]:-0}" ]; then
+    echo "FAIL: radius-token-widened ${widened_locations[$f]} expected rounded-[var(--tr-radius-<rung>)] or border-radius: var(--tr-radius-<rung>) (found ${widened_actual[$f]}, pin ${widened_pinned[$f]:-0})" >&2
+    fail=1
+  fi
+done
+for f in "${!widened_pinned[@]}"; do
+  if [ "${widened_actual[$f]:-0}" -lt "${widened_pinned[$f]}" ]; then
+    echo "FAIL: WIDENED_BASELINE pins ${widened_pinned[$f]} in $f, but only ${widened_actual[$f]:-0} remain; lower or delete the pin" >&2
+    fail=1
+  fi
+done
+
+declare -A actual=() offending=() locations=()
+while IFS=$'\t' read -r n f v where; do
+  [ -n "$f" ] && actual["$f"]="$n" && offending["$f"]="$v" && locations["$f"]="$where"
 done <<< "$counts"
 
 declare -A pinned=()
@@ -149,8 +192,8 @@ done
 if [ "${#regressions[@]}" -gt 0 ]; then
   echo "FAIL: radius literals above the pinned baseline:" >&2
   while read -r f; do
-    echo "  $f -- ${actual[$f]} literal(s), baseline pins ${pinned[$f]:-0}" >&2
-    echo "      offending: ${offending[$f]}" >&2
+    echo "  radius-token $f:${locations[$f]} found ${offending[$f]}; expected rounded-[var(--tr-radius-<rung>)] or border-radius: var(--tr-radius-<rung>)" >&2
+    echo "      ${actual[$f]} literal(s), baseline pins ${pinned[$f]:-0}" >&2
   done < <(printf '%s\n' "${regressions[@]}" | sort)
   echo "      Expected shape: rounded-[var(--tr-radius-<rung>)] in a class" >&2
   echo "      string, border-radius: var(--tr-radius-<rung>) in CSS. The rungs" >&2

@@ -379,7 +379,10 @@ export class PaneWriteQueue {
       if (splitAt < offset && p.isWarning) restIsWarning = true
       if (splitAt < offset && p.exempt) restIsExempt = true
     }
-    const rest = merged.slice(splitAt)
+    // Copy small tails so a few queued bytes cannot retain a large replay buffer.
+    const rest = merged.length - splitAt < merged.length / 2
+      ? merged.slice(splitAt)
+      : merged.subarray(splitAt)
     this.queue.unshift({ data: rest, isWarning: restIsWarning, exempt: restIsExempt })
     this.queuedBytes += rest.length
     return merged.subarray(0, splitAt)

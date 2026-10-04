@@ -303,6 +303,36 @@ impl FrameRegistry {
 
     pub fn offer(&self, session: u32, offset: u64, payload_len: usize, frame: &Arc<Vec<u8>>) {
         let inner = self.inner.lock().expect("frame registry lock");
+        self.offer_locked(&inner, session, offset, payload_len, frame);
+    }
+
+    pub fn offer_lazy(
+        &self,
+        session: u32,
+        offset: u64,
+        payload_len: usize,
+        encode: impl FnOnce() -> Arc<Vec<u8>>,
+    ) {
+        let inner = self.inner.lock().expect("frame registry lock");
+        let has_session_taps = inner
+            .by_session
+            .get(&session)
+            .is_some_and(|taps| !taps.is_empty());
+        if !has_session_taps && inner.every.is_empty() {
+            return;
+        }
+        let frame = encode();
+        self.offer_locked(&inner, session, offset, payload_len, &frame);
+    }
+
+    fn offer_locked(
+        &self,
+        inner: &RegistryInner,
+        session: u32,
+        offset: u64,
+        payload_len: usize,
+        frame: &Arc<Vec<u8>>,
+    ) {
         if let Some(taps) = inner.by_session.get(&session) {
             for tap in taps {
                 tap.offer(offset, payload_len, frame);
@@ -616,5 +646,26 @@ mod tests {
         registry.unregister(&all);
         registry.offer(1, 6, 3, &frame(1, 6, 3));
         assert!(all.drain().is_empty());
+    }
+
+    #[test]
+    fn lazy_offer_encodes_only_when_a_matching_tap_exists() {
+        let registry = FrameRegistry::default();
+        let encodes = std::cell::Cell::new(0);
+        registry.offer_lazy(1, 0, 3, || {
+            encodes.set(encodes.get() + 1);
+            frame(1, 0, 3)
+        });
+        assert_eq!(encodes.get(), 0);
+
+        let wake = Arc::new(Notify::new());
+        let tap = FrameTap::new(Some(1), wake);
+        registry.register(&tap);
+        registry.offer_lazy(1, 0, 3, || {
+            encodes.set(encodes.get() + 1);
+            frame(1, 0, 3)
+        });
+        assert_eq!(encodes.get(), 1);
+        assert_eq!(tap.drain().len(), 1);
     }
 }

@@ -3717,6 +3717,20 @@ impl Db {
         Ok(pending != 0)
     }
 
+    pub fn delegations_next_deadline(&self) -> Result<Option<u64>> {
+        let conn = self.conn.lock().expect("db lock");
+        let deadline: Option<i64> = conn.query_row(
+            "SELECT MIN(deadline) FROM (
+                 SELECT retained_until AS deadline FROM delegations WHERE retained_until IS NOT NULL
+                 UNION ALL
+                 SELECT cleanup_after AS deadline FROM delegations WHERE cleanup_after IS NOT NULL
+             )",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(deadline.map(|value| value as u64))
+    }
+
     pub fn delegation_set_cleanup_after(
         &self,
         child: u32,
