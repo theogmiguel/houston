@@ -250,6 +250,8 @@ fn plain_pane(daemon: &Arc<Daemon>, ws: &Path) -> u32 {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id
@@ -751,6 +753,8 @@ async fn hook_drop_links_session_to_its_transcript() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     let db_path = state.path().join("test.db");
@@ -866,6 +870,8 @@ async fn a_sub_agent_drop_never_replaces_the_root_conversation_link() {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
             .id

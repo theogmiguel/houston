@@ -28,6 +28,7 @@ export interface SegmentedProps<T extends string = string> {
   error?: { message: string; onRetry: () => void }
   'aria-label': string
   className?: string
+  leadingLabel?: ReactNode
 }
 
 function Spinner(): React.JSX.Element {
@@ -47,6 +48,7 @@ export function Segmented<T extends string = string>({
   loading = false,
   error,
   className = '',
+  leadingLabel,
   ...rest
 }: SegmentedProps<T>): React.JSX.Element {
   const ariaLabel = rest['aria-label']
@@ -153,6 +155,7 @@ export function Segmented<T extends string = string>({
         loading ? 'opacity-60' : ''
       } ${className}`}
     >
+      {leadingLabel}
       {options.map((opt, index) => {
         const selected = opt.value === value
         const disabled = loading || opt.disabled

@@ -35,6 +35,9 @@ import {
 import { isDetachable, type DetachPayload, type PaneType } from '../layout/paneDetach'
 import { StackTabs } from './StackTabs'
 import { materialAttrs } from './material'
+import type { SessionSlot } from './sessionPresets'
+
+const LaunchGridPreview = lazy(() => import('./ui/LaunchGridPreview').then((m) => ({ default: m.LaunchGridPreview })))
 
 interface Props {
   tree: LayoutNode
@@ -98,6 +101,7 @@ interface Props {
   onNativeError?: (text: string) => void
   onDetach?: (payload: DetachPayload) => void
   focusUrlRequest?: number
+  launchPreview?: { slots: SessionSlot[]; target: 'this-grid' | 'new-grid' }
 }
 
 interface DropTarget {
@@ -881,6 +885,11 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
           onKeyDown={(e) => handleSplitterKeyDown(sp, e)}
         />
       ))}
+      {props.launchPreview && !gridHidden && (
+        <Suspense fallback={null}>
+          <LaunchGridPreview tree={tree} slots={props.launchPreview.slots} target={props.launchPreview.target} sessions={sessions} />
+        </Suspense>
+      )}
     </div>
       </WarmContext.Provider>
     </GridHiddenContext.Provider>

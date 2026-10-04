@@ -112,6 +112,8 @@ fn spawn(
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("the pane spawns")
 }

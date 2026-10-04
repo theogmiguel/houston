@@ -341,6 +341,8 @@ async fn restart_roundtrip(signal: Signal) {
                     acp: None,
                     profile: None,
                     prompt: None,
+                    model: None,
+                    effort: None,
                 },
             )
             .await;

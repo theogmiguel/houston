@@ -7,6 +7,7 @@ import {
   MIN_PANE_PX,
   DEFAULT_GRID_ID,
   evenGrid,
+  launchPreviewTree,
   findEditorByPath,
   findPane,
   findStackContaining,
@@ -111,6 +112,16 @@ describe('prune', () => {
 
     const collapsed = prune(row(leaf(1), leaf(2)), new Set([2]))
     expect(collapsed).toEqual(leaf(2))
+  })
+})
+
+describe('launchPreviewTree', () => {
+  it('adds outlined placeholder leaves to the current split tree', () => {
+    expect(preorderLeaves(launchPreviewTree(leaf(9), 2, 'this-grid'))).toEqual([9, -1, -2])
+  })
+
+  it('builds a fresh shared split tree for a new grid', () => {
+    expect(preorderLeaves(launchPreviewTree(leaf(9), 3, 'new-grid'))).toEqual([-1, -2, -3])
   })
 })
 
