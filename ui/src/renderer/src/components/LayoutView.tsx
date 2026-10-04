@@ -94,6 +94,7 @@ interface Props {
   onOpenFile: (session: number, path: string, line?: number, col?: number) => void
   onOpenDir: (path: string, session?: number) => void
   onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
   onNativeError?: (text: string) => void
   onDetach?: (payload: DetachPayload) => void
   focusUrlRequest?: number
@@ -319,6 +320,8 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
             expanded={expanded}
             onExpand={props.onExpand}
             onError={props.onNativeError}
+            onSendToTerminal={props.onSendToTerminal}
+            sendToTerminalLabel={props.sendToTerminalLabel}
           />
         </Suspense>
       </SurfaceBoundary>

@@ -27,6 +27,7 @@ export function SidePanel(props: SourceControlPanelProps & {
   focused?: boolean
   closed?: boolean
   onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
   sessions: ReadonlyMap<number, SessionInfo>
   /// The focused pane, so its task can drive the Tasks tab's Now card.
   activeSessionId?: number | null
@@ -111,7 +112,7 @@ export function SidePanel(props: SourceControlPanelProps & {
     </div>
     <div className="side-card">
       <div className={`flex-1 min-h-0 flex-col ${active.kind === 'scm' ? 'flex' : 'hidden'}`}><SourceControlPanel {...props} session={props.activeSessionId} embedded onChangedCount={setChangedCount} /></div>
-      {active.kind === 'files' && <Suspense fallback={<div />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'side-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} /></Suspense>}
+      {active.kind === 'files' && <Suspense fallback={<div />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'side-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} onSendToTerminal={props.onSendToTerminal} sendToTerminalLabel={props.sendToTerminalLabel} /></Suspense>}
       {active.kind === 'overview' && props.client && <Suspense fallback={<div />}><OverviewTab parentId={active.orchestrator} sessions={props.sessions} client={props.client} onClose={() => close(state.active)} onReview={(child) => { props.onReviewChild(child); setState((current) => ({ ...current, active: 0 })) }} /></Suspense>}
       {active.kind === 'tasks' && <Suspense fallback={<div />}><TasksTab client={props.client} workspace={props.workspace === 'all' ? '' : props.workspace} workspaces={props.workspaces} boundSession={props.activeSessionId != null ? props.sessions.get(props.activeSessionId) ?? null : null} sessions={props.sessions} onFocusPane={props.onFocusPane} onReviewChild={props.onReviewChild} onStartRequested={props.onTaskStartRequested} compose={active.compose} onComposeHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} openTaskId={active.openId} onOpenTaskHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} createDraft={active.create} onCreateDraftHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} /></Suspense>}
       {state.tabs.map((tab, index) => tab.kind === 'browser' && <div key={tab.id} className={`side-browser ${state.active === index ? 'flex' : 'hidden'}`}><Suspense fallback={<div />}><BrowserPane node={{ kind: 'browser', id: tab.id, url: tab.url }} workspaceDir={props.workspace} loadRequest={props.request?.kind === 'browser' && !props.request.revealOnly && props.request.id === tab.id ? props.request : undefined} active={state.active === index && !props.closed && props.focused !== false} hiddenByExpand={props.closed || state.active !== index || props.hiddenByOverlay} panel onNavigate={(url) => setState((current) => ({ ...current, tabs: current.tabs.map((item) => item.kind === 'browser' && item.id === tab.id ? { ...item, url } : item) }))} onClose={() => close(index)} onMoveToGrid={(url) => { moveBrowserToGrid(tab.id, url, props.workspace); close(index) }} onHeaderPointerDown={() => {}} onSendToTerminal={props.onSendToTerminal} /></Suspense></div>)}
@@ -127,6 +128,7 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: se
   focused?: boolean
   closed?: boolean
   onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
   activeId: number | null
   sessions: ReadonlyMap<number, SessionInfo>
   request: SideOpen | null

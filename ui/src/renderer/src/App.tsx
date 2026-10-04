@@ -2265,6 +2265,8 @@ export function App(): React.JSX.Element {
     if (!cur.client.sendStdin(target, text)) pushError("connection lost — selected element was not delivered");
   }, [pushError]);
   const pickerAvailable = pickerTarget.current !== null && isLive(sessions.get(pickerTarget.current)?.state ?? "exited");
+  const pickerTargetId = pickerTarget.current;
+  const pickerTargetLabel = pickerTargetId === null ? undefined : sessions.get(pickerTargetId)?.title ?? `Session ${pickerTargetId}`;
 
   const openFilesPaneAt = useCallback(
     (workspaceDir: string, root: string, anchor: PaneKey | null): void => {
@@ -3495,6 +3497,7 @@ export function App(): React.JSX.Element {
                     onOpenFile={openTerminalFile}
                     onOpenDir={openTerminalDir}
                     onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                    sendToTerminalLabel={pickerTargetLabel}
                     onNativeError={pushError}
                     onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3601,6 +3604,7 @@ export function App(): React.JSX.Element {
                               onOpenFile={openTerminalFile}
                               onOpenDir={openTerminalDir}
                               onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                              sendToTerminalLabel={pickerTargetLabel}
                               onNativeError={pushError}
                               onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3631,6 +3635,7 @@ export function App(): React.JSX.Element {
                   focused={activeSurface === "side"}
                   closed={!scmOpen}
                   onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                  sendToTerminalLabel={pickerTargetLabel}
                   selectedWorkspace={sideWorkspace}
                   activeId={activeId}
                   sessions={sessions}
