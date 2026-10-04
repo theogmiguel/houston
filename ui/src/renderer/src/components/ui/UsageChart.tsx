@@ -92,7 +92,7 @@ export function UsageChart({
   const last = points[points.length - 1]
 
   return (
-    <div data-testid="usage-chart" className="grid min-w-0 grid-cols-[54px_minmax(0,1fr)]">
+    <div data-testid="usage-chart" className="grid min-w-0 grid-cols-[54px_minmax(0,1fr)] grid-rows-[210px_20px]">
         <div
           className="relative row-start-1 text-right"
           style={{ height: VIEW_H }}
@@ -170,11 +170,11 @@ export function UsageChart({
             )
           })}
         </svg>
-      <div className="absolute inset-x-[var(--space-1)] bottom-[var(--space-1)] flex justify-between [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
-        <span>{first ? labelFor(first) : ''}</span>
-        <span>{middle && middle !== first && middle !== last ? labelFor(middle) : ''}</span>
-        <span>{last && last !== first ? labelFor(last) : ''}</span>
-      </div>
+        </div>
+        <div className="col-start-2 row-start-2 flex justify-between px-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
+          <span>{first ? labelFor(first) : ''}</span>
+          <span>{middle && middle !== first && middle !== last ? labelFor(middle) : ''}</span>
+          <span>{last && last !== first ? labelFor(last) : ''}</span>
         </div>
     </div>
   )

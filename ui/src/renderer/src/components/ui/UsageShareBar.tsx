@@ -1,5 +1,6 @@
 import { Tooltip } from '../Tooltip'
 import { UsageSectionHeading } from './UsageSectionHeading'
+import { formatUsd } from '../../usage'
 
 const SEGMENT_COLORS = [
   'var(--text-faint)',
@@ -36,7 +37,7 @@ export function UsageShareBar({
         {segments.map((segment, index) => {
           const share = total > 0 ? segment.value / total : 0
           return (
-            <Tooltip key={segment.id} label={`${segment.label} · $${segment.value.toFixed(2)} · ${(share * 100).toFixed(1)}%`}>
+            <Tooltip key={segment.id} label={`${segment.label} · ${formatUsd(segment.value)} · ${(share * 100).toFixed(1)}%`}>
               <span aria-hidden="true" className="h-full" style={{ width: `${share * 100}%`, background: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }} />
             </Tooltip>
           )
@@ -45,8 +46,8 @@ export function UsageShareBar({
       <div className="flex flex-wrap gap-x-[var(--space-3)] gap-y-[var(--space-1)]">
         {segments.map((segment, index) => (
           <span key={segment.id} className="inline-flex items-center gap-[var(--space-1-5)] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
-            <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full" style={{ background: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }} />
-            {segment.label} {`$${segment.value.toFixed(2)}`}
+            <span aria-hidden="true" className="h-[7px] w-[7px]" style={{ background: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }} />
+            {segment.label} {formatUsd(segment.value)}
           </span>
         ))}
       </div>

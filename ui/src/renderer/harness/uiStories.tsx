@@ -148,6 +148,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Caption">
           <UiCaption>Supporting text and coverage details.</UiCaption>
+          <UiCaption tone="faint">Quiet supporting footnote.</UiCaption>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Task progress">
@@ -170,6 +171,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="StatusLabel">
           <SpecimenRow>{STATUS_LABELS.map((status) => <StatusLabel key={status} status={status} />)}</SpecimenRow>
+          <SpecimenRow><StatusLabel status="Open" size="small" /><StatusLabel status="Fixing" size="small" /><StatusLabel status="Not seen" size="small" /></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="RoutineDetail and ConnectionCell">
@@ -249,6 +251,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Table — Usage breakdown">
           <Table
             aria-label="Usage breakdown by model"
+            layout="fixed"
             rows={breakdownRows}
             getRowId={(row) => row.model}
             columns={[
@@ -262,7 +265,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Usage chart, calendar and shares">
-          <UsageSectionHeading aside="Premium $121.40">Cost by speed</UsageSectionHeading>
+          <UsageSectionHeading fullWidth aside="Premium $121.40">Cost by speed</UsageSectionHeading>
           <UsageProviderRow mark="✳" label="Claude Code" sessions={172} amount="$2,071.40" note="83.3% of cost · 4.1B tokens" color="var(--claude)" />
           <div style={{ maxWidth: 900 }}><UsageChart metric="cost" points={[
             { startMs: 0, key: 'Mon', byProvider: { claude: { cost: 120, tokens: 0 }, codex: { cost: 45, tokens: 0 } } },
@@ -293,7 +296,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
                     <div><Caption>Runs on</Caption><Select aria-label="Runs on" value="claude" options={[{ value: 'claude', label: 'Claude Code' }]} onChange={noop} /></div>
                   </div>
                   <SectionHead title="Runs" count={30} />
-                  <Table variant="framed" aria-label="Routine run history" rows={[{ started: 'Today 02:00', result: 'Waiting for a slot', took: '—', cost: '—' }, { started: 'Yesterday 02:00', result: 'Done', took: '4m', cost: '$0.71' }, { started: 'Oct 1 02:00', result: 'Failed', took: '1m', cost: '$0.12' }]} getRowId={(row) => row.started} columns={[{ key: 'started', header: 'Started' }, { key: 'result', header: 'Result' }, { key: 'took', header: 'Took', numeric: true }, { key: 'cost', header: 'Cost', numeric: true }]} />
+                  <Table density="compact" variant="framed" aria-label="Routine run history" rows={[{ started: 'Today 02:00', result: 'Working', took: '—' }, { started: 'Yesterday 02:00', result: 'Done', took: '4m' }, { started: 'Oct 1 02:00', result: 'Failed', took: '1m' }]} getRowId={(row) => row.started} columns={[{ key: 'started', header: 'Started' }, { key: 'result', header: 'Result' }, { key: 'took', header: 'Took', numeric: true }]} />
                   <Notice tone="warn">3 of 3 running. Routines run 3 at a time (Settings › Routines).</Notice>
                 </div>
               )}

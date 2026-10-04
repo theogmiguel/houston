@@ -38,8 +38,8 @@ export function formatTokens(n: number): string {
   for (const [scale, suffix] of units) {
     if (n >= scale) {
       const v = n / scale
-      const digits = v >= 100 ? 0 : v >= 10 ? 1 : 2
-      return `${v.toFixed(digits)}${suffix}`
+      const digits = v >= 100 ? 0 : 1
+      return `${Number(v.toFixed(digits))}${suffix}`
     }
   }
   return String(Math.round(n))
@@ -55,7 +55,7 @@ export function formatUsd(n: number): string {
 export function formatAxisUsd(n: number): string {
   if (n === 0) return '0'
   if (n >= 1000) return `$${Math.round(n).toLocaleString('en-US')}`
-  return `$${n.toFixed(2)}`
+  return formatUsd(n)
 }
 
 export function formatShare(fraction: number): string {

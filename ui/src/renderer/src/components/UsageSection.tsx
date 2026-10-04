@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { IconAgentClaude, IconAgentCodex, IconChartArea, IconInfo, IconRefresh, type IconComponent } from './icons'
+import { IconChartArea, IconInfo, IconRefresh } from './icons'
 import { EmptyState } from './EmptyState'
 import { Segmented } from './Segmented'
 import { UsageChart, type UsageSeries } from './ui/UsageChart'
@@ -25,7 +25,7 @@ import {
   type UsageWindowDef,
   type UsageWindowId
 } from '../usage'
-import { ICON_ROLE_CLS, Icon } from './Icon'
+import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { Select } from './Select'
 import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar } from './ui'
@@ -38,9 +38,9 @@ const PROVIDER_COLOR: Record<UsageProvider, string> = {
   codex: 'var(--text-primary)'
 }
 
-const PROVIDER_ICON: Record<UsageProvider, IconComponent> = {
-  claude: IconAgentClaude,
-  codex: IconAgentCodex
+const PROVIDER_MARK: Record<UsageProvider, string> = {
+  claude: '✳',
+  codex: '◎'
 }
 
 function StatCell({
@@ -68,8 +68,6 @@ function UsageHero({
   heroValue,
   sessions,
   providers,
-  hidden,
-  onToggleProvider,
   windowDef,
   points,
   series,
@@ -79,8 +77,6 @@ function UsageHero({
   heroValue: string
   sessions: number
   providers: (ProviderSummary & { sessions: number })[]
-  hidden: UsageProvider[]
-  onToggleProvider: (provider: UsageProvider) => void
   windowDef: UsageWindowDef
   points: SeriesPoint[]
   series: UsageSeries[]
@@ -102,11 +98,10 @@ function UsageHero({
 
         <div className="mt-[var(--space-3)] flex flex-col gap-[var(--space-3)]">
           {providers.map((p) => {
-            const Icon = PROVIDER_ICON[p.provider]
             return (
               <UsageProviderRow
                 key={p.provider}
-                mark={<Icon className={ICON_ROLE_CLS.body} />}
+                mark={PROVIDER_MARK[p.provider]}
                 label={p.label}
                 sessions={p.sessions}
                 amount={metric === 'cost' ? formatUsd(p.cost) : formatTokens(p.tokens)}
@@ -122,33 +117,6 @@ function UsageHero({
         <div className="mb-[var(--space-3)] flex flex-wrap items-center justify-between gap-[var(--space-2)]">
           <div className="text-[length:var(--tr-text-lg)] font-semibold tracking-[-0.006em] text-[var(--text-primary)]">
             {windowDef.hourly ? 'Hourly' : 'Daily'} {metric === 'cost' ? 'cost' : 'processed tokens'}
-          </div>
-          <div className="flex items-center gap-[var(--space-3)]">
-            <div className="flex items-center gap-[var(--space-2-5)]">
-              {providers.map((p) => {
-                const Icon = PROVIDER_ICON[p.provider]
-                const on = !hidden.includes(p.provider)
-                return (
-                  <button
-                    key={p.provider}
-                    type="button"
-                    data-testid={`usage-legend-${p.provider}`}
-                    aria-pressed={on}
-                    onClick={() => onToggleProvider(p.provider)}
-                    className="btn border-0 flex items-center gap-[var(--space-1-5)] rounded-[var(--tr-radius-button)] px-[var(--space-1-5)] py-[2px] text-[length:var(--tr-text-sm)]"
-                    style={{
-                      color: on ? 'var(--text-primary)' : 'var(--text-faint)',
-                      opacity: on ? 1 : 0.6
-                    }}
-                  >
-                    <span style={{ color: on ? PROVIDER_COLOR[p.provider] : 'inherit' }}>
-                      <Icon className={ICON_ROLE_CLS.ui} />
-                    </span>
-                    {p.label}
-                  </button>
-                )
-              })}
-            </div>
           </div>
         </div>
         <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />
@@ -239,14 +207,14 @@ function UsageBreakdown({
           columns={[
             { key: 'rank', header: '#', width: '28px', tone: 'faint' },
             { key: 'id', header: mode === 'model' ? 'Model' : 'Day', render: (id, row) => {
-              const Mark = row.provider ? PROVIDER_ICON[row.provider] : null
+              const mark = row.provider ? PROVIDER_MARK[row.provider] : null
               return mode === 'model'
-                ? <UsageModelCell mark={Mark ? <Mark className={ICON_ROLE_CLS.ui} /> : null} name={String(id)} share={row.share} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} />
+                ? <UsageModelCell mark={mark} name={String(id)} share={row.share} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} />
                 : <span>{id}</span>
             } },
-            { key: 'cost', header: 'Cost', numeric: true, render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span className="text-[var(--text-faint)]">not priced</span></Tooltip> : formatUsd(Number(cost)) },
-            { key: 'share', header: 'Share', numeric: true, tone: 'muted', render: (share) => formatShare(Number(share)) },
-            { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) }
+            { key: 'cost', header: 'Cost', width: '100px', numeric: true, weight: 'regular', render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span>not priced</span></Tooltip> : formatUsd(Number(cost)) },
+            { key: 'share', header: 'Share', width: '76px', numeric: true, tone: 'muted', render: (share) => formatShare(Number(share)) },
+            { key: 'tokens', header: 'Tokens', width: '88px', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) }
           ]}
         />
       </div>
@@ -298,7 +266,6 @@ export function UsageSection({
   const [selectedWorkspace, setSelectedWorkspace] = useState(initialWorkspace)
   const [metric, setMetric] = useState<'cost' | 'tokens'>('cost')
   const [mode, setMode] = useState<BreakdownMode>('model')
-  const [hidden, setHidden] = useState<UsageProvider[]>([])
   const [asked, setAsked] = useState<{ sinceMs: number; untilMs: number } | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
@@ -345,7 +312,6 @@ export function UsageSection({
   const rows = useMemo(() => breakdownRows(buckets, mode, timeZone), [buckets, mode, timeZone])
 
   const series: UsageSeries[] = providers
-    .filter((p) => !hidden.includes(p.provider))
     .map((p) => ({ provider: p.provider, label: p.label, color: PROVIDER_COLOR[p.provider] }))
 
   const labelFor = (point: SeriesPoint): string => {
@@ -430,12 +396,6 @@ export function UsageSection({
           heroValue={heroValue}
           sessions={sessions}
           providers={displayProviders}
-          hidden={hidden}
-          onToggleProvider={(provider) =>
-            setHidden((prev) =>
-              prev.includes(provider) ? prev.filter((x) => x !== provider) : [...prev, provider]
-            )
-          }
           windowDef={windowDef}
           points={points}
           series={series}
@@ -450,7 +410,7 @@ export function UsageSection({
 
         <section className="mt-[var(--space-2)] grid gap-[var(--space-2)]" data-testid="usage-calendar-section">
           <div className="flex items-center justify-between gap-[var(--space-3)]">
-            <UsageSectionHeading aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
+            <UsageSectionHeading fullWidth aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
           </div>
           <UsageCalendar days={activity} metric={metric} selectedDay={selectedDay} caption="Houston keeps one total per day, so days older than the transcripts still count. Click a day to see its breakdown." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
         </section>
