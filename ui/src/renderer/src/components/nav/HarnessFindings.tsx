@@ -120,7 +120,7 @@ function FindingRow({
     <Card.Row
       heading={f.title}
       meta={meta}
-      status={<StatusLabel status={phaseStatus(f.phase)} />}
+      status={<StatusLabel status={phaseStatus(f.phase)} size="small" />}
       action={<span className="flex flex-wrap items-center gap-[var(--space-1-5)]">{phaseActions(f.phase).map((action) => (
         <FindingActionButton
           key={action}

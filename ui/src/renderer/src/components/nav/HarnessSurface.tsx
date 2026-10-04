@@ -57,6 +57,9 @@ export interface HarnessSurfaceProps {
   onLoadReport: (reviewId: number) => void
   onOpenFile: (path: string) => void
   onReveal: (path: string) => void
+  trendValues?: number[]
+  trendReviewCount?: number
+  historyDeltaOverrides?: Record<number, { new: number; gone: number }>
 }
 
 export function HarnessSurface(props: HarnessSurfaceProps): React.JSX.Element {
@@ -132,10 +135,11 @@ function HarnessWorkspaceContent({
     return <FirstRun models={state.models} onStart={(value) => { pendingRun.current = workspace; props.onCreateRoutine(value) }} />
   }
   const published = state.reviews.filter((review) => review.status === 'published')
-  const trend = published.slice(0, 4).reverse().map((review) =>
+  const trend = props.trendValues ?? published.slice(0, 4).reverse().map((review) =>
     review.sessions ? Math.round((review.finding_count * 100) / review.sessions) : 0
   )
-  return <HarnessBody {...props} state={state} routine={state.routine} published={published} latestReview={published[0] ?? null} trend={trend} />
+  const trendReviewCount = props.trendReviewCount ?? published.length
+  return <HarnessBody {...props} state={state} routine={state.routine} published={published} latestReview={published[0] ?? null} trend={trend} trendReviewCount={trendReviewCount} />
 }
 
 function FirstRun({
@@ -334,9 +338,10 @@ function HarnessBody(
     published: HarnessState['reviews']
     latestReview: HarnessState['reviews'][number] | null
     trend: number[]
+    trendReviewCount: number
   }
 ): React.JSX.Element {
-  const { state, routine, latestReview, published, trend } = props
+  const { state, routine, latestReview, published, trend, trendReviewCount } = props
   const firstValue = trend[0] ?? 0
   const lastValue = trend[trend.length - 1] ?? 0
   const coverage = state.providerCoverage.reduce((sum, item) => sum + item.sessions, 0)
@@ -347,7 +352,7 @@ function HarnessBody(
       <div className="flex min-w-0 items-center gap-[var(--space-2)]">
         <BarSparkline values={trend} label={`Repeated mistakes per 100 sessions: ${firstValue} to ${lastValue}`} />
         <Caption className="min-w-0">
-          Repeated mistakes per 100 sessions: {firstValue} → {lastValue} over {published.length} reviews
+          Repeated mistakes per 100 sessions: {firstValue} → {lastValue} over {trendReviewCount} reviews
           {latestReview && <> · last review #{latestReview.id} {formatHarnessDate(latestReview.started_at_ms, true)}, {latestReview.sessions ?? 0} sessions</>}
           {routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>}
         </Caption>
@@ -369,8 +374,9 @@ function HarnessBody(
         onLoadReport={props.onLoadReport}
         onOpenFile={props.onOpenFile}
         onReveal={props.onReveal}
+        deltaOverrides={props.historyDeltaOverrides}
       />
-      <Caption>
+      <Caption tone="faint">
         Read: Claude Code, Codex. {coverage ? `Not read: ${unscanned} in this window.` : 'All sessions in this window were read.'}
       </Caption>
     </div>

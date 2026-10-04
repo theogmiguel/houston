@@ -71,7 +71,7 @@ export function HarnessReportView({
       {shown ? (
         <div
           data-testid="harness-report"
-          className="rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] p-[16px]"
+          className="rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] p-[var(--space-5)]"
         >
           <MarkdownPreview source={shown.markdown} variant="chat" />
         </div>
