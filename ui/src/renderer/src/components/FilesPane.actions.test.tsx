@@ -18,6 +18,8 @@ describe('Files tree actions', () => {
     mount()
     const row = await screen.findByRole('treeitem')
     fireEvent.contextMenu(row, { clientX: 100, clientY: 100 })
+    expect(screen.getByRole('menuitem', { name: /Rename/ }).textContent).toContain('F2')
+    expect(screen.getByRole('menuitem', { name: /Delete/ }).textContent).toContain('Del')
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy path' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('/ws/a.ts'))
     fireEvent.contextMenu(row, { clientX: 100, clientY: 100 })

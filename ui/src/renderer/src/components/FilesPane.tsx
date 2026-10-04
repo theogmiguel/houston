@@ -619,7 +619,7 @@ function FilesTreeContextMenu({ menu, menuRef, root, onClose, onError, onSendToT
           role="menu"
           tabIndex={-1}
           data-testid="files-row-menu"
-          className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[220px] max-h-[calc(100dvh-var(--space-4))] overflow-y-auto flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`}
+          className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[220px] max-h-[calc(100dvh-var(--space-4))] overflow-y-auto flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] focus:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--border)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`}
           style={(() => {
             const left = Math.min(menu.x, window.innerWidth - 200)
             const top = Math.max(8, Math.min(menu.y, window.innerHeight - 220))
@@ -632,8 +632,8 @@ function FilesTreeContextMenu({ menu, menuRef, root, onClose, onError, onSendToT
           <MenuItem onClick={() => { onClose(); copyFilePath(relativeFilePath(root, menu.path), onError) }}>Copy relative path</MenuItem>
           <MenuItem aria-label={`Send path to ${sendToTerminalLabel}`} disabled={!onSendToTerminal} disabledReason="Focus a live agent pane first" onClick={() => { onSendToTerminal!(menu.path); onClose() }}>{`Send path to ${sendToTerminalLabel}`}</MenuItem>
           <div className={EDITOR_CTX_SEP_CLS} />
-          <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { onRename(menu.path); onClose() }}>Rename</button>
-          <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { onDelete(menu.path); onClose() }}>Delete</button>
+          <MenuItem shortcut="F2" onClick={() => { onRename(menu.path); onClose() }}>Rename</MenuItem>
+          <MenuItem shortcut="Del" onClick={() => { onDelete(menu.path); onClose() }}>Delete</MenuItem>
           <div className={EDITOR_CTX_SEP_CLS} />
           <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { onCreate('file', fileActionDirectory(menu.path, menu.dir)); onClose() }}>New file</button>
           <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { onCreate('directory', fileActionDirectory(menu.path, menu.dir)); onClose() }}>New folder</button>
