@@ -81,6 +81,8 @@ import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
 import { ContextIndicator } from './ContextIndicator'
 import { PaneTaskChip } from './tasks/PaneTaskChip'
+import { PrWatchChip } from './ui/PrWatch'
+import { usePrWatch } from './git/usePrWatch'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -348,6 +350,10 @@ interface Props {
   onFocusPane?: (id: number) => void
 }
 
+function PaneWatchChip({ watches }: { watches: readonly { number: number }[] }): React.JSX.Element | null {
+  return watches[0] ? <PrWatchChip number={watches[0].number} /> : null
+}
+
 function SessionPaneImpl({
   client,
   info: infoProp,
@@ -386,6 +392,7 @@ function SessionPaneImpl({
   onFocusPane
 }: Props): React.JSX.Element {
   const info = useSession(infoProp.id, infoProp) ?? infoProp
+  const prWatches = usePrWatch(client, info.id)
   const family = useSessionFamily(info.id, rosterSessions(rosterProp))
   const roster = withSessionFamily(rosterProp, family)
   const [peekId, setPeekId] = useState<number | null>(null)
@@ -478,6 +485,7 @@ function SessionPaneImpl({
             onRename={(t) => client.renameSession(info.id, t)}
           />
           <PaneTaskChip task={info.task} />
+          <PaneWatchChip watches={prWatches} />
           <BranchChip branch={branch} note={branchNote} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}

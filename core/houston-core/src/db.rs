@@ -73,6 +73,13 @@ pub struct ManagedWorktreeRow {
     pub measured_at_ms: Option<i64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PrWatchRow {
+    pub session_id: u32,
+    pub link: proto::PullRequestLink,
+    pub state: crate::pull_requests::watch::State,
+}
+
 pub struct Db {
     conn: Mutex<Connection>,
 }
@@ -1379,6 +1386,16 @@ impl Db {
                 created_at INTEGER NOT NULL,
                 ended_at INTEGER
             );",
+        )?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS pr_watches (
+                session_id INTEGER NOT NULL,
+                pr_number INTEGER NOT NULL,
+                link_json TEXT NOT NULL,
+                state_json TEXT NOT NULL,
+                PRIMARY KEY (session_id, pr_number)
+            );
+            CREATE INDEX IF NOT EXISTS pr_watches_session ON pr_watches(session_id);",
         )?;
         add_column_if_missing(&conn, "sessions", "title", "title TEXT")?;
         add_column_if_missing(&conn, "sessions", "codename", "codename TEXT")?;
@@ -2924,6 +2941,55 @@ impl Db {
     /// The one pull request manually associated with a project directory. The
     /// settings table is already the (key, payload) store, so the association
     /// needs no table of its own; the directory rides in the key.
+    pub fn pr_watch_list(&self, session_id: Option<u32>) -> Result<Vec<PrWatchRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT session_id, link_json, state_json FROM pr_watches
+             WHERE (?1 IS NULL OR session_id = ?1) ORDER BY session_id, pr_number",
+        )?;
+        let rows = stmt.query_map([session_id], |row| {
+            let session_id: i64 = row.get(0)?;
+            let link: String = row.get(1)?;
+            let state: String = row.get(2)?;
+            Ok((session_id, link, state))
+        })?;
+        rows.map(|row| {
+            let (session_id, link, state) = row?;
+            Ok(PrWatchRow {
+                session_id: u32::try_from(session_id)?,
+                link: serde_json::from_str(&link)?,
+                state: serde_json::from_str(&state)?,
+            })
+        })
+        .collect()
+    }
+
+    pub fn pr_watch_set(
+        &self,
+        session_id: u32,
+        link: &proto::PullRequestLink,
+        state: &crate::pull_requests::watch::State,
+    ) -> Result<()> {
+        let number = link.number;
+        let link = serde_json::to_string(link)?;
+        let state = serde_json::to_string(state)?;
+        self.conn.lock().expect("db lock").execute(
+            "INSERT INTO pr_watches(session_id, pr_number, link_json, state_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(session_id, pr_number) DO UPDATE SET
+               link_json = excluded.link_json, state_json = excluded.state_json",
+            rusqlite::params![session_id, number, link, state],
+        )?;
+        Ok(())
+    }
+
+    pub fn pr_watch_remove(&self, session_id: u32, number: u32) -> Result<bool> {
+        Ok(self.conn.lock().expect("db lock").execute(
+            "DELETE FROM pr_watches WHERE session_id = ?1 AND pr_number = ?2",
+            rusqlite::params![session_id, number],
+        )? > 0)
+    }
+
     fn pull_request_link_key(dir: &str) -> String {
         format!("pull_request_link:{dir}")
     }

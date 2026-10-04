@@ -53,6 +53,7 @@ export interface SourceControlPanelProps {
   reviewTarget?: number
   embedded?: boolean
   dir: string | null
+  session?: number | null
   client: HoustonClient | null
   width: number
   onWidth: (px: number) => void
@@ -242,6 +243,7 @@ export function SourceControlPanel({
   reviewTarget,
   embedded = false,
   dir,
+  session,
   client,
   width,
   onWidth,
@@ -384,6 +386,7 @@ export function SourceControlPanel({
                 key={dir ?? 'none'}
                 client={client}
                 dir={dir}
+                session={session}
                 onOpenUrlInPane={onOpenUrlInPane}
                 onShowChanges={() => onTab('changes')}
                 compact={embedded}

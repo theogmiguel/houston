@@ -30,6 +30,8 @@ import { PrReviewBar } from './PrReviewBar'
 import { PrSummary } from './PrSummary'
 import { PrStackSection } from './PrStack'
 import { PrFooterBar } from './PrFooterBar'
+import { PrWatchRow, PrWatchStack } from '../ui/PrWatch'
+import { usePrWatch } from './usePrWatch'
 import {
   usePrDetail,
   usePrList,
@@ -40,6 +42,7 @@ import {
 export interface PullRequestTabProps {
   client: HoustonClient | null
   dir: string | null
+  session?: number | null
   onOpenUrlInPane?: (url: string) => void
   onShowChanges?: () => void
   active?: boolean
@@ -970,6 +973,7 @@ function PrDetailView({
 export function PullRequestTab({
   client,
   dir,
+  session = null,
   onOpenUrlInPane,
   onShowChanges,
   active = true,
@@ -978,6 +982,23 @@ export function PullRequestTab({
   compact = false
 }: PullRequestTabProps): React.JSX.Element {
   const pr = usePrDetail(client, dir, active, refreshSignal)
+  const watches = usePrWatch(client, session)
+  const watchRows = watches.map((watch) => (
+    <PrWatchRow
+      key={`${watch.number}:${watch.url}`}
+      number={watch.number}
+      onStop={() => {
+        if (client && session != null) client.send({ type: 'pr_watch_unwatch', session, number: watch.number })
+      }}
+      onOpen={() => onOpenUrlInPane?.(watch.url)}
+    />
+  ))
+  const withWatchRows = (content: React.ReactNode): React.JSX.Element => (
+    <PrWatchStack>
+      {watchRows}
+      {content}
+    </PrWatchStack>
+  )
   const [browsing, setBrowsing] = useState(false)
   const list = usePrList(client, dir, active && browsing)
   const [method, setMethod] = useState<PrMergeMethod>('squash')
@@ -997,20 +1018,22 @@ export function PullRequestTab({
 
   if (browsing) {
     return (
-      <PrBrowse
-        list={list}
-        active
-        onBack={() => setBrowsing(false)}
-        onSelect={(number) => {
-          setBrowsing(false)
-          pr.show(number)
-        }}
-      />
+      withWatchRows(
+        <PrBrowse
+          list={list}
+          active
+          onBack={() => setBrowsing(false)}
+          onSelect={(number) => {
+            setBrowsing(false)
+            pr.show(number)
+          }}
+        />
+      )
     )
   }
 
   if (pr.view === null) {
-    return (
+    return withWatchRows(
       <div className={EMPTY} data-testid="pr-loading">
         <span className={SPIN_CLASS}>
           <Icon glyph={IconLoaderCircle} role="subhead" />
@@ -1027,9 +1050,9 @@ export function PullRequestTab({
       </ScmNotice>
     ) : null
 
-  if (view.gh !== 'ready') return <PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} />
+  if (view.gh !== 'ready') return withWatchRows(<PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} />)
   if (view.message !== null || view.link === null) {
-    return (
+    return withWatchRows(
       <PrEmpty
         view={view}
         pr={pr}
@@ -1040,9 +1063,9 @@ export function PullRequestTab({
     )
   }
   if (view.detail === null) {
-    return <PrReadError view={view} link={view.link} pr={pr} linkMessage={linkMessage} />
+    return withWatchRows(<PrReadError view={view} link={view.link} pr={pr} linkMessage={linkMessage} />)
   }
-  return (
+  return withWatchRows(
     <PrDetailView
       compact={compact}
       view={view}
