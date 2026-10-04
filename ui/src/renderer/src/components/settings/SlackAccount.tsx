@@ -165,7 +165,13 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
             value={language}
             options={LANGUAGE_OPTIONS}
             aria-label="Language Houston writes in Slack"
-            onChange={(value) => setLanguage(value as SlackLanguage)}
+            onChange={(value) => {
+              const next = value as SlackLanguage
+              setLanguage(next)
+              setRefusal(null)
+              // The language applies on its own, with the saved owner and channels.
+              client?.slackConfigure(info?.owner_user_id ?? null, info?.channels ?? [], next)
+            }}
           />
           {channels.map((c, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">

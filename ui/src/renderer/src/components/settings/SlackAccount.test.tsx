@@ -80,7 +80,7 @@ describe('Slack intake settings', () => {
     expect(calls.slackConnect).toHaveBeenCalledWith(null, null)
   })
 
-  it('shows the current language and saves a new one with the rest of the settings', () => {
+  it('shows the current language and saves it with the rest of the settings', () => {
     const { client, receive, calls } = fakeClient()
     render(<SlackAccount client={client} />)
     act(() => receive({ info: { ...OFF, language: 'pt_br' }, refusal: null }))
@@ -88,6 +88,18 @@ describe('Slack intake settings', () => {
     expect(select.textContent).toContain('Português (Brasil)')
     fireEvent.click(screen.getByTestId('slack-save'))
     expect(calls.slackConfigure).toHaveBeenCalledWith(null, [], 'pt_br')
+  })
+
+  it('applies a language as soon as it is chosen, with the saved owner and channels', async () => {
+    const { client, receive, calls } = fakeClient()
+    render(<SlackAccount client={client} />)
+    const saved = [{ channel_id: 'C1', workspace: '/w' }]
+    act(() => receive({ info: { ...OFF, owner_user_id: 'U1', channels: saved }, refusal: null }))
+    fireEvent.change(screen.getByLabelText("Owner's Slack member ID"), { target: { value: 'U2-unsaved' } })
+    fireEvent.mouseDown(screen.getByLabelText('Language Houston writes in Slack'))
+    const option = (await screen.findAllByRole('option')).find((o) => o.getAttribute('data-value') === 'pt_br')
+    fireEvent.mouseUp(option as HTMLElement)
+    expect(calls.slackConfigure).toHaveBeenCalledWith('U1', saved, 'pt_br')
   })
 
   it('keeps what was typed and shows a refusal', () => {

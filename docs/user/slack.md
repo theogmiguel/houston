@@ -53,8 +53,10 @@ Open **Settings ▸ Accounts ▸ Slack**:
 - **Owner and channels**: the owner is the Slack member ID (`U…`, from the profile's **Copy
   member ID**) whose ✅ starts requests. Each channel ID (`C…` or `G…`, from the channel's
   details) is mapped to one workspace; requests from that channel are filed there.
-- **Language**: English or Português (Brasil). Houston writes its own Slack text in it, and
-  the agent is asked to write the question and the hand-back for the requester in it.
+- **Language**: English (the default) or Português (Brasil); it applies as soon as it is
+  chosen. Houston writes its own Slack text in it, and the agent is asked to write the
+  question and the hand-back for the requester in it. A run reads it when it starts, so a
+  change reaches the next run, not one already working.
 
 The status line shows whether the connection is up, the Slack team and the last event. An
 error stays visible until the next successful connection.
