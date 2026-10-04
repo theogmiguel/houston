@@ -5,7 +5,12 @@
   // With the event stream up, polling is only a safety net; without it, the
   // client polls at these rates until the stream reconnects.
   var SAFETY_MS = 30000, LIST_MS = 3000, FEED_MS = 2500, SCREEN_MS = 1500, SCREEN_LINES = 120;
-  var SENT_HOLD_MS = 10000, RETRY_MAX_MS = 30000;
+  // Twice the server's 15 s heartbeat plus margin: a stream silent this long
+  // is dead (for example after a network change) and is reopened.
+  var RETRY_MAX_MS = 30000, STREAM_SILENCE_MS = 40000;
+  // Deeper markdown nesting is shown as plain text, so a hostile reply cannot
+  // exhaust the stack.
+  var MD_DEPTH_MAX = 6;
   var STATUS = { "needs-input": "Needs input", working: "Working", idle: "Idle", spawning: "Starting", unavailable: "No status" };
   var KINDS = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "OpenCode", cursor: "Cursor", grok: "Grok", custom: "Shell" };
   var KEYS = [
@@ -15,7 +20,8 @@
   var $ = function (id) { return document.getElementById(id); };
   var S = {
     token: null, pendingPair: null, sessions: [], loaded: false, filter: null, view: null,
-    pane: null, tab: "conv", entries: [], last: 0, pending: null, expanded: {},
+    pane: null, tab: "conv", entries: [], last: 0, epoch: null, pending: null, expanded: {},
+    shown: 0, tailSteps: null, tailNode: null,
     live: false, stream: null, retry: 1000, timers: {}, busy: false, other: null,
     sent: {}, seenPending: {}, screenSource: "screen"
   };
@@ -120,9 +126,12 @@
         if (r.status === 401) { unpair("This device is no longer paired. Pair it again from Houston."); throw new Error("unpaired"); }
         if (!r.ok || !r.body) throw new Error("event stream answered " + r.status);
         var reader = r.body.getReader(), decoder = new TextDecoder(), buf = "";
+        var silence = function () { later("stream-silence", function () { if (S.stream === ctrl) ctrl.abort(); }, STREAM_SILENCE_MS); };
+        silence();
         function pump() {
           return reader.read().then(function (chunk) {
             if (chunk.done) return;
+            silence();
             buf += decoder.decode(chunk.value, { stream: true }).replace(/\r\n/g, "\n");
             var at;
             while ((at = buf.indexOf("\n\n")) >= 0) {
@@ -136,6 +145,7 @@
       })
       .catch(function () { /* reconnects below */ })
       .then(function () {
+        clearTimeout(S.timers["stream-silence"]);
         if (S.stream !== ctrl) return;
         S.stream = null;
         setLive(false);
@@ -226,12 +236,18 @@
   }
 
   function notePending() {
-    var fresh = false;
+    var fresh = false, seen = {}, sent = {};
     S.sessions.forEach(function (s) {
       if (!s.pending) return;
-      var key = s.id + ":" + s.pending.seq + ":" + s.pending.type;
-      if (!S.seenPending[key]) { S.seenPending[key] = true; if (S.loaded) fresh = true; }
+      var key = s.id + ":" + s.pending.epoch + ":" + s.pending.seq + ":" + s.pending.type;
+      if (!S.seenPending[key] && S.loaded) fresh = true;
+      seen[key] = true;
+      var tap = s.id + ":" + s.pending.seq;
+      if (S.sent[tap]) sent[tap] = true;
     });
+    // Only cards still listed are remembered, so neither map grows.
+    S.seenPending = seen;
+    S.sent = sent;
     if (fresh && !document.hidden && navigator.vibrate) {
       try { navigator.vibrate(40); } catch (e) { /* unsupported */ }
     }
@@ -251,7 +267,7 @@
         renderBar();
         // Reply labels name the agent, which the feed alone does not carry.
         var s = session(S.pane);
-        if (s && s.kind !== known) { S.kindShown = s.kind; renderFeed(); }
+        if (s && s.kind !== known) { S.kindShown = s.kind; renderFeed(true); }
       }
     }).catch(function (e) {
       if (S.view === "list" && S.token) {
@@ -299,21 +315,27 @@
   function needCard(s) {
     var card = el("div", "need"), open = button("need-open", null, function () { openPane(s.id); });
     var where = el("div", "need-where");
-    where.appendChild(el("span", null, s.workspace.name + " · " + (s.title || "Pane " + s.id)));
-    where.appendChild(el("span", null, ago(s.waiting_since || s.status_since)));
+    where.appendChild(el("span", "need-name", s.workspace.name + " · " + (s.title || "Pane " + s.id)));
+    where.appendChild(el("span", "need-ago", ago(s.waiting_since || s.status_since)));
     open.appendChild(where);
     open.appendChild(el("div", "need-what", pendingWhat(s.pending)));
     if (s.pending && s.pending.detail) open.appendChild(el("div", "need-target", s.pending.detail));
     card.appendChild(open);
     var p = s.pending;
     if (p && p.type === "permission" && p.decidable) {
-      var actions = el("div", "need-actions"), sent = p.sent || S.sent[s.id + ":" + p.seq];
-      var deny = button("btn danger", "Deny", function () { decide(s.id, p.seq, "deny"); });
-      var approve = button("btn primary", "Approve", function () { decide(s.id, p.seq, "approve"); });
-      deny.disabled = approve.disabled = !!sent;
-      actions.appendChild(deny); actions.appendChild(approve);
-      card.appendChild(actions);
-      if (sent) card.appendChild(el("div", "sent", "Sent · waiting for the agent"));
+      var actions = el("div", "need-actions"), state = cardState(s.id, p);
+      if (state) {
+        card.appendChild(el("div", "sent", state));
+      } else if (p.truncated) {
+        // Approving needs the whole command, which only the terminal shows.
+        card.appendChild(el("div", "decision-note", "Only part of this command is shown."));
+        actions.appendChild(button("btn primary", "Open terminal", function () { openPane(s.id, "term"); }));
+        card.appendChild(actions);
+      } else {
+        actions.appendChild(button("btn danger", "Deny", function () { decide(s.id, p.seq, "deny"); }));
+        actions.appendChild(button("btn primary", "Approve", function () { decide(s.id, p.seq, "approve"); }));
+        card.appendChild(actions);
+      }
     }
     return card;
   }
@@ -395,10 +417,10 @@
     chip.textContent = st.label;
   }
 
-  function openPane(id) {
+  function openPane(id, tab) {
     if (S.pane !== id) {
-      S.entries = []; S.last = 0; S.pending = null; S.expanded = {}; S.other = null; S.kindShown = null;
-      $("feed").replaceChildren();
+      S.entries = []; S.last = 0; S.epoch = null; S.pending = null; S.expanded = {}; S.other = null; S.kindShown = null;
+      renderFeed(true);
       $("screen").textContent = "";
       setDockStatus("");
       $("text").value = "";
@@ -407,7 +429,7 @@
     S.pane = id;
     if (location.hash !== "#session=" + id) history.replaceState(null, "", "#session=" + id);
     show("pane");
-    selectTab(S.tab);
+    selectTab(tab || S.tab);
     renderBar();
     renderCard();
     loadFeed(true);
@@ -440,36 +462,65 @@
     if (id == null || !S.token) return Promise.resolve();
     return api("GET", "/api/sessions/" + id + "/feed?after=" + S.last).then(function (d) {
       if (S.pane !== id) return;
-      if (d.last_seq < S.last || d.truncated) {
-        S.entries = []; S.last = 0;
-        if (d.last_seq < S.last) return loadFeed(first);
+      // Another epoch (a daemon restart, or remote access turned off and on)
+      // numbers its entries afresh, so everything shown so far is dropped.
+      var reset = (S.epoch != null && d.epoch !== S.epoch) || d.last_seq < S.last || d.truncated;
+      if (reset) {
+        var refetch = S.last > 0 && !d.truncated;
+        S.entries = []; S.last = 0; S.epoch = d.epoch;
+        renderFeed(true);
+        if (refetch) return loadFeed(first);
       }
+      S.epoch = d.epoch;
       var stick = first || pinned();
       (d.entries || []).forEach(function (e) { if (e.seq > S.last) S.entries.push(e); });
       S.last = Math.max(S.last, d.last_seq || 0);
       S.pending = d.pending || null;
-      renderFeed();
+      // The card first: it is what the person must act on.
       renderCard();
+      renderFeed(false);
       if (stick && S.tab === "conv") toBottom();
     }).catch(function (e) { if (S.pane === id) setDockStatus(e.message, true); });
   }
 
-  function renderFeed() {
+  // Appends entries not yet shown; `reset` starts over. Existing nodes are
+  // kept, so text selection survives and only new entries animate.
+  function renderFeed(reset) {
     var root = $("feed"), s = session(S.pane);
-    root.replaceChildren();
+    if (reset) { root.replaceChildren(); S.shown = 0; S.tailSteps = null; S.tailNode = null; }
     $("feed-empty").classList.toggle("hidden", S.entries.length > 0);
-    var i = 0;
-    while (i < S.entries.length) {
-      var e = S.entries[i];
+    var arrive = !reset && S.shown > 0;
+    while (S.shown < S.entries.length) {
+      var e = S.entries[S.shown++];
       if (e.type === "step") {
-        var steps = [];
-        while (i < S.entries.length && S.entries[i].type === "step") steps.push(S.entries[i++]);
-        root.appendChild(stepGroup(steps));
+        if (S.tailSteps) {
+          S.tailSteps.push(e);
+          var grown = stepGroup(S.tailSteps);
+          S.tailNode.replaceWith(grown);
+          S.tailNode = grown;
+        } else {
+          S.tailSteps = [e];
+          S.tailNode = stepGroup(S.tailSteps);
+          root.appendChild(S.tailNode);
+        }
         continue;
       }
-      var node = entryNode(e, s);
-      if (node) root.appendChild(node);
-      i++;
+      S.tailSteps = null; S.tailNode = null;
+      var node = safeEntry(e, s);
+      if (node) {
+        if (arrive) node.classList.add("arrive");
+        root.appendChild(node);
+      }
+    }
+  }
+
+  function safeEntry(e, s) {
+    try {
+      return entryNode(e, s);
+    } catch (err) {
+      var n = el("div", "msg agent plain");
+      n.textContent = e.text || "";
+      return n;
     }
   }
 
@@ -478,7 +529,9 @@
     var wrap = el("div", "steps-group");
     var toggle = button("steps-toggle", null, function () {
       S.expanded[key] = !S.expanded[key];
-      renderFeed();
+      var fresh = stepGroup(steps);
+      wrap.replaceWith(fresh);
+      if (S.tailNode === wrap) S.tailNode = fresh;
     });
     toggle.setAttribute("aria-expanded", String(open));
     toggle.appendChild(svg("M9 6l6 6-6 6"));
@@ -548,27 +601,41 @@
     return null;
   }
 
-  function isSent(p) { return !!(p && (p.sent || S.sent[S.pane + ":" + p.seq])); }
+  // Why a card takes no tap, or "" while it does.
+  function cardState(id, p) {
+    if (!p) return "";
+    if (p.answered_elsewhere) return "Answered in the terminal · waiting for the agent";
+    if (p.sent || S.sent[id + ":" + p.seq]) return "Sent · waiting for the agent";
+    return "";
+  }
 
   function renderCard() {
     var root = $("card"), p = S.pending, s = session(S.pane);
     root.replaceChildren();
     root.classList.toggle("hidden", !p);
     if (!p) { if (S.other) setOther(null); return; }
-    var sent = isSent(p), src = entry(p.seq);
+    var state = cardState(S.pane, p), sent = !!state, src = entry(p.seq);
     var kicker = function (t) { root.appendChild(el("div", "decision-kicker", t)); };
     if (p.type === "permission") {
       kicker("Permission");
       root.appendChild(el("div", "decision-title", "Allow " + p.title + "?"));
       var target = (src && src.target) || p.detail;
       if (target) root.appendChild(el("div", "decision-target", target));
-      if (p.decidable) {
+      if (p.decidable && p.answered_elsewhere) {
+        var look = el("div", "decision-actions");
+        look.appendChild(button("btn primary", "Open terminal", function () { selectTab("term"); }));
+        root.appendChild(look);
+      } else if (p.decidable) {
         var acts = el("div", "decision-actions");
-        var deny = button("btn danger", "Deny", function () { decide(S.pane, p.seq, "deny"); });
-        acts.appendChild(deny);
-        if (src && src.always) acts.appendChild(button("btn", "Always", function () { decide(S.pane, p.seq, "always"); }));
-        acts.appendChild(button("btn primary", "Approve", function () { decide(S.pane, p.seq, "approve"); }));
-        Array.prototype.forEach.call(acts.children, function (b) { b.disabled = sent; });
+        acts.appendChild(button("btn danger", "Deny", function () { decide(S.pane, p.seq, "deny"); }));
+        if (p.truncated) {
+          root.appendChild(el("div", "decision-note", "Only part of this command is shown: it was too long, or it held invisible characters. Read it in the terminal and approve it there."));
+          acts.appendChild(button("btn primary", "Open terminal", function () { selectTab("term"); }));
+        } else {
+          if (src && src.always) acts.appendChild(button("btn", "Always", function () { decide(S.pane, p.seq, "always"); }));
+          acts.appendChild(button("btn primary", "Approve", function () { decide(S.pane, p.seq, "approve"); }));
+        }
+        Array.prototype.forEach.call(acts.children, function (b) { if (b.textContent !== "Open terminal") b.disabled = sent; });
         root.appendChild(acts);
       }
     } else if (p.type === "question" && src && src.questions) {
@@ -589,7 +656,7 @@
           b.disabled = sent || !p.decidable;
           opts.appendChild(b);
         });
-        if (p.decidable && q.options.length < 9) {
+        if (p.decidable && !sent && q.options.length < 9) {
           var other = button("option", null, function () { setOther({ seq: p.seq, question: q.question }); });
           other.appendChild(el("span", "option-n", String(q.options.length + 1)));
           var ob = el("span", "option-body");
@@ -612,7 +679,12 @@
       go.appendChild(button("btn primary", "Open terminal", function () { selectTab("term"); }));
       root.appendChild(go);
     }
-    if (sent) root.appendChild(el("div", "sent", "Sent · waiting for the agent"));
+    if (p.answered_elsewhere && p.type === "question") {
+      var term = el("div", "decision-actions");
+      term.appendChild(button("btn primary", "Open terminal", function () { selectTab("term"); }));
+      root.appendChild(term);
+    }
+    if (sent) root.appendChild(el("div", "sent", state));
   }
 
   function undecidableNote(p, s) {
@@ -628,20 +700,27 @@
     return (id === S.pane && S.pending && S.pending.epoch) || (s && s.pending && s.pending.epoch) || "";
   }
 
+  function notice(text, isError) {
+    if (S.view === "pane") { setDockStatus(text, isError); return; }
+    // The list has no status line; only refusals are worth showing there.
+    $("list-error").textContent = isError ? text : "";
+    $("list-error").classList.toggle("hidden", !isError);
+  }
+
   function decide(id, seq, choice, text) {
-    if (S.busy) return Promise.resolve(false);
+    if (S.busy) { notice("Wait for the previous send to finish, then tap again.", true); return Promise.resolve(false); }
     S.busy = true;
-    setDockStatus("Sending…");
+    notice("Sending…");
     var key = id + ":" + seq;
     return api("POST", "/api/sessions/" + id + "/decide", { epoch: epochOf(id), entry_seq: seq, choice: choice, text: text })
       .then(function () {
+        // Held until the server's card changes: the daemon keeps it consumed.
         S.sent[key] = true;
-        setTimeout(function () { delete S.sent[key]; renderCard(); if (S.view === "list") renderList(); }, SENT_HOLD_MS);
-        setDockStatus("");
+        notice("");
         if (choice === "other") setOther(null);
         return true;
       })
-      .catch(function (e) { setDockStatus(e.message, true); return false; })
+      .catch(function (e) { notice(e.message, true); return false; })
       .then(function (ok) {
         S.busy = false;
         renderCard();
@@ -808,7 +887,9 @@
       /^\s*\|/.test(line) || /^\s*([-*_])(\s*\1){2,}\s*$/.test(line);
   }
 
-  function blocks(root, src) {
+  function blocks(root, src, depth) {
+    depth = depth || 0;
+    if (depth > MD_DEPTH_MAX) { root.appendChild(el("p", "md-flat", src)); return; }
     var ls = src.replace(/\r\n?/g, "\n").split("\n"), i = 0, m, buf;
     while (i < ls.length) {
       var line = ls[i];
@@ -842,11 +923,11 @@
         buf = [];
         while (i < ls.length && /^\s*>/.test(ls[i])) buf.push(ls[i++].replace(/^\s*>\s?/, ""));
         var q = el("blockquote");
-        blocks(q, buf.join("\n"));
+        blocks(q, buf.join("\n"), depth + 1);
         root.appendChild(q);
         continue;
       }
-      if (LIST_ITEM.test(line)) { i = list(root, ls, i); continue; }
+      if (LIST_ITEM.test(line)) { i = list(root, ls, i, depth); continue; }
       buf = [];
       while (i < ls.length && !/^\s*$/.test(ls[i]) && !(buf.length && startsBlock(ls[i]))) buf.push(ls[i++].trim());
       var p = el("p");
@@ -855,12 +936,12 @@
     }
   }
 
-  function list(root, ls, i) {
+  function list(root, ls, i, depth) {
     var first = LIST_ITEM.exec(ls[i]), base = first[1].length, ordered = /\d/.test(first[2]);
     var node = el(ordered ? "ol" : "ul"), li = null, sub = [];
     if (ordered) { var start = parseInt(first[2], 10); if (start !== 1) node.start = start; }
     var flush = function () {
-      if (li && sub.length) blocks(li, sub.join("\n"));
+      if (li && sub.length) blocks(li, sub.join("\n"), depth + 1);
       sub = [];
     };
     while (i < ls.length) {
@@ -944,6 +1025,24 @@
     if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
   });
   window.addEventListener("resize", function () { if (S.tab === "term") fitScreen(); });
+
+  // iOS ignores interactive-widget=resizes-content: the keyboard covers the
+  // layout viewport, so the dock is lifted by the part the keyboard hides, and
+  // the decision card folds to its title while the message box has focus.
+  function fitKeyboard() {
+    var vv = window.visualViewport;
+    if (!vv) return;
+    var hidden = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty("--keyboard", hidden + "px");
+    $("dock").classList.toggle("composing", document.activeElement === $("text"));
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", fitKeyboard);
+    window.visualViewport.addEventListener("scroll", fitKeyboard);
+  }
+  $("text").addEventListener("focus", fitKeyboard);
+  $("text").addEventListener("blur", fitKeyboard);
+  fitKeyboard();
 
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) { stopTimers(); disconnect(); return; }
