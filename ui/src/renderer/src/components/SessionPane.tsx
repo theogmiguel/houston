@@ -1,3 +1,4 @@
+import { useSession, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useEffect, useContext, useRef, useState } from 'react'
 import { ChildrenRoster, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
@@ -352,7 +353,7 @@ interface Props {
 
 function SessionPaneImpl({
   client,
-  info,
+  info: infoProp,
   theme,
   active,
   connected,
@@ -381,12 +382,19 @@ function SessionPaneImpl({
   onSwapAdjacent,
   onOpenFile,
   onOpenDir,
-  roster,
+  roster: rosterProp,
   gridSessionIds,
   onMoveChildToGrid,
   onReturnChildToRoster,
   onFocusPane
 }: Props): React.JSX.Element {
+  const info = useSession(infoProp.id, infoProp) ?? infoProp
+  const family = useSessionsSelector(
+    (sessions) => [...sessions.values()].filter((session) => session.id === info.id || session.id === info.spawned_by || session.spawned_by === info.id),
+    shallowArrayEqual,
+    [...(rosterProp?.sessions.values() ?? [])],
+  )
+  const roster = rosterProp ? { ...rosterProp, sessions: new Map(family.map((session) => [session.id, session])) } : undefined
   const [peekId, setPeekId] = useState<number | null>(null)
   const [recent, setRecent] = useState<number[]>([])
   const [collapsed, setCollapsed] = useState(false)
