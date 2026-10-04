@@ -11,9 +11,9 @@ describe('settingsSections — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Filled — fourteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
-    expect(SETTINGS_SECTIONS.length).toBe(14)
-    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(14)
+  it('Filled — fifteen sections, all navigable, across three labelled groups plus the quiet tail', () => {
+    expect(SETTINGS_SECTIONS.length).toBe(15)
+    expect(NAVIGABLE_SETTINGS_SECTIONS.length).toBe(15)
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('usage')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('accounts')
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toContain('agent-setup')
@@ -57,7 +57,7 @@ describe('settingsSections — state matrix', () => {
       'tasks',
       'voice'
     ])
-    expect(inGroup('data')).toEqual(['privacy', 'usage', 'daemon'])
+    expect(inGroup('data')).toEqual(['privacy', 'usage', 'daemon', 'remote'])
   })
 
   it('Workspaces and Diagnostics are genuinely reachable — no `pending` flag left standing, and both resolve through NAVIGABLE_SETTINGS_SECTIONS the same way every other section does', () => {
@@ -104,7 +104,7 @@ describe('settingsSections — state matrix', () => {
     expect(true).toBe(true)
   })
 
-  it('Overflow — N/A: fourteen entries in four groups is a fixed, small, known-at-compile-time size; there is no scroll/truncation concern in the data itself.', () => {
+  it('Overflow — N/A: fifteen entries in four groups is a fixed, small, known-at-compile-time size; there is no scroll/truncation concern in the data itself.', () => {
     expect(true).toBe(true)
   })
 

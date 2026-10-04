@@ -14,6 +14,7 @@ export type SettingsSectionId =
   | 'usage'
   | 'diagnostics'
   | 'daemon'
+  | 'remote'
   | 'about'
 
 export type SettingsIconKey =
@@ -31,6 +32,7 @@ export type SettingsIconKey =
   | 'info'
   | 'wrench'
   | 'server'
+  | 'phone'
 
 export interface SettingsGroupDef {
   id: SettingsGroupId
@@ -162,6 +164,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     keywords: [
       'background process', 'detach', 'stop daemon', 'running since', 'reap', 'exit',
       'live sessions', 'routines armed', 'clients connected', 'quit'
+    ]
+  },
+  {
+    id: 'remote',
+    label: 'Remote access',
+    icon: 'phone',
+    group: 'data',
+    keywords: [
+      'phone', 'mobile', 'remote', 'pair', 'device', 'tailscale', 'ntfy', 'notification',
+      'push', 'qr', 'revoke', 'another computer'
     ]
   },
   {

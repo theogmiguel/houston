@@ -31,6 +31,7 @@ export const TASK_BRIEF_MAX_BYTES = 16384
 export const TASK_LIVE_IMPLEMENTATION_RUNS = 1
 export const TASK_PR_WATCH_INTERVAL_MS = 300000
 export const TASKS_REWORK_ROUNDS_MAX = 5
+export const REMOTE_NOTIFY_DELAY_MAX_SECS = 600
 export const TAG_PALETTE = ["#a78bfa", "#7cb7ff", "#22d3ee", "#2dd4bf", "#4ade80", "#a3e635", "#f59e0b", "#fb923c", "#f472b6", "#e879f9", "#a8b0c2"]
 export const MAX_TAG_NAME_LEN = 32
 export const MAX_TAGS_PER_SESSION = 5

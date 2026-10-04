@@ -60,6 +60,7 @@ import {
   IconSearch,
   IconSun,
   IconServer,
+  IconPhone,
   IconUser,
   IconTarget,
   IconChartArea,
@@ -106,6 +107,7 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   info: IconInfo,
   wrench: IconWrench,
   server: IconServer,
+  phone: IconPhone,
 };
 
 export const RAIL_SELECTED_CLS = "bg-selected-fill text-[var(--text-primary)]";
