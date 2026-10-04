@@ -38,6 +38,9 @@ named.
 | **grid** | A named layout under a workspace holding a split tree. Renderer state only (`tr-grids:<path>`, `tr-layout:<path>::<gridId>`). | `layout/tree.ts::GridMeta` |
 | **tag** | A named colour from `TAG_PALETTE`, in the daemon's tag registry. A **pane tag** is on the session (`SessionInfo.tags`, daemon state); a **grid tag** is on `GridMeta.tags` (renderer state). Neither is derived from the other. Tag ids are never reused; the renderer removes ids missing from an authoritative registry snapshot from every saved grid. | `db.rs::tags`, `layout/tree.ts::GridMeta` |
 | **stack** | A tabbed group of panes in one grid slot, capped at 4. | `StackTabs.tsx` |
+| **remote access** | The opt-in second listener that serves a web client and `/api/*` to paired devices, plus optional ntfy notifications. Separate from the loopback control endpoint. | `remote/`, `daemon/remote.rs` |
+| **paired device** | A browser that redeemed a pairing code and holds a remote-access token. It reads and types into panes; it cannot pair, configure, spawn or kill. Revoking deletes its `remote_devices` row. | `db/remote.rs` |
+| **pairing code** | A single-use, ten-minute, 128-bit code carried in a pairing link's URL fragment. Starting a new pairing invalidates the previous code. | `remote::Runtime::start_pairing` |
 | **codename** | A pane's auto-generated name, from a fixed pool, replaced by a better name as one arrives. | `pane_name.rs` |
 | **title source** | Where a pane's current name came from — codename, first prompt, the CLI's own window title, or the user. A weaker source never overwrites a stronger one. | `daemon.rs`, `osc_title.rs` |
 | **Tidy** | The topbar action that rebalances the grid into even splits. | `App.tsx` |

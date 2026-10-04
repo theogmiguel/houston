@@ -8,7 +8,8 @@ is the execution boundary — every PTY, agent process, git call, hook and MCP r
 there, and it outlives the app: quitting Houston closes the socket, not the daemon. The
 renderer is a built Vite bundle embedded in the app binary that talks to the daemon over that
 WebSocket and a handful of Tauri commands. Agent CLIs run as children of the daemon and talk
-back to it over MCP.
+back to it over MCP. The control endpoint stays on loopback; remote access is a separate,
+opt-in listener for paired devices (see [Remote access](#remote-access)).
 
 The renderer paints Houston's own surfaces over a dithered background field in
 Custom mode: one user image or preset behind the whole window, its output
@@ -155,6 +156,37 @@ own frame set; every other reply comes back through a bounded per-connection que
 The scrollback replay is the one base64 payload, riding the JSON channel so it
 orders against the attach that asked for it. Details: [renderer.md](renderer.md).
 
+### Remote access
+
+`remote/` runs a second axum listener, started by `boot.rs` and idle until Settings turns it
+on (`remote_enabled`; default bind `127.0.0.1:47823`, `47824` on the dev channel). It is not
+part of the generation handoff: the new generation binds with backoff while the old one
+releases the port. Its router serves only the embedded web client and `/api/*`; `/ws`,
+`/mcp`, `/orchestrate`, `/task` and `/manage` do not exist there, so nothing reachable on it
+carries the daemon token's or a pane token's authority.
+
+Trust model:
+
+- **Credential.** A paired device holds a 256-bit token minted when it redeems a single-use,
+  ten-minute pairing code from the URL fragment. Only the token's SHA-256 is stored
+  (`remote_devices`); revoking deletes the row. The daemon token and pane tokens are never
+  accepted.
+- **Scope.** The API lists panes, reads a pane's screen as text and writes input through the
+  desktop's stdin path. Writing to any pane, shell panes included, makes a device equivalent
+  to a shell as the user; it cannot pair, configure, spawn or kill. One input request per
+  pane runs at a time.
+- **Transport.** TLS is delegated to `tailscale serve` in front of the loopback bind. A bind
+  on every interface needs a public URL; Settings warns when a token would cross the network
+  over plain HTTP.
+- **Defences.** `Host` must be an allowed name (DNS rebinding, 421); a write's `Origin` must
+  be the public URL or `http://<allowed host>:<port>` (403). Wrong tokens and pairing codes
+  lock their source out for 60 s after ten in a minute; loopback callers share one source and
+  a valid token is never locked out. Bodies, connections (64), idle time (30 s) and request
+  time (20 s) are bounded.
+- **Notifications.** ntfy is an outbound POST with a generic body and a link, never terminal
+  content. The topic URL is a bearer secret kept in the keychain under a per-state-directory
+  service; the database holds only the server origin.
+
 ### The emulator, and who answers an unwatched pane's terminal
 
 The daemon owns a real terminal emulator per session — the same libghostty-vt the renderer
@@ -299,8 +331,8 @@ the runtime package.
 - **Browser panes hold no authority.** The invoke handler refuses any Tauri command coming
   from a content-only webview label. Destructive agent actions in the browser
   (`browser_click`, `browser_type`) pass a human confirmation gate.
-- **Secrets never touch the DB.** SSH passwords, passphrases and the Groq key live in the
-  OS keychain (Secret Service via zbus); the DB holds a reference. `sanitize.rs` redacts
+- **Secrets never touch the DB.** SSH passwords, passphrases, the Groq key and the ntfy topic
+  URL live in the OS keychain (Secret Service via zbus); the DB holds a reference. `sanitize.rs` redacts
   known secret shapes from anything persisted or shown to another agent.
 - **Other CLIs' config is written only through reversible markers.** Hook entries carry a
   `--houston-managed[=<channel>]` sentinel matched per whitespace token; MCP
@@ -411,6 +443,9 @@ no pane virtualization, no unix-socket transport (the browser WebSocket API cann
   Tauri's custom-protocol fetch transport. Windows routes that protocol through a
   native webview-label guard before plugin dispatch, including channel-data fetches;
   browser content has no application authority.
+- Remote access is axum and reqwest only, the same on Linux and Windows, except that a
+  build without the daemon's emulator (Windows) serves a pane's raw output tail instead of its
+  screen and refuses multi-line input.
 - Tauri's `tracing` feature must never be enabled: it makes `eval_script_with_callback`
   block, which lets the watchdog supervisor block on the very event loop it watches.
   `check-watchdog.sh` enforces it.

@@ -234,10 +234,14 @@ be delegated to, via #3 — identity is still not status.
 renderer paints with, built natively into the daemon from the same pinned revision. It is fed
 every PTY chunk after the token redactor. This is the third lawful reader of PTY content,
 alongside the activity mirror and the handoff excerpt above — and unlike those
-two it reads nothing *for* a decision. It has exactly two consumers: an attach
+two it reads nothing *for* a decision. It has exactly three consumers: an attach
 (`session_attach{snapshot:true}` answers with its state, and the handoff manifest carries the
-same bytes) and a screen read (`pane_read --source screen`, `WaitForIdle`), plus the terminal
-questions it answers on its own behalf.
+same bytes), a screen read for an agent (`pane_read --source screen`, `WaitForIdle`) and a
+screen read for a paired remote-access device (`GET /api/sessions/{id}/screen`, display text
+on request, never polled by the daemon), plus the terminal questions it answers on its own
+behalf. Remote input also asks it one mode bit, whether the program enabled bracketed paste,
+to decide how to write a multi-line answer, as the renderer does for a desktop paste; that
+decides an encoding, never a status.
 
 **Why it is not the rule above.** What it produces is a screen and the bytes the terminal owes
 the program — never an `AgentStatus`. Nothing samples it on a timer; nothing derives a
