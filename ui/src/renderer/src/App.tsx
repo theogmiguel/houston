@@ -534,6 +534,11 @@ function harnessAttentionFor(overview: readonly { workspace: string; attention: 
   return overview.find((row) => row.workspace === workspace)?.attention ?? 0;
 }
 
+function sessionLabel(sessions: ReadonlyMap<number, { title?: string | null }>, id: number | null): string | undefined {
+  if (id === null) return undefined;
+  return sessions.get(id)?.title ?? `Session ${id}`;
+}
+
 function SessionEffects({ connection, workspaces, onFocusPane }: {
   connection: Parameters<typeof useTrayBridge>[0]["connection"];
   workspaces: Workspace[];
@@ -2266,8 +2271,7 @@ export function App(): React.JSX.Element {
     if (!cur.client.sendStdin(target, text)) pushError("connection lost — selected element was not delivered");
   }, [pushError]);
   const pickerAvailable = pickerTarget.current !== null && isLive(sessions.get(pickerTarget.current)?.state ?? "exited");
-  const pickerTargetId = pickerTarget.current;
-  const pickerTargetLabel = pickerTargetId === null ? undefined : sessions.get(pickerTargetId)?.title ?? `Session ${pickerTargetId}`;
+  const pickerTargetLabel = sessionLabel(sessions, pickerTarget.current);
 
   const openFilesPaneAt = useCallback(
     (workspaceDir: string, root: string, anchor: PaneKey | null): void => {
