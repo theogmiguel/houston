@@ -595,6 +595,63 @@ above the pane's own chrome. Fading the element itself fades its text and
 borders along with it, and a pane you are placing is one you still want to
 recognise.
 
+## Patterns
+
+### Page header
+
+Use the `heading` text role for page titles, as Settings does. Reserve the larger
+`title` role for onboarding and About. A one-sentence description is optional.
+Place page actions at the end of the title row, and use the rail label verbatim as
+the page title. Use `PAGE_COLUMN_CLS` (720px) for forms and lists and
+`PAGE_COLUMN_WIDE_CLS` (1040px) for tables and list-detail views.
+
+### Section heading and count
+
+Put a count immediately after its label on the same line, with a 6px gap, tabular
+numerals, the label's size and one softer ink step. Do not use parentheses, a
+middle dot, monospace numerals or right alignment; the right end of a heading is
+for its action. Omit zero in tabs and headings; disable an action instead of
+showing `(0)`. Put phrases such as “1 routine” in descriptions. Keep `Chip` counts
+for metrics.
+
+### Primary action
+
+Show one primary action per view in the page header, using `BTN_PRIMARY`. Use “New
+<noun>” when Houston creates the item and “Add <noun>” when Houston registers an
+existing item. Repeat the action in an empty state only when the page header does
+not show it.
+
+### Field
+
+Use a sentence-case label in the `small` text step, weight 600 and secondary ink,
+6px above a 28px control. A hint is optional; an error replaces it. Use `Segmented`
+for two to four exclusive options and `Select` for more than four. Use pressed
+chips only for multi-select filters.
+
+### Status
+
+Choose one status word per row from this vocabulary: Working, Needs input, Idle,
+Done, Failed, Paused, In sync and Missing. Do not rely on colour alone. “Ok” and
+“Not there” are not status words. A PR that introduces a status word adds it to
+this list.
+
+### Empty state
+
+Compose an empty state from an existing 32px icon tile with the surface's own
+glyph, a `ui`-step title, one sentence and at most one action, centred in its
+region. Use a magnifier only when a search has no results. Reserve the serif
+display step for whole-window states such as first run or no workspace.
+
+## Voice and copy
+
+Use sentence case for buttons, headings, field labels, menu items and tooltips.
+Render uppercase section labels through the `label` text role; do not type their
+copy in capitals. Counts follow [Section heading and count](#section-heading-and-count).
+Use “New” for creation and “Add” for registering an existing item. Cancel,
+Dismiss, Close and Discard are quiet ghost actions. A limit error names the limit,
+the actual value and the requested operation. Keep the existing ellipsis and label
+tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.sh`).
+
 ## States
 
 | State | Treatment |
