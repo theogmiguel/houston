@@ -17173,6 +17173,21 @@ impl Daemon {
     ) {
         let child = row.child_session;
         if self
+            .db
+            .pr_watch_list(Some(child))
+            .is_ok_and(|watches| !watches.is_empty())
+        {
+            if row.stalled
+                && self
+                    .db
+                    .delegation_set_stalled(child, false, now_ms())
+                    .is_ok()
+            {
+                self.broadcast_delegation(child);
+            }
+            return;
+        }
+        if self
             .permission_episodes
             .lock()
             .expect("episodes lock")
@@ -18218,6 +18233,103 @@ mod hook_state_registry_tests {
         let healed = crate::hook_state::read_scopes(state.path());
         assert_eq!(healed.len(), 1, "boot must rebuild wholesale: {healed:?}");
         assert_eq!(healed[0].swarm, id);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod pr_watch_stall_tests {
+    use super::*;
+
+    #[test]
+    fn an_idle_watched_child_is_not_marked_stalled() {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig {
+            token: "pr-watch-test".into(),
+            db_path: state.path().join("test.db"),
+        })
+        .unwrap();
+        let workspace = state.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        daemon
+            .workspace_add(&workspace.display().to_string())
+            .unwrap();
+        let make_pane = || {
+            daemon
+                .create_session(CreateParams {
+                    agent: proto::AgentKind::Custom,
+                    project_dir: workspace.clone(),
+                    cmd: Some(vec!["/bin/sh".into(), "-c".into(), "exec cat".into()]),
+                    cols: 80,
+                    rows: 24,
+                    cwd_from: None,
+                    shell_integration: false,
+                    auto_approve: false,
+                    acp: None,
+                    profile: None,
+                    prompt: None,
+                })
+                .unwrap()
+        };
+        let parent = make_pane();
+        let child = make_pane();
+        daemon
+            .db
+            .delegation_create(parent.id, child.id, Some("review"), "Review the PR", 1)
+            .unwrap();
+        daemon
+            .db
+            .delegation_set_state(child.id, "running", 1)
+            .unwrap();
+        let link = proto::PullRequestLink {
+            host: "GitHub".into(),
+            repository: "owner/repo".into(),
+            number: 7,
+            url: "https://github.com/owner/repo/pull/7".into(),
+            state: proto::PullRequestState::Open,
+            source: proto::PullRequestLinkSource::Agent,
+            title: Some("Review".into()),
+            is_draft: false,
+            additions: 0,
+            deletions: 0,
+            changed_files: 0,
+            checks: None,
+            review_decision: None,
+            linked_at: 1,
+            merged_at: None,
+            closed_at: None,
+            synced_at: None,
+        };
+        daemon
+            .db
+            .pr_watch_set(
+                child.id,
+                &link,
+                &crate::pull_requests::watch::State {
+                    started_at: 1,
+                    head_sha: "abc".into(),
+                    failed_checks: Default::default(),
+                    passed: false,
+                    comments_through: 1,
+                    comment_ids: Default::default(),
+                    conflicting: false,
+                    comment_only_wakes: 0,
+                    read_failures: 0,
+                    own_login: None,
+                },
+            )
+            .unwrap();
+
+        let row = daemon.db.delegation_for_child(child.id).unwrap().unwrap();
+        let session = daemon.get(child.id).unwrap();
+        session.last_output.store(0, Ordering::Relaxed);
+        daemon.delegation_stall_pass(&row, &session, false, u64::MAX);
+
+        assert!(!daemon.delegation_of(child.id).unwrap().stalled);
+        assert!(daemon.inbox_rows_for_test(parent.id).is_empty());
+        for id in [child.id, parent.id] {
+            let _ = daemon.kill(id);
+            let _ = daemon.close(id);
+        }
     }
 }
 

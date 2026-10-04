@@ -96,6 +96,15 @@ for five minutes. This is a diagnostic heuristic, not a request for human input.
 when a matching tool completion or authoritative turn end/interruption arrives. Houston
 does not send keys or a desktop notification in response to it.
 
+## Watch a pull request
+
+From an agent pane, ask the agent to watch an open GitHub pull request. The agent calls
+`pane_pr_watch` with a pull request number or URL, then ends its turn. Houston checks the pull
+request once a minute and wakes that pane when a check fails, all reported checks pass, a new
+review or comment arrives, or the branch becomes conflicted with its base. A watch stops when the
+pull request is merged or closed, after repeated read failures, or after ten comment-only wakes.
+Use `pane_pr_unwatch` when updates are no longer needed.
+
 ## Workspaces and child lifetime
 
 By default, a child starts in the parent's current directory when it is inside the

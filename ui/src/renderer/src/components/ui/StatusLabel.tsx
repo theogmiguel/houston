@@ -14,6 +14,7 @@ export const STATUS_LABELS = [
   'Fixing',
   'Not seen',
   'Ready',
+  'Watching',
   'Verified'
 ] as const
 
@@ -35,6 +36,7 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Fixing: 'var(--info)',
   'Not seen': 'var(--text-faint)',
   Ready: 'var(--ok)',
+  Watching: 'var(--info)',
   Verified: 'var(--ok)'
 }
 

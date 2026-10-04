@@ -56,6 +56,8 @@ pub async fn start_with_listener(
         .route("/orchestrate/wait", post(orch_wait))
         .route("/orchestrate/kill", post(orch_kill))
         .route("/orchestrate/submit", post(orch_submit))
+        .route("/orchestrate/pr-watch", post(orch_pr_watch))
+        .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
         .route("/harness/publish", post(harness_publish))
         .route("/task/next", get(task_next))
         .route("/task/list", get(task_list))
@@ -606,6 +608,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitBranch { .. }
             | proto::ClientMsg::PrStatus { .. }
             | proto::ClientMsg::PrDetail { .. }
+            | proto::ClientMsg::PrWatchList
             | proto::ClientMsg::GitReviewDiffs { .. }
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
@@ -713,6 +716,15 @@ async fn dispatch(
     conn_id: u64,
 ) -> anyhow::Result<()> {
     match msg {
+        proto::ClientMsg::PrWatchList => match daemon.pr_watch_infos() {
+            Ok(watches) => send_msg(sink, &proto::ServerMsg::PrWatchList { watches })
+                .await
+                .map_err(|_| anyhow::anyhow!("sending PR watch list failed")),
+            Err(e) => Err(e),
+        },
+        proto::ClientMsg::PrWatchUnwatch { session, number } => {
+            daemon.pr_watch_stop(session, number).map(|_| ())
+        }
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate {
             agent,
@@ -4194,6 +4206,46 @@ async fn orch_kill(
             axum::Json(json!({ "killed": body.session })),
         )
             .into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PrWatchBody {
+    pr: String,
+}
+
+async fn orch_pr_watch(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<PrWatchBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let target = body.pr;
+    let start_target = target.clone();
+    let result =
+        tokio::task::spawn_blocking(move || daemon.pr_watch_start(scope.session_id, &start_target))
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("PR watch panicked: {e}")));
+    match result {
+        Ok(()) => (StatusCode::OK, axum::Json(json!({"watching": true, "pr": target, "note": "End your turn now; Houston wakes this pane on the next PR change."}))).into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
+async fn orch_pr_unwatch(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || daemon.pr_watch_stop_all(scope.session_id))
+        .await
+        .unwrap_or_else(|e| Err(anyhow::anyhow!("PR unwatch panicked: {e}")));
+    match result {
+        Ok(stopped) => (StatusCode::OK, axum::Json(json!({"stopped": stopped}))).into_response(),
         Err(e) => orch_err_response(e),
     }
 }

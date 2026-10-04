@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { Card, EmptyState, Field, PageFrame, PageHeader, PaneHeaderButton, SectionHead, Segmented, Select, StatusLabel } from './index'
+import { Card, EmptyState, Field, PageFrame, PageHeader, PaneHeaderButton, PrWatchChip, PrWatchRow, PrWatchStack, SectionHead, Segmented, Select, StatusLabel } from './index'
 import { IconClose, IconSearch } from '../icons'
 
 // @ts-expect-error pane header icon buttons require an accessible name
@@ -84,5 +84,17 @@ describe('page and content primitives', () => {
   it('requires and forwards the pane header button accessible name', () => {
     render(<PaneHeaderButton icon={IconClose} aria-label="Close pane" />)
     expect(screen.getByRole('button', { name: 'Close pane' }).className).toContain("after:h-[28px]")
+  })
+
+  it('renders PR watch status, stop action and GitHub action', () => {
+    const onStop = vi.fn()
+    const onOpen = vi.fn()
+    render(<><PrWatchChip number={61} /><PrWatchStack><PrWatchRow number={61} onStop={onStop} onOpen={onOpen} /></PrWatchStack></>)
+    expect(screen.getByTestId('pr-watch-chip').textContent).toContain('#61')
+    expect(screen.getByTestId('pr-watch-stack').className).toContain('flex-col')
+    screen.getByRole('button', { name: 'Stop watching' }).click()
+    screen.getByRole('button', { name: 'Open on GitHub' }).click()
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(onOpen).toHaveBeenCalledOnce()
   })
 })

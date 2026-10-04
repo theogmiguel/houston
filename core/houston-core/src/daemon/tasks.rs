@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use houston_protocol as proto;
+use reqwest::Url;
 
-use super::{bracketed_paste, now_unix_ms, CreatedWorktree, Daemon, MAX_TITLE_LEN};
+use super::{bracketed_paste, now_unix, now_unix_ms, CreatedWorktree, Daemon, MAX_TITLE_LEN};
 use crate::db::{
     ManagedWorktreeRow, SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow,
     TaskQuery, TaskRow, TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
@@ -4290,6 +4291,291 @@ impl Daemon {
             tokio::time::sleep(Duration::from_millis(proto::TASK_PR_WATCH_INTERVAL_MS)).await;
         }
     }
+
+    pub fn pr_watch_start(self: &Arc<Self>, session_id: u32, target: &str) -> anyhow::Result<()> {
+        let session = self.get(session_id)?;
+        let info = session.snapshot_info();
+        if !matches!(
+            info.agent,
+            proto::AgentKind::Claude
+                | proto::AgentKind::Codex
+                | proto::AgentKind::Antigravity
+                | proto::AgentKind::Opencode
+                | proto::AgentKind::Cursor
+                | proto::AgentKind::Grok
+        ) {
+            anyhow::bail!("PR watch cannot wake provider {:?}; supported providers are Claude, Codex, Antigravity, OpenCode, Cursor and Grok", info.agent);
+        }
+        let number = pr_watch_number(target)?;
+        let (link, detail) = crate::pull_requests::read(
+            Path::new(&info.project_dir),
+            Some(number),
+            proto::PullRequestLinkSource::Agent,
+            None,
+        )?;
+        if link.state != proto::PullRequestState::Open {
+            anyhow::bail!(
+                "PR #{} is {:?}; expected an open pull request",
+                link.number,
+                link.state
+            );
+        }
+        if let Some((host, repository, target_number)) = pr_watch_url_identity(target)? {
+            let link_url = Url::parse(&link.url)?;
+            anyhow::ensure!(
+                host.eq_ignore_ascii_case(link_url.host_str().unwrap_or_default())
+                    && repository.eq_ignore_ascii_case(&link.repository)
+                    && target_number == link.number,
+                "PR URL {target:?} does not identify the pull request read from this workspace"
+            );
+        }
+        let own_login = crate::gh::viewer_login(Path::new(&info.project_dir))
+            .ok()
+            .flatten();
+        let failed_checks = detail
+            .checks
+            .iter()
+            .filter(|check| check.state == proto::PrCheckState::Failing)
+            .map(|check| check.name.clone())
+            .collect();
+        let passed = !detail.checks.is_empty()
+            && detail.checks.iter().all(|check| {
+                matches!(
+                    check.state,
+                    proto::PrCheckState::Passing | proto::PrCheckState::Skipped
+                )
+            });
+        self.db.pr_watch_set(
+            session_id,
+            &link,
+            &crate::pull_requests::watch::State {
+                started_at: now_unix(),
+                head_sha: detail.head_sha,
+                failed_checks,
+                passed,
+                comments_through: now_unix(),
+                comment_ids: Default::default(),
+                conflicting: detail.mergeable == proto::PrMergeable::Conflicting,
+                comment_only_wakes: 0,
+                read_failures: 0,
+                own_login,
+            },
+        )?;
+        self.broadcast_pr_watches(session_id);
+        Ok(())
+    }
+
+    pub fn pr_watch_stop(self: &Arc<Self>, session_id: u32, number: u32) -> anyhow::Result<bool> {
+        let stopped = self.db.pr_watch_remove(session_id, number)?;
+        self.broadcast_pr_watches(session_id);
+        Ok(stopped)
+    }
+
+    pub fn pr_watch_stop_all(self: &Arc<Self>, session_id: u32) -> anyhow::Result<u32> {
+        let rows = self.db.pr_watch_list(Some(session_id))?;
+        let mut stopped = 0;
+        for row in rows {
+            stopped += u32::from(self.db.pr_watch_remove(session_id, row.link.number)?);
+        }
+        self.broadcast_pr_watches(session_id);
+        Ok(stopped)
+    }
+
+    fn broadcast_pr_watches(&self, session_id: u32) {
+        let watches = match self.db.pr_watch_list(Some(session_id)) {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| proto::PrWatchInfo {
+                    number: row.link.number,
+                    url: row.link.url,
+                })
+                .collect(),
+            Err(e) => {
+                tracing::warn!("listing PR watches for pane {session_id}: {e}");
+                Vec::new()
+            }
+        };
+        self.broadcast_control(&proto::ServerMsg::PrWatchChanged {
+            session: session_id,
+            watches,
+        });
+    }
+
+    pub fn pr_watch_infos(&self) -> anyhow::Result<Vec<proto::SessionPrWatches>> {
+        let rows = self.db.pr_watch_list(None)?;
+        let mut grouped = std::collections::BTreeMap::<u32, Vec<proto::PrWatchInfo>>::new();
+        for row in rows {
+            grouped
+                .entry(row.session_id)
+                .or_default()
+                .push(proto::PrWatchInfo {
+                    number: row.link.number,
+                    url: row.link.url,
+                });
+        }
+        Ok(grouped
+            .into_iter()
+            .map(|(session, watches)| proto::SessionPrWatches { session, watches })
+            .collect())
+    }
+
+    pub fn pr_watch_tick(self: &Arc<Self>) {
+        let watches = match self.db.pr_watch_list(None) {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!("listing PR watches: {e}");
+                return;
+            }
+        };
+        for row in watches {
+            let Ok(session) = self.get(row.session_id) else {
+                continue;
+            };
+            let info = session.snapshot_info();
+            let target = Path::new(&info.project_dir);
+            let result = crate::pull_requests::read(
+                target,
+                Some(row.link.number),
+                row.link.source,
+                Some(&row.link),
+            );
+            let evaluation = match result {
+                Ok((link, detail)) => {
+                    let own_login = row.state.own_login.clone();
+                    crate::pull_requests::watch::evaluate(
+                        row.state,
+                        &link,
+                        &detail,
+                        detail.author.as_deref(),
+                        own_login.as_deref(),
+                    )
+                }
+                Err(e) => {
+                    let failed = crate::pull_requests::watch::failed_read(row.state);
+                    if failed.state.is_none() {
+                        failed
+                    } else {
+                        if let Some(state) = failed.state {
+                            let _ = self.db.pr_watch_set(row.session_id, &row.link, &state);
+                        }
+                        tracing::warn!(
+                            "reading PR #{} for pane {}: {e}",
+                            row.link.number,
+                            row.session_id
+                        );
+                        continue;
+                    }
+                }
+            };
+            let body = crate::pull_requests::watch::message(row.link.number, &evaluation.changes);
+            if let Some(state) = &evaluation.state {
+                if let Err(e) = self.db.pr_watch_set(row.session_id, &row.link, state) {
+                    tracing::warn!(
+                        "saving PR watch #{} for pane {}: {e}",
+                        row.link.number,
+                        row.session_id
+                    );
+                    continue;
+                }
+            } else if let Err(e) = self.db.pr_watch_remove(row.session_id, row.link.number) {
+                tracing::warn!(
+                    "ending PR watch #{} for pane {}: {e}",
+                    row.link.number,
+                    row.session_id
+                );
+                continue;
+            }
+            if !evaluation.changes.is_empty() {
+                let workspace = self.current_workspace(row.session_id).unwrap_or_default();
+                if let Err(e) = self.inbox_write(
+                    row.session_id,
+                    &workspace,
+                    None,
+                    None,
+                    crate::orchestrate::InboxKind::OperatorNote,
+                    &format!("PR #{} update", row.link.number),
+                    &body,
+                    Vec::new(),
+                    None,
+                    None,
+                    false,
+                    true,
+                ) {
+                    tracing::warn!(
+                        "waking pane {} for PR #{}: {e}",
+                        row.session_id,
+                        row.link.number
+                    );
+                }
+            }
+            self.broadcast_pr_watches(row.session_id);
+        }
+    }
+
+    pub async fn pr_watch_loop(self: Arc<Self>) {
+        loop {
+            let daemon = Arc::clone(&self);
+            let _ = tokio::task::spawn_blocking(move || daemon.pr_watch_tick()).await;
+            tokio::time::sleep(Duration::from_millis(
+                crate::pull_requests::watch::PR_WATCH_INTERVAL_MS,
+            ))
+            .await;
+        }
+    }
+}
+
+fn pr_watch_number(target: &str) -> anyhow::Result<u32> {
+    if target.trim().contains("://") {
+        return pr_watch_url_identity(target)?
+            .map(|(_, _, number)| number)
+            .ok_or_else(|| {
+                anyhow::anyhow!("PR target {target:?} must be a GitHub pull request URL")
+            });
+    }
+    let raw = target.trim();
+    let number = raw
+        .strip_prefix('#')
+        .unwrap_or(raw)
+        .parse::<u32>()
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "PR target {target:?} must be a positive number or GitHub pull request URL"
+            )
+        })?;
+    anyhow::ensure!(
+        number > 0,
+        "PR target {target:?} must be a positive pull request number"
+    );
+    Ok(number)
+}
+
+fn pr_watch_url_identity(target: &str) -> anyhow::Result<Option<(String, String, u32)>> {
+    if !target.trim().contains("://") {
+        return Ok(None);
+    }
+    let url = Url::parse(target.trim())
+        .map_err(|e| anyhow::anyhow!("PR target {target:?} is not a valid URL: {e}"))?;
+    anyhow::ensure!(url.scheme() == "https", "PR URL {target:?} must use https");
+    let segments = url
+        .path_segments()
+        .map(|s| s.filter(|part| !part.is_empty()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    anyhow::ensure!(
+        segments.len() == 4 && segments[2] == "pull",
+        "PR URL {target:?} must have the shape https://github.com/OWNER/REPO/pull/NUMBER"
+    );
+    let number = segments[3].parse::<u32>().map_err(|_| {
+        anyhow::anyhow!("PR URL {target:?} must end in a positive pull request number")
+    })?;
+    anyhow::ensure!(
+        number > 0,
+        "PR URL {target:?} must end in a positive pull request number"
+    );
+    Ok(Some((
+        url.host_str().unwrap_or_default().to_string(),
+        format!("{}/{}", segments[0], segments[1]),
+        number,
+    )))
 }
 
 /// The pane chip's task binding from one run row.

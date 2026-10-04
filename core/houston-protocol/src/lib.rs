@@ -1828,6 +1828,21 @@ pub struct SessionInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PrWatchInfo {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionPrWatches {
+    pub session: u32,
+    pub watches: Vec<PrWatchInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TagInfo {
     pub id: u32,
     pub name: String,
@@ -2713,6 +2728,7 @@ pub enum ClientMsg {
         rows: u16,
     },
     SessionList,
+    PrWatchList,
     SessionAttach {
         session: u32,
         #[serde(default)]
@@ -3013,6 +3029,10 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         merge_method: Option<PrMergeMethod>,
         request: u32,
+    },
+    PrWatchUnwatch {
+        session: u32,
+        number: u32,
     },
     GitReviewDiffs {
         dir: String,
@@ -3627,6 +3647,9 @@ pub enum ServerMsg {
     SessionList {
         sessions: Vec<SessionInfo>,
     },
+    PrWatchList {
+        watches: Vec<SessionPrWatches>,
+    },
     SessionRemoved {
         session: u32,
     },
@@ -3668,6 +3691,10 @@ pub enum ServerMsg {
     SessionResumable {
         session: u32,
         resumable: bool,
+    },
+    PrWatchChanged {
+        session: u32,
+        watches: Vec<PrWatchInfo>,
     },
     TagList {
         tags: Vec<TagInfo>,

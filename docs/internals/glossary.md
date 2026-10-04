@@ -73,6 +73,7 @@ named.
 | **handoff pane** | A pane an agent opens with `pane_spawn{handoff: true}`: top-level, with no parent or delegation, so the caller closes without the live-children guard. Refused from a child. | `daemon.rs::orchestrate_handoff` |
 | **handoff offer** | One `operator_note` inbox row, reason `handoff_offer`, written to a top-level pane with children each time its reported compactions reach a multiple of `HANDOFF_OFFER_AFTER_COMPACTIONS`; never to a child or a pane that already handed off. It starts nothing. | `daemon.rs::note_compaction` |
 | **handoff document** | The older, generative form: a budgeted prompt assembled from a pane's command blocks, written by a hidden CLI session. Wire and daemon only — no UI door. | `handoff.rs` |
+| **PR watch** | A persisted watch for an open GitHub pull request that wakes its owning agent pane when checks, review activity, or mergeability change. | `pr_watches`, `daemon/tasks.rs` |
 
 ## Runtime nouns
 
