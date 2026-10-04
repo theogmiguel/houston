@@ -12,20 +12,20 @@ export function TaskDrawerHeader({ taskKey, workspace, heading, status, actions 
   actions: ReactNode
 }): React.JSX.Element {
   return (
-    <header className="grid gap-[var(--space-2)] px-[var(--space-3)] pb-[var(--space-3)]">
+    <header className="grid gap-[var(--space-3)] pb-[var(--space-3)]">
       <div className="flex min-w-0 items-center gap-[var(--space-2)]">
         <span className="font-mono text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">{taskKey}</span>
         <span className="min-w-0 flex-1 truncate text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{workspace}</span>
         {actions}
       </div>
-      <h1 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{heading}</h1>
+      <h1 className="m-0 text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.2] text-[var(--text-primary)]">{heading}</h1>
       <TaskProgress status={status} />
     </header>
   )
 }
 
 export function TaskDetailFrame({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="tasks-root" data-testid="task-detail"><div className="tk-detail">{children}</div></div>
+  return <div className="tasks-root" data-testid="task-detail"><div className="tk-detail" style={{ padding: 'var(--space-2) var(--space-3) var(--space-3)' }}>{children}</div></div>
 }
 
 export function TaskDrawerExecutionPanel({ tone, status, metadata, reuse, children }: {
@@ -35,7 +35,7 @@ export function TaskDrawerExecutionPanel({ tone, status, metadata, reuse, childr
   reuse: string
   children: ReactNode
 }): React.JSX.Element {
-  return <div className={`exec ${tone === 'needs' ? 'needs' : ''}`} data-presentation="drawer" data-testid="task-execution" style={{ marginTop: 10 }}>
+  return <div className={`exec ${tone === 'needs' ? 'needs' : ''}`} data-presentation="drawer" data-testid="task-execution" style={{ marginTop: 'var(--space-2-5)' }}>
     <div className="h"><span className={`tk-dot ${tone}`} /><b>{status}</b><span data-task-drawer-run-meta>{metadata}</span></div>
     <div data-task-drawer-run-reuse>{reuse}</div>
     {children}
@@ -89,9 +89,9 @@ export function TaskQueueMeta({ taskKey, children }: { taskKey: string; children
 }
 
 export function TaskDrawerCard({ children }: { children: ReactNode }): React.JSX.Element {
-  return <Card className="mx-[var(--space-3)]">{children}</Card>
+  return <Card>{children}</Card>
 }
 
 export function TaskDrawerOrigin({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="mx-[var(--space-3)]">{children}</div>
+  return <div>{children}</div>
 }

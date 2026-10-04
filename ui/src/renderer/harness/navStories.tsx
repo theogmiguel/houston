@@ -355,7 +355,7 @@ export function HarnessPageStory(): React.JSX.Element {
       title: 'Codex skips hooks until the first approval',
       count: 6,
       review_id: 12,
-      task: { task_id: 44, key: 'HOU-44', status: 'done', landed_at_ms: Date.UTC(2026, 9, 1) },
+      task: { task_id: 44, key: 'HOU-44', status: 'done', landed_at_ms: Date.UTC(2026, 9, 2) },
       phase: 'awaiting_verification',
       verification: { review_id: 12, verdict: 'inconclusive', sessions_after: 6, quotes: [] }
     }),

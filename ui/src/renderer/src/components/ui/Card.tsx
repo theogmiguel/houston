@@ -15,6 +15,11 @@ export interface CardContentProps {
   children: ReactNode
 }
 
+export interface CardGroupProps {
+  children: ReactNode
+  rail?: 'new' | 'still' | 'gone'
+}
+
 export interface CardRowProps {
   heading: ReactNode
   meta?: ReactNode
@@ -54,4 +59,8 @@ function CardContent({ children }: CardContentProps): React.JSX.Element {
   return <div className="grid gap-[var(--space-1)] px-[var(--space-2-5)] pb-[var(--space-2)]">{children}</div>
 }
 
-export const Card = Object.assign(CardBase, { Row: CardRow, Content: CardContent })
+function CardGroup({ children, rail }: CardGroupProps): React.JSX.Element {
+  return <section className={`grid gap-[var(--space-1)] ${rail ? railClasses({ rail }) : ''}`}>{children}</section>
+}
+
+export const Card = Object.assign(CardBase, { Row: CardRow, Content: CardContent, Group: CardGroup })

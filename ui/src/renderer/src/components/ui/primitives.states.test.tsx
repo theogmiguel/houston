@@ -80,7 +80,7 @@ describe('components/ui primitives', () => {
       const label = screen.getByLabelText(status)
       expect(label.textContent).toBe(status)
       expect(label.querySelector('[aria-hidden="true"]')?.className).toContain('rounded-full')
-      if (status === 'Idle' || status === 'Paused' || status === 'Missing') {
+      if (status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen') {
         expect(label.querySelector('[aria-hidden="true"]')?.getAttribute('style')).toContain('transparent')
       }
       unmount()

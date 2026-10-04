@@ -124,9 +124,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Card.Row density="compact" heading="Compact queue row" meta="HOU-45 · Claude Code needs input" status={<StatusLabel status="Ready" />} action={<Button size="sm">Review changes</Button>} />
           </Card>
           <Card>
-            <Card.Row rail="new" heading="New review group" meta="Amber rule" />
-            <Card.Row rail="still" heading="Still there group" meta="Stop rule" />
-            <Card.Row rail="gone" heading="Gone review group" meta="Ok rule" />
+            <Card.Group rail="new"><SectionHead title="New" count={1} /><Card.Row heading="New review group" meta="Amber rule" /></Card.Group>
+            <Card.Group rail="still"><SectionHead title="Still there" count={1} /><Card.Row heading="Still there group" meta="Stop rule" /></Card.Group>
+            <Card.Group rail="gone"><SectionHead title="Gone" count={1} /><Card.Row heading="Gone review group" meta="Ok rule" /></Card.Group>
             <Card.Row compact rail="new" heading="Compact history row" meta="One line for recent history" />
           </Card>
           <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
@@ -206,7 +206,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Segmented">
           <SpecimenRow>
-            <Segmented aria-label="Filter" options={[{ value: 'active', label: 'Active' }, { value: 'resolved', label: 'Resolved' }, { value: 'dismissed', label: 'Dismissed' }]} value="active" onChange={noop} />
+            <Segmented aria-label="Filter" options={[{ value: 'active', label: 'Active', count: 4 }, { value: 'resolved', label: 'Resolved', count: 1 }, { value: 'dismissed', label: 'Dismissed' }]} value="active" onChange={noop} />
             <Segmented aria-label="Disabled choice" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two', disabled: true }]} value="two" />
             <Segmented aria-label="Loading choice" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" loading />
           </SpecimenRow>

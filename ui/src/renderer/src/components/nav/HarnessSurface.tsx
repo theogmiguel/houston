@@ -26,6 +26,7 @@ import {
   type HarnessSchedule
 } from './harnessFormat'
 import { formatCadence, nextUpTimeLabel } from './routineFormat'
+import { formatHarnessDate } from './harnessFormat'
 
 const TEXT_CLS =
   '[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-secondary)]'
@@ -347,7 +348,7 @@ function HarnessBody(
         <BarSparkline values={trend} label={`Repeated mistakes per 100 sessions: ${firstValue} to ${lastValue}`} />
         <Caption className="min-w-0">
           Repeated mistakes per 100 sessions: {firstValue} → {lastValue} over {published.length} reviews
-          {latestReview && <> · last review #{latestReview.id} {reviewTime(latestReview.started_at_ms)}, {latestReview.sessions ?? 0} sessions</>}
+          {latestReview && <> · last review #{latestReview.id} {formatHarnessDate(latestReview.started_at_ms, true)}, {latestReview.sessions ?? 0} sessions</>}
           {routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>}
         </Caption>
       </div>
@@ -374,8 +375,4 @@ function HarnessBody(
       </Caption>
     </div>
   )
-}
-
-function reviewTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
 }

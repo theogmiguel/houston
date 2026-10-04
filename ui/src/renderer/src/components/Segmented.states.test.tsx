@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Segmented } from './Segmented'
+import { Segmented } from './ui/Segmented'
 
 const OPTIONS = [
   { value: 'grid', label: 'Grid' },
@@ -42,6 +42,22 @@ describe('Segmented — state matrix', () => {
     expect(container.querySelector('[data-testid="segmented"]')?.getAttribute('data-state')).toBe(
       'filled'
     )
+  })
+
+  it('renders an option count in muted ink', () => {
+    act(() => {
+      root.render(<Segmented aria-label="Filter" options={[{ value: 'active', label: 'Active', count: 4 }]} value="active" />)
+    })
+    const count = Array.from(container.querySelectorAll('button[role="radio"] span')).find((span) => span.textContent === '4')
+    expect(count?.className).toContain('text-[var(--text-muted)]')
+    expect(count?.textContent).toBe('4')
+  })
+
+  it('omits a zero count from an option', () => {
+    act(() => {
+      root.render(<Segmented aria-label="Filter" options={[{ value: 'dismissed', label: 'Dismissed', count: 0 }]} value="dismissed" />)
+    })
+    expect(container.querySelector('button[role="radio"]')?.textContent).toBe('Dismissed')
   })
 
   it('Hover — an unselected option lifts its INK, and paints no hover fill (the reference has none)', () => {
