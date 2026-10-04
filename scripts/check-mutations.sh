@@ -8,7 +8,7 @@ cd "$repo_root"
 # MIN_COVERED is an inverse ratchet: it is the number of checks that had a
 # mutation when this landed and only ever grows. Lowering it is a withdrawal
 # that belongs in the commit message.
-MIN_COVERED=6
+MIN_COVERED=8
 
 mapfile -t checks < <(
   {

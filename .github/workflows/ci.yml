@@ -95,6 +95,10 @@ jobs:
         run: bash scripts/check-focus-visible.sh
       - name: check-empty-state-action.sh (an empty state offers the action its copy names)
         run: bash scripts/check-empty-state-action.sh
+      - name: check-ui-boundary.sh (feature class strings use layout utilities only)
+        run: bash scripts/check-ui-boundary.sh
+      - name: check-copy.sh (interface copy uses sentence case and status vocabulary)
+        run: bash scripts/check-copy.sh
       - name: check-ratchets-only-tighten.sh (a baseline pin may fall, never rise)
         run: bash scripts/check-ratchets-only-tighten.sh
       - uses: oven-sh/setup-bun@v2
