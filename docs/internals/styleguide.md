@@ -628,7 +628,9 @@ recognise.
 
 ### Page header
 
-Use the `heading` text role for page titles, as Settings does. Reserve the larger
+Every destination page uses `PageFrame`; choose its `form` (720px) or `wide` (1040px)
+width from the content shape. Compose its heading with `PageHeader`. Use the `heading`
+text role for page titles, as Settings does. Reserve the larger
 `title` role for onboarding and About. A one-sentence description is optional.
 Place page actions at the end of the title row, and use the rail label verbatim as
 the page title. Use `PAGE_COLUMN_CLS` (720px) for forms and lists and
@@ -636,7 +638,8 @@ the page title. Use `PAGE_COLUMN_CLS` (720px) for forms and lists and
 
 ### Section heading and count
 
-Use `Count` immediately after its label on the same line, with a 6px gap, tabular
+Use `SectionHead` with `Count` immediately after its label on the same line, with
+a 6px gap, tabular
 numerals, the label's size and one softer ink step. Do not use parentheses, a
 middle dot, monospace numerals or right alignment; the right end of a heading is
 for its action. Omit zero in tabs and headings; disable an action instead of
@@ -645,15 +648,16 @@ for metrics.
 
 ### Primary action
 
-Show one primary action per view in the page header, using `BTN_PRIMARY`. Use “New
-<noun>” when Houston creates the item and “Add <noun>” when Houston registers an
-existing item. Repeat the action in an empty state only when the page header does
-not show it.
+Show one primary action per view in the page header, using `Button` with the
+`primary` variant. Use “New <noun>” when Houston creates the item and “Add <noun>”
+when Houston registers an existing item. Repeat the action in an empty state only
+when the page header does not show it.
 
 ### Field
 
-Use a sentence-case label in the `small` text step, weight 600 and secondary ink,
-6px above a 28px control. A hint is optional; an error replaces it. Use `Segmented`
+Use `Field` with a sentence-case label in the `small` text step, weight 600 and
+secondary ink, 6px above a 28px control. A hint is optional; an error replaces it.
+Use `Segmented`
 for two to four exclusive options and `Select` for more than four. Use pressed
 chips only for multi-select filters.
 
@@ -662,16 +666,27 @@ chips only for multi-select filters.
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
 Needs input, Idle, Done, Failed, Paused, In sync and Missing. Do not rely on colour
-alone. “Ok” and
+alone. Idle, Paused and Missing use a hollow ring. “Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
 
 ### Empty state
 
-Compose an empty state from an existing 32px icon tile with the surface's own
-glyph, a `ui`-step title, one sentence and at most one action, centred in its
-region. Use a magnifier only when a search has no results. Reserve the serif
-display step for whole-window states such as first run or no workspace.
+Use `EmptyState`: a 32px icon tile with the surface's own glyph, a `ui`-step title,
+one sentence and at most one action, centred in its region. Use a magnifier only
+when a search has no results. Reserve the serif display step for whole-window
+states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
+`BrowserPane.tsx`'s empty state are absorbed during their later screen migrations.
+
+### Grouped rows
+
+Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
+places its title and metadata on the left and status or action on the right.
+
+### Pane header actions
+
+Use `PaneHeaderButton` for pane-header icon actions. Its `aria-label` is required;
+the shared recipe preserves the 28px hit target inside the 28px pane header.
 
 ## Voice and copy
 
