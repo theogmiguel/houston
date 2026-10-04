@@ -11,6 +11,7 @@ import type { LayoutNode } from '../src/renderer/src/layout/tree'
 import { SettingsView } from '../src/renderer/src/components/SettingsView'
 import { ShortcutSheet } from '../src/renderer/src/components/ShortcutSheet'
 import { PaneHandoff } from '../src/renderer/src/components/PaneHandoff'
+import { FilesPane } from '../src/renderer/src/components/FilesPane'
 import { HandoffOverlay, type HandoffUiState } from '../src/renderer/src/components/HandoffOverlay'
 import { AnimOut } from '../src/renderer/src/components/AnimOut'
 import { ConfirmModal } from '../src/renderer/src/components/ConfirmModal'
@@ -64,12 +65,13 @@ const FIXTURE_DIRS: Record<string, { name: string; dir: boolean }[]> = {
   [FIXTURE_DIR_ROOT]: [
     { name: 'src', dir: true },
     { name: 'README.md', dir: false },
+    { name: 'large.ts', dir: false },
     { name: 'broken.txt', dir: false }
   ],
   [`${FIXTURE_DIR_ROOT}/src`]: [{ name: 'index.ts', dir: false }]
 }
 const FIXTURE_FILES: Record<string, string> = {
-  [`${FIXTURE_DIR_ROOT}/README.md`]: '# Houston\n\nFixture file for the P5 Wave B harness.\n',
+  [`${FIXTURE_DIR_ROOT}/README.md`]: '# Houston\n\nFixture file for the P5 Wave B harness with a deliberately long line that demonstrates the Files editor word wrap control in both chrome themes.\n',
   [`${FIXTURE_DIR_ROOT}/src/index.ts`]: "export const fixture = 'p5-harness'\n"
 }
 
@@ -95,6 +97,8 @@ window.houston = {
   readFile: (path: string) =>
     path in FIXTURE_FILES
       ? Promise.resolve(FIXTURE_FILES[path])
+      : path === `${FIXTURE_DIR_ROOT}/large.ts`
+        ? Promise.reject(new Error(`file too large to edit: ${path} is 3000000 bytes (max 2097152)`))
       : Promise.reject(new Error(`p5-harness readFile: no fixture content for ${JSON.stringify(path)}`)),
   writeFile: () => Promise.resolve(),
   statFile: () => Promise.resolve({ mtimeMs: FROZEN_NOW }),
@@ -559,6 +563,7 @@ type Surface =
   | 'sidebar'
   | 'session-pane'
   | 'layout'
+  | 'files'
 
 type Assert = {
   sel: string
@@ -1078,6 +1083,32 @@ const CASES: Case[] = [
     assert: [{ sel: '[data-testid="pane-sub"], .pane-sub', prop: 'display', is: 'none' }]
   },
 
+  {
+    id: 'files-menu',
+    w: 980,
+    h: 620,
+    surface: 'files',
+    prep: [
+      { role: '[role="treeitem"]', name: 'README.md' },
+      { role: '[role="treeitem"]', name: 'README.md', contextMenu: true }
+    ]
+  },
+  {
+    id: 'files-wrap',
+    w: 980,
+    h: 620,
+    surface: 'files',
+    localStorageSeed: { 'tr-files-word-wrap': 'true' },
+    prep: [{ role: '[role="treeitem"]', name: 'README.md' }]
+  },
+  {
+    id: 'files-oversized',
+    w: 980,
+    h: 620,
+    surface: 'files',
+    prep: [{ role: '[role="treeitem"]', name: 'large.ts' }]
+  },
+
 ]
 
 declare global {
@@ -1104,6 +1135,20 @@ function Surface({
   appShell?: Case['appShell']
 }): React.JSX.Element {
   switch (surface) {
+    case 'files':
+      return (
+        <div data-theme={document.documentElement.dataset.theme ?? 'graphite'} className="side-card h-full w-full flex" style={{ background: 'var(--content-bg)' }}>
+          <FilesPane
+            panel
+            node={{ kind: 'files', id: 'files-proposed', root: FIXTURE_DIR_ROOT }}
+            workspaceDir={FIXTURE_DIR_ROOT}
+            onClose={() => {}}
+            onHeaderPointerDown={() => {}}
+            onSendToTerminal={() => {}}
+            sendToTerminalLabel="auth-refactor"
+          />
+        </div>
+      )
     case 'modal':
       if (!modal) throw new Error(`Surface: surface 'modal' needs a \`modal\` kind, got ${JSON.stringify(modal)}`)
       return <ModalHost kind={modal} closing={!!closing} />

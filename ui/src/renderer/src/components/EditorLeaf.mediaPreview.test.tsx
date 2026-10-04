@@ -121,7 +121,7 @@ describe('EditorLeaf media/binary preview (Phase 6 item 4 batches 1 and 3a)', ()
     await mount('/ws/big.txt')
     const block = preview('editor-preview-too-large')
     expect(block).not.toBeNull()
-    expect(block?.textContent).toContain('2.9 MB (max 2 MB)')
+    expect(block?.textContent).toContain('File size 2.9 MB exceeds the 2 MB edit limit.')
   })
 
   it('routes a UTF-8 decode refusal to the "Unsupported encoding" error state', async () => {

@@ -1,11 +1,12 @@
 import type { EditorPreviewState } from '../editor/previewState'
-import { formatMB, formatMBWhole } from '../editor/previewState'
+import { formatLargeFileNotice } from '../editor/previewState'
 import {
   EPREVIEW_DETAIL_CLS,
   EPREVIEW_NAME_CLS,
   EPREVIEW_TITLE_CLS,
   EPREVIEW_WRAP_CLS
 } from '../editor/editorChrome'
+import { Notice } from './ui'
 
 export function EditorPreviewBlock({
   state,
@@ -31,9 +32,9 @@ export function EditorPreviewBlock({
         <div className={EPREVIEW_WRAP_CLS} data-testid={testId ?? 'editor-preview-too-large'}>
           <span className={EPREVIEW_TITLE_CLS}>{state.title}</span>
           {name && <span className={EPREVIEW_NAME_CLS}>{name}</span>}
-          <span className={EPREVIEW_DETAIL_CLS}>
-            {formatMB(state.sizeBytes)} (max {formatMBWhole(state.maxBytes)})
-          </span>
+          <Notice tone="info" className="w-full">
+            {formatLargeFileNotice(state.sizeBytes, state.maxBytes, state.title.endsWith('edit') ? 'edit' : 'preview')}
+          </Notice>
           {action}
         </div>
       )

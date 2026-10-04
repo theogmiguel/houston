@@ -55,8 +55,8 @@
       "over": 1
     },
     "src/renderer/src/components/FilesPane.tsx": {
-      "total": 257,
-      "worst": 24,
+      "total": 247,
+      "worst": 23,
       "over": 1
     },
     "src/renderer/src/components/IconTile.tsx": {
