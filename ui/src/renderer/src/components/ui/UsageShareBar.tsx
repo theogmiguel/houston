@@ -1,4 +1,5 @@
 import { Tooltip } from '../Tooltip'
+import { UsageSectionHeading } from './UsageSectionHeading'
 
 const SEGMENT_COLORS = [
   'var(--text-faint)',
@@ -30,10 +31,7 @@ export function UsageShareBar({
   const total = usageShareTotal(segments)
   return (
     <section className="grid gap-[var(--space-2)]" data-testid={`usage-share-${heading.toLowerCase().replaceAll(' ', '-')}`}>
-      <div className="flex items-baseline gap-[var(--space-2)]">
-        <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{heading}</h2>
-        {aside && <span className="ml-auto text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{aside}</span>}
-      </div>
+      <UsageSectionHeading aside={aside}>{heading}</UsageSectionHeading>
       <div className="flex h-[8px] overflow-hidden rounded-full bg-[var(--card-hover)]" aria-label={`${heading} total ${total.toFixed(2)}`}>
         {segments.map((segment, index) => {
           const share = total > 0 ? segment.value / total : 0

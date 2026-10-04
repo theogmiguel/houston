@@ -92,7 +92,7 @@ export function UsageChart({
   const last = points[points.length - 1]
 
   return (
-    <div data-testid="usage-chart" className="grid min-w-0 grid-cols-[54px_minmax(0,1fr)] gap-y-[var(--space-1-5)]">
+    <div data-testid="usage-chart" className="grid min-w-0 grid-cols-[54px_minmax(0,1fr)]">
         <div
           className="relative row-start-1 text-right"
           style={{ height: VIEW_H }}
@@ -109,6 +109,7 @@ export function UsageChart({
           ))}
         </div>
 
+        <div className="relative col-start-2 row-start-1 min-w-0" style={{ height: VIEW_H }}>
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           width="100%"
@@ -116,7 +117,7 @@ export function UsageChart({
           preserveAspectRatio="none"
           role="img"
           aria-label={metric === 'cost' ? 'Daily cost by provider' : 'Daily processed tokens by provider'}
-          className="col-start-2 row-start-1 block min-w-0 w-full"
+          className="block min-w-0 w-full"
         >
           <defs>
             {series.map((s) => (
@@ -169,11 +170,12 @@ export function UsageChart({
             )
           })}
         </svg>
-      <div className="col-start-2 row-start-2 flex justify-between [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
+      <div className="absolute inset-x-[var(--space-1)] bottom-[var(--space-1)] flex justify-between [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
         <span>{first ? labelFor(first) : ''}</span>
         <span>{middle && middle !== first && middle !== last ? labelFor(middle) : ''}</span>
         <span>{last && last !== first ? labelFor(last) : ''}</span>
       </div>
+        </div>
     </div>
   )
 }

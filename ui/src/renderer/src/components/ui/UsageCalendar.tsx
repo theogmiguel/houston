@@ -72,7 +72,7 @@ export function UsageCalendar({
             <div className="relative h-[var(--h-ctl-mini)] text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">
               {monthLabels.map((month) => <span key={month.index} className="absolute" style={{ left: `${(Math.floor(month.index / 7) / 53) * 100}%` }}>{month.label}</span>)}
             </div>
-            <div className="grid grid-flow-col grid-rows-7 auto-cols-[minmax(8px,1fr)] gap-[3px]" role="group" aria-label="Usage activity by day">
+            <div className="grid grid-flow-col grid-rows-7 auto-cols-[minmax(8px,1fr)] gap-[var(--space-1)]" role="group" aria-label="Usage activity by day">
               {cells.map((day, index) => day === null
                 ? <span key={`empty-${index}`} />
                 : <Tooltip key={day.key} label={`${day.key} · ${metric === 'cost' ? `$${day.amount.toFixed(2)}` : `${day.amount.toLocaleString('en-US')} tokens`}`}>
@@ -83,7 +83,7 @@ export function UsageCalendar({
                       data-level={levelFor(day.amount, max)}
                       data-testid="usage-calendar-day"
                       onClick={() => onSelect(day.key)}
-                      className={`h-[var(--space-2-5)] w-[var(--space-2-5)] rounded-[var(--tr-radius-input)] border border-[var(--divider)] ${LEVELS[levelFor(day.amount, max)]} ${selectedDay === day.key ? 'outline outline-1 outline-[var(--text-primary)]' : ''}`}
+                      className={`aspect-square min-w-[var(--space-3)] rounded-[var(--tr-radius-input)] border border-[var(--divider)] ${LEVELS[levelFor(day.amount, max)]} ${selectedDay === day.key ? 'outline outline-1 outline-[var(--text-primary)]' : ''}`}
                     />
                   </Tooltip>)}
             </div>

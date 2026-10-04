@@ -28,7 +28,7 @@ import {
 import { ICON_ROLE_CLS, Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { Select } from './Select'
-import { Button, Table, UsageCalendar, UsageShareBar } from './ui'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar } from './ui'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
 export type UsageSummaryMsg = Extract<ServerMsg, { type: 'usage_summary' }>
@@ -103,39 +103,16 @@ function UsageHero({
         <div className="mt-[var(--space-3)] flex flex-col gap-[var(--space-3)]">
           {providers.map((p) => {
             const Icon = PROVIDER_ICON[p.provider]
-            const share = metric === 'cost' ? p.costShare : p.tokenShare
             return (
-              <div key={p.provider} data-testid={`usage-provider-${p.provider}`} className="min-w-0">
-                <div className="flex items-baseline gap-[var(--space-2)]">
-                  <span
-                    className="shrink-0 translate-y-[2px]"
-                    style={{ color: PROVIDER_COLOR[p.provider] }}
-                  >
-                    <Icon className={ICON_ROLE_CLS.body} />
-                  </span>
-                  <span className="truncate text-[length:var(--tr-text-md)] text-[var(--text-primary)]">
-                    {p.label}
-                  </span>
-                  <span className="text-[length:var(--tr-text-small-size)] text-[var(--text-faint)]">{p.sessions} sessions</span>
-                  <span className="ml-auto shrink-0 tabular-nums text-[length:var(--tr-text-md)] font-medium text-[var(--text-primary)]">
-                    {metric === 'cost' ? formatUsd(p.cost) : formatTokens(p.tokens)}
-                  </span>
-                </div>
-                <div className="mt-[var(--space-2)] h-[3px] w-full overflow-hidden rounded-full bg-[var(--card-hover)]">
-                  <span
-                    className="block h-full rounded-full"
-                    style={{
-                      width: `${Math.max(share * 100, share > 0 ? 1.5 : 0)}%`,
-                      background: PROVIDER_COLOR[p.provider]
-                    }}
-                  />
-                </div>
-                <div className="mt-[var(--space-2)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
-                  {metric === 'cost'
-                    ? `${formatShare(p.costShare)} of cost · ${formatTokens(p.tokens)} tokens`
-                    : `${formatShare(p.tokenShare)} of tokens · ${formatUsd(p.cost)}`}
-                </div>
-              </div>
+              <UsageProviderRow
+                key={p.provider}
+                mark={<Icon className={ICON_ROLE_CLS.body} />}
+                label={p.label}
+                sessions={p.sessions}
+                amount={metric === 'cost' ? formatUsd(p.cost) : formatTokens(p.tokens)}
+                note={metric === 'cost' ? `${formatShare(p.costShare)} of cost · ${formatTokens(p.tokens)} tokens` : `${formatShare(p.tokenShare)} of tokens · ${formatUsd(p.cost)}`}
+                color={PROVIDER_COLOR[p.provider]}
+              />
             )
           })}
         </div>
@@ -240,9 +217,7 @@ function UsageBreakdown({
   return (
     <>
       <div className="mt-[var(--space-5)] flex items-center justify-between gap-[var(--space-3)]">
-        <div className="text-[length:var(--tr-text-lg)] font-semibold tracking-[-0.006em] text-[var(--text-primary)]">
-          Breakdown
-        </div>
+        <UsageSectionHeading>Breakdown</UsageSectionHeading>
         <Segmented
           aria-label="Breakdown grouping"
           options={[
@@ -265,7 +240,9 @@ function UsageBreakdown({
             { key: 'rank', header: '#', width: '28px', tone: 'faint' },
             { key: 'id', header: mode === 'model' ? 'Model' : 'Day', render: (id, row) => {
               const Mark = row.provider ? PROVIDER_ICON[row.provider] : null
-              return <span className="flex min-w-0 items-center gap-[var(--space-2)]">{Mark && <span className="shrink-0" style={{ color: PROVIDER_COLOR[row.provider!] }}><Mark className={ICON_ROLE_CLS.ui} /></span>}<span className="min-w-0 truncate font-mono text-[var(--text-primary)]">{id}</span>{mode === 'model' && <span aria-hidden="true" className="h-[2px] w-[220px] max-w-full shrink-0 bg-[var(--card-hover)]"><span className="block h-full" style={{ width: `${Math.max(0, Math.min(row.share, 1)) * 100}%`, background: row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)' }} /></span>}</span>
+              return mode === 'model'
+                ? <UsageModelCell mark={Mark ? <Mark className={ICON_ROLE_CLS.ui} /> : null} name={String(id)} share={row.share} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} />
+                : <span>{id}</span>
             } },
             { key: 'cost', header: 'Cost', numeric: true, render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span className="text-[var(--text-faint)]">not priced</span></Tooltip> : formatUsd(Number(cost)) },
             { key: 'share', header: 'Share', numeric: true, tone: 'muted', render: (share) => formatShare(Number(share)) },
@@ -289,6 +266,13 @@ function usageRangeLabel(
       : 'Reading transcripts…'
   }
   return formatRange(summary.since_ms, summary.until_ms, timeZone)
+}
+
+function activitySummary(metric: 'cost' | 'tokens', activity: UsageActivityDay[]): string {
+  const total = metric === 'cost'
+    ? `$${Math.round(activity.reduce((sum, day) => sum + day.cost_usd, 0)).toLocaleString('en-US')}`
+    : formatTokens(activity.reduce((sum, day) => sum + day.totals.uncached_input_tokens + day.totals.cached_input_tokens + day.totals.cache_creation_tokens + day.totals.output_tokens, 0))
+  return `${total} in the last year`
 }
 
 export function UsageSection({
@@ -460,14 +444,13 @@ export function UsageSection({
 
         {}
         <section className="mt-[var(--space-6)] grid gap-0" data-testid="usage-totals">
-          <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">Totals</h2>
+          <UsageSectionHeading>Totals</UsageSectionHeading>
           <UsageTokenStrip totals={totals} />
         </section>
 
         <section className="mt-[var(--space-2)] grid gap-[var(--space-2)]" data-testid="usage-calendar-section">
           <div className="flex items-center justify-between gap-[var(--space-3)]">
-            <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{metric === 'cost' ? `$${Math.round(activity.reduce((sum, day) => sum + day.cost_usd, 0)).toLocaleString('en-US')}` : formatTokens(activity.reduce((sum, day) => sum + day.totals.uncached_input_tokens + day.totals.cached_input_tokens + day.totals.cache_creation_tokens + day.totals.output_tokens, 0))} in the last year</h2>
-            <span className="text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">Follows Cost | Tokens</span>
+            <UsageSectionHeading aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
           </div>
           <UsageCalendar days={activity} metric={metric} selectedDay={selectedDay} caption="Houston keeps one total per day, so days older than the transcripts still count. Click a day to see its breakdown." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
         </section>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import {
   BarSparkline,
+  ActionMenu,
   Button,
   Card,
   Caption as UiCaption,
@@ -34,6 +35,9 @@ import {
   Tooltip,
   UsageCalendar,
   UsageChart,
+  UsageModelCell,
+  UsageProviderRow,
+  UsageSectionHeading,
   UsageShareBar
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
@@ -182,7 +186,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
             running={false}
             pending={false}
             atLimit={{ running: 3, limit: 3 }}
-            waitingForSlot
             onRunNow={noop}
             onToggleEnabled={noop}
             onEdit={noop}
@@ -250,12 +253,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             getRowId={(row) => row.model}
             columns={[
               { key: 'rank', header: '#', tone: 'faint', width: 'var(--space-5)' },
-              { key: 'model', header: 'Model', render: (value, row) => (
-                <span className="grid gap-[var(--space-1)]">
-                  <span>{value}</span>
-                  <span aria-hidden="true" className="h-0.5 rounded-full bg-[var(--text-primary)]" style={{ width: `${row.bar}%`, maxWidth: 220 }} />
-                </span>
-              ) },
+              { key: 'model', header: 'Model', render: (value, row) => <UsageModelCell mark="◎" name={String(value)} share={row.bar / 100} color="var(--text-primary)" /> },
               { key: 'cost', header: 'Cost', numeric: true, width: '100px' },
               { key: 'share', header: 'Share', numeric: true, tone: 'muted', width: '64px' },
               { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '64px' }
@@ -264,6 +262,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Usage chart, calendar and shares">
+          <UsageSectionHeading aside="Premium $121.40">Cost by speed</UsageSectionHeading>
+          <UsageProviderRow mark="✳" label="Claude Code" sessions={172} amount="$2,071.40" note="83.3% of cost · 4.1B tokens" color="var(--claude)" />
           <div style={{ maxWidth: 900 }}><UsageChart metric="cost" points={[
             { startMs: 0, key: 'Mon', byProvider: { claude: { cost: 120, tokens: 0 }, codex: { cost: 45, tokens: 0 } } },
             { startMs: 1, key: 'Tue', byProvider: { claude: { cost: 180, tokens: 0 }, codex: { cost: 90, tokens: 0 } } },
@@ -272,6 +272,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           ]} series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--accent)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} labelFor={(point) => point.key} /></div>
           <UsageCalendar days={[]} metric="cost" selectedDay={null} onSelect={noop} />
           <UsageShareBar heading="Cost by type" segments={[{ id: 'input', label: 'Input', value: 58 }, { id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'output', label: 'Output', value: 18 }]} />
+          <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: noop }, { label: 'Delete', onSelect: noop, tone: 'danger' }]} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="ListDetail — Routines">
