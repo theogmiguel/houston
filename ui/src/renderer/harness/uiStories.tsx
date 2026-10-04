@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
 import {
+  BarSparkline,
   Button,
   Card,
+  Caption as UiCaption,
   Chip,
   Count,
   Drawer,
@@ -84,6 +86,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="primary" icon={IconPlus}>Primary</Button>
             <Button variant="secondary">Secondary</Button>
             <Button variant="ghost">Ghost</Button>
+            <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
@@ -110,12 +113,27 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Card.Row heading="Default card" meta="Heading and supporting detail" status={<StatusLabel status="Working" />} action={<Button size="sm">Open</Button>} />
             <Card.Row heading="Second row" meta="Rows keep their shared structure" />
           </Card>
+          <Card>
+            <Card.Row rail="new" heading="New review group" meta="Amber rule" />
+            <Card.Row rail="still" heading="Still there group" meta="Stop rule" />
+            <Card.Row rail="gone" heading="Gone review group" meta="Ok rule" />
+            <Card.Row compact rail="new" heading="Compact history row" meta="One line for recent history" />
+          </Card>
+          <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="BarSparkline">
+          <SpecimenRow><BarSparkline values={[41, 33, 25, 18]} label="Repeated mistakes per 100 sessions: 41 to 18" /><Caption>Trend across reviews</Caption></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Caption">
+          <UiCaption>Supporting text and coverage details.</UiCaption>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Count">
           <SpecimenRow><span>Tasks<Count value={12} /></span><span>Zero omitted<Count value={0} /></span><span>Zero shown<Count value={0} showZero /></span></SpecimenRow>
-          <SpecimenRow><span>Primary ink<Count value={4} from="primary" /></span><span>Secondary ink<Count value={4} from="secondary" /></span></SpecimenRow>
+          <SpecimenRow><span>Primary ink<Count value={4} from="primary" /></span><span>Secondary ink<Count value={4} from="secondary" /></span><span>Attention<Count value={4} from="accent" /></span></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="StatusLabel">
@@ -233,6 +251,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Notice — Harness provider coverage">
           <Notice tone="info">Not read: 4 OpenCode sessions in this window.</Notice>
+          <Notice tone="info" indicator="dot" action={{ label: 'Dismiss', onClick: noop }}>Review #13 found one new thing to fix and confirmed one fix worked.</Notice>
           <Notice tone="danger" action={{ label: 'Open settings', onClick: noop }}>Limits are unavailable until a quota reader is configured.</Notice>
         </SpecimenGroup>
 

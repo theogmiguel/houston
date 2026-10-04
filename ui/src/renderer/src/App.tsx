@@ -107,6 +107,7 @@ import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
 import { HarnessView, useHarnessActions } from "./components/nav/HarnessView";
+import { useHarnessSignals } from "./houston/useHarnessSignals";
 import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes";
 import { engineLabel } from "./components/engineLabel";
 import { LayoutView } from "./components/LayoutView";
@@ -569,6 +570,10 @@ export function App(): React.JSX.Element {
   const [tags, setTags] = useState<TagInfo[]>([]);
   const appNotices = useNotices();
   const [selectedWs, setSelectedWs] = useState("all");
+  const harnessOverview = useHarnessSignals(conn.kind === "ready" ? conn.client : null);
+  const harnessAttention = selectedWs === "all"
+    ? harnessOverview.reduce((total, row) => total + row.attention, 0)
+    : harnessOverview.find((row) => row.workspace === selectedWs)?.attention ?? 0;
   const {
     activeId,
     setActiveId,
@@ -3228,6 +3233,7 @@ export function App(): React.JSX.Element {
                 setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite")
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
+              harnessAttention={harnessAttention}
               onRemoveWorkspace={removeWorkspace}
               onOpenExternalError={pushError}
               onRenameStart={(path) => {
@@ -3715,14 +3721,9 @@ export function App(): React.JSX.Element {
                       }))}
                       selectedWorkspace={selectedWs}
                       routinesRunning={routinesRunning}
-                      liveSessions={sessions}
-                      onOpenSession={(sessionId) => {
-                        setRailView(null);
-                        focusPane(sessionId);
-                      }}
                       onOpenFile={harness.openFile}
                       onReveal={harness.reveal}
-                      onPrepareFix={harness.spawnFix}
+                      attentionRows={harnessOverview}
                     />
                   ) : (
                   <Suspense fallback={<div className="flex-1" />}>

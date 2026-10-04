@@ -23,6 +23,9 @@ function fakeClient() {
     harnessRoutineCreate: vi.fn(),
     harnessReport: vi.fn(),
     harnessDecide: vi.fn(),
+    harnessFixTask: vi.fn(),
+    harnessSeen: vi.fn(),
+    harnessOverviewGet: vi.fn(),
     routineRunNow: vi.fn(),
     routineUpdate: vi.fn()
   }
@@ -55,11 +58,9 @@ describe('HarnessView', () => {
           workspaces={[{ id: WS, name: 'proj' }]}
           selectedWorkspace={selectedWorkspace}
           routinesRunning={[]}
-          liveSessions={new Set<number>()}
-          onOpenSession={vi.fn()}
+          attentionRows={[]}
           onOpenFile={vi.fn()}
           onReveal={vi.fn()}
-          onPrepareFix={vi.fn()}
         />
       )
     )
@@ -79,7 +80,7 @@ describe('HarnessView', () => {
     const { client, asClient } = fakeClient()
     render(asClient, 'all')
     expect(client.harnessState).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Choose the workspace')
+    expect(container.textContent).toContain('Choose a workspace to see its Harness reviews')
   })
 
   it('the first review routine is created for the reviewed workspace', () => {
@@ -168,12 +169,7 @@ describe('HarnessView', () => {
       ],
       provider_coverage: []
     })
-    act(() => container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')!.click())
-    act(() =>
-      Array.from(container.querySelectorAll('button'))
-        .find((b) => b.textContent === 'Dismiss')!
-        .click()
-    )
+    act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Dismiss')!.click())
     expect(client.harnessDecide).toHaveBeenCalledWith(WS, 'denied-push', 'dismissed')
   })
 
@@ -181,6 +177,40 @@ describe('HarnessView', () => {
     const { emit, asClient } = fakeClient()
     render(asClient)
     emit({ type: 'routine_refused', id: null, kind: 'limit', limit: 4096, requested: 4097 })
-    expect(container.querySelector('[data-testid="harness-error"]')?.textContent).toContain('4096')
+    expect(container.textContent).toContain('4096')
+  })
+
+  it('creates a Harness fix task with the finding workspace and apply prompt', () => {
+    const { client, emit, asClient } = fakeClient()
+    render(asClient)
+    emit({
+      type: 'harness_state',
+      models: [],
+      workspace: WS,
+      routine: { id: 7, name: 'Harness', prompt: 'p', cadence: { type: 'interval', seconds: 60 }, enabled: false, engine: 'claude', next_run_at_ms: 0, permission_mode: 'accept_edits', isolate: false, revision: 'r' },
+      reviews: [],
+      findings: [{
+        review_id: 1, key: 'HOU-12', title: 'Repeated mistake', category: '', confidence: '', sessions: [], count: 2, quotes: [], recommendation_kind: '', target: '', recommendation: '', apply_prompt: 'Fix this safely.', state: 'open', recurred: false, phase: 'open', last_seen_review_id: 1
+      }],
+      provider_coverage: []
+    })
+    act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Create task')!.click())
+    expect(client.harnessFixTask).toHaveBeenCalledWith(WS, 'HOU-12', 'claude', 'Fix this safely.')
+  })
+
+  it('dismisses a published-review notice through HarnessSeen', () => {
+    const { client, emit, asClient } = fakeClient()
+    render(asClient)
+    emit({
+      type: 'harness_state', workspace: WS, routine: null, reviews: [{ id: 2, workspace: WS, routine_id: 1, run_id: 2, status: 'published', started_at_ms: 1, run_dir: WS, finding_count: 1, sessions: 3 }], findings: [], models: [], provider_coverage: []
+    })
+    act(() => root.render(
+      <HarnessView client={asClient} workspaces={[{ id: WS, name: 'proj' }]} selectedWorkspace={WS} routinesRunning={[]} attentionRows={[{
+        workspace: WS, open: 1, fixing: 0, awaiting_verification: 0, not_seen: 0, resolved: 0, dismissed: 0, latest_published_review_id: 2, seen_review_id: 1, attention: 1
+      }]} onOpenFile={vi.fn()} onReveal={vi.fn()} />
+    ))
+    const notice = container.querySelector('[data-tone="info"] button') as HTMLButtonElement
+    act(() => notice.click())
+    expect(client.harnessSeen).toHaveBeenCalledWith(WS, 2)
   })
 })

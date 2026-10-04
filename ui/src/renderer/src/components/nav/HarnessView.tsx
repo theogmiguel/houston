@@ -3,7 +3,7 @@ import type { Conn } from '../../App'
 import { showItemInFolder } from '../../houston/bridge'
 import { setRailView } from '../../railView'
 import type { HoustonClient } from '../../houston/client'
-import type { AgentKind } from '../../houston/generated/AgentKind'
+import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import { useHarness } from '../../houston/useHarness'
 import { HarnessSurface } from './HarnessSurface'
 import { formatRoutineError } from './routineFormat'
@@ -15,22 +15,18 @@ export function HarnessView({
   workspaces,
   selectedWorkspace,
   routinesRunning,
-  liveSessions,
-  onOpenSession,
   onOpenFile,
   onReveal,
-  onPrepareFix
+  attentionRows
 }: {
   client: HoustonClient | null
   workspaces: { id: string; name: string }[]
   /** The app's selected workspace, or `all` when none is. */
   selectedWorkspace: string
   routinesRunning: number[]
-  liveSessions: { has(id: number): boolean }
-  onOpenSession: (sessionId: number) => void
   onOpenFile: (workspace: string, path: string) => void
   onReveal: (path: string) => void
-  onPrepareFix: (workspace: string, engine: AgentKind, prompt: string) => void
+  attentionRows: HarnessAttention[]
 }): React.JSX.Element {
   const [workspace, setWorkspace] = useState<string | null>(
     selectedWorkspace === 'all' ? null : selectedWorkspace
@@ -38,6 +34,10 @@ export function HarnessView({
   const [error, setError] = useState<string | null>(null)
   const { state, report, reportError, loadReport } = useHarness(client, workspace)
   const routineId = state?.routine?.id ?? null
+
+  useEffect(() => {
+    setWorkspace(selectedWorkspace === 'all' ? null : selectedWorkspace)
+  }, [selectedWorkspace])
 
   useEffect(() => {
     if (!client) return
@@ -67,33 +67,29 @@ export function HarnessView({
       report={report}
       reportError={reportError}
       running={routineId !== null && routinesRunning.includes(routineId)}
-      liveSessions={liveSessions}
       onCreateRoutine={(v) => {
         if (client && workspace) client.harnessRoutineCreate({ workspace, ...v })
       }}
-      onUpdateRoutine={({ id, expected_revision, ...patch }) =>
-        client?.routineUpdate(id, expected_revision, patch)
-      }
       onRunNow={(id) => client?.routineRunNow(id)}
       onDecide={(key, next) => {
         if (client && workspace) client.harnessDecide(workspace, key, next)
       }}
       onLoadReport={loadReport}
-      onOpenSession={onOpenSession}
       onOpenFile={(path) => {
         if (workspace) onOpenFile(workspace, path)
       }}
       onReveal={onReveal}
-      onPrepareFix={(engine, prompt) => {
-        if (workspace) onPrepareFix(workspace, engine, prompt)
+      attention={attentionRows.find((row) => row.workspace === workspace) ?? null}
+      onSeen={(seenWorkspace, reviewId) => client?.harnessSeen(seenWorkspace, reviewId)}
+      onCreateTask={(key, engine, prompt) => {
+        if (workspace) client?.harnessFixTask(workspace, key, engine, prompt)
       }}
     />
   )
 }
 
-/// What the Harness view asks of the rest of the app: open a file in an editor
-/// leaf, show one in the file manager, or open an agent pane with a prompt,
-/// each in the reviewed workspace, which it brings into view.
+/// What the Harness view asks of the rest of the app: open a report file or show
+/// it in the file manager, bringing the reviewed workspace into view.
 export function useHarnessActions({
   conn,
   showWorkspace,
@@ -108,7 +104,6 @@ export function useHarnessActions({
   client: HoustonClient | null
   openFile: (workspace: string, path: string) => void
   reveal: (path: string) => void
-  spawnFix: (workspace: string, engine: AgentKind, prompt: string) => void
 } {
   const client = conn.kind === 'ready' ? conn.client : null
   return {
@@ -129,14 +124,5 @@ export function useHarnessActions({
       },
       [pushError]
     ),
-    spawnFix: useCallback(
-      (workspace: string, engine: AgentKind, prompt: string) => {
-        if (!client) return
-        setRailView(null)
-        showWorkspace(workspace)
-        client.createSession({ agent: engine, project_dir: workspace, prompt })
-      },
-      [client, showWorkspace]
-    )
   }
 }

@@ -11,20 +11,34 @@ export interface CardProps {
   className?: string
 }
 
+export interface CardContentProps {
+  children: ReactNode
+}
+
 export interface CardRowProps {
   heading: ReactNode
   meta?: ReactNode
   status?: ReactNode
   action?: ReactNode
+  rail?: 'new' | 'still' | 'gone'
+  compact?: boolean
   className?: string
 }
 
-function CardRow({ heading, meta, status, action, className = '' }: CardRowProps): React.JSX.Element {
+const railClasses = variants('relative before:absolute before:inset-y-[var(--space-1)] before:left-0 before:w-[2px]', {
+  rail: {
+    new: 'before:bg-[var(--warn)]',
+    still: 'before:bg-[var(--stop)]',
+    gone: 'before:bg-[var(--ok)]'
+  }
+}, { rail: 'new' })
+
+function CardRow({ heading, meta, status, action, rail, compact = false, className = '' }: CardRowProps): React.JSX.Element {
   return (
-    <div className={`flex min-w-0 flex-wrap items-center gap-[var(--space-2)] px-[var(--space-3)] py-[var(--space-2)] [&+&]:border-t [&+&]:border-[var(--divider)] hover:bg-[var(--hover-fill)] ${className}`}>
-      <div className="grid min-w-0 flex-1 gap-[var(--space-1)]">
+    <div className={`flex min-w-0 flex-wrap items-center gap-[var(--space-2)] px-[var(--space-3)] ${compact ? 'py-[var(--space-1)]' : 'py-[var(--space-2)]'} [&+&]:border-t [&+&]:border-[var(--divider)] hover:bg-[var(--hover-fill)] ${rail ? railClasses({ rail }) : ''} ${rail ? 'pl-[var(--space-4)]' : ''} ${className}`}>
+      <div className={compact ? 'flex min-w-0 flex-1 flex-wrap items-baseline gap-x-[var(--space-2)]' : 'grid min-w-0 flex-1 gap-[var(--space-1)]'}>
         <div className="truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{heading}</div>
-        {meta && <div className="text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]">{meta}</div>}
+        {meta && <div className={`text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] ${compact ? 'whitespace-nowrap' : ''}`}>{meta}</div>}
       </div>
       {(status || action) && <div className="ml-auto flex flex-none flex-wrap items-center justify-end gap-[var(--space-1-5)]">{status}{action}</div>}
     </div>
@@ -35,4 +49,8 @@ function CardBase({ children, tone = 'default', className = '' }: CardProps): Re
   return <div className={`${cardClasses({ tone })} ${className}`}>{children}</div>
 }
 
-export const Card = Object.assign(CardBase, { Row: CardRow })
+function CardContent({ children }: CardContentProps): React.JSX.Element {
+  return <div className="grid gap-[var(--space-1)] px-[var(--space-2-5)] pb-[var(--space-2)]">{children}</div>
+}
+
+export const Card = Object.assign(CardBase, { Row: CardRow, Content: CardContent })

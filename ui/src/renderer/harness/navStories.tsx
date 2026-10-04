@@ -4,7 +4,11 @@ import { McpSurface } from '../src/components/nav/McpSurface'
 import { RoutinesSurface } from '../src/components/nav/RoutinesSurface'
 import { RoutineEditor } from '../src/components/nav/RoutineEditor'
 import { SkillsSurface } from '../src/components/nav/SkillsSurface'
+import { HarnessSurface } from '../src/components/nav/HarnessSurface'
 import type { AgentHookState } from '../src/houston/generated/AgentHookState'
+import type { HarnessFinding } from '../src/houston/generated/HarnessFinding'
+import type { HarnessReview } from '../src/houston/generated/HarnessReview'
+import type { HarnessState } from '../src/houston/useHarness'
 import type { McpServer } from '../src/houston/generated/McpServer'
 import type { McpToolState } from '../src/houston/generated/McpToolState'
 import type { Routine } from '../src/houston/routineTypes'
@@ -288,6 +292,154 @@ export function NavHooks(): React.JSX.Element {
         onSet={noop}
         onRefresh={noop}
       />
+    </Frame>
+  )
+}
+
+const HARNESS_WS = '/home/dev/code/auth-refactor'
+
+function harnessReview(id: number, sessions: number, findingCount: number, startedAt?: number): HarnessReview {
+  const started = startedAt ?? Date.UTC(2026, 9, 5, 12) - (13 - id) * 7 * 86_400_000
+  return {
+    id,
+    workspace: HARNESS_WS,
+    routine_id: 3,
+    run_id: 100 + id,
+    session_id: 500 + id,
+    status: 'published',
+    started_at_ms: started,
+    ended_at_ms: started + 900_000,
+    run_dir: `${HARNESS_WS}/.houston/harness/r${100 + id}`,
+    window: ['2026-09-01', '2026-09-28'],
+    sessions,
+    prompts: sessions * 8,
+    cost_usd: 1.2,
+    finding_count: findingCount,
+    summary: `${findingCount} findings`,
+    error: null
+  }
+}
+
+function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
+  return {
+    review_id: 13,
+    key: 'HOU-42',
+    title: 'Agents run bun test instead of bun run test',
+    category: 'verification',
+    confidence: 'high',
+    sessions: ['session-a'],
+    count: 11,
+    quotes: [],
+    recommendation_kind: 'tooling',
+    target: 'AGENTS.md',
+    recommendation: 'Use bun run test.',
+    apply_prompt: 'Update the command.',
+    state: 'open',
+    recurred: false,
+    phase: 'open',
+    task: null,
+    verification: null,
+    last_seen_review_id: 13,
+    ...overrides
+  }
+}
+
+export function HarnessPageStory(): React.JSX.Element {
+  const latest = harnessReview(13, 38, 7)
+  const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12)), harnessReview(11, 42, 13), harnessReview(10, 39, 16)]
+  const findings = [
+    harnessFinding({ key: 'HOU-47', title: 'Agents re-read the styleguide on every UI change', count: 9, target: 'AGENTS.md', review_id: 13 }),
+    harnessFinding({ key: 'HOU-42', count: 11, task: { task_id: 42, key: 'HOU-42', status: 'in_progress', landed_at_ms: null }, phase: 'fixing' }),
+    harnessFinding({
+      key: 'HOU-44',
+      title: 'Codex skips hooks until the first approval',
+      count: 6,
+      review_id: 12,
+      task: { task_id: 44, key: 'HOU-44', status: 'done', landed_at_ms: Date.UTC(2026, 9, 1) },
+      phase: 'awaiting_verification',
+      verification: { review_id: 12, verdict: 'inconclusive', sessions_after: 6, quotes: [] }
+    }),
+    harnessFinding({ key: 'HOU-51', title: 'Agents open the browser pane to read local docs', review_id: 12, count: 4, phase: 'not_seen', state: 'open', last_seen_review_id: 12 }),
+    harnessFinding({
+      key: 'HOU-41',
+      title: 'Pane titles get truncated',
+      review_id: 12,
+      phase: 'resolved',
+      state: 'resolved',
+      task: { task_id: 41, key: 'HOU-41', status: 'done', landed_at_ms: Date.UTC(2026, 8, 24) },
+      verification: { review_id: 13, verdict: 'gone', sessions_after: 0, quotes: [] }
+    }),
+    harnessFinding({ key: 'HOU-38', title: 'Old preference name remains in the guide', review_id: 10, phase: 'dismissed', state: 'dismissed' })
+  ]
+  const state: HarnessState = {
+    workspace: HARNESS_WS,
+    routine: {
+      id: 3,
+      name: 'Harness review · auth-refactor',
+      prompt: '[houston harness review]',
+      cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] },
+      enabled: true,
+      workspace_id: HARNESS_WS,
+      engine: 'claude',
+      model: null,
+      next_run_at_ms: Date.UTC(2026, 9, 5, 12),
+      permission_mode: 'accept_edits',
+      isolate: false,
+      revision: 'review-3'
+    },
+    reviews,
+    findings,
+    models: [],
+    providerCoverage: [{ agent: 'opencode', sessions: 4 }]
+  }
+
+  return (
+    <Frame>
+      <div style={{ display: 'flex', width: 'calc(100% - 16px)', height: 'calc(100% - 8px)', margin: '0 8px 8px', border: '1px solid var(--divider)', borderRadius: 10, overflow: 'hidden' }}>
+        <aside style={{ width: 140, flex: 'none', padding: 8, background: 'var(--rail-bg)', color: 'var(--text-secondary)' }}>
+          <div style={{ padding: 8, color: 'var(--text-faint)', fontSize: 11 }}>HOUSTON</div>
+          <div style={{ display: 'grid', gap: 2, marginBottom: 8 }}>
+            {['auth-refactor', 'migrate-db', 'shell'].map((item) => (
+              <div key={item} style={{ padding: '5px 8px', fontSize: 12 }}>{item}</div>
+            ))}
+          </div>
+          <div style={{ height: 1, background: 'var(--divider)', margin: '0 8px 8px' }} />
+          <div style={{ display: 'grid', gap: 2 }}>
+            {['Tasks　2', 'Routines', 'Skills', 'Harness　1', 'Connections', 'Usage'].map((item) => (
+              <div key={item} style={{ padding: '5px 8px', borderRadius: 6, background: item.startsWith('Harness') ? 'var(--hover-fill)' : 'transparent' }}>{item}</div>
+            ))}
+          </div>
+        </aside>
+        <HarnessSurface
+        workspaces={[{ id: HARNESS_WS, name: 'auth-refactor' }]}
+        workspace={HARNESS_WS}
+        onWorkspace={noop}
+        state={state}
+        report={null}
+        running={false}
+        error={null}
+        onCreateRoutine={noop}
+        onRunNow={noop}
+        onDecide={noop}
+        attention={{
+          workspace: HARNESS_WS,
+          open: 1,
+          fixing: 2,
+          awaiting_verification: 1,
+          not_seen: 1,
+          resolved: 1,
+          dismissed: 1,
+          latest_published_review_id: 13,
+          seen_review_id: 12,
+          attention: 4
+        }}
+        onSeen={noop}
+        onCreateTask={noop}
+        onLoadReport={noop}
+        onOpenFile={noop}
+        onReveal={noop}
+        />
+      </div>
     </Frame>
   )
 }
