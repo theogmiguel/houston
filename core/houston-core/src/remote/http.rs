@@ -4,7 +4,7 @@
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
@@ -19,10 +19,8 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::Engine;
 use serde::Deserialize;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 
@@ -35,6 +33,8 @@ use crate::daemon::Daemon;
 use crate::db::RemoteDeviceRow;
 
 const INDEX_HTML: &str = include_str!("pwa/index.html");
+const APP_JS: &str = include_str!("pwa/app.js");
+const APP_CSS: &str = include_str!("pwa/app.css");
 const MANIFEST: &str = include_str!("pwa/manifest.webmanifest");
 const ICON_SVG: &str = include_str!("pwa/icon.svg");
 
@@ -184,6 +184,8 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/", get(index))
         .route("/manifest.webmanifest", get(manifest))
         .route("/icon.svg", get(icon))
+        .route("/app.js", get(app_js))
+        .route("/app.css", get(app_css))
         .route("/api/pair", post(pair))
         .route("/api/me", get(me))
         .route("/api/sessions", get(sessions))
@@ -295,23 +297,10 @@ async fn guard(State(daemon): State<Arc<Daemon>>, req: Request, next: Next) -> R
     resp
 }
 
-/// The inline script's hash, so the policy can refuse every other script.
-fn content_security_policy() -> &'static str {
-    static CSP: OnceLock<String> = OnceLock::new();
-    CSP.get_or_init(|| {
-        let script = INDEX_HTML
-            .split_once("<script>")
-            .and_then(|(_, rest)| rest.split_once("</script>"))
-            .map(|(body, _)| body)
-            .unwrap_or("");
-        let hash = base64::engine::general_purpose::STANDARD.encode(Sha256::digest(script));
-        format!(
-            "default-src 'none'; script-src 'sha256-{hash}'; style-src 'unsafe-inline'; \
-             img-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; \
-             form-action 'none'; frame-ancestors 'none'"
-        )
-    })
-}
+/// Scripts and styles only from this listener's own files: no inline code runs.
+const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
+     img-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; \
+     form-action 'none'; frame-ancestors 'none'";
 
 async fn index() -> Response {
     let mut resp = (
@@ -319,11 +308,23 @@ async fn index() -> Response {
         INDEX_HTML,
     )
         .into_response();
-    if let Ok(v) = HeaderValue::from_str(content_security_policy()) {
-        resp.headers_mut()
-            .insert(header::CONTENT_SECURITY_POLICY, v);
-    }
+    resp.headers_mut().insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+    );
     resp
+}
+
+async fn app_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        APP_JS,
+    )
+        .into_response()
+}
+
+async fn app_css() -> Response {
+    ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], APP_CSS).into_response()
 }
 
 async fn manifest() -> Response {
@@ -705,8 +706,12 @@ mod tests {
     }
 
     #[test]
-    fn the_policy_hashes_the_inline_script() {
-        assert!(content_security_policy().contains("script-src 'sha256-"));
-        assert!(INDEX_HTML.matches("<script>").count() == 1);
+    fn the_page_carries_no_inline_script_or_style() {
+        assert!(!INDEX_HTML.contains("<script>"), "scripts load from app.js");
+        assert!(!INDEX_HTML.contains("<style") && !INDEX_HTML.contains("style=\""));
+        assert!(
+            !APP_JS.contains("innerHTML"),
+            "the client builds nodes, never markup"
+        );
     }
 }

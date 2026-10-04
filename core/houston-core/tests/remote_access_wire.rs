@@ -263,8 +263,22 @@ async fn the_web_client_is_served_with_a_strict_policy() {
     assert_eq!(reply.status, 200);
     assert!(reply.body.contains("Pair this device"));
     let headers = reply.headers.to_ascii_lowercase();
-    assert!(headers.contains("content-security-policy: default-src 'none'; script-src 'sha256-"));
+    assert!(headers.contains(
+        "content-security-policy: default-src 'none'; script-src 'self'; style-src 'self';"
+    ));
     assert!(headers.contains("x-frame-options: deny"));
+    for (path, kind) in [("/app.js", "text/javascript"), ("/app.css", "text/css")] {
+        let asset = request(addr, "GET", path, &[], None).await;
+        assert_eq!(asset.status, 200, "{path}");
+        assert!(
+            asset
+                .headers
+                .to_ascii_lowercase()
+                .contains(&format!("content-type: {kind}")),
+            "{path}: {}",
+            asset.headers
+        );
+    }
     let manifest = request(addr, "GET", "/manifest.webmanifest", &[], None).await;
     assert_eq!(manifest.status, 200);
     assert_eq!(manifest.json()["display"], "standalone");
