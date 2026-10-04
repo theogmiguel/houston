@@ -1,12 +1,15 @@
-import React from 'react'
+import React, { useState } from 'react'
 import {
   Button,
   Card,
   Chip,
   Count,
+  Drawer,
   EmptyState,
   Field,
   IconTile,
+  ListDetail,
+  Notice,
   PageFrame,
   PageHeader,
   PaneHeaderButton,
@@ -15,11 +18,26 @@ import {
   Segmented,
   STATUS_LABELS,
   StatusLabel,
+  Table,
   Tooltip
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
 
 const noop = (): void => {}
+
+const breakdownRows = [
+  { rank: 1, model: 'claude-opus-5-5', cost: '$1,812.30', share: '72.9%', tokens: '2.9B', bar: 72.9 },
+  { rank: 2, model: 'gpt-5.5-codex', cost: '$402.10', share: '16.2%', tokens: '498M', bar: 16.2 },
+  { rank: 3, model: 'claude-sonnet-5-5', cost: '$259.10', share: '10.4%', tokens: '1.2B', bar: 10.4 },
+  { rank: 4, model: 'gpt-5.5-codex-mini', cost: '$12.80', share: '0.5%', tokens: '14M', bar: 0.5 }
+]
+
+const routineItems = [
+  { id: 'harness', title: 'Harness review · houston', sub: 'Working' },
+  { id: 'nightly', title: 'Nightly dependency check', sub: 'Waiting for a slot' },
+  { id: 'weekly', title: 'Weekly changelog draft', sub: 'Idle · Fri 17:00' },
+  { id: 'flaky', title: 'Flaky test sweep', sub: 'Paused' }
+]
 const options = [
   { value: 'graphite', label: 'Graphite' },
   { value: 'paper', label: 'Paper' },
@@ -44,6 +62,8 @@ function Caption({ children }: { children: React.ReactNode }): React.JSX.Element
 }
 
 export function UiPrimitivesStory(): React.JSX.Element {
+  const [selectedRoutine, setSelectedRoutine] = useState<string | null>('nightly')
+  const [drawerOpen, setDrawerOpen] = useState(false)
   return (
     <div
       className="ui-primitives-specimen"
@@ -150,6 +170,70 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Segmented aria-label="Loading choice" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" loading />
           </SpecimenRow>
           <Segmented aria-label="Error choice" options={[]} error={{ message: 'Could not load options.', onRetry: noop }} />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Table — Usage breakdown">
+          <Table
+            aria-label="Usage breakdown by model"
+            rows={breakdownRows}
+            getRowId={(row) => row.model}
+            columns={[
+              { key: 'rank', header: '#', tone: 'faint', width: 'var(--space-5)' },
+              { key: 'model', header: 'Model', render: (value, row) => (
+                <span className="grid gap-[var(--space-1)]">
+                  <span>{value}</span>
+                  <span aria-hidden="true" className="h-0.5 rounded-full bg-[var(--text-primary)]" style={{ width: `${row.bar}%`, maxWidth: 220 }} />
+                </span>
+              ) },
+              { key: 'cost', header: 'Cost', numeric: true, width: '100px' },
+              { key: 'share', header: 'Share', numeric: true, tone: 'muted', width: '64px' },
+              { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '64px' }
+            ]}
+          />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="ListDetail — Routines">
+          <PageFrame width="wide" className="p-0">
+            <ListDetail
+              items={routineItems}
+              selectedId={selectedRoutine}
+              onSelect={setSelectedRoutine}
+              backLabel="Back to routines"
+              renderDetail={(item) => item && (
+                <div className="grid gap-[var(--space-3)]">
+                  <div className="flex flex-wrap items-center justify-between gap-[var(--space-2)]">
+                    <h3 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold">{item.title}</h3>
+                    <Button size="sm">Run now</Button>
+                  </div>
+                  <div className="grid gap-[var(--space-2)] sm:grid-cols-2">
+                    <div><Caption>Schedule</Caption><Segmented aria-label="Schedule" options={[{ value: 'manual', label: 'Manual' }, { value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }]} value="daily" /></div>
+                    <div><Caption>Runs on</Caption><Select aria-label="Runs on" value="claude" options={[{ value: 'claude', label: 'Claude Code' }]} onChange={noop} /></div>
+                  </div>
+                  <SectionHead title="Runs" count={30} />
+                  <Table variant="framed" aria-label="Routine run history" rows={[{ started: 'Today 02:00', result: 'Waiting for a slot', took: '—', cost: '—' }, { started: 'Yesterday 02:00', result: 'Done', took: '4m', cost: '$0.71' }, { started: 'Oct 1 02:00', result: 'Failed', took: '1m', cost: '$0.12' }]} getRowId={(row) => row.started} columns={[{ key: 'started', header: 'Started' }, { key: 'result', header: 'Result' }, { key: 'took', header: 'Took', numeric: true }, { key: 'cost', header: 'Cost', numeric: true }]} />
+                  <Notice tone="warn">3 of 3 running. Routines run 3 at a time (Settings › Routines).</Notice>
+                </div>
+              )}
+            />
+          </PageFrame>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Drawer — Tasks detail">
+          <SpecimenRow><Button variant="secondary" onClick={() => setDrawerOpen(true)}>Open task detail</Button></SpecimenRow>
+          <Drawer open={drawerOpen} heading="Block bun test in agent settings" onClose={() => setDrawerOpen(false)}>
+            <div className="grid gap-[var(--space-3)]">
+              <Caption>HOU-42 · houston</Caption>
+              <p className="m-0 text-[length:var(--tr-text-ui-size)] text-[var(--text-secondary)]">Idle · stopped 14m ago · Attempt 1 · Claude Code</p>
+              <SpecimenRow><Button>Start again</Button><Button variant="secondary">Review changes</Button></SpecimenRow>
+              <SectionHead title="Acceptance" count={2} />
+              <Card><Card.Row heading="bun test is denied in .claude/settings.json" /><Card.Row heading="AGENTS.md points to bun run test" /></Card>
+            </div>
+          </Drawer>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Notice — Harness provider coverage">
+          <Notice tone="info">Not read: 4 OpenCode sessions in this window.</Notice>
+          <Notice tone="danger" action={{ label: 'Open settings', onClick: noop }}>Limits are unavailable until a quota reader is configured.</Notice>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Tooltip">
