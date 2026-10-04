@@ -1784,7 +1784,10 @@ impl Daemon {
             return Ok(());
         };
         let Some(question) = self.db.intake_open_question(row.id)? else {
-            return self.slack_adjustment(&row, ts, author, text);
+            if self.slack_adjustable_run(&row)?.is_some() {
+                return self.slack_adjustment(&row, ts, author, text);
+            }
+            return self.slack_complement(&row, ts, author, text);
         };
         let from_owner = config.owner.as_deref() == Some(author);
         if author != row.author && !from_owner {
@@ -1853,6 +1856,91 @@ impl Daemon {
             .db
             .latest_implementation_run(task.id)?
             .filter(|run| run.state == proto::TaskRunState::HandedBack))
+    }
+
+    /// A requester's reply outside a question and before any result. Before
+    /// the work starts it joins the task's description, which the brief
+    /// carries; during the work it reaches the owner. Either way it gets 👀.
+    fn slack_complement(&self, row: &IntakeRow, ts: &str, author: &str, text: &str) -> Result<()> {
+        let text = text.trim();
+        if author != row.author || text.is_empty() {
+            return Ok(());
+        }
+        let Some(task) = row
+            .task_id
+            .map(|id| self.db.task(id))
+            .transpose()?
+            .flatten()
+        else {
+            return Ok(());
+        };
+        let key = format!("complement:{ts}");
+        if self.db.intake_outbox_has(&key)? {
+            return Ok(());
+        }
+        let now = now_unix_ms();
+        let text = for_slack(&row.workspace, text);
+        if row.state == INTAKE_PENDING || row.state == INTAKE_QUEUED {
+            let description = format!(
+                "{}\n\nAdded by the requester in the thread before the work started:\n{text}",
+                task.description.trim_end()
+            );
+            let saved = self.task_save(
+                task.workspace.as_deref().unwrap_or_default(),
+                Some(task.id),
+                Some(task.revision),
+                proto::TaskPatch {
+                    description: Some(description),
+                    ..Default::default()
+                },
+            )?;
+            match &saved {
+                proto::ServerMsg::TaskRefused { message, .. } => {
+                    tracing::warn!(
+                        "slack: a complement to request {} was not saved: {message}",
+                        row.id
+                    );
+                    return Ok(());
+                }
+                other => self.broadcast_control(other),
+            }
+        } else if row.state == INTAKE_STARTED {
+            let open = self
+                .db
+                .latest_implementation_run(task.id)?
+                .is_some_and(|run| run.ended_at_ms.is_none());
+            if !open {
+                return Ok(());
+            }
+            let t = self.slack_text();
+            let mut blocks = vec![
+                section(&t.mid_work(&self.slack_ident(row))),
+                section(&quote(&text)),
+                context(t.mid_work_hint()),
+            ];
+            if let Some(link) = &row.permalink {
+                blocks.push(json!({"type": "actions", "elements": [link_button(t.view_thread(), link, "thread")]}));
+            }
+            self.db.intake_outbox_push(
+                row.id,
+                &format!("dm-midwork:{ts}"),
+                &Outgoing::message(
+                    OutboxTarget::Dm,
+                    strip_mrkdwn(&t.mid_work(&strip_mrkdwn(&self.slack_ident(row)))),
+                    Some(Value::Array(blocks).to_string()),
+                ),
+                now,
+            )?;
+        } else {
+            return Ok(());
+        }
+        self.db.intake_outbox_push(
+            row.id,
+            &key,
+            &Outgoing::react(Some(ts), Some(R_SEEN), None),
+            now,
+        )?;
+        Ok(())
     }
 
     /// The requester's reply after a hand-back asks for an adjustment: 👀 on

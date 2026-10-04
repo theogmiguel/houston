@@ -126,7 +126,10 @@ five attempts, and the status line names it.
    refused at triage gets no second note. Houston watches no forge for a merge or a
    deploy of its own: the task's state is the signal.
 
-7. A reply from the requester in the thread after the hand-back, while the task is in
+7. A reply from the requester in the thread outside a question gets 👀. Before the work
+   starts it is added to the task's description, so the agent reads it; during the work it
+   reaches the owner as a direct message, since the agent does not read the thread.
+8. A reply from the requester in the thread after the hand-back, while the task is in
    review, may ask for an adjustment: it gets 👀 and the owner gets a direct message
    quoting it with **Accept** and **Ignore**. Accepting (the button, or the owner's ✅ on
    the reply) starts a new attempt on the same worktree with the reply in its brief, within

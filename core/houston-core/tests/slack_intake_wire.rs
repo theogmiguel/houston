@@ -1693,3 +1693,56 @@ async fn a_message_slack_refuses_goes_out_as_text_and_a_dropped_one_is_reported(
     }
     r.daemon.slack_disconnect();
 }
+
+#[tokio::test]
+async fn a_reply_before_the_work_joins_the_task_and_one_during_it_reaches_the_owner() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-complement").await;
+    let request = "1800000007.000100";
+    r.fake
+        .send_event("c1", mention(request, REQUESTER, "add a team column"));
+    let task_id = r.await_tasks(1).await[0].0;
+    let reply = |user: &str, text: &str, ts: &str| {
+        json!({"type": "message", "channel": CHANNEL, "user": user, "team": "T1", "ts": ts,
+            "thread_ts": request, "text": text})
+    };
+    r.fake.send_event(
+        "c2",
+        reply(REQUESTER, "e também por consultor", "1800000007.000200"),
+    );
+    r.fake
+        .send_event("c3", reply("USOMEONE", "and in red", "1800000007.000300"));
+    r.fake.await_reactions("1800000007.000200", &["eyes"]).await;
+    let description: String = r
+        .db()
+        .query_row(
+            "SELECT description FROM backlog_tasks WHERE id = ?1",
+            [task_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        description.contains("add a team column") && description.contains("e também por consultor"),
+        "the brief will carry the complement: {description:?}"
+    );
+    assert!(
+        !description.contains("and in red"),
+        "a bystander adds nothing"
+    );
+    assert!(r.fake.reactions_on("1800000007.000300").is_empty());
+
+    r.fake.send_event("c4", check_mark(request, OWNER));
+    let session = r.await_runs(1).await[0].1;
+    r.await_output(session, "e também por consultor").await;
+    r.fake.send_event(
+        "c5",
+        reply(REQUESTER, "a coluna pode ser a última", "1800000007.000400"),
+    );
+    r.fake.await_reactions("1800000007.000400", &["eyes"]).await;
+    let dm = r.fake.await_dm("Mensagem nova durante o trabalho").await;
+    assert!(
+        dm.to_string().contains("> a coluna pode ser a última"),
+        "{dm}"
+    );
+    r.finish();
+}

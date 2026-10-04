@@ -517,6 +517,21 @@ impl Text {
         }
     }
 
+    pub fn mid_work(self, ident: &str) -> String {
+        if self.pt() {
+            format!("*Mensagem nova durante o trabalho* em {ident}")
+        } else {
+            format!("*New message during the work* on {ident}")
+        }
+    }
+
+    pub fn mid_work_hint(self) -> &'static str {
+        self.pick(
+            "O agente não recebe esta mensagem. Se ela muda o pedido, passe para o pane no Houston.",
+            "The agent does not get this message. If it changes the request, pass it on in the Houston pane.",
+        )
+    }
+
     /// An adjustment the owner sets aside: a thank-you is the usual one.
     pub fn ignore(self) -> &'static str {
         self.pick("Ignorar", "Ignore")
