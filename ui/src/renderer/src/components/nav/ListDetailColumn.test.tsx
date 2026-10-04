@@ -43,7 +43,7 @@ function server(name: string): McpServer {
   }
 }
 
-describe('the ListDetail surfaces sit in a column wide enough to be two columns', () => {
+describe('wide surfaces have room for their main content', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -59,6 +59,7 @@ describe('the ListDetail surfaces sit in a column wide enough to be two columns'
   })
 
   async function settleCard(): Promise<void> {
+    await act(async () => { await import('../SkillsView') })
     for (let i = 0; i < 80; i++) {
       if (container.querySelector('[data-testid="list-detail"]')) return
       await act(async () => {
@@ -122,7 +123,14 @@ describe('the ListDetail surfaces sit in a column wide enough to be two columns'
         />
       )
     })
-    await settleCard()
-    expectBothColumnsAtTheWideRung()
+    await act(async () => { await import('../McpManager') })
+    for (let i = 0; i < 100 && !container.querySelector('[data-testid="table-frame"]'); i++) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)) })
+    }
+    const table = container.querySelector('[data-testid="table-frame"]')
+    expect(table).not.toBeNull()
+    expect(table!.className).toContain('overflow-x-auto')
+    expect(container.textContent).toContain('Claude Code')
+    expect(container.textContent).toContain('Cursor')
   })
 })
