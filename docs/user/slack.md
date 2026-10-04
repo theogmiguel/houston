@@ -153,6 +153,19 @@ threads that were waiting for one. A ✅ on an adjustment reply added while offl
 use **Accept** in the direct message. A channel mapped for the first time starts from the moment
 it is mapped.
 
+## Tell the channel
+
+Reactions do not explain themselves, and only the requester can act on some of them. Pin a
+message like this one in each mapped channel, in the connector's language:
+
+> **How to ask @houston for a change.** Mention @houston in a new message in this channel
+> with the screen and what you want changed; a screenshot helps. Progress shows as a
+> reaction on your message: 👀 received, waiting for the team's approval · ⚙️ in progress ·
+> ❓ a question for you in the thread · 🏁 ready, waiting for review (not live yet) · 🚀 live ·
+> 🚫 not going ahead · ⚠️ stopped; the team has been told. When asked something, pick an
+> option or reply in the thread: your next message there is the answer. After 🏁, reply in
+> the thread to ask for an adjustment. After 🚀, start a new request for another change.
+
 ## Limits
 
 - Request text: 8,192 bytes. A longer request, or a mention with no request in it, gets ⚠️
