@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type AppHarness,
   deliverHelloOk,
+  deliverControl,
   makeSession,
   makeWorkspace,
   renderReadyApp,
@@ -101,6 +102,18 @@ describe('the tray is fed by this window', () => {
         workspace: 'project'
       }
     ])
+  })
+
+  it('updates the tray payload after a pure status event without a replacement roster', async () => {
+    harness = await renderReadyApp({ sessions: [makeSession({ id: 1, status: 'working' })] })
+    await flushTray()
+    expect(lastPayload().sessions[0].status).toBe('running')
+    deliverControl({ type: 'agent_status', session: 1, status: 'needs-input' })
+    await flushTray()
+    expect(lastPayload().sessions[0]).toMatchObject({ status: 'needsInput', needsInput: true })
+    deliverControl({ type: 'agent_status', session: 1, status: 'idle' })
+    await flushTray()
+    expect(lastPayload().sessions[0]).toMatchObject({ status: 'idle', needsInput: false })
   })
 
   it("carries the rail label for the pane's workspace, not its raw path", async () => {

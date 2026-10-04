@@ -1,3 +1,4 @@
+import { useSessions } from '../sessionsStore'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SessionInfo } from '../houston/client'
 import { clampScmWidth, defaultScmWidth } from '../scmPanel'
@@ -118,7 +119,7 @@ export function SidePanel(props: SourceControlPanelProps & {
   </aside>
 }
 
-export function SidePanelIntegration({ selectedWorkspace, activeId, sessions, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: SourceControlPanelProps & {
+export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: sessionsProp, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: SourceControlPanelProps & {
   selectedWorkspace: string
   workspaces?: { path: string; name: string }[]
   expanded?: boolean
@@ -137,6 +138,7 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions, re
   onReviewChild: (child: SessionInfo) => void
   onTaskStartRequested?: (taskId: number, workspace: string) => void
 }): React.JSX.Element {
+  const sessions = useSessions(sessionsProp)
   const workspace = selectedWorkspace === 'all' ? sessions.get(activeId ?? -1)?.project_dir ?? 'all' : selectedWorkspace
   return <SidePanel {...props} key={workspace} workspace={workspace} sessions={sessions} request={request} activeSessionId={activeId} onFocusPane={onFocusPane} reviewTarget={reviewChild?.id} onReviewChild={onReviewChild}
     onFocusSide={() => onSurface('side')}

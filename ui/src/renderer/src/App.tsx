@@ -1,3 +1,4 @@
+import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
 import { registerOwned } from './pane/registration';
 import {
@@ -369,47 +370,6 @@ const REVIEW_INTENT_TTL_MS = 10_000;
 
 type SessionStateMessage = Extract<ServerMsg, { type: "session_state" }>;
 
-type GridLifecycle =
-  | "starting"
-  | "working"
-  | "needs-input"
-  | "idle"
-  | "unavailable"
-  | "stopped";
-
-function gridLifecycle(sessions: SessionInfo[]): {
-  state: GridLifecycle;
-  label: string;
-} {
-  const live = sessions.filter((session) => isLive(session.state));
-  if (live.length === 0) return { state: "stopped", label: "No live panes" };
-
-  const count = (status: SessionInfo["status"]): number =>
-    live.filter((session) => session.status === status).length;
-  const needsInput = live.filter((session) => session.status === "needs-input" || session.children_waiting > 0).length;
-  const working = count("working");
-  const starting = count("spawning");
-  const idle = count("idle");
-  const unavailable = count("unavailable") + count(null) + count(undefined);
-  const state: GridLifecycle = needsInput
-    ? "needs-input"
-    : working
-      ? "working"
-      : starting
-        ? "starting"
-        : unavailable
-          ? "unavailable"
-          : "idle";
-  const parts = [
-    needsInput ? `${needsInput} need input` : "",
-    working ? `${working} working` : "",
-    starting ? `${starting} starting` : "",
-    idle ? `${idle} ready` : "",
-    unavailable ? `${unavailable} status unavailable` : "",
-  ].filter(Boolean);
-  return { state, label: parts.join(" · ") };
-}
-
 type RosterPatchMsg = Extract<
   ServerMsg,
   {
@@ -542,6 +502,17 @@ function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, a
   return focusedPaneOwnsKey(event);
 }
 
+function SessionEffects({ connection, workspaces, onFocusPane }: {
+  connection: Parameters<typeof useTrayBridge>[0]["connection"];
+  workspaces: Workspace[];
+  onFocusPane: (id: number) => void;
+}): null {
+  const sessions = useSessions();
+  useOrchestrationNotifications(sessions);
+  useTrayBridge({ connection, sessions, workspaces, onFocusPane });
+  return null;
+}
+
 export function App(): React.JSX.Element {
   const [conn, setConn] = useState<Conn>({ kind: "connecting" });
   const dismissedUpdate = useDismissedUpdate();
@@ -591,7 +562,9 @@ export function App(): React.JSX.Element {
       window.removeEventListener("resize", onResize);
     };
   }, []);
-  const [sessions, setSessions] = useState<Map<number, SessionInfo>>(new Map());
+  const [sessionsStore] = useState(createSessionsStore);
+  const sessions = useLayoutSessions(sessionsStore);
+  const setSessions = sessionsStore.set;
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const appNotices = useNotices();
@@ -965,8 +938,7 @@ export function App(): React.JSX.Element {
   }, [lastWorkspace, selectWorkspaceFromKeyboard]);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-  const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
+  const sessionsRef = useMemo(() => ({ get current() { return sessionsStore.getSnapshot(); } }), [sessionsStore]);
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
   const savedLayoutsRef = useRef(layouts);
@@ -975,8 +947,6 @@ export function App(): React.JSX.Element {
   const voiceSettingsRef = useRef(voiceSettings);
   voiceSettingsRef.current = voiceSettings;
   const dictationTargetRef = useRef<number | null>(null);
-
-  useOrchestrationNotifications(sessions);
 
   const paneRoster = useMemo<PaneRoster>(() => ({
     sessions,
@@ -1001,13 +971,6 @@ export function App(): React.JSX.Element {
     setSelectedWs(target.project_dir);
     setActiveId(session);
   };
-
-  useTrayBridge({
-    connection: conn.kind,
-    sessions,
-    workspaces,
-    onFocusPane: focusPane,
-  });
 
   const [focusBrowserUrl, setFocusBrowserUrl] = useState(0);
   const [reviewSessions, setReviewSessions] = useState<
@@ -1199,10 +1162,9 @@ export function App(): React.JSX.Element {
             break;
           case "agent_status":
             setSessions((prev) => {
-              const next = new Map(prev);
-              const s = next.get(msg.session);
-              if (s) next.set(msg.session, { ...s, status: msg.status });
-              return next;
+              const s = prev.get(msg.session);
+              if (!s || s.status === msg.status) return prev;
+              return new Map(prev).set(msg.session, { ...s, status: msg.status });
             });
             break;
           case "session_context":
@@ -1568,8 +1530,6 @@ export function App(): React.JSX.Element {
         id: string;
         name: string;
         count?: number;
-        state?: GridLifecycle;
-        statusLabel?: string;
         sessionIds?: number[];
         tagIds?: number[];
         paneTagIds?: number[];
@@ -1581,10 +1541,6 @@ export function App(): React.JSX.Element {
         const tagIds = gridTagIds(g);
         if (!st) return { id: g.id, name: g.name, tagIds };
         const ids = preorderSessions(st.tree);
-        const gridSessions = ids
-          .map((id) => sessions.get(id))
-          .filter((session): session is SessionInfo => session !== undefined);
-        const lifecycle = gridLifecycle(gridSessions);
         const paneTagIds = [
           ...new Set(
             ids.flatMap((id) => sessions.get(id)?.tags ?? []),
@@ -1594,8 +1550,6 @@ export function App(): React.JSX.Element {
           id: g.id,
           name: g.name,
           count: ids.length,
-          state: lifecycle.state,
-          statusLabel: lifecycle.label,
           sessionIds: ids,
           tagIds,
           paneTagIds,
@@ -3221,6 +3175,8 @@ export function App(): React.JSX.Element {
   };
 
   return (
+    <SessionsStoreContext.Provider value={sessionsStore}>
+      <SessionEffects connection={conn.kind} workspaces={workspaces} onFocusPane={focusPane} />
     <TerminalTuningContext.Provider value={terminalTuning}>
       <KeymapOverridesContext.Provider value={keymapOverrides}>
       <TagsContext.Provider value={tags}>
@@ -4199,5 +4155,6 @@ export function App(): React.JSX.Element {
       </TagsContext.Provider>
       </KeymapOverridesContext.Provider>
     </TerminalTuningContext.Provider>
+    </SessionsStoreContext.Provider>
   );
 }

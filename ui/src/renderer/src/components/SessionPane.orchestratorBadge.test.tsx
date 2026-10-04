@@ -15,6 +15,8 @@ vi.mock('./RenameTitle', () => ({
   RenameTitle: ({ title }: { title: string }) => <span data-testid="pane-title-mock">{title}</span>
 }))
 
+import { createSessionsStore, SessionsStoreContext } from '../sessionsStore'
+
 import { OrchestratorBadge, SessionPane } from './SessionPane'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -224,4 +226,24 @@ describe('SessionPane orchestrator badge (v63)', () => {
     expect(badge.getAttribute('aria-label')).toContain('Max')
     expect(badge.getAttribute('aria-label')).toContain('1 waiting on you')
   })
+})
+
+it('updates an open delegation card from the live store with unchanged roster props', async () => {
+  const parent: SessionInfo = { id: 1, agent: 'claude', project_dir: '/tmp/project', cwd: '/tmp/project', state: 'running', title: 'parent', codename: 'parent', hidden: false, spawned_by: null, live_children: 1, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false }
+  const child: SessionInfo = { ...parent, id: 2, spawned_by: 1, codename: 'worker', title: 'worker', live_children: 0, delegation: { parent: 1, state: 'working', stalled: false, started_at: 1000, result_staged: false, superseded: 0, turn_end_source: 'stop-hook', inbox_owed: 0, inbox_provisional: 0, reusable: true } }
+  const sessions = new Map([[1, parent], [2, child]])
+  const store = createSessionsStore(sessions)
+  root = createRoot(container!)
+  act(() => root!.render(<SessionsStoreContext.Provider value={store}><OrchestratorBadge info={parent} roster={{ sessions, maxLiveChildren: null }} /></SessionsStoreContext.Provider>))
+  const badge = container!.querySelector<HTMLButtonElement>('[data-testid="orchestrator-badge"]')!
+  await act(async () => {
+    badge.click()
+    await import('./DelegationPanel')
+  })
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('working')
+  act(() => store.set((previous) => new Map(previous)
+    .set(1, { ...parent, children_waiting: 1 })
+    .set(2, { ...child, delegation: { ...child.delegation!, state: 'needs_input', stalled: true } })))
+  expect(badge.getAttribute('aria-label')).toContain('1 waiting on you')
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('needs input')
 })

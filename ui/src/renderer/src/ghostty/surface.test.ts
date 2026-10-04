@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { GhosttyCell, GhosttyRow } from './core'
 import { DEFAULT_TERMINAL_LINE_HEIGHT } from './renderer'
 import {
+  GhosttyTerminalSurface,
   DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE,
   MAX_TERMINAL_LINE_HEIGHT,
@@ -625,5 +626,25 @@ describe('terminal scrollbar', () => {
       terminalScrollbarOffsetAtPointer({ total: 100, offset: 0, len: 25 }, 200, 175, 25)
     ).toBe(75)
     expect(terminalScrollbarOffsetAtPointer({ total: 25, offset: 0, len: 25 }, 200, 100, 0)).toBe(0)
+  })
+})
+
+describe('surface fit scheduling', () => {
+  it('coalesces observer fits until the next animation frame', () => {
+    let frame: FrameRequestCallback | undefined
+    const raf = vi.fn((callback: FrameRequestCallback) => { frame = callback; return 1 })
+    vi.stubGlobal('window', { requestAnimationFrame: raf })
+    try {
+      const surface = Object.create(GhosttyTerminalSurface.prototype)
+      Object.assign(surface, { disposed: false, fitFrame: 0, fit: vi.fn() })
+      surface.requestFit()
+      surface.requestFit()
+      expect(raf).toHaveBeenCalledTimes(1)
+      expect(surface.fit).not.toHaveBeenCalled()
+      frame!(0)
+      expect(surface.fit).toHaveBeenCalledTimes(1)
+      surface.requestFit()
+      expect(raf).toHaveBeenCalledTimes(2)
+    } finally { vi.unstubAllGlobals() }
   })
 })

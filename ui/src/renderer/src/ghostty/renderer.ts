@@ -73,13 +73,17 @@ export function ghosttyTextRunEnd(
   return end;
 }
 
+let cachedFontSize = 0;
+let cachedFontFamily = "";
 let fontCacheKey = "";
+let rowMask = new Uint8Array(0);
 const fontCache = new Map<number, string>();
 
 function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): string {
-  const key = `${fontSize}px ${fontFamily}`;
-  if (key !== fontCacheKey) {
-    fontCacheKey = key;
+  if (fontSize !== cachedFontSize || fontFamily !== cachedFontFamily) {
+    cachedFontSize = fontSize;
+    cachedFontFamily = fontFamily;
+    fontCacheKey = `${fontSize}px ${fontFamily}`;
     fontCache.clear();
   }
   const variant = (cell.italic ? 1 : 0) | (cell.bold ? 2 : 0);
@@ -87,7 +91,7 @@ function fontForCell(cell: GhosttyCell, fontSize: number, fontFamily: string): s
   if (hit !== undefined) return hit;
   const style = cell.italic ? "italic" : "normal";
   const weight = cell.bold ? "700" : "400";
-  const value = `${style} ${weight} ${key}`;
+  const value = `${style} ${weight} ${fontCacheKey}`;
   fontCache.set(variant, value);
   return value;
 }
@@ -176,20 +180,15 @@ export function renderGhosttySnapshot(options: {
   const hoveredLinkRange = options.hoveredLinkRange ?? null;
   const originY = options.originY ?? padding;
   const devicePixelRatio = options.devicePixelRatio ?? 1;
-  const rowsToDraw = forceFull
-    ? Array.from({ length: snapshot.rows }, (_, index) => index)
-    : [...snapshot.dirtyRows];
-  if (
-    previousCursorY !== null &&
-    previousCursorY !== undefined &&
-    previousCursorY >= 0 &&
-    !rowsToDraw.includes(previousCursorY)
-  ) {
-    rowsToDraw.push(previousCursorY);
+  if (rowMask.length < snapshot.rows) rowMask = new Uint8Array(snapshot.rows);
+  rowMask.fill(forceFull ? 1 : 0);
+  if (!forceFull) {
+    for (const row of snapshot.dirtyRows) rowMask[row] = 1;
   }
-  if (snapshot.cursorVisible && snapshot.cursorY >= 0 && !rowsToDraw.includes(snapshot.cursorY)) {
-    rowsToDraw.push(snapshot.cursorY);
+  if (previousCursorY !== null && previousCursorY !== undefined && previousCursorY >= 0) {
+    rowMask[previousCursorY] = 1;
   }
+  if (snapshot.cursorVisible && snapshot.cursorY >= 0) rowMask[snapshot.cursorY] = 1;
 
   if (forceFull) {
     context.save();
@@ -203,7 +202,8 @@ export function renderGhosttySnapshot(options: {
   const verticalClipBleed = metrics.height / 4;
 
   const bands: { start: number; end: number }[] = [];
-  for (const rowIndex of [...new Set(rowsToDraw)].sort((left, right) => left - right)) {
+  for (let rowIndex = 0; rowIndex < snapshot.rows; rowIndex += 1) {
+    if (!rowMask[rowIndex]) continue;
     const last = bands[bands.length - 1];
     if (last && rowIndex <= last.end + 2) last.end = rowIndex;
     else bands.push({ start: rowIndex, end: rowIndex });
@@ -293,10 +293,10 @@ export function renderGhosttySnapshot(options: {
           runStart,
           (cell) => sameTextStyle(cell, first) && !isCustomGlyph(cell.text),
         );
-        const text = row.cells
-          .slice(runStart, runEnd)
-          .map((cell) => cell.text)
-          .join("");
+        let text = "";
+        for (let column = runStart; column < runEnd; column += 1) {
+          text += row.cells[column]!.text;
+        }
         if (!first.invisible && text.trim().length > 0) {
           context.save();
           context.beginPath();

@@ -1,3 +1,4 @@
+import { useSessionsSelector, shallowArrayEqual, useWorkspaceWaiting } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
 import { MAX_TAGS_PER_GRID } from "../layout/tree";
 import type { TagUsage } from "./TagManager";
@@ -884,7 +885,7 @@ function CollapsedGridsRow({
   onRenameCancel,
   on,
   panes,
-  waiting,
+  waiting: waitingProp,
   tagMatched,
   tagTotal,
   live,
@@ -920,6 +921,7 @@ function CollapsedGridsRow({
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
 }): React.JSX.Element {
+  const waiting = useWorkspaceWaiting(w.path, waitingProp);
   if (renamingThis) {
     return (
       <Fragment>
@@ -1006,13 +1008,64 @@ function CollapsedGridsRow({
   );
 }
 
+type GridLifecycle =
+  | "starting"
+  | "working"
+  | "needs-input"
+  | "idle"
+  | "unavailable"
+  | "stopped";
+
+function gridLifecycle(sessions: SessionInfo[]): {
+  state: GridLifecycle;
+  label: string;
+} {
+  const live = sessions.filter((session) => isLive(session.state));
+  if (live.length === 0) return { state: "stopped", label: "No live panes" };
+
+  const count = (status: SessionInfo["status"]): number =>
+    live.filter((session) => session.status === status).length;
+  const needsInput = live.filter((session) => session.status === "needs-input" || session.children_waiting > 0).length;
+  const working = count("working");
+  const starting = count("spawning");
+  const idle = count("idle");
+  const unavailable = count("unavailable") + count(null) + count(undefined);
+  const state: GridLifecycle = needsInput
+    ? "needs-input"
+    : working
+      ? "working"
+      : starting
+        ? "starting"
+        : unavailable
+          ? "unavailable"
+          : "idle";
+  const parts = [
+    needsInput ? `${needsInput} need input` : "",
+    working ? `${working} working` : "",
+    starting ? `${starting} starting` : "",
+    idle ? `${idle} ready` : "",
+    unavailable ? `${unavailable} status unavailable` : "",
+  ].filter(Boolean);
+  return { state, label: parts.join(" · ") };
+}
+
 function GridStateDot({
-  state = "stopped",
-  label = "No live panes",
+  state: stateProp = "stopped",
+  label: labelProp = "No live panes",
+  sessionIds,
 }: {
   state?: GridItem["state"];
   label?: string;
+  sessionIds?: number[];
 }): React.JSX.Element {
+  const members = useSessionsSelector(
+    (sessions) => (sessionIds ?? []).flatMap((id) => sessions.get(id) ?? []),
+    (a, b) => a === b || (a !== null && b !== null && shallowArrayEqual(a, b)),
+    null,
+  );
+  const lifecycle = members !== null && sessionIds !== undefined ? gridLifecycle(members) : null;
+  const state = lifecycle?.state ?? stateProp;
+  const label = lifecycle?.label ?? labelProp;
   const active = state === "starting" || state === "working";
   return (
     <Tooltip label={label}>
@@ -1124,7 +1177,7 @@ function ExpandedGridsRow({
   onRenameCancel,
   on,
   panes,
-  waiting,
+  waiting: waitingProp,
   tagMatched,
   tagTotal,
   live,
@@ -1189,6 +1242,7 @@ function ExpandedGridsRow({
   onRenameSubmit: (path: string, name: string) => void;
   onRenameCancel: () => void;
 }): React.JSX.Element {
+  const waiting = useWorkspaceWaiting(w.path, waitingProp);
   return (
     <Fragment>
       {dropBefore}
@@ -1290,6 +1344,7 @@ function ExpandedGridsRow({
           selected === w.path && selectedGridId === g.id;
         const stateDot = (
           <GridStateDot
+            sessionIds={g.sessionIds}
             state={g.state ?? undefined}
             label={g.statusLabel ?? undefined}
           />
