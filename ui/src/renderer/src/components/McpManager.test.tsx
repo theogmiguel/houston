@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '../houston/generated/McpServer'
 import type { McpToolState } from '../houston/generated/McpToolState'
 import type { McpManagerProps } from './McpManager'
@@ -33,6 +33,8 @@ function props(overrides: Partial<McpManagerProps> = {}): McpManagerProps {
   }
 }
 
+afterEach(cleanup)
+
 describe('Connections matrix', () => {
   it('shows managed CLI columns and explains providers not managed here', () => {
     render(<McpManager {...props()} />)
@@ -48,15 +50,26 @@ describe('Connections matrix', () => {
     const onUpsertServer = vi.fn()
     const onSync = vi.fn()
     render(<McpManager {...props({
-      checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]],
+      tools: [{ ...tool('claude'), error: 'npx was not found on PATH' }, tool('codex'), tool('opencode'), tool('cursor')],
       onUpsertServer,
       onSync
     })} />)
-    expect(screen.getAllByText('Failed')).toHaveLength(4)
-    expect(screen.getAllByText('npx was not found on PATH')).toHaveLength(4)
-    fireEvent.click(screen.getAllByTestId('mcp-cell-claude-github')[1])
+    expect(screen.getAllByText('Failed')).toHaveLength(1)
+    expect(screen.getByText('npx').tagName).toBe('CODE')
+    expect(screen.getAllByText(/was not found on PATH/)).toHaveLength(1)
+    fireEvent.click(screen.getByTestId('mcp-cell-claude-github'))
     expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode', 'cursor'] }))
     expect(onSync).toHaveBeenCalledWith('claude')
+  })
+
+  it('keeps a server check failure off absent agent destinations', () => {
+    render(<McpManager {...props({
+      tools: [tool('claude'), tool('codex', []), tool('opencode', []), tool('cursor', [])],
+      checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]]
+    })} />)
+    expect(screen.getByTestId('mcp-cell-claude-github').textContent).toContain('Failed')
+    expect(screen.getByTestId('mcp-cell-codex-github').textContent).toBe('')
+    expect(screen.getByText('npx').tagName).toBe('CODE')
   })
 
   it('uses the page Add server action for an empty state', () => {

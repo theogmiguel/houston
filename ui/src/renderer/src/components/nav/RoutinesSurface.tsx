@@ -182,7 +182,6 @@ export function RoutinesSurface(props: {
         renderDetail={(item) => {
           if (!item) return <EmptyState icon={IconClock} heading="Select a routine" description="Choose a routine to see its schedule and runs." />
           const routine = item.routine
-          const waitingForSlot = slotsFull && waitingIds.has(routine.id)
           return (
             <Suspense fallback={<p role="status">Loading routine details…</p>}>
               <RoutineDetail
@@ -193,7 +192,6 @@ export function RoutinesSurface(props: {
                 running={running.includes(routine.id)}
                 pending={pendingRuns.has(routine.id)}
                 atLimit={slotsFull ? { running: running.length, limit: ROUTINE_RUNS_CONCURRENT } : null}
-                waitingForSlot={waitingForSlot}
                 onRunNow={() => {
                   onRequest({ routineName: routine.name })
                   setPendingRuns((current) => new Set(current).add(routine.id))

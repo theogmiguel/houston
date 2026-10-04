@@ -1,4 +1,5 @@
 import { Button, Field, Notice, SectionHead, Segmented, Select, StatusLabel, Table, type TableColumn } from './index'
+import { ActionMenu } from './ActionMenu'
 import { Toggle } from '../settingsPrimitives'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { Routine, RoutineRun } from '../../houston/routineTypes'
@@ -54,7 +55,6 @@ export function RoutineDetail({
   running,
   pending,
   atLimit,
-  waitingForSlot,
   onRunNow,
   onToggleEnabled,
   onEdit,
@@ -70,7 +70,6 @@ export function RoutineDetail({
   running: boolean
   pending: boolean
   atLimit: { running: number; limit: number } | null
-  waitingForSlot: boolean
   onRunNow: () => void
   onToggleEnabled: () => void
   onEdit: () => void
@@ -90,11 +89,9 @@ export function RoutineDetail({
     <div className="grid min-w-0 gap-[var(--space-3)]" data-testid="routine-detail">
       <div className="flex min-w-0 items-center gap-[var(--space-2)]">
         <h2 className="m-0 min-w-0 flex-1 truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{routine.name}</h2>
-        {waitingForSlot && <StatusLabel status="Waiting for a slot" />}
-        <Button variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
-        <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
         <Button variant="secondary" size="sm" data-testid="routine-run-now" disabled={running || pending} onClick={onRunNow}>{pending ? 'Starting…' : 'Run now'}</Button>
         <Toggle on={routine.enabled} onChange={onToggleEnabled} data-testid="routine-enabled" aria-label={`Enable ${routine.name}`} />
+        <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: onEdit }, { label: 'Delete', onSelect: onDelete, tone: 'danger' }]} />
       </div>
       {atLimit && <Notice tone="warn" className="w-full"><span data-testid="routine-limit-notice">{atLimit.running} of {atLimit.limit} running. Routines run {atLimit.limit} at a time (Settings › Routines).</span></Notice>}
       <div className="grid grid-cols-1 gap-[var(--space-3)] [@container_(min-width:560px)]:grid-cols-2">
@@ -118,6 +115,7 @@ export function RoutineDetail({
             value={routine.engine}
             options={ENGINE_ORDER.filter((engine) => ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'].includes(engine)).map((engine) => ({ value: engine, label: engineLabel(engine) }))}
             onChange={(value) => onUpdateEngine(value as AgentKind)}
+            width="full"
           />
         </Field>
       </div>

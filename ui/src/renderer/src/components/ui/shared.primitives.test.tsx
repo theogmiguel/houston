@@ -21,7 +21,7 @@ describe('shared table, list-detail, drawer and notice primitives', () => {
       engine: 'claude' as const, next_run_at_ms: 10_000, last_run_at_ms: null, permission_mode: 'accept_edits' as const,
       isolate: false, revision: 'r1'
     }
-    render(<RoutineDetail routine={routine} runs={[]} runsLoading={false} now={0} running={false} pending={false} atLimit={{ running: 3, limit: 3 }} waitingForSlot onRunNow={onRunNow} onToggleEnabled={() => {}} onEdit={() => {}} onDelete={() => {}} onUpdateSchedule={() => {}} onUpdateEngine={() => {}} onOpenSession={() => {}} />)
+    render(<RoutineDetail routine={routine} runs={[]} runsLoading={false} now={0} running={false} pending={false} atLimit={{ running: 3, limit: 3 }} onRunNow={onRunNow} onToggleEnabled={() => {}} onEdit={() => {}} onDelete={() => {}} onUpdateSchedule={() => {}} onUpdateEngine={() => {}} onOpenSession={() => {}} />)
     expect(screen.getByRole('heading', { name: routine.name })).toBeTruthy()
     expect(screen.getByText('3 of 3 running. Routines run 3 at a time (Settings › Routines).')).toBeTruthy()
     screen.getByRole('button', { name: 'Run now' }).click()

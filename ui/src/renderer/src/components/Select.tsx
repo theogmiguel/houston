@@ -28,6 +28,7 @@ export interface SelectProps {
   className?: string
   chrome?: string
   prefix?: React.ReactNode
+  width?: 'auto' | 'full'
 }
 
 // How long a type-ahead buffer survives between keystrokes. 800 ms sits between
@@ -57,7 +58,8 @@ export function Select({
   'data-testid': testId,
   className = '',
   chrome = SELECT_CLS,
-  prefix
+  prefix,
+  width = 'auto'
 }: SelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<MenuPos | null>(null)
@@ -249,7 +251,7 @@ export function Select({
             if (open) close(true)
             else openMenu()
           }}
-          className={`${chrome} ${TRIGGER_LAYOUT_CLS} ${className}`}
+          className={`${chrome} ${TRIGGER_LAYOUT_CLS} ${width === 'full' ? 'w-full' : ''} ${className}`}
         >
           {prefix && <span className="flex-none inline-flex items-center">{prefix}</span>}
           <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ''}</span>

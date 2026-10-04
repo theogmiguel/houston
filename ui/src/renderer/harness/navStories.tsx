@@ -18,10 +18,24 @@ import type { Skill } from '../src/env'
 
 const noop = (): void => {}
 
-const NOW = 1_700_000_000_000
+const NOW = new Date(2026, 9, 3, 12).getTime()
 
-function Frame({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <div style={{ display: 'flex', flex: 1, minWidth: 0, height: '100%' }}>{children}</div>
+function Frame({ children, active = 'Routines' }: { children: React.ReactNode; active?: 'Routines' | 'Connections' | 'Skills' }): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', flex: 1, minWidth: 0, height: '100%' }}>
+      <aside style={{ width: 148, flex: 'none', padding: 8, background: 'var(--rail-bg)', color: 'var(--text-secondary)' }}>
+        <div style={{ padding: 8, color: 'var(--text-faint)', fontSize: 11 }}>HOUSTON</div>
+        <div style={{ display: 'grid', gap: 2, marginBottom: 8 }}>
+          {['auth-refactor', 'migrate-db', 'shell'].map((item) => <div key={item} style={{ padding: '5px 8px', fontSize: 12 }}>{item}</div>)}
+        </div>
+        <div style={{ height: 1, background: 'var(--divider)', margin: '0 8px 8px' }} />
+        <div style={{ display: 'grid', gap: 2, fontSize: 13 }}>
+          {['Tasks', 'Routines', 'Skills', 'Harness', 'Connections', 'Usage'].map((item) => <div key={item} style={{ padding: '5px 8px', borderRadius: 6, background: item === active ? 'var(--hover-fill)' : 'transparent', color: item === active ? 'var(--text-primary)' : undefined }}>{item}</div>)}
+        </div>
+      </aside>
+      <div style={{ display: 'flex', minWidth: 0, flex: 1 }}>{children}</div>
+    </div>
+  )
 }
 
 function routine(o: Partial<Routine> = {}): Routine {
@@ -45,22 +59,28 @@ function routine(o: Partial<Routine> = {}): Routine {
 }
 
 export function NavRoutines(): React.JSX.Element {
-  const routines = [
-    routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW + 60_000, last_run_at_ms: NOW - 60_000 }),
-    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000 }),
-    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: NOW + 3 * 24 * 3600_000, last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok' }),
-    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: '/home/dev/code/api', next_run_at_ms: NOW + 3600_000 })
-  ]
   const run = (id: number, status: RoutineRun['status'], started: number, sessionId: number | null, error?: string): RoutineRun => ({
     id, routine_id: 2, trigger: 'schedule', status, started_at_ms: started, ended_at_ms: status === 'running' ? null : started + 4 * 60_000,
     session_id: sessionId, error
   })
+  const runHistory: RoutineRun[] = [
+    run(30, 'running', new Date(2026, 9, 3, 2).getTime(), 42),
+    run(29, 'ok', new Date(2026, 9, 2, 2).getTime(), 41),
+    run(28, 'failed', new Date(2026, 9, 1, 2).getTime(), 40, 'npx was not found on PATH'),
+    ...Array.from({ length: 27 }, (_, index) => run(27 - index, 'ok', new Date(2026, 8, 30 - index, 2).getTime(), 13 + index))
+  ]
+  const routines = [
+    routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW - 120_000, last_run_at_ms: NOW - 60_000 }),
+    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000 }),
+    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: NOW + 6 * 24 * 3600_000, last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok' }),
+    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: '/home/dev/code/api', next_run_at_ms: NOW + 7 * 24 * 3600_000 })
+  ]
   return (
-    <Frame>
+    <Frame active="Routines">
       <RoutinesSurface
         routines={routines}
         running={[1, 91, 92]}
-        runs={{ 2: [run(30, 'running', NOW - 60_000, 42), run(29, 'ok', NOW - 86_400_000, 41), run(28, 'failed', NOW - 2 * 86_400_000, 40, 'npx was not found on PATH')] }}
+        runs={{ 2: runHistory }}
         runsLoading={null}
         workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
         error={null}
@@ -81,7 +101,7 @@ export function NavRoutines(): React.JSX.Element {
 
 export function NavRoutineEditor(): React.JSX.Element {
   return (
-    <Frame>
+    <Frame active="Routines">
       <RoutineEditor
         mode="create"
         workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
@@ -105,7 +125,7 @@ export function NavRoutineEditor(): React.JSX.Element {
 
 export function NavRoutinesEmpty(): React.JSX.Element {
   return (
-    <Frame>
+    <Frame active="Routines">
       <RoutinesSurface
         routines={[]}
         running={[]}
@@ -172,7 +192,7 @@ function skillColumn(tool: SkillToolState['tool'], names: string[], inherits = f
 export function NavSkills(): React.JSX.Element {
   installSkillFixture()
   return (
-    <Frame>
+    <Frame active="Skills">
       <SkillsSurface
         tools={[
           skillColumn('claude', ['tdd', 'triage']),
@@ -213,14 +233,14 @@ function mcpColumn(tool: McpToolState['tool'], servers: McpServer[], detected = 
 
 export function NavMcp(): React.JSX.Element {
   return (
-    <Frame>
+    <Frame active="Connections">
       <McpSurface
         source={[mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]}
         tools={[
           mcpColumn('claude', [mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'P')]),
-          mcpColumn('codex', [mcpServer('github', 'G'), mcpServer('linear', 'L')]),
-          mcpColumn('opencode', [mcpServer('github', 'G'), mcpServer('linear', 'L'), mcpServer('postgres-local', 'OP')]),
-          mcpColumn('cursor', [mcpServer('github', 'G'), mcpServer('postgres-local', 'P')])
+          mcpColumn('codex', [mcpServer('linear', 'L')]),
+          mcpColumn('opencode', [mcpServer('linear', 'L'), mcpServer('postgres-local', 'OP')]),
+          mcpColumn('cursor', [mcpServer('postgres-local', 'P')])
         ]}
         results={[]}
         checks={[["github", { state: 'failed', message: 'npx was not found on PATH' }]]}
@@ -338,7 +358,13 @@ function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
 
 export function HarnessPageStory(): React.JSX.Element {
   const latest = harnessReview(13, 38, 7)
-  const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12)), harnessReview(11, 42, 13), harnessReview(10, 39, 16)]
+  const reviews = Array.from({ length: 13 }, (_, index) => {
+    const id = 13 - index
+    if (id === 13) return latest
+    return id === 12
+      ? harnessReview(id, 41, 10, Date.UTC(2026, 8, 22, 12))
+      : harnessReview(id, 42, 13)
+  })
   const findings = [
     harnessFinding({ key: 'HOU-47', title: 'Agents re-read the styleguide on every UI change', count: 9, target: 'AGENTS.md', review_id: 13 }),
     harnessFinding({ key: 'HOU-42', count: 11, task: { task_id: 42, key: 'HOU-42', status: 'in_progress', landed_at_ms: null }, phase: 'fixing' }),
@@ -386,7 +412,7 @@ export function HarnessPageStory(): React.JSX.Element {
   }
 
   return (
-    <Frame>
+    <div style={{ display: 'flex', width: '100%', height: '100%', minWidth: 0 }}>
       <div style={{ display: 'flex', width: 'calc(100% - 16px)', height: 'calc(100% - 8px)', margin: '0 8px 8px', border: '1px solid var(--divider)', borderRadius: 10, overflow: 'hidden' }}>
         <aside style={{ width: 140, flex: 'none', padding: 8, background: 'var(--rail-bg)', color: 'var(--text-secondary)' }}>
           <div style={{ padding: 8, color: 'var(--text-faint)', fontSize: 11 }}>HOUSTON</div>
@@ -432,6 +458,6 @@ export function HarnessPageStory(): React.JSX.Element {
         onReveal={noop}
         />
       </div>
-    </Frame>
+    </div>
   )
 }
