@@ -58,13 +58,17 @@ pub(crate) mod geometry {
     use super::{host_zoom_factor, run_on_view};
     use crate::browser::rect::{clamp_to_window, spec_to_logical, Rect, RectSpec};
     use tauri::{AppHandle, Manager};
-    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Controller, COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC,
+    };
     use windows_sys::Win32::Foundation::{HWND, RECT};
     use windows_sys::Win32::Graphics::Gdi::MapWindowPoints;
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetFocus;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetAncestor, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
-        SetParent, SetWindowPos, GA_PARENT, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
+        EnumWindows, GetAncestor, GetClientRect, GetWindowThreadProcessId, IsChild,
+        IsWindowVisible, SetParent, SetWindowPos, GA_PARENT, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+        SWP_NOZORDER,
     };
 
     pub(super) fn child_hwnd(controller: &ICoreWebView2Controller) -> Result<HWND, String> {
@@ -301,7 +305,25 @@ pub(crate) mod geometry {
         window
             .set_focus()
             .map_err(|err| format!("browser: set_focus() on window {window_label:?}: {err}"))?;
-        Ok(window.is_focused().unwrap_or(false))
+        let webview = app
+            .get_webview(window_label)
+            .ok_or_else(|| format!("browser: no host webview labelled {window_label:?}"))?;
+        run_on_view(
+            &webview,
+            window_label,
+            "focus the host webview",
+            |platform| {
+                let controller = platform.controller();
+                // SAFETY: main thread; the controller and HWND belong to the live host.
+                unsafe { controller.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC) }
+                    .map_err(|err| format!("browser: MoveFocus on host: {err}"))?;
+                let hwnd = child_hwnd(&controller)?;
+                // SAFETY: GetFocus reads this UI thread's focus; IsChild only reads HWND ancestry.
+                let focused = unsafe { GetFocus() };
+                Ok(!focused.is_null()
+                    && (focused == hwnd || unsafe { IsChild(hwnd, focused) } != 0))
+            },
+        )
     }
 
     pub(crate) fn toplevel_window_signatures(_app: &AppHandle) -> Result<Vec<String>, String> {

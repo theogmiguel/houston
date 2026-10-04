@@ -2431,7 +2431,7 @@ checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "houston-core"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2474,7 +2474,7 @@ dependencies = [
 
 [[package]]
 name = "houston-protocol"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2482,7 +2482,7 @@ dependencies = [
 
 [[package]]
 name = "houston-tauri"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2497,6 +2497,7 @@ dependencies = [
  "javascriptcore-rs",
  "libc",
  "libloading 0.7.4",
+ "percent-encoding",
  "png 0.17.16",
  "regex",
  "reqwest",

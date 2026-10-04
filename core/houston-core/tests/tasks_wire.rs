@@ -460,7 +460,10 @@ async fn workspace_remove_unassigns_tasks_and_interrupts_runs() {
         .iter()
         .any(|entry| entry.actor == "houston:workspace-removed"));
     assert_eq!(runs[0].state, proto::TaskRunState::Interrupted);
-    assert!(runs[0].reason.as_deref().unwrap().contains(&workspace));
+    assert_eq!(
+        runs[0].reason.as_deref(),
+        Some(format!("workspace {workspace:?} was removed").as_str())
+    );
     let proto::ServerMsg::TaskSnapshot { tasks, .. } = daemon.task_snapshot("unassigned").unwrap()
     else {
         panic!("expected snapshot");
@@ -699,7 +702,7 @@ async fn global_keys_snapshot_scopes_and_optional_workspace_patch_over_wire() {
         panic!("expected refusal");
     };
     assert!(
-        message.contains(&invalid) && message.contains("registered workspace path"),
+        message.contains(&format!("{invalid:?}")) && message.contains("registered workspace path"),
         "{message}"
     );
     assert_eq!(
