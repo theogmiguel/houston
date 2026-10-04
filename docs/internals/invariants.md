@@ -234,14 +234,20 @@ The conversation a paired remote-access device reads (`remote/feed.rs`) is built
 hook payload fields: the prompt, the turn's last message, `AskUserQuestion`'s questions and
 answers, and a permission request's or finished tool call's name and one target (a command,
 path, URL or pattern). It never reads a transcript or the screen. Its decision card follows
-status transitions; it never sets one.
+status transitions; it never sets one. No hook reports that a permission was granted, so the
+pane keeps needing input until the approved tool finishes: a card a device answered stays
+consumed until the status changes or a new card replaces it, and an operator keystroke into
+the pane marks an open card as answered in the terminal.
 
 This is the one exception to the rule that hook drops carry only a digest of `tool_input`:
-the hook client masks that single target with the credential redactor, cuts it to one line of
-at most 300 characters, and writes it into the drop under `feed`. The daemon keeps it in a
-per-session ring (200 entries, 512 KiB, 32 MiB across sessions) only while remote access is
-on, serves it only to paired devices, and never writes it to SQLite or the log; it is gone
-when the daemon exits. A decision a device makes is typed into the PTY as the provider's own
+the hook client masks that single target, like every feed text, with the review-packet
+credential patterns followed by the high-entropy pass (`remote::feed::mask`), removes
+invisible formatting characters, cuts it to at most 300 characters, and writes it into the
+drop under `feed`. A target that was cut or had such characters removed is marked
+`truncated`, and a device may not approve it. The daemon keeps it in a per-session ring
+(200 entries, 512 KiB, 32 MiB across sessions) only while remote access is on, clears every
+ring when it is turned off, serves it only to paired devices, and never writes it to SQLite
+or the log; it is gone when the daemon exits. A decision a device makes is typed into the PTY as the provider's own
 keys, through the same stdin path as typed input, never through a hook reply.
 
 ### The daemon owns a terminal emulator; it never reads it for status

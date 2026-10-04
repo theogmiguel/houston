@@ -24,8 +24,9 @@ The conversation comes only from what each agent CLI reports through its hooks w
 access is on: prompts, final replies, questions and their options, and for each permission
 request or tool step the tool's name and one target (a command, file path, URL or pattern).
 Secrets that match Houston's credential patterns are masked, long text is shortened, and
-nothing of it is saved: it is kept in memory and is gone when the daemon stops. Activity from
-before remote access was turned on is only in the Terminal tab.
+nothing of it is saved: it is kept in memory and is gone when the daemon stops. Turning remote
+access off clears it, and nothing is collected while it is off, so activity from before
+remote access was last turned on is only in the Terminal tab.
 
 ## Turn it on
 
@@ -76,18 +77,23 @@ chips at the top filter by workspace. The page title counts the panes that need 
 Android phone vibrates briefly when a new request arrives while Houston is open. The dot
 next to the title shows whether updates are live or reconnecting.
 
-A permission request in **Needs you** shows the tool and its target with **Approve** and
-**Deny**, so you can answer without opening the pane. Inside a pane, the request waiting on
-you is a card above the message box:
+A permission request in **Needs you** shows the tool and its whole target with **Approve**
+and **Deny**, so you can answer without opening the pane. When Houston can show only part of
+the command, because it is very long or contains invisible formatting characters, the
+request offers **Open terminal** instead: read and approve it there. Inside a pane, the
+request waiting on you is a card above the message box:
 
 - **Permission:** **Approve**, **Deny**, and **Always** when the CLI offers to stop asking
   for similar requests.
 - **Question:** tap an option, or **Other…** to type your own answer in the message box.
 
-After a tap the card shows **Sent** until the agent moves on. Houston answers by typing the
-same keys you would press in the terminal, so an answer you give on the desktop meanwhile is
-just as valid; if the request changed before your tap arrived, Houston refuses the tap
-instead of answering the wrong request.
+After a tap the card shows **Sent** and takes no further tap until the agent moves on, which
+for an approved command can be when the command finishes. Houston answers by typing the same
+keys you would press in the terminal; when a key reaches the pane from the desktop or the key
+row after the request arrived, the card shows **Answered in the terminal** and offers only
+**Open terminal**. If the request changed before your tap arrived, or remote access was
+turned off and on since the page loaded, Houston refuses the tap instead of answering the
+wrong request.
 
 Cards you can answer with a tap are available for Claude Code permission requests and
 single questions with one answer. Questions with several parts or several answers, and
@@ -124,8 +130,9 @@ them on your server.
 
 ## Revoke a device or turn it off
 
-Choose **Revoke** next to a device (and confirm) to end its access immediately. Turning off
-**Allow remote access** stops the listener and notifications; paired devices stay listed
+Choose **Revoke** next to a device (and confirm) to end its access immediately, including a
+page it has open. Turning off **Allow remote access** stops the listener, closes open pages'
+live updates, clears the conversations and stops notifications; paired devices stay listed
 and work again when you turn it back on. To stop notifications only, choose **Turn off**
 next to the topic URL.
 

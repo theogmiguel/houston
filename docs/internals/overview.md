@@ -175,12 +175,17 @@ Trust model:
   writes input through the desktop's stdin path, either as typed text and keys or as a
   decision that the per-provider table in `remote/feed.rs` turns into the CLI's own keys.
   Writing to any pane, shell panes included, makes a device equivalent to a shell as the
-  user; it cannot pair, configure, spawn or kill. One input request per pane runs at a time,
-  and a decision names the feed entry it answers so a stale tap is refused.
+  user; it cannot pair, configure, spawn or kill. One input request per pane runs at a time.
+  A decision names the feed epoch and entry it answers, so a stale tap is refused, and it
+  consumes the card under the feed lock, so two devices cannot both answer it.
 - **Feed and events.** The feed is filled from applied hook drops and status transitions
-  only while remote access is on (see [invariants](invariants.md)). `/api/events` is a
-  server-sent event stream of change notices without content; the web client reads it
-  through `fetch` so the bearer token stays in a header, and falls back to polling.
+  only while remote access is on (see [invariants](invariants.md)); turning it off clears
+  the feed and starts a new epoch. `/api/events` is a server-sent event stream of change
+  notices without content; the web client reads it through `fetch` so the bearer token
+  stays in a header, and falls back to polling. Streams never end on their own, and axum's
+  graceful shutdown waits for every connection, so the daemon ends them itself when the
+  listener stops or their device is revoked, and stops waiting for other requests after a
+  few seconds.
 - **Transport.** TLS is delegated to `tailscale serve` in front of the loopback bind. A bind
   on every interface needs a public URL; Settings warns when a token would cross the network
   over plain HTTP.
