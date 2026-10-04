@@ -44,6 +44,7 @@ import {
   NavSkills
 } from './navStories'
 import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory } from './tasksStories'
+import { UiPrimitivesStory } from './uiStories'
 
 const noop = (): void => {}
 
@@ -118,6 +119,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
       harness ok — theme tokens, fonts and Tailwind layers loaded
     </div>
   ),
+  'ui-primitives': () => <UiPrimitivesStory />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
   'settings/appearance': () => <SettingsAppearance />,

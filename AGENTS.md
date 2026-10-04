@@ -165,6 +165,7 @@ on the daemon port with per-pane bearer tokens. See the
   `protocol/protocol.md`: protocol reference.
 - Keep provider complexity at provider boundaries, core models testable and renderer
   logic focused on presentation. Change only what the task requires.
+- Compose renderer UI from `ui/src/renderer/src/components/ui/`; add missing roles there as variants with a `ui-primitives` specimen case. Feature `className` values carry layout only. UI PRs attach before and after captures.
 - Comments explain non-obvious usage and follow the comment hygiene budget. Tunable
   constants need a short rationale; measure when their values affect performance.
 - Errors include the offending value and expected shape. Avoid unrelated product names
