@@ -12,7 +12,7 @@ import { IconGrid, IconSplitDown, IconSquareTerminal } from './icons'
 
 // Only the agents spawnable via `hs-pane`/handoff today, not the full
 // `AgentKind` union (shell/custom/ssh/the ACP long tail are not offered here).
-const POPOVER_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok']
+const POPOVER_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode']
 
 export interface AddPanePopoverProps {
   right: number

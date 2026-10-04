@@ -41,6 +41,11 @@ export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
     label: 'Grok',
     writes:
       'Writes its own hooks file in `~/.grok/hooks/`, with one entry per lifecycle event. Any entries of yours in that file stay, and turning this off removes only Houston’s — deleting the file once nothing is left in it.'
+  },
+  zcode: {
+    label: 'ZCode',
+    writes:
+      'Adds one entry per lifecycle event to `~/.zcode/cli/config.json`, sets `hooks.enabled` (which also runs hooks of yours that were switched off) and lists Houston’s plugin for the pane tools. Turning this off removes only Houston’s entries and restores `hooks.enabled` once no channel’s entry remains.'
   }
 }
 

@@ -59,8 +59,8 @@ describe('Changes pane — Review with agent', () => {
   it('offers every spawnable engine tile and no shell', () => {
     mount({})
     openPicker()
-    expect(qa('[data-agent]')).toHaveLength(6)
-    expect(qa('[data-agent] svg')).toHaveLength(6)
+    expect(qa('[data-agent]')).toHaveLength(7)
+    expect(qa('[data-agent] svg')).toHaveLength(7)
     expect(q('[data-testid="review-provider-shell"]')).toBeNull()
   })
 

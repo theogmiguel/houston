@@ -1015,6 +1015,14 @@ export function IconAgentGrok(p: IconProps): React.JSX.Element {
   )
 }
 
+export function IconAgentZcode(p: IconProps): React.JSX.Element {
+  return (
+    <FilledMark {...p} viewBox="0 0 24 24">
+      <path d="M4 3h16v3.2L9.4 18H20v3H4v-3.2L14.6 6H4z" />
+    </FilledMark>
+  )
+}
+
 export function IconAgentShell(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>
@@ -1142,7 +1150,8 @@ export const AGENT_DOT_COLOR: Partial<Record<string, string>> = {
   antigravity: 'var(--antigravity)',
   opencode: 'var(--opencode)',
   cursor: 'var(--cursor)',
-  grok: 'var(--grok)'
+  grok: 'var(--grok)',
+  zcode: 'var(--zcode)'
 }
 
 export function IconAgent({
@@ -1175,6 +1184,8 @@ function agentMark(agent: string, p: IconProps): React.JSX.Element {
       return <IconAgentCursor {...p} />
     case 'grok':
       return <IconAgentGrok {...p} />
+    case 'zcode':
+      return <IconAgentZcode {...p} />
     case 'ssh':
       return <IconAgentSsh {...p} />
     default:

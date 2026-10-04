@@ -7,6 +7,7 @@ export const ENGINE_ORDER: AgentKind[] = [
   'opencode',
   'cursor',
   'grok',
+  'zcode',
   'shell',
   'ssh',
   'droid',
@@ -18,7 +19,8 @@ export const ENGINE_ORDER: AgentKind[] = [
 const ENGINE_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  antigravity: 'Antigravity'
+  antigravity: 'Antigravity',
+  zcode: 'ZCode'
 }
 
 export function engineLabel(engine: AgentKind): string {

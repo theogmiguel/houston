@@ -140,7 +140,8 @@ const AGENT_KINDS: readonly { kind: AgentKind; label: string }[] = [
   { kind: 'antigravity', label: 'Antigravity' },
   { kind: 'opencode', label: 'opencode' },
   { kind: 'cursor', label: 'Cursor Agent' },
-  { kind: 'grok', label: 'Grok' }
+  { kind: 'grok', label: 'Grok' },
+  { kind: 'zcode', label: 'ZCode' }
 ]
 
 function buildSettingsSectionCommands(): Command[] {

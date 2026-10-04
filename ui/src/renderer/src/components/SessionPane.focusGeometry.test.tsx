@@ -193,7 +193,7 @@ describe('pane focus geometry (charter §05b)', () => {
   })
 
   it('tints every spawnable provider, monochrome brands included', () => {
-    for (const agent of ['codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const) {
+    for (const agent of ['codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'] as const) {
       const { container, root } = renderPane(true, agent)
       const glyph = container.querySelector('[data-testid="engine-glyph"]')
       if (!(glyph instanceof HTMLElement)) throw new Error(`no engine-glyph for ${agent}`)
