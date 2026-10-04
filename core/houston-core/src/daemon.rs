@@ -11815,6 +11815,16 @@ impl Daemon {
         until_ms: i64,
         refresh_pricing: bool,
     ) -> Result<proto::ServerMsg> {
+        self.usage_summary_filtered(since_ms, until_ms, refresh_pricing, None)
+    }
+
+    pub fn usage_summary_filtered(
+        &self,
+        since_ms: i64,
+        until_ms: i64,
+        refresh_pricing: bool,
+        workspace: Option<String>,
+    ) -> Result<proto::ServerMsg> {
         if until_ms <= since_ms {
             bail!(
                 "{} empty window: asked for [{since_ms}, {until_ms}) ms, \
@@ -11834,6 +11844,13 @@ impl Daemon {
             );
         }
 
+        let workspaces = self
+            .db
+            .list_workspaces()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|workspace| workspace.path)
+            .collect::<Vec<_>>();
         let outcome = crate::usage::scan(&crate::usage::ScanRequest {
             since_ms,
             until_ms,
@@ -11842,7 +11859,12 @@ impl Daemon {
                 .load(self.update_policy().check, refresh_pricing),
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
+            workspaces,
+            workspace_filter: workspace,
         });
+        if let Err(e) = self.db.usage_daily_rollup_upsert(&outcome.rollups) {
+            tracing::warn!("persisting usage daily rollups failed: {e:#}");
+        }
         tracing::debug!(
             "usage scan: {} buckets from {} source(s) in {}ms \
              ({} duplicate record(s) dropped, {} outside the window)",
@@ -11862,6 +11884,40 @@ impl Daemon {
             pricing: outcome.pricing,
             untracked_agents: crate::usage::untracked_agents(),
             scan_duration_ms: outcome.scan_duration_ms,
+        })
+    }
+
+    pub fn usage_activity_summary(
+        &self,
+        since_ms: i64,
+        until_ms: i64,
+        workspace: Option<String>,
+    ) -> Result<proto::ServerMsg> {
+        if until_ms <= since_ms {
+            bail!(
+                "{} empty activity window: asked for [{since_ms}, {until_ms}) ms",
+                proto::USAGE_WINDOW_REFUSED
+            );
+        }
+        let since_day = crate::usage::time::local_date_from_ms(since_ms);
+        let until_day = crate::usage::time::local_date_from_ms(until_ms - 1);
+        let day_span = crate::usage::time::local_day_ordinal_from_ms(until_ms - 1)
+            - crate::usage::time::local_day_ordinal_from_ms(since_ms)
+            + 1;
+        if day_span > i64::from(proto::USAGE_ACTIVITY_MAX_DAYS) {
+            bail!(
+                "{} asked for {day_span} calendar days, limit is {}",
+                proto::USAGE_WINDOW_REFUSED,
+                proto::USAGE_ACTIVITY_MAX_DAYS
+            );
+        }
+        let days = self
+            .db
+            .usage_activity_summary(&since_day, &until_day, workspace.as_deref())?;
+        Ok(proto::ServerMsg::UsageActivitySummary {
+            since_ms,
+            until_ms,
+            days,
         })
     }
 

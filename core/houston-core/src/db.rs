@@ -86,6 +86,13 @@ fn state_str(s: proto::SessionState) -> &'static str {
     }
 }
 
+fn usage_provider_key(provider: proto::UsageProvider) -> &'static str {
+    match provider {
+        proto::UsageProvider::Claude => "claude",
+        proto::UsageProvider::Codex => "codex",
+    }
+}
+
 // Matches only SQLite's damage codes, never a message substring: the healer repairs
 // corruption by throwing rows away, so a typo'd column must not be mistaken for one.
 fn is_corruption(err: &rusqlite::Error) -> bool {
@@ -1339,6 +1346,22 @@ impl Db {
             created_at INTEGER NOT NULL,
             PRIMARY KEY (caller, client_request_id)
         );",
+        )?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS usage_daily_rollup (
+                day TEXT NOT NULL,
+                workspace_path TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                uncached_input INTEGER NOT NULL,
+                cached_input INTEGER NOT NULL,
+                cache_creation INTEGER NOT NULL,
+                output INTEGER NOT NULL,
+                reasoning INTEGER NOT NULL,
+                cost_usd REAL NOT NULL,
+                PRIMARY KEY (day, workspace_path, provider, model)
+            );
+            CREATE INDEX IF NOT EXISTS usage_daily_rollup_day ON usage_daily_rollup(day);",
         )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS workspaces (
@@ -4720,6 +4743,77 @@ impl Db {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn usage_daily_rollup_upsert(
+        &self,
+        points: &[crate::usage::UsageRollupPoint],
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO usage_daily_rollup
+                    (day, workspace_path, provider, model, uncached_input, cached_input,
+                     cache_creation, output, reasoning, cost_usd)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(day, workspace_path, provider, model) DO UPDATE SET
+                    uncached_input = MAX(usage_daily_rollup.uncached_input, excluded.uncached_input),
+                    cached_input = MAX(usage_daily_rollup.cached_input, excluded.cached_input),
+                    cache_creation = MAX(usage_daily_rollup.cache_creation, excluded.cache_creation),
+                    output = MAX(usage_daily_rollup.output, excluded.output),
+                    reasoning = MAX(usage_daily_rollup.reasoning, excluded.reasoning),
+                    cost_usd = MAX(usage_daily_rollup.cost_usd, excluded.cost_usd)",
+            )?;
+            for point in points {
+                stmt.execute(rusqlite::params![
+                    point.day,
+                    point.workspace_path.as_deref().unwrap_or(""),
+                    usage_provider_key(point.provider),
+                    point.model,
+                    point.totals.uncached_input_tokens as i64,
+                    point.totals.cached_input_tokens as i64,
+                    point.totals.cache_creation_tokens as i64,
+                    point.totals.output_tokens as i64,
+                    point.totals.reasoning_tokens as i64,
+                    point.cost_usd,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn usage_activity_summary(
+        &self,
+        since_day: &str,
+        until_day: &str,
+        workspace: Option<&str>,
+    ) -> Result<Vec<proto::UsageActivityDay>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare_cached(
+            "SELECT day, SUM(cost_usd), SUM(uncached_input), SUM(cached_input),
+                    SUM(cache_creation), SUM(output), SUM(reasoning)
+               FROM usage_daily_rollup
+              WHERE day >= ?1 AND day <= ?2 AND (?3 IS NULL OR workspace_path = ?3)
+              GROUP BY day ORDER BY day",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![since_day, until_day, workspace], |row| {
+                Ok(proto::UsageActivityDay {
+                    day: row.get(0)?,
+                    cost_usd: row.get(1)?,
+                    totals: proto::UsageTokenTotals {
+                        uncached_input_tokens: row.get::<_, i64>(2)? as u64,
+                        cached_input_tokens: row.get::<_, i64>(3)? as u64,
+                        cache_creation_tokens: row.get::<_, i64>(4)? as u64,
+                        output_tokens: row.get::<_, i64>(5)? as u64,
+                        reasoning_tokens: row.get::<_, i64>(6)? as u64,
+                    },
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 

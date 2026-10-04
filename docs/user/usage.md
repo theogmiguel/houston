@@ -10,6 +10,10 @@ Usage reads transcript files that Claude Code and Codex already write to disk on
 own machine, counts tokens out of them, and folds those counts into hourly buckets by
 provider and model. Those two CLIs are the only ones it covers.
 
+The workspace filter attributes a transcript by its recorded working directory.
+A session in a workspace directory or one of its worktrees belongs to that
+workspace; sessions outside registered workspaces remain in **All workspaces**.
+
 ## What it does not cover
 
 Every other CLI Houston can spawn and that spends tokens — Antigravity, OpenCode,
@@ -30,6 +34,13 @@ in a transcript becomes a token tally and is then dropped — prompt text, tool 
 file contents and paths inside a transcript are never retained, logged, cached, or sent
 anywhere; only integer counts plus a model and session identifier are kept, in a local
 cache that exists to make re-opening a transcript file cheap on a later look.
+
+Each scan also adds daily totals to Houston's local SQLite database. The activity
+calendar can keep a day after Claude Code or Codex removes its transcript. History
+begins when a scan first records that day; older days cannot be reconstructed from
+transcripts that have already been deleted. The calendar request returns no more than
+365 local calendar days. The scan cache stores the workspace association and speed
+tier, but does not retain the transcript working directory.
 
 Dollar costs are computed from LiteLLM's public model catalog, fetched from GitHub and
 cached locally. The same cached catalog supplies model context limits to the context

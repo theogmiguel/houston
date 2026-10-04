@@ -31,6 +31,12 @@ function bucket(over: Partial<UsageBucket> & { hour_start_ms: number }): UsageBu
     records: 5,
     unpriced_records: 0,
     sessions: 2,
+    workspace_path: null,
+    category_cost_usd: { input_usd: 0, cache_read_usd: 0, cache_write_usd: 0, output_usd: 0, other_usd: 0 },
+    fast_cost_usd: 0,
+    ultrafast_cost_usd: 0,
+    speed_premium_usd: 0,
+    speed_rate_available: true,
     ...over
   }
 }

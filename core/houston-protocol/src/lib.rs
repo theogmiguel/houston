@@ -3568,6 +3568,20 @@ pub enum ClientMsg {
         until_ms: i64,
         #[serde(default)]
         refresh_pricing: bool,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
+    },
+    UsageActivitySummaryGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        since_ms: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
     },
     BrowserToolResult {
         request_id: u64,
@@ -4227,6 +4241,13 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         scan_duration_ms: u64,
     },
+    UsageActivitySummary {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        since_ms: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+        days: Vec<UsageActivityDay>,
+    },
     Error {
         message: String,
         context: Option<String>,
@@ -4315,6 +4336,32 @@ pub struct UsageBucket {
     pub records: u32,
     pub unpriced_records: u32,
     pub sessions: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub workspace_path: Option<String>,
+    pub category_cost_usd: UsageCategoryCost,
+    pub fast_cost_usd: f64,
+    pub ultrafast_cost_usd: f64,
+    pub speed_premium_usd: f64,
+    pub speed_rate_available: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageCategoryCost {
+    pub input_usd: f64,
+    pub cache_read_usd: f64,
+    pub cache_write_usd: f64,
+    pub output_usd: f64,
+    pub other_usd: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageActivityDay {
+    pub day: String,
+    pub cost_usd: f64,
+    pub totals: UsageTokenTotals,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4369,6 +4416,9 @@ pub struct UsagePricing {
 }
 
 pub const USAGE_MAX_WINDOW_DAYS: u32 = 90;
+
+/// The calendar is one row per day; bounding it here keeps an activity reply small.
+pub const USAGE_ACTIVITY_MAX_DAYS: u32 = 365;
 
 pub const USAGE_WINDOW_REFUSED: &str = "usage_window_refused:";
 

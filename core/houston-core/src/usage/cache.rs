@@ -8,7 +8,7 @@ use super::transcripts::UsageRecord;
 /// Bumped whenever a parser change alters what a given file parses to. Getting
 /// this wrong is silent and permanent: stale rows keep serving the old reading
 /// of a file that will never change again. Stored in `PRAGMA user_version`.
-pub const SCAN_CACHE_VERSION: u32 = 2;
+pub const SCAN_CACHE_VERSION: u32 = 3;
 
 /// Rows for a file older than this are dropped on prune: `USAGE_MAX_WINDOW_DAYS`
 /// is the widest window the wire accepts, so such a transcript is unreachable
@@ -44,7 +44,9 @@ const SCHEMA: &str = "
         output            INTEGER NOT NULL,
         reasoning         INTEGER NOT NULL,
         dedupe_key        INTEGER,
-        reported_cost_usd REAL
+        reported_cost_usd REAL,
+        speed             TEXT NOT NULL,
+        workspace_path    TEXT
     );
     CREATE INDEX IF NOT EXISTS scan_record_file ON scan_record(file_id);
 ";
@@ -146,7 +148,7 @@ impl ScanCacheDb {
 
         let mut rows = conn.prepare_cached(
             "SELECT timestamp_ms, model, session_id, uncached_input, cached_input,
-                    cache_creation, output, reasoning, dedupe_key, reported_cost_usd
+                    cache_creation, output, reasoning, dedupe_key, reported_cost_usd, speed, workspace_path
                FROM scan_record WHERE file_id = ?1",
         )?;
         let records = rows
@@ -165,6 +167,13 @@ impl ScanCacheDb {
                     },
                     reported_cost_usd: row.get(9)?,
                     dedupe_key: row.get::<_, Option<i64>>(8)?.map(|k| k as u64),
+                    speed: match row.get::<_, String>(10)?.as_str() {
+                        "fast" => super::transcripts::UsageSpeed::Fast,
+                        "ultrafast" => super::transcripts::UsageSpeed::Ultrafast,
+                        _ => super::transcripts::UsageSpeed::Standard,
+                    },
+                    cwd: None,
+                    workspace_path: row.get(11)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -215,8 +224,8 @@ impl ScanCacheDb {
         let mut insert = conn.prepare_cached(
             "INSERT INTO scan_record
                 (file_id, timestamp_ms, model, session_id, uncached_input, cached_input,
-                 cache_creation, output, reasoning, dedupe_key, reported_cost_usd)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                 cache_creation, output, reasoning, dedupe_key, reported_cost_usd, speed, workspace_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )?;
         for r in records {
             insert.execute(rusqlite::params![
@@ -230,7 +239,13 @@ impl ScanCacheDb {
                 r.totals.output_tokens as i64,
                 r.totals.reasoning_tokens as i64,
                 r.dedupe_key.map(|k| k as i64),
-                r.reported_cost_usd
+                r.reported_cost_usd,
+                match r.speed {
+                    super::transcripts::UsageSpeed::Standard => "standard",
+                    super::transcripts::UsageSpeed::Fast => "fast",
+                    super::transcripts::UsageSpeed::Ultrafast => "ultrafast",
+                },
+                r.workspace_path
             ])?;
         }
         Ok(())
@@ -321,6 +336,9 @@ mod tests {
             },
             reported_cost_usd: Some(0.5),
             dedupe_key: dedupe,
+            speed: crate::usage::transcripts::UsageSpeed::Standard,
+            cwd: None,
+            workspace_path: None,
         }
     }
 

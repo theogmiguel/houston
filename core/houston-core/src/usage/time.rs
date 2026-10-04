@@ -109,6 +109,38 @@ pub fn floor_hour_ms(ms: i64) -> i64 {
     ms.div_euclid(HOUR_MS) * HOUR_MS
 }
 
+pub fn local_date_from_ms(ms: i64) -> String {
+    let seconds = ms.div_euclid(1_000) as libc::time_t;
+    let mut local = std::mem::MaybeUninit::<libc::tm>::uninit();
+    #[cfg(unix)]
+    let result = unsafe { libc::localtime_r(&seconds, local.as_mut_ptr()) };
+    #[cfg(windows)]
+    let result = unsafe { (libc::localtime_s)(local.as_mut_ptr(), &seconds) };
+    #[cfg(unix)]
+    let valid = !result.is_null();
+    #[cfg(windows)]
+    let valid = result == 0;
+    if !valid {
+        return ms.div_euclid(86_400_000).to_string();
+    }
+    let local = unsafe { local.assume_init() };
+    format!(
+        "{:04}-{:02}-{:02}",
+        local.tm_year + 1900,
+        local.tm_mon + 1,
+        local.tm_mday
+    )
+}
+
+pub fn local_day_ordinal_from_ms(ms: i64) -> i64 {
+    let date = local_date_from_ms(ms);
+    let mut parts = date.split('-').filter_map(|part| part.parse::<i64>().ok());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(year), Some(month), Some(day)) => days_from_civil(year, month, day),
+        _ => ms.div_euclid(86_400_000),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -588,6 +588,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::OrchestrationSettingsGet
             | proto::ClientMsg::HostInfoGet
             | proto::ClientMsg::UsageSummaryGet { .. }
+            | proto::ClientMsg::UsageActivitySummaryGet { .. }
             | proto::ClientMsg::CommandHistoryIgnoreGlobsGet
             | proto::ClientMsg::McpState
             | proto::ClientMsg::AgentProfileList
@@ -831,13 +832,33 @@ async fn dispatch(
             since_ms,
             until_ms,
             refresh_pricing,
+            workspace,
         } => {
             let daemon = Arc::clone(daemon);
             match tokio::task::spawn_blocking(move || {
-                daemon.usage_summary(since_ms, until_ms, refresh_pricing)
+                daemon.usage_summary_filtered(since_ms, until_ms, refresh_pricing, workspace)
             })
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("usage scan panicked: {e}")))
+            {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+        proto::ClientMsg::UsageActivitySummaryGet {
+            since_ms,
+            until_ms,
+            workspace,
+        } => {
+            let daemon = Arc::clone(daemon);
+            match tokio::task::spawn_blocking(move || {
+                daemon.usage_activity_summary(since_ms, until_ms, workspace)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("usage activity summary panicked: {e}")))
             {
                 Ok(msg) => {
                     let _ = send_msg(sink, &msg).await;

@@ -12,6 +12,7 @@ struct BucketKey {
     hour_start_ms: i64,
     provider: proto::UsageProvider,
     model: String,
+    workspace_path: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -23,6 +24,11 @@ struct MutableBucket {
     unpriced_records: u32,
     provider_reported_records: u32,
     sessions: HashSet<String>,
+    category_cost_usd: proto::UsageCategoryCost,
+    fast_cost_usd: f64,
+    ultrafast_cost_usd: f64,
+    speed_premium_usd: f64,
+    speed_rate_available: bool,
 }
 
 /// De-duplication is GLOBAL across the scan, never per file: resuming or forking
@@ -77,18 +83,34 @@ impl Aggregator {
             hour_start_ms: floor_hour_ms(record.timestamp_ms),
             provider: record.provider,
             model: record.model.clone(),
+            workspace_path: record.workspace_path.clone(),
         };
         let priced = price_usage(
             &self.rates,
             &record.model,
             &record.totals,
             record.reported_cost_usd,
+            record.speed,
         );
         let savings = cache_savings_usd(&self.rates, &record.model, &record.totals);
 
-        let bucket = self.buckets.entry(key).or_default();
+        let bucket = self.buckets.entry(key).or_insert_with(|| MutableBucket {
+            speed_rate_available: true,
+            ..MutableBucket::default()
+        });
         bucket.totals.add(&record.totals);
         bucket.cost_usd += priced.cost_usd;
+        bucket.category_cost_usd.input_usd += priced.category_cost_usd.input_usd;
+        bucket.category_cost_usd.cache_read_usd += priced.category_cost_usd.cache_read_usd;
+        bucket.category_cost_usd.cache_write_usd += priced.category_cost_usd.cache_write_usd;
+        bucket.category_cost_usd.output_usd += priced.category_cost_usd.output_usd;
+        bucket.category_cost_usd.other_usd += priced.category_cost_usd.other_usd;
+        bucket.fast_cost_usd += priced.fast_cost_usd;
+        bucket.ultrafast_cost_usd += priced.ultrafast_cost_usd;
+        bucket.speed_premium_usd += priced.speed_premium_usd;
+        if record.speed != super::transcripts::UsageSpeed::Standard {
+            bucket.speed_rate_available &= priced.speed_rate_available;
+        }
         bucket.cache_savings_usd += savings;
         bucket.records += 1;
         match priced.cost_source {
@@ -117,6 +139,12 @@ impl Aggregator {
                 records: bucket.records,
                 unpriced_records: bucket.unpriced_records,
                 sessions: bucket.sessions.len() as u32,
+                workspace_path: key.workspace_path,
+                category_cost_usd: bucket.category_cost_usd,
+                fast_cost_usd: bucket.fast_cost_usd,
+                ultrafast_cost_usd: bucket.ultrafast_cost_usd,
+                speed_premium_usd: bucket.speed_premium_usd,
+                speed_rate_available: bucket.speed_rate_available,
             })
             .collect();
         buckets.sort_by(|a, b| {
@@ -185,6 +213,9 @@ mod tests {
             },
             reported_cost_usd: None,
             dedupe_key: dedupe,
+            speed: crate::usage::transcripts::UsageSpeed::Standard,
+            cwd: None,
+            workspace_path: None,
         }
     }
 
