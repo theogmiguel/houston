@@ -222,6 +222,102 @@ impl Text {
         )
     }
 
+    pub fn ready_title(self) -> &'static str {
+        self.pick(
+            "*Pronto, aguardando revisão*",
+            "*Ready, waiting for review*",
+        )
+    }
+
+    pub fn refused_title(self) -> &'static str {
+        self.pick("*Não vai seguir*", "*Not going ahead*")
+    }
+
+    pub fn what_changes(self) -> &'static str {
+        self.pick("*O que muda.*", "*What changes.*")
+    }
+
+    pub fn how_to_check(self) -> &'static str {
+        self.pick(
+            "*Como conferir quando estiver no ar*",
+            "*How to check once it is live*",
+        )
+    }
+
+    pub fn review_note(self) -> &'static str {
+        self.pick(
+            "Uma pessoa do time de desenvolvimento ainda revisa a mudança e confere a tela antes de ela ir ao ar.",
+            "A developer still reviews the change and checks the screen before it goes live.",
+        )
+    }
+
+    pub fn dm_ready(self, subject: &str) -> String {
+        if self.pt() {
+            format!("*Pronto para revisão: {subject}*")
+        } else {
+            format!("*Ready for review: {subject}*")
+        }
+    }
+
+    pub fn dm_refused(self, subject: &str) -> String {
+        if self.pt() {
+            format!("*Recusado na triagem: {subject}*")
+        } else {
+            format!("*Refused at triage: {subject}*")
+        }
+    }
+
+    pub fn size_line(self, word: &str, files: usize, added: u64, deleted: u64) -> String {
+        if self.pt() {
+            let unit = if files == 1 { "arquivo" } else { "arquivos" };
+            format!("*Tamanho: {word}* · {files} {unit} · +{added} −{deleted} linhas")
+        } else {
+            let unit = if files == 1 { "file" } else { "files" };
+            format!("*Size: {word}* · {files} {unit} · +{added} −{deleted} lines")
+        }
+    }
+
+    pub fn size_word(self, size: crate::slack::form::Size) -> &'static str {
+        use crate::slack::form::Size;
+        match size {
+            Size::Small => self.pick("pequeno", "small"),
+            Size::Medium => self.pick("médio", "medium"),
+            Size::Large => self.pick("grande", "large"),
+        }
+    }
+
+    pub fn branch_pushed(self, branch: &str) -> String {
+        if self.pt() {
+            format!("Branch `{branch}`, enviada")
+        } else {
+            format!("Branch `{branch}`, pushed")
+        }
+    }
+
+    pub fn branch_local(self, branch: &str) -> String {
+        if self.pt() {
+            format!("Branch `{branch}`, não enviada")
+        } else {
+            format!("Branch `{branch}`, not pushed")
+        }
+    }
+
+    pub fn open_pr(self) -> &'static str {
+        self.pick("Abrir pull request", "Open pull request")
+    }
+
+    pub fn view_thread(self) -> &'static str {
+        self.pick("Ver thread", "View thread")
+    }
+
+    pub fn work_time(self, minutes: i64) -> String {
+        if self.pt() {
+            format!("{minutes} min de trabalho")
+        } else {
+            format!("{minutes} min of work")
+        }
+    }
+
     pub fn images_over_count(self, max: usize, attached: usize) -> String {
         if self.pt() {
             format!("Só as {max} primeiras imagens entraram ({attached} anexadas).")
@@ -271,6 +367,11 @@ mod tests {
         );
         assert_eq!(en.start_outlook(1, 2), "1 working; it starts right away");
         assert!(pt.refuse_title().chars().count() <= 24);
+        assert!(pt.other_title().chars().count() <= 24);
+        assert_eq!(
+            pt.size_line("médio", 11, 482, 0),
+            "*Tamanho: médio* · 11 arquivos · +482 −0 linhas"
+        );
         assert!(en.refuse_title().chars().count() <= 24);
     }
 }

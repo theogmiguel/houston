@@ -16,7 +16,7 @@ use crate::db::{
     IntakeRow, IntakeWrite, OutboxTarget, Outgoing, Posted, INTAKE_PENDING, INTAKE_QUEUED,
     INTAKE_REFUSED, INTAKE_STARTED,
 };
-use crate::slack::form::QuestionForm;
+use crate::slack::form::{Outcome, QuestionForm, ResultForm, Size};
 use crate::slack::text::Text;
 use crate::slack::{api, credentials, intake, socket};
 
@@ -262,6 +262,79 @@ fn refuse_view(t: Text, intake_id: i64) -> Value {
             },
         }],
     })
+}
+
+/// A medium change still reads in one sitting; past either cut it is large.
+/// Proposed cuts, to revisit with measured runs.
+const SIZE_MEDIUM_FILES_MAX: usize = 15;
+const SIZE_MEDIUM_LINES_MAX: u64 = 600;
+/// Without the agent's word, a change this narrow counts as small.
+const SIZE_SMALL_FILES_MAX: usize = 3;
+
+/// Small is the agent's call (the repository's own rule); otherwise the
+/// counted files and lines decide.
+fn size_category(agent: Option<Size>, size: crate::git::DiffSize) -> Size {
+    let lines = size.added + size.deleted;
+    match agent {
+        Some(Size::Small) => Size::Small,
+        None if size.files <= SIZE_SMALL_FILES_MAX => Size::Small,
+        _ if size.files <= SIZE_MEDIUM_FILES_MAX && lines <= SIZE_MEDIUM_LINES_MAX => Size::Medium,
+        _ => Size::Large,
+    }
+}
+
+#[derive(Default)]
+struct RunFacts {
+    pr_url: Option<String>,
+    open_pr: Option<String>,
+    pushed: Option<String>,
+    size: Option<crate::git::DiffSize>,
+}
+
+/// Agent text bound for Slack: the workspace path cut out, secrets redacted.
+fn for_slack(workspace: &str, summary: &str) -> String {
+    let summary = summary.trim().replace(workspace, ".");
+    let (summary, _) = crate::sanitize::redact_secrets(&summary);
+    truncate_chars(&summary, SUMMARY_MAX_CHARS)
+}
+
+/// The thread's result, laid out from the agent's fields.
+fn result_blocks(t: Text, form: &ResultForm) -> Value {
+    let refused = form.outcome == Outcome::Refused;
+    let mut blocks = vec![section(if refused {
+        t.refused_title()
+    } else {
+        t.ready_title()
+    })];
+    if refused {
+        blocks.push(section(&escape(&form.changes)));
+    } else {
+        blocks.push(section(&format!(
+            "{} {}",
+            t.what_changes(),
+            escape(&form.changes)
+        )));
+    }
+    if !form.steps.is_empty() {
+        let steps: Vec<String> = form
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("{}. {}", i + 1, escape(s)))
+            .collect();
+        blocks.push(section(&format!(
+            "{}\n{}",
+            t.how_to_check(),
+            steps.join("\n")
+        )));
+    }
+    if let Some(c) = &form.caveats {
+        blocks.push(section(&escape(c)));
+    }
+    if !refused {
+        blocks.push(context(t.review_note()));
+    }
+    Value::Array(blocks)
 }
 
 /// An answer in the person's own words; required, unlike a refusal reason.
@@ -536,9 +609,15 @@ impl Daemon {
              --question \"...\" --option \"...\" --option \"...\" --recommended N` (2 to 4 \
              options; or the `task_ask` MCP tool): it goes to the request's thread with a button \
              per option, and the answer arrives as your next prompt, so end your turn after \
-             asking. Write everything the requester reads (the question \
-             and the hand-back) in {language}, in product words: no task keys, branches or file \
-             paths."
+             asking. Hand the task back with fields instead of --summary: `hs-task handback \
+             --subject \"title, at most 60 characters\" --changes \"what changes\" --step \"how \
+             to see it once live\" (up to 3) [--caveats \"...\"] --live-note \"posted when it \
+             goes live\" --dropped-note \"posted if it is dropped\" [--size small] [--note \
+             \"fact for the owner\"] [--warning \"warning for the owner\"]`, or `--refused \
+             --subject ... --changes \"why, and what would make it executable\"` when it should \
+             not go ahead (or `task_handback` with `result`). Write everything the requester \
+             reads (the question, the subject, changes, steps, caveats and both notes) in \
+             {language}, in product words: no task keys, branches or file paths."
         ))
     }
 
@@ -1392,7 +1471,14 @@ impl Daemon {
 
     /// How the owner's messages name a request.
     fn slack_ident(&self, row: &IntakeRow) -> String {
-        self.slack_text().request_of(&row.channel, &row.author)
+        let subject = self
+            .db
+            .intake_latest_result(row.id)
+            .ok()
+            .flatten()
+            .and_then(|(_, raw)| serde_json::from_str::<ResultForm>(&raw).ok())
+            .map(|f| format!("*{}*", escape(&f.subject)));
+        subject.unwrap_or_else(|| self.slack_text().request_of(&row.channel, &row.author))
     }
 
     /// The request's text as filed, without the list of saved images.
@@ -1607,7 +1693,7 @@ impl Daemon {
             bail!("{key} already has a question waiting in its thread (question {}); end your turn and wait for its answer", open.id);
         }
         let now = now_unix_ms();
-        let redact = |text: &str| crate::sanitize::redact_secrets(text).0;
+        let redact = |text: &str| for_slack(&row.workspace, text);
         let form = QuestionForm {
             context: form.context.as_deref().map(redact),
             question: redact(&form.question),
@@ -1730,7 +1816,11 @@ impl Daemon {
                     self.db.intake_set_status(row.id, status, now)?;
                 }
                 proto::TaskRunState::HandedBack => {
-                    self.db.intake_set_status(row.id, R_READY, now)?;
+                    let refused = self
+                        .slack_result_of(run.id)?
+                        .is_some_and(|f| f.outcome == Outcome::Refused);
+                    let status = if refused { R_DROPPED } else { R_READY };
+                    self.db.intake_set_status(row.id, status, now)?;
                     if !self.db.intake_outbox_has(&format!("handback:{}", run.id))? {
                         self.slack_handed_back(&row, &run).await?;
                     }
@@ -1767,21 +1857,120 @@ impl Daemon {
         Ok(())
     }
 
+    /// The thread's "ready" (or "not going ahead") message, from the agent's
+    /// fields, and the owner's message with the size, branch, pull request,
+    /// warnings and time worked.
     async fn slack_handed_back(
         self: &Arc<Self>,
         row: &IntakeRow,
         run: &crate::db::TaskRunRow,
     ) -> Result<()> {
         let now = now_unix_ms();
-        let key = self.task_key_of(run.task_id)?.unwrap_or_default();
-        let branch = run.branch.clone().unwrap_or_default();
-        let pr_url = match (&run.pr_url, &run.worktree_path) {
-            (Some(url), _) => Some(url.clone()),
-            (None, Some(dir)) => {
-                let dir = PathBuf::from(dir);
-                let found =
-                    tokio::task::spawn_blocking(move || crate::gh::pr_for_checkout(&dir)).await?;
-                match found {
+        let t = self.slack_text();
+        let form = self.slack_result_of(run.id)?;
+        let refused = form.as_ref().is_some_and(|f| f.outcome == Outcome::Refused);
+        let thread = match &form {
+            Some(form) => result_blocks(t, form),
+            None => {
+                let summary = for_slack(&row.workspace, run.summary.as_deref().unwrap_or(""));
+                Value::Array(vec![
+                    section(t.ready_title()),
+                    section(&format!("{} {}", t.what_changes(), escape(&summary))),
+                    context(t.review_note()),
+                ])
+            }
+        };
+        let title = if refused {
+            t.refused_title()
+        } else {
+            t.ready_title()
+        };
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("handback:{}", run.id),
+            &Outgoing::message(
+                OutboxTarget::Thread,
+                strip_mrkdwn(title),
+                Some(thread.to_string()),
+            ),
+            now,
+        )?;
+
+        let facts = self.slack_run_facts(run).await?;
+        let subject = form
+            .as_ref()
+            .map(|f| escape(&f.subject))
+            .unwrap_or_else(|| self.slack_ident(row));
+        let heading = if refused {
+            t.dm_refused(&subject)
+        } else {
+            t.dm_ready(&subject)
+        };
+        let mut blocks = vec![section(&heading)];
+        if !refused {
+            if let Some(size) = facts.size {
+                let category = size_category(form.as_ref().and_then(|f| f.size), size);
+                blocks.push(section(&t.size_line(
+                    t.size_word(category),
+                    size.files,
+                    size.added,
+                    size.deleted,
+                )));
+            }
+            let branch = match &facts.pushed {
+                Some(remote) => t.branch_pushed(remote),
+                None => t.branch_local(run.branch.as_deref().unwrap_or_default()),
+            };
+            blocks.push(section(&branch));
+        }
+        for warning in form.iter().flat_map(|f| &f.warnings) {
+            blocks.push(section(&format!("⚠️ {}", escape(warning))));
+        }
+        let worked_ms = run.ended_at_ms.unwrap_or(now)
+            - run.started_at_ms
+            - self.db.intake_question_wait_ms(run.id, now)?;
+        let mut line: Vec<String> = form
+            .iter()
+            .flat_map(|f| &f.notes)
+            .map(|n| escape(n))
+            .collect();
+        line.push(t.work_time((worked_ms.max(0) + 59_999) / 60_000));
+        blocks.push(context(&line.join(" · ")));
+        let mut buttons = Vec::new();
+        if let Some(url) = facts.pr_url.as_deref().or(facts.open_pr.as_deref()) {
+            let mut b = link_button(t.open_pr(), url);
+            b["style"] = json!("primary");
+            buttons.push(b);
+        }
+        if let Some(link) = &row.permalink {
+            buttons.push(link_button(t.view_thread(), link));
+        }
+        if !buttons.is_empty() {
+            blocks.push(json!({"type": "actions", "elements": buttons}));
+        }
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("dm-result:{}", run.id),
+            &Outgoing::message(
+                OutboxTarget::Dm,
+                strip_mrkdwn(&heading),
+                Some(Value::Array(blocks).to_string()),
+            ),
+            now,
+        )?;
+        Ok(())
+    }
+
+    /// What git and the forge say about a handed-back run's worktree.
+    async fn slack_run_facts(&self, run: &crate::db::TaskRunRow) -> Result<RunFacts> {
+        let Some(dir) = run.worktree_path.clone().map(PathBuf::from) else {
+            return Ok(RunFacts::default());
+        };
+        let pr_url = match &run.pr_url {
+            Some(url) => Some(url.clone()),
+            None => {
+                let at = dir.clone();
+                match tokio::task::spawn_blocking(move || crate::gh::pr_for_checkout(&at)).await? {
                     crate::gh::PrLookup::Found(facts) => {
                         self.db.task_run_set_pr_url(run.id, Some(&facts.url))?;
                         self.broadcast_task_run(run.id);
@@ -1790,66 +1979,90 @@ impl Daemon {
                     _ => None,
                 }
             }
-            (None, None) => None,
         };
-        let pushed = match &run.worktree_path {
-            Some(dir) => {
-                let dir = PathBuf::from(dir);
-                tokio::task::spawn_blocking(move || {
-                    crate::git::upstream_branch(&dir).map(|b| (b, crate::git::remote_url(&dir)))
-                })
-                .await?
-            }
-            None => None,
-        };
-        let open_pr = match (&pr_url, &pushed) {
-            (None, Some((remote_branch, Some(remote)))) => pr_creation_url(remote, remote_branch),
+        let base = run.base_commit.clone();
+        let (pushed, remote, size) = tokio::task::spawn_blocking(move || {
+            let pushed = crate::git::upstream_branch(&dir);
+            let remote = crate::git::remote_url(&dir);
+            let size = base.and_then(|b| crate::git::diff_size(&dir, &b).ok());
+            (pushed, remote, size)
+        })
+        .await?;
+        let open_pr = match (&pr_url, &pushed, &remote) {
+            (None, Some(branch), Some(remote)) => pr_creation_url(remote, branch),
             _ => None,
         };
-        let branch_line = match &pushed {
-            Some((remote_branch, _)) => format!("Branch: `{remote_branch}` (pushed)"),
-            None => format!("Branch: `{branch}` (local, not pushed)"),
-        };
-        let text = Self::slack_result_text(
-            &key,
-            &row.workspace,
-            &branch_line,
-            pr_url.as_deref(),
-            open_pr.as_deref(),
-            run.summary.as_deref(),
-        );
-        self.db.intake_outbox_push(
-            row.id,
-            &format!("handback:{}", run.id),
-            &Outgoing::message(OutboxTarget::Thread, text, None),
-            now,
-        )?;
-        Ok(())
+        Ok(RunFacts {
+            pr_url,
+            open_pr,
+            pushed,
+            size,
+        })
     }
 
-    /// What the thread learns at hand-back: state, branch, pull request and the
-    /// agent's own summary. The workspace path is cut out, secrets redacted.
-    fn slack_result_text(
-        key: &str,
+    fn slack_result_of(&self, run_id: i64) -> Result<Option<ResultForm>> {
+        Ok(self
+            .db
+            .intake_result(run_id)?
+            .and_then(|raw| serde_json::from_str(&raw).ok()))
+    }
+
+    /// `hs-task handback` / `task_handback`: a Slack-filed task hands back the
+    /// structured fields, which Houston keeps for the thread and turns into
+    /// the task comment; any other task hands back a one-line summary.
+    #[allow(clippy::too_many_arguments)]
+    pub fn task_handback_from(
+        &self,
         workspace: &str,
-        branch_line: &str,
-        pr_url: Option<&str>,
-        open_pr: Option<&str>,
+        id: i64,
         summary: Option<&str>,
-    ) -> String {
-        let mut text = format!("{key} is ready for review.\n{branch_line}");
-        if let Some(url) = pr_url {
-            text.push_str(&format!("\nPull request: {url}"));
-        } else if let Some(url) = open_pr {
-            text.push_str(&format!("\nOpen the pull request: {url}"));
-        }
-        if let Some(summary) = summary.map(str::trim).filter(|s| !s.is_empty()) {
-            let summary = summary.replace(workspace, ".");
-            let (summary, _) = crate::sanitize::redact_secrets(&summary);
-            text.push_str("\n\n");
-            text.push_str(&truncate_chars(&summary, SUMMARY_MAX_CHARS));
-        }
-        text
+        form: Option<ResultForm>,
+        session: u32,
+        actor: &str,
+        operation: &str,
+    ) -> Result<proto::ServerMsg> {
+        let summary = summary.map(str::trim).filter(|s| !s.is_empty());
+        let intake = self.db.intake_for_task(id)?;
+        let summary = match (&intake, form) {
+            (Some(row), form) => {
+                // An empty form fails with the message that names every field.
+                let form = form.unwrap_or_default().normalized()?;
+                let redact = |text: &str| for_slack(&row.workspace, text);
+                let form = ResultForm {
+                    subject: redact(&form.subject),
+                    changes: redact(&form.changes),
+                    steps: form.steps.iter().map(|s| redact(s)).collect(),
+                    caveats: form.caveats.as_deref().map(redact),
+                    live_note: form.live_note.as_deref().map(redact),
+                    dropped_note: form.dropped_note.as_deref().map(redact),
+                    notes: form.notes.iter().map(|s| redact(s)).collect(),
+                    warnings: form.warnings.iter().map(|s| redact(s)).collect(),
+                    ..form
+                };
+                if let Some(run) = self.db.open_task_run_for_task(id)? {
+                    self.db.intake_result_set(
+                        run.id,
+                        row.id,
+                        &serde_json::to_string(&form)?,
+                        now_unix_ms(),
+                    )?;
+                }
+                summary
+                    .map(str::to_string)
+                    .unwrap_or_else(|| form.summary())
+            }
+            (None, Some(form)) => summary
+                .map(str::to_string)
+                .unwrap_or_else(|| form.summary()),
+            (None, None) => match summary {
+                Some(s) => s.to_string(),
+                None => bail!(
+                    "{operation} needs --summary \"…\" — one line on what was done; expected \
+                     `hs-task handback [HOU-n] --summary T`"
+                ),
+            },
+        };
+        self.task_handback(workspace, id, &summary, session, actor, operation)
     }
 
     /// Answers are typed into their pane only when it is idle, the way a
@@ -2063,20 +2276,65 @@ mod tests {
     }
 
     #[test]
-    fn the_result_cuts_the_workspace_path_and_redacts_secrets() {
-        let text = Daemon::slack_result_text(
-            "HOU-7",
+    fn a_summary_without_fields_loses_the_workspace_path_and_its_secrets() {
+        let text = for_slack(
             "/home/u/repo",
-            "Branch: `feat/x` (pushed)",
-            Some("https://github.com/o/r/pull/9"),
-            None,
-            Some("Changed /home/u/repo/src/a.rs; token xoxb-123456789012-abcdefghijkl"),
+            "Changed /home/u/repo/src/a.rs; token xoxb-123456789012-abcdefghijkl",
         );
-        assert!(text.contains("HOU-7 is ready for review."));
-        assert!(text.contains("Pull request: https://github.com/o/r/pull/9"));
         assert!(text.contains("./src/a.rs"), "{text}");
         assert!(!text.contains("/home/u/repo"), "{text}");
         assert!(text.contains("[redacted:slack_token]"), "{text}");
+    }
+
+    #[test]
+    fn small_is_the_agents_word_and_the_counts_decide_medium_and_large() {
+        let size = |files, added, deleted| crate::git::DiffSize {
+            files,
+            added,
+            deleted,
+        };
+        assert_eq!(
+            size_category(Some(Size::Small), size(9, 400, 0)),
+            Size::Small
+        );
+        assert_eq!(size_category(None, size(3, 50, 0)), Size::Small);
+        assert_eq!(
+            size_category(Some(Size::Medium), size(3, 50, 0)),
+            Size::Medium
+        );
+        assert_eq!(size_category(None, size(11, 482, 0)), Size::Medium);
+        assert_eq!(size_category(None, size(16, 10, 0)), Size::Large);
+        assert_eq!(size_category(None, size(4, 400, 201)), Size::Large);
+    }
+
+    #[test]
+    fn the_thread_result_is_laid_out_from_the_fields_and_escapes_them() {
+        let form = ResultForm {
+            subject: "Tier conversion".into(),
+            changes: "A <new> block & more.".into(),
+            steps: vec!["Open it.".into(), "Change the period.".into()],
+            caveats: Some("Numbers lag by a day.".into()),
+            ..Default::default()
+        };
+        let text = result_blocks(Text(proto::SlackLanguage::PtBr), &form).to_string();
+        assert!(text.contains("*Pronto, aguardando revisão*"), "{text}");
+        assert!(text.contains("A &lt;new&gt; block &amp; more."), "{text}");
+        assert!(
+            text.contains(
+                "*Como conferir quando estiver no ar*\\n1. Open it.\\n2. Change the period."
+            ),
+            "{text}"
+        );
+        assert!(text.contains("ainda revisa a mudança"), "{text}");
+        let refused = ResultForm {
+            outcome: Outcome::Refused,
+            ..form
+        };
+        let text = result_blocks(Text(proto::SlackLanguage::PtBr), &refused).to_string();
+        assert!(
+            text.contains("*Não vai seguir*") && !text.contains("ainda revisa"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -2097,19 +2355,6 @@ mod tests {
         assert_eq!(
             pr_creation_url("git@bitbucket.org:team/a/b.git", "feat/x"),
             None
-        );
-        let text = Daemon::slack_result_text(
-            "HOU-7",
-            "/home/u/repo",
-            "Branch: `feat/x` (pushed)",
-            None,
-            Some("https://bitbucket.org/team/repo/pull-requests/new?source=feat/x&t=1"),
-            None,
-        );
-        assert!(text.contains("Branch: `feat/x` (pushed)"), "{text}");
-        assert!(
-            text.contains("Open the pull request: https://bitbucket.org/team/repo/"),
-            "{text}"
         );
     }
 }

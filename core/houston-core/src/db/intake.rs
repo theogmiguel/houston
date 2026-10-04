@@ -49,7 +49,14 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             last_error TEXT,
             created_at INTEGER NOT NULL,
             sent_at    INTEGER
-        );",
+        );
+        CREATE TABLE IF NOT EXISTS intake_results (
+            run_id     INTEGER PRIMARY KEY,
+            intake_id  INTEGER NOT NULL,
+            form       TEXT    NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_intake_results_intake ON intake_results(intake_id, run_id);",
     )?;
     super::add_column_if_missing(
         conn,
@@ -626,6 +633,59 @@ impl Db {
             )
             .optional()?
             .flatten())
+    }
+
+    /// The agent's hand-back fields for one run; a second hand-back replaces them.
+    pub fn intake_result_set(
+        &self,
+        run_id: i64,
+        intake_id: i64,
+        form: &str,
+        now_ms: i64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO intake_results (run_id, intake_id, form, created_at) VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(run_id) DO UPDATE SET form = excluded.form, created_at = excluded.created_at",
+            rusqlite::params![run_id, intake_id, form, now_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn intake_result(&self, run_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT form FROM intake_results WHERE run_id = ?1",
+                [run_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// The newest run's hand-back fields of a request: (run id, form).
+    pub fn intake_latest_result(&self, intake_id: i64) -> Result<Option<(i64, String)>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT run_id, form FROM intake_results WHERE intake_id = ?1 \
+                 ORDER BY run_id DESC LIMIT 1",
+                [intake_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// How long a run's questions waited for a person, up to `now_ms` for one
+    /// still open.
+    pub fn intake_question_wait_ms(&self, run_id: i64, now_ms: i64) -> Result<i64> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT COALESCE(SUM(COALESCE(answered_at, ?2) - created_at), 0) \
+             FROM intake_questions WHERE run_id = ?1",
+            rusqlite::params![run_id, now_ms],
+            |r| r.get(0),
+        )?)
     }
 
     pub fn task_run_set_pr_url(&self, run_id: i64, pr_url: Option<&str>) -> Result<()> {

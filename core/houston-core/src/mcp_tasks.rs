@@ -242,14 +242,32 @@ fn all_specs() -> Vec<ToolSpec> {
             "task_handback",
             "Hand a task back",
             "Return finished work: the summary becomes a comment and the task moves to \
-             in_review, never done.",
+             in_review, never done. A task filed from Slack hands back `result` instead: the \
+             fields the requester and the owner read.",
             json!({
                 "type": "object",
                 "properties": {
                     "id": id_property(),
                     "summary": { "type": "string" },
+                    "result": {
+                        "type": "object",
+                        "properties": {
+                            "outcome": { "type": "string", "enum": ["ready", "refused"] },
+                            "subject": { "type": "string", "description": "A short title for the request, at most 60 characters." },
+                            "changes": { "type": "string", "description": "What changes, in product words; for a refusal, why and what would make it executable." },
+                            "steps": { "type": "array", "items": { "type": "string" }, "maxItems": crate::slack::form::RESULT_STEPS_MAX, "description": "How to see the change once it is live." },
+                            "caveats": { "type": "string" },
+                            "live_note": { "type": "string", "description": "Posted to the thread when the task is Done." },
+                            "dropped_note": { "type": "string", "description": "Posted to the thread when the task is Canceled." },
+                            "size": { "type": "string", "enum": ["small", "medium", "large"] },
+                            "notes": { "type": "array", "items": { "type": "string" }, "description": "Short facts for the owner only." },
+                            "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings for the owner only." },
+                        },
+                        "required": ["subject", "changes"],
+                        "additionalProperties": false,
+                    },
                 },
-                "required": ["id", "summary"],
+                "required": ["id"],
                 "additionalProperties": false,
             }),
         ),
@@ -583,9 +601,23 @@ fn dispatch(
         }
         "task_handback" => {
             let id = task_ref(daemon, workspace, args, name)?;
-            let summary = required_string(args, "summary")?;
-            let msg =
-                daemon.task_handback(workspace, id, &summary, session, &actor, "task_handback")?;
+            let summary = args.get("summary").and_then(Value::as_str);
+            let result = match args.get("result") {
+                Some(raw) => Some(
+                    serde_json::from_value::<crate::slack::form::ResultForm>(raw.clone())
+                        .map_err(|e| anyhow::anyhow!("task_handback result does not parse: {e}"))?,
+                ),
+                None => None,
+            };
+            let msg = daemon.task_handback_from(
+                workspace,
+                id,
+                summary,
+                result,
+                session,
+                &actor,
+                "task_handback",
+            )?;
             let output = changed_output(daemon, msg, Some("handed back"))?;
             Ok(with_status(output, "in_review"))
         }

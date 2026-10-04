@@ -15,6 +15,9 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task comment [HOU-n] TEXT
   hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
   hs-task handback [HOU-n] --summary T
+  hs-task handback [HOU-n] --subject T --changes T --step T [--step …] [--caveats T]
+             --live-note T --dropped-note T [--size small|medium|large]
+             [--note T …] [--warning T …] [--refused]   (a Slack-filed task)
   hs-task ask --question Q --option A --option B [--option …] --recommended N
              [--context T]           (a Slack-filed task: asks in its thread)
 
@@ -148,17 +151,31 @@ fn cli(args: &[String]) -> Result<()> {
         }
         "handback" => {
             let key = key_arg(rest.first())?;
-            let summary = flag("summary").ok_or_else(|| {
-                anyhow::anyhow!(
+            let structured = ["subject", "changes", "refused"]
+                .iter()
+                .any(|k| flags.contains_key(*k));
+            let mut body = json!({ "key": key, "summary": flag("summary") });
+            if structured {
+                body["result"] = json!({
+                    "outcome": if flags.contains_key("refused") { "refused" } else { "ready" },
+                    "subject": flag("subject").unwrap_or_default(),
+                    "changes": flag("changes").unwrap_or_default(),
+                    "steps": repeated(&args, "--step"),
+                    "caveats": flag("caveats"),
+                    "live_note": flag("live-note"),
+                    "dropped_note": flag("dropped-note"),
+                    "size": flag("size"),
+                    "notes": repeated(&args, "--note"),
+                    "warnings": repeated(&args, "--warning"),
+                });
+            } else if flag("summary").is_none() {
+                bail!(
                     "handback needs --summary \"…\" — one line on what was done; expected \
-                     `hs-task handback [HOU-n] --summary T`"
-                )
-            })?;
-            print(call(
-                "POST",
-                "/task/handback",
-                Some(json!({ "key": key, "summary": summary })),
-            )?)
+                     `hs-task handback [HOU-n] --summary T` (a Slack-filed task hands back \
+                     --subject, --changes, --step, --live-note and --dropped-note instead)"
+                );
+            }
+            print(call("POST", "/task/handback", Some(body))?)
         }
         "ask" => {
             let options = repeated(&args, "--option");

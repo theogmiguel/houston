@@ -90,11 +90,25 @@ error stays visible until the next successful connection.
    pane is idle. Anyone else who clicks is told privately that only the requester or the
    owner answers; their replies are ignored. The owner gets no direct message for a
    question: the ❓ on the request shows it.
-5. When the agent hands the task back, Houston replies with the branch the worktree
-   pushed to (or says it was not pushed), the pull request `gh` finds for that branch
-   (GitHub only) or, when there is none, the link that opens one on GitHub or Bitbucket
-   Cloud, and the agent's hand-back summary, with the workspace path removed and secrets
-   redacted.
+5. When the agent hands the task back, it fills fields instead of a one-line summary: a
+   subject of at most 60 characters, what changes, up to three steps to see it once it is
+   live, caveats, a note for when it goes live and one for when it is dropped, and, for the
+   owner only, short facts and warnings (`hs-task handback --subject … --changes … --step …
+   --live-note … --dropped-note …`, or the `result` of the `task_handback` tool). The
+   thread gets **Ready, waiting for review** with what changes, how to check it and that a
+   developer still reviews it; the request gets 🏁. A request the agent refuses at triage
+   (`--refused`) gets **Not going ahead** with the agent's reason instead, and 🚫. The
+   thread never shows the task key, the branch or file paths; the workspace path is cut out
+   of every field and secrets are redacted.
+
+   The owner gets a direct message named by the subject, with the size in one word
+   (small, medium or large) and the files and lines changed since the run's base, the
+   pushed branch (or that it was not pushed), the warnings and facts, the time worked
+   without the time spent waiting for an answer, and an **Open pull request** button: the
+   pull request `gh` finds for the branch (GitHub only) or, when there is none, the page
+   that opens one on GitHub or Bitbucket Cloud. Small is the agent's call, following the
+   repository's own rule; without it, three files or fewer count as small. Up to 15 files
+   and 600 changed lines is medium; anything larger is large.
 
 The request shows its state as one reaction at a time, beside the owner's ✅: 👀 received,
 ⚙️ working, ❓ waiting for an answer, 🏁 ready for review, 🚫 not going ahead and ⚠️
@@ -116,6 +130,8 @@ it is mapped.
 - Images: four per request, 10 MiB each, PNG, JPEG, GIF or WebP checked by their content.
   Others are named in the owner's message and left out. Images are saved under the workspace's
   `.houston/intake/<id>/`, which git ignores.
+- Hand-back fields: subject 60 characters, what changes 1,500, three steps of 300, caveats
+  600, each note 500, six owner facts and six warnings of 200.
 - Channels: 16. A question's context: 500 characters; the question: 300; each of its two to
   four options: 200. Text typed into Houston's dialogs: 2,000 characters.
 
@@ -133,8 +149,10 @@ it is mapped.
   hand-back reply. Everyone in the channel
   can read them.
 - **Houston → Slack, to the owner only**: direct messages naming the channel, the
-  requester and the first 280 characters of the request, with the start outlook and,
-  when something needs attention, Houston's reason.
+  requester and the first 280 characters of the request, with the start outlook; at
+  hand-back, the subject, the size, the branch name, the pull request link, the agent's
+  facts and warnings and the time worked; and, when something needs attention, Houston's
+  reason.
 - **Houston → the agent's provider**: the request text and images reach the agent as task
   data, so they are sent to the provider like any prompt.
 - Nothing goes to Houston's authors or any other service. Disconnecting stops all of it.

@@ -12,7 +12,7 @@ use axum::routing::{any, get};
 use axum::{Json, Router};
 use common::start_daemon_with_handle;
 use houston_core::daemon::Daemon;
-use houston_core::slack::form::QuestionForm;
+use houston_core::slack::form::{Outcome, QuestionForm, ResultForm};
 use houston_protocol as proto;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -954,25 +954,151 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
     );
     r.fake.await_call("chat.update", "*Resposta:* Submit").await;
 
-    let handed = r
+    let refused = r
         .daemon
-        .task_handback(
+        .task_handback_from(
             &r.workspace(),
             task_id,
-            &format!("Renamed it in {}/src/a.rs", r.workspace()),
+            Some("Renamed it"),
+            None,
+            session,
+            "agent:one (operator)",
+            "task_handback",
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("--subject and --changes"),
+        "a Slack-filed task hands back fields, not a one-line summary: {refused}"
+    );
+
+    let worktree: String = r
+        .db()
+        .query_row(
+            "SELECT worktree_path FROM backlog_task_runs WHERE task_id = ?1",
+            [task_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let worktree = PathBuf::from(worktree);
+    std::fs::write(worktree.join("form.txt"), "Submit\nCancel\n").unwrap();
+    git(&worktree, &["add", "-A"]);
+    git(&worktree, &["commit", "-m", "rename the button"]);
+
+    let handed = r
+        .daemon
+        .task_handback_from(
+            &r.workspace(),
+            task_id,
+            None,
+            Some(ResultForm {
+                subject: "Botão do formulário com o rótulo Enviar".into(),
+                changes: format!(
+                    "O botão principal passa a dizer Enviar. ({}/src/a.rs)",
+                    r.workspace()
+                ),
+                steps: vec!["Abrir o formulário.".into(), "Ver o botão.".into()],
+                caveats: Some("Só na tela de cadastro.".into()),
+                live_note: Some("Está no ar: o botão já diz Enviar.".into()),
+                dropped_note: Some("Este pedido não vai seguir.".into()),
+                notes: vec!["Testes verdes".into(), "tela não conferida".into()],
+                warnings: vec![
+                    "A revisão automática não rodou: a orquestração está desligada".into(),
+                ],
+                ..Default::default()
+            }),
             session,
             "agent:one (operator)",
             "task_handback",
         )
         .unwrap();
     assert!(matches!(handed, proto::ServerMsg::TaskChanged { .. }));
-    let result = r.fake.await_post("is ready for review").await;
-    let text = result["text"].as_str().unwrap();
-    assert!(text.contains("Branch: `houston/task/hou-"), "{text}");
+    let result = r.fake.await_post("Pronto, aguardando revisão").await;
+    assert_eq!(result["channel"], CHANNEL);
+    let thread = result.to_string();
     assert!(
-        text.contains("./src/a.rs") && !text.contains(&r.workspace()),
-        "no local paths: {text}"
+        thread.contains("*O que muda.* O botão principal passa a dizer Enviar.")
+            && thread.contains("1. Abrir o formulário.")
+            && thread.contains("Só na tela de cadastro.")
+            && thread.contains("ainda revisa a mudança"),
+        "{thread}"
     );
+    assert!(
+        !thread.contains("HOU-")
+            && !thread.contains("houston/task/")
+            && !thread.contains(&r.workspace()),
+        "no task key, branch or local path in the thread: {thread}"
+    );
+    r.fake
+        .await_reactions("1800000001.000100", &["checkered_flag"])
+        .await;
+    let dm = r
+        .fake
+        .await_dm("Pronto para revisão: Botão do formulário com o rótulo Enviar")
+        .await
+        .to_string();
+    assert!(
+        dm.contains("*Tamanho: pequeno* · 1 arquivo · +2 −0 linhas")
+            && dm.contains("Branch `houston/task/hou-")
+            && dm.contains("não enviada")
+            && dm.contains("⚠️ A revisão automática não rodou")
+            && dm.contains("Testes verdes · tela não conferida · ")
+            && dm.contains("min de trabalho")
+            && dm.contains("Ver thread"),
+        "{dm}"
+    );
+    let comment: String = r
+        .db()
+        .query_row(
+            "SELECT body FROM backlog_task_comments WHERE task_id = ?1 ORDER BY id DESC LIMIT 1",
+            [task_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        comment.contains("Botão do formulário") && comment.contains("Live note: Está no ar"),
+        "the task keeps every field: {comment}"
+    );
+    r.finish();
+}
+
+#[tokio::test]
+async fn a_refusal_at_triage_tells_the_thread_why_and_marks_the_request() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-triage-refusal").await;
+    r.fake.send_event(
+        "t1",
+        mention("1800000003.000100", REQUESTER, "email every client"),
+    );
+    let task_id = r.await_tasks(1).await[0].0;
+    r.fake
+        .send_event("t2", check_mark("1800000003.000100", OWNER));
+    let session = r.await_runs(1).await[0].1;
+    r.daemon
+        .task_handback_from(
+            &r.workspace(),
+            task_id,
+            None,
+            Some(ResultForm {
+                outcome: Outcome::Refused,
+                subject: "E-mail para todos os clientes".into(),
+                changes: "Enviar mensagens a clientes precisa de uma pessoa. Com o texto aprovado, dá para preparar o envio.".into(),
+                ..Default::default()
+            }),
+            session,
+            "agent:one (operator)",
+            "task_handback",
+        )
+        .unwrap();
+    let posted = r.fake.await_post("Não vai seguir").await.to_string();
+    assert!(posted.contains("precisa de uma pessoa"), "{posted}");
+    assert!(!posted.contains("ainda revisa"), "{posted}");
+    r.fake
+        .await_reactions("1800000003.000100", &["no_entry_sign"])
+        .await;
+    r.fake
+        .await_dm("Recusado na triagem: E-mail para todos os clientes")
+        .await;
     r.finish();
 }
 

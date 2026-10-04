@@ -4325,7 +4325,11 @@ struct TaskCheckBody {
 struct TaskHandbackBody {
     key: Option<String>,
     id: Option<i64>,
-    summary: String,
+    #[serde(default)]
+    summary: Option<String>,
+    /// A Slack-filed task's fields for the thread and the owner.
+    #[serde(default)]
+    result: Option<crate::slack::form::ResultForm>,
 }
 
 /// Resolves global task references and checks the caller's agent scope.
@@ -4610,10 +4614,11 @@ async fn task_handback(
 ) -> Response {
     task_request(daemon, headers, move |d, scope, actor| {
         let id = task_id_from(d, &scope.workspace_id, body.key.as_deref(), body.id, "task")?;
-        d.task_handback(
+        d.task_handback_from(
             &scope.workspace_id,
             id,
-            &body.summary,
+            body.summary.as_deref(),
+            body.result,
             scope.session_id,
             actor,
             "task_handback",
