@@ -1666,6 +1666,7 @@ const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Elem
     routines: IconClock,
     harness: IconTarget,
     mcp: IconGlobe,
+    usage: IconChartArea,
   });
 
 const RAIL_SEARCH_CLS =

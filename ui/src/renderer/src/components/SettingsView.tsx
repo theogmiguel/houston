@@ -32,12 +32,12 @@ import { VoiceSection } from './settings/VoiceSection'
 import { ShortcutsSection } from './settings/ShortcutsSection'
 import { OrchestrationSection } from './settings/OrchestrationSection'
 import { TasksSection } from './settings/TasksSection'
-import type { UsageSummaryMsg } from './UsageSection'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
 import type { AgentProfileActive } from '../houston/generated/AgentProfileActive'
 import type { SessionPolicy } from '../houston/generated/SessionPolicy'
 import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
+import type { UsageSummaryMsg } from './UsageSection'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
 import { MATERIAL_CLS, materialAttrs } from './material'
 
@@ -146,16 +146,16 @@ interface Props {
   onMailboxRetentionSet: (hours: number) => void
 
   hostInfo: HostInfo | null
+  usage: UsageSummaryMsg | null
+  usageLoading: boolean
+  usageError: string | null
+  onUsageRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
   agentHooks: AgentHookState[] | null
   agentHooksCheckedAt?: number | null
   onAgentHooksSet: (provider: AgentKind, enabled: boolean) => void
   onAgentHooksRefresh: () => void
   onOpenHooks: () => void
   onRevealSessionDb: () => void
-  usage: UsageSummaryMsg | null
-  usageLoading: boolean
-  usageError: string | null
-  onUsageRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
 }
 
 function SectionDispatch({
@@ -241,11 +241,7 @@ function SectionDispatch({
   onAgentHooksSet,
   onAgentHooksRefresh,
   onOpenHooks,
-  onRevealSessionDb,
-  usage,
-  usageLoading,
-  usageError,
-  onUsageRequest
+  onRevealSessionDb
 }: SectionDispatchProps): React.JSX.Element {
   return (
     <>
@@ -391,12 +387,7 @@ function SectionDispatch({
         )}
 
         {section === 'usage' && (
-          <UsageTabSection
-            usage={usage}
-            usageLoading={usageLoading}
-            usageError={usageError}
-            onUsageRequest={onUsageRequest}
-          />
+          <UsageTabSection />
         )}
 
         {section === 'diagnostics' && (
@@ -462,7 +453,7 @@ export function SettingsView(props: Props): React.JSX.Element {
       {}
       <div
         className={`w-full min-w-0 mx-auto px-[var(--space-6)] pt-[var(--space-6)] pb-[60px] ${
-          section === 'usage' || section === 'agent-setup'
+          section === 'agent-setup'
             ? PAGE_COLUMN_WIDE_CLS
             : PAGE_COLUMN_CLS
         }`}

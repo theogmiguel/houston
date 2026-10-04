@@ -3,11 +3,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { SettingsView } from './SettingsView'
+import { UsageSection, categoryTotals, speedTotals } from './UsageSection'
 import type { UsageSummaryMsg } from './UsageSection'
-import { monotonePath, niceScale } from './UsageChart'
-import { setSettingsNavForTests } from '../settingsNav'
-import { baseSettingsViewProps } from './settingsViewTestFixtures'
 import type { UsageBucket } from '../houston/generated/UsageBucket'
 
 const DAY = 86_400_000
@@ -26,16 +23,16 @@ function bucket(over: Partial<UsageBucket> & { hour_start_ms: number }): UsageBu
       reasoning_tokens: 100
     },
     cost_usd: 100,
-    cache_savings_usd: 400,
+    cache_savings_usd: 4,
     cost_source: 'model_priced',
     records: 5,
     unpriced_records: 0,
     sessions: 2,
-    workspace_path: null,
-    category_cost_usd: { input_usd: 0, cache_read_usd: 0, cache_write_usd: 0, output_usd: 0, other_usd: 0 },
-    fast_cost_usd: 0,
-    ultrafast_cost_usd: 0,
-    speed_premium_usd: 0,
+    workspace_path: '/proj',
+    category_cost_usd: { input_usd: 10, cache_read_usd: 40, cache_write_usd: 15, output_usd: 35, other_usd: 0 },
+    fast_cost_usd: 10,
+    ultrafast_cost_usd: 2,
+    speed_premium_usd: 8,
     speed_rate_available: true,
     ...over
   }
@@ -49,63 +46,15 @@ function summary(over: Partial<UsageSummaryMsg> = {}): UsageSummaryMsg {
     read_at_ms: DAY0 + 3 * DAY,
     buckets: [
       bucket({ hour_start_ms: DAY0 + HOUR }),
-      bucket({
-        hour_start_ms: DAY0 + DAY,
-        provider: 'codex',
-        model: 'gpt-5-codex',
-        cost_usd: 25
-      }),
-      bucket({
-        hour_start_ms: DAY0 + DAY,
-        model: '<synthetic>',
-        cost_usd: 0,
-        records: 3,
-        unpriced_records: 3,
-        cost_source: 'unpriced'
-      })
+      bucket({ hour_start_ms: DAY0 + DAY, provider: 'codex', model: 'gpt-5-codex', cost_usd: 25,
+        category_cost_usd: { input_usd: 2.5, cache_read_usd: 10, cache_write_usd: 3.75, output_usd: 8.75, other_usd: 0 },
+        fast_cost_usd: 0, ultrafast_cost_usd: 0, speed_premium_usd: 0 }),
+      bucket({ hour_start_ms: DAY0 + DAY, model: '<synthetic>', cost_usd: 0, records: 3, unpriced_records: 3, cost_source: 'unpriced',
+        category_cost_usd: { input_usd: 0, cache_read_usd: 0, cache_write_usd: 0, output_usd: 0, other_usd: 0 } })
     ],
-    sources: [
-      {
-        provider: 'claude',
-        path: '/home/u/.claude/projects',
-        profile_name: null,
-        status: 'ok',
-        scanned_files: 120,
-        skipped_files: 8,
-        failed_files: 0,
-        distinct_sessions: 31,
-        message: null
-      },
-      {
-        provider: 'claude',
-        path: '/home/u/.claude-personal/projects',
-        profile_name: 'personal',
-        status: 'ok',
-        scanned_files: 90,
-        skipped_files: 2,
-        failed_files: 0,
-        distinct_sessions: 12,
-        message: null
-      },
-      {
-        provider: 'codex',
-        path: '/home/u/.codex/sessions',
-        profile_name: null,
-        status: 'missing',
-        scanned_files: 0,
-        skipped_files: 0,
-        failed_files: 0,
-        distinct_sessions: 0,
-        message: '/home/u/.codex/sessions does not exist'
-      }
-    ],
-    pricing: {
-      status: 'cached',
-      source: 'https://example.invalid/rates.json',
-      fetched_at_ms: DAY0,
-      known_models: 1_681,
-      message: null
-    },
+    sources: [{ provider: 'claude', path: '/home/u/.claude/projects', profile_name: null, status: 'ok', scanned_files: 120, skipped_files: 8, failed_files: 0, distinct_sessions: 31, message: null },
+      { provider: 'codex', path: '/home/u/.codex/sessions', profile_name: null, status: 'ok', scanned_files: 40, skipped_files: 0, failed_files: 0, distinct_sessions: 12, message: null }],
+    pricing: { status: 'cached', source: 'https://example.invalid/rates.json', fetched_at_ms: DAY0, known_models: 1_681, message: null },
     untracked_agents: ['antigravity', 'opencode', 'cursor', 'grok'],
     scan_duration_ms: 1_800,
     ...over
@@ -115,175 +64,83 @@ function summary(over: Partial<UsageSummaryMsg> = {}): UsageSummaryMsg {
 let host: HTMLDivElement
 let root: Root
 
-function render(props: Partial<React.ComponentProps<typeof SettingsView>> = {}): void {
-  act(() => {
-    root.render(<SettingsView {...baseSettingsViewProps()} usage={summary()} {...props} />)
-  })
+function render(props: Partial<React.ComponentProps<typeof UsageSection>> = {}): void {
+  act(() => root.render(<UsageSection summary={summary()} loading={false} error={null} activity={[]} workspaces={[{ path: '/proj', name: 'Houston' }]} onRequest={() => {}} onActivityRequest={() => {}} {...props} />))
 }
 
 beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
-  act(() => setSettingsNavForTests({ section: 'usage' }))
 })
 
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 const text = (): string => host.textContent ?? ''
 const q = (sel: string): HTMLElement | null => host.querySelector(sel)
 
-describe('Settings → Usage', () => {
-  it('asks for a window as soon as the section opens', () => {
-    const onUsageRequest = vi.fn()
-    render({ usage: null, onUsageRequest })
-    expect(onUsageRequest).toHaveBeenCalledTimes(1)
-    const [since, until, refresh] = onUsageRequest.mock.calls[0]
-    expect(until - since).toBe(7 * DAY)
-    expect(refresh).toBe(false)
+describe('Usage page', () => {
+  it('requests both summary windows and includes the selected workspace', () => {
+    const onRequest = vi.fn()
+    const onActivityRequest = vi.fn()
+    render({ initialWorkspace: '/proj', onRequest, onActivityRequest })
+    expect(onRequest).toHaveBeenCalledTimes(1)
+    expect(onRequest.mock.calls[0][3]).toBe('/proj')
+    expect(onActivityRequest).toHaveBeenCalledTimes(1)
+    expect(onActivityRequest.mock.calls[0][2]).toBe('/proj')
+    expect(onActivityRequest.mock.calls[0][1] - onActivityRequest.mock.calls[0][0]).toBe(365 * DAY)
   })
 
-  it('shows the headline cost with the "not what you were billed" caveat', () => {
+  it('shows the API estimate and a tooltip with the full-rate caveat', () => {
     render()
     expect(q('[data-testid="usage-headline"]')?.textContent).toContain('$125.00')
-    expect(text()).toContain('if billed at full API rate')
+    expect(text()).toContain('43 sessions')
+    expect(host.querySelector('[aria-label="API estimate details"]')).not.toBeNull()
   })
 
-  it('splits by provider and keeps a provider that spent nothing visible', () => {
-    render({ usage: summary({ buckets: [bucket({ hour_start_ms: DAY0 + HOUR })] }) })
-    expect(q('[data-testid="usage-provider-codex"]')?.textContent).toContain('$0.00')
-    expect(q('[data-testid="usage-provider-claude"]')?.textContent).toContain('100.0% of cost')
-  })
-
-  it('names the providers it does not read instead of showing them as zero', () => {
+  it('shows 365 local calendar days with the five-step legend', () => {
     render()
-    expect(text()).toContain('Not tracked')
-    expect(text()).toContain('Antigravity')
-    expect(text()).toContain('Cursor')
-    expect(q('[data-testid="usage-provider-antigravity"]')).toBeNull()
+    expect(host.querySelectorAll('[data-testid="usage-calendar-day"]')).toHaveLength(365)
+    expect(host.querySelectorAll('[data-testid="usage-calendar"] [data-level]')).toHaveLength(370)
+    expect(text()).toContain('Mon')
+    expect(text()).toContain('Wed')
+    expect(text()).toContain('Fri')
   })
 
-  it('reports an unpriced model as unpriced, never as $0.00', () => {
+  it('a selected day filters the breakdown to that date', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(DAY0 + 2 * DAY)
     render()
-    const table = q('[data-testid="usage-breakdown"]')?.textContent ?? ''
-    expect(table).toContain('<synthetic>')
-    expect(table).toContain('not priced')
+    const expectedDay = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(DAY0 + DAY))
+    const day = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="usage-calendar-day"]')].find((button) => button.getAttribute('aria-label')?.startsWith(expectedDay))
+    act(() => day?.click())
+    const rows = [...host.querySelectorAll('[data-testid="usage-breakdown"] tbody tr')]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].textContent).toContain(expectedDay)
   })
 
-  it('pivots the breakdown between models and days', () => {
+  it('disables Limits and exposes its reason', () => {
     render()
-    const rows = (): string[] =>
-      [...host.querySelectorAll('[data-testid="usage-breakdown"] tbody tr')].map(
-        (r) => r.textContent ?? ''
-      )
-    expect(rows()[0]).toContain('claude-opus-5')
-
-    const dayBtn = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Day')
-    act(() => dayBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(rows()[0]).toMatch(/\d{4}-\d{2}-\d{2}/)
+    const limits = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Limits')
+    expect(limits?.disabled).toBe(true)
+    expect(limits?.parentElement?.getAttribute('data-tooltip')).toBe('A quota reader is not available yet')
   })
 
-  it('hiding a series hides its curve without moving the headline', () => {
+  it('category and speed segments sum to their respective totals', () => {
+    const buckets = summary().buckets
+    expect(categoryTotals(buckets).reduce((sum, item) => sum + item.value, 0)).toBe(125)
+    expect(speedTotals(buckets).reduce((sum, item) => sum + item.value, 0)).toBe(125)
+    expect(speedTotals(buckets).map((item) => item.label)).toEqual(['Standard', 'Fast', 'Ultrafast'])
+  })
+
+  it('reports unpriced models without assigning them a zero rate', () => {
     render()
-    const before = q('[data-testid="usage-headline"]')?.textContent
-    expect(q('[data-testid="usage-chart-series-codex"]')).not.toBeNull()
-
-    const legend = q('[data-testid="usage-legend-codex"]')
-    act(() => legend?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-
-    expect(q('[data-testid="usage-chart-series-codex"]')).toBeNull()
-    expect(q('[data-testid="usage-headline"]')?.textContent).toBe(before)
-  })
-
-  it('names every directory it read, and which profile produced it', () => {
-    render()
-    const sources = [...host.querySelectorAll('[data-testid="usage-source"]')].map(
-      (n) => n.textContent ?? ''
-    )
-    expect(sources).toHaveLength(3)
-    expect(sources[1]).toContain('.claude-personal/projects')
-    expect(sources[1]).toContain('personal')
-    expect(sources[2]).toContain('does not exist')
-  })
-
-  it('re-scans and re-fetches rates only on the explicit refresh', () => {
-    const onUsageRequest = vi.fn()
-    render({ onUsageRequest })
-    onUsageRequest.mockClear()
-    act(() =>
-      q('[data-testid="usage-refresh"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    )
-    expect(onUsageRequest.mock.calls[0][2]).toBe(true)
-  })
-
-  it('changing the window asks again with the new span', () => {
-    const onUsageRequest = vi.fn()
-    render({ onUsageRequest })
-    onUsageRequest.mockClear()
-    const btn = [...host.querySelectorAll('button')].find((b) => b.textContent === '30 days')
-    act(() => btn?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const [since, until, refresh] = onUsageRequest.mock.calls[0]
-    expect(until - since).toBe(30 * DAY)
-    expect(refresh).toBe(false)
-  })
-
-  it('shows a refused window in the section, not nowhere', () => {
-    render({ usage: null, usageError: 'asked for 120.0 days, limit is 90 days' })
-    expect(q('[data-testid="usage-error"]')?.textContent).toContain('limit is 90 days')
-  })
-
-  it('says nothing was recorded rather than rendering an empty table', () => {
-    render({ usage: summary({ buckets: [] }) })
-    expect(text()).toContain('Nothing was recorded in this window')
-  })
-
-  it('does not present the previous window as the answer while a wider one loads', () => {
-    render({ usageLoading: true })
-    const body = q('[data-testid="usage-body"]')
-    expect(body?.getAttribute('aria-busy')).toBe('true')
-    expect(body?.className).toContain('opacity-40')
-    expect(q('[data-testid="usage-range"]')?.textContent).toContain('reading transcripts…')
-  })
-
-  it('leaves a plain refresh of the SAME window at full strength', () => {
-    const since = Date.now() - 7 * DAY
-    render({ usage: summary({ since_ms: since, until_ms: since + 7 * DAY }), usageLoading: true })
-    const body = q('[data-testid="usage-body"]')
-    expect(body?.getAttribute('aria-busy')).toBe('false')
-    expect(body?.className ?? '').not.toContain('opacity-40')
-    expect(q('[data-testid="usage-range"]')?.textContent).not.toContain('reading transcripts…')
-  })
-})
-
-describe('chart maths', () => {
-  it('never overshoots below the data between two points', () => {
-    const xs = [0, 1, 2, 3]
-    const ys = [100, 10, 100, 100]
-    const d = monotonePath(xs, ys)
-    const control = [...d.matchAll(/C ([\d.-]+) ([\d.-]+), ([\d.-]+) ([\d.-]+)/g)].flatMap((m) => [
-      Number(m[2]),
-      Number(m[4])
-    ])
-    expect(control.every((y) => y <= 100.0001)).toBe(true)
-  })
-
-  it('degenerates safely for zero and one point', () => {
-    expect(monotonePath([], [])).toBe('')
-    expect(monotonePath([5], [7])).toBe('M 5 7')
-  })
-
-  it('gives an all-zero window a real axis instead of collapsing it', () => {
-    expect(niceScale(0).ticks.length).toBeGreaterThan(1)
-    expect(niceScale(Number.NaN).top).toBe(1)
-  })
-
-  it('rounds the ceiling up to a readable step', () => {
-    expect(niceScale(680).top).toBe(750)
-    expect(niceScale(2_950).top).toBe(3_000)
-    expect(niceScale(0.42).top).toBe(0.6)
-    expect(niceScale(0.42).ticks).toEqual([0, 0.2, 0.4, 0.6])
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('<synthetic>')
+    expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('not priced')
   })
 })

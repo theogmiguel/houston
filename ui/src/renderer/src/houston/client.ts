@@ -1250,13 +1250,18 @@ export class HoustonClient {
     this.send({ type: 'restore_resume_set', enabled })
   }
 
-  usageSummaryGet(sinceMs: number, untilMs: number, refreshPricing = false): void {
+  usageSummaryGet(sinceMs: number, untilMs: number, refreshPricing = false, workspace?: string | null): void {
     this.send({
       type: 'usage_summary_get',
       since_ms: sinceMs,
       until_ms: untilMs,
-      refresh_pricing: refreshPricing
+      refresh_pricing: refreshPricing,
+      workspace: workspace ?? null
     })
+  }
+
+  usageActivitySummaryGet(sinceMs: number, untilMs: number, workspace?: string | null): void {
+    this.send({ type: 'usage_activity_summary_get', since_ms: sinceMs, until_ms: untilMs, workspace: workspace ?? null })
   }
 
   settledRetentionSet(hours: number): void {

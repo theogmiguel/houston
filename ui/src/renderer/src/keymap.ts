@@ -282,6 +282,14 @@ export const settingsShortcut: ShortcutEntry = {
   match: (e) => e.ctrlKey && e.key === ','
 }
 
+export const usageShortcut: ShortcutEntry = {
+  id: 'usage',
+  keyLabel: 'Ctrl+U',
+  description: 'open usage',
+  category: 'global',
+  match: (e) => (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'u' || e.key === 'U')
+}
+
 export const commandPaletteShortcut: ShortcutEntry = {
   id: 'command-palette',
   keyLabel: 'Ctrl+K',
@@ -396,6 +404,7 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   shortcutSheetShortcut,
   browserFocusUrl,
   settingsShortcut,
+  usageShortcut,
   commandPaletteShortcut,
   prefixShortcut,
   wsPrev,

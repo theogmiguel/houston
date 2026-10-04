@@ -63,6 +63,7 @@ import {
 } from "./houston/client";
 import { USAGE_WINDOW_REFUSED } from "./houston/generated/DEFAULTS";
 import type { UsageSummaryMsg } from "./components/UsageSection";
+import type { UsageActivityDay } from "./houston/generated/UsageActivityDay";
 import { daemonShutdown, daemonStatus } from "./houston/manage";
 import { appQuit } from "./houston/tray";
 import { useTrayBridge } from "./houston/useTray";
@@ -176,6 +177,7 @@ import {
   wsPrev,
   selectPane,
   settingsShortcut,
+  usageShortcut,
   shortcutSheetShortcut,
   toggleGit,
   togglePanel,
@@ -318,6 +320,9 @@ const SettingsView = lazy(() =>
   import("./components/SettingsView").then((m) => ({
     default: m.SettingsView,
   })),
+);
+const UsageSection = lazy(() =>
+  import("./components/UsageSection").then((m) => ({ default: m.UsageSection })),
 );
 
 const SshConnectModal = lazy(() =>
@@ -616,6 +621,7 @@ export function App(): React.JSX.Element {
     useState<OrchestrationStateView | null>(null);
   const [hostInfo, setHostInfo] = useState<HostInfo | null>(null);
   const [usage, setUsage] = useState<UsageSummaryMsg | null>(null);
+  const [usageActivity, setUsageActivity] = useState<UsageActivityDay[]>([]);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [historyIgnoreGlobs, setHistoryIgnoreGlobs] = useState<string[] | null>(
@@ -1283,6 +1289,9 @@ export function App(): React.JSX.Element {
             setUsageLoading(false);
             setUsageError(null);
             break;
+          case "usage_activity_summary":
+            setUsageActivity(msg.days);
+            break;
           case "command_history_ignore_globs":
             setHistoryIgnoreGlobs(msg.globs);
             break;
@@ -1747,14 +1756,19 @@ export function App(): React.JSX.Element {
   // reads transcript files Houston does not own, and a repeat window would
   // re-read gigabytes for a number that moves on human timescales.
   const requestUsage = useCallback(
-    (sinceMs: number, untilMs: number, refreshPricing: boolean) => {
+    (sinceMs: number, untilMs: number, refreshPricing: boolean, workspace: string | null = null) => {
       if (conn.kind !== "ready") return;
       setUsageLoading(true);
       setUsageError(null);
-      conn.client.usageSummaryGet(sinceMs, untilMs, refreshPricing);
+      conn.client.usageSummaryGet(sinceMs, untilMs, refreshPricing, workspace);
     },
     [conn],
   );
+
+  const requestUsageActivity = useCallback((sinceMs: number, untilMs: number, workspace: string | null) => {
+    if (conn.kind !== "ready") return;
+    conn.client.usageActivitySummaryGet(sinceMs, untilMs, workspace);
+  }, [conn]);
 
   useEffect(() => {
     if (selectedWs !== "all") localStorage.setItem(SELECTED_WS_KEY, selectedWs);
@@ -2900,6 +2914,12 @@ export function App(): React.JSX.Element {
         setSettings((cur) => !cur);
         return;
       }
+      if (resolveGlobalMatch(usageShortcut, keymapOverrides)(e)) {
+        e.preventDefault();
+        setSettings(false);
+        setRailView("usage");
+        return;
+      }
       if (
         paneHandoff ||
         settings ||
@@ -3769,6 +3789,19 @@ export function App(): React.JSX.Element {
                       onReveal={harness.reveal}
                       attentionRows={harnessOverview}
                     />
+                  ) : railView === "usage" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
+                      <UsageSection
+                        summary={usage}
+                        activity={usageActivity}
+                        loading={usageLoading}
+                        error={usageError}
+                        workspaces={workspaces.map((workspace) => ({ path: workspace.path, name: workspace.name }))}
+                        initialWorkspace="all"
+                        onRequest={requestUsage}
+                        onActivityRequest={requestUsageActivity}
+                      />
+                    </Suspense>
                   ) : (
                   <Suspense fallback={<div className="flex-1" />}>
                     <SettingsView
