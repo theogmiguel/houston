@@ -73,6 +73,7 @@ pub mod voice;
 pub mod vt;
 pub mod worktree_cleanup;
 pub mod worktrees;
+pub mod zcode_config;
 
 #[cfg(test)]
 pub mod test_tracing_capture;
