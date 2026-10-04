@@ -59,22 +59,28 @@ function routine(o: Partial<Routine> = {}): Routine {
 }
 
 export function NavRoutines(): React.JSX.Element {
-  const routines = [
-    routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW + 60_000, last_run_at_ms: NOW - 60_000 }),
-    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000 }),
-    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: NOW + 3 * 24 * 3600_000, last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok' }),
-    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: '/home/dev/code/api', next_run_at_ms: NOW + 3600_000 })
-  ]
   const run = (id: number, status: RoutineRun['status'], started: number, sessionId: number | null, error?: string): RoutineRun => ({
     id, routine_id: 2, trigger: 'schedule', status, started_at_ms: started, ended_at_ms: status === 'running' ? null : started + 4 * 60_000,
     session_id: sessionId, error
   })
+  const runHistory: RoutineRun[] = [
+    run(30, 'running', new Date(2026, 9, 3, 2).getTime(), 42),
+    run(29, 'ok', new Date(2026, 9, 2, 2).getTime(), 41),
+    run(28, 'failed', new Date(2026, 9, 1, 2).getTime(), 40, 'npx was not found on PATH'),
+    ...Array.from({ length: 27 }, (_, index) => run(27 - index, 'ok', new Date(2026, 8, 30 - index, 2).getTime(), 13 + index))
+  ]
+  const routines = [
+    routine({ id: 1, name: 'Harness review', cadence: { type: 'clock', hour: 9, minute: 0, weekdays: [2] }, next_run_at_ms: NOW - 120_000, last_run_at_ms: NOW - 60_000 }),
+    routine({ id: 2, name: 'Nightly dependency check', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, next_run_at_ms: NOW - 60_000 }),
+    routine({ id: 3, name: 'Weekly changelog draft', cadence: { type: 'clock', hour: 17, minute: 0, weekdays: [6] }, next_run_at_ms: NOW + 6 * 24 * 3600_000, last_run_at_ms: NOW - 24 * 3600_000, last_outcome: 'ok' }),
+    routine({ id: 4, name: 'Flaky test sweep', enabled: false, workspace_id: '/home/dev/code/api', next_run_at_ms: NOW + 7 * 24 * 3600_000 })
+  ]
   return (
     <Frame active="Routines">
       <RoutinesSurface
         routines={routines}
         running={[1, 91, 92]}
-        runs={{ 2: [run(30, 'running', new Date(2026, 9, 3, 2).getTime(), 42), run(29, 'ok', new Date(2026, 9, 2, 2).getTime(), 41), run(28, 'failed', new Date(2026, 9, 1, 2).getTime(), 40, 'npx was not found on PATH')] }}
+        runs={{ 2: runHistory }}
         runsLoading={null}
         workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
         error={null}
