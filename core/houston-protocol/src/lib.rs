@@ -1778,6 +1778,9 @@ pub struct SessionInfo {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub status: Option<AgentStatus>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub status_since_ms: Option<u64>,
+    #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub context: Option<SessionContext>,
     #[serde(default)]

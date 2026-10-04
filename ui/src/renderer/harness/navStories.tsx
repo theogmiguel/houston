@@ -15,6 +15,7 @@ import type { Routine } from '../src/houston/routineTypes'
 import type { RoutineRun } from '../src/houston/generated/RoutineRun'
 import type { SkillToolState } from '../src/houston/generated/SkillToolState'
 import type { Skill } from '../src/env'
+import type { HoustonClient } from '../src/houston/client'
 
 const noop = (): void => {}
 
@@ -160,11 +161,11 @@ function installSkillFixture(): void {
     },
     {
       agent: 'claude',
-      source: 'user',
-      name: 'triage',
-      path: '/home/dev/.claude/skills/triage/SKILL.md',
-      invoke: '/triage',
-      description: 'Drive an issue through the triage state machine.'
+      source: 'project',
+      name: 'ui-tokens',
+      path: '/home/dev/code/auth-refactor/.claude/skills/ui-tokens/SKILL.md',
+      invoke: '/ui-tokens',
+      description: 'Use theme tokens and shared chrome constants in the renderer.'
     },
     {
       agent: 'codex',
@@ -176,7 +177,13 @@ function installSkillFixture(): void {
     }
   ]
   const w = window as unknown as { houston?: Record<string, unknown> }
-  w.houston = { ...(w.houston ?? {}), listSkills: async () => skills }
+  w.houston = {
+    ...(w.houston ?? {}),
+    listSkills: async () => skills,
+    readFile: async (path: string) => path.endsWith('digest.jsonl')
+      ? `${JSON.stringify({ skills: { 'ui-tokens': 1 } })}\n${JSON.stringify({ skills: {} })}`
+      : '# UI tokens\n\nUse the shared design tokens.'
+  }
 }
 
 function skillColumn(tool: SkillToolState['tool'], names: string[], inherits = false): SkillToolState {
@@ -190,23 +197,75 @@ function skillColumn(tool: SkillToolState['tool'], names: string[], inherits = f
   }
 }
 
+function OpenSkillStory({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      const button = [...(ref.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+        .find((candidate) => candidate.textContent?.includes('ui-tokens'))
+      if (!button) return
+      button.click()
+      window.clearInterval(timer)
+    }, 50)
+    return () => window.clearInterval(timer)
+  }, [])
+  return <div ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0 }}>{children}</div>
+}
+
 export function NavSkills(): React.JSX.Element {
   installSkillFixture()
+  const client = React.useMemo(() => {
+    const handlers = new Map<string, (message: unknown) => void>()
+    const state: HarnessState = {
+      workspace: '/home/dev/code/auth-refactor',
+      routine: null,
+      reviews: [{ id: 13, workspace: '/home/dev/code/auth-refactor', routine_id: 1, run_id: 13, status: 'published', started_at_ms: 1, run_dir: '/home/dev/code/auth-refactor/.houston/harness/r13', finding_count: 0 }],
+      findings: [],
+      models: [],
+      providerCoverage: []
+    }
+    return {
+      subscribe(kind: string, handler: (message: never) => void) {
+        handlers.set(kind, handler as (message: unknown) => void)
+        return () => handlers.delete(kind)
+      },
+      harnessState() {
+        queueMicrotask(() => handlers.get('harness_state')?.({
+          type: 'harness_state',
+          workspace: state.workspace,
+          routine: state.routine,
+          reviews: state.reviews,
+          findings: state.findings,
+          models: state.models,
+          provider_coverage: state.providerCoverage
+        }))
+      }
+    } as unknown as HoustonClient
+  }, [])
   return (
     <Frame active="Skills">
-      <SkillsSurface
-        tools={[
-          skillColumn('claude', ['tdd', 'triage']),
-          skillColumn('codex', ['lint-sweep']),
-          skillColumn('cursor', [], true)
-        ]}
-        pushes={[]}
-        autoPushEnabled={false}
-        onRefresh={noop}
-        onPush={noop}
-        onPushUndo={noop}
-        onAutoPushSet={noop}
-      />
+      <OpenSkillStory>
+        <SkillsSurface
+          tools={[
+            skillColumn('claude', ['tdd', 'ui-tokens']),
+            skillColumn('codex', ['ui-tokens']),
+            skillColumn('opencode', [], true),
+            skillColumn('cursor', [], true),
+            skillColumn('grok', [], true)
+          ]}
+          client={client}
+          workspace="/home/dev/code/auth-refactor"
+          focusedPaneName="auth-refactor"
+          canRunSkillInFocusedPane
+          onRunSkill={noop}
+          pushes={[]}
+          autoPushEnabled={false}
+          onRefresh={noop}
+          onPush={noop}
+          onPushUndo={noop}
+          onAutoPushSet={noop}
+        />
+      </OpenSkillStory>
     </Frame>
   )
 }

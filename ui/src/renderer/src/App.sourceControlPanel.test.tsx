@@ -113,8 +113,17 @@ describe('source control panel — shell integration', () => {
 
   // The palette runs the HIGHLIGHTED row, and a click only moves the
   // highlight — hover the row first, then click it, as a pointer would.
-  function runPaletteRow(match: string): void {
+  async function runPaletteRow(match: string): Promise<void> {
     pressCtrlK()
+    for (let i = 0; i < 240 && !harness!.container.querySelector('[data-testid="command-palette"]'); i++) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)) })
+    }
+    const search = harness!.container.querySelector<HTMLInputElement>('[data-testid="command-palette-search"]')!
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(search, match)
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
     const row = Array.from(
       harness!.container.querySelectorAll<HTMLElement>('[data-testid="command-palette-row"]')
     ).find((r) => r.textContent?.includes(match))
@@ -127,8 +136,8 @@ describe('source control panel — shell integration', () => {
     })
   }
 
-  function switchToAll(): void {
-    runPaletteRow('All workspaces')
+  async function switchToAll(): Promise<void> {
+    await runPaletteRow('All workspaces')
   }
 
   it('`g` opens the panel without writing a git leaf into the saved grid', async () => {
@@ -240,7 +249,7 @@ describe('source control panel — shell integration', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    switchToAll()
+    await switchToAll()
     press('g')
     await settlePanel()
     expect(panel()).not.toBeNull()
@@ -263,7 +272,7 @@ describe('source control panel — shell integration', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    switchToAll()
+    await switchToAll()
 
     const toggle = (): HTMLButtonElement =>
       harness!.container.querySelector<HTMLButtonElement>('[data-testid="scm-toggle"]')!
@@ -295,7 +304,7 @@ describe('source control panel — shell integration', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    switchToAll()
+    await switchToAll()
     press('g')
     await settlePanel()
     act(() => {
@@ -367,7 +376,7 @@ describe('source control panel — shell integration', () => {
 
   it('the palette row still toggles the panel through the old command id', async () => {
     await boot([1])
-    runPaletteRow('side panel')
+    await runPaletteRow('side panel')
     await settlePanel()
     expect(panel()).not.toBeNull()
   })

@@ -145,6 +145,7 @@ async fn session_reparent_over_the_wire_refuses_a_swarm_tied_session() {
             ssh_host: None,
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             spawned_by: None,

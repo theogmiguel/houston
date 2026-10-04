@@ -169,20 +169,19 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
   const badge = (): HTMLElement | null =>
     container.querySelector('[data-testid="tree-filter-badge"]')
 
-  it('renders a grid\u2019s own tags as ONE named chip plus a count', () => {
+  it('keeps grid rows free of inline tag chips', () => {
     render(TREE)
     const row = gridRow('alpha review')
     const chips = chipsOf(row)
-    expect(chips).toHaveLength(1)
-    expect(chips[0].textContent).toContain('wait-human')
-    expect(row.querySelector('[data-testid="tag-chips-more"]')?.textContent).toBe('+1')
+    expect(chips).toHaveLength(0)
+    expect(row.querySelector('[data-testid="tag-chips-more"]')).toBeNull()
     expect(chipsOf(gridRow('bravo main'))).toHaveLength(0)
   })
 
   it('a single tag shows no count beside it', () => {
     render(TREE)
     const row = gridRow('alpha main')
-    expect(chipsOf(row)).toHaveLength(1)
+    expect(chipsOf(row)).toHaveLength(0)
     expect(row.querySelector('[data-testid="tag-chips-more"]')).toBeNull()
   })
 
@@ -206,21 +205,18 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
       sessions: [taggedSession(11, '/a', [])]
     })
     const row = gridRow('alpha main')
-    expect(chipsOf(row)).toHaveLength(1)
-    expect(row.querySelector('[data-testid="tag-chips-more"]')?.textContent).toBe('+2')
+    expect(chipsOf(row)).toHaveLength(0)
+    expect(row.querySelector('[data-testid="tag-chips-more"]')).toBeNull()
   })
 
-  it('clicking a chip filters by it; clicking it again drops the filter', () => {
+  it('the tag menu toggles a filter and restores the rows when it is cleared', () => {
     render(TREE)
-    act(() => {
-      chipsOf(gridRow('alpha main'))[0].click()
-    })
+    openFilter()
+    act(() => options()[0].click())
     expect(badge()?.textContent).toBe('1')
     expect(gridRow('alpha review')).toBeUndefined()
 
-    act(() => {
-      chipsOf(gridRow('alpha main'))[0].click()
-    })
+    act(() => options()[0].click())
     expect(badge()).toBeNull()
     expect(gridRow('alpha review')).not.toBeUndefined()
   })
@@ -293,9 +289,8 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
 
   it('hides every tab whose known membership carries none of the active filter, and the workspace left with nothing', () => {
     render(TREE)
-    act(() => {
-      chipsOf(gridRow('alpha main'))[0].click()
-    })
+    openFilter()
+    act(() => options()[0].click())
     expect(gridRows().map((t) => t.replace(/\d+$/, ''))).toHaveLength(1)
     expect(gridRow('alpha main')).not.toBeUndefined()
     expect(gridRow('alpha review')).toBeUndefined()
@@ -317,9 +312,8 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
         ]
       }
     })
-    act(() => {
-      chipsOf(gridRow('alpha main'))[0].click()
-    })
+    openFilter()
+    act(() => options()[0].click())
     expect(gridRow('alpha unknown')).not.toBeUndefined()
     expect(gridRow('bravo main')).toBeUndefined()
   })
@@ -345,18 +339,16 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(container.textContent).toContain('No tab carries that tag')
   })
 
-  it('a chip is name-and-dot at the default width, dot-only below RAIL_TAG_DOT_AT, and name-and-dot again above it', () => {
+  it('keeps tag chips out of grid rows at every rail width', () => {
     render(TREE)
-    const chip = (): HTMLElement => chipsOf(gridRow('alpha main'))[0]
-
-    expect(chip().textContent).toContain('code review')
+    const chips = (): HTMLElement[] => chipsOf(gridRow('alpha main'))
+    expect(chips()).toHaveLength(0)
 
     act(() => setRailWidth(RAIL_TAG_DOT_AT - 40))
-    expect(chip().textContent).toBe('')
-    expect(chip().querySelector('span')?.className).toContain('w-[6px]')
+    expect(chips()).toHaveLength(0)
 
     act(() => setRailWidth(RAIL_TAG_DOT_AT + 60))
-    expect(chip().textContent).toContain('code review')
+    expect(chips()).toHaveLength(0)
   })
 
   it('survives a filter persisted by an older shape and prunes deleted tags', () => {

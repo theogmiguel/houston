@@ -105,6 +105,7 @@ import { Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { MATERIAL_CLS, materialAttrs } from "./components/material";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
+import { canUseSkillInFocusedPane } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
@@ -188,7 +189,6 @@ import {
 } from "./keymap";
 import { prefixLayer } from "./prefixLayer";
 import { PrefixHint } from "./components/PrefixHint";
-import { CommandPalette } from "./components/CommandPalette";
 import {
   paletteNavActions,
   type GridTarget,
@@ -323,6 +323,9 @@ const SettingsView = lazy(() =>
 );
 const UsageSection = lazy(() =>
   import("./components/UsageSection").then((m) => ({ default: m.UsageSection })),
+);
+const CommandPalette = lazy(() =>
+  import("./components/ui/CommandPalette").then((m) => ({ default: m.CommandPalette })),
 );
 
 const SshConnectModal = lazy(() =>
@@ -1080,7 +1083,7 @@ export function App(): React.JSX.Element {
       setSessions((prev) => {
         const next = new Map(prev);
         const s = next.get(msg.session);
-        if (s) next.set(msg.session, { ...s, state: msg.state });
+        if (s) next.set(msg.session, { ...s, state: msg.state, status_since_ms: Date.now() });
         return next;
       });
       if (!isLive(msg.state)) {
@@ -1225,7 +1228,7 @@ export function App(): React.JSX.Element {
             setSessions((prev) => {
               const s = prev.get(msg.session);
               if (!s || s.status === msg.status) return prev;
-              return new Map(prev).set(msg.session, { ...s, status: msg.status });
+              return new Map(prev).set(msg.session, { ...s, status: msg.status, status_since_ms: Date.now() });
             });
             break;
           case "session_context":
@@ -2369,6 +2372,13 @@ export function App(): React.JSX.Element {
     },
     [openEditorFile],
   );
+  const openRailInspector = useCallback((paneId: number, tab: ScmTab): void => {
+    setActiveId(paneId);
+    setScmTab(tab);
+    setScmOpen(true);
+    setSideExpanded(true);
+    setActiveSurface("side");
+  }, [setActiveId, setActiveSurface, setSideExpanded]);
   const openTerminalDir = useCallback(
     (path: string, session?: number): void => {
       const root = session == null ? selectedWs : sessionsRef.current.get(session)?.project_dir ?? selectedWs;
@@ -3223,6 +3233,8 @@ export function App(): React.JSX.Element {
       setShowLauncher(false);
     },
     switchGrid: handleSelectGrid,
+    focusPane,
+    restartPane: (id) => client.respawnSession(id, undefined, null, undefined, undefined, false),
     ...paletteNavActions({
       workspaceCount: orderedWorkspaces.length,
       lastWorkspace: lastWorkspace(),
@@ -3304,6 +3316,9 @@ export function App(): React.JSX.Element {
                 setWsColors((prev) => ({ ...prev, [path]: color }))
               }
               onSshConnect={openSshConnect}
+              railClient={conn.kind === "ready" ? conn.client : null}
+              checkoutBranches={checkout.chips}
+              onOpenInspector={openRailInspector}
               gridsByWorkspace={gridsByWorkspace}
               tags={tags}
               onSetGridTags={(path, gridId, tagIds) =>
@@ -3721,6 +3736,16 @@ export function App(): React.JSX.Element {
                     </Suspense>
                   ) : railView === "skills" ? (
                     <SkillsSurface
+                      client={conn.kind === "ready" ? conn.client : null}
+                      workspace={selectedWs === "all" ? null : selectedWs}
+                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
+                      canRunSkillInFocusedPane={canUseSkillInFocusedPane(
+                        sessions,
+                        activeId,
+                        selectedWs,
+                        conn.kind
+                      )}
+                      onRunSkill={runSkill}
                       tools={skills}
                       pushes={skillPushes}
                       autoPushEnabled={skillAutoPush}
@@ -4150,18 +4175,22 @@ export function App(): React.JSX.Element {
 
           <AnimOut open={paletteOpen} suppress="modal">
             {paletteOpen && (
-              <CommandPalette
-                onClose={() => setPaletteOpen(false)}
-                actions={paletteActions}
-                hasWorkspace={selectedWs !== "all"}
-                workspaces={orderedWorkspaces}
-                grids={paletteGrids}
-                appearance={{
-                  currentTheme: theme,
-                  onPreview: setTheme,
-                  onCommit: setTheme,
-                }}
-              />
+              <Suspense fallback={null}>
+                <CommandPalette
+                  onClose={() => setPaletteOpen(false)}
+                  actions={paletteActions}
+                  hasWorkspace={selectedWs !== "all"}
+                  workspaces={orderedWorkspaces}
+                  grids={paletteGrids}
+                  sessions={[...sessions.values()]}
+                  activeSessionId={activeId}
+                  appearance={{
+                    currentTheme: theme,
+                    onPreview: setTheme,
+                    onCommit: setTheme,
+                  }}
+                />
+              </Suspense>
             )}
           </AnimOut>
 

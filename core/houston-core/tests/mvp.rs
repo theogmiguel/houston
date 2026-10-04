@@ -393,6 +393,7 @@ async fn interrupted_sessions_are_automatically_restored_and_restartable() {
             ssh_host: None,
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             acp: None,

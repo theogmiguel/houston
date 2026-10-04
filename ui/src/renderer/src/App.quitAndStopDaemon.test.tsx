@@ -26,6 +26,13 @@ function pressCtrlK(): void {
 
 async function openAndRunQuit(h: AppHarness): Promise<void> {
   pressCtrlK()
+  await vi.waitFor(() => expect(h.container.querySelector('[data-testid="command-palette"]')).not.toBeNull())
+  const search = h.container.querySelector<HTMLInputElement>('[data-testid="command-palette-search"]')!
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+  act(() => {
+    setter.call(search, 'Quit and stop daemon')
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+  })
   const row = Array.from(h.container.querySelectorAll('[data-testid="command-palette-row"]')).find((r) =>
     r.textContent?.includes('Quit and stop daemon')
   )
