@@ -399,6 +399,7 @@ impl Daemon {
             acceptance_checked: row.acceptance_checked,
             acceptance_total: row.acceptance_total,
             open_run: None,
+            origin: None,
         }
     }
 
@@ -419,6 +420,7 @@ impl Daemon {
             created_at_ms: row.created_at_ms,
             updated_at_ms: row.updated_at_ms,
             archived_at_ms: row.archived_at_ms,
+            origin: None,
         }
     }
 
@@ -493,11 +495,13 @@ impl Daemon {
                 map.insert(run.task_id, run);
                 map
             });
+        let origins = self.db.harness_task_origins()?;
         Ok(rows
             .into_iter()
             .map(|row| {
                 let mut wire = Self::task_summary_to_wire(row);
                 wire.open_run = open.get(&wire.id).map(Self::task_run_ref_to_wire);
+                wire.origin = origins.get(&wire.id).cloned();
                 wire
             })
             .collect())
@@ -555,8 +559,10 @@ impl Daemon {
             .into_iter()
             .map(Self::task_run_to_wire)
             .collect();
+        let mut task = Self::task_to_wire(row);
+        task.origin = self.db.harness_task_origin(id)?;
         Ok(proto::ServerMsg::TaskDetail {
-            task: Self::task_to_wire(row),
+            task,
             acceptance,
             comments,
             history,
