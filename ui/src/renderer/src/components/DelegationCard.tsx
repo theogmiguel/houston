@@ -1,3 +1,4 @@
+import { useSession, useSessionFamily } from '../sessionsStore'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
@@ -596,8 +597,8 @@ const BADGE_CLS =
 
 export function HeaderDelegationBadge({
   kind,
-  info,
-  roster,
+  info: infoProp,
+  roster: rosterProp,
   onFocusPane,
   onDeliverNow,
   children,
@@ -613,6 +614,9 @@ export function HeaderDelegationBadge({
   onFocusPane?: (id: number) => void
   onDeliverNow?: (session: number) => void
 }): React.JSX.Element {
+  const info = useSession(infoProp.id, infoProp) ?? infoProp
+  const family = useSessionFamily(info.id, rosterProp?.sessions)
+  const roster = rosterProp ? { ...rosterProp, sessions: family } : undefined
   const id = useId()
   const btnRef = useRef<HTMLButtonElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)

@@ -68,6 +68,19 @@ export function useSession(id: number, fallback?: SessionInfo): SessionInfo | un
   return useSessionsSelector((sessions) => sessions.get(id), Object.is, fallback)
 }
 
+export function useSessionFamily(id: number, fallback: ReadonlyMap<number, SessionInfo> = emptySessions): ReadonlyMap<number, SessionInfo> {
+  const fallbackMembers = useMemo(() => [...fallback.values()], [fallback])
+  const members = useSessionsSelector(
+    (sessions) => {
+      const parent = sessions.get(id)?.spawned_by
+      return [...sessions.values()].filter((session) => session.id === id || session.id === parent || session.spawned_by === id)
+    },
+    shallowArrayEqual,
+    fallbackMembers,
+  )
+  return useMemo(() => new Map(members.map((session) => [session.id, session])), [members])
+}
+
 const emptyIds: number[] = []
 export function useSessionIds(filter?: (session: SessionInfo) => boolean): number[] {
   return useSessionsSelector(

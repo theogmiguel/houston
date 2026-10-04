@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Task } from '../../houston/generated/Task'
 import { TasksTab } from './TasksTab'
 import { TaskStartCard } from './TaskExecution'
+import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
+import type { SessionInfo } from '../../houston/client'
+import type { TaskRun } from '../../houston/generated/TaskRun'
+import { TaskNowCard } from './TaskNowCard'
 import { TaskDetail } from './TaskDetail'
 
 const mocks = vi.hoisted(() => ({ useTasks: vi.fn(), saveTask: vi.fn(), startTask: vi.fn() }))
@@ -120,4 +124,26 @@ describe('global Tasks viewer', () => {
       .find((option) => option.textContent === 'No workspace')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
     expect(onSave).toHaveBeenLastCalledWith(7, 1, { workspace: null })
   })
+  it('reviews the live session after leaf events while task cards follow the task run stream', () => {
+    const session: SessionInfo = { id: 1, agent: 'claude', state: 'running', status: 'working', codename: 'worker', title: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: false, task: { task_id: 7, key: 'HOU-7', title: 'Global task', status: 'in_progress', run_id: 3, run_state: 'running' } }
+    const sessions = new Map([[1, session]])
+    const store = createSessionsStore(sessions)
+    const onReview = vi.fn()
+    const run: TaskRun = { id: 3, task_id: 7, attempt: 1, kind: 'implementation', state: 'running', provider: 'claude', session_id: 1, initial_revision: 1, started_at_ms: 1 }
+    const renderCards = (currentRun: TaskRun) => act(() => root.render(<SessionsStoreContext.Provider value={store}>
+      <TaskNowCard session={session} summary={{ ...TASK, status: 'in_progress', open_run: currentRun, acceptance_checked: 0, acceptance_total: 0 }} detail={null} onOpenSession={vi.fn()} onStop={vi.fn()} />
+      <TaskDetail detail={{ task: TASK, acceptance: [], comments: [], history: [], runs: [currentRun] }} access="off" refusal={null} now={1} parentOptions={[]} sessions={sessions} startSettings={null} onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={vi.fn()} onArchive={vi.fn()} onStart={vi.fn()} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={onReview} />
+    </SessionsStoreContext.Provider>))
+    renderCards(run)
+    const current = { ...session, status: 'needs-input' as const, live_children: 2 }
+    act(() => store.set((previous) => new Map(previous).set(1, current)))
+    click('[data-testid="task-run-review"]')
+    expect(onReview).toHaveBeenLastCalledWith(current)
+    expect(onReview.mock.calls.at(-1)?.[0]).toBe(current)
+    expect(container.querySelector('[data-testid="tasks-now"] .tk-st')?.textContent).toBe('In progress')
+    renderCards({ ...run, state: 'waiting_for_input' })
+    expect(container.querySelector('[data-testid="tasks-now"] .tk-st')?.textContent).toBe('Needs you')
+    expect(container.querySelector('[data-testid="task-execution"] .tk-st')?.textContent).toBe('Needs you')
+  })
+
 })

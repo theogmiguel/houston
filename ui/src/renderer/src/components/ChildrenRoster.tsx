@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useSession, useSessionFamily, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { openSideOverview } from '../sidePanel'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
@@ -66,7 +67,7 @@ export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Eleme
   return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
 }
 
-export function ChildrenRoster({ parent, children, roster, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
+export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
   parent: SessionInfo
   children: SessionInfo[]
   roster?: PaneRoster
@@ -79,6 +80,15 @@ export function ChildrenRoster({ parent, children, roster, client, selected, onS
   /// Which segment starts selected; the harness stories open the queue with it.
   defaultView?: 'children' | 'queue'
 }): React.JSX.Element {
+  const parent = useSession(parentProp.id, parentProp) ?? parentProp
+  const children = useSessionsSelector(
+    (sessions) => [...sessions.values()].filter((child) => child.spawned_by === parent.id).sort((a, b) => a.id - b.id),
+    shallowArrayEqual,
+    childrenProp,
+  )
+  const fallbackRoster = useMemo(() => rosterProp?.sessions ?? new Map([parentProp, ...childrenProp].map((session) => [session.id, session])), [rosterProp?.sessions, parentProp, childrenProp])
+  const family = useSessionFamily(parent.id, fallbackRoster)
+  const roster = rosterProp ? { ...rosterProp, sessions: family } : undefined
   const [filter, setFilter] = useState(false)
   const [pending, setPending] = useState<number[]>([])
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
