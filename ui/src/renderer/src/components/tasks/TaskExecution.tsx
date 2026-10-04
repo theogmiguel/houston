@@ -165,6 +165,15 @@ function ExecutionActions({
           onClick={() => onRunControl(run.id, 'resume')}
         />
       )}
+      {run.state === 'cancelled' && (
+        <RunControlButton
+          testId="task-run-start-again"
+          label="Start again"
+          primary
+          readOnly={readOnly}
+          onClick={() => onRunControl(run.id, 'resume')}
+        />
+      )}
     </div>
   )
 }

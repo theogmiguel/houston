@@ -483,6 +483,7 @@ function offeredUpdate(
 
 const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
+const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -569,6 +570,7 @@ export function App(): React.JSX.Element {
   const [tags, setTags] = useState<TagInfo[]>([]);
   const appNotices = useNotices();
   const [selectedWs, setSelectedWs] = useState("all");
+  const [taskTurnCount, setTaskTurnCount] = useState(0);
   const {
     activeId,
     setActiveId,
@@ -665,6 +667,25 @@ export function App(): React.JSX.Element {
 
   const settingsSection = useSettingsSection();
   const railView = useRailView();
+  useEffect(() => {
+    if (conn.kind !== "ready") {
+      setTaskTurnCount(0);
+      return;
+    }
+    const scope = selectedWs === "all" ? "all" : selectedWs;
+    let current = true;
+    const off = conn.client.subscribe("task_snapshot", (msg) => {
+      if (msg.scope !== scope) return;
+      void import("./components/tasks/format").then(({ queueGroupOf }) => {
+        if (current) setTaskTurnCount(msg.tasks.filter((task) => queueGroupOf(task) === "your-turn").length);
+      });
+    });
+    conn.client.taskSnapshot(scope);
+    return () => {
+      current = false;
+      off();
+    };
+  }, [conn, selectedWs]);
   useEffect(() => {
     if (settings) setRailView(null);
   }, [settings]);
@@ -3228,6 +3249,7 @@ export function App(): React.JSX.Element {
                 setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite")
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
+              taskTurnCount={taskTurnCount}
               onRemoveWorkspace={removeWorkspace}
               onOpenExternalError={pushError}
               onRenameStart={(path) => {
@@ -3612,7 +3634,29 @@ export function App(): React.JSX.Element {
             {settings || railView !== null ? (
               <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
                 <SurfaceBoundary label={railView ?? "Settings"}>
-                  {railView === "skills" ? (
+                  {railView === "tasks" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
+                      <TasksSurface
+                        client={conn.kind === "ready" ? conn.client : null}
+                        workspace={selectedWs}
+                        workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
+                        sessions={sessions}
+                        now={Date.now()}
+                        onStartRequested={handleTaskStartRequested}
+                        onOpenSession={(sessionId) => {
+                          setRailView(null);
+                          focusPane(sessionId);
+                        }}
+                        onReview={(session) => {
+                          setRailView(null);
+                          setSideReview(session);
+                          setScmTab("changes");
+                          setSideRequest(null);
+                        }}
+                        onOpenExternal={(url) => void openExternal(url)}
+                      />
+                    </Suspense>
+                  ) : railView === "skills" ? (
                     <SkillsSurface
                       tools={skills}
                       pushes={skillPushes}

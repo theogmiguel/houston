@@ -62,12 +62,12 @@ import {
   IconServer,
   IconUser,
   IconTarget,
+  IconTasks,
   IconChartArea,
   IconTerminal,
   IconZap,
   IconGlobe,
   IconClock,
-  IconTasks,
   type IconProps,
 } from "./icons";
 import { Tooltip } from "./Tooltip";
@@ -75,6 +75,7 @@ import logoUrl from "../assets/logo-chrome.svg";
 import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { ICON_ROLE_CLS, Icon } from "./Icon";
+import { Count } from "./ui/Count";
 import {
   RAIL_VIEWS,
   RAIL_VIEW_LABEL,
@@ -336,6 +337,7 @@ interface Props {
   chromeTheme: ChromeTheme;
   onToggleChromeTheme: () => void;
   updateVersion?: string | null;
+  taskTurnCount?: number;
 
   className?: string;
   onHeadMouseDown?: (e: React.MouseEvent) => void;
@@ -1658,6 +1660,7 @@ function RailHead({
 
 const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Element>> =
   Object.freeze({
+    tasks: IconTasks,
     skills: IconZap,
     routines: IconClock,
     harness: IconTarget,
@@ -1677,6 +1680,7 @@ function RailNav({
   view,
   hidden,
   paletteChord,
+  taskTurnCount,
   onOpenPalette,
   onSelect,
   onRowMenu,
@@ -1684,6 +1688,7 @@ function RailNav({
   view: RailView | null;
   hidden: ReadonlySet<RailView>;
   paletteChord: string | null | undefined;
+  taskTurnCount: number;
   onOpenPalette: (() => void) | undefined;
   onSelect: (v: RailView) => void;
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
@@ -1730,6 +1735,7 @@ function RailNav({
               <Icon glyph={RAIL_VIEW_ICON[v]} role="ui" />
             </span>
             <span className="min-w-0 truncate">{RAIL_VIEW_LABEL[v]}</span>
+            {v === "tasks" && taskTurnCount > 0 && <Count value={taskTurnCount} from="accent" />}
           </button>
         );
       })}
@@ -2328,6 +2334,7 @@ export function Sidebar({
   chromeTheme,
   onToggleChromeTheme,
   updateVersion,
+  taskTurnCount = 0,
   className = "",
   onHeadMouseDown,
   onHeadDoubleClick,
@@ -2772,6 +2779,7 @@ export function Sidebar({
         view={railView}
         hidden={hiddenRailViews}
         paletteChord={paletteChord}
+        taskTurnCount={taskTurnCount}
         onOpenPalette={onOpenPalette ?? (() => {})}
         onSelect={selectRailView}
         onRowMenu={openNavMenu}

@@ -17,11 +17,12 @@ export interface CardRowProps {
   status?: ReactNode
   action?: ReactNode
   className?: string
+  density?: 'default' | 'compact'
 }
 
-function CardRow({ heading, meta, status, action, className = '' }: CardRowProps): React.JSX.Element {
+function CardRow({ heading, meta, status, action, className = '', density = 'default' }: CardRowProps): React.JSX.Element {
   return (
-    <div className={`flex min-w-0 flex-wrap items-center gap-[var(--space-2)] px-[var(--space-3)] py-[var(--space-2)] [&+&]:border-t [&+&]:border-[var(--divider)] hover:bg-[var(--hover-fill)] ${className}`}>
+    <div className={`flex min-w-0 flex-wrap items-center gap-[var(--space-2)] ${density === 'compact' ? 'px-[var(--space-2-5)] py-[var(--space-2)]' : 'px-[var(--space-3)] py-[var(--space-2)]'} [&+&]:border-t [&+&]:border-[var(--divider)] hover:bg-[var(--hover-fill)] ${className}`}>
       <div className="grid min-w-0 flex-1 gap-[var(--space-1)]">
         <div className="truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{heading}</div>
         {meta && <div className="text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]">{meta}</div>}

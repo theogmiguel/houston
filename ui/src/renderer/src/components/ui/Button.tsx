@@ -3,7 +3,7 @@ import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOV
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-solid' | 'icon'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-solid' | 'icon' | 'text'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -54,7 +54,8 @@ const buttonClasses = variants(
       ghost: BTN_GHOST,
       danger: BTN_GHOST + ' ' + BTN_GHOST_DANGER_HOVER,
       'danger-solid': BTN_DANGER_SOLID,
-      icon: BTN_ICO
+      icon: BTN_ICO,
+      text: 'h-auto min-h-0 border-0 bg-transparent p-0 text-left font-semibold text-[var(--text-primary)] hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]'
     },
     size: sizeClasses
   },
@@ -73,7 +74,7 @@ export function Button(props: ButtonProps): React.JSX.Element {
     type = 'button',
     ...buttonProps
   } = props
-  const classes = `${buttonClasses({ variant, size: variant === 'icon' ? 'icon' : size })} ${variant === 'danger' && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
+  const classes = `${buttonClasses({ variant, size: variant === 'icon' || variant === 'text' ? 'icon' : size })} ${variant === 'danger' && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd
 

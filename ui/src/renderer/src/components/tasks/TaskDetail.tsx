@@ -50,6 +50,7 @@ import {
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
+import { TaskProgress, Chip } from '../ui'
 
 export interface TaskDetailProps {
   detail: TaskDetailData
@@ -70,6 +71,7 @@ export interface TaskDetailProps {
   onRunControl: (runId: number, action: TaskRunAction) => void
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
+  presentation?: 'side' | 'drawer'
 }
 
 export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
@@ -83,10 +85,11 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
   const reviewer = taskReviewer(detail.runs)
   const review = taskReviewOutcome(detail.runs, detail.comments)
+  const drawer = props.presentation === 'drawer'
 
   return (
     <div className="tasks-root" data-testid="task-detail">
-      <div className="tk-head">
+      {!drawer && <div className="tk-head">
         <button type="button" className={`btn ${BTN_GHOST} ${HIT_TARGET_28}`} onClick={props.onBack}>
           <Icon glyph={IconChevronLeft} role="small" />
           Tasks
@@ -112,10 +115,10 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             }
           ]}
         />
-      </div>
+      </div>}
       {refusal && refusal.id === task.id && <RefusalBanner refusal={refusal} onReload={props.onReload} taskId={task.id} />}
       <div className="tk-detail">
-        <input
+        {!drawer && <input
           className="tk-title-input"
           aria-label="Task title"
           value={title}
@@ -126,8 +129,8 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             if (event.key === 'Enter') event.currentTarget.blur()
             if (event.key === 'Escape') setTitle(task.title)
           }}
-        />
-        <div className="sub3">
+        />}
+        {!drawer && <div className="sub3">
           <span>created by {task.created_by === 'user' ? 'you' : task.created_by}</span>
           <span>·</span>
           <span>{formatAgo(task.created_at_ms, now)}</span>
@@ -139,8 +142,11 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
               <span>archived {formatAgo(task.archived_at_ms ?? task.updated_at_ms, now)}</span>
             </>
           )}
-        </div>
-        <div className="tk-props">
+        </div>}
+        {drawer && <div className="px-[var(--space-3)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">{task.workspace?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'No workspace'}</div>}
+        {drawer && <div className="px-[var(--space-3)] pt-[var(--space-1-5)] text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">{title}</div>}
+        {drawer && <div className="px-[var(--space-3)] pt-[var(--space-3)]"><TaskProgress status={task.status} /></div>}
+        {!drawer && <div className="tk-props">
           <Select aria-label="Workspace" data-testid="task-workspace" value={task.workspace ?? ''} options={[{ value: '', label: 'No workspace' }, ...(props.workspaceOptions ?? [])]} disabled={readOnly} prefix={<span className="k">Workspace</span>} chrome="prop-select" onChange={(value) => props.onSave(task.id, task.revision, { workspace: value || null })} />
           <Select
             aria-label="Status"
@@ -179,7 +185,8 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
               {taskAgentLabel(reviewer)}
             </span>
           )}
-        </div>
+        </div>}
+        {!drawer && <>
         <SectionHeading heading="Description" />
         <textarea
           className="tk-desc-input"
@@ -193,18 +200,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             if (description !== task.description) props.onSave(task.id, task.revision, { description })
           }}
         />
-        <SectionHeading
-          heading="Acceptance"
-          trailing={acceptanceText(
-            detail.acceptance.filter((item) => item.checked_at_ms != null).length,
-            detail.acceptance.length
-          )}
-        />
-        <AcceptanceList
-          items={detail.acceptance}
-          readOnly={readOnly}
-          onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
-        />
+        </>}
         {latestRun ? (
           <TaskExecutionCard
             run={latestRun}
@@ -217,19 +213,26 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             onRunControl={props.onRunControl}
           />
         ) : (
-          startable && (
-            <TaskStartCard
-              task={task}
-              settings={props.startSettings}
-              workspaceOptions={props.workspaceOptions}
-              readOnly={readOnly}
-              onStart={props.onStart}
-            />
-          )
+          startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={props.onStart} />
         )}
-        <SectionHeading heading="Activity" />
-        <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
-        <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
+        <SectionHeading
+          heading="Acceptance"
+          trailing={acceptanceText(
+            detail.acceptance.filter((item) => item.checked_at_ms != null).length,
+            detail.acceptance.length
+          )}
+        />
+        <AcceptanceList
+          items={detail.acceptance}
+          readOnly={readOnly}
+          onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
+        />
+        {drawer && task.origin?.kind === 'harness_finding' && <div className="px-[var(--space-3)] pt-[var(--space-2)]"><Chip variant="compound" label={`From Harness finding · ${task.origin.key}`} /></div>}
+        {!drawer && <>
+          <SectionHeading heading="Activity" />
+          <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
+          <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
+        </>}
       </div>
     </div>
   )

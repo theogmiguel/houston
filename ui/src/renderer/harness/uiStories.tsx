@@ -19,6 +19,7 @@ import {
   STATUS_LABELS,
   StatusLabel,
   Table,
+  TaskProgress,
   Tooltip
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
@@ -88,6 +89,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
             <Button variant="icon" icon={IconClose} aria-label="Close" />
+            <Button variant="text">Task row title</Button>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
@@ -109,8 +111,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Card>
             <Card.Row heading="Default card" meta="Heading and supporting detail" status={<StatusLabel status="Working" />} action={<Button size="sm">Open</Button>} />
             <Card.Row heading="Second row" meta="Rows keep their shared structure" />
+            <Card.Row density="compact" heading="Compact queue row" meta="HOU-45 · Claude Code needs input" status={<StatusLabel status="Ready" />} action={<Button size="sm">Review changes</Button>} />
           </Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Task progress">
+          <div style={{ maxWidth: 560 }}><TaskProgress status="in_progress" /></div>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Count">

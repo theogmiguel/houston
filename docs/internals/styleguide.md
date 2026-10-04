@@ -458,6 +458,7 @@ differences as a variant in the registry.
 | `danger` | Ghost with the danger tint on hover; `armed` adds its standing danger cue |
 | `danger-solid` | `BTN_DANGER_SOLID`; always paired with a warning icon |
 | `icon` | `BTN_ICO`'s box and hover |
+| `text` | A title link inside an interactive content row; no control box or padding |
 
 Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
 `SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY` is flagged for removal:
@@ -683,7 +684,7 @@ chips only for multi-select filters.
 
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Idle, Done, Failed, Paused, In sync and Missing. Do not rely on colour
+Needs input, Idle, Done, Failed, Paused, In sync, Missing and Ready. Do not rely on colour
 alone. Idle, Paused and Missing use a hollow ring. “Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
@@ -715,6 +716,9 @@ Use `Drawer` for a detail panel over the current page. It has a right-aligned 72
 maximum width, a labelled title row and a close button. It traps Tab focus, closes on
 Escape or a backdrop press, and returns focus to the opener. Entry uses the panel and
 scrim motion tokens and is disabled by reduced-motion preferences.
+
+Use `TaskProgress` for the four task lifecycle stages. Its current stage follows the
+task status; the component owns the line, ink and spacing.
 
 ### Inline notice
 

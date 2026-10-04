@@ -44,6 +44,7 @@ import {
   NavSkills
 } from './navStories'
 import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory } from './tasksStories'
+import { TasksPageStory } from './tasksPageStory'
 import { UiPrimitivesStory } from './uiStories'
 
 const noop = (): void => {}
@@ -138,6 +139,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/mcp-detail': () => <NavMcpDetail />,
   'nav/hooks': () => <NavHooks />,
   'tasks/list': () => <TasksListStory />,
+  'tasks/page': () => <TasksPageStory />,
   'tasks/detail': () => <TasksDetailStory />,
   'tasks/roster': () => <TasksRosterStory />,
   'tasks/queue': () => <TasksQueueStory />,
