@@ -95,6 +95,7 @@ export interface SessionSlot {
   modelSource: SlotValueSource
   effortSource: SlotValueSource
   agentSource: SlotValueSource
+  headerSource?: string
   skippedRoute: string | null
   invalidReason: string | null
 }
@@ -165,6 +166,7 @@ export function resolveSlots(
         ? 'workspace setting' : profile?.effort && effort === profile.effort ? 'profile'
           : role?.effort && effort === role.effort ? 'preset' : 'agent default',
       agentSource: override.agent ? 'user override' : role?.engine ? 'preset' : options.defaultAgentSource ?? 'preset',
+      headerSource: route && !routeSkipped ? `route · ${role?.label ?? route.pattern}` : role?.label ? 'preset' : override.agent ? 'user override' : options.defaultAgentSource ?? 'preset',
       skippedRoute: routeRequiresUnsupportedModel
         ? `${route?.pattern} → ${route.model} skipped: the Codex local model list is not available to verify this route`
         : routeRequiresUnsupportedEffort

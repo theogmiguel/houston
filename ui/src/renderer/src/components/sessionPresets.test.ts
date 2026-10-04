@@ -35,7 +35,7 @@ describe('expandSlots', () => {
     expect(expandSlots(byId('solo'), 'codex', 1, 'Fix the parser')).toEqual([
       {
         index: 0, agent: 'codex', roleLabel: null, prompt: 'Fix the parser', model: null,
-        effort: null, modelSource: 'agent default', effortSource: 'agent default', agentSource: 'preset', skippedRoute: null, invalidReason: null
+        effort: null, modelSource: 'agent default', effortSource: 'agent default', agentSource: 'preset', headerSource: 'preset', skippedRoute: null, invalidReason: null
       }
     ])
   })

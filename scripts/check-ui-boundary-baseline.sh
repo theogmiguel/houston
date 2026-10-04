@@ -36,7 +36,7 @@ BASELINE=(
   "ui/src/renderer/src/components/LayoutView.tsx 16"
   "ui/src/renderer/src/components/MarkdownPreview.tsx 2"
   "ui/src/renderer/src/components/McpManager.tsx 66"
-  "ui/src/renderer/src/components/NewSessionComposer.tsx 102"
+  "ui/src/renderer/src/components/NewSessionComposer.tsx 76"
   "ui/src/renderer/src/components/NoticeStack.tsx 24"
   "ui/src/renderer/src/components/OpenInMenu.tsx 2"
   "ui/src/renderer/src/components/OverviewTab.tsx 30"

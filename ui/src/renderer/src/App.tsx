@@ -336,6 +336,9 @@ const PaneHandoff = lazy(() =>
 const NewSessionComposer = lazy(() =>
   import("./components/NewSessionComposer").then((m) => ({ default: m.NewSessionComposer })),
 );
+const LaunchGridPreview = lazy(() =>
+  import("./components/ui/LaunchGridPreview").then((m) => ({ default: m.LaunchGridPreview })),
+);
 export { isTitlebarDragEligible, isBareTitlebarTarget };
 
 const SELECTED_WS_KEY = "tr-selected-workspace";
@@ -741,6 +744,10 @@ export function App(): React.JSX.Element {
   const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
     null,
   );
+  const [launchPreview, setLaunchPreview] = useState<{
+    slots: SessionSlot[];
+    target: "this-grid" | "new-grid";
+  } | null>(null);
   const [showLauncher, setShowLauncher] = useState(false);
   const [pickingWorkspace, setPickingWorkspace] = useState(false);
   const [workspaceRefusals, setWorkspaceRefusals] = useState<string[]>([]);
@@ -1953,8 +1960,15 @@ export function App(): React.JSX.Element {
         });
       }
       setComposer(null);
+      setLaunchPreview(null);
     },
     [conn, selectedWs, shellIntegration, handleAddGrid],
+  );
+  const handleLaunchPreview = useCallback(
+    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
+      setLaunchPreview({ slots, target });
+    },
+    [],
   );
 
   const handleRenameGrid = useCallback(
@@ -3609,13 +3623,21 @@ export function App(): React.JSX.Element {
                               focusUrlRequest={
                                 gridSelected ? focusBrowserUrl : undefined
                               }
+                              launchPreview={gridSelected && composer ? launchPreview ?? undefined : undefined}
                             />
                           ) : gridSelected ? (
-                            <WorkspaceEmpty
-                              onNewSession={() => setComposer("current-grid")}
-                              onTerminal={newTerminal}
-                              onBrowser={() => openBrowserPane(w.path, null)}
-                            />
+                            <div className="relative flex-1 min-w-0 min-h-0">
+                              <WorkspaceEmpty
+                                onNewSession={() => setComposer("current-grid")}
+                                onTerminal={newTerminal}
+                                onBrowser={() => openBrowserPane(w.path, null)}
+                              />
+                              {composer && launchPreview && (
+                                <Suspense fallback={null}>
+                                  <LaunchGridPreview tree={null} slots={launchPreview.slots} target={launchPreview.target} sessions={sessions} />
+                                </Suspense>
+                              )}
+                            </div>
                           ) : null}
                         </div>
                       );
@@ -3631,9 +3653,9 @@ export function App(): React.JSX.Element {
                     workspacePath={selectedWs}
                     client={conn.kind === "ready" ? conn.client : null}
                     initialTarget={composer === "new-grid" ? "new-grid" : "this-grid"}
-                    tree={currentTree}
+                    onPreviewChange={handleLaunchPreview}
                     onLaunch={launchSessions}
-                    onCancel={() => setComposer(null)}
+                    onCancel={() => { setComposer(null); setLaunchPreview(null) }}
                   />
                 </Suspense>
               )}

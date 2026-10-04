@@ -10,11 +10,13 @@ describe('NewSessionComposer — state matrix', () => {
   let root: Root
   let launched: SessionSlot[][]
   let destinations: string[]
+  let previews: Array<{ slots: SessionSlot[]; target: string }>
   let cancels: number
 
   beforeEach(() => {
     launched = []
     destinations = []
+    previews = []
     cancels = 0
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -24,6 +26,7 @@ describe('NewSessionComposer — state matrix', () => {
         <NewSessionComposer
           workspaceName="Houston"
           workspacePath="/home/dev/projects/houston"
+          onPreviewChange={(slots, target) => { previews.push({ slots, target }) }}
           onLaunch={(slots, target) => { launched.push(slots); destinations.push(target) }}
           onCancel={() => {
             cancels += 1
@@ -89,7 +92,7 @@ describe('NewSessionComposer — state matrix', () => {
     click('[aria-label="Fewer"]')
     click('[aria-label="Fewer"]')
     expect(previewRows()).toHaveLength(2)
-    expect(previewRows().map((r) => r.textContent?.slice(0, 12))).toEqual(['1Claude Code', '2Claude Code'])
+    expect(previewRows().every((row) => row.textContent?.includes('Claude Code'))).toBe(true)
   })
 
   it('Preset — Pair labels its two slots and Workbench forces its shell slot', () => {
@@ -138,20 +141,27 @@ describe('NewSessionComposer — state matrix', () => {
     expect(launched).toEqual([])
   })
 
-  it('Hover and target — previews a preset without selecting it and switches launch destination', () => {
+  it('Hover and target — previews on the grid without changing the selected slots or launch count', () => {
     act(() => q<HTMLButtonElement>('[data-preset="swarm"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
-    expect(previewRows()).toHaveLength(4)
+    expect(previewRows()).toHaveLength(2)
+    expect(q('[data-testid="new-session-launch"]').textContent).toContain('Launch 2 sessions')
+    expect(previews.at(-1)?.slots).toHaveLength(4)
     expect(q('[data-preset="pair"]').getAttribute('aria-pressed')).toBe('true')
     act(() => q<HTMLButtonElement>('[data-preset="swarm"]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
     expect(previewRows()).toHaveLength(2)
-    click('[data-target="new-grid"]')
+    expect(previews.at(-1)?.slots).toHaveLength(2)
+    click('[data-testid="launch-target-new-grid"]')
     click('[data-testid="new-session-launch"]')
     expect(launched[0]).toHaveLength(2)
     expect(destinations).toEqual(['new-grid'])
   })
 
   it('Slot override — changing the model updates the source chip', () => {
-    const input = q<HTMLInputElement>('[aria-label="Model override for slot 1"]')
+    const model = q<HTMLButtonElement>('[aria-label="Model override for slot 1"]')
+    act(() => model.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    const custom = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((option) => option.textContent?.includes('Type model ID'))
+    act(() => custom?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
+    const input = q<HTMLInputElement>('[aria-label="Typed model ID for slot 1"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     act(() => {
       setter.call(input, 'custom-model')

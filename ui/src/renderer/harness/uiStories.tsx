@@ -14,7 +14,7 @@ import {
   Field,
   IconTile,
   ListDetail,
-  LaunchLayoutPreviewSpecimen,
+  LaunchGridPreviewSpecimen,
   LaunchPresetOutlineSpecimen,
   LaunchSlotCardSpecimen,
   Notice,
@@ -237,8 +237,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
         </SpecimenGroup>
 
-        <SpecimenGroup heading="Launch layout preview">
-          <LaunchLayoutPreviewSpecimen />
+        <SpecimenGroup heading="Launch grid preview">
+          <LaunchGridPreviewSpecimen />
         </SpecimenGroup>
         <SpecimenGroup heading="Launch preset outline">
           <LaunchPresetOutlineSpecimen />

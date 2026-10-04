@@ -19,24 +19,18 @@ import {
 } from './sessionPresets'
 import type { SlotOverrides } from './sessionPresets'
 import { Icon } from './Icon'
-import {
-  PICKER_LABEL_CLS,
-  TILE_BASE,
-  TILE_IDLE,
-  TILE_SELECTED
-} from './pickerChrome'
+import { PICKER_LABEL_CLS } from './pickerChrome'
 import { Tooltip } from './Tooltip'
 import { Select } from './Select'
 import { MATERIAL_CLS, materialAttrs } from './material'
-import type { LayoutNode } from '../layout/tree'
-import { LaunchComposerHeader, LaunchLayoutPreview, LaunchPresetOutline, LaunchSlotCard, LaunchWorkspaceBadge } from './ui'
+import { Chip, LaunchComposerHeader, LaunchPresetCard, LaunchSlotCard, LaunchWorkspaceBadge, Segmented } from './ui'
 
 export interface NewSessionComposerProps {
   workspaceName: string
   workspacePath: string
   client?: HoustonClient | null
   initialTarget?: 'this-grid' | 'new-grid'
-  tree?: LayoutNode | null
+  onPreviewChange?: (slots: SessionSlot[], target: 'this-grid' | 'new-grid') => void
   onLaunch: (slots: SessionSlot[], target: 'this-grid' | 'new-grid') => void
   onCancel: () => void
 }
@@ -48,7 +42,7 @@ export function NewSessionComposer({
   workspacePath,
   client = null,
   initialTarget = 'this-grid',
-  tree = null,
+  onPreviewChange,
   onLaunch,
   onCancel
 }: NewSessionComposerProps): React.JSX.Element {
@@ -75,24 +69,29 @@ export function NewSessionComposer({
     () => SESSION_PRESETS.find((p) => p.id === presetId) ?? null,
     [presetId]
   )
-  const previewPreset = useMemo(
-    () => SESSION_PRESETS.find((value) => value.id === hoveredPreset) ?? preset,
-    [hoveredPreset, preset]
-  )
   const overLimit = taskOverLimitMessage(task)
   const slots = useMemo(
-    () => resolveSlots(previewPreset, agent, hoveredPreset ? previewPreset?.count ?? count : count, task, { routes, overrides, defaultAgentSource: agentOverridden ? 'user override' : 'preset' }),
-    [previewPreset, hoveredPreset, agent, agentOverridden, count, task, routes, overrides]
+    () => resolveSlots(preset, agent, count, task, { routes, overrides, defaultAgentSource: agentOverridden ? 'user override' : 'preset' }),
+    [preset, agent, agentOverridden, count, task, routes, overrides]
   )
+  const previewSlots = useMemo(() => {
+    const previewPreset = SESSION_PRESETS.find((value) => value.id === hoveredPreset) ?? preset
+    return resolveSlots(previewPreset, agent, hoveredPreset ? previewPreset?.count ?? count : count, task, { routes, overrides, defaultAgentSource: agentOverridden ? 'user override' : 'preset' })
+  }, [hoveredPreset, preset, agent, agentOverridden, count, task, routes, overrides])
   const invalidSlot = slots.find((slot) => slot.invalidReason)
   const canLaunch = !overLimit && !invalidSlot
 
   const choosePreset = (p: SessionPreset): void => {
+    setHoveredPreset(null)
     setPresetId(p.id)
     setCount(p.count)
     setAgent(p.defaultAgent)
     setAgentOverridden(false)
   }
+
+  useEffect(() => {
+    onPreviewChange?.(hoveredPreset ? previewSlots : slots, target)
+  }, [hoveredPreset, previewSlots, slots, target, onPreviewChange])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -116,7 +115,7 @@ export function NewSessionComposer({
     <div
       data-testid="new-session-composer"
       {...materialAttrs('base')}
-      className={`flex-none min-w-0 h-full w-[420px] grid grid-rows-[44px_minmax(0,1fr)_56px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
+      className={`flex-none min-w-0 h-full w-[560px] max-w-[48vw] grid grid-rows-[44px_minmax(0,1fr)_56px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
       <LaunchComposerHeader>
         <LaunchWorkspaceBadge logoUrl={logoUrl} workspaceName={workspaceName} />
@@ -140,58 +139,34 @@ export function NewSessionComposer({
         </button>
       </LaunchComposerHeader>
 
-      <div className="min-h-0 overflow-y-auto px-6">
-        <div className="mx-auto flex w-full max-w-[556px] flex-col gap-[14px] pb-8 pt-[14px]">
-          <fieldset className="m-0 flex flex-col gap-[var(--space-2)] border-0 p-0">
-            <legend className={`${LABEL_CLS} p-0`}>Launch into</legend>
-            <div className="flex gap-[5px]">
-              {([['this-grid', 'This grid'], ['new-grid', 'New grid']] as const).map(([value, label]) => (
-                <button key={value} type="button" data-target={value} aria-pressed={target === value} onClick={() => setTarget(value)}
-                  className={`${TILE_BASE} ${target === value ? TILE_SELECTED : TILE_IDLE} flex-1`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
+      <div className="min-h-0 overflow-y-auto px-5">
+        <div className="mx-auto flex w-full max-w-[556px] flex-col gap-[var(--space-3)] pb-8 pt-[14px]">
+          <Segmented aria-label="Launch target" leadingLabel="Launch into" value={target} onChange={setTarget} options={[
+              { value: 'this-grid', label: 'This grid', testId: 'launch-target-this-grid' },
+              { value: 'new-grid', label: 'New grid', testId: 'launch-target-new-grid' }
+            ]} className="w-full" />
           <fieldset className="m-0 flex flex-col gap-[var(--space-2)] border-0 p-0">
             <legend className={`${LABEL_CLS} p-0`}>Preset</legend>
             <div className="grid grid-cols-4 gap-[7px]">
               {SESSION_PRESETS.map((p) => {
                 const selected = presetId === p.id
                 return (
-                  <button
+                  <LaunchPresetCard
                     key={p.id}
-                    type="button"
-                    data-preset={p.id}
-                    aria-pressed={selected}
-                    onClick={() => choosePreset(p)}
-                    onMouseEnter={() => setHoveredPreset(p.id)}
-                    onMouseLeave={() => setHoveredPreset(null)}
-                    className={`${TILE_BASE} ${selected ? TILE_SELECTED : TILE_IDLE} flex h-[104px] min-w-0 flex-col gap-[5px] overflow-hidden rounded-[var(--tr-radius-md)] px-[9px] pt-[9px] pb-[7px]`}
-                  >
-                    <span className="flex w-full items-center leading-[15px]">
-                      <LaunchPresetOutline count={p.count} />
-                    </span>
-                    <span className="flex w-full min-w-0 items-center gap-[var(--space-1)] leading-[15px]">
-                      <span className="min-w-0 flex-1 truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]">
-                        {p.name}
-                      </span>
-                      <span
-                        className={`[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tabular-nums ${selected ? 'text-[var(--accent)]' : 'text-[var(--text-faint)]'}`}
-                      >
-                        {p.count}
-                      </span>
-                    </span>
-                    <span className="line-clamp-4 whitespace-normal [font-size:var(--tr-text-micro-size)] [font-weight:var(--tr-text-small-weight)] leading-[12.5px] text-[var(--text-muted)]">
-                      {p.blurb}
-                    </span>
-                  </button>
+                    id={p.id}
+                    name={p.name}
+                    blurb={p.blurb}
+                    count={p.count}
+                    selected={selected}
+                    onSelect={() => choosePreset(p)}
+                    onPreviewStart={() => setHoveredPreset(p.id)}
+                    onPreviewEnd={() => setHoveredPreset(null)}
+                  />
                 )
               })}
             </div>
           </fieldset>
 
-          <LaunchLayoutPreview tree={tree} count={slots.length} target={target} />
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-[var(--space-3)]">
             <label className="flex min-w-0 flex-col gap-[var(--space-1)]">
               <span className={LABEL_CLS}>Default agent</span>
@@ -207,6 +182,18 @@ export function NewSessionComposer({
               </div>
             </div>
           </div>
+
+          <section className="flex flex-col gap-[var(--space-2)]">
+            <h2 className={`${LABEL_CLS} m-0`}>Slots</h2>
+            <div className="grid grid-cols-1 gap-[7px]" data-testid="new-session-preview">
+              {slots.map((s) => (
+                <LaunchSlotCard key={s.index} slot={s} workspaceName={workspaceName} override={overrides[s.index] ?? {}}
+                  onAgentChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], agent: value } }))}
+                  onModelChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], model: value } }))}
+                  onEffortChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], effort: value } }))} />
+              ))}
+            </div>
+          </section>
 
           <div className="flex flex-col gap-[var(--space-1-5)]">
             <label className={LABEL_CLS} htmlFor="new-session-task">
@@ -235,31 +222,14 @@ export function NewSessionComposer({
             </span>
           </div>
 
-          <section className="flex flex-col gap-[var(--space-2)]">
-            <h2 className={`${LABEL_CLS} m-0`}>Slots</h2>
-            <div className="grid grid-cols-1 gap-[7px]" data-testid="new-session-preview">
-              {slots.map((s) => (
-                <LaunchSlotCard key={s.index} slot={s} workspaceName={workspaceName} override={overrides[s.index] ?? {}}
-                  onAgentChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], agent: value } }))}
-                  onModelChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], model: value } }))}
-                  onEffortChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], effort: value } }))} />
-              ))}
-            </div>
-          </section>
           <section aria-label="Workspace routing" className="flex flex-col gap-[var(--space-2)]">
-            <h2 className={`${LABEL_CLS} m-0`}>Workspace routing</h2>
+            <div className="flex items-center justify-between gap-[var(--space-2)]">
+              <h2 className={`${LABEL_CLS} m-0`}>Workspace routing</h2>
+              <Chip variant="state" label="Houston" />
+            </div>
             {routes.length === 0
               ? <span className="[font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">No routes · agents use their defaults</span>
               : <div className="flex flex-wrap gap-[var(--space-2)]">{routes.map((route, index) => <span key={`${route.pattern}-${index}`} className="[font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">{route.pattern} → {route.model}{route.effort ? ` · ${route.effort}` : ''}</span>)}</div>}
-            <p className="m-0 [font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">
-              Active profiles provide account selection only; model and effort values are not available in the profile message, so the next configured source applies.
-            </p>
-          </section>
-          <section className="flex flex-col gap-[var(--space-2)]">
-            <h2 className={`${LABEL_CLS} m-0`}>O que cada parte precisa</h2>
-            <div className="flex flex-wrap gap-[var(--space-1)] [font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">
-              {['preset', 'profile', 'agent default', 'workspace setting', 'user override'].map((source) => <span key={source}>{source}</span>)}
-            </div>
           </section>
         </div>
       </div>
