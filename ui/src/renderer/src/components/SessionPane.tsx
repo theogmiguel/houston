@@ -391,28 +391,8 @@ function SessionPaneImpl({
   const info = useSession(infoProp.id, infoProp) ?? infoProp
   const family = useSessionFamily(info.id, rosterProp?.sessions)
   const roster = rosterProp ? { ...rosterProp, sessions: family } : undefined
-  const [peekId, setPeekId] = useState<number | null>(null)
-  const [recent, setRecent] = useState<number[]>([])
   const [collapsed, setCollapsed] = useState(false)
-  const children = [...(roster?.sessions.values() ?? [])].filter((child) => child.spawned_by === info.id).sort((a, b) => a.id - b.id)
-  const peek = children.find((child) => child.id === peekId && !gridSessionIds?.has(child.id))
-  const selectChild = (id: number | null): void => {
-    if (id != null && gridSessionIds?.has(id)) {
-      onFocusPane?.(id)
-      return
-    }
-    setPeekId(id)
-    if (id != null) setRecent((prev) => [id, ...prev.filter((other) => other !== id)].slice(0, PEEK_KEEP_MOUNTED))
-  }
-  const moveChild = (id: number): void => {
-    if (gridSessionIds?.has(id)) {
-      onFocusPane?.(id)
-      return
-    }
-    setPeekId(null)
-    setRecent((prev) => prev.filter((other) => other !== id))
-    onMoveChildToGrid?.(info.id, id)
-  }
+  const { children, peek, recent, selectChild, moveChild } = useChildPeek(info.id, roster?.sessions, gridSessionIds, onFocusPane, onMoveChildToGrid)
   const live = isLive(info.state)
   const ended = endedLabel(info.state)
 
@@ -483,16 +463,7 @@ function SessionPaneImpl({
           <PaneTaskChip task={info.task} />
           <BranchChip branch={branch} note={branchNote} />
           <PaneHeaderTags tagIds={info.tags} />
-          {info.acp != null && <AcpBadge slug={info.acp} />}
-          {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
-          {showProject && (
-            <span
-              data-testid="pane-sub"
-              className="[@container_(max-width:400px)]:hidden text-[var(--text-faint)] text-[length:var(--tr-text-xs)] whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
-            >
-              · {info.agent === 'ssh' && info.ssh_host ? info.ssh_host : basename(info.project_dir)}
-            </span>
-          )}
+          <PaneHeadBadges info={info} showProject={showProject} />
         </span>
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </header>
@@ -656,6 +627,56 @@ function SessionPaneImpl({
 }
 
 export const SessionPane = memo(SessionPaneImpl)
+
+function PaneHeadBadges({ info, showProject }: { info: SessionInfo; showProject: boolean | undefined }): React.JSX.Element {
+  return (
+    <>
+      {info.acp != null && <AcpBadge slug={info.acp} />}
+      {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
+      {showProject && (
+        <span
+          data-testid="pane-sub"
+          className="[@container_(max-width:400px)]:hidden text-[var(--text-faint)] text-[length:var(--tr-text-xs)] whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
+        >
+          · {info.agent === 'ssh' && info.ssh_host ? info.ssh_host : basename(info.project_dir)}
+        </span>
+      )}
+    </>
+  )
+}
+
+// Children of `parentId`, the peeked child and the recently peeked ids kept mounted. A child
+// already in the grid is focused there instead of peeked.
+function useChildPeek(
+  parentId: number,
+  sessions: ReadonlyMap<number, SessionInfo> | undefined,
+  gridSessionIds: Props['gridSessionIds'],
+  onFocusPane: Props['onFocusPane'],
+  onMoveChildToGrid: Props['onMoveChildToGrid'],
+): { children: SessionInfo[]; peek: SessionInfo | undefined; recent: number[]; selectChild: (id: number | null) => void; moveChild: (id: number) => void } {
+  const [peekId, setPeekId] = useState<number | null>(null)
+  const [recent, setRecent] = useState<number[]>([])
+  const children = [...(sessions?.values() ?? [])].filter((child) => child.spawned_by === parentId).sort((a, b) => a.id - b.id)
+  const peek = children.find((child) => child.id === peekId && !gridSessionIds?.has(child.id))
+  const selectChild = (id: number | null): void => {
+    if (id != null && gridSessionIds?.has(id)) {
+      onFocusPane?.(id)
+      return
+    }
+    setPeekId(id)
+    if (id != null) setRecent((prev) => [id, ...prev.filter((other) => other !== id)].slice(0, PEEK_KEEP_MOUNTED))
+  }
+  const moveChild = (id: number): void => {
+    if (gridSessionIds?.has(id)) {
+      onFocusPane?.(id)
+      return
+    }
+    setPeekId(null)
+    setRecent((prev) => prev.filter((other) => other !== id))
+    onMoveChildToGrid?.(parentId, id)
+  }
+  return { children, peek, recent, selectChild, moveChild }
+}
 
 function RosterTerminals({ client, info, children, recent, gridSessionIds, peek, active, connected, theme, fontSize, fontFamily, shiftEnterNewline, openLinksInPane, onOpenUrlInPane, copyOnSelect, stripBoxGlyphs, registerOutput, onActivate, onZoom, onShellZoom, onOpenFile, onOpenDir, termActions }: Pick<Props, 'client' | 'info' | 'gridSessionIds' | 'active' | 'connected' | 'theme' | 'fontSize' | 'fontFamily' | 'shiftEnterNewline' | 'openLinksInPane' | 'onOpenUrlInPane' | 'copyOnSelect' | 'stripBoxGlyphs' | 'registerOutput' | 'onActivate' | 'onZoom' | 'onShellZoom' | 'onOpenFile' | 'onOpenDir'> & {
   children: SessionInfo[]
