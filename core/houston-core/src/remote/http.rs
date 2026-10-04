@@ -364,39 +364,63 @@ fn authenticate(
     daemon: &Daemon,
     headers: &HeaderMap,
     source: IpAddr,
-) -> Result<RemoteDeviceRow, Response> {
+) -> Result<RemoteDeviceRow, Refused> {
     let Some(token) = bearer(headers) else {
-        return Err(error(
+        return Err(Refused::from(error(
             StatusCode::UNAUTHORIZED,
             "missing device token: expected `Authorization: Bearer <token>` from a paired device",
-        ));
+        )));
     };
     match daemon.remote_authenticate(token) {
         Ok(Some(device)) => Ok(device),
         Ok(None) => {
             let now = Instant::now();
             if let Err(secs) = daemon.remote.auth_check(source, now) {
-                return Err(too_many(secs));
+                return Err(too_many(secs).into());
             }
             daemon.remote.auth_failed(source, now);
-            Err(error(
+            Err(Refused::from(error(
                 StatusCode::UNAUTHORIZED,
                 "device token is not valid: it was revoked or never issued; pair this device again",
-            ))
+            )))
         }
-        Err(e) => Err(error(
+        Err(e) => Err(Refused::from(error(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("the daemon could not read its paired devices ({e}); retry shortly"),
-        )),
+        ))),
+    }
+}
+
+/// A refusal on its way out; boxed so `Result`s that carry it stay small.
+struct Refused(Box<Response>);
+
+impl From<Response> for Refused {
+    fn from(resp: Response) -> Self {
+        Refused(Box::new(resp))
+    }
+}
+
+impl From<ApiError> for Refused {
+    fn from(e: ApiError) -> Self {
+        Refused::from(e.into_response())
+    }
+}
+
+impl IntoResponse for Refused {
+    fn into_response(self) -> Response {
+        *self.0
     }
 }
 
 async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, Response> + Send + 'static,
-) -> Result<T, Response> {
-    tokio::task::spawn_blocking(f)
-        .await
-        .unwrap_or_else(|e| Err(error(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}"))))
+    f: impl FnOnce() -> Result<T, Refused> + Send + 'static,
+) -> Result<T, Refused> {
+    tokio::task::spawn_blocking(f).await.unwrap_or_else(|e| {
+        Err(Refused::from(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("{e}"),
+        )))
+    })
 }
 
 #[derive(Deserialize)]
@@ -425,15 +449,15 @@ async fn pair(
     let result = blocking(move || {
         let now = Instant::now();
         if let Err(secs) = daemon.remote.auth_check(peer.0.ip(), now) {
-            return Err(too_many(secs));
+            return Err(too_many(secs).into());
         }
         match daemon.remote_pair(&body.code, &body.device_name) {
             Ok(pair) => Ok(pair),
             Err(e @ ApiError::Unauthorized(_)) => {
                 daemon.remote.auth_failed(peer.0.ip(), now);
-                Err(e.into_response())
+                Err(e.into())
             }
-            Err(e) => Err(e.into_response()),
+            Err(e) => Err(e.into()),
         }
     })
     .await;
@@ -441,7 +465,7 @@ async fn pair(
         Ok((token, device_id)) => {
             Json(json!({ "token": token, "device_id": device_id })).into_response()
         }
-        Err(resp) => resp,
+        Err(refused) => refused.into_response(),
     }
 }
 
@@ -452,7 +476,7 @@ async fn me(
 ) -> Response {
     match blocking(move || authenticate(&daemon, &headers, peer.0.ip())).await {
         Ok(device) => Json(json!({ "device_id": device.id, "name": device.name })).into_response(),
-        Err(resp) => resp,
+        Err(refused) => refused.into_response(),
     }
 }
 
@@ -468,7 +492,7 @@ async fn sessions(
     .await;
     match result {
         Ok(sessions) => Json(json!({ "sessions": sessions })).into_response(),
-        Err(resp) => resp,
+        Err(refused) => refused.into_response(),
     }
 }
 
@@ -493,15 +517,13 @@ async fn screen(
     let lines = query.lines.unwrap_or(SCREEN_LINES_DEFAULT);
     let result = blocking(move || {
         authenticate(&daemon, &headers, peer.0.ip())?;
-        daemon
-            .remote_screen(id, lines)
-            .map_err(IntoResponse::into_response)
+        daemon.remote_screen(id, lines).map_err(Refused::from)
     })
     .await;
     match result {
         Ok(screen) => Json(json!({ "id": id, "lines": screen.lines, "source": screen.source }))
             .into_response(),
-        Err(resp) => resp,
+        Err(refused) => refused.into_response(),
     }
 }
 
@@ -536,12 +558,12 @@ async fn input(
         authenticate(&daemon, &headers, peer.0.ip())?;
         daemon
             .remote_input(id, body.text.as_deref(), &body.keys)
-            .map_err(IntoResponse::into_response)
+            .map_err(Refused::from)
     })
     .await;
     match result {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(resp) => resp,
+        Err(refused) => refused.into_response(),
     }
 }
 
