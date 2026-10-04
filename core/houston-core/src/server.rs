@@ -625,6 +625,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::TasksAccessGet { .. }
             | proto::ClientMsg::TaskStartSettingsGet { .. }
             | proto::ClientMsg::TaskReviewSettingsGet { .. }
+            | proto::ClientMsg::RemoteGet
     )
 }
 
@@ -2710,6 +2711,63 @@ async fn dispatch(
                 .deliver_result(request_id, ok, output, error);
             Ok(())
         }
+        proto::ClientMsg::RemoteGet => {
+            let d = Arc::clone(daemon);
+            let msg = tokio::task::spawn_blocking(move || d.remote_state_msg())
+                .await
+                .map_err(|e| anyhow::anyhow!("remote state panicked: {e}"))?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::RemoteConfigure {
+            enabled,
+            bind,
+            public_url,
+            ntfy_url,
+            notify_delay_secs,
+            notify_detail,
+            notify_finished,
+        } => {
+            let d = Arc::clone(daemon);
+            let patch = crate::remote::ConfigPatch {
+                enabled,
+                bind,
+                public_url,
+                ntfy_url,
+                notify_delay_secs,
+                notify_detail: notify_detail.map(|v| match v {
+                    proto::RemoteNotifyDetail::Generic => "generic".to_string(),
+                    proto::RemoteNotifyDetail::PaneName => "pane_name".to_string(),
+                }),
+                notify_finished,
+            };
+            let result = tokio::task::spawn_blocking(move || d.remote_configure(patch))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("remote configure panicked: {e}")));
+            remote_reply(sink, result).await;
+            Ok(())
+        }
+        proto::ClientMsg::RemotePairStart => {
+            let d = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || d.remote_pairing_msg())
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("remote pairing panicked: {e}")));
+            match result {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                Err(e) => send_error(sink, format!("{e:#}"), Some("remote".into())).await,
+            }
+            Ok(())
+        }
+        proto::ClientMsg::RemoteDeviceRevoke { id } => {
+            let d = Arc::clone(daemon);
+            let result = tokio::task::spawn_blocking(move || d.remote_device_revoke(id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("remote revoke panicked: {e}")));
+            remote_reply(sink, result).await;
+            Ok(())
+        }
     }
 }
 
@@ -3690,6 +3748,13 @@ async fn send_msg(
 ) -> Result<(), ()> {
     let json = serde_json::to_string(msg).expect("ServerMsg serializes");
     sink.send(Message::Text(json.into())).await.map_err(|_| ())
+}
+
+/// Remote-access refusals carry `context: "remote"` so Settings can show them in place.
+async fn remote_reply(sink: &mut (impl SinkExt<Message> + Unpin), result: anyhow::Result<()>) {
+    if let Err(e) = result {
+        send_error(sink, format!("{e:#}"), Some("remote".into())).await;
+    }
 }
 
 async fn send_error(

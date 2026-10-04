@@ -135,7 +135,61 @@ impl Daemon {
         )?;
         *self.remote.config.lock().expect("remote config lock") = Some(next);
         self.remote.reconfigured.send_modify(|n| *n += 1);
+        self.remote_broadcast_state();
         Ok(())
+    }
+
+    /// Settings > Remote access: the configured values, listener state and devices.
+    pub fn remote_state_msg(&self) -> proto::ServerMsg {
+        let cfg = self.remote_config();
+        let listen = self.remote_listen_state();
+        let devices = self
+            .db
+            .remote_devices()
+            .unwrap_or_else(|e| {
+                tracing::warn!("remote access: reading paired devices: {e}");
+                Vec::new()
+            })
+            .into_iter()
+            .map(|d| proto::RemoteDevice {
+                id: d.id,
+                name: d.name,
+                created_at: d.created_at,
+                last_seen_at: d.last_seen_at,
+            })
+            .collect();
+        proto::ServerMsg::RemoteState {
+            remote: proto::RemoteInfo {
+                enabled: cfg.enabled,
+                bind: cfg.bind.to_string(),
+                url: cfg.effective_url(),
+                public_url: cfg.public_url.clone(),
+                listening: listen.listening.is_some(),
+                error: listen.error,
+                ntfy_server: cfg.ntfy_server.clone(),
+                notify_delay_secs: cfg.notify_delay_secs,
+                notify_detail: match cfg.notify_detail {
+                    NotifyDetail::Generic => proto::RemoteNotifyDetail::Generic,
+                    NotifyDetail::PaneName => proto::RemoteNotifyDetail::PaneName,
+                },
+                notify_finished: cfg.notify_finished,
+                devices,
+            },
+        }
+    }
+
+    fn remote_broadcast_state(&self) {
+        self.broadcast_control(&self.remote_state_msg());
+    }
+
+    /// The pairing link and its QR code for Settings; any earlier code stops working.
+    pub fn remote_pairing_msg(&self) -> Result<proto::ServerMsg> {
+        let pairing = self.remote_pair_start();
+        Ok(proto::ServerMsg::RemotePairing {
+            qr_svg: remote::qr::svg(&pairing.url)?,
+            url: pairing.url,
+            expires_at: pairing.expires_at_ms,
+        })
     }
 
     pub fn remote_listen_state(&self) -> ListenState {
@@ -143,16 +197,19 @@ impl Daemon {
     }
 
     fn remote_set_listen(&self, state: ListenState) {
-        let mut slot = self.remote.listen.lock().expect("remote listen lock");
-        if *slot == state {
-            return;
+        {
+            let mut slot = self.remote.listen.lock().expect("remote listen lock");
+            if *slot == state {
+                return;
+            }
+            if let Some(error) = &state.error {
+                tracing::warn!("remote access: {error}");
+            } else if let Some(addr) = state.listening {
+                tracing::info!("remote access listening on {addr}");
+            }
+            *slot = state;
         }
-        if let Some(error) = &state.error {
-            tracing::warn!("remote access: {error}");
-        } else if let Some(addr) = state.listening {
-            tracing::info!("remote access listening on {addr}");
-        }
-        *slot = state;
+        self.remote_broadcast_state();
     }
 
     /// A one-time code for the URL fragment; it never reaches a proxy log.
@@ -179,6 +236,7 @@ impl Daemon {
             .lock()
             .expect("remote last-seen lock")
             .remove(&id);
+        self.remote_broadcast_state();
         Ok(())
     }
 
@@ -215,6 +273,7 @@ impl Daemon {
                     row.id
                 );
             }
+            self.remote_broadcast_state();
         }
         Some(row)
     }
@@ -234,6 +293,7 @@ impl Daemon {
             .remote_device_insert(&name, &remote::hash_secret(&token), now_ms())
             .map_err(|e| ApiError::Internal(format!("recording the paired device: {e}")))?;
         tracing::info!("remote access: paired device {id}");
+        self.remote_broadcast_state();
         Ok((token, id))
     }
 

@@ -1,4 +1,4 @@
-# Wire protocol v124
+# Wire protocol v125
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -322,6 +322,15 @@ every refusal names the setting.
 | `voice_model_delete` | `model_id` | `voice_model_state` + `voice_settings` (bcast) |
 | `voice_level_monitor` | `enabled` | `voice_level` every `VOICE_LEVEL_INTERVAL_MS` while anyone is monitoring. Opens the microphone; refcounted per connection as a set, and released on disconnect |
 
+### Remote access
+
+| Message | Fields | Reply |
+|---|---|---|
+| `remote_get` | — | `remote_state` (direct) |
+| `remote_configure` | `enabled?`, `bind?` (`IP:PORT`, port not 0), `public_url?` (an http(s) origin; `""` clears), `ntfy_url?` (an http(s) topic URL, stored in the OS keychain; `""` turns notifications off), `notify_delay_secs?` (`0..=REMOTE_NOTIFY_DELAY_MAX_SECS`), `notify_detail?: RemoteNotifyDetail`, `notify_finished?` | `remote_state` (bcast). Every field is validated before any is stored, so a refusal changes nothing; it is an `error` with `context: "remote"` naming the value and the expected shape (an ntfy refusal never echoes the URL) |
+| `remote_pair_start` | — | `remote_pairing` (direct). Replaces any earlier code |
+| `remote_device_revoke` | `id` | `remote_state` (bcast); an unknown id is an `error` with `context: "remote"` |
+
 ### Host and usage
 
 | Message | Fields | Reply |
@@ -433,6 +442,8 @@ every refusal names the setting.
 | `voice_transcript` | `session`, `text`, `engine` (`"local:<model_id>"` or `"groq"`), `translated` (what happened, not what was asked) | bcast — one finished utterance for the pane named at `voice_start` |
 | `voice_model_state` | `model: VoiceModelState` | bcast — download progress, completion, failure or deletion |
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
+| `remote_state` | `remote: RemoteInfo` | direct reply to `remote_get`; bcast after `remote_configure`, `remote_device_revoke`, a pairing, a listener transition (listening, stopped, bind error) and a device's last-seen update (at most once a minute per device) |
+| `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only |
@@ -699,6 +710,13 @@ WorktreeKeep       branch_changed{current?} | dirty{files} | ignored_files{files
                    commits_outside_pr{count, pr} | pr_head_unavailable{pr} | in_use{session} |
                    grace{until_ms} | not_merged{state} | no_pr | gh_unavailable{gh} |
                    probably_integrated | remove_failed{message}
+
+RemoteNotifyDetail generic | pane_name
+RemoteDevice       id, name, created_at (epoch ms), last_seen_at? (epoch ms)
+RemoteInfo         enabled, bind ("IP:PORT"), public_url?, url (public_url, else http://<bind>), listening,
+                   error? (the last bind or serve failure), ntfy_server? (origin only; the topic URL is in the
+                   OS keychain and never on the wire), notify_delay_secs, notify_detail: RemoteNotifyDetail,
+                   notify_finished, devices: RemoteDevice[]
 
 UsageProvider      claude | codex
 UsageTokenTotals   uncached_input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens
@@ -999,6 +1017,30 @@ caller and do not create operator-addressed inbox rows.
 for Claude and Codex PostToolUse context. These supplementary hints do not acknowledge,
 resolve or consume the durable inbox rows.
 
+## Remote access HTTP API
+
+A separate, opt-in listener (`RemoteInfo.bind`, default `127.0.0.1:47823`) serves
+paired devices. It is not `/ws`: it never serves `/ws`, `/mcp`, `/orchestrate`,
+`/task`, `/inbox`, `/harness` or `/manage`, and it carries no PTY byte stream.
+Bodies are JSON (`Content-Type: application/json`), at most `BODY_LIMIT` bytes.
+Errors are `{"error": "<message naming the value and the expected shape>"}`.
+
+| Route | Auth | Body / query | Reply |
+|---|---|---|---|
+| `GET /`, `/manifest.webmanifest`, `/icon.svg` | none | — | the embedded web client; `/` carries a CSP that admits only its own inline script |
+| `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
+| `GET /api/me` | device | — | `{device_id, name}` |
+| `GET /api/sessions` | device | — | `{sessions: [{id, title, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?}]}`, needs-input first, then working, idle, others, and panes that are not running |
+| `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[]}`, the same text extraction as `pane_read`; it never attaches or resizes |
+| `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Keys: `enter esc tab up down left right backspace ctrl+c y n space` |
+
+Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
+an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's
+host), else 421; a non-GET request with an `Origin` outside that set gets 403.
+Statuses: 400 invalid input, 401 missing or unknown token or pairing code, 404
+unknown pane, 409 pane not running, 413 body too large, 429 locked out after too
+many failed authentications (with `Retry-After`).
+
 ## Versioning rules
 
 - `PROTOCOL_VERSION` is bumped **once per wire-touching batch**, not once per
@@ -1019,6 +1061,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 125 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |
 | 123 | **A local task backlog per workspace.** New `task_snapshot`, `task_get`, `task_save`, `task_comment`, `task_check`, `task_archive`, `tasks_access_get` and `tasks_access_set` client messages and `task_snapshot`, `task_detail`, `task_changed`, `task_refused` and `tasks_access` replies, with `Task`, `TaskSummary`, `TaskPatch`, `TaskStatus`, `TaskPriority`, `TaskAcceptanceItem`, `TaskComment`, `TaskHistoryEntry`, `TaskRun`, `TaskCounts`, `TaskErrorKind` and `TasksAccess`. Tasks live in per-workspace `backlog_*` SQLite tables, get a monotonic `HOU-<n>` number and an integer `revision`, and are gated by a per-workspace Tasks access (`off`/`read`/`write`, default `write`) in Settings ▸ Tasks; the orphan `tasks`/`task_events` tables are unrelated and untouched. Removing a workspace deletes its tasks. No existing message changes |
 | 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |

@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 
 pub mod http;
 pub mod ntfy;
+pub mod qr;
 
 /// A fixed port, so `tailscale serve --bg 47823` stays valid across restarts.
 pub const DEFAULT_BIND: &str = "127.0.0.1:47823";

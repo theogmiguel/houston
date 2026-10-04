@@ -49,6 +49,9 @@ tempfile = "3"
 # the daemon may swap the keyring store.
 keyring = { version = "4.1.6", features = ["v1"] }
 zeroize = "1.9.0"
+# SVG output only: the default "image" feature would pull a raster stack for a
+# pairing QR the renderer draws as markup.
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 cpal = "0.18"
 rtrb = "0.4"
 hound = "3.5"
