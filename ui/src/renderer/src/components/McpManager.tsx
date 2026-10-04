@@ -28,13 +28,16 @@ import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
 import { Icon } from './Icon'
 import { Button, Caption, Card, ConnectionCell, Drawer, EmptyState, PageFrame, PageHeader, Table, type TableColumn } from './ui'
+import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
 
 const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
-  cursor: 'Cursor'
+  cursor: 'Cursor',
+  antigravity: 'Antigravity',
+  grok: 'Grok'
 }
 
 function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: MatrixRow[] }): React.JSX.Element {
@@ -72,7 +75,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         : current.kind === 'in-sync' || (current.kind === 'drifted' && row.source && row.byTool[tool]?.fingerprint === row.source.fingerprint)
           ? 'In sync'
           : 'Off'
-    return <ConnectionCell status={status} reason={reason} server={row.name} agent={label(tool)} data-testid={`mcp-cell-${tool}-${row.name}`} onClick={() => toggleCell(row, tool)} />
+    return <ConnectionCell status={status} reason={reason} showStatus={current.kind !== 'absent' || !!reason} server={row.name} agent={label(tool)} data-testid={`mcp-cell-${tool}-${row.name}`} onClick={() => toggleCell(row, tool)} />
   }
 
   const displayRows: ConnectionDisplayRow[] = listed.map((row) => ({
@@ -115,11 +118,14 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
           columns={columns}
           rowAction={(display) => {
             const row = rows.find((item) => item.name === display.id)!
-            return <div className="flex items-center gap-[var(--space-1)]">
-              {row.hasDrift && <Button variant="ghost" size="sm" onClick={() => setDiffRow(diffRow === row.name ? null : row.name)}>{diffRow === row.name ? 'Hide diff' : 'Show diff'}</Button>}
-              <Button variant="ghost" size="sm" onClick={() => setForm({ previousName: row.name })}>Edit</Button>
-              <Button variant="danger" size="sm" onClick={() => setConfirmRemove(row.name)}>Remove</Button>
-            </div>
+            const failed = DESTINATIONS.some((tool) => cellFor(row, tool).kind !== 'absent' && checkFor(row.name, props.checks).state === 'failed') || DESTINATIONS.some((tool) => props.tools.find((item) => item.tool === tool)?.error)
+            const label = row.hasDrift ? 'Show diff' : failed ? 'Edit' : 'More actions'
+            const items = [
+              ...(row.hasDrift ? [{ label: diffRow === row.name ? 'Hide diff' : 'Show diff', onSelect: () => setDiffRow(diffRow === row.name ? null : row.name) }] : []),
+              ...(!row.hasDrift ? [{ label: 'Edit', onSelect: () => setForm({ previousName: row.name }) }] : []),
+              { label: 'Remove', onSelect: () => setConfirmRemove(row.name), tone: 'danger' as const }
+            ]
+            return <ActionMenu label={label} iconOnly={label === 'More actions'} items={items} />
           }}
           empty={{ heading: 'No MCP servers', description: 'Add an MCP server to connect it to your agents.' }}
         />

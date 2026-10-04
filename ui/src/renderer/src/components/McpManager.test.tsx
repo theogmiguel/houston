@@ -48,12 +48,13 @@ describe('Connections matrix', () => {
     const onUpsertServer = vi.fn()
     const onSync = vi.fn()
     render(<McpManager {...props({
-      checks: [['github', { state: 'failed', message: 'npx was not found on PATH' }]],
+      tools: [{ ...tool('claude'), error: 'npx was not found on PATH' }, tool('codex'), tool('opencode'), tool('cursor')],
       onUpsertServer,
       onSync
     })} />)
-    expect(screen.getAllByText('Failed')).toHaveLength(4)
-    expect(screen.getAllByText('npx was not found on PATH')).toHaveLength(4)
+    expect(screen.getAllByText('Failed')).toHaveLength(1)
+    expect(screen.getByText('npx').tagName).toBe('CODE')
+    expect(screen.getAllByText(/was not found on PATH/)).toHaveLength(1)
     fireEvent.click(screen.getAllByTestId('mcp-cell-claude-github')[1])
     expect(onUpsertServer).toHaveBeenCalledWith('github', expect.objectContaining({ destinations: ['codex', 'opencode', 'cursor'] }))
     expect(onSync).toHaveBeenCalledWith('claude')
