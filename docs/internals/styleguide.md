@@ -455,15 +455,18 @@ visible rather than silently defaulting to a bordered card.
 |---|---|
 | `BTN_PRIMARY` | The single affirmative action in a flow |
 | `BTN_DANGER_SOLID` | The irreversible action — same *rank* as primary, differing only in consequence. Always paired with a warning icon; colour alone is not a signal |
-| `BTN_GHOST` | The ordinary case: transparent fill, muted label, no border |
+| `BTN_GHOST` | The ordinary case: transparent fill, muted label, no border. Hover fills with `--hover-fill` and lifts the label to `--text-primary` |
 | `BTN_GHOST_BG` | Ghost's background half only, for sites that must inherit their text colour |
 | `BTN_GHOST_DANGER_HOVER` | Hover-only danger cue: a destructive click with no standing risk before it |
 | `BTN_GHOST_DANGER_ARM` | Standing danger cue: an armed, click-again-to-confirm control |
 | `BTN_ICO` | Full icon-button chrome (24×22 box, `--tr-radius-sm`, muted→primary on hover) |
 | `BTN_ICO_STRUCTURE` | Bare structure only, for sites that bring their own size and colour |
 
-Ghost's `border-none` is a real border-*style* reset, so a later `border-color`
-utility paints nothing — danger cues signal through fill + text, never a border.
+`BTN_GHOST` is a component-layer class (`btn-ghost` in `base.css`), so any utility a
+site adds — its own text colour, `BTN_GHOST_DANGER_HOVER`, `BTN_GHOST_DANGER_ARM` —
+wins over it by layer, not by class order. Ghost's `border: none` is a real
+border-*style* reset, so a later `border-color` utility paints nothing — danger cues
+signal through fill + text, never a border.
 **Cancel, Dismiss, Close and Discard are not destructive.** They back the user out
 and stay quiet: `BTN_GHOST`, no colour, no keyboard chip. Save the weight for the
 affirmative action.
@@ -609,7 +612,7 @@ recognise.
 |---|---|
 | **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent); outline-offset: 1px` — so no site can forget it. A site with its own ring still wins by utility order. |
 | **Focus (halo)** | The composite ring used on chips and tiles: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." |
-| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Buttons use `--border-hover` / `--card-hover`. Ghost-danger buttons get a hover-only tint. |
+| **Hover** | `--hover-fill`, an achromatic 5% overlay, for rows and rail items. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
 | **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
 | **Selected** | `--selected-fill`, an achromatic 10% overlay. Full-row fill, no left bar, no accent tint. `Chip`'s `selected` is the documented exception. |
 | **Active pane** | `--border-focus` — a plain luminance-step ring, a header lift to `--raised`, and the pane's own name held at `--text-primary` while every other pane's name steps to `--text-secondary`. **No hue** in any of the three: a coloured stroke or ink would clash with whichever terminal palette the agent underneath is using. The pane body — the terminal itself — never changes on focus. |

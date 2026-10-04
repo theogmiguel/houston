@@ -12,15 +12,17 @@ export const BTN_DANGER_SOLID =
 export const BTN_SECONDARY =
   'btn border border-[var(--border)] bg-[var(--content-bg)] text-[var(--text-primary)] hover:enabled:bg-[var(--hover-fill)] disabled:opacity-55'
 
-// border-none resets border-style (not a transparent border color) -- the
-// danger variants below depend on that reset already having zeroed the
-// border, so a border-color override alone would paint nothing.
+// Background half of the ghost look, for sites that keep their own text colour
+// and border (App.tsx's inherit-colour button).
 export const BTN_GHOST_BG = 'bg-transparent'
 
-export const BTN_GHOST = `${BTN_GHOST_BG} border-none text-[var(--text-muted)]`
+// A component-layer class (base.css) that owns the hover state: call-site
+// utilities and the danger variants below win by layer, not by tie-break order.
+// Its `border: none` resets border-style, so border-color alone paints nothing.
+export const BTN_GHOST = 'btn-ghost'
 
-// Signal through fill + text, not border-color: BTN_GHOST above resets
-// border-style to none, so a border-color override here would paint nothing.
+// Signal through fill + text, not border-color (BTN_GHOST has no border style).
+// Utilities outrank BTN_GHOST's component-layer hover, so this wins on its own.
 export const BTN_GHOST_DANGER_HOVER =
   'hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] hover:text-[var(--danger)]'
 
