@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyReadError, formatMB, formatMBWhole } from './previewState'
+import { classifyReadError, formatLargeFileNotice, formatMB, formatMBWhole } from './previewState'
 
 describe('classifyReadError', () => {
   it('parses the too-large-to-edit refusal, pulling the real size and cap out of the message', () => {
@@ -84,5 +84,13 @@ describe('formatMBWhole', () => {
   it('formats bytes as a whole-number MB, no decimal', () => {
     expect(formatMBWhole(2 * 1024 * 1024)).toBe('2 MB')
     expect(formatMBWhole(3000000)).toBe('3 MB')
+  })
+})
+
+describe('formatLargeFileNotice', () => {
+  it('names the file size, limit and requested operation', () => {
+    expect(formatLargeFileNotice(3000000, 2097152, 'edit')).toBe(
+      'File size 2.9 MB exceeds the 2 MB edit limit. Requested: open for editing.'
+    )
   })
 })
