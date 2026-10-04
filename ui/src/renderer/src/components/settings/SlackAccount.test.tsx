@@ -38,6 +38,7 @@ const OFF: SlackInfo = {
   bot_user_id: null,
   owner_user_id: null,
   channels: [],
+  language: 'en',
   last_event_at_ms: null,
   last_catchup_at_ms: null,
   error: null
@@ -79,13 +80,23 @@ describe('Slack intake settings', () => {
     expect(calls.slackConnect).toHaveBeenCalledWith(null, null)
   })
 
+  it('shows the current language and saves a new one with the rest of the settings', () => {
+    const { client, receive, calls } = fakeClient()
+    render(<SlackAccount client={client} />)
+    act(() => receive({ info: { ...OFF, language: 'pt_br' }, refusal: null }))
+    const select = screen.getByLabelText('Language Houston writes in Slack')
+    expect(select.textContent).toContain('Português (Brasil)')
+    fireEvent.click(screen.getByTestId('slack-save'))
+    expect(calls.slackConfigure).toHaveBeenCalledWith(null, [], 'pt_br')
+  })
+
   it('keeps what was typed and shows a refusal', () => {
     const { client, receive, calls } = fakeClient()
     render(<SlackAccount client={client} />)
     act(() => receive({ info: OFF, refusal: null }))
     fireEvent.change(screen.getByLabelText("Owner's Slack member ID"), { target: { value: '@me' } })
     fireEvent.click(screen.getByTestId('slack-save'))
-    expect(calls.slackConfigure).toHaveBeenCalledWith('@me', [])
+    expect(calls.slackConfigure).toHaveBeenCalledWith('@me', [], 'en')
     act(() => receive({ info: OFF, refusal: 'owner "@me" is not a Slack member ID' }))
     expect(screen.getByTestId('slack-refusal').textContent).toContain('not a Slack member ID')
     expect((screen.getByLabelText("Owner's Slack member ID") as HTMLInputElement).value).toBe('@me')

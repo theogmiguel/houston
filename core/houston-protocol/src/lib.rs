@@ -572,6 +572,18 @@ pub enum SlackConnection {
     Retrying,
 }
 
+/// The language of everything the Slack intake writes: Houston's own phrases
+/// in the owner's direct messages and the thread, and the fields the agent is
+/// told to write for the requester.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SlackLanguage {
+    #[default]
+    En,
+    PtBr,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SlackInfo {
@@ -589,6 +601,8 @@ pub struct SlackInfo {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub owner_user_id: Option<String>,
     pub channels: Vec<SlackChannelMap>,
+    #[serde(default)]
+    pub language: SlackLanguage,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_event_at_ms: Option<i64>,
@@ -3202,11 +3216,15 @@ pub enum ClientMsg {
     /// Closes the connection, turns the connector off and deletes both tokens.
     SlackDisconnect,
     /// Replaces the owner and the channel map; the tokens are untouched.
+    /// `language` absent keeps the current one.
     SlackConfigure {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         owner_user_id: Option<String>,
         channels: Vec<SlackChannelMap>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        language: Option<SlackLanguage>,
     },
     KeymapGet,
     KeymapSet {

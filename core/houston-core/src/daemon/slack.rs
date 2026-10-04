@@ -21,6 +21,7 @@ const SOURCE: &str = "slack";
 const KEY_ENABLED: &str = "slack_enabled";
 const KEY_OWNER: &str = "slack_owner";
 const KEY_CHANNELS: &str = "slack_channels";
+const KEY_LANGUAGE: &str = "slack_language";
 const KEY_CURSOR: &str = "slack_cursor:";
 /// Replies, the queue and answers wait at most this long; well under the
 /// pace at which a person reads a thread.
@@ -67,6 +68,7 @@ impl Default for SlackRuntime {
 struct Config {
     owner: Option<String>,
     channels: Vec<proto::SlackChannelMap>,
+    language: proto::SlackLanguage,
 }
 
 impl Config {
@@ -154,7 +156,18 @@ impl Daemon {
             .flatten()
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
-        Config { owner, channels }
+        let language = self
+            .db
+            .get_setting(KEY_LANGUAGE)
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_value(Value::String(raw)).ok())
+            .unwrap_or_default();
+        Config {
+            owner,
+            channels,
+            language,
+        }
     }
 
     fn slack_enabled(&self) -> bool {
@@ -185,6 +198,7 @@ impl Daemon {
             bot_user_id: st.identity.as_ref().map(|i| i.bot_user_id.clone()),
             owner_user_id: config.owner,
             channels: config.channels,
+            language: config.language,
             last_event_at_ms: st.last_event_at_ms,
             last_catchup_at_ms: st.last_catchup_at_ms,
             error: keychain_error.or_else(|| st.error.clone()),
@@ -244,6 +258,7 @@ impl Daemon {
         &self,
         owner: Option<&str>,
         channels: &[proto::SlackChannelMap],
+        language: Option<proto::SlackLanguage>,
     ) -> proto::ServerMsg {
         match self.slack_check_config(owner, channels) {
             Ok(()) => {}
@@ -256,6 +271,11 @@ impl Daemon {
             }
             self.db
                 .set_setting(KEY_CHANNELS, &serde_json::to_string(channels)?)?;
+            if let Some(language) = language {
+                if let Value::String(name) = serde_json::to_value(language)? {
+                    self.db.set_setting(KEY_LANGUAGE, &name)?;
+                }
+            }
             Ok(())
         })();
         self.slack_state_msg(
@@ -302,6 +322,26 @@ impl Daemon {
             }
         }
         Ok(())
+    }
+
+    /// The brief's paragraph for a task filed from Slack. Its first sentence is
+    /// what the repository's factory skill recognises, so it never changes.
+    pub(super) fn slack_brief_note(&self, row: &crate::db::TaskRow) -> Option<String> {
+        if !row.created_by.starts_with("slack:") {
+            return None;
+        }
+        let language = match self.slack_config().language {
+            proto::SlackLanguage::PtBr => "Brazilian Portuguese (pt-BR)",
+            proto::SlackLanguage::En => "English",
+        };
+        Some(format!(
+            "This task was filed from a Slack request. Follow this repository's factory skill if \
+             it has one. Ask a question only with `hs-task ask \"...\"` (or the `task_ask` MCP \
+             tool): it goes to the request's thread, and the answer arrives as your next prompt, \
+             so end your turn after asking. Write everything the requester reads (the question \
+             and the hand-back) in {language}, in product words: no task keys, branches or file \
+             paths."
+        ))
     }
 
     /// The tasks list's origin column: every task filed from Slack, with its

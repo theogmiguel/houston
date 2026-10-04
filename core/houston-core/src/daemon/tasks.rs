@@ -1952,6 +1952,7 @@ impl Daemon {
         acceptance: &[TaskAcceptanceRow],
         branch: &str,
         findings: Option<&str>,
+        slack_note: Option<&str>,
     ) -> String {
         let mut brief = format!(
             "Houston task {key} (id {}): {}\n\
@@ -1970,13 +1971,9 @@ impl Daemon {
         if let Some(findings) = findings {
             brief.push_str(&Self::task_findings_block(key, findings));
         }
-        if row.created_by.starts_with("slack:") {
-            brief.push_str(
-                "\n\nThis task was filed from a Slack request. Follow this repository's factory \
-                 skill if it has one. Ask a question only with `hs-task ask \"...\"` (or the \
-                 `task_ask` MCP tool): it goes to the request's thread, and the answer arrives as \
-                 your next prompt, so end your turn after asking.",
-            );
+        if let Some(note) = slack_note {
+            brief.push_str("\n\n");
+            brief.push_str(note);
         }
         brief.push_str(
             "\n\nWhen the work is done, hand the task back with `hs-task handback --summary \
@@ -2176,7 +2173,15 @@ impl Daemon {
         let now = now_unix_ms();
         let key = Self::task_key(row.number);
         let acceptance = self.db.task_acceptance(row.id)?;
-        let brief = Self::task_brief(&key, row, &acceptance, &created.branch, findings);
+        let slack_note = self.slack_brief_note(row);
+        let brief = Self::task_brief(
+            &key,
+            row,
+            &acceptance,
+            &created.branch,
+            findings,
+            slack_note.as_deref(),
+        );
         if brief.len() > proto::TASK_BRIEF_MAX_BYTES {
             return Ok(Self::task_limit_refused(
                 Some(row.id),
@@ -2463,7 +2468,15 @@ impl Daemon {
         // The cap is checked before anything is created, so a refused Start
         // leaves no worktree or branch behind.
         let acceptance = self.db.task_acceptance(id)?;
-        let brief = Self::task_brief(&key, &row, &acceptance, &branch, None);
+        let slack_note = self.slack_brief_note(&row);
+        let brief = Self::task_brief(
+            &key,
+            &row,
+            &acceptance,
+            &branch,
+            None,
+            slack_note.as_deref(),
+        );
         if brief.len() > proto::TASK_BRIEF_MAX_BYTES {
             return Ok(Self::task_limit_refused(
                 Some(id),

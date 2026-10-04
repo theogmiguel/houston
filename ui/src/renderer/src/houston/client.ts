@@ -6,6 +6,7 @@ import type { SshProfile } from './generated/SshProfile'
 import type { SessionPolicy } from './generated/SessionPolicy'
 import type { UpdatePolicy } from './generated/UpdatePolicy'
 import type { SlackChannelMap } from './generated/SlackChannelMap'
+import type { SlackLanguage } from './generated/SlackLanguage'
 import type { KeymapOverrides } from './generated/KeymapOverrides'
 import type { CloudStt } from './generated/CloudStt'
 import type { VoiceSettings } from './generated/VoiceSettings'
@@ -1163,8 +1164,8 @@ export class HoustonClient {
     this.send({ type: 'slack_disconnect' })
   }
 
-  slackConfigure(ownerUserId: string | null, channels: SlackChannelMap[]): void {
-    this.send({ type: 'slack_configure', owner_user_id: ownerUserId, channels })
+  slackConfigure(ownerUserId: string | null, channels: SlackChannelMap[], language: SlackLanguage): void {
+    this.send({ type: 'slack_configure', owner_user_id: ownerUserId, channels, language })
   }
 
   skillSync(): void {

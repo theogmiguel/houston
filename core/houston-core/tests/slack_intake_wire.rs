@@ -28,14 +28,15 @@ const OWNER: &str = "UOWNER";
 const REQUESTER: &str = "UREQ";
 const CHANNEL: &str = "C0TEST";
 
-/// A Claude that stays up without hooks, like the task Start tests use.
+/// A Claude that stays up without hooks, like the task Start tests use, and
+/// prints its arguments so a test can read the brief it was started with.
 fn shim_dir() -> PathBuf {
     SHIM.get_or_init(|| {
         let dir = tempfile::tempdir().expect("shim tempdir").keep();
         let path = dir.join("claude");
         std::fs::write(
             &path,
-            "#!/bin/sh\nstty -echo -icanon 2>/dev/null\necho FIXTURE-READY\nexec cat\n",
+            "#!/bin/sh\nstty -echo -icanon 2>/dev/null\nprintf '%s\\n' \"$@\"\necho FIXTURE-READY\nexec cat\n",
         )
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -248,6 +249,7 @@ async fn rig(name: &str) -> Rig {
             channel_id: CHANNEL.into(),
             workspace: r.workspace(),
         }],
+        Some(proto::SlackLanguage::PtBr),
     );
     assert!(
         matches!(configured, proto::ServerMsg::Slack { refusal: None, .. }),
@@ -344,6 +346,22 @@ impl Rig {
         }
     }
 
+    async fn await_output(&self, session: u32, needle: &str) -> String {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        loop {
+            let replay = self.daemon.scrollback(session, None).unwrap();
+            let text = String::from_utf8_lossy(&replay.data).into_owned();
+            if text.contains(needle) {
+                return text;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "session {session} never printed {needle:?}: {text:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
     fn finish(&self) {
         self.daemon.slack_disconnect();
     }
@@ -418,6 +436,8 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
         .send_event("e5", check_mark("1800000000.000100", OWNER));
     let runs = r.await_runs(1).await;
     assert_eq!(runs[0].0, tasks[0].0);
+    r.await_output(runs[0].1, "in Brazilian Portuguese (pt-BR)")
+        .await;
     r.fake.await_post("Started HOU-").await;
     r.finish();
 }
@@ -675,7 +695,7 @@ async fn configuration_refuses_bad_ids_and_unknown_workspaces_by_name() {
         } => why,
         other => panic!("expected a refusal, got {other:?}"),
     };
-    let why = refused(r.daemon.slack_configure(Some("@augusto"), &[]));
+    let why = refused(r.daemon.slack_configure(Some("@augusto"), &[], None));
     assert!(
         why.contains("\"@augusto\"") && why.contains("member ID"),
         "{why}"
@@ -686,6 +706,7 @@ async fn configuration_refuses_bad_ids_and_unknown_workspaces_by_name() {
             channel_id: "#general".into(),
             workspace: r.workspace(),
         }],
+        None,
     ));
     assert!(why.contains("\"#general\""), "{why}");
     let why = refused(r.daemon.slack_configure(
@@ -694,6 +715,7 @@ async fn configuration_refuses_bad_ids_and_unknown_workspaces_by_name() {
             channel_id: "C1X".into(),
             workspace: "/nope".into(),
         }],
+        None,
     ));
     assert!(why.contains("\"/nope\" is not registered"), "{why}");
     let why = refused(r.daemon.slack_connect(Some("xoxb-swapped"), Some("xoxb-1")));
@@ -702,6 +724,18 @@ async fn configuration_refuses_bad_ids_and_unknown_workspaces_by_name() {
         r.daemon.slack_info().owner_user_id.as_deref(),
         Some(OWNER),
         "a refusal changes nothing"
+    );
+    let kept = r.daemon.slack_configure(
+        Some(OWNER),
+        &[proto::SlackChannelMap {
+            channel_id: CHANNEL.into(),
+            workspace: r.workspace(),
+        }],
+        None,
+    );
+    assert!(
+        matches!(kept, proto::ServerMsg::Slack { refusal: None, ref info } if info.language == proto::SlackLanguage::PtBr),
+        "a configure without a language keeps the current one: {kept:?}"
     );
 
     let off = r.daemon.slack_disconnect();

@@ -2704,10 +2704,11 @@ async fn dispatch(
         proto::ClientMsg::SlackConfigure {
             owner_user_id,
             channels,
+            language,
         } => {
             let d = daemon.clone();
             let msg = tokio::task::spawn_blocking(move || {
-                d.slack_configure(owner_user_id.as_deref(), &channels)
+                d.slack_configure(owner_user_id.as_deref(), &channels, language)
             })
             .await?;
             slack_reply(daemon, sink, msg).await;

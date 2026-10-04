@@ -3,6 +3,7 @@ import type { HoustonClient } from '../../houston/client'
 import { SLACK_TOKEN_LEN_MAX } from '../../houston/generated/DEFAULTS'
 import type { SlackChannelMap } from '../../houston/generated/SlackChannelMap'
 import type { SlackInfo } from '../../houston/generated/SlackInfo'
+import type { SlackLanguage } from '../../houston/generated/SlackLanguage'
 import type { Workspace } from '../../houston/generated/Workspace'
 import { BTN_GHOST } from '../buttonChrome'
 import { Select } from '../Select'
@@ -18,6 +19,11 @@ const CONNECTION_LABEL: Record<SlackInfo['connection'], string> = {
   connected: 'Connected',
   retrying: 'Reconnecting'
 }
+
+const LANGUAGE_OPTIONS: { value: SlackLanguage; label: string }[] = [
+  { value: 'en', label: 'English' },
+  { value: 'pt_br', label: 'Português (Brasil)' }
+]
 
 function statusLine(info: SlackInfo): string {
   const parts = [CONNECTION_LABEL[info.connection]]
@@ -36,6 +42,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
   const [botToken, setBotToken] = useState('')
   const [owner, setOwner] = useState('')
   const [channels, setChannels] = useState<SlackChannelMap[]>([])
+  const [language, setLanguage] = useState<SlackLanguage>('en')
   const [refusal, setRefusal] = useState<string | null>(null)
   useEffect(() => {
     setInfo(null)
@@ -49,6 +56,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
       setInfo(msg.info)
       setOwner(msg.info.owner_user_id ?? '')
       setChannels(msg.info.channels)
+      setLanguage(msg.info.language)
       if (msg.info.has_tokens) {
         setAppToken('')
         setBotToken('')
@@ -141,7 +149,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
       </Row>
       <Row
         title="Owner and channels"
-        desc="The owner is the only person whose ✅ starts a request (a member ID, U…, from the Slack profile's “Copy member ID”). Each channel ID (C…, from the channel's details) files its requests under one workspace."
+        desc="The owner is the only person whose ✅ starts a request (a member ID, U…, from the Slack profile's “Copy member ID”). The language applies to everything Houston writes in Slack and to what the agent is asked to write in the thread. Each channel ID (C…, from the channel's details) files its requests under one workspace."
         indent
       >
         <div className="flex flex-col gap-2" data-testid="slack-config">
@@ -152,6 +160,12 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
             placeholder="U…"
             value={owner}
             onChange={(e) => setOwner(e.target.value)}
+          />
+          <Select
+            value={language}
+            options={LANGUAGE_OPTIONS}
+            aria-label="Language Houston writes in Slack"
+            onChange={(value) => setLanguage(value as SlackLanguage)}
           />
           {channels.map((c, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
@@ -196,7 +210,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
               data-testid="slack-save"
               onClick={() => {
                 setRefusal(null)
-                client?.slackConfigure(owner.trim() === '' ? null : owner.trim(), channels)
+                client?.slackConfigure(owner.trim() === '' ? null : owner.trim(), channels, language)
               }}
             >
               Save
