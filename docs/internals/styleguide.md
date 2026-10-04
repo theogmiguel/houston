@@ -558,13 +558,22 @@ slide a thumb.**
 
 ### Tables
 
-`DataTable`: sticky opaque `thead` on `--surface`, row hairlines on `--divider`
-(never `--border`), 28px rows, numeric columns right-aligned with `tabular-nums`,
-default body height cap 360px, and empty/loading/error states rendered inline in
-`tbody` rather than replacing the table. `DefinitionTable` is a lookup surface, not a
-form: a 160px label column on `--panel` with a small muted icon tile, a mono value
-column with optional middle-truncation, and masked rows for secrets — the masked
-value never touches the DOM in full and there is no reveal control.
+Use `Table` for content tables. Define columns with row keys, mark numeric columns
+`numeric`, and render model-specific content through a column renderer. Numeric cells
+and their headings right-align with tabular figures. Rows are separated by `--divider`
+hairlines with `--space-2-5` vertical padding. Cell ink defaults to primary; set a
+column's `tone` to `muted` for secondary figures or `faint` for ranks. `plain` tables sit
+directly on the page; `framed` tables sit inside a hairline frame when they share a
+panel with other content. Rows highlight on hover. Row actions remain in their own trailing column. A clickable row supports
+Enter and Space and ignores events from nested controls. Empty results use
+`EmptyState`; failures use `Notice` with an optional retry action. `DataTable` remains
+for existing callers that need its loading state, sticky head and bounded body scroll;
+it does not provide the row keyboard and action-column behaviour of `Table`.
+
+`DefinitionTable` is a lookup surface, not a form: a 160px label column on `--panel`
+with a small muted icon tile, a mono value column with optional middle-truncation, and
+masked rows for secrets — the masked value never touches the DOM in full and there is
+no reveal control.
 
 ### Menus
 
@@ -691,6 +700,27 @@ states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
 
 Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
 places its title and metadata on the left and status or action on the right.
+
+### List and detail
+
+Compose `ListDetail` inside `PageFrame width="wide"`. The list column uses the
+existing 280px split at the 720px container threshold; on narrow containers it shows
+one side at a time with a back button. Pass `selectedId` and `onSelect` when selection
+must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
+new selection.
+
+### Drawer
+
+Use `Drawer` for a detail panel over the current page. It has a right-aligned 720px
+maximum width, a labelled title row and a close button. It traps Tab focus, closes on
+Escape or a backdrop press, and returns focus to the opener. Entry uses the panel and
+scrim motion tokens and is disabled by reduced-motion preferences.
+
+### Inline notice
+
+Use `Notice` for a single inline info, warn or danger sentence, with an optional
+`Button` action. A concurrency limit names the limit, current value and settings path,
+for example: “3 of 3 running. Routines run 3 at a time (Settings › Routines)”.
 
 ### Pane header actions
 
