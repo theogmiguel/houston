@@ -13,7 +13,7 @@ import type { ThemeName } from '../../theme'
 import { Icon } from '../Icon'
 import { FOCUS_HALO } from '../shadowChrome'
 import { MATERIAL_CLS, materialAttrs } from '../material'
-import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand } from './commandPalette'
+import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './commandPalette'
 import { variants } from './variants'
 
 export interface AppearanceEmbed {
@@ -158,7 +158,7 @@ export function CommandPalette({
           runCommand(cmd)
         }}
       >
-        {cmd.session && <span aria-hidden="true" className={`h-[7px] w-[7px] rounded-full flex-none ${cmd.session.status === 'needs-input' ? 'bg-[var(--warning)]' : cmd.session.status === 'working' || cmd.session.status === 'spawning' ? 'bg-[var(--success)]' : 'bg-[var(--text-faint)]'}`} />}
+        {cmd.session && <span aria-hidden="true" className={`h-[7px] w-[7px] rounded-full flex-none ${sessionDotClass(cmd.session.status)}`} />}
         {cmd.session && <span aria-hidden="true" className="w-3 text-center text-[var(--text-secondary)]">{cmd.session.agent === 'claude' ? '✳' : cmd.session.agent === 'codex' ? '◇' : '•'}</span>}
         <div className="min-w-0 flex-1">
           <div

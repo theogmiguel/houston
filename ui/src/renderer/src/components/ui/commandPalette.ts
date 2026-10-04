@@ -1,6 +1,7 @@
 import type { Command, CommandGroup } from '../commandRegistry'
 import { effectiveLabel } from '../../keymap'
 import type { KeymapOverrides } from '../../houston/generated/KeymapOverrides'
+import type { AgentStatus } from '../../houston/generated/AgentStatus'
 
 export const PALETTE_RECENTS_KEY = 'houston-command-palette-recents'
 export const PALETTE_RECENTS_LIMIT = 8
@@ -34,5 +35,21 @@ export function readPaletteRecents(storage: Pick<Storage, 'getItem'>): string[] 
     return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string').slice(0, PALETTE_RECENTS_LIMIT) : []
   } catch {
     return []
+  }
+}
+
+/** Same status colours as the pane header's StatusDot, without its pulse. */
+export function sessionDotClass(status: AgentStatus | null | undefined): string {
+  switch (status) {
+    case 'working':
+      return 'bg-[var(--info)]'
+    case 'spawning':
+      return 'bg-[var(--accent)]'
+    case 'needs-input':
+      return 'bg-[var(--warn)]'
+    case 'unavailable':
+      return 'bg-transparent ring-1 ring-inset ring-[var(--text-faint)]'
+    default:
+      return 'bg-[var(--text-muted)]'
   }
 }

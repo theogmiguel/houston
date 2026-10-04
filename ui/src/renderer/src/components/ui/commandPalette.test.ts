@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildCommands, type Command } from '../commandRegistry'
-import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand } from './commandPalette'
+import { groupPaletteCommands, PALETTE_RECENTS_KEY, paletteShortcutLabels, readPaletteRecents, rememberPaletteCommand, sessionDotClass } from './commandPalette'
 
 const command = (id: string, group: Command['group'] = 'View'): Command => ({ id, title: id, group, enabled: true, run: () => {} })
 
@@ -25,5 +25,12 @@ describe('command palette helpers', () => {
     const commands = buildCommands({ actions: { newTerminal: () => {}, insertPane: () => {}, newGrid: () => {}, toggleGitPane: () => {}, spawnAgent: () => {}, openTasks: () => {}, toggleSidebarRail: () => {}, toggleChromeTheme: () => {}, openAddPanePopover: () => {}, setGridLayout: () => {}, openShortcutSheet: () => {}, selectNavRow: () => {}, switchWorkspace: () => {}, switchGrid: () => {} }, hasWorkspace: true, workspaces: [] })
     const labels = paletteShortcutLabels(commands, { shortcuts_enabled: true, bindings: { 'toggle-sidebar': { ctrl: true, alt: true, code: 'KeyJ', shift: false, meta: false } } })
     expect(labels['view.toggle-sidebar']).toBe('Ctrl+Alt+J')
+  })
+
+  it('colours a session dot like the pane header: working is info, needs input is warn', () => {
+    expect(sessionDotClass('working')).toBe('bg-[var(--info)]')
+    expect(sessionDotClass('spawning')).toBe('bg-[var(--accent)]')
+    expect(sessionDotClass('needs-input')).toBe('bg-[var(--warn)]')
+    expect(sessionDotClass('idle')).toBe('bg-[var(--text-muted)]')
   })
 })
