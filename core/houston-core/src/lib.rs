@@ -84,6 +84,7 @@ pub mod worktree_cleanup;
 pub mod worktrees;
 pub mod wsl_ensure;
 pub mod wsl_proxy;
+pub mod zcode_config;
 
 #[cfg(test)]
 pub mod test_tracing_capture;
