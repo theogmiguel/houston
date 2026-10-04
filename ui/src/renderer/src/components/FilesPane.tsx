@@ -4,7 +4,7 @@ import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import type { GitFileStatus, HoustonClient } from '../houston/client'
 import { FILE_REFERENCE_MIME, copyFilePath, fileActionDirectory, fileReference, gitTreeStatus, relativeFilePath } from './files/fileActions'
 import { lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { RING_ACCENT_ICON } from './shadowChrome'
+import { BORDER_HAIRLINE_INSET, RING_ACCENT_ICON } from './shadowChrome'
 import type { DirEntry } from '../env'
 import type { FilesNode, PaneKey } from '../layout/tree'
 import { readDir, showItemInFolder, createFile, createDirectory, renameFile, trashFile } from '../houston/bridge'
@@ -619,7 +619,7 @@ function FilesTreeContextMenu({ menu, menuRef, root, onClose, onError, onSendToT
           role="menu"
           tabIndex={-1}
           data-testid="files-row-menu"
-          className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[220px] max-h-[calc(100dvh-var(--space-4))] overflow-y-auto flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] focus:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--border)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`}
+          className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[220px] max-h-[calc(100dvh-var(--space-4))] overflow-y-auto flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] focus:outline-none focus-visible:shadow-[${BORDER_HAIRLINE_INSET}] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`}
           style={(() => {
             const left = Math.min(menu.x, window.innerWidth - 200)
             const top = Math.max(8, Math.min(menu.y, window.innerHeight - 220))
