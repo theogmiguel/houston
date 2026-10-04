@@ -85,9 +85,29 @@ function fixtureClient(): HoustonClient {
 
 export function TasksPageStory(): React.JSX.Element {
   const client = React.useMemo(fixtureClient, [])
-  return <div style={{ height: '100%', background: 'var(--content-bg)' }}><TasksSurface
-    client={client} workspace={WORKSPACE} workspaces={[{ path: WORKSPACE, name: 'houston' }]}
-    sessions={SESSIONS} now={NOW} onStartRequested={() => {}} onOpenSession={() => {}}
-    onReview={() => {}} onOpenExternal={() => {}}
-  /></div>
+  return (
+    <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
+      <aside style={{ width: 148, flex: 'none', padding: 8, background: 'var(--rail-bg)', color: 'var(--text-secondary)' }}>
+        <div style={{ padding: 8, color: 'var(--text-faint)', fontSize: 11 }}>HOUSTON</div>
+        <div style={{ display: 'grid', gap: 2, marginBottom: 8 }}>
+          {['auth-refactor', 'migrate-db', 'shell'].map((item) => <div key={item} style={{ padding: '5px 8px', fontSize: 12 }}>{item}</div>)}
+        </div>
+        <div style={{ height: 1, background: 'var(--divider)', margin: '0 8px 8px' }} />
+        <div style={{ display: 'grid', gap: 2 }}>
+          {([['Tasks', 2], ['Routines', null], ['Skills', null], ['Harness', 1], ['Connections', null], ['Usage', null]] as const).map(([label, count]) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, background: label === 'Tasks' ? 'var(--hover-fill)' : 'transparent' }}>
+              {label}{count !== null && <span style={{ color: 'var(--accent)' }}>{count}</span>}
+            </div>
+          ))}
+        </div>
+      </aside>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <TasksSurface
+          client={client} workspace={WORKSPACE} workspaces={[{ path: WORKSPACE, name: 'houston' }]}
+          sessions={SESSIONS} now={NOW} onStartRequested={() => {}} onOpenSession={() => {}}
+          onReview={() => {}} onOpenExternal={() => {}}
+        />
+      </div>
+    </div>
+  )
 }

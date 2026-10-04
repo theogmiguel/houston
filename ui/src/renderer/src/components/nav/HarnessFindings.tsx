@@ -5,6 +5,7 @@ import type { HarnessFindingPhase } from '../../houston/generated/HarnessFinding
 import type { HarnessFindingState } from '../../houston/generated/HarnessFindingState'
 import { openSideTasks } from '../../sidePanel'
 import { Button, Card, Segmented, StatusLabel, type StatusLabelValue } from '../ui'
+import { formatHarnessDate } from './harnessFormat'
 
 export type HarnessFilter = 'active' | 'resolved' | 'dismissed'
 export type HarnessFindingAction = 'create_task' | 'dismiss' | 'open_task' | 'verify_now' | 'resolve' | 'keep_open' | 'reopen'
@@ -60,10 +61,11 @@ export function HarnessFindings({
         value={filter}
         onChange={setFilter}
         options={[
-          { value: 'active', label: `Active ${counts.active}`, testId: 'harness-filter-active' },
-          { value: 'resolved', label: `Resolved ${counts.resolved}`, testId: 'harness-filter-resolved' },
-          { value: 'dismissed', label: `Dismissed ${counts.dismissed}`, testId: 'harness-filter-dismissed' }
+          { value: 'active', label: 'Active', count: counts.active || undefined, testId: 'harness-filter-active' },
+          { value: 'resolved', label: 'Resolved', count: counts.resolved || undefined, testId: 'harness-filter-resolved' },
+          { value: 'dismissed', label: 'Dismissed', count: counts.dismissed || undefined, testId: 'harness-filter-dismissed' }
         ]}
+        className="justify-self-start"
       />
       {shown.length ? (
         <Card>
@@ -108,7 +110,7 @@ function FindingRow({
   ) : f.phase === 'fixing' ? (
     <>{f.count} of {reviewSessions} sessions · {linkedTask} {task?.status.replace('_', ' ')} · checked again after it merges</>
   ) : f.phase === 'awaiting_verification' ? (
-    <>{linkedTask} merged {task?.landed_at_ms ? new Date(task.landed_at_ms).toLocaleDateString() : ''} · {f.verification?.sessions_after ?? 0} sessions since · verdict in the next review</>
+    <>{linkedTask} merged {task?.landed_at_ms ? formatHarnessDate(task.landed_at_ms) : ''} · {f.verification?.sessions_after ?? 0} sessions since · verdict in the next review</>
   ) : f.phase === 'not_seen' ? (
     <>No task · not raised by review #{latestReviewId ?? f.review_id} · last seen in #{f.last_seen_review_id} ({f.count} sessions)</>
   ) : (
@@ -152,18 +154,18 @@ function FindingActionButton({
 }): React.JSX.Element {
   switch (action) {
     case 'create_task':
-      return <Button size="sm" variant="secondary" onClick={() => onCreateTask(finding.key, engine, finding.apply_prompt)}>Create task</Button>
+      return <Button variant="secondary" onClick={() => onCreateTask(finding.key, engine, finding.apply_prompt)}>Create task</Button>
     case 'dismiss':
-      return <Button size="sm" variant="ghost" onClick={() => onDecide(finding.key, 'dismissed')}>Dismiss</Button>
+      return <Button variant="ghost" onClick={() => onDecide(finding.key, 'dismissed')}>Dismiss</Button>
     case 'open_task':
-      return <Button size="sm" variant="ghost" onClick={() => finding.task && openSideTasks(false, finding.task.task_id)}>Open task</Button>
+      return <Button variant="ghost" onClick={() => finding.task && openSideTasks(false, finding.task.task_id)}>Open task</Button>
     case 'verify_now':
-      return <Button size="sm" variant="secondary" onClick={onVerifyNow}>Verify now</Button>
+      return <Button variant="secondary" onClick={onVerifyNow}>Verify now</Button>
     case 'resolve':
-      return <Button size="sm" variant="secondary" onClick={() => onDecide(finding.key, 'resolved')}>Resolve</Button>
+      return <Button variant="secondary" onClick={() => onDecide(finding.key, 'resolved')}>Resolve</Button>
     case 'keep_open':
-      return <Button size="sm" variant="ghost" onClick={() => onDecide(finding.key, 'open')}>Keep open</Button>
+      return <Button variant="ghost" onClick={() => onDecide(finding.key, 'open')}>Keep open</Button>
     case 'reopen':
-      return <Button size="sm" variant="ghost" onClick={() => onDecide(finding.key, 'open')}>Reopen</Button>
+      return <Button variant="ghost" onClick={() => onDecide(finding.key, 'open')}>Reopen</Button>
   }
 }

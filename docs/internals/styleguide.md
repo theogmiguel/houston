@@ -562,7 +562,8 @@ an accent border.
 
 A 28px track at `--tr-radius-button` over a 4%-mixed background; 22px items, 54px
 minimum width, 12px label. Selection **cross-fades colour and background; it does not
-slide a thumb.**
+slide a thumb.** A count may follow the label in muted ink. The track sizes to its
+options unless its parent deliberately gives it a wider layout.
 
 ### Tables
 
@@ -691,7 +692,7 @@ chips only for multi-select filters.
 
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Idle, Done, Failed, Paused, In sync, Missing, Open, Fixing, Not seen and Ready.
+Needs input, Idle, Done, Failed, Paused, In sync, Missing, Open, Fixing, Not seen, Ready and Verified.
 Do not rely on colour alone. Idle, Paused, Missing and Not seen use a hollow ring. “Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
@@ -708,9 +709,9 @@ states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
 
 Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
 places its title and metadata on the left and status or action on the right. Its
-`compact` variant keeps history rows on one line. The `rail` variant marks New,
-Still there and Gone review groups with warn, stop and ok rules. Keep the rule to
-this primitive; feature files supply the group content. Use `Card.Content` for a
+`compact` variant keeps history rows on one line. `Card.Group` spans its heading and
+rows with a New, Still there or Gone warn, stop or ok rule. Keep the rule to this
+primitive; feature files supply the group content. Use `Card.Content` for a
 padded, vertically grouped set of section rows.
 
 `BarSparkline` shows a short sequence of comparable values with an accessible text
@@ -733,8 +734,9 @@ maximum width, a labelled title row and a close button. It traps Tab focus, clos
 Escape or a backdrop press, and returns focus to the opener. Entry uses the panel and
 scrim motion tokens and is disabled by reduced-motion preferences.
 
-Use `TaskProgress` for the four task lifecycle stages. Its current stage follows the
-task status; the component owns the line, ink and spacing.
+Task details keep a page gutter around the header, execution card, acceptance section
+and origin chip. Use `TaskProgress` for the four task lifecycle stages. Its current
+stage follows the task status; the component owns the line, ink and spacing.
 
 ### Inline notice
 

@@ -202,7 +202,7 @@ describe('HarnessSurface', () => {
 
   it('shows one actionable row per active phase and sends task and decision callbacks', () => {
     render()
-    expect(container.textContent).toContain('Active 1')
+    expect(container.textContent).toContain('Active1')
     expect(button('Create task')).toBeTruthy()
     click(button('Dismiss'))
     expect(props.onDecide).toHaveBeenCalledWith('denied-push', 'dismissed')

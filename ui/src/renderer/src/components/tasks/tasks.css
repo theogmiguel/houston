@@ -797,6 +797,9 @@
 
 .exec[data-presentation="drawer"] {
   background: var(--card-bg);
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: var(--space-3);
 }
 
 .exec .h {

@@ -72,6 +72,15 @@ describe('page and content primitives', () => {
     expect(screen.getByLabelText('Idle').firstElementChild?.getAttribute('style')).toContain('transparent')
   })
 
+  it('spans a review group heading and its rows with one status rail', () => {
+    const { container } = render(<Card><Card.Group rail="gone"><SectionHead title="Gone" count={1} /><Card.Row heading="Fixed issue" /></Card.Group></Card>)
+    const group = container.querySelector('section')
+    const row = container.querySelector('.overflow-hidden > section > div')
+    expect(group?.className).toContain('before:bg-[var(--ok)]')
+    expect(row?.className).not.toContain('before:')
+    expect(screen.getByRole('heading', { name: 'Gone1' })).toBeTruthy()
+  })
+
   it('requires and forwards the pane header button accessible name', () => {
     render(<PaneHeaderButton icon={IconClose} aria-label="Close pane" />)
     expect(screen.getByRole('button', { name: 'Close pane' }).className).toContain("after:h-[28px]")

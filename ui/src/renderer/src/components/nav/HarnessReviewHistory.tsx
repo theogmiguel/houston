@@ -6,6 +6,7 @@ import { openSideTasks } from '../../sidePanel'
 import { IconChevronDown, IconChevronRight } from '../icons'
 import { Button, Card, SectionHead, StatusLabel } from '../ui'
 import { HarnessReportView } from './HarnessReportView'
+import { formatHarnessDate } from './harnessFormat'
 
 export function HarnessReviewHistory({
   state,
@@ -51,7 +52,7 @@ export function HarnessReviewHistory({
         <Card>
           <Card.Row
           heading={`Review #${latest.id}`}
-          meta={`${formatReviewMoment(latest.started_at_ms)} · ${latest.sessions ?? 0} sessions · Claude Code, Codex`}
+          meta={`${formatHarnessDate(latest.started_at_ms, true)} · ${latest.sessions ?? 0} sessions · Claude Code, Codex`}
           compact
             action={<Button size="sm" variant="ghost" onClick={() => setReportId(latest.id)}>Full report</Button>}
           />
@@ -64,7 +65,7 @@ export function HarnessReviewHistory({
         <Card key={review.id}>
           <Card.Row
               heading={`Review #${review.id}`}
-              meta={`${formatHistoryDate(review.started_at_ms)} · ${review.sessions ?? 0} sessions · ${review.finding_count} findings`}
+              meta={`${formatHarnessDate(review.started_at_ms)} · ${review.sessions ?? 0} sessions · ${review.finding_count} findings`}
               compact
               action={
                 <Button
@@ -110,26 +111,23 @@ function ReviewGroup({
 }): React.JSX.Element | null {
   if (findings.length === 0) return null
   return (
-    <section aria-label={label}>
-      <SectionHead title={label} count={findings.length} />
-      {findings.map((finding) => (
-        <Card.Row
-          key={finding.key}
-          rail={rail}
-          compact
-          heading={finding.title}
-          meta={rail === 'gone' ? <>{finding.verification?.sessions_after ?? 0} sessions since it merged</> : `${finding.count} sessions`}
-          status={finding.task ? <Button size="sm" variant="link" onClick={() => openSideTasks(false, finding.task?.task_id)}>{finding.task.key}</Button> : rail === 'gone' ? <StatusLabel status="Done" /> : undefined}
-        />
-      ))}
-    </section>
+    <Card.Group rail={rail}>
+      <section aria-label={label}>
+        <SectionHead title={label} count={findings.length} />
+      </section>
+      {findings.map((finding) => {
+        const task = finding.task
+        return (
+          <Card.Row
+            key={finding.key}
+            compact
+            heading={<>{finding.title}{task && <> <Button size="sm" variant="link" onClick={() => openSideTasks(false, task.task_id)}>{task.key}</Button></>}</>}
+            meta={rail === 'gone'
+              ? <><StatusLabel status="Verified" /> {finding.verification?.sessions_after ?? 0} sessions since it merged</>
+              : <>{task ? 'not merged yet' : `${finding.count} sessions`}</>}
+          />
+        )
+      })}
+    </Card.Group>
   )
-}
-
-function formatReviewMoment(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-}
-
-function formatHistoryDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

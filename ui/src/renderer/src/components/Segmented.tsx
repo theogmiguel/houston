@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import type { ReactNode } from 'react'
 import { HIT_TARGET_28 } from './hitTarget'
 import { FOCUS_HALO } from './shadowChrome'
 import { Tooltip } from './Tooltip'
@@ -11,7 +12,7 @@ import {
 
 export interface SegmentedOption<T extends string = string> {
   value: T
-  label: string
+  label: ReactNode
   compactLabel?: string
   icon?: React.ReactNode
   disabled?: boolean
