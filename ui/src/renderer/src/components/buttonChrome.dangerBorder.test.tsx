@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -12,7 +14,10 @@ import { HostKeyModal } from './HostKeyModal'
 
 describe('BTN_GHOST resets the base border (design critique P1)', () => {
   it('carries a border reset, not just a background/text override', () => {
-    expect(BTN_GHOST).toMatch(/\bborder-none\b/)
+    const rule = readFileSync(join(__dirname, '..', 'base.css'), 'utf8').match(
+      new RegExp(`\\.${BTN_GHOST}\\s*\\{([^}]*)\\}`)
+    )?.[1]
+    expect(rule).toMatch(/border:\s*none/)
   })
 })
 
