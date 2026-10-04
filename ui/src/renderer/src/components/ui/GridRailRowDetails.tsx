@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import type { PrInfo, SessionInfo } from '../../houston/client'
 import { Icon } from '../Icon'
 import { Tooltip } from '../Tooltip'
-import { IconAgent, IconGitBranch, IconFolder } from '../icons'
+import { IconAgent, IconGitBranch, IconGitPullRequest, IconFolder } from '../icons'
 import { line2DetailsForWidth, railHoverCardModel } from './railRowModel'
 import type { RailLine2Details } from './railRowModel'
 import type { RailDiffTotals } from '../git/useRailGitFacts'
@@ -51,6 +51,7 @@ function PullRequestBadge({ panes, prStatus, onOpenInspector, onOpenExternal }: 
     if (event.ctrlKey || event.metaKey) { if (pr) onOpenExternal(pr.url) }
     else if (panes[0]) onOpenInspector(panes[0].id, 'pull-request')
   }}>
+    {pr && <Icon glyph={IconGitPullRequest} role="small" className="flex-none" />}
     {pr ? `#${pr.number}` : 'GitHub unavailable'}
     {pr && pr.state !== 'MERGED' && <span aria-hidden className={`inline-block h-[5px] w-[5px] rounded-full ${prChecksTone(pr.checks)}`} />}
   </button></Tooltip>
