@@ -209,7 +209,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
                     <div><Caption>Schedule</Caption><Segmented aria-label="Schedule" options={[{ value: 'manual', label: 'Manual' }, { value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }]} value="daily" /></div>
                     <div><Caption>Runs on</Caption><Select aria-label="Runs on" value="claude" options={[{ value: 'claude', label: 'Claude Code' }]} onChange={noop} /></div>
                   </div>
-                  <Caption>Runs 30</Caption>
+                  <SectionHead title="Runs" count={30} />
                   <Table aria-label="Routine run history" rows={[{ started: 'Today 02:00', result: 'Waiting for a slot', took: '—', cost: '—' }, { started: 'Yesterday 02:00', result: 'Done', took: '4m', cost: '$0.71' }, { started: 'Oct 1 02:00', result: 'Failed', took: '1m', cost: '$0.12' }]} getRowId={(row) => row.started} columns={[{ key: 'started', header: 'Started' }, { key: 'result', header: 'Result' }, { key: 'took', header: 'Took', numeric: true }, { key: 'cost', header: 'Cost', numeric: true }]} />
                   <Notice tone="warn">3 of 3 running. Routines run 3 at a time (Settings › Routines).</Notice>
                 </div>

@@ -92,7 +92,7 @@ export function ListDetail<T extends ListDetailItem>({
                   aria-current={isSelected || undefined}
                   onClick={() => select(item.id)}
                   onKeyDown={onItemKeyDown(item)}
-                  className="btn min-w-0 flex-1 grid grid-cols-1 justify-items-start rounded-[var(--tr-radius-sm)] border-0 bg-transparent py-[var(--space-2)] pl-[var(--space-2-5)] pr-[var(--space-1)] text-left"
+                  className="btn min-w-0 flex-1 grid grid-cols-1 justify-items-start gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] border-0 bg-transparent py-[var(--space-2)] pl-[var(--space-2-5)] pr-[var(--space-1)] text-left"
                 >
                   <span className="block truncate text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)]">{item.title}</span>
                   {item.sub && <span className="block truncate text-[length:var(--tr-text-small-size)] font-[var(--tr-text-small-weight)] text-[var(--text-muted)]">{item.sub}</span>}
