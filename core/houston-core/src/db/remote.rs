@@ -36,6 +36,21 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RemoteDeviceRow> {
 }
 
 impl Db {
+    /// Writes several settings in one transaction, so a failure leaves none changed.
+    pub fn set_settings_atomic(&self, pairs: &[(&str, &str)]) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        for (key, value) in pairs {
+            tx.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = ?2",
+                rusqlite::params![key, value],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn remote_device_insert(&self, name: &str, token_hash: &str, now_ms: u64) -> Result<i64> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(

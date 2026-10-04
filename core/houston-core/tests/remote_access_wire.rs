@@ -37,7 +37,8 @@ async fn request(
     if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
         req.push_str(&format!("Host: {addr}\r\n"));
     }
-    for (k, v) in headers {
+    // An empty value omits the header, so a test can send a request with no Host.
+    for (k, v) in headers.iter().filter(|(_, v)| !v.is_empty()) {
         req.push_str(&format!("{k}: {v}\r\n"));
     }
     if let Some(body) = body {
@@ -410,11 +411,24 @@ async fn repeated_failures_lock_authentication_out() {
         assert_eq!(reply.status, 401);
     }
     let auth = format!("Bearer {token}");
-    let locked = request(
+    let valid = request(
         addr,
         "GET",
         "/api/sessions",
         &[("Authorization", &auth)],
+        None,
+    )
+    .await;
+    assert_eq!(
+        valid.status, 200,
+        "a paired device keeps working during a lockout: {}",
+        valid.body
+    );
+    let locked = request(
+        addr,
+        "GET",
+        "/api/sessions",
+        &[("Authorization", "Bearer wrong")],
         None,
     )
     .await;
@@ -429,6 +443,118 @@ async fn repeated_failures_lock_authentication_out() {
     let body = serde_json::json!({ "code": code, "device_name": "x" }).to_string();
     let pairing = request(addr, "POST", "/api/pair", &[], Some(&body)).await;
     assert_eq!(pairing.status, 429, "pairing shares the lockout");
+}
+
+#[tokio::test]
+async fn oversized_bodies_and_missing_hosts_are_refused() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let auth = format!("Bearer {token}");
+    let (info, _dir) = pane(&daemon, &["cat"]);
+    let huge = serde_json::json!({ "text": "x".repeat(40 * 1024) }).to_string();
+    let reply = request(
+        addr,
+        "POST",
+        &format!("/api/sessions/{}/input", info.id),
+        &[("Authorization", &auth)],
+        Some(&huge),
+    )
+    .await;
+    assert_eq!(reply.status, 413, "{}", reply.body);
+
+    let hostless = request(addr, "GET", "/", &[("Host", "")], None).await;
+    assert_eq!(hostless.status, 421, "{}", hostless.body);
+    daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn an_origin_on_another_port_is_refused() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let code = daemon.remote_pair_start().code;
+    let body = serde_json::json!({ "code": code, "device_name": "x" }).to_string();
+    let other_port = request(
+        addr,
+        "POST",
+        "/api/pair",
+        &[("Origin", "http://localhost:3000")],
+        Some(&body),
+    )
+    .await;
+    assert_eq!(other_port.status, 403, "{}", other_port.body);
+    let same = request(
+        addr,
+        "POST",
+        "/api/pair",
+        &[("Origin", &format!("http://127.0.0.1:{}", addr.port()))],
+        Some(&body),
+    )
+    .await;
+    assert_eq!(same.status, 200, "{}", same.body);
+}
+
+#[tokio::test]
+async fn binding_every_interface_needs_a_public_url() {
+    let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    let err = daemon
+        .remote_configure(ConfigPatch {
+            bind: Some("0.0.0.0:47999".into()),
+            ..Default::default()
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("0.0.0.0:47999") && err.contains("public URL"),
+        "{err}"
+    );
+    daemon
+        .remote_configure(ConfigPatch {
+            bind: Some("0.0.0.0:47999".into()),
+            public_url: Some("http://192.168.1.20:47999".into()),
+            ..Default::default()
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn multi_line_text_needs_the_program_to_accept_a_paste() {
+    let (daemon, addr, _state) = remote_daemon().await;
+    let (token, _) = pair(&daemon, addr).await;
+    let auth = format!("Bearer {token}");
+    let (plain, _d1) = pane(&daemon, &["sh", "-c", "echo PLAIN-READY; exec cat"]);
+    screen_until(addr, &token, plain.id, "PLAIN-READY").await;
+    let two_lines = serde_json::json!({ "text": "line-one\nline-two" }).to_string();
+    let refused = request(
+        addr,
+        "POST",
+        &format!("/api/sessions/{}/input", plain.id),
+        &[("Authorization", &auth)],
+        Some(&two_lines),
+    )
+    .await;
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    assert!(refused.body.contains("bracketed paste"), "{}", refused.body);
+
+    let (pasting, _d2) = pane(
+        &daemon,
+        &[
+            "sh",
+            "-c",
+            "printf '\\033[?2004h'; echo PASTE-READY; exec cat",
+        ],
+    );
+    screen_until(addr, &token, pasting.id, "PASTE-READY").await;
+    let accepted = request(
+        addr,
+        "POST",
+        &format!("/api/sessions/{}/input", pasting.id),
+        &[("Authorization", &auth)],
+        Some(&two_lines),
+    )
+    .await;
+    assert_eq!(accepted.status, 200, "{}", accepted.body);
+    screen_until(addr, &token, pasting.id, "line-two").await;
+    daemon.kill(plain.id).ok();
+    daemon.kill(pasting.id).ok();
 }
 
 #[tokio::test]

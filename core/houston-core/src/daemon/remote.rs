@@ -1,7 +1,7 @@
 //! The daemon's side of remote access: persisted settings, the listener loop,
 //! pairing, and the observe-and-answer operations the HTTP API exposes.
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use houston_protocol as proto;
@@ -15,15 +15,20 @@ const BIND_BACKOFF_START: Duration = Duration::from_secs(1);
 // A retiring generation releases the port within seconds; 30 s bounds the
 // retry cost when another program holds it for good.
 const BIND_BACKOFF_MAX: Duration = Duration::from_secs(30);
-// Matches the paste path: a TUI that sees text and Enter in one read treats the
-// Enter as part of a paste instead of a submit.
-const INPUT_SETTLE: Duration = Duration::from_millis(40);
 
 #[derive(Debug, Clone)]
 pub struct RemotePairing {
     pub url: String,
     pub code: String,
     pub expires_at_ms: u64,
+}
+
+/// A pane's text for a device; `source` is `screen` from the emulator, or
+/// `scrollback` (raw output tail) where this build has no emulator.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteScreen {
+    pub lines: Vec<String>,
+    pub source: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -58,7 +63,10 @@ impl Daemon {
 
     fn remote_config_from_db(&self) -> Config {
         let get = |key: &str| self.db.get_setting(key).ok().flatten();
-        let default = Config::default();
+        let default = Config {
+            bind: remote::default_bind(self.channel()),
+            ..Config::default()
+        };
         Config {
             enabled: get(remote::KEY_ENABLED).as_deref() == Some("1"),
             bind: get(remote::KEY_BIND)
@@ -99,6 +107,15 @@ impl Daemon {
         if let Some(finished) = patch.notify_finished {
             next.notify_finished = finished;
         }
+        if next.bind.ip().is_unspecified() && next.public_url.is_none() {
+            anyhow::bail!(
+                "remote bind {} listens on every interface, so there is no single address to \
+                 pair devices with: set the public URL to the address devices open (for example \
+                 http://192.168.1.20:{}), or bind one address",
+                next.bind,
+                next.bind.port()
+            );
+        }
         let ntfy = match &patch.ntfy_url {
             Some(raw) => Some(remote::parse_ntfy_url(raw).map_err(|e| anyhow!(e))?),
             None => None,
@@ -113,26 +130,23 @@ impl Daemon {
                 url.clone().map(zeroize::Zeroizing::new);
         }
         let flag = |b: bool| if b { "1" } else { "0" };
-        self.db
-            .set_setting(remote::KEY_ENABLED, flag(next.enabled))?;
-        self.db
-            .set_setting(remote::KEY_BIND, &next.bind.to_string())?;
-        self.db.set_setting(
-            remote::KEY_PUBLIC_URL,
-            next.public_url.as_deref().unwrap_or(""),
-        )?;
-        self.db.set_setting(
-            remote::KEY_NOTIFY_DELAY,
-            &next.notify_delay_secs.to_string(),
-        )?;
-        self.db
-            .set_setting(remote::KEY_NOTIFY_DETAIL, next.notify_detail.as_str())?;
-        self.db
-            .set_setting(remote::KEY_NOTIFY_FINISHED, flag(next.notify_finished))?;
-        self.db.set_setting(
-            remote::KEY_NTFY_SERVER,
-            next.ntfy_server.as_deref().unwrap_or(""),
-        )?;
+        let bind = next.bind.to_string();
+        let delay = next.notify_delay_secs.to_string();
+        self.db.set_settings_atomic(&[
+            (remote::KEY_ENABLED, flag(next.enabled)),
+            (remote::KEY_BIND, &bind),
+            (
+                remote::KEY_PUBLIC_URL,
+                next.public_url.as_deref().unwrap_or(""),
+            ),
+            (remote::KEY_NOTIFY_DELAY, &delay),
+            (remote::KEY_NOTIFY_DETAIL, next.notify_detail.as_str()),
+            (remote::KEY_NOTIFY_FINISHED, flag(next.notify_finished)),
+            (
+                remote::KEY_NTFY_SERVER,
+                next.ntfy_server.as_deref().unwrap_or(""),
+            ),
+        ])?;
         *self.remote.config.lock().expect("remote config lock") = Some(next);
         self.remote.reconfigured.send_modify(|n| *n += 1);
         self.remote_broadcast_state();
@@ -214,12 +228,13 @@ impl Daemon {
 
     /// A one-time code for the URL fragment; it never reaches a proxy log.
     pub fn remote_pair_start(&self) -> RemotePairing {
-        let code = self.remote.start_pairing(Instant::now());
+        let now = now_ms();
+        let code = self.remote.start_pairing(now);
         let url = format!("{}/#pair={code}", self.remote_config().effective_url());
         RemotePairing {
             url,
             code,
-            expires_at_ms: now_ms() + remote::PAIRING_TTL.as_millis() as u64,
+            expires_at_ms: now + remote::PAIRING_TTL.as_millis() as u64,
         }
     }
 
@@ -240,14 +255,22 @@ impl Daemon {
         Ok(())
     }
 
-    pub(crate) fn remote_authenticate(&self, raw_token: &str) -> Option<RemoteDeviceRow> {
-        let row = self
+    /// `Err` is a database failure, which is neither a wrong token nor a revocation.
+    pub(crate) fn remote_authenticate(
+        &self,
+        raw_token: &str,
+    ) -> Result<Option<RemoteDeviceRow>, String> {
+        let row = match self
             .db
             .remote_device_by_hash(&remote::hash_secret(raw_token))
-            .unwrap_or_else(|e| {
+        {
+            Ok(Some(row)) => row,
+            Ok(None) => return Ok(None),
+            Err(e) => {
                 tracing::warn!("remote access: reading paired devices: {e}");
-                None
-            })?;
+                return Err(e.to_string());
+            }
+        };
         let now = now_ms();
         let due = {
             let mut written = self
@@ -275,7 +298,7 @@ impl Daemon {
             }
             self.remote_broadcast_state();
         }
-        Some(row)
+        Ok(Some(row))
     }
 
     pub(crate) fn remote_pair(
@@ -285,7 +308,7 @@ impl Daemon {
     ) -> Result<(String, i64), ApiError> {
         let name = remote::validate_device_name(device_name).map_err(ApiError::BadRequest)?;
         self.remote
-            .redeem_pairing(code, Instant::now())
+            .redeem_pairing(code, now_ms())
             .map_err(|e| ApiError::Unauthorized(e.to_string()))?;
         let token = remote::mint_secret();
         let id = self
@@ -354,7 +377,7 @@ impl Daemon {
 
     /// The same text extraction `pane_read` uses. It never attaches, so it
     /// answers no terminal query and never resizes the PTY.
-    pub fn remote_screen(&self, id: u32, lines: usize) -> Result<Vec<String>, ApiError> {
+    pub fn remote_screen(&self, id: u32, lines: usize) -> Result<RemoteScreen, ApiError> {
         if lines == 0 || lines > remote::SCREEN_LINES_MAX {
             return Err(ApiError::BadRequest(format!(
                 "lines={lines} is out of range: expected 1 to {}",
@@ -362,14 +385,30 @@ impl Daemon {
             )));
         }
         let s = self.remote_target(id)?;
-        Ok(crate::orchestrate::cap_read_tail(
-            self.session_screen(&s, lines),
-            lines,
-        ))
+        let screen = s.vt().as_mut().map(|emulator| emulator.screen_text(lines));
+        let (text, source) = match screen {
+            Some(text) => (text, "screen"),
+            None => {
+                let tail = s
+                    .scrollback
+                    .lock()
+                    .expect("scrollback lock")
+                    .tail_lines(lines);
+                (
+                    tail.iter().map(|l| strip_escapes(l)).collect(),
+                    "scrollback",
+                )
+            }
+        };
+        Ok(RemoteScreen {
+            lines: crate::orchestrate::cap_read_tail(text, lines),
+            source,
+        })
     }
 
-    /// Text first, then keys, through the desktop's stdin path. Multi-line text
-    /// goes as a bracketed paste so a newline does not submit it early.
+    /// Text first, then keys, through the desktop's stdin path. Multi-line text is
+    /// a bracketed paste, and only when the program enabled paste mode, as the
+    /// desktop does; otherwise its newlines would submit it line by line.
     pub fn remote_input(
         &self,
         id: u32,
@@ -393,19 +432,42 @@ impl Daemon {
                 "pane {id} is not running: input needs a live pane"
             )));
         }
+        let Some(_claim) = self.remote.claim_input(id) else {
+            return Err(ApiError::Conflict(format!(
+                "input for pane {id} is still being written: wait for it to finish, then send again"
+            )));
+        };
+        let multi_line = text.as_ref().is_some_and(|t| t.contains('\n'));
+        if multi_line {
+            match s.vt().as_mut().map(|emulator| emulator.bracketed_paste()) {
+                Some(true) => {}
+                Some(false) => {
+                    return Err(ApiError::Conflict(format!(
+                        "pane {id}'s program has not turned on bracketed paste, so a multi-line \
+                         answer would submit line by line: send one line at a time"
+                    )))
+                }
+                None => {
+                    return Err(ApiError::Conflict(format!(
+                        "this build has no terminal emulator to tell whether pane {id} accepts a \
+                         multi-line paste: send one line at a time"
+                    )))
+                }
+            }
+        }
         let write = |bytes: &[u8]| -> Result<(), ApiError> {
             self.note_operator_keystroke(id, bytes);
             self.write_stdin_from_renderer(id, bytes)
                 .map_err(|e| ApiError::Conflict(format!("writing to pane {id}: {e}")))
         };
         if let Some(text) = &text {
-            if text.contains('\n') {
+            if multi_line {
                 write(&super::bracketed_paste(text))?;
             } else {
                 write(text.as_bytes())?;
             }
             if !key_bytes.is_empty() {
-                std::thread::sleep(INPUT_SETTLE);
+                std::thread::sleep(super::SWARM_WAKE_SETTLE);
             }
         }
         if !key_bytes.is_empty() {
@@ -416,6 +478,11 @@ impl Daemon {
 
     pub(crate) fn remote_note_status(&self, id: u32, status: proto::AgentStatus) {
         self.remote.note_status(id, status, now_ms());
+        let mut seen = self.remote.seen.lock().expect("remote seen lock");
+        if seen.len() > remote::SEEN_PRUNE_AT {
+            let live = self.sessions.lock().expect("sessions lock");
+            seen.retain(|id, _| live.contains_key(id));
+        }
     }
 
     /// Idle until Settings > Remote access turns the listener on; re-binds when
@@ -471,10 +538,7 @@ impl Daemon {
                             }
                         }
                     };
-                    let app = remote::http::router(Arc::clone(&self));
-                    if let Err(e) = axum::serve(listener, app)
-                        .with_graceful_shutdown(shutdown)
-                        .await
+                    if let Err(e) = remote::http::serve(Arc::clone(&self), listener, shutdown).await
                     {
                         self.remote_set_listen(ListenState {
                             listening: None,
@@ -613,4 +677,15 @@ impl Daemon {
             });
         }
     }
+}
+
+/// Drops CSI, OSC and two-byte escape sequences and carriage returns from raw
+/// output, for the no-emulator fallback.
+fn strip_escapes(line: &str) -> String {
+    static ESCAPES: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = ESCAPES.get_or_init(|| {
+        regex::Regex::new(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])|\r")
+            .expect("escape pattern compiles")
+    });
+    re.replace_all(line, "").into_owned()
 }

@@ -1,8 +1,8 @@
 //! Remote access: an opt-in second listener serving a web client and an HTTP API
 //! to paired devices, which observe and answer panes. It never serves `/ws`, MCP
 //! or agent routes; see docs/internals/overview.md for the trust model.
-use std::collections::{HashMap, VecDeque};
-use std::net::SocketAddr;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -15,6 +15,9 @@ pub mod qr;
 
 /// A fixed port, so `tailscale serve --bg 47823` stays valid across restarts.
 pub const DEFAULT_BIND: &str = "127.0.0.1:47823";
+/// The dev channel's own port, so its web client never shares an origin (and
+/// its stored token) with the installed one.
+pub const DEFAULT_BIND_DEV: &str = "127.0.0.1:47824";
 pub const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 pub const AUTH_FAILURE_LIMIT: usize = 10;
 pub const AUTH_FAILURE_WINDOW: Duration = Duration::from_secs(60);
@@ -25,7 +28,7 @@ pub const INPUT_TEXT_MAX: usize = 4096;
 pub const INPUT_KEYS_MAX: usize = 16;
 pub const DEVICE_NAME_MAX: usize = 64;
 pub const NOTIFY_DELAY_DEFAULT: u32 = 30;
-pub const NOTIFY_DELAY_MAX: u32 = 600;
+pub const NOTIFY_DELAY_MAX: u32 = proto::REMOTE_NOTIFY_DELAY_MAX_SECS;
 pub const NTFY_URL_MAX: usize = 512;
 // The largest legal request is a 4096-character answer, at most 16 KiB of UTF-8.
 pub const BODY_LIMIT: usize = 20 * 1024;
@@ -35,21 +38,40 @@ pub const LAST_SEEN_WRITE_INTERVAL_MS: u64 = 60_000;
 // Status transitions are a few per turn; the bound only matters when no
 // notifier loop drains the queue, as in a daemon embedded by a test.
 const STATUS_QUEUE: usize = 1024;
+// Above this many tracked panes, entries for sessions that no longer exist are dropped.
+pub(crate) const SEEN_PRUNE_AT: usize = 256;
+// Distinct failing sources tracked at once; the oldest idle ones are dropped first.
+const LIMITER_SOURCES_MAX: usize = 1024;
+// One phone and a browser need a handful; the cap keeps idle sockets from
+// exhausting the descriptors the daemon also needs for PTYs.
+pub const MAX_CONNECTIONS: usize = 64;
+pub const CONNECTION_IDLE: Duration = Duration::from_secs(30);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
-pub const REMOTE_KEYS: [(&str, &[u8]); 12] = [
-    ("enter", b"\r"),
-    ("esc", b"\x1b"),
-    ("tab", b"\t"),
-    ("up", b"\x1b[A"),
-    ("down", b"\x1b[B"),
+/// Keys beyond the orchestration set (`orchestrate::SENDABLE_KEYS`) that a
+/// person answering from a phone needs.
+pub const EXTRA_KEYS: [(&str, &[u8]); 4] = [
     ("left", b"\x1b[D"),
     ("right", b"\x1b[C"),
     ("backspace", b"\x7f"),
-    ("ctrl+c", b"\x03"),
-    ("y", b"y"),
-    ("n", b"n"),
     ("space", b" "),
 ];
+
+fn remote_keys() -> impl Iterator<Item = &'static (&'static str, &'static [u8])> {
+    crate::orchestrate::SENDABLE_KEYS
+        .iter()
+        .chain(EXTRA_KEYS.iter())
+}
+
+/// The default listen address for a channel.
+pub fn default_bind(channel: Option<&str>) -> SocketAddr {
+    let raw = if channel == Some("dev") {
+        DEFAULT_BIND_DEV
+    } else {
+        DEFAULT_BIND
+    };
+    raw.parse().expect("default bind parses")
+}
 
 pub(crate) const KEY_ENABLED: &str = "remote_enabled";
 pub(crate) const KEY_BIND: &str = "remote_bind";
@@ -121,7 +143,34 @@ impl Config {
         }
     }
 
-    /// Host names a request may carry in `Host` or `Origin`. Anything else is a
+    /// Origins whose pages may send state-changing requests: the public URL, and
+    /// `http://<host>:<port>` for each loopback name and the bind address.
+    pub fn allowed_origins(&self) -> Vec<String> {
+        let port = self.bind.port();
+        let mut origins: Vec<String> = ["localhost", "127.0.0.1", "[::1]"]
+            .iter()
+            .map(|h| format!("http://{h}:{port}"))
+            .collect();
+        if !self.bind.ip().is_unspecified() {
+            origins.push(format!("http://{}", self.bind));
+        }
+        if let Some(url) = &self.public_url {
+            origins.push(url.clone());
+        }
+        origins
+    }
+
+    /// Whether a device's token would cross the network without TLS: the bind is
+    /// off loopback and no https public URL fronts it.
+    pub fn plain_http_off_loopback(&self) -> bool {
+        !self.bind.ip().is_loopback()
+            && !self
+                .public_url
+                .as_deref()
+                .is_some_and(|u| u.starts_with("https://"))
+    }
+
+    /// Host names a request may carry in `Host`. Anything else is a
     /// DNS-rebinding attempt or a misdirected request.
     pub fn allowed_hosts(&self) -> Vec<String> {
         let mut hosts = vec![
@@ -271,8 +320,7 @@ pub fn validate_device_name(raw: &str) -> Result<String, String> {
 
 pub fn keys_to_bytes(keys: &[String]) -> Result<Vec<u8>, String> {
     let names = || {
-        REMOTE_KEYS
-            .iter()
+        remote_keys()
             .map(|(k, _)| *k)
             .collect::<Vec<_>>()
             .join(", ")
@@ -286,7 +334,7 @@ pub fn keys_to_bytes(keys: &[String]) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     for key in keys {
         let wanted = key.trim().to_ascii_lowercase();
-        let Some((_, bytes)) = REMOTE_KEYS.iter().find(|(k, _)| *k == wanted) else {
+        let Some((_, bytes)) = remote_keys().find(|(k, _)| *k == wanted) else {
             return Err(format!(
                 "key {key:?} is not one remote access sends: expected one of {}",
                 names()
@@ -297,8 +345,8 @@ pub fn keys_to_bytes(keys: &[String]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Free text from a device: `\r\n` and `\r` become `\n`, and other control
-/// characters are refused so text cannot end a bracketed paste or forge a key.
+/// Free text from a device: `\r\n` and `\r` become `\n`, and every other control
+/// character (Tab included) is refused so text cannot end a paste or forge a key.
 pub fn validate_input_text(raw: &str) -> Result<String, String> {
     let len = raw.chars().count();
     if len > INPUT_TEXT_MAX {
@@ -307,13 +355,10 @@ pub fn validate_input_text(raw: &str) -> Result<String, String> {
         ));
     }
     let text = raw.replace("\r\n", "\n").replace('\r', "\n");
-    if let Some(bad) = text
-        .chars()
-        .find(|c| c.is_control() && *c != '\n' && *c != '\t')
-    {
+    if let Some(bad) = text.chars().find(|c| c.is_control() && *c != '\n') {
         return Err(format!(
-            "text contains control character U+{:04X}: send keys such as esc or ctrl+c in \
-             `keys` instead",
+            "text contains control character U+{:04X}: send keys such as tab, esc or ctrl+c \
+             in `keys` instead",
             bad as u32
         ));
     }
@@ -395,14 +440,15 @@ impl std::fmt::Display for PairError {
     }
 }
 
+/// Expiry is wall-clock milliseconds: a monotonic clock stops while the machine
+/// sleeps, which would keep a code alive past the time Settings shows.
 struct Pairing {
     code_hash: String,
-    expires: Instant,
+    expires_ms: u64,
 }
 
-/// Failed authentication or pairing attempts across all callers: behind
-/// `tailscale serve` every request arrives from loopback, so a per-address
-/// count would not separate anyone.
+/// Failed authentication or pairing attempts from one source. Loopback callers
+/// (everything behind `tailscale serve`) share one source.
 #[derive(Default)]
 pub struct FailureLimiter {
     failures: VecDeque<Instant>,
@@ -422,6 +468,14 @@ impl FailureLimiter {
         }
     }
 
+    fn is_active(&self, now: Instant) -> bool {
+        self.locked_until.is_some_and(|u| now < u)
+            || self
+                .failures
+                .back()
+                .is_some_and(|t| now.duration_since(*t) < AUTH_FAILURE_WINDOW)
+    }
+
     pub fn record_failure(&mut self, now: Instant) {
         while self
             .failures
@@ -435,6 +489,29 @@ impl FailureLimiter {
             self.failures.clear();
             self.locked_until = Some(now + AUTH_LOCKOUT);
         }
+    }
+}
+
+fn limiter_key(source: IpAddr) -> Option<IpAddr> {
+    let loopback = match source {
+        IpAddr::V4(a) => a.is_loopback(),
+        IpAddr::V6(a) => a.is_loopback() || a.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback()),
+    };
+    (!loopback).then_some(source)
+}
+
+pub(crate) struct InputClaim<'a> {
+    runtime: &'a Runtime,
+    id: u32,
+}
+
+impl Drop for InputClaim<'_> {
+    fn drop(&mut self) {
+        self.runtime
+            .input_busy
+            .lock()
+            .expect("remote input lock")
+            .remove(&self.id);
     }
 }
 
@@ -478,7 +555,8 @@ pub struct Runtime {
     pub(crate) listen: Mutex<ListenState>,
     pub(crate) reconfigured: tokio::sync::watch::Sender<u64>,
     pairing: Mutex<Option<Pairing>>,
-    limiter: Mutex<FailureLimiter>,
+    limiter: Mutex<HashMap<Option<IpAddr>, FailureLimiter>>,
+    input_busy: Mutex<HashSet<u32>>,
     pub(crate) seen: Mutex<HashMap<u32, SeenStatus>>,
     pub(crate) last_seen_written: Mutex<HashMap<i64, u64>>,
     status_tx: tokio::sync::mpsc::Sender<StatusEvent>,
@@ -502,7 +580,8 @@ impl Runtime {
             listen: Mutex::new(ListenState::default()),
             reconfigured: tokio::sync::watch::Sender::new(0),
             pairing: Mutex::new(None),
-            limiter: Mutex::new(FailureLimiter::default()),
+            limiter: Mutex::new(HashMap::new()),
+            input_busy: Mutex::new(HashSet::new()),
             seen: Mutex::new(HashMap::new()),
             last_seen_written: Mutex::new(HashMap::new()),
             status_tx,
@@ -516,18 +595,18 @@ impl Runtime {
     }
 
     /// Returns the code and its expiry; any earlier code stops working.
-    pub fn start_pairing(&self, now: Instant) -> String {
+    pub fn start_pairing(&self, now_ms: u64) -> String {
         let code = mint_pairing_code();
         *self.pairing.lock().expect("remote pairing lock") = Some(Pairing {
             code_hash: hash_secret(&code),
-            expires: now + PAIRING_TTL,
+            expires_ms: now_ms + PAIRING_TTL.as_millis() as u64,
         });
         code
     }
 
     /// Consumes the active code on success. A wrong code leaves it in place, so a
     /// guess cannot cancel the operator's pairing.
-    pub fn redeem_pairing(&self, code: &str, now: Instant) -> Result<(), PairError> {
+    pub fn redeem_pairing(&self, code: &str, now_ms: u64) -> Result<(), PairError> {
         let mut slot = self.pairing.lock().expect("remote pairing lock");
         let Some(active) = slot.as_ref() else {
             return Err(PairError::NoneActive);
@@ -535,7 +614,7 @@ impl Runtime {
         if !constant_time_eq(active.code_hash.as_bytes(), hash_secret(code).as_bytes()) {
             return Err(PairError::Invalid);
         }
-        if now >= active.expires {
+        if now_ms >= active.expires_ms {
             *slot = None;
             return Err(PairError::Expired);
         }
@@ -546,19 +625,44 @@ impl Runtime {
     #[doc(hidden)]
     pub fn expire_pairing_for_test(&self) {
         if let Some(p) = self.pairing.lock().expect("remote pairing lock").as_mut() {
-            p.expires = Instant::now();
+            p.expires_ms = 0;
         }
     }
 
-    pub fn auth_check(&self, now: Instant) -> Result<(), u64> {
-        self.limiter.lock().expect("remote limiter lock").check(now)
-    }
-
-    pub fn auth_failed(&self, now: Instant) {
-        self.limiter
+    pub fn auth_check(&self, source: IpAddr, now: Instant) -> Result<(), u64> {
+        match self
+            .limiter
             .lock()
             .expect("remote limiter lock")
+            .get_mut(&limiter_key(source))
+        {
+            Some(l) => l.check(now),
+            None => Ok(()),
+        }
+    }
+
+    pub fn auth_failed(&self, source: IpAddr, now: Instant) {
+        let mut map = self.limiter.lock().expect("remote limiter lock");
+        if map.len() >= LIMITER_SOURCES_MAX && !map.contains_key(&limiter_key(source)) {
+            map.retain(|_, l| l.is_active(now));
+            if map.len() >= LIMITER_SOURCES_MAX {
+                return;
+            }
+        }
+        map.entry(limiter_key(source))
+            .or_default()
             .record_failure(now);
+    }
+
+    /// Holds pane `id` for one request's writes; a second request for the same
+    /// pane is refused until the first finishes, so answers never interleave.
+    pub(crate) fn claim_input(&self, id: u32) -> Option<InputClaim<'_>> {
+        let claimed = self
+            .input_busy
+            .lock()
+            .expect("remote input lock")
+            .insert(id);
+        claimed.then(|| InputClaim { runtime: self, id })
     }
 
     pub(crate) fn note_status(&self, session: u32, status: proto::AgentStatus, now_ms: u64) {
@@ -617,7 +721,7 @@ mod tests {
     #[test]
     fn a_pairing_code_works_once() {
         let rt = Runtime::new();
-        let now = Instant::now();
+        let now = 1_000;
         let code = rt.start_pairing(now);
         assert_eq!(code.len(), 32, "128 bits in hex");
         assert_eq!(rt.redeem_pairing("nope", now), Err(PairError::Invalid));
@@ -628,10 +732,10 @@ mod tests {
     #[test]
     fn a_pairing_code_expires() {
         let rt = Runtime::new();
-        let now = Instant::now();
+        let now = 1_000;
         let code = rt.start_pairing(now);
         assert_eq!(
-            rt.redeem_pairing(&code, now + PAIRING_TTL),
+            rt.redeem_pairing(&code, now + PAIRING_TTL.as_millis() as u64),
             Err(PairError::Expired)
         );
     }
@@ -639,7 +743,7 @@ mod tests {
     #[test]
     fn a_new_pairing_replaces_the_old_code() {
         let rt = Runtime::new();
-        let now = Instant::now();
+        let now = 1_000;
         let first = rt.start_pairing(now);
         let second = rt.start_pairing(now);
         assert_eq!(rt.redeem_pairing(&first, now), Err(PairError::Invalid));
@@ -724,7 +828,50 @@ mod tests {
     fn text_refuses_escape_but_keeps_newlines() {
         assert_eq!(validate_input_text("a\r\nb").unwrap(), "a\nb");
         assert!(validate_input_text("\x1b[201~").is_err());
+        assert!(
+            validate_input_text("a\tb").is_err(),
+            "tab is a key, not text"
+        );
         assert!(validate_input_text(&"x".repeat(INPUT_TEXT_MAX + 1)).is_err());
+    }
+
+    #[test]
+    fn sources_are_limited_apart_and_loopback_shares_one() {
+        let rt = Runtime::new();
+        let now = Instant::now();
+        let lan: IpAddr = "192.168.1.9".parse().unwrap();
+        for _ in 0..AUTH_FAILURE_LIMIT {
+            rt.auth_failed(lan, now);
+        }
+        assert!(rt.auth_check(lan, now).is_err());
+        assert!(rt.auth_check("127.0.0.1".parse().unwrap(), now).is_ok());
+        for _ in 0..AUTH_FAILURE_LIMIT {
+            rt.auth_failed("127.0.0.1".parse().unwrap(), now);
+        }
+        assert!(rt.auth_check("::1".parse().unwrap(), now).is_err());
+    }
+
+    #[test]
+    fn origins_carry_scheme_host_and_port() {
+        let cfg = Config {
+            public_url: Some("https://box.tail1.ts.net".to_string()),
+            ..Config::default()
+        };
+        let origins = cfg.allowed_origins();
+        assert!(origins.contains(&"http://127.0.0.1:47823".to_string()));
+        assert!(origins.contains(&"https://box.tail1.ts.net".to_string()));
+        assert!(!origins.contains(&"http://localhost:3000".to_string()));
+    }
+
+    #[test]
+    fn input_claims_are_exclusive_per_pane() {
+        let rt = Runtime::new();
+        let first = rt.claim_input(3);
+        assert!(first.is_some());
+        assert!(rt.claim_input(3).is_none());
+        assert!(rt.claim_input(4).is_some());
+        drop(first);
+        assert!(rt.claim_input(3).is_some());
     }
 
     #[test]

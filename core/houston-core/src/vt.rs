@@ -86,6 +86,8 @@ mod imp {
         ) -> i32;
         fn ghostty_terminal_set(terminal: *mut c_void, option: i32, value: *const c_void) -> i32;
         fn ghostty_terminal_vt_write(terminal: *mut c_void, data: *const u8, len: usize);
+        fn ghostty_terminal_mode_get(terminal: *mut c_void, mode: u16, out_value: *mut bool)
+            -> i32;
         fn ghostty_free(allocator: *const c_void, ptr: *mut u8, len: usize);
 
         fn ghostty_formatter_terminal_new(
@@ -327,6 +329,17 @@ mod imp {
             Ok(())
         }
 
+        /// Whether the program enabled bracketed paste (DEC mode 2004), the same
+        /// check the renderer makes before wrapping a paste.
+        pub fn bracketed_paste(&mut self) -> bool {
+            const MODE_BRACKETED_PASTE: u16 = 2004;
+            let mut on = false;
+            // SAFETY: `terminal` is live for `&mut self`; `on` is a valid out-pointer.
+            let result =
+                unsafe { ghostty_terminal_mode_get(self.terminal, MODE_BRACKETED_PASTE, &mut on) };
+            result == RESULT_SUCCESS && on
+        }
+
         pub fn screen_text(&mut self, lines: usize) -> Vec<String> {
             let mut formatter: *mut c_void = std::ptr::null_mut();
             let options = FormatterTerminalOptions {
@@ -435,6 +448,10 @@ mod imp {
 
         pub fn screen_text(&mut self, _lines: usize) -> Vec<String> {
             Vec::new()
+        }
+
+        pub fn bracketed_paste(&mut self) -> bool {
+            false
         }
     }
 }

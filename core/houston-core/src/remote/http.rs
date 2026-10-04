@@ -1,11 +1,19 @@
 //! The remote listener's router: the embedded web client and `/api/*`. Every
 //! request passes the Host check; state-changing requests also pass the Origin
 //! check; API calls other than pairing need a paired device's bearer token.
+use std::future::Future;
+use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
+use std::task::{Context, Poll};
 use std::time::Instant;
 
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+use axum::extract::connect_info::Connected;
 use axum::extract::rejection::{JsonRejection, QueryRejection};
-use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -16,13 +24,157 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use super::{ApiError, BODY_LIMIT, SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX};
+use super::{
+    ApiError, BODY_LIMIT, CONNECTION_IDLE, MAX_CONNECTIONS, REQUEST_TIMEOUT, SCREEN_LINES_DEFAULT,
+    SCREEN_LINES_MAX,
+};
 use crate::daemon::Daemon;
 use crate::db::RemoteDeviceRow;
 
 const INDEX_HTML: &str = include_str!("pwa/index.html");
 const MANIFEST: &str = include_str!("pwa/manifest.webmanifest");
 const ICON_SVG: &str = include_str!("pwa/icon.svg");
+
+/// Serves `router` on `listener` with the connection cap and idle timeout,
+/// until `shutdown` resolves.
+pub async fn serve(
+    daemon: Arc<Daemon>,
+    listener: tokio::net::TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    let listener = LimitedListener {
+        inner: listener,
+        permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+    };
+    axum::serve(
+        listener,
+        router(daemon).into_make_service_with_connect_info::<Peer>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
+}
+
+/// The remote peer's address, for the per-source authentication lockout.
+#[derive(Debug, Clone, Copy)]
+pub struct Peer(pub SocketAddr);
+
+impl Connected<axum::serve::IncomingStream<'_, LimitedListener>> for Peer {
+    fn connect_info(stream: axum::serve::IncomingStream<'_, LimitedListener>) -> Self {
+        Peer(*stream.remote_addr())
+    }
+}
+
+/// Accepts at most `MAX_CONNECTIONS` at once; further clients wait in the
+/// kernel backlog until one closes.
+pub struct LimitedListener {
+    inner: tokio::net::TcpListener,
+    permits: Arc<Semaphore>,
+}
+
+impl axum::serve::Listener for LimitedListener {
+    type Io = IdleTimeoutStream;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            let permit = Arc::clone(&self.permits)
+                .acquire_owned()
+                .await
+                .expect("the connection semaphore is never closed");
+            match self.inner.accept().await {
+                Ok((stream, addr)) => {
+                    let _ = stream.set_nodelay(true);
+                    return (IdleTimeoutStream::new(stream, permit), addr);
+                }
+                Err(e) => {
+                    tracing::debug!("remote access: accept failed: {e}");
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.inner.local_addr()
+    }
+}
+
+/// A connection that fails once it has neither read nor written for
+/// `CONNECTION_IDLE`, so a silent client cannot hold a slot forever.
+pub struct IdleTimeoutStream {
+    inner: tokio::net::TcpStream,
+    deadline: Pin<Box<tokio::time::Sleep>>,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl IdleTimeoutStream {
+    fn new(inner: tokio::net::TcpStream, permit: OwnedSemaphorePermit) -> Self {
+        Self {
+            inner,
+            deadline: Box::pin(tokio::time::sleep(CONNECTION_IDLE)),
+            _permit: permit,
+        }
+    }
+
+    fn touch(&mut self) {
+        self.deadline
+            .as_mut()
+            .reset(tokio::time::Instant::now() + CONNECTION_IDLE);
+    }
+
+    fn expired(&mut self, cx: &mut Context<'_>) -> bool {
+        self.deadline.as_mut().poll(cx).is_ready()
+    }
+}
+
+fn idle_error() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        format!("remote connection idle for {} s", CONNECTION_IDLE.as_secs()),
+    )
+}
+
+impl AsyncRead for IdleTimeoutStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        match Pin::new(&mut self.inner).poll_read(cx, buf) {
+            Poll::Ready(r) => {
+                self.touch();
+                Poll::Ready(r)
+            }
+            Poll::Pending if self.expired(cx) => Poll::Ready(Err(idle_error())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncWrite for IdleTimeoutStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        match Pin::new(&mut self.inner).poll_write(cx, buf) {
+            Poll::Ready(r) => {
+                self.touch();
+                Poll::Ready(r)
+            }
+            Poll::Pending if self.expired(cx) => Poll::Ready(Err(idle_error())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
 
 pub fn router(daemon: Arc<Daemon>) -> Router {
     Router::new()
@@ -73,7 +225,7 @@ fn host_only(authority: &str) -> String {
 }
 
 async fn guard(State(daemon): State<Arc<Daemon>>, req: Request, next: Next) -> Response {
-    let allowed = daemon.remote_config().allowed_hosts();
+    let cfg = daemon.remote_config();
     let host = req
         .headers()
         .get(header::HOST)
@@ -83,38 +235,46 @@ async fn guard(State(daemon): State<Arc<Daemon>>, req: Request, next: Next) -> R
     let Some(host) = host else {
         return error(
             StatusCode::MISDIRECTED_REQUEST,
-            "request has no Host header: expected one of the remote access host names",
+            "request has no Host header: expected the address set in Settings > Remote access",
         );
     };
-    if !allowed.contains(&host_only(&host)) {
+    if !cfg.allowed_hosts().contains(&host_only(&host)) {
         return error(
             StatusCode::MISDIRECTED_REQUEST,
             format!(
-                "host {host:?} is not served here: expected one of {}; set the public URL in \
-                 Settings > Remote access to the address devices use",
-                allowed.join(", ")
+                "host {host:?} is not served here: open the address set in Settings > Remote \
+                 access, or set the public URL there to the address devices use"
             ),
         );
     }
     if !matches!(*req.method(), Method::GET | Method::HEAD) {
         if let Some(origin) = req.headers().get(header::ORIGIN) {
-            let origin = origin.to_str().unwrap_or("");
-            let origin_host = reqwest::Url::parse(origin)
-                .ok()
-                .and_then(|u| u.host_str().map(str::to_ascii_lowercase));
-            if !origin_host.is_some_and(|h| allowed.contains(&h)) {
+            let origin = origin.to_str().unwrap_or("").trim_end_matches('/');
+            let allowed = cfg
+                .allowed_origins()
+                .iter()
+                .any(|o| o.eq_ignore_ascii_case(origin));
+            if !allowed {
                 return error(
                     StatusCode::FORBIDDEN,
                     format!(
-                        "origin {origin:?} may not call this API: expected a page served from \
-                         one of {}",
-                        allowed.join(", ")
+                        "origin {origin:?} may not call this API: expected a page served by this \
+                         listener"
                     ),
                 );
             }
         }
     }
-    let mut resp = next.run(req).await;
+    let mut resp = match tokio::time::timeout(REQUEST_TIMEOUT, next.run(req)).await {
+        Ok(resp) => resp,
+        Err(_) => error(
+            StatusCode::REQUEST_TIMEOUT,
+            format!(
+                "the request took longer than {} s and was abandoned",
+                REQUEST_TIMEOUT.as_secs()
+            ),
+        ),
+    };
     let headers = resp.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(
@@ -197,13 +357,14 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .filter(|t| !t.is_empty())
 }
 
-/// A missing token is not a guess and does not count toward the lockout; a
-/// wrong one does. While locked out nothing is checked at all.
-fn authenticate(daemon: &Daemon, headers: &HeaderMap) -> Result<RemoteDeviceRow, Response> {
-    let now = Instant::now();
-    if let Err(secs) = daemon.remote.auth_check(now) {
-        return Err(too_many(secs));
-    }
+/// A missing token is not a guess and does not count. A valid token always
+/// passes: the lockout slows guessing and must not lock out paired devices.
+/// Only a wrong token counts toward, and is refused by, its source's lockout.
+fn authenticate(
+    daemon: &Daemon,
+    headers: &HeaderMap,
+    source: IpAddr,
+) -> Result<RemoteDeviceRow, Response> {
     let Some(token) = bearer(headers) else {
         return Err(error(
             StatusCode::UNAUTHORIZED,
@@ -211,14 +372,22 @@ fn authenticate(daemon: &Daemon, headers: &HeaderMap) -> Result<RemoteDeviceRow,
         ));
     };
     match daemon.remote_authenticate(token) {
-        Some(device) => Ok(device),
-        None => {
-            daemon.remote.auth_failed(now);
+        Ok(Some(device)) => Ok(device),
+        Ok(None) => {
+            let now = Instant::now();
+            if let Err(secs) = daemon.remote.auth_check(source, now) {
+                return Err(too_many(secs));
+            }
+            daemon.remote.auth_failed(source, now);
             Err(error(
                 StatusCode::UNAUTHORIZED,
                 "device token is not valid: it was revoked or never issued; pair this device again",
             ))
         }
+        Err(e) => Err(error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("the daemon could not read its paired devices ({e}); retry shortly"),
+        )),
     }
 }
 
@@ -238,6 +407,7 @@ struct PairBody {
 
 async fn pair(
     State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
     body: Result<Json<PairBody>, JsonRejection>,
 ) -> Response {
     let body = match body {
@@ -254,13 +424,13 @@ async fn pair(
     };
     let result = blocking(move || {
         let now = Instant::now();
-        if let Err(secs) = daemon.remote.auth_check(now) {
+        if let Err(secs) = daemon.remote.auth_check(peer.0.ip(), now) {
             return Err(too_many(secs));
         }
         match daemon.remote_pair(&body.code, &body.device_name) {
             Ok(pair) => Ok(pair),
             Err(e @ ApiError::Unauthorized(_)) => {
-                daemon.remote.auth_failed(now);
+                daemon.remote.auth_failed(peer.0.ip(), now);
                 Err(e.into_response())
             }
             Err(e) => Err(e.into_response()),
@@ -275,16 +445,24 @@ async fn pair(
     }
 }
 
-async fn me(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
-    match blocking(move || authenticate(&daemon, &headers)).await {
+async fn me(
+    State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    headers: HeaderMap,
+) -> Response {
+    match blocking(move || authenticate(&daemon, &headers, peer.0.ip())).await {
         Ok(device) => Json(json!({ "device_id": device.id, "name": device.name })).into_response(),
         Err(resp) => resp,
     }
 }
 
-async fn sessions(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
+async fn sessions(
+    State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
+    headers: HeaderMap,
+) -> Response {
     let result = blocking(move || {
-        authenticate(&daemon, &headers)?;
+        authenticate(&daemon, &headers, peer.0.ip())?;
         Ok(daemon.remote_sessions())
     })
     .await;
@@ -301,6 +479,7 @@ struct ScreenQuery {
 
 async fn screen(
     State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
     Path(id): Path<u32>,
     headers: HeaderMap,
     query: Result<Query<ScreenQuery>, QueryRejection>,
@@ -313,14 +492,15 @@ async fn screen(
     };
     let lines = query.lines.unwrap_or(SCREEN_LINES_DEFAULT);
     let result = blocking(move || {
-        authenticate(&daemon, &headers)?;
+        authenticate(&daemon, &headers, peer.0.ip())?;
         daemon
             .remote_screen(id, lines)
             .map_err(IntoResponse::into_response)
     })
     .await;
     match result {
-        Ok(lines) => Json(json!({ "id": id, "lines": lines })).into_response(),
+        Ok(screen) => Json(json!({ "id": id, "lines": screen.lines, "source": screen.source }))
+            .into_response(),
         Err(resp) => resp,
     }
 }
@@ -334,6 +514,7 @@ struct InputBody {
 
 async fn input(
     State(daemon): State<Arc<Daemon>>,
+    ConnectInfo(peer): ConnectInfo<Peer>,
     Path(id): Path<u32>,
     headers: HeaderMap,
     body: Result<Json<InputBody>, JsonRejection>,
@@ -352,7 +533,7 @@ async fn input(
         }
     };
     let result = blocking(move || {
-        authenticate(&daemon, &headers)?;
+        authenticate(&daemon, &headers, peer.0.ip())?;
         daemon
             .remote_input(id, body.text.as_deref(), &body.keys)
             .map_err(IntoResponse::into_response)

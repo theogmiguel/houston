@@ -1019,7 +1019,8 @@ resolve or consume the durable inbox rows.
 
 ## Remote access HTTP API
 
-A separate, opt-in listener (`RemoteInfo.bind`, default `127.0.0.1:47823`) serves
+A separate, opt-in listener (`RemoteInfo.bind`, default `127.0.0.1:47823`, or
+`127.0.0.1:47824` on the dev channel so the two never share a web origin) serves
 paired devices. It is not `/ws`: it never serves `/ws`, `/mcp`, `/orchestrate`,
 `/task`, `/inbox`, `/harness` or `/manage`, and it carries no PTY byte stream.
 Bodies are JSON (`Content-Type: application/json`), at most `BODY_LIMIT` bytes.
@@ -1031,15 +1032,25 @@ Errors are `{"error": "<message naming the value and the expected shape>"}`.
 | `POST /api/pair` | pairing code | `{code, device_name}` (1–64 printable characters) | `{token, device_id}`. The token (256 bits, hex) is returned once; the daemon stores its SHA-256 |
 | `GET /api/me` | device | — | `{device_id, name}` |
 | `GET /api/sessions` | device | — | `{sessions: [{id, title, workspace: {name, path}, kind: AgentKind, state: SessionState, status: AgentStatus?, reason: null, status_since?}]}`, needs-input first, then working, idle, others, and panes that are not running |
-| `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[]}`, the same text extraction as `pane_read`; it never attaches or resizes |
-| `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Keys: `enter esc tab up down left right backspace ctrl+c y n space` |
+| `GET /api/sessions/{id}/screen` | device | `?lines=` 1–200, default 60 | `{id, lines: string[], source}`. `source: "screen"` is the same text extraction as `pane_read`; where the build has no terminal emulator (Windows) it is `"scrollback"`, the raw output tail with escape sequences removed. It never attaches or resizes |
+| `POST /api/sessions/{id}/input` | device | `{text?: string (≤ 4096 characters, no control characters but newline), keys?: string[] (≤ 16)}` | `{ok: true}`. Text is written first, then keys after a short settle, through the desktop's stdin path. Multi-line text is sent as a bracketed paste only when the pane's program enabled paste mode (2004), else refused with 409. One request per pane at a time; a concurrent one gets 409. Keys: `esc enter up down tab ctrl+c y n left right backspace space` |
 
 Device auth is `Authorization: Bearer <token>`. Every request's `Host` must name
 an allowed host (`localhost`, `127.0.0.1`, `[::1]`, the bind IP, the public URL's
-host), else 421; a non-GET request with an `Origin` outside that set gets 403.
+host), else 421; a non-GET request whose `Origin` is not the public URL or
+`http://<allowed host>:<bind port>` (scheme, host and port compared) gets 403.
+Neither refusal lists the allowed names. A bind on every interface (`0.0.0.0`,
+`::`) is refused unless a public URL is set.
+
 Statuses: 400 invalid input, 401 missing or unknown token or pairing code, 404
-unknown pane, 409 pane not running, 413 body too large, 429 locked out after too
-many failed authentications (with `Retry-After`).
+unknown pane, 408 a request ran past 20 s, 409 pane not running, input already
+in flight or multi-line text the program cannot take as a paste, 413 body too
+large, 429 locked out (with `Retry-After`), 503 the daemon could not read its
+paired devices. Ten wrong tokens or pairing codes from one source within 60 s
+lock that source out of token checks and pairing for 60 s; loopback callers
+(everything behind `tailscale serve`) are one source; a valid token is never
+locked out. The listener holds at most 64 connections and closes one that is
+idle for 30 s.
 
 ## Versioning rules
 

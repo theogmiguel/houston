@@ -135,7 +135,7 @@ ul.panes button {
     ["Ctrl+C", { keys: ["ctrl+c"] }, true]
   ];
   var $ = function (id) { return document.getElementById(id); };
-  var token = null, current = null, timer = null, pendingPair = null, lastSessions = [];
+  var token = null, current = null, timer = null, pendingPair = null, lastSessions = [], sending = false, ticks = 0, rawSource = false;
 
   function store(get, value) {
     try {
@@ -258,19 +258,22 @@ ul.panes button {
     var b = $("pane-badge");
     b.className = "badge " + (s.state === "running" && s.status ? s.status : "");
     b.textContent = label(s);
-    $("pane-sub").textContent = s.workspace.name + " · " + s.kind;
+    $("pane-sub").textContent = s.workspace.name + " · " + s.kind +
+      (rawSource ? " · raw output: this build has no terminal emulator" : "");
   }
 
   function loadPane() {
     var id = current;
     if (id == null) return;
+    var withList = ticks++ % 5 === 0;
     Promise.all([
       api("GET", "/api/sessions/" + id + "/screen?lines=" + SCREEN_LINES),
-      api("GET", "/api/sessions").catch(function () { return null; })
+      withList ? api("GET", "/api/sessions").catch(function () { return null; }) : null
     ]).then(function (r) {
       if (current !== id) return;
       var pre = $("screen"), atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
       pre.textContent = (r[0].lines || []).join("\n");
+      if ((r[0].source === "scrollback") !== rawSource) { rawSource = r[0].source === "scrollback"; paneInfo(); }
       if (atBottom) pre.scrollTop = pre.scrollHeight;
       if (r[1]) { lastSessions = r[1].sessions || []; paneInfo(); }
     }).catch(function (e) { if (current === id) $("pane-status").textContent = e.message; })
@@ -278,19 +281,28 @@ ul.panes button {
   }
 
   function openPane(id) {
-    current = id; location.hash = "session=" + id;
+    current = id; ticks = 0; location.hash = "session=" + id;
     $("screen").textContent = ""; $("pane-status").textContent = ""; $("text").value = "";
     show("pane"); paneInfo(); loadPane();
   }
 
+  function setSending(on) {
+    sending = on;
+    $("send").disabled = on;
+    Array.prototype.forEach.call($("keys").querySelectorAll("button"), function (b) { b.disabled = on; });
+  }
+
   function send(body, what) {
     var id = current;
+    if (sending) return Promise.resolve(false);
+    setSending(true);
     $("pane-status").textContent = "Sending…";
     return api("POST", "/api/sessions/" + id + "/input", body).then(function () {
       $("pane-status").textContent = "Sent " + what;
       setTimeout(loadPane, 300);
       return true;
-    }).catch(function (e) { $("pane-status").textContent = e.message; return false; });
+    }).catch(function (e) { $("pane-status").textContent = e.message; return false; })
+      .then(function (ok) { setSending(false); return ok; });
   }
 
   function buildKeys() {
