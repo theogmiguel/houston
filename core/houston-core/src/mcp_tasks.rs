@@ -257,6 +257,7 @@ fn all_specs() -> Vec<ToolSpec> {
                     "question": { "type": "string" },
                     "options": { "type": "array", "items": { "type": "string" } },
                     "recommended": { "type": "integer" },
+                    "why": { "type": "string" },
                 },
                 "required": ["question", "options", "recommended"],
                 "additionalProperties": false,

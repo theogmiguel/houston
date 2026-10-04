@@ -86,9 +86,9 @@ five attempts, and the status line names it.
    frees.
 
 4. The agent can ask one question at a time with
-   `hs-task ask --context … --question … --option … --option … --recommended N` (or the
-   `task_ask` tool): one sentence of context, the question, two to four options and the
-   one it recommends. Houston posts it to the thread with a button per option and an
+   `hs-task ask --context … --question … --option … --option … --recommended N --why …` (or
+   the `task_ask` tool): one sentence of context, the question, two to four options, the
+   one it recommends and, optionally, why. Houston posts it to the thread with a button per option and an
    **Another answer…** button that opens a text box; replying in the thread in one's own
    words works too. The first answer from the requester or the owner counts, the question
    is edited to show it, and it is typed into the agent's pane as its next prompt once the
@@ -160,7 +160,7 @@ it is mapped.
 - Hand-back fields: subject 60 characters, what changes 1,500, three steps of 300, caveats
   600, each note 500, six owner facts and six warnings of 200.
 - Channels: 16. A question's context: 500 characters; the question: 300; each of its two to
-  four options: 200. Text typed into Houston's dialogs: 2,000 characters.
+  four options: 200; why the recommended one: 200. Text typed into Houston's dialogs: 2,000 characters.
 
 ## What leaves the machine
 
@@ -173,8 +173,8 @@ it is mapped.
   history. It downloads the images of a filed request.
 - **Houston → Slack, in the thread**: the status reactions on the request, the owner's
   refusal reason, the agent's questions with their options and the answer chosen, the
-  hand-back reply, the note posted when the task is closed, and the 👀 or 🚫 on a reply
-  asking for an adjustment. Everyone in the channel
+  hand-back reply, the note posted when the task is closed, and the 👀 on a reply that
+  may ask for an adjustment. Everyone in the channel
   can read them.
 - **Houston → Slack, to the owner only**: direct messages naming the channel, the
   requester and the first 280 characters of the request, with the start outlook; at

@@ -20,7 +20,7 @@ hs-task — a Houston pane's view of its workspace's task backlog
              [--note T …] [--warning T …] [--blocker T …] [--refused]
              (a Slack-filed task)
   hs-task ask --question Q --option A --option B [--option …] --recommended N
-             [--context T]           (a Slack-filed task: asks in its thread)
+             [--why T] [--context T]           (a Slack-filed task: asks in its thread)
 
 The task key defaults to $HOUSTON_TASK when set; otherwise pass HOU-n.
 Statuses: backlog, todo, in_progress, in_review, done, canceled.
@@ -195,6 +195,7 @@ fn cli(args: &[String]) -> Result<()> {
                 "question": question,
                 "options": options,
                 "recommended": recommended,
+                "why": flag("why"),
             });
             let reply = call("POST", "/task/ask", Some(body))?;
             println!(

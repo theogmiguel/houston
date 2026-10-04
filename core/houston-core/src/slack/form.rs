@@ -10,6 +10,8 @@ pub const QUESTION_CONTEXT_MAX: usize = 500;
 pub const QUESTION_TEXT_MAX: usize = 300;
 /// Each option is a section beside its own button, so it can be a full phrase.
 pub const QUESTION_OPTION_MAX: usize = 200;
+/// One sentence on why the recommended option is the one to pick.
+pub const QUESTION_WHY_MAX: usize = 200;
 pub const QUESTION_OPTIONS_MIN: usize = 2;
 pub const QUESTION_OPTIONS_MAX: usize = 4;
 
@@ -24,6 +26,8 @@ pub struct QuestionForm {
     pub options: Vec<String>,
     #[serde(default)]
     pub recommended: Option<usize>,
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
 fn check_len(field: &str, value: &str, max: usize, operation: &str) -> Result<()> {
@@ -35,7 +39,7 @@ fn check_len(field: &str, value: &str, max: usize, operation: &str) -> Result<()
 }
 
 const ASK_SHAPE: &str = "expected `hs-task ask --context \"one sentence\" --question \"…\" \
-     --option \"…\" --option \"…\" [--option …] --recommended N`";
+     --option \"…\" --option \"…\" [--option …] --recommended N [--why \"why that one\"]`";
 
 impl QuestionForm {
     /// Trims every field and refuses a form that does not fit, naming the
@@ -47,6 +51,10 @@ impl QuestionForm {
             .context
             .map(|c| c.trim().to_string())
             .filter(|c| !c.is_empty());
+        self.why = self
+            .why
+            .map(|w| w.trim().to_string())
+            .filter(|w| !w.is_empty());
         self.options = self
             .options
             .into_iter()
@@ -59,6 +67,9 @@ impl QuestionForm {
         check_len("the question", &self.question, QUESTION_TEXT_MAX, op)?;
         if let Some(c) = &self.context {
             check_len("the context", c, QUESTION_CONTEXT_MAX, op)?;
+        }
+        if let Some(w) = &self.why {
+            check_len("--why", w, QUESTION_WHY_MAX, op)?;
         }
         let n = self.options.len();
         if !(QUESTION_OPTIONS_MIN..=QUESTION_OPTIONS_MAX).contains(&n) {
@@ -263,6 +274,7 @@ mod tests {
             question: "Which tiers?".into(),
             options: vec!["Up to 300k".into(), " ".into(), "Up to 250k".into()],
             recommended: Some(1),
+            why: Some("  The tiers you asked for.  ".into()),
         }
     }
 
@@ -274,6 +286,7 @@ mod tests {
             Some("A new block under the pipeline.")
         );
         assert_eq!(ok.options, ["Up to 300k", "Up to 250k"]);
+        assert_eq!(ok.why.as_deref(), Some("The tiers you asked for."));
 
         let one = QuestionForm {
             options: vec!["only".into()],

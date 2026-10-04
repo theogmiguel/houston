@@ -874,6 +874,7 @@ fn label_question() -> QuestionForm {
         question: "Which label?".into(),
         options: vec!["Save".into(), "Submit".into()],
         recommended: Some(2),
+        why: Some("Submit is the word the rest of the form already uses.".into()),
     }
 }
 
@@ -960,7 +961,8 @@ async fn a_question_has_a_button_per_option_and_only_the_requester_or_owner_answ
             && blocks.contains("Submit _(recomendado)_")
             && blocks.contains(&format!("\"{id}:1\""))
             && blocks.contains(&format!("\"{id}:2\""))
-            && blocks.contains("Outra resposta…"),
+            && blocks.contains("Outra resposta…")
+            && blocks.contains("Submit is the word the rest of the form already uses."),
         "context, question, a button per option with the recommended one marked, and an own-words button: {blocks}"
     );
     assert!(

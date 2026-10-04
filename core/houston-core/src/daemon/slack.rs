@@ -440,6 +440,9 @@ fn question_blocks(
                 block["accessory"] =
                     button(t.choose(), ACTION_ANSWER, &format!("{id}:{}", i + 1), style);
                 blocks.push(block);
+                if let (true, Some(why)) = (recommended, &form.why) {
+                    blocks.push(context(&escape(why)));
+                }
             }
             blocks.push(json!({"type": "actions", "elements": [
                 button(t.other_answer(), ACTION_OTHER, &id.to_string(), None),
@@ -659,7 +662,7 @@ impl Daemon {
         Some(format!(
             "This task was filed from a Slack request. Follow this repository's factory skill if \
              it has one. Ask a question only with `hs-task ask --context \"one sentence\" \
-             --question \"...\" --option \"...\" --option \"...\" --recommended N` (2 to 4 \
+             --question \"...\" --option \"...\" --option \"...\" --recommended N --why \"why that one\"` (2 to 4 \
              options; or the `task_ask` MCP tool): it goes to the request's thread with a button \
              per option, and the answer arrives as your next prompt, so end your turn after \
              asking. Hand the task back with fields instead of --summary: `hs-task handback \
@@ -2042,6 +2045,7 @@ impl Daemon {
             question: redact(&form.question),
             options: form.options.iter().map(|o| redact(o)).collect(),
             recommended: form.recommended,
+            why: form.why.as_deref().map(redact),
         };
         let id = self.db.intake_question_insert(
             row.id,
