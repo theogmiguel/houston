@@ -31,6 +31,8 @@ fn create_custom_session(
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
 }

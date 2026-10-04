@@ -26,6 +26,8 @@ async fn session_reparent_over_the_wire_moves_the_session_and_broadcasts() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 
@@ -83,6 +85,8 @@ async fn session_reparent_has_no_second_direct_reply() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 

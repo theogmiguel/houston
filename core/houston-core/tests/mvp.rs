@@ -26,6 +26,8 @@ fn create_custom_session(
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
 }
@@ -193,6 +195,8 @@ async fn create_with_cwd_from_inherits_live_directory() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     assert!(
@@ -460,6 +464,8 @@ async fn codenames_are_assigned_renamed_and_persisted() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     assert!(

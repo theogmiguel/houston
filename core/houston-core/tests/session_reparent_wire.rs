@@ -24,6 +24,8 @@ async fn reparenting_a_live_session_updates_every_in_memory_reader() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 
@@ -235,6 +237,8 @@ async fn reparent_refuses_a_target_that_is_not_a_directory() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 

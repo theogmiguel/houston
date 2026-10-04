@@ -81,6 +81,8 @@ fn a_pane(daemon: &std::sync::Arc<Daemon>) -> (proto::SessionInfo, tempfile::Tem
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     (info, dir)
@@ -103,6 +105,8 @@ async fn a_correlation_hook_cannot_leave_a_pane_spawning_forever() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     assert_eq!(

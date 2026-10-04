@@ -185,6 +185,8 @@ fn claude_pane(daemon: &Arc<Daemon>, dir: &Path, profile: Option<u32>) -> proto:
             acp: None,
             profile: profile.map(|id| proto::ProfileChoice::Profile { id }),
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
 }
@@ -838,6 +840,8 @@ async fn a_codex_pane_restores_its_exact_thread_id() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     argv_of(&env, info.id).await;

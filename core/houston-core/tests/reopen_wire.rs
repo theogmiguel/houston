@@ -59,6 +59,8 @@ fn create_custom_session(daemon: &Arc<Daemon>, dir: &std::path::Path, cmd: Vec<&
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id
@@ -78,6 +80,8 @@ fn create_shell_session_no_integration(daemon: &Arc<Daemon>, dir: &std::path::Pa
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id
@@ -383,6 +387,8 @@ async fn a_long_opening_prompt_is_written_to_a_prompt_file() {
             acp: None,
             profile: None,
             prompt: Some(prompt.clone()),
+            model: None,
+            effort: None,
         })
         .unwrap();
 
@@ -431,6 +437,8 @@ fn claude_session_on(daemon: &Arc<Daemon>, dir: &std::path::Path, profile: u32) 
             acp: None,
             profile: Some(proto::ProfileChoice::Profile { id: profile }),
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id

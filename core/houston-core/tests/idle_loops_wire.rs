@@ -77,6 +77,8 @@ fn create_sleeping_session(daemon: &std::sync::Arc<Daemon>, project: &std::path:
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("create child session")
         .id
@@ -253,6 +255,8 @@ async fn p4_idle_rss_with_twelve_saturated_emulators() {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("a shell session starts");
         ids.push(info.id);

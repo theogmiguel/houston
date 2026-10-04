@@ -55,6 +55,8 @@ fn spawn_fixture(daemon: &Arc<Daemon>, dir: &std::path::Path) -> u32 {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id
@@ -168,6 +170,8 @@ sleep 5
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id;

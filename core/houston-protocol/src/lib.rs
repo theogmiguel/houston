@@ -2696,6 +2696,12 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         prompt: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        model: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        effort: Option<ChatEffort>,
     },
     SessionKill {
         session: u32,

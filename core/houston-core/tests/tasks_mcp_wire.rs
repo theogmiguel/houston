@@ -36,6 +36,8 @@ fn plain_pane(daemon: &Arc<Daemon>, ws: &Path) -> u32 {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id

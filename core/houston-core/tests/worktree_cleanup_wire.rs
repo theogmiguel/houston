@@ -570,6 +570,8 @@ async fn a_tree_with_a_live_pane_inside_is_kept() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 
@@ -1392,6 +1394,8 @@ async fn k6_cleanup_rechecks_pane_opened_during_network_lookup() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     pass.await.unwrap().unwrap();

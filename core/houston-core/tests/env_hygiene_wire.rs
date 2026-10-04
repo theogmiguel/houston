@@ -64,6 +64,8 @@ async fn a_spawned_session_does_not_inherit_the_launchers_session_markers() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     collect_broadcast_until(&mut rx, info.id, "DUMPED").await;
