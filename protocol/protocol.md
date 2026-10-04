@@ -334,7 +334,8 @@ every refusal names the setting.
 | `restore_resume_set` | `enabled` (v119: whether boot restore resumes each pane's conversation; on by default) | `host_info` (bcast) |
 | `mailbox_retention_set` | `hours` (`1..=MAILBOX_RETENTION_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
 | `worktree_cleanup_set` | `enabled`, `grace_hours` (`1..=WORKTREE_CLEANUP_GRACE_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
-| `usage_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `refresh_pricing?` | `usage_summary` (direct), never a broadcast. A half-open instant range: the daemon has no time zone, so the client converts local days to instants and back. Refused when `until_ms <= since_ms` or the span exceeds `USAGE_MAX_WINDOW_DAYS` |
+| `usage_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `refresh_pricing?`, `workspace?` (registered path) | `usage_summary` (direct), never a broadcast. A half-open instant range. Refused when `until_ms <= since_ms` or the span exceeds `USAGE_MAX_WINDOW_DAYS` |
+| `usage_activity_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `workspace?` | `usage_activity_summary` (direct) with at most `USAGE_ACTIVITY_MAX_DAYS` local-day rows; reads the durable daily rollup and does not scan transcripts |
 | `browser_tool_result` | `request_id`, `ok`, `output?: JSON`, `error?` | reply to a `browser_tool_call` this connection received — the browser-tool relay's app-to-daemon half (v93, Detach). Ignored if the daemon is no longer waiting on `request_id` |
 
 ## Server → client
@@ -439,6 +440,7 @@ every refusal names the setting.
 | `voice_level` | `rms` | bcast every `VOICE_LEVEL_INTERVAL_MS` while any connection is monitoring; same normalized scale as `VoiceSettings.rms_floor` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
+| `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only |
 | `browser_tool_call` | `request_id`, `tool`, `args: JSON`, `session_id`, `workspace_id` | daemon-initiated, to the one connection owning the current window — the browser-tool relay (v93, Detach) |
 
@@ -717,16 +719,21 @@ WorktreeKeep       branch_changed{current?} | dirty{files} | ignored_files{files
 UsageProvider      claude | codex
 UsageTokenTotals   uncached_input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens
 UsageBucket        hour_start_ms, provider, model, totals, cost_usd, cache_savings_usd, records,
-                   cost_source (provider_reported | model_priced | unpriced), unpriced_records, sessions
+                   cost_source (provider_reported | model_priced | unpriced), unpriced_records, sessions,
+                   workspace_path?, category_cost_usd, fast_cost_usd, ultrafast_cost_usd,
+                   speed_premium_usd, speed_rate_available
+UsageCategoryCost  input_usd, cache_read_usd, cache_write_usd, output_usd, other_usd
+UsageActivityDay   day (local YYYY-MM-DD), cost_usd, totals
 UsageSource        provider, path, profile_name?, status (ok | missing | partial | failed), scanned_files,
                    skipped_files, failed_files, distinct_sessions, message?
 UsagePricing       status (fresh | cached | unavailable), source, fetched_at_ms?, known_models, message?
 ```
 
-Every cap and default named above is a constant in `lib.rs`, mirrored into the
-UI as `DEFAULTS.ts` by `scripts/gen-protocol-types.sh` so a client can refuse an
-out-of-range value before the daemon has to. One definition, two consumers —
-never a number typed twice.
+Every client-input cap and default named above is a constant in `lib.rs`, mirrored
+into the UI as `DEFAULTS.ts` by `scripts/gen-protocol-types.sh` so a client can
+refuse an out-of-range value before the daemon has to. Server-side response bounds
+remain daemon constants because clients do not submit them. One definition per
+bound — never a number typed twice.
 
 ## Attach sequencing
 
@@ -1033,7 +1040,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 125 | **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. No other message changes |
+| 125 | **Usage buckets and durable activity gain detail.** Usage buckets gain category and speed costs plus workspace attribution; `usage_summary_get.workspace?`; `usage_activity_summary_get` → `usage_activity_summary` reads up to 365 local calendar days persisted in `usage_daily_rollup`. **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. No other message changes |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |
 | 123 | **A local task backlog per workspace.** New `task_snapshot`, `task_get`, `task_save`, `task_comment`, `task_check`, `task_archive`, `tasks_access_get` and `tasks_access_set` client messages and `task_snapshot`, `task_detail`, `task_changed`, `task_refused` and `tasks_access` replies, with `Task`, `TaskSummary`, `TaskPatch`, `TaskStatus`, `TaskPriority`, `TaskAcceptanceItem`, `TaskComment`, `TaskHistoryEntry`, `TaskRun`, `TaskCounts`, `TaskErrorKind` and `TasksAccess`. Tasks live in per-workspace `backlog_*` SQLite tables, get a monotonic `HOU-<n>` number and an integer `revision`, and are gated by a per-workspace Tasks access (`off`/`read`/`write`, default `write`) in Settings ▸ Tasks; the orphan `tasks`/`task_events` tables are unrelated and untouched. Removing a workspace deletes its tasks. No existing message changes |
 | 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |
