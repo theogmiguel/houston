@@ -3,7 +3,7 @@ import { UsageSection, type UsageSummaryMsg } from '../src/components/UsageSecti
 import type { UsageActivityDay } from '../src/houston/generated/UsageActivityDay'
 import type { UsageBucket } from '../src/houston/generated/UsageBucket'
 
-const NOW = Date.UTC(2025, 9, 3, 21)
+const NOW = Date.UTC(2026, 9, 3, 21)
 const DAY = 86_400_000
 const DAILY_COST: Record<'claude' | 'codex', number[]> = {
   claude: [260, 310, 280, 320, 310, 360, 231.4],
