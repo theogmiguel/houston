@@ -17,6 +17,10 @@ RATCHETS=(
   "scripts/check-type-scale-widened-baseline.sh FLOOR_BASELINE bash"
   "scripts/check-radius-tokens-widened-baseline.sh WIDENED_BASELINE bash"
   "scripts/check-spacing-tokens-widened-baseline.sh WIDENED_BASELINE bash"
+  "scripts/check-ui-boundary-baseline.sh BASELINE bash"
+  "scripts/check-copy-baseline.sh TITLE_CASE_BASELINE bash"
+  "scripts/check-copy-baseline.sh COUNT_BASELINE bash"
+  "scripts/check-copy-baseline.sh BANNED_STATUS_BASELINE bash"
   "scripts/check-focus-visible.sh EXEMPT_COUNTS bash"
   "ui/complexity-baseline.json files json"
 )
