@@ -24,6 +24,16 @@ function NewSessionClicked({ selector }: { selector: string }): React.JSX.Elemen
   )
 }
 
+function DockedLaunchHoverStory(): React.JSX.Element {
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    ref.current?.querySelector<HTMLButtonElement>('[data-preset="swarm"]')?.dispatchEvent(
+      new MouseEvent('mouseover', { bubbles: true })
+    )
+  }, [])
+  return <div ref={ref} className="flex h-full min-w-0 bg-[var(--content-bg)]"><NewSession /></div>
+}
+
 function DockedLaunchStory(): React.JSX.Element {
   return (
     <div className="flex h-full min-w-0 bg-[var(--content-bg)]">
@@ -121,6 +131,7 @@ function RailWorkspacesMulti(): React.JSX.Element {
 export const STORIES: Record<string, () => React.JSX.Element> = {
   'new-session/default': () => <NewSession />,
   'launch/docked': () => <DockedLaunchStory />,
+  'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,
   'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' />,
   'new-session/terminal': () => <NewSessionClicked selector='[data-agent="shell"]' />,
   'harness/smoke': () => (

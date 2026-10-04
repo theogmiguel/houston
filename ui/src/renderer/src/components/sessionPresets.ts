@@ -94,6 +94,7 @@ export interface SessionSlot {
   effort: ChatEffort | null
   modelSource: SlotValueSource
   effortSource: SlotValueSource
+  agentSource: SlotValueSource
   skippedRoute: string | null
   invalidReason: string | null
 }
@@ -115,6 +116,7 @@ export interface ResolvedSlotsOptions {
   routes?: readonly RoleRoute[]
   profileDefaults?: Partial<Record<AgentKind, ProfileLaunchDefaults>>
   overrides?: Readonly<Record<number, SlotOverrides>>
+  defaultAgentSource?: SlotValueSource
 }
 
 const EFFORT_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'grok']
@@ -139,12 +141,14 @@ export function resolveSlots(
     const slotAgent = override.agent ?? role?.engine ?? agent
     const profile = options.profileDefaults?.[slotAgent]
     const route = role?.label ? routeForRole(options.routes ?? [], role.label) : undefined
-    const routeRequiresUnsupportedEffort = !!route?.effort && !EFFORT_AGENTS.includes(slotAgent)
     const modelOverride = !!override.model?.trim()
     const effortOverride = override.effort !== undefined && override.effort !== null
-    const model = (modelOverride ? override.model : route && !routeRequiresUnsupportedEffort
+    const routeRequiresUnsupportedModel = !!route?.model && slotAgent === 'codex' && !modelOverride
+    const routeRequiresUnsupportedEffort = !!route?.effort && !EFFORT_AGENTS.includes(slotAgent) && !effortOverride
+    const routeSkipped = routeRequiresUnsupportedModel || routeRequiresUnsupportedEffort
+    const model = (modelOverride ? override.model : route && !routeSkipped
       ? route.model : profile?.model ?? role?.model ?? null) ?? null
-    const effort = (effortOverride ? override.effort : route && !routeRequiresUnsupportedEffort
+    const effort = (effortOverride ? override.effort : route && !routeSkipped
       ? route.effort ?? profile?.effort ?? role?.effort ?? null : profile?.effort ?? role?.effort ?? null) ?? null
     const instruction = role?.instruction
     return {
@@ -154,14 +158,17 @@ export function resolveSlots(
       prompt: [instruction, trimmedTask].filter((value): value is string => !!value).join('\n\n'),
       model,
       effort,
-      modelSource: modelOverride ? 'user override' : route && !routeRequiresUnsupportedEffort && model === route.model
+      modelSource: modelOverride ? 'user override' : route && !routeSkipped && model === route.model
         ? 'workspace setting' : profile?.model && model === profile.model ? 'profile'
           : role?.model && model === role.model ? 'preset' : 'agent default',
-      effortSource: effortOverride ? 'user override' : route && !routeRequiresUnsupportedEffort && route.effort && effort === route.effort
+      effortSource: effortOverride ? 'user override' : route && !routeSkipped && route.effort && effort === route.effort
         ? 'workspace setting' : profile?.effort && effort === profile.effort ? 'profile'
           : role?.effort && effort === role.effort ? 'preset' : 'agent default',
-      skippedRoute: routeRequiresUnsupportedEffort
-        ? `${route?.pattern} requires ${route.effort} effort, unsupported by ${slotAgent}` : null,
+      agentSource: override.agent ? 'user override' : role?.engine ? 'preset' : options.defaultAgentSource ?? 'preset',
+      skippedRoute: routeRequiresUnsupportedModel
+        ? `${route?.pattern} → ${route.model} skipped: the Codex local model list is not available to verify this route`
+        : routeRequiresUnsupportedEffort
+          ? `${route?.pattern} requires ${route.effort} effort, unsupported by ${slotAgent}` : null,
       invalidReason: effort && !EFFORT_AGENTS.includes(slotAgent)
         ? `Effort ${effort} is unsupported by ${slotAgent}` : null
     }

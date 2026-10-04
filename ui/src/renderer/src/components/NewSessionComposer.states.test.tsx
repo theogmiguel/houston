@@ -56,8 +56,8 @@ describe('NewSessionComposer — state matrix', () => {
   const previewRows = (): HTMLElement[] =>
     Array.from(container.querySelectorAll<HTMLElement>('[data-testid="new-session-preview"] > div'))
 
-  it('Initial — one screen with all four sections and no stepper anywhere', () => {
-    for (const label of ['Preset', 'Agent', 'How many', 'Slots']) {
+  it('Initial — one screen with presets, targets, slots and an editable count', () => {
+    for (const label of ['Preset', 'Default agent', 'How many', 'Slots']) {
       expect(container.textContent).toContain(label)
     }
     for (const wizardWord of ['Next', 'Back', 'Step 1', 'Finish']) {
@@ -66,18 +66,18 @@ describe('NewSessionComposer — state matrix', () => {
     expect(container.querySelectorAll('.overflow-y-auto')).toHaveLength(1)
   })
 
-  it('Initial — Solo is preselected, so the preview is one Claude slot', () => {
-    expect(q('[data-preset="solo"]').getAttribute('aria-pressed')).toBe('true')
-    expect(previewRows()).toHaveLength(1)
+  it('Initial — Pair is preselected, so the preview has builder and reviewer slots', () => {
+    expect(q('[data-preset="pair"]').getAttribute('aria-pressed')).toBe('true')
+    expect(previewRows()).toHaveLength(2)
     expect(q('[data-testid="new-session-summary"]').textContent).toBe(
-      'Solo · 1 session in Houston'
+      'Pair · 2 sessions in Houston'
     )
   })
 
   it('Preset — picking one fills BOTH count and agent, and the preview follows', () => {
     click('[data-preset="swarm"]')
-    expect(q('[data-count="4"]').getAttribute('aria-pressed')).toBe('true')
-    expect(q('[data-agent="claude"]').getAttribute('aria-pressed')).toBe('true')
+    expect(q('[data-testid="new-session-count"]').textContent).toBe('4')
+    expect(q('[aria-label="Default agent"]').textContent).toContain('Claude Code')
     expect(previewRows()).toHaveLength(4)
     expect(q('[data-testid="new-session-summary"]').textContent).toBe(
       'Swarm · 4 sessions in Houston'
@@ -86,7 +86,8 @@ describe('NewSessionComposer — state matrix', () => {
 
   it('Preset — a seeded count stays EDITABLE; it is a starting point, not a lock', () => {
     click('[data-preset="swarm"]')
-    click('[data-count="2"]')
+    click('[aria-label="Fewer"]')
+    click('[aria-label="Fewer"]')
     expect(previewRows()).toHaveLength(2)
     expect(previewRows().map((r) => r.textContent?.slice(0, 12))).toEqual(['1Claude Code', '2Claude Code'])
   })
@@ -100,38 +101,31 @@ describe('NewSessionComposer — state matrix', () => {
     expect(rows[1]).toContain('Terminal')
   })
 
-  it('Agent — the roster is the reference\'s, minus the kinds Houston cannot spawn', () => {
-    expect(
-      Array.from(container.querySelectorAll('[data-agent]')).map((b) => b.textContent)
-    ).toEqual([
-      'Claude Code',
-      'Codex',
-      'Cursor Agent',
-      'Antigravity',
-      'OpenCode',
-      'Grok Build',
-      'Terminal'
+  it('Default agent — the shared Select offers every spawnable provider', () => {
+    const trigger = q<HTMLButtonElement>('[aria-label="Default agent"]')
+    act(() => trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    expect(Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map((option) => option.textContent?.trim())).toEqual([
+      'Claude Code', 'Codex', 'Cursor Agent', 'Antigravity', 'OpenCode', 'Grok Build', 'Terminal'
     ])
-    expect(container.querySelectorAll('[data-testid^="new-session-agent-check-"]')).toHaveLength(1)
-    click('[data-agent="shell"]')
-    expect(q('[data-testid="new-session-agent-check-shell"]')).toBeTruthy()
-    expect(container.querySelectorAll('[data-testid^="new-session-agent-check-"]')).toHaveLength(1)
+    const shell = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((option) => option.textContent?.trim() === 'Terminal')
+    act(() => shell?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
+    expect(q('[aria-label="Default agent"]').textContent).toContain('Terminal')
   })
 
   it('How many — the trailing word follows the count, singular then plural', () => {
-    expect(container.textContent).toContain('1 session in Houston')
-    click('[data-count="3"]')
+    expect(container.textContent).toContain('2 sessions in Houston')
+    click('[aria-label="More"]')
     expect(q('[data-testid="new-session-summary"]').textContent).toBe(
-      'Solo · 3 sessions in Houston'
+      'Pair · 3 sessions in Houston'
     )
   })
 
   it('Task — a typed task reaches every slot without changing the preview rows', () => {
-    expect(previewRows()[0].textContent).toContain('1Claude Code')
+    expect(previewRows()[0].textContent).toContain('builder')
     typeTask('Fix the parser')
-    expect(previewRows()[0].textContent).toContain('1Claude Code')
+    expect(previewRows()[0].textContent).toContain('builder')
     click('[data-testid="new-session-launch"]')
-    expect(launched[0][0].prompt).toBe('Fix the parser')
+    expect(launched[0][0].prompt.endsWith('Fix the parser')).toBe(true)
   })
 
   it('Task — over the byte cap the launch is refused, naming the limit and the value', () => {
@@ -147,12 +141,12 @@ describe('NewSessionComposer — state matrix', () => {
   it('Hover and target — previews a preset without selecting it and switches launch destination', () => {
     act(() => q<HTMLButtonElement>('[data-preset="swarm"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     expect(previewRows()).toHaveLength(4)
-    expect(q('[data-preset="solo"]').getAttribute('aria-pressed')).toBe('true')
+    expect(q('[data-preset="pair"]').getAttribute('aria-pressed')).toBe('true')
     act(() => q<HTMLButtonElement>('[data-preset="swarm"]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
-    expect(previewRows()).toHaveLength(1)
+    expect(previewRows()).toHaveLength(2)
     click('[data-target="new-grid"]')
     click('[data-testid="new-session-launch"]')
-    expect(launched[0]).toHaveLength(1)
+    expect(launched[0]).toHaveLength(2)
     expect(destinations).toEqual(['new-grid'])
   })
 
@@ -180,7 +174,10 @@ describe('NewSessionComposer — state matrix', () => {
 
   it('Submit — launches exactly the slots the preview drew, in order', () => {
     click('[data-preset="pair"]')
-    click('[data-agent="codex"]')
+    const trigger = q<HTMLButtonElement>('[aria-label="Default agent"]')
+    act(() => trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    const codex = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((option) => option.textContent?.trim() === 'Codex')
+    act(() => codex?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
     typeTask('Fix the parser')
     click('[data-testid="new-session-launch"]')
     expect(launched).toHaveLength(1)
@@ -192,8 +189,8 @@ describe('NewSessionComposer — state matrix', () => {
     expect(launched[0][0].prompt.endsWith('Fix the parser')).toBe(true)
   })
 
-  it('Cancel — both the footer button and the header close report a cancel, launching nothing', () => {
-    click('[data-testid="new-session-cancel"]')
+  it('Cancel — the header close reports a cancel, launching nothing', () => {
+    click('[data-testid="new-session-close"]')
     click('[data-testid="new-session-close"]')
     expect(cancels).toBe(2)
     expect(launched).toEqual([])

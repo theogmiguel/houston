@@ -35,7 +35,7 @@ describe('expandSlots', () => {
     expect(expandSlots(byId('solo'), 'codex', 1, 'Fix the parser')).toEqual([
       {
         index: 0, agent: 'codex', roleLabel: null, prompt: 'Fix the parser', model: null,
-        effort: null, modelSource: 'agent default', effortSource: 'agent default', skippedRoute: null, invalidReason: null
+        effort: null, modelSource: 'agent default', effortSource: 'agent default', agentSource: 'preset', skippedRoute: null, invalidReason: null
       }
     ])
   })
@@ -102,6 +102,17 @@ describe('expandSlots', () => {
     })[0]).toMatchObject({ model: 'profile-model', modelSource: 'profile', effort: 'high', effortSource: 'profile' })
     expect(resolveSlots(preset, 'claude', 1, '')[0]).toMatchObject({
       model: 'preset-model', modelSource: 'preset', effort: 'low', effortSource: 'preset'
+    })
+  })
+
+  it('shows a workspace route skipped for Codex when its local model list is unavailable', () => {
+    const preset = { ...byId('pair') }
+    expect(resolveSlots(preset, 'codex', 2, '', {
+      routes: [{ pattern: 'reviewer', model: 'sonnet', effort: 'high' }]
+    })[1]).toMatchObject({
+      model: null,
+      modelSource: 'agent default',
+      skippedRoute: 'reviewer → sonnet skipped: the Codex local model list is not available to verify this route'
     })
   })
 

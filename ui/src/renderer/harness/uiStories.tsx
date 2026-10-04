@@ -15,6 +15,7 @@ import {
   IconTile,
   ListDetail,
   LaunchLayoutPreviewSpecimen,
+  LaunchPresetOutlineSpecimen,
   LaunchSlotCardSpecimen,
   Notice,
   PageFrame,
@@ -238,6 +239,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Launch layout preview">
           <LaunchLayoutPreviewSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Launch preset outline">
+          <LaunchPresetOutlineSpecimen />
         </SpecimenGroup>
         <SpecimenGroup heading="Launch slot card">
           <LaunchSlotCardSpecimen />
