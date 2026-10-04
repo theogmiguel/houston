@@ -14,6 +14,8 @@ import {
   Field,
   IconTile,
   ListDetail,
+  LaunchLayoutPreviewSpecimen,
+  LaunchSlotCardSpecimen,
   Notice,
   PageFrame,
   PageHeader,
@@ -140,6 +142,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </Card>
           <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Launch layout preview">
+          <LaunchLayoutPreviewSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Launch slot card">
+          <LaunchSlotCardSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="BarSparkline">

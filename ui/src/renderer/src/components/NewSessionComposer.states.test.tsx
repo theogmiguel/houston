@@ -9,10 +9,12 @@ describe('NewSessionComposer — state matrix', () => {
   let container: HTMLDivElement
   let root: Root
   let launched: SessionSlot[][]
+  let destinations: string[]
   let cancels: number
 
   beforeEach(() => {
     launched = []
+    destinations = []
     cancels = 0
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -22,7 +24,7 @@ describe('NewSessionComposer — state matrix', () => {
         <NewSessionComposer
           workspaceName="Houston"
           workspacePath="/home/dev/projects/houston"
-          onLaunch={(slots) => launched.push(slots)}
+          onLaunch={(slots, target) => { launched.push(slots); destinations.push(target) }}
           onCancel={() => {
             cancels += 1
           }}
@@ -55,7 +57,7 @@ describe('NewSessionComposer — state matrix', () => {
     Array.from(container.querySelectorAll<HTMLElement>('[data-testid="new-session-preview"] > div'))
 
   it('Initial — one screen with all four sections and no stepper anywhere', () => {
-    for (const label of ['Preset', 'Agent', 'How many', 'Will launch']) {
+    for (const label of ['Preset', 'Agent', 'How many', 'Slots']) {
       expect(container.textContent).toContain(label)
     }
     for (const wizardWord of ['Next', 'Back', 'Step 1', 'Finish']) {
@@ -86,7 +88,7 @@ describe('NewSessionComposer — state matrix', () => {
     click('[data-preset="swarm"]')
     click('[data-count="2"]')
     expect(previewRows()).toHaveLength(2)
-    expect(previewRows().map((r) => r.textContent)).toEqual(['1Claude Code', '2Claude Code'])
+    expect(previewRows().map((r) => r.textContent?.slice(0, 12))).toEqual(['1Claude Code', '2Claude Code'])
   })
 
   it('Preset — Pair labels its two slots and Workbench forces its shell slot', () => {
@@ -125,9 +127,9 @@ describe('NewSessionComposer — state matrix', () => {
   })
 
   it('Task — a typed task reaches every slot without changing the preview rows', () => {
-    expect(previewRows()[0].textContent).toBe('1Claude Code')
+    expect(previewRows()[0].textContent).toContain('1Claude Code')
     typeTask('Fix the parser')
-    expect(previewRows()[0].textContent).toBe('1Claude Code')
+    expect(previewRows()[0].textContent).toContain('1Claude Code')
     click('[data-testid="new-session-launch"]')
     expect(launched[0][0].prompt).toBe('Fix the parser')
   })
@@ -140,6 +142,40 @@ describe('NewSessionComposer — state matrix', () => {
     expect(q<HTMLButtonElement>('[data-testid="new-session-launch"]').disabled).toBe(true)
     click('[data-testid="new-session-launch"]')
     expect(launched).toEqual([])
+  })
+
+  it('Hover and target — previews a preset without selecting it and switches launch destination', () => {
+    act(() => q<HTMLButtonElement>('[data-preset="swarm"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    expect(previewRows()).toHaveLength(4)
+    expect(q('[data-preset="solo"]').getAttribute('aria-pressed')).toBe('true')
+    act(() => q<HTMLButtonElement>('[data-preset="swarm"]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
+    expect(previewRows()).toHaveLength(1)
+    click('[data-target="new-grid"]')
+    click('[data-testid="new-session-launch"]')
+    expect(launched[0]).toHaveLength(1)
+    expect(destinations).toEqual(['new-grid'])
+  })
+
+  it('Slot override — changing the model updates the source chip', () => {
+    const input = q<HTMLInputElement>('[aria-label="Model override for slot 1"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(input, 'custom-model')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(q('[data-testid="slot-model-source-0"]').textContent).toContain('user override')
+  })
+
+  it('Invalid slot — unsupported per-run effort shows the reason and blocks launch', () => {
+    click('[data-preset="solo"]')
+    act(() => q<HTMLButtonElement>('[aria-label="Agent override for slot 1"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    const cursor = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((option) => option.textContent?.trim() === 'Cursor Agent')
+    act(() => cursor?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
+    act(() => q<HTMLButtonElement>('[aria-label="Effort override for slot 1"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })))
+    const high = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((option) => option.textContent?.trim() === 'high')
+    act(() => high?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })))
+    expect(container.textContent).toContain('Effort high is unsupported')
+    expect(q<HTMLButtonElement>('[data-testid="new-session-launch"]').disabled).toBe(true)
   })
 
   it('Submit — launches exactly the slots the preview drew, in order', () => {
@@ -169,7 +205,7 @@ describe('NewSessionComposer — state matrix', () => {
     })
     expect(cancels).toBe(1)
     act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))
+      q<HTMLTextAreaElement>('[data-testid="new-session-task"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
     })
     expect(launched).toHaveLength(1)
   })

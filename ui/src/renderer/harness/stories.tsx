@@ -23,6 +23,19 @@ function NewSessionClicked({ selector }: { selector: string }): React.JSX.Elemen
     </div>
   )
 }
+
+function DockedLaunchStory(): React.JSX.Element {
+  return (
+    <div className="flex h-full min-w-0 bg-[var(--content-bg)]">
+      <div className="grid min-w-0 flex-1 grid-cols-2 gap-[var(--pane-gutter)] p-[var(--pane-gutter)]" aria-label="Current grid">
+        {['Session · Claude Code', 'Session · Codex'].map((name) => (
+          <div key={name} className="flex items-center justify-center rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-muted)]">{name}</div>
+        ))}
+      </div>
+      <NewSession />
+    </div>
+  )
+}
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
 import { SettingsAgentSetup, SettingsAppearance, SettingsDiagnostics, SettingsTerminal } from './settingsStories'
@@ -107,6 +120,7 @@ function RailWorkspacesMulti(): React.JSX.Element {
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
   'new-session/default': () => <NewSession />,
+  'launch/docked': () => <DockedLaunchStory />,
   'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' />,
   'new-session/terminal': () => <NewSessionClicked selector='[data-agent="shell"]' />,
   'harness/smoke': () => (

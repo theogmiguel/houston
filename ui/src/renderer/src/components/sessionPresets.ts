@@ -1,4 +1,6 @@
 import type { AgentKind } from '../houston/client'
+import type { ChatEffort } from '../houston/generated/ChatEffort'
+import type { RoleRoute } from '../houston/generated/RoleRoute'
 
 export const COMPOSER_AGENTS: readonly AgentKind[] = [
   'claude',
@@ -28,6 +30,8 @@ export interface PresetRole {
   label: string
   instruction?: string
   engine?: AgentKind
+  model?: string
+  effort?: ChatEffort
 }
 
 export interface SessionPreset {
@@ -86,6 +90,82 @@ export interface SessionSlot {
   agent: AgentKind
   roleLabel: string | null
   prompt: string
+  model: string | null
+  effort: ChatEffort | null
+  modelSource: SlotValueSource
+  effortSource: SlotValueSource
+  skippedRoute: string | null
+  invalidReason: string | null
+}
+
+export type SlotValueSource = 'preset' | 'profile' | 'agent default' | 'workspace setting' | 'user override'
+
+export interface SlotOverrides {
+  agent?: AgentKind
+  model?: string | null
+  effort?: ChatEffort | null
+}
+
+export interface ProfileLaunchDefaults {
+  model?: string | null
+  effort?: ChatEffort | null
+}
+
+export interface ResolvedSlotsOptions {
+  routes?: readonly RoleRoute[]
+  profileDefaults?: Partial<Record<AgentKind, ProfileLaunchDefaults>>
+  overrides?: Readonly<Record<number, SlotOverrides>>
+}
+
+const EFFORT_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'grok']
+
+function routeForRole(routes: readonly RoleRoute[], role: string): RoleRoute | undefined {
+  return routes.find((route) => route.pattern === '*' || route.pattern === role ||
+    (route.pattern.endsWith('*') && role.startsWith(route.pattern.slice(0, -1))))
+}
+
+export function resolveSlots(
+  preset: SessionPreset | null,
+  agent: AgentKind,
+  count: number,
+  task: string,
+  options: ResolvedSlotsOptions = {}
+): SessionSlot[] {
+  const roles = preset?.roles ?? []
+  const trimmedTask = task.trim()
+  return Array.from({ length: count }, (_, index) => {
+    const role = roles.length > 0 ? roles[index % roles.length] : undefined
+    const override = options.overrides?.[index] ?? {}
+    const slotAgent = override.agent ?? role?.engine ?? agent
+    const profile = options.profileDefaults?.[slotAgent]
+    const route = role?.label ? routeForRole(options.routes ?? [], role.label) : undefined
+    const routeRequiresUnsupportedEffort = !!route?.effort && !EFFORT_AGENTS.includes(slotAgent)
+    const modelOverride = !!override.model?.trim()
+    const effortOverride = override.effort !== undefined && override.effort !== null
+    const model = (modelOverride ? override.model : route && !routeRequiresUnsupportedEffort
+      ? route.model : profile?.model ?? role?.model ?? null) ?? null
+    const effort = (effortOverride ? override.effort : route && !routeRequiresUnsupportedEffort
+      ? route.effort ?? profile?.effort ?? role?.effort ?? null : profile?.effort ?? role?.effort ?? null) ?? null
+    const instruction = role?.instruction
+    return {
+      index,
+      agent: slotAgent,
+      roleLabel: role?.label ?? null,
+      prompt: [instruction, trimmedTask].filter((value): value is string => !!value).join('\n\n'),
+      model,
+      effort,
+      modelSource: modelOverride ? 'user override' : route && !routeRequiresUnsupportedEffort && model === route.model
+        ? 'workspace setting' : profile?.model && model === profile.model ? 'profile'
+          : role?.model && model === role.model ? 'preset' : 'agent default',
+      effortSource: effortOverride ? 'user override' : route && !routeRequiresUnsupportedEffort && route.effort && effort === route.effort
+        ? 'workspace setting' : profile?.effort && effort === profile.effort ? 'profile'
+          : role?.effort && effort === role.effort ? 'preset' : 'agent default',
+      skippedRoute: routeRequiresUnsupportedEffort
+        ? `${route?.pattern} requires ${route.effort} effort, unsupported by ${slotAgent}` : null,
+      invalidReason: effort && !EFFORT_AGENTS.includes(slotAgent)
+        ? `Effort ${effort} is unsupported by ${slotAgent}` : null
+    }
+  })
 }
 
 export function taskByteLength(task: string): number {
@@ -104,17 +184,5 @@ export function expandSlots(
   count: number,
   task: string
 ): SessionSlot[] {
-  const roles = preset?.roles ?? []
-  return Array.from({ length: count }, (_, index) => {
-    const role = roles.length > 0 ? roles[index % roles.length] : undefined
-    const instruction = role?.instruction
-    const trimmedTask = task.trim()
-    const prompt = [instruction, trimmedTask].filter((s): s is string => !!s).join('\n\n')
-    return {
-      index,
-      agent: role?.engine ?? agent,
-      roleLabel: role?.label ?? null,
-      prompt
-    }
-  })
+  return resolveSlots(preset, agent, count, task)
 }

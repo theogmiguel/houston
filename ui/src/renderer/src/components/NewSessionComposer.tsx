@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import logoUrl from '../assets/logo-chrome.svg'
-import type { AgentKind } from '../houston/client'
+import type { HoustonClient } from '../houston/client'
+import type { AgentKind } from '../houston/generated/AgentKind'
+import type { RoleRoute } from '../houston/generated/RoleRoute'
 import { BTN_PRIMARY } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import {
@@ -19,11 +21,12 @@ import {
   COMPOSER_AGENTS,
   MAX_COUNT,
   SESSION_PRESETS,
-  expandSlots,
+  resolveSlots,
   taskOverLimitMessage,
   type SessionPreset,
   type SessionSlot
 } from './sessionPresets'
+import type { SlotOverrides } from './sessionPresets'
 import { ICON_ROLE_CLS, Icon } from './Icon'
 import {
   PICKER_LABEL_CLS,
@@ -34,11 +37,16 @@ import {
 } from './pickerChrome'
 import { Tooltip } from './Tooltip'
 import { MATERIAL_CLS, materialAttrs } from './material'
+import type { LayoutNode } from '../layout/tree'
+import { LaunchComposerHeader, LaunchLayoutPreview, LaunchSlotCard, LaunchWorkspaceBadge } from './ui'
 
 export interface NewSessionComposerProps {
   workspaceName: string
   workspacePath: string
-  onLaunch: (slots: SessionSlot[]) => void
+  client?: HoustonClient | null
+  initialTarget?: 'this-grid' | 'new-grid'
+  tree?: LayoutNode | null
+  onLaunch: (slots: SessionSlot[], target: 'this-grid' | 'new-grid') => void
   onCancel: () => void
 }
 
@@ -54,6 +62,9 @@ const PRESET_GLYPH: Record<string, IconComponent> = {
 export function NewSessionComposer({
   workspaceName,
   workspacePath,
+  client = null,
+  initialTarget = 'this-grid',
+  tree = null,
   onLaunch,
   onCancel
 }: NewSessionComposerProps): React.JSX.Element {
@@ -61,14 +72,35 @@ export function NewSessionComposer({
   const [agent, setAgent] = useState<AgentKind>('claude')
   const [count, setCount] = useState(1)
   const [task, setTask] = useState('')
+  const [target, setTarget] = useState<'this-grid' | 'new-grid'>(initialTarget)
+  const [hoveredPreset, setHoveredPreset] = useState<string | null>(null)
+  const [overrides, setOverrides] = useState<Record<number, SlotOverrides>>({})
+  const [routes, setRoutes] = useState<RoleRoute[]>([])
+
+  useEffect(() => {
+    if (!client) return
+    const off = client.subscribe('workspace_routing', (message) => {
+      if (message.workspace === workspacePath) setRoutes(message.routes)
+    })
+    client.workspaceRoutingGet(workspacePath)
+    return off
+  }, [client, workspacePath])
 
   const preset: SessionPreset | null = useMemo(
     () => SESSION_PRESETS.find((p) => p.id === presetId) ?? null,
     [presetId]
   )
+  const previewPreset = useMemo(
+    () => SESSION_PRESETS.find((value) => value.id === hoveredPreset) ?? preset,
+    [hoveredPreset, preset]
+  )
   const overLimit = taskOverLimitMessage(task)
-  const slots = useMemo(() => expandSlots(preset, agent, count, task), [preset, agent, count, task])
-  const canLaunch = !overLimit
+  const slots = useMemo(
+    () => resolveSlots(previewPreset, agent, hoveredPreset ? previewPreset?.count ?? count : count, task, { routes, overrides }),
+    [previewPreset, hoveredPreset, agent, count, task, routes, overrides]
+  )
+  const invalidSlot = slots.find((slot) => slot.invalidReason)
+  const canLaunch = !overLimit && !invalidSlot
 
   const choosePreset = (p: SessionPreset): void => {
     setPresetId(p.id)
@@ -83,14 +115,14 @@ export function NewSessionComposer({
         onCancel()
         return
       }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && e.target instanceof HTMLTextAreaElement && e.target.dataset.testid === 'new-session-task') {
         e.preventDefault()
-        if (canLaunch) onLaunch(slots)
+        if (canLaunch) onLaunch(slots, target)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel, onLaunch, slots, canLaunch])
+  }, [onCancel, onLaunch, slots, canLaunch, target])
 
   const sessionWord = count === 1 ? 'session' : 'sessions'
 
@@ -98,13 +130,10 @@ export function NewSessionComposer({
     <div
       data-testid="new-session-composer"
       {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full grid grid-rows-[44px_minmax(0,1fr)_56px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
+      className={`flex-none min-w-0 h-full w-[380px] grid grid-rows-[44px_minmax(0,1fr)_56px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
-      <div className="flex items-center gap-[10px] border-b border-[var(--border)] px-[14px]">
-        <span className="inline-flex h-[var(--h-ctl-mini)] flex-none items-center gap-[6px] rounded-[var(--tr-radius-sm)] bg-[var(--card-hover)] pl-[7px] pr-[9px] [font-size:var(--tr-text-small-size)] font-bold text-[var(--text-primary)]">
-          <img src={logoUrl} alt="" width={15} height={15} className="block flex-none" />
-          <span className="max-w-[180px] truncate">{workspaceName}</span>
-        </span>
+      <LaunchComposerHeader>
+        <LaunchWorkspaceBadge logoUrl={logoUrl} workspaceName={workspaceName} />
         <span className="flex-none [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]">
           New session
         </span>
@@ -123,12 +152,24 @@ export function NewSessionComposer({
         >
           <Icon glyph={IconClose} role="small" />
         </button>
-      </div>
+      </LaunchComposerHeader>
 
       <div className="min-h-0 overflow-y-auto px-6">
         <div className="mx-auto flex w-full max-w-[556px] flex-col gap-[14px] pb-8 pt-[14px]">
-          <fieldset className="m-0 border-0 p-0">
-            <legend className={`${LABEL_CLS} mb-[8px] p-0`}>Preset</legend>
+          <fieldset className="m-0 flex flex-col gap-[var(--space-2)] border-0 p-0">
+            <legend className={`${LABEL_CLS} p-0`}>Launch into</legend>
+            <div className="flex gap-[5px]">
+              {([['this-grid', 'This grid'], ['new-grid', 'New grid']] as const).map(([value, label]) => (
+                <button key={value} type="button" data-target={value} aria-pressed={target === value} onClick={() => setTarget(value)}
+                  className={`${TILE_BASE} ${target === value ? TILE_SELECTED : TILE_IDLE} flex-1`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <LaunchLayoutPreview tree={tree} count={slots.length} target={target} />
+          <fieldset className="m-0 flex flex-col gap-[var(--space-2)] border-0 p-0">
+            <legend className={`${LABEL_CLS} p-0`}>Preset</legend>
             <div className="grid grid-cols-4 gap-[7px]">
               {SESSION_PRESETS.map((p) => {
                 const selected = presetId === p.id
@@ -140,6 +181,8 @@ export function NewSessionComposer({
                     data-preset={p.id}
                     aria-pressed={selected}
                     onClick={() => choosePreset(p)}
+                    onMouseEnter={() => setHoveredPreset(p.id)}
+                    onMouseLeave={() => setHoveredPreset(null)}
                     className={`${TILE_BASE} ${selected ? TILE_SELECTED : TILE_IDLE} flex h-[58px] flex-col gap-[5px] overflow-hidden rounded-[var(--tr-radius-md)] px-[9px] pt-[9px] pb-0`}
                   >
                     <span className="flex items-center gap-[7px] leading-[15px]">
@@ -164,8 +207,8 @@ export function NewSessionComposer({
             </div>
           </fieldset>
 
-          <fieldset className="m-0 border-0 p-0">
-            <legend className={`${LABEL_CLS} mb-[8px] p-0`}>Agent</legend>
+          <fieldset className="m-0 flex flex-col gap-[var(--space-2)] border-0 p-0">
+            <legend className={`${LABEL_CLS} p-0`}>Agent</legend>
             <div className="grid grid-cols-3 gap-[7px]">
               {COMPOSER_AGENTS.map((a) => {
                 const selected = agent === a
@@ -200,9 +243,9 @@ export function NewSessionComposer({
             </div>
           </fieldset>
 
-          <fieldset className="m-0 border-0 p-0">
-            <legend className={`${LABEL_CLS} mb-[8px] p-0`}>How many</legend>
-            <div className="flex items-center gap-[5px]">
+          <fieldset className="m-0 flex flex-col gap-[var(--space-2)] border-0 p-0">
+            <legend className={`${LABEL_CLS} p-0`}>How many</legend>
+            <div className="flex items-center gap-[var(--space-1-5)]">
               {Array.from({ length: MAX_COUNT }, (_, i) => i + 1).map((n) => (
                 <button
                   key={n}
@@ -215,12 +258,12 @@ export function NewSessionComposer({
                   {n}
                 </button>
               ))}
-              <span className="ml-[9px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">{sessionWord}</span>
+              <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">{sessionWord}</span>
             </div>
           </fieldset>
 
-          <div>
-            <label className={`${LABEL_CLS} mb-[8px]`} htmlFor="new-session-task">
+          <div className="flex flex-col gap-[var(--space-1-5)]">
+            <label className={LABEL_CLS} htmlFor="new-session-task">
               {count === 1 ? 'Task — optional' : 'Task — goes to every agent, optional'}
             </label>
             <textarea
@@ -236,34 +279,34 @@ export function NewSessionComposer({
               <p
                 role="alert"
                 data-testid="new-session-task-error"
-                className="m-0 mt-[6px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)]"
+                className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)]"
               >
                 {overLimit}
               </p>
             )}
           </div>
 
-          <section>
-            <h2 className={`${LABEL_CLS} m-0 mb-[8px]`}>Will launch</h2>
-            <div className="grid grid-cols-3 gap-[7px]" data-testid="new-session-preview">
+          <section className="flex flex-col gap-[var(--space-2)]">
+            <h2 className={`${LABEL_CLS} m-0`}>Slots</h2>
+            <div className="grid grid-cols-1 gap-[7px]" data-testid="new-session-preview">
               {slots.map((s) => (
-                <div
-                  key={s.index}
-                  data-slot={s.index}
-                  className="flex h-[var(--h-pill)] items-center gap-[9px] rounded-[var(--tr-radius-sm)] bg-[var(--card-bg)] pl-[10px] pr-[8px]"
-                >
-                  <span className="flex-none [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tabular-nums text-[var(--text-faint)]">
-                    {s.index + 1}
-                  </span>
-                  <span className="flex-none" style={{ color: engineGlyphColor(s.agent) }}>
-                    <IconAgent agent={s.agent} className={ICON_ROLE_CLS.ui} />
-                  </span>
-                  <span className="min-w-0 truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
-                    {AGENT_LABEL[s.agent] ?? s.agent}
-                    {s.roleLabel && <span className="text-[var(--text-muted)]"> · {s.roleLabel}</span>}
-                  </span>
-                </div>
+                <LaunchSlotCard key={s.index} slot={s} workspaceName={workspaceName} override={overrides[s.index] ?? {}}
+                  onAgentChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], agent: value } }))}
+                  onModelChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], model: value } }))}
+                  onEffortChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], effort: value } }))} />
               ))}
+            </div>
+          </section>
+          <section aria-label="Workspace routing" className="flex flex-col gap-[var(--space-2)]">
+            <h2 className={`${LABEL_CLS} m-0`}>Workspace routing</h2>
+            {routes.length === 0
+              ? <span className="[font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">No routes · agents use their defaults</span>
+              : <div className="flex flex-wrap gap-[var(--space-2)]">{routes.map((route, index) => <span key={`${route.pattern}-${index}`} className="[font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">{route.pattern} → {route.model}{route.effort ? ` · ${route.effort}` : ''}</span>)}</div>}
+          </section>
+          <section className="flex flex-col gap-[var(--space-2)]">
+            <h2 className={`${LABEL_CLS} m-0`}>O que cada parte precisa</h2>
+            <div className="flex flex-wrap gap-[var(--space-1)] [font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">
+              {['preset', 'profile', 'agent default', 'workspace setting', 'user override'].map((source) => <span key={source}>{source}</span>)}
             </div>
           </section>
         </div>
@@ -288,12 +331,10 @@ export function NewSessionComposer({
           type="button"
           data-testid="new-session-launch"
           disabled={!canLaunch}
-          onClick={() => onLaunch(slots)}
+          onClick={() => onLaunch(slots, target)}
           className={`btn ${BTN_PRIMARY} inline-flex h-8 items-center rounded-[var(--tr-radius-button)] px-[var(--space-5)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] disabled:opacity-40 disabled:cursor-not-allowed`}
         >
-          {count === 1
-            ? `Launch ${AGENT_LABEL[slots[0]?.agent ?? agent] ?? agent}`
-            : `Launch ${count} sessions`}
+          Launch <small>Ctrl ↵</small>
         </button>
       </div>
     </div>

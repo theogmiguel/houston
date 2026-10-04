@@ -126,7 +126,6 @@ import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
 import type { HandoffSource } from "./components/PaneHandoff";
-import { NewSessionComposer } from "./components/NewSessionComposer";
 import type { SessionSlot } from "./components/sessionPresets";
 import { WorkspaceEmpty } from "./components/WorkspaceEmpty";
 import { WorkspacesEmpty } from "./components/WorkspacesEmpty";
@@ -332,6 +331,9 @@ const SshConnectModal = lazy(() =>
 );
 const PaneHandoff = lazy(() =>
   import("./components/PaneHandoff").then((m) => ({ default: m.PaneHandoff })),
+);
+const NewSessionComposer = lazy(() =>
+  import("./components/NewSessionComposer").then((m) => ({ default: m.NewSessionComposer })),
 );
 export { isTitlebarDragEligible, isBareTitlebarTarget };
 
@@ -1934,22 +1936,24 @@ export function App(): React.JSX.Element {
     );
   }, []);
   const launchSessions = useCallback(
-    (slots: SessionSlot[]): void => {
+    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
       if (conn.kind !== "ready" || selectedWs === "all") return;
       setExpandedId(null);
-      if (composer === "new-grid") handleAddGrid(selectedWs);
+      if (target === "new-grid") handleAddGrid(selectedWs);
       for (const slot of slots) {
         conn.client.createSession({
           agent: slot.agent,
           project_dir: selectedWs,
           shell_integration: shellIntegration,
+          model: slot.model,
+          effort: slot.effort,
           prompt:
             slot.agent === "shell" || slot.prompt === "" ? null : slot.prompt,
         });
       }
       setComposer(null);
     },
-    [conn, selectedWs, shellIntegration, composer, handleAddGrid],
+    [conn, selectedWs, shellIntegration, handleAddGrid],
   );
 
   const handleRenameGrid = useCallback(
@@ -3617,6 +3621,19 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </div>
+              {composer && selectedWs !== "all" && !settings && railView === null && (
+                <Suspense fallback={null}>
+                  <NewSessionComposer
+                    workspaceName={basename(selectedWs)}
+                    workspacePath={selectedWs}
+                    client={conn.kind === "ready" ? conn.client : null}
+                    initialTarget={composer === "new-grid" ? "new-grid" : "this-grid"}
+                    tree={currentTree}
+                    onLaunch={launchSessions}
+                    onCancel={() => setComposer(null)}
+                  />
+                </Suspense>
+              )}
               {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
                 <SidePanelIntegration
                   expanded={sideExpanded}
@@ -4005,15 +4022,6 @@ export function App(): React.JSX.Element {
                   </Suspense>
                   )}
                 </SurfaceBoundary>
-              </div>
-            ) : composer && selectedWs !== "all" ? (
-              <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
-                <NewSessionComposer
-                  workspaceName={basename(selectedWs)}
-                  workspacePath={selectedWs}
-                  onLaunch={launchSessions}
-                  onCancel={() => setComposer(null)}
-                />
               </div>
             ) : firstRunOpen || workspacesEmptyOpen ? (
               <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 BASELINE=(
-  "ui/src/renderer/src/App.tsx 53"
+  "ui/src/renderer/src/App.tsx 51"
   "ui/src/renderer/src/BootstrapGate.tsx 33"
   "ui/src/renderer/src/components/AddPanePopover.tsx 91"
   "ui/src/renderer/src/components/AgentProfiles.tsx 85"
@@ -36,7 +36,7 @@ BASELINE=(
   "ui/src/renderer/src/components/LayoutView.tsx 16"
   "ui/src/renderer/src/components/MarkdownPreview.tsx 2"
   "ui/src/renderer/src/components/McpManager.tsx 66"
-  "ui/src/renderer/src/components/NewSessionComposer.tsx 119"
+  "ui/src/renderer/src/components/NewSessionComposer.tsx 107"
   "ui/src/renderer/src/components/NoticeStack.tsx 24"
   "ui/src/renderer/src/components/OpenInMenu.tsx 2"
   "ui/src/renderer/src/components/OverviewTab.tsx 30"
