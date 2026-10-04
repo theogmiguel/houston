@@ -736,7 +736,10 @@ async fn the_owner_refuses_with_a_reason_that_reaches_the_thread_as_written() {
         .await_post("Isso precisa passar pelo time de dados.")
         .await;
     assert_eq!(posted["thread_ts"], "1800000000.000100");
-    assert_eq!(posted["text"], "Isso precisa passar pelo time de dados.");
+    assert_eq!(
+        posted["text"],
+        "Não vai seguir: Isso precisa passar pelo time de dados."
+    );
     let blocks = posted["blocks"].to_string();
     assert!(
         blocks.contains("*Não vai seguir*")
@@ -804,12 +807,28 @@ async fn a_request_over_the_text_limit_is_marked_and_the_owner_is_told_why() {
         .await;
     assert!(dm.to_string().contains("Atenção"), "{dm}");
     assert!(r.tasks().is_empty(), "nothing was filed");
-    let told = r.fake.await_post("longo demais").await;
+    let told = r
+        .fake
+        .await_post("passou do tamanho que dá para registrar")
+        .await;
     assert_eq!(told["thread_ts"], "1800000000.000100");
     assert!(
-        told["text"].as_str().unwrap().contains("<@UBOT>"),
+        told["text"]
+            .as_str()
+            .unwrap()
+            .contains("Responda aqui mesmo"),
         "the requester learns how to fix it: {told}"
     );
+    r.fake.send_event(
+        "e2",
+        json!({"type": "message", "channel": CHANNEL, "user": REQUESTER, "team": "T1",
+            "ts": "1800000000.000200", "thread_ts": "1800000000.000100",
+            "text": "<@UBOT> só a coluna de time na lista"}),
+    );
+    let tasks = r.await_tasks(1).await;
+    assert_eq!(tasks.len(), 1, "the reply in the thread files the request");
+    r.fake.await_reactions("1800000000.000100", &["eyes"]).await;
+    r.fake.await_dm("só a coluna de time na lista").await;
     r.finish();
 }
 
@@ -1643,7 +1662,7 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(r.runs().len(), 2, "an ignored adjustment starts nothing");
     r.fake
-        .await_call("chat.update", "Ignorado: não era pedido de ajuste")
+        .await_call("chat.update", "Ignorado · a resposta só perdeu o 👀")
         .await;
 
     let pending_ts = later(5);
@@ -1739,7 +1758,10 @@ async fn a_reply_before_the_work_joins_the_task_and_one_during_it_reaches_the_ow
         reply(REQUESTER, "a coluna pode ser a última", "1800000007.000400"),
     );
     r.fake.await_reactions("1800000007.000400", &["eyes"]).await;
-    let dm = r.fake.await_dm("Mensagem nova durante o trabalho").await;
+    let dm = r
+        .fake
+        .await_dm("Mensagem nova de quem pediu, com o trabalho em andamento")
+        .await;
     assert!(
         dm.to_string().contains("> a coluna pode ser a última"),
         "{dm}"

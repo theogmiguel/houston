@@ -144,6 +144,11 @@ fn truncate_chars(text: &str, max: usize) -> String {
     }
 }
 
+/// The agent may pass a banner line with its own ⛔ or ⚠️; Houston adds one.
+fn without_mark(line: &str) -> &str {
+    line.trim_start_matches(['⛔', '⚠', '\u{fe0f}', ' '])
+}
+
 /// A notification or a name shows one line: the text's words, cut to length.
 fn one_line(text: &str, max: usize) -> String {
     truncate_chars(&text.split_whitespace().collect::<Vec<_>>().join(" "), max)
@@ -671,7 +676,7 @@ impl Daemon {
              goes live\" --dropped-note \"posted if it is dropped\" [--size small] [--note \
              \"fact for the owner\"] [--warning \"warning for the owner\"] [--blocker \"what must be \
              fixed before merging\"]`, or `--refused \
-             --subject ... --changes \"why, and what would make it executable\"` when it should \
+             --subject ... --changes \"why, in product words, then what the requester can do to go ahead\"` when it should \
              not go ahead (or `task_handback` with a `result` object of the same fields: \
              outcome ready|refused, subject, changes, steps, caveats, live_note, dropped_note, \
              size, notes, warnings, blockers). Write everything the requester \
@@ -926,7 +931,20 @@ impl Daemon {
                 ts,
                 author,
                 text,
-            } => self.slack_reply(config, &channel, &thread_ts, &ts, &author, &text),
+            } => {
+                match self
+                    .slack_refile(
+                        api, tokens, config, &channel, &thread_ts, &ts, &author, &text,
+                    )
+                    .await
+                {
+                    Ok(true) => Ok(()),
+                    Ok(false) => {
+                        self.slack_reply(config, &channel, &thread_ts, &ts, &author, &text)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
             intake::Intent::Ignore(why) => {
                 tracing::debug!("slack: ignored event: {why}");
                 Ok(())
@@ -1083,6 +1101,86 @@ impl Daemon {
             self.slack_dm_notice(&row, &format!("refused:{}", row.id), &t.not_filed(&refusal))?;
             return Ok(());
         }
+        self.slack_file(api, tokens, t, row, text, files).await
+    }
+
+    /// A request refused for being empty or too long is fixed by its author
+    /// replying in its own thread, which the refusal told them to do: the
+    /// reply becomes the request. `Ok(false)` when the reply is anything else.
+    #[allow(clippy::too_many_arguments)]
+    async fn slack_refile(
+        self: &Arc<Self>,
+        api: &api::Api,
+        tokens: &credentials::Tokens,
+        config: &Config,
+        channel: &str,
+        thread_ts: &str,
+        ts: &str,
+        author: &str,
+        text: &str,
+    ) -> Result<bool> {
+        let Some(row) = self.db.intake_by_message(SOURCE, channel, thread_ts)? else {
+            return Ok(false);
+        };
+        if row.task_id.is_some() || row.state != INTAKE_REFUSED || author != row.author {
+            return Ok(false);
+        }
+        let text = text.trim();
+        let t = Text(config.language);
+        let key = format!("complement:{ts}");
+        if text.is_empty() || self.db.intake_outbox_has(&key)? {
+            return Ok(true);
+        }
+        let now = now_unix_ms();
+        self.db.intake_outbox_push(
+            row.id,
+            &key,
+            &Outgoing::react(Some(ts), Some(R_SEEN), None),
+            now,
+        )?;
+        if text.len() > proto::SLACK_REQUEST_TEXT_MAX {
+            self.db.intake_outbox_push(
+                row.id,
+                &format!("refused-reply:{ts}"),
+                &Outgoing::message(
+                    OutboxTarget::Thread,
+                    t.too_long_reply(&self.slack_bot_mention()),
+                    None,
+                ),
+                now,
+            )?;
+            return Ok(true);
+        }
+        self.db.intake_set_state(row.id, INTAKE_PENDING, now)?;
+        let row = self.db.intake(row.id)?.unwrap_or(row);
+        self.slack_file(api, tokens, t, row, text, &[]).await?;
+        Ok(true)
+    }
+
+    /// Files a recorded request as a task and tells the owner: 👀 on the
+    /// request, the images saved, the task created, the new-request message.
+    async fn slack_file(
+        self: &Arc<Self>,
+        api: &api::Api,
+        tokens: &credentials::Tokens,
+        t: Text,
+        row: IntakeRow,
+        text: &str,
+        files: &[intake::FileRef],
+    ) -> Result<()> {
+        let now = now_unix_ms();
+        let (channel, ts, author, workspace) = (
+            row.channel.clone(),
+            row.ts.clone(),
+            row.author.clone(),
+            row.workspace.clone(),
+        );
+        let (channel, ts, author, workspace) = (
+            channel.as_str(),
+            ts.as_str(),
+            author.as_str(),
+            workspace.as_str(),
+        );
         self.db.intake_set_status(row.id, R_SEEN, now)?;
         let mut notes = Vec::new();
         let images = self
@@ -1341,7 +1439,7 @@ impl Daemon {
                 &format!("owner-refusal:{}", row.id),
                 &Outgoing::message(
                     OutboxTarget::Thread,
-                    reason.to_string(),
+                    t.refused_fallback(&one_line(reason, FALLBACK_EXCERPT_CHARS)),
                     Some(blocks.to_string()),
                 ),
                 now,
@@ -1926,7 +2024,11 @@ impl Daemon {
                 &format!("dm-midwork:{ts}"),
                 &Outgoing::message(
                     OutboxTarget::Dm,
-                    strip_mrkdwn(&t.mid_work(&strip_mrkdwn(&self.slack_ident(row)))),
+                    format!(
+                        "{}: “{}”",
+                        strip_mrkdwn(&t.mid_work(&strip_mrkdwn(&self.slack_ident(row)))),
+                        one_line(&text, FALLBACK_EXCERPT_CHARS)
+                    ),
                     Some(Value::Array(blocks).to_string()),
                 ),
                 now,
@@ -2006,6 +2108,7 @@ impl Daemon {
                     buttons.push(link_button(t.view_thread(), link, "thread"));
                 }
                 blocks.push(json!({"type": "actions", "elements": buttons}));
+                blocks.push(context(t.ignore_hint()));
             }
             Footer::Status(status) => blocks.push(context(&escape(status))),
         }
@@ -2429,7 +2532,7 @@ impl Daemon {
         };
         let mut blocks = vec![section(&heading)];
         for blocker in &blockers {
-            blocks.push(section(&format!("⛔ {}", escape(blocker))));
+            blocks.push(section(&format!("⛔ {}", escape(without_mark(blocker)))));
         }
         let mut size_word = None;
         if refused {
@@ -2458,7 +2561,7 @@ impl Daemon {
         }
         let warnings: Vec<&String> = form.iter().flat_map(|f| &f.warnings).collect();
         for warning in &warnings {
-            blocks.push(section(&format!("⚠️ {}", escape(warning))));
+            blocks.push(section(&format!("⚠️ {}", escape(without_mark(warning)))));
         }
         let worked_ms = run.ended_at_ms.unwrap_or(now)
             - run.started_at_ms
@@ -2473,7 +2576,7 @@ impl Daemon {
         let mut buttons = Vec::new();
         let pr = match (&facts.pr_url, &facts.open_pr) {
             (Some(url), _) => Some((t.open_pr(), url)),
-            (None, Some(url)) if !refused && !adjusted => Some((t.create_pr(), url)),
+            (None, Some(url)) if !refused => Some((t.create_pr(), url)),
             _ => None,
         };
         if let Some((label, url)) = pr {
@@ -2498,7 +2601,8 @@ impl Daemon {
                 t.result_fallback(
                     &strip_mrkdwn(&heading),
                     size_word,
-                    warnings.len() + blockers.len(),
+                    blockers.len(),
+                    warnings.len(),
                 ),
                 Some(Value::Array(blocks).to_string()),
             ),
@@ -2713,10 +2817,16 @@ impl Daemon {
                         } else {
                             "a message"
                         };
+                        let about = match row
+                            .task_id
+                            .and_then(|id| self.task_key_of(id).ok().flatten())
+                        {
+                            Some(key) => key,
+                            None => format!("request {} in channel {}", row.id, row.channel),
+                        };
                         self.slack_update(|st| {
                             st.error = Some(format!(
-                                "Slack refused {what} about {} {OUTBOX_ATTEMPTS_MAX} times and it was dropped: {message}; the request's task in Houston has the details",
-                                strip_mrkdwn(&self.slack_ident(&row))
+                                "Slack refused {what} about {about} {OUTBOX_ATTEMPTS_MAX} times and it was dropped ({message}); the task in Houston has the details"
                             ))
                         });
                     }

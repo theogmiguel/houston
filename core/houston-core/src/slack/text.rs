@@ -141,17 +141,17 @@ impl Text {
     /// What the requester can fix alone, said in the thread.
     pub fn empty_request_reply(self, bot: &str) -> String {
         if self.pt() {
-            format!("Faltou o pedido: escreva numa mesma mensagem o que você quer mudar, mencionando {bot}.")
+            format!("Faltou o pedido. Responda aqui mesmo dizendo o que você quer mudar; um print ajuda. (Mencione {bot} quando fizer um pedido novo no canal.)")
         } else {
-            format!("The request is missing: write what you want changed in one message that mentions {bot}.")
+            format!("The request is missing. Reply right here with what you want changed; a screenshot helps. (Mention {bot} when you make a new request in the channel.)")
         }
     }
 
     pub fn too_long_reply(self, bot: &str) -> String {
         if self.pt() {
-            format!("O pedido ficou longo demais para registrar; resuma e mencione {bot} de novo numa mensagem nova.")
+            format!("O pedido passou do tamanho que dá para registrar. Responda aqui mesmo com um resumo. (Mencione {bot} quando fizer um pedido novo no canal.)")
         } else {
-            format!("The request is too long to file; shorten it and mention {bot} again in a new message.")
+            format!("The request is too long to file. Reply right here with a summary. (Mention {bot} when you make a new request in the channel.)")
         }
     }
 
@@ -232,8 +232,8 @@ impl Text {
 
     pub fn question_hint(self) -> &'static str {
         self.pick(
-            "Escolha uma opção acima ou escreva a resposta aqui na thread: sua próxima mensagem aqui vale como resposta.",
-            "Pick an option above or write the answer here in the thread: your next message here counts as the answer.",
+            "Escolha uma opção acima ou responda aqui na thread: sua próxima mensagem vale como resposta.",
+            "Pick an option above or reply here in the thread: your next message counts as the answer.",
         )
     }
 
@@ -252,9 +252,9 @@ impl Text {
 
     pub fn only_requester_answers(self, requester: &str) -> String {
         if self.pt() {
-            format!("Esta pergunta é para <@{requester}>, que fez o pedido. Se tiver uma sugestão, fale com essa pessoa.")
+            format!("Esta pergunta é para <@{requester}>, que fez o pedido. Se tiver uma sugestão, fale com <@{requester}>.")
         } else {
-            format!("This question is for <@{requester}>, who made the request. If you have a suggestion, talk to them.")
+            format!("This question is for <@{requester}>, who made the request. If you have a suggestion, talk to <@{requester}>.")
         }
     }
 
@@ -379,24 +379,35 @@ impl Text {
 
     pub fn same_branch(self) -> &'static str {
         self.pick(
-            "Mesma branch da entrega anterior: o PR aberto antes recebe os commits novos.",
-            "Same branch as the earlier delivery: the pull request opened before gets the new commits.",
+            "Mesma branch da entrega anterior: se você já criou o PR, ele recebe os commits novos; se não, crie por aqui.",
+            "Same branch as the earlier delivery: a pull request you already created gets the new commits; otherwise create it here.",
         )
     }
 
     /// The owner's notification for a result: what, how big, how many warnings.
-    pub fn result_fallback(self, heading: &str, size: Option<&str>, warnings: usize) -> String {
+    pub fn result_fallback(
+        self,
+        heading: &str,
+        size: Option<&str>,
+        blockers: usize,
+        warnings: usize,
+    ) -> String {
         let mut extra = Vec::new();
         if let Some(size) = size {
             extra.push(size.to_string());
         }
-        match (self.pt(), warnings) {
-            (_, 0) => {}
-            (true, 1) => extra.push("1 aviso".into()),
-            (true, n) => extra.push(format!("{n} avisos")),
-            (false, 1) => extra.push("1 warning".into()),
-            (false, n) => extra.push(format!("{n} warnings")),
-        }
+        let count = |n: usize, one: &str, many: &str| match n {
+            0 => None,
+            1 => Some(format!("1 {one}")),
+            n => Some(format!("{n} {many}")),
+        };
+        let (b, w) = if self.pt() {
+            (("bloqueio", "bloqueios"), ("aviso", "avisos"))
+        } else {
+            (("blocker", "blockers"), ("warning", "warnings"))
+        };
+        extra.extend(count(blockers, b.0, b.1));
+        extra.extend(count(warnings, w.0, w.1));
         if extra.is_empty() {
             heading.to_string()
         } else {
@@ -465,13 +476,15 @@ impl Text {
     /// A run that ended without a hand-back, by its state's wire name.
     pub fn ended(self, state: &str) -> String {
         if !self.pt() {
-            return format!("ended as {state} in Houston.");
+            return format!("ended as {state} without handing back. Look at it in Houston.");
         }
         match state {
-            "failed" => "falhou no Houston.".into(),
-            "cancelled" => "foi cancelado no Houston.".into(),
-            "needs_review" => "terminou pedindo revisão no Houston.".into(),
-            other => format!("terminou como {other} no Houston."),
+            "failed" => "falhou sem entregar. Veja o motivo e tente de novo no Houston.".into(),
+            "cancelled" => {
+                "foi cancelado antes de entregar. Se foi engano, tente de novo no Houston.".into()
+            }
+            "needs_review" => "terminou sem entregar e espera você olhar no Houston.".into(),
+            other => format!("terminou como {other} sem entregar. Veja no Houston."),
         }
     }
 
@@ -511,24 +524,24 @@ impl Text {
 
     pub fn adjustment_busy(self, working: usize, cap: usize) -> String {
         if self.pt() {
-            format!("o ajuste não começou: já há {working} trabalhos em andamento (limite {cap}). Aceite de novo quando um terminar.")
+            format!("teve o ajuste adiado: já há {working} trabalhos em andamento (limite {cap}). Clique em Aceitar de novo na mensagem do ajuste quando um terminar.")
         } else {
-            format!("the adjustment did not start: {working} runs are working (limit {cap}). Accept it again when one finishes.")
+            format!("had its adjustment put off: {working} runs are working (limit {cap}). Click Accept again on the adjustment message when one finishes.")
         }
     }
 
     pub fn mid_work(self, ident: &str) -> String {
         if self.pt() {
-            format!("*Mensagem nova durante o trabalho* em {ident}")
+            format!("*Mensagem nova de quem pediu, com o trabalho em andamento* · {ident}")
         } else {
-            format!("*New message during the work* on {ident}")
+            format!("*New message from the requester while the work runs* · {ident}")
         }
     }
 
     pub fn mid_work_hint(self) -> &'static str {
         self.pick(
-            "O agente não recebe esta mensagem. Se ela muda o pedido, passe para o pane no Houston.",
-            "The agent does not get this message. If it changes the request, pass it on in the Houston pane.",
+            "Quem pediu vê 👀 nesta mensagem e conta que ela entrou, mas o agente não a recebe: se ela muda o pedido, passe para o pane no Houston; se não der, peça um ajuste depois da entrega.",
+            "The requester sees 👀 on this message and counts on it, but the agent does not get it: if it changes the request, pass it on in the Houston pane, or ask for an adjustment after the delivery.",
         )
     }
 
@@ -539,8 +552,15 @@ impl Text {
 
     pub fn ignored(self) -> &'static str {
         self.pick(
-            "Ignorado: não era pedido de ajuste",
-            "Ignored: not an adjustment",
+            "Ignorado · a resposta só perdeu o 👀",
+            "Ignored · the reply only lost its 👀",
+        )
+    }
+
+    pub fn ignore_hint(self) -> &'static str {
+        self.pick(
+            "Ignorar só tira o 👀, sem avisar quem pediu. Se não vai fazer um ajuste de verdade, diga isso na thread.",
+            "Ignore only removes the 👀 and tells the requester nothing. If you will not make a real adjustment, say so in the thread.",
         )
     }
 
@@ -600,18 +620,22 @@ mod tests {
         );
         assert_eq!(en.start_outlook(1, 2), "1 working; it starts right away");
         assert_eq!(
-            pt.result_fallback("Pronto para revisão: X", Some("médio"), 2),
+            pt.result_fallback("Pronto para revisão: X", Some("médio"), 0, 2),
             "Pronto para revisão: X (médio, 2 avisos)"
         );
         assert_eq!(
-            pt.result_fallback("Recusado na triagem: X", None, 0),
+            pt.result_fallback("Recusado na triagem: X", None, 0, 0),
             "Recusado na triagem: X"
         );
         assert!(pt.stopped_for(true, "ignored").contains("o pane fechou"));
         assert!(!pt
             .stopped_for(false, "the daemon restarted")
             .contains("daemon"));
-        assert_eq!(pt.ended("failed"), "falhou no Houston.");
+        assert!(pt.ended("failed").starts_with("falhou sem entregar."));
+        assert_eq!(
+            pt.result_fallback("Entregue com bloqueio: X", Some("médio"), 1, 2),
+            "Entregue com bloqueio: X (médio, 1 bloqueio, 2 avisos)"
+        );
         assert!(pt.refuse_title().chars().count() <= 24);
         assert!(pt.other_title().chars().count() <= 24);
         assert_eq!(

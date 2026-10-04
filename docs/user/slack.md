@@ -165,11 +165,25 @@ message like this one in each mapped channel, in the connector's language:
 > 🚫 not going ahead · ⚠️ stopped; the team has been told. When asked something, pick an
 > option or reply in the thread: your next message there is the answer. After 🏁, reply in
 > the thread to ask for an adjustment. After 🚀, start a new request for another change.
+> Before ⚙️, reply in the thread to add to the request: 👀 on your reply means it was taken.
+
+The same message in Português (Brasil):
+
+> **Como pedir mudanças ao @houston.** Mencione @houston numa mensagem nova neste canal
+> dizendo a tela e o que quer mudar; um print ajuda. O andamento aparece como reação na sua
+> mensagem: 👀 recebido, aguardando aprovação do time · ⚙️ em andamento · ❓ tem uma pergunta
+> para você na thread · 🏁 pronto, aguardando revisão (ainda não está no ar) · 🚀 no ar ·
+> 🚫 não vai seguir · ⚠️ parado; o time já foi avisado. Se o bot perguntar algo, escolha uma
+> opção ou responda na thread: sua próxima mensagem lá vale como resposta. Antes do ⚙️, para
+> completar o pedido, responda na thread: o 👀 na sua resposta quer dizer que ela entrou.
+> Depois do 🏁, para mudar algo, responda na thread descrevendo o ajuste. Depois do 🚀, para
+> outra mudança, faça um pedido novo.
 
 ## Limits
 
 - Request text: 8,192 bytes. A longer request, or a mention with no request in it, gets ⚠️
-  and is not filed; the thread says how to fix it and the owner is told.
+  and is not filed; the thread asks the requester to reply right there, the reply is filed
+  as the request, and the owner is told.
 - Images: four per request, 10 MiB each, PNG, JPEG, GIF or WebP checked by their content.
   Others are named in the owner's message and left out. Images are saved under the workspace's
   `.houston/intake/<id>/`, which git ignores.
