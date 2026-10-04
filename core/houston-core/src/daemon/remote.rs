@@ -74,6 +74,7 @@ impl Daemon {
                 .and_then(|v| NotifyDetail::parse(&v).ok())
                 .unwrap_or(default.notify_detail),
             notify_finished: get(remote::KEY_NOTIFY_FINISHED).as_deref() == Some("1"),
+            ntfy_server: get(remote::KEY_NTFY_SERVER).filter(|v| !v.is_empty()),
         }
     }
 
@@ -98,6 +99,19 @@ impl Daemon {
         if let Some(finished) = patch.notify_finished {
             next.notify_finished = finished;
         }
+        let ntfy = match &patch.ntfy_url {
+            Some(raw) => Some(remote::parse_ntfy_url(raw).map_err(|e| anyhow!(e))?),
+            None => None,
+        };
+        if let Some(url) = &ntfy {
+            match url {
+                Some(url) => remote::ntfy::store_url(&self.state_dir, url)?,
+                None => remote::ntfy::delete_url(&self.state_dir)?,
+            }
+            next.ntfy_server = url.as_deref().and_then(remote::ntfy_server);
+            *self.remote.ntfy_url.lock().expect("remote ntfy lock") =
+                url.clone().map(zeroize::Zeroizing::new);
+        }
         let flag = |b: bool| if b { "1" } else { "0" };
         self.db
             .set_setting(remote::KEY_ENABLED, flag(next.enabled))?;
@@ -115,6 +129,10 @@ impl Daemon {
             .set_setting(remote::KEY_NOTIFY_DETAIL, next.notify_detail.as_str())?;
         self.db
             .set_setting(remote::KEY_NOTIFY_FINISHED, flag(next.notify_finished))?;
+        self.db.set_setting(
+            remote::KEY_NTFY_SERVER,
+            next.ntfy_server.as_deref().unwrap_or(""),
+        )?;
         *self.remote.config.lock().expect("remote config lock") = Some(next);
         self.remote.reconfigured.send_modify(|n| *n += 1);
         Ok(())
@@ -343,7 +361,20 @@ impl Daemon {
     /// Idle until Settings > Remote access turns the listener on; re-binds when
     /// the bind address changes.
     pub async fn remote_loops(self: Arc<Self>) {
-        self.remote_listen_loop().await;
+        let rx = self
+            .remote
+            .status_rx
+            .lock()
+            .expect("remote status rx lock")
+            .take();
+        let Some(rx) = rx else {
+            tracing::warn!("remote access: the loops are already running; ignoring a second start");
+            return;
+        };
+        tokio::join!(
+            Arc::clone(&self).remote_listen_loop(),
+            Arc::clone(&self).remote_notify_loop(rx)
+        );
     }
 
     async fn remote_listen_loop(self: Arc<Self>) {
@@ -410,6 +441,116 @@ impl Daemon {
                     }
                 }
             }
+        }
+    }
+
+    /// The topic URL from the in-memory cache, else the keychain. Only called
+    /// once a notification is due, so a daemon without ntfy never asks the keychain.
+    async fn remote_ntfy_url(self: &Arc<Self>) -> Option<zeroize::Zeroizing<String>> {
+        if let Some(url) = self
+            .remote
+            .ntfy_url
+            .lock()
+            .expect("remote ntfy lock")
+            .clone()
+        {
+            return Some(url);
+        }
+        let state_dir = self.state_dir.clone();
+        match tokio::task::spawn_blocking(move || remote::ntfy::load_url(&state_dir)).await {
+            Ok(Ok(Some(url))) => {
+                *self.remote.ntfy_url.lock().expect("remote ntfy lock") = Some(url.clone());
+                Some(url)
+            }
+            Ok(Ok(None)) => {
+                tracing::warn!(
+                    "remote access: ntfy is configured but the keychain holds no topic URL"
+                );
+                None
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("remote access: {e:#}");
+                None
+            }
+            Err(e) => {
+                tracing::warn!("remote access: reading the ntfy topic URL panicked: {e}");
+                None
+            }
+        }
+    }
+
+    /// One timer per status transition; the epoch check makes it a no-op once
+    /// the pane has moved on, which is the debounce and the desktop-answer case.
+    async fn remote_notify_loop(
+        self: Arc<Self>,
+        mut rx: tokio::sync::mpsc::Receiver<remote::StatusEvent>,
+    ) {
+        let client = match reqwest::Client::builder()
+            .timeout(remote::ntfy::SEND_TIMEOUT)
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(
+                    "remote access: building the ntfy client failed, notifications are off: {e}"
+                );
+                return;
+            }
+        };
+        while let Some(ev) = rx.recv().await {
+            let cfg = self.remote_config();
+            if !cfg.enabled || cfg.ntfy_server.is_none() {
+                continue;
+            }
+            let kind = match (ev.from, ev.to) {
+                (_, proto::AgentStatus::NeedsInput) => remote::ntfy::Kind::NeedsInput,
+                (Some(proto::AgentStatus::Working), proto::AgentStatus::Idle)
+                    if cfg.notify_finished =>
+                {
+                    remote::ntfy::Kind::Finished
+                }
+                _ => continue,
+            };
+            let this = Arc::clone(&self);
+            let client = client.clone();
+            let delay = Duration::from_secs(u64::from(cfg.notify_delay_secs));
+            tokio::spawn(async move {
+                tokio::time::sleep(delay).await;
+                if this.remote.seen(ev.session).map(|s| s.epoch) != Some(ev.epoch) {
+                    return;
+                }
+                let Ok(session) = this.get(ev.session) else {
+                    return;
+                };
+                if session.info.hidden || !session.state.lock().expect("state lock").is_live() {
+                    return;
+                }
+                let title = session.title.lock().expect("title lock").clone();
+                let cfg = this.remote_config();
+                if !cfg.enabled || cfg.ntfy_server.is_none() {
+                    return;
+                }
+                let Some(url) = this.remote_ntfy_url().await else {
+                    return;
+                };
+                let msg = remote::ntfy::compose(
+                    kind,
+                    cfg.notify_detail,
+                    &title,
+                    &cfg.effective_url(),
+                    ev.session,
+                );
+                let server = cfg.ntfy_server.as_deref().unwrap_or("ntfy");
+                match remote::ntfy::send(&client, &url, &msg).await {
+                    Ok(()) => {
+                        tracing::info!("remote access: notified {server} about pane {}", ev.session)
+                    }
+                    Err(e) => tracing::warn!(
+                        "remote access: notifying {server} about pane {} failed: {e}",
+                        ev.session
+                    ),
+                }
+            });
         }
     }
 }

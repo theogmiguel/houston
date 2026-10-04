@@ -10,6 +10,7 @@ use houston_protocol as proto;
 use sha2::{Digest, Sha256};
 
 pub mod http;
+pub mod ntfy;
 
 /// A fixed port, so `tailscale serve --bg 47823` stays valid across restarts.
 pub const DEFAULT_BIND: &str = "127.0.0.1:47823";
@@ -24,11 +25,15 @@ pub const INPUT_KEYS_MAX: usize = 16;
 pub const DEVICE_NAME_MAX: usize = 64;
 pub const NOTIFY_DELAY_DEFAULT: u32 = 30;
 pub const NOTIFY_DELAY_MAX: u32 = 600;
+pub const NTFY_URL_MAX: usize = 512;
 // The largest legal request is a 4096-character answer, at most 16 KiB of UTF-8.
 pub const BODY_LIMIT: usize = 20 * 1024;
 // A device polls every few seconds; persisting each request would turn reads
 // into a write stream, so last-seen is recorded at most once a minute.
 pub const LAST_SEEN_WRITE_INTERVAL_MS: u64 = 60_000;
+// Status transitions are a few per turn; the bound only matters when no
+// notifier loop drains the queue, as in a daemon embedded by a test.
+const STATUS_QUEUE: usize = 1024;
 
 pub const REMOTE_KEYS: [(&str, &[u8]); 12] = [
     ("enter", b"\r"),
@@ -51,6 +56,8 @@ pub(crate) const KEY_PUBLIC_URL: &str = "remote_public_url";
 pub(crate) const KEY_NOTIFY_DELAY: &str = "remote_notify_delay_secs";
 pub(crate) const KEY_NOTIFY_DETAIL: &str = "remote_notify_detail";
 pub(crate) const KEY_NOTIFY_FINISHED: &str = "remote_notify_finished";
+/// The ntfy server origin while the keychain holds a topic URL; empty when off.
+pub(crate) const KEY_NTFY_SERVER: &str = "remote_ntfy_server";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotifyDetail {
@@ -86,6 +93,8 @@ pub struct Config {
     pub notify_delay_secs: u32,
     pub notify_detail: NotifyDetail,
     pub notify_finished: bool,
+    /// Set while notifications are on; the topic URL itself is in the keychain.
+    pub ntfy_server: Option<String>,
 }
 
 impl Default for Config {
@@ -97,6 +106,7 @@ impl Default for Config {
             notify_delay_secs: NOTIFY_DELAY_DEFAULT,
             notify_detail: NotifyDetail::Generic,
             notify_finished: false,
+            ntfy_server: None,
         }
     }
 }
@@ -143,6 +153,7 @@ pub struct ConfigPatch {
     pub enabled: Option<bool>,
     pub bind: Option<String>,
     pub public_url: Option<String>,
+    pub ntfy_url: Option<String>,
     pub notify_delay_secs: Option<u32>,
     pub notify_detail: Option<String>,
     pub notify_finished: Option<bool>,
@@ -189,6 +200,47 @@ pub fn parse_public_url(raw: &str) -> Result<Option<String>, String> {
         ));
     }
     Ok(Some(url.origin().ascii_serialization()))
+}
+
+/// `""` turns notifications off. Otherwise an http(s) topic URL without credentials.
+pub fn parse_ntfy_url(raw: &str) -> Result<Option<String>, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    let shape = "expected a topic URL such as https://ntfy.sh/<unguessable-topic>";
+    if raw.len() > NTFY_URL_MAX {
+        return Err(format!(
+            "ntfy URL is {} bytes; the limit is {NTFY_URL_MAX}: {shape}",
+            raw.len()
+        ));
+    }
+    // The URL is a bearer secret, so errors name its shape, never its value.
+    let url =
+        reqwest::Url::parse(raw).map_err(|e| format!("ntfy URL is not a URL ({e}): {shape}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!("ntfy URL uses scheme {:?}: {shape}", url.scheme()));
+    }
+    if url.host_str().is_none_or(str::is_empty) {
+        return Err(format!("ntfy URL has no host: {shape}"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(format!("ntfy URL carries credentials: {shape}"));
+    }
+    if url.path().trim_matches('/').is_empty() {
+        return Err(format!("ntfy URL names no topic: {shape}"));
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(format!("ntfy URL has a query or fragment: {shape}"));
+    }
+    Ok(Some(url.to_string()))
+}
+
+/// Origin of the ntfy server, safe to show and log; the topic is the secret part.
+pub fn ntfy_server(url: &str) -> Option<String> {
+    reqwest::Url::parse(url)
+        .ok()
+        .map(|u| u.origin().ascii_serialization())
 }
 
 pub fn validate_notify_delay(secs: u32) -> Result<u32, String> {
@@ -404,18 +456,34 @@ pub struct ListenState {
 pub(crate) struct SeenStatus {
     pub status: proto::AgentStatus,
     pub since_ms: u64,
+    /// Bumped on every transition; a pending notification fires only if the
+    /// epoch it was scheduled under is still current.
+    pub epoch: u64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StatusEvent {
+    pub session: u32,
+    pub from: Option<proto::AgentStatus>,
+    pub to: proto::AgentStatus,
+    pub epoch: u64,
 }
 
 /// In-memory remote state owned by the daemon. Configuration persists in the
 /// settings table; everything here is rebuilt at boot.
 pub struct Runtime {
     pub(crate) config: Mutex<Option<Config>>,
+    pub(crate) ntfy_url: Mutex<Option<zeroize::Zeroizing<String>>>,
     pub(crate) listen: Mutex<ListenState>,
     pub(crate) reconfigured: tokio::sync::watch::Sender<u64>,
     pairing: Mutex<Option<Pairing>>,
     limiter: Mutex<FailureLimiter>,
     pub(crate) seen: Mutex<HashMap<u32, SeenStatus>>,
     pub(crate) last_seen_written: Mutex<HashMap<i64, u64>>,
+    status_tx: tokio::sync::mpsc::Sender<StatusEvent>,
+    /// Taken by the notifier loop; transitions before it starts wait in the channel.
+    pub(crate) status_rx: Mutex<Option<tokio::sync::mpsc::Receiver<StatusEvent>>>,
+    next_epoch: std::sync::atomic::AtomicU64,
 }
 
 impl Default for Runtime {
@@ -426,14 +494,19 @@ impl Default for Runtime {
 
 impl Runtime {
     pub fn new() -> Self {
+        let (status_tx, status_rx) = tokio::sync::mpsc::channel(STATUS_QUEUE);
         Self {
             config: Mutex::new(None),
+            ntfy_url: Mutex::new(None),
             listen: Mutex::new(ListenState::default()),
             reconfigured: tokio::sync::watch::Sender::new(0),
             pairing: Mutex::new(None),
             limiter: Mutex::new(FailureLimiter::default()),
             seen: Mutex::new(HashMap::new()),
             last_seen_written: Mutex::new(HashMap::new()),
+            status_tx,
+            status_rx: Mutex::new(Some(status_rx)),
+            next_epoch: std::sync::atomic::AtomicU64::new(1),
         }
     }
 
@@ -488,13 +561,28 @@ impl Runtime {
     }
 
     pub(crate) fn note_status(&self, session: u32, status: proto::AgentStatus, now_ms: u64) {
-        self.seen.lock().expect("remote seen lock").insert(
+        let epoch = self
+            .next_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let from = self
+            .seen
+            .lock()
+            .expect("remote seen lock")
+            .insert(
+                session,
+                SeenStatus {
+                    status,
+                    since_ms: now_ms,
+                    epoch,
+                },
+            )
+            .map(|s| s.status);
+        let _ = self.status_tx.try_send(StatusEvent {
             session,
-            SeenStatus {
-                status,
-                since_ms: now_ms,
-            },
-        );
+            from,
+            to: status,
+            epoch,
+        });
     }
 
     pub(crate) fn seen(&self, session: u32) -> Option<SeenStatus> {
@@ -591,6 +679,17 @@ mod tests {
         assert!(parse_public_url("https://box/x").is_err());
         assert!(parse_public_url("ftp://box").is_err());
         assert!(parse_public_url("https://u:p@box").is_err());
+    }
+
+    #[test]
+    fn ntfy_errors_never_echo_the_topic() {
+        let err = parse_ntfy_url("https://ntfy.sh/secret-topic?x=1").unwrap_err();
+        assert!(!err.contains("secret-topic"), "{err}");
+        assert!(parse_ntfy_url("https://ntfy.sh/").is_err());
+        assert_eq!(
+            parse_ntfy_url("https://ntfy.sh/abc").unwrap().as_deref(),
+            Some("https://ntfy.sh/abc")
+        );
     }
 
     #[test]
