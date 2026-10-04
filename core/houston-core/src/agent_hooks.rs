@@ -195,6 +195,7 @@ pub fn provider_slug(provider: proto::AgentKind) -> &'static str {
         proto::AgentKind::Copilot => "copilot",
         proto::AgentKind::Aider => "aider",
         proto::AgentKind::Grok => "grok",
+        proto::AgentKind::Zcode => "zcode",
         proto::AgentKind::Shell => "shell",
         proto::AgentKind::Ssh => "ssh",
         proto::AgentKind::Custom => "custom",

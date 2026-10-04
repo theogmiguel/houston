@@ -1,4 +1,4 @@
-# Wire protocol v134
+# Wire protocol v135
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -533,7 +533,7 @@ Enum values are `snake_case` on the wire unless marked otherwise. Enums with
 data are internally tagged; the tag field is named in each entry below.
 
 ```
-AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | droid | copilot | aider | ssh
+AgentKind          claude | codex | antigravity | shell | custom | opencode | cursor | grok | zcode | droid | copilot | aider | ssh
 SessionState       running | exited | killed | interrupted
 AgentStatus        kebab: spawning | working | idle | needs-input | unavailable
 ContextState       snake: unknown | idle | working | near_limit | reset
@@ -1290,6 +1290,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 135 | **ZCode is a spawnable provider.** `AgentKind` gains `zcode`, accepted wherever a spawnable kind is (`session_create`, `pane_spawn`, `agent_hooks_set`, hook rows). ZCode panes launch `zcode` with `--mode` for plan, auto and bypass approval, resume by `--resume <session id>` from the SessionStart hook, receive their first prompt as a paste once the TUI has drawn, and refuse a non-empty `model` naming the limit. Its hooks and orchestration plugin live in `~/.zcode/cli/config.json`. Tasks, routines and harness review refuse it by name |
 | 134 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`, and `remote_grids_publish` with `RemoteGrid`, so paired devices group panes by desktop grid. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
 | 133 | **Children ask the orchestrator before alerting the user, retain instruction queues and expose full results after close.** `InboxKind` gains progress/question/blocked/reply and `InboxRow.reply_to?`. `DelegationState.asked_orchestrator` and `DelegationInfo.input_request?` type input ownership, stable identity, bounded redacted provider permission evidence and escalation reasons. Every actual permission is parent-first; parents deny or escalate and only the operator may approve; only user-owned asks count in `children_waiting`. MCP/CLI gain report, reply, deny, escalate and instruction list/get/cancel/resume. Typed instruction snapshots, acceptance and detail record queued/held/delivered/cancelled/uncertain states. Result previews gain stable message/request identity and readiness; result pagination and scoped full-result detail/refusal support archived children. All new `/ws` messages and payloads are defined above. |
 | 132 | **Claude panes use the fullscreen TUI by default.** `SessionPolicy.claude_fullscreen` defaults to true and can be changed through `session_policy_set`; the launcher sets the fullscreen environment flag when enabled. |
