@@ -490,6 +490,10 @@ signal through fill + text, never a border.
 and stay quiet: `BTN_GHOST`, no colour. Save the weight for the
 affirmative action.
 
+Use `ActionMenu` as the single trailing control when a row has secondary actions.
+Keep destructive removal in its menu; choose one contextual trigger label or the
+ellipsis trigger rather than placing every row action beside one another.
+
 ### Component boundary
 
 Renderer UI composes from `ui/src/renderer/src/components/ui/`. Outside that directory, class
@@ -669,7 +673,8 @@ Use `SectionHead` with `Count` immediately after its label on the same line, wit
 a 6px gap, tabular
 numerals, the label's size and one softer ink step. Do not use parentheses, a
 middle dot, monospace numerals or right alignment; the right end of a heading is
-for its action. Omit zero in tabs and headings; disable an action instead of
+for its action. Use its inset option when a group heading sits beside a colored rail.
+Omit zero in tabs and headings; disable an action instead of
 showing `(0)`. Put phrases such as “1 routine” in descriptions. Keep `Chip` counts
 for metrics.
 
@@ -728,7 +733,8 @@ one side at a time with a back button. Pass `selectedId` and `onSelect` when sel
 must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
 new selection.
 
-Use `RoutineDetail` for the selected routine's schedule, unattended provider and run history.
+Use `RoutineDetail` for the selected routine's schedule, unattended provider and run history;
+Edit and Delete live in its trailing action menu beside Run now and the enabled switch.
 `ConnectionCell` keeps an MCP destination's state and any failure reason together inside its
 matrix cell; the cell action updates that server's destination and syncs the matching CLI.
 

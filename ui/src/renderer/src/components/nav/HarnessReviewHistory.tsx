@@ -113,7 +113,7 @@ function ReviewGroup({
   return (
     <Card.Group rail={rail}>
       <section aria-label={label}>
-        <SectionHead title={label} count={findings.length} />
+        <SectionHead title={label} count={findings.length} inset />
       </section>
       {findings.map((finding) => {
         const task = finding.task
