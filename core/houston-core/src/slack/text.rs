@@ -1,0 +1,216 @@
+//! Houston's own words in Slack, in the connector's language: fixed labels,
+//! the owner's direct messages and notices no agent is there to write. What
+//! the requester reads about the work itself comes from the agent.
+
+use houston_protocol::SlackLanguage;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Text(pub SlackLanguage);
+
+impl Text {
+    fn pick(self, pt: &'static str, en: &'static str) -> &'static str {
+        match self.0 {
+            SlackLanguage::PtBr => pt,
+            SlackLanguage::En => en,
+        }
+    }
+
+    fn pt(self) -> bool {
+        self.0 == SlackLanguage::PtBr
+    }
+
+    pub fn accept(self) -> &'static str {
+        self.pick("Aceitar", "Accept")
+    }
+
+    pub fn refuse(self) -> &'static str {
+        self.pick("Recusar", "Refuse")
+    }
+
+    pub fn cancel(self) -> &'static str {
+        self.pick("Cancelar", "Cancel")
+    }
+
+    pub fn view_message(self) -> &'static str {
+        self.pick("Ver mensagem", "View message")
+    }
+
+    /// "*New request* in #channel, from @someone".
+    pub fn new_request(self, channel: &str, author: &str) -> String {
+        if self.pt() {
+            format!("*Novo pedido* em <#{channel}>, de <@{author}>")
+        } else {
+            format!("*New request* in <#{channel}>, from <@{author}>")
+        }
+    }
+
+    /// How a request is named before the agent has given it a subject.
+    pub fn request_of(self, channel: &str, author: &str) -> String {
+        if self.pt() {
+            format!("o pedido de <@{author}> em <#{channel}>")
+        } else {
+            format!("the request from <@{author}> in <#{channel}>")
+        }
+    }
+
+    /// What accepting would do now, given the working runs and the cap.
+    pub fn start_outlook(self, working: usize, cap: usize) -> String {
+        match (self.pt(), working) {
+            (true, 0) => "nenhum trabalho em andamento, começa na hora".into(),
+            (false, 0) => "nothing else is working; it starts right away".into(),
+            (true, n) if n < cap => format!("{n} em andamento, começa na hora"),
+            (false, n) if n < cap => format!("{n} working; it starts right away"),
+            (true, n) => format!("{n} em andamento (limite {cap}); entra na fila"),
+            (false, n) => format!("{n} working (limit {cap}); it joins the queue"),
+        }
+    }
+
+    pub fn accepted_started(self) -> &'static str {
+        self.pick("Aceito · começou", "Accepted · started")
+    }
+
+    pub fn accepted_queued(self, position: usize) -> String {
+        if self.pt() {
+            format!("Aceito · na fila, posição {position}")
+        } else {
+            format!("Accepted · queued, position {position}")
+        }
+    }
+
+    pub fn refused_by_owner(self) -> &'static str {
+        self.pick("Recusado por você", "Refused by you")
+    }
+
+    pub fn closed_in_houston(self) -> &'static str {
+        self.pick(
+            "Fechado no Houston antes de começar",
+            "Closed in Houston before it started",
+        )
+    }
+
+    /// The refusal modal; Slack caps a modal title at 24 characters.
+    pub fn refuse_title(self) -> &'static str {
+        self.pick("Recusar pedido", "Refuse request")
+    }
+
+    pub fn refuse_label(self) -> &'static str {
+        self.pick("Motivo (opcional)", "Reason (optional)")
+    }
+
+    pub fn refuse_hint(self) -> &'static str {
+        self.pick(
+            "Vai para a thread do pedido como você escrever. Sem motivo, o pedido recebe só 🚫.",
+            "Goes to the request's thread as you write it. Without one, the request only gets 🚫.",
+        )
+    }
+
+    pub fn attention(self) -> &'static str {
+        self.pick("*Atenção*", "*Attention*")
+    }
+
+    pub fn not_filed(self, why: &str) -> String {
+        if self.pt() {
+            format!("não foi registrado: {why}")
+        } else {
+            format!("was not filed: {why}")
+        }
+    }
+
+    pub fn too_long(self, len: usize, max: usize) -> String {
+        if self.pt() {
+            format!("o texto tem {len} bytes, acima do limite de {max}")
+        } else {
+            format!("its text is {len} bytes, over the {max}-byte limit")
+        }
+    }
+
+    pub fn empty_request(self) -> &'static str {
+        self.pick(
+            "a menção não tem texto de pedido",
+            "the mention has no request text",
+        )
+    }
+
+    pub fn could_not_start(self, why: &str) -> String {
+        if self.pt() {
+            format!("não pôde começar: {why}")
+        } else {
+            format!("could not start: {why}")
+        }
+    }
+
+    pub fn waiting_for_confirmation(self) -> &'static str {
+        self.pick(
+            "aguarda uma confirmação no pane do Houston",
+            "is waiting for a confirmation in its Houston pane",
+        )
+    }
+
+    pub fn stopped(self, reason: &str) -> String {
+        if self.pt() {
+            format!("parou sem entregar ({reason}). Retome ou tente de novo no Houston.")
+        } else {
+            format!("stopped without handing back ({reason}). Resume or retry it in Houston.")
+        }
+    }
+
+    pub fn ended_as(self, state: &str) -> String {
+        if self.pt() {
+            format!("terminou como {state} no Houston.")
+        } else {
+            format!("ended as {state} in Houston.")
+        }
+    }
+
+    pub fn images_over_count(self, max: usize, attached: usize) -> String {
+        if self.pt() {
+            format!("Só as {max} primeiras imagens entraram ({attached} anexadas).")
+        } else {
+            format!("Only the first {max} files were kept ({attached} attached).")
+        }
+    }
+
+    pub fn image_too_big(self, name: &str, size: u64, max: u64) -> String {
+        if self.pt() {
+            format!("{name} tem {size} bytes, acima do limite de {max}; ficou de fora.")
+        } else {
+            format!("{name} is {size} bytes, over the {max}-byte limit; left out.")
+        }
+    }
+
+    pub fn image_failed(self, name: &str, why: &str) -> String {
+        if self.pt() {
+            format!("{name} ficou de fora ({why}).")
+        } else {
+            format!("{name} was left out ({why}).")
+        }
+    }
+
+    pub fn not_an_image(self, name: &str) -> String {
+        if self.pt() {
+            format!("{name} não é uma imagem PNG, JPEG, GIF ou WebP; ficou de fora.")
+        } else {
+            format!("{name} is not a PNG, JPEG, GIF or WebP image; left out.")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_phrase_follows_the_language() {
+        let pt = Text(SlackLanguage::PtBr);
+        let en = Text(SlackLanguage::En);
+        assert_eq!(pt.accept(), "Aceitar");
+        assert_eq!(en.accept(), "Accept");
+        assert_eq!(
+            pt.start_outlook(2, 2),
+            "2 em andamento (limite 2); entra na fila"
+        );
+        assert_eq!(en.start_outlook(1, 2), "1 working; it starts right away");
+        assert!(pt.refuse_title().chars().count() <= 24);
+        assert!(en.refuse_title().chars().count() <= 24);
+    }
+}

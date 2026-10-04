@@ -5,7 +5,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::StreamExt;
 use reqwest::Url;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::time::Duration;
 
 use crate::ssh_credentials::Secret;
@@ -73,6 +73,12 @@ pub struct Identity {
     pub bot_user_id: String,
 }
 
+#[derive(Clone, Copy)]
+enum Body<'a> {
+    Form(&'a [(&'a str, &'a str)]),
+    Json(&'a Value),
+}
+
 #[derive(Clone)]
 pub struct Api {
     base: Url,
@@ -99,21 +105,25 @@ impl Api {
             .expect("Slack method names are URL-safe")
     }
 
-    /// Slack's `{"ok": false, "error": ...}` (HTTP 200) is an error here. Reads
-    /// take query arguments; `chat.postMessage` sends JSON, as text can outgrow a URL.
     async fn call(&self, method: &str, token: &Secret, form: &[(&str, &str)]) -> Result<Value> {
-        let json_body = method == "chat.postMessage";
+        self.send(method, token, Body::Form(form)).await
+    }
+
+    async fn call_json(&self, method: &str, token: &Secret, body: &Value) -> Result<Value> {
+        self.send(method, token, Body::Json(body)).await
+    }
+
+    /// Slack's `{"ok": false, "error": ...}` (HTTP 200) is an error here. Reads
+    /// take query arguments; writes send JSON, as text and blocks can outgrow a URL.
+    async fn send(&self, method: &str, token: &Secret, body: Body<'_>) -> Result<Value> {
         for attempt in 0..2 {
             let mut url = self.url(method);
-            let mut req = if json_body {
-                let body: serde_json::Map<String, Value> = form
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
-                    .collect();
-                self.http.post(url).json(&body)
-            } else {
-                url.query_pairs_mut().extend_pairs(form);
-                self.http.post(url)
+            let mut req = match body {
+                Body::Json(value) => self.http.post(url).json(value),
+                Body::Form(form) => {
+                    url.query_pairs_mut().extend_pairs(form);
+                    self.http.post(url)
+                }
             };
             req = req.bearer_auth(token.expose());
             let resp = req
@@ -182,31 +192,87 @@ impl Api {
         check_socket_url(raw)
     }
 
+    /// Posts to a channel (in a thread when `thread_ts` is given) or a DM
+    /// channel. `text` is the notification fallback when `blocks` is given.
     /// Returns the posted message's `ts`.
     pub async fn post_message(
         &self,
         bot: &Secret,
         channel: &str,
-        thread_ts: &str,
+        thread_ts: Option<&str>,
         text: &str,
+        blocks: Option<&Value>,
     ) -> Result<String> {
-        let body = self
-            .call(
-                "chat.postMessage",
-                bot,
-                &[
-                    ("channel", channel),
-                    ("thread_ts", thread_ts),
-                    ("text", text),
-                    ("unfurl_links", "false"),
-                ],
-            )
-            .await?;
+        let mut body = json!({
+            "channel": channel,
+            "text": text,
+            "unfurl_links": false,
+            "unfurl_media": false,
+        });
+        if let Some(ts) = thread_ts {
+            body["thread_ts"] = json!(ts);
+        }
+        if let Some(blocks) = blocks {
+            body["blocks"] = blocks.clone();
+        }
+        let body = self.call_json("chat.postMessage", bot, &body).await?;
         Ok(body
             .get("ts")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string())
+    }
+
+    pub async fn update_message(
+        &self,
+        bot: &Secret,
+        channel: &str,
+        ts: &str,
+        text: &str,
+        blocks: Option<&Value>,
+    ) -> Result<()> {
+        let body = json!({
+            "channel": channel,
+            "ts": ts,
+            "text": text,
+            "blocks": blocks.cloned().unwrap_or_else(|| json!([])),
+        });
+        self.call_json("chat.update", bot, &body).await.map(|_| ())
+    }
+
+    /// A message only `user` sees, in the thread of `thread_ts`.
+    pub async fn post_ephemeral(
+        &self,
+        bot: &Secret,
+        channel: &str,
+        user: &str,
+        thread_ts: Option<&str>,
+        text: &str,
+    ) -> Result<()> {
+        let mut body = json!({ "channel": channel, "user": user, "text": text });
+        if let Some(ts) = thread_ts {
+            body["thread_ts"] = json!(ts);
+        }
+        self.call_json("chat.postEphemeral", bot, &body)
+            .await
+            .map(|_| ())
+    }
+
+    /// The direct-message channel between the bot and `user`.
+    pub async fn open_dm(&self, bot: &Secret, user: &str) -> Result<String> {
+        let body = self
+            .call("conversations.open", bot, &[("users", user)])
+            .await?;
+        body.pointer("/channel/id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("Slack conversations.open answered without a channel id"))
+    }
+
+    /// Opens a modal; `trigger_id` comes from a click and expires in seconds.
+    pub async fn open_view(&self, bot: &Secret, trigger_id: &str, view: &Value) -> Result<()> {
+        let body = json!({ "trigger_id": trigger_id, "view": view });
+        self.call_json("views.open", bot, &body).await.map(|_| ())
     }
 
     /// An `already_reacted` answer is success: the reaction is there.
@@ -226,6 +292,27 @@ impl Api {
             .await
         {
             Err(e) if e.to_string().ends_with("already_reacted") => Ok(()),
+            other => other.map(|_| ()),
+        }
+    }
+
+    /// A `no_reaction` answer is success: the reaction is gone.
+    pub async fn remove_reaction(
+        &self,
+        bot: &Secret,
+        channel: &str,
+        ts: &str,
+        name: &str,
+    ) -> Result<()> {
+        match self
+            .call(
+                "reactions.remove",
+                bot,
+                &[("channel", channel), ("timestamp", ts), ("name", name)],
+            )
+            .await
+        {
+            Err(e) if e.to_string().ends_with("no_reaction") => Ok(()),
             other => other.map(|_| ()),
         }
     }

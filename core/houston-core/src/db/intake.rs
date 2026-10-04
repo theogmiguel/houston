@@ -51,6 +51,22 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             sent_at    INTEGER
         );",
     )?;
+    super::add_column_if_missing(
+        conn,
+        "intake_events",
+        "status_reaction",
+        "status_reaction TEXT",
+    )?;
+    for (column, def) in [
+        ("target", "target TEXT NOT NULL DEFAULT 'thread'"),
+        ("blocks", "blocks TEXT"),
+        ("posted_channel", "posted_channel TEXT"),
+        ("update_of", "update_of TEXT"),
+        ("message_ts", "message_ts TEXT"),
+        ("remove_reaction", "remove_reaction TEXT"),
+    ] {
+        super::add_column_if_missing(conn, "intake_outbox", column, def)?;
+    }
     Ok(())
 }
 
@@ -123,13 +139,94 @@ fn question_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRow> {
     })
 }
 
+/// Where an outbox row goes: the request's thread, the owner's direct
+/// messages, an edit of an earlier row's message, or a reaction change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboxTarget {
+    Thread,
+    Dm,
+    Update,
+    React,
+}
+
+impl OutboxTarget {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Thread => "thread",
+            Self::Dm => "dm",
+            Self::Update => "update",
+            Self::React => "react",
+        }
+    }
+
+    fn parse(raw: &str) -> Self {
+        match raw {
+            "dm" => Self::Dm,
+            "update" => Self::Update,
+            "react" => Self::React,
+            _ => Self::Thread,
+        }
+    }
+}
+
+/// One message or reaction Houston owes Slack. `blocks` is Block Kit JSON;
+/// `text` is then the notification fallback. A reaction applies to
+/// `message_ts`, or to the request itself when it is absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outgoing {
+    pub target: OutboxTarget,
+    pub text: String,
+    pub blocks: Option<String>,
+    pub reaction: Option<String>,
+    pub remove_reaction: Option<String>,
+    pub message_ts: Option<String>,
+    pub update_of: Option<String>,
+}
+
+impl Outgoing {
+    pub fn message(target: OutboxTarget, text: String, blocks: Option<String>) -> Self {
+        Self {
+            target,
+            text,
+            blocks,
+            reaction: None,
+            remove_reaction: None,
+            message_ts: None,
+            update_of: None,
+        }
+    }
+
+    pub fn update(of: &str, text: String, blocks: Option<String>) -> Self {
+        Self {
+            update_of: Some(of.to_string()),
+            ..Self::message(OutboxTarget::Update, text, blocks)
+        }
+    }
+
+    pub fn react(message_ts: Option<&str>, add: Option<&str>, remove: Option<&str>) -> Self {
+        Self {
+            reaction: add.map(str::to_string),
+            remove_reaction: remove.map(str::to_string),
+            message_ts: message_ts.map(str::to_string),
+            ..Self::message(OutboxTarget::React, String::new(), None)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboxRow {
     pub id: i64,
     pub intake_id: i64,
-    pub text: String,
-    pub reaction: Option<String>,
     pub attempts: u32,
+    pub item: Outgoing,
+}
+
+/// Where an earlier outbox row's message landed, once Slack accepted it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Posted {
+    pub sent: bool,
+    pub channel: Option<String>,
+    pub ts: Option<String>,
 }
 
 pub struct IntakeWrite<'a> {
@@ -363,22 +460,66 @@ impl Db {
         &self,
         intake_id: i64,
         key: &str,
-        text: &str,
-        reaction: Option<&str>,
+        item: &Outgoing,
         now_ms: i64,
     ) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.execute(
-            "INSERT OR IGNORE INTO intake_outbox (intake_id, dedupe_key, text, reaction, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![intake_id, key, text, reaction, now_ms],
-        )? > 0)
+        push(&conn, intake_id, key, item, now_ms)
+    }
+
+    /// Moves the request's status reaction to `name`, queueing the swap.
+    /// `Ok(false)` when it already shows `name`.
+    pub fn intake_set_status(&self, intake_id: i64, name: &str, now_ms: i64) -> Result<bool> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT status_reaction FROM intake_events WHERE id = ?1",
+                [intake_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        if current.as_deref() == Some(name) {
+            return Ok(false);
+        }
+        let seq: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM intake_outbox WHERE intake_id = ?1 AND target = 'react'",
+            [intake_id],
+            |r| r.get(0),
+        )?;
+        push(
+            &tx,
+            intake_id,
+            &format!("status:{intake_id}:{seq}"),
+            &Outgoing::react(None, Some(name), current.as_deref()),
+            now_ms,
+        )?;
+        tx.execute(
+            "UPDATE intake_events SET status_reaction = ?2 WHERE id = ?1",
+            rusqlite::params![intake_id, name],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    pub fn intake_status(&self, intake_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT status_reaction FROM intake_events WHERE id = ?1",
+                [intake_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten())
     }
 
     pub fn intake_outbox_pending(&self, limit: u32) -> Result<Vec<OutboxRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
-            "SELECT id, intake_id, text, reaction, attempts FROM intake_outbox \
+            "SELECT id, intake_id, attempts, target, text, blocks, reaction, remove_reaction, \
+                    message_ts, update_of FROM intake_outbox \
              WHERE sent_at IS NULL ORDER BY id LIMIT ?1",
         )?;
         let rows = stmt
@@ -386,20 +527,34 @@ impl Db {
                 Ok(OutboxRow {
                     id: r.get(0)?,
                     intake_id: r.get(1)?,
-                    text: r.get(2)?,
-                    reaction: r.get(3)?,
-                    attempts: r.get(4)?,
+                    attempts: r.get(2)?,
+                    item: Outgoing {
+                        target: OutboxTarget::parse(&r.get::<_, String>(3)?),
+                        text: r.get(4)?,
+                        blocks: r.get(5)?,
+                        reaction: r.get(6)?,
+                        remove_reaction: r.get(7)?,
+                        message_ts: r.get(8)?,
+                        update_of: r.get(9)?,
+                    },
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    pub fn intake_outbox_sent(&self, id: i64, posted_ts: Option<&str>, now_ms: i64) -> Result<()> {
+    pub fn intake_outbox_sent(
+        &self,
+        id: i64,
+        posted_channel: Option<&str>,
+        posted_ts: Option<&str>,
+        now_ms: i64,
+    ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
-            "UPDATE intake_outbox SET sent_at = ?2, posted_ts = ?3, last_error = NULL WHERE id = ?1",
-            rusqlite::params![id, now_ms, posted_ts],
+            "UPDATE intake_outbox SET sent_at = ?2, posted_channel = ?3, posted_ts = ?4, \
+             last_error = NULL WHERE id = ?1",
+            rusqlite::params![id, now_ms, posted_channel, posted_ts],
         )?;
         Ok(())
     }
@@ -411,6 +566,25 @@ impl Db {
             rusqlite::params![id, error],
         )?;
         Ok(())
+    }
+
+    /// Where the row queued under `key` was posted; `None` when there is no such row.
+    pub fn intake_outbox_posted(&self, key: &str) -> Result<Option<Posted>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn
+            .query_row(
+                "SELECT sent_at IS NOT NULL, posted_channel, posted_ts FROM intake_outbox \
+                 WHERE dedupe_key = ?1",
+                [key],
+                |r| {
+                    Ok(Posted {
+                        sent: r.get(0)?,
+                        channel: r.get(1)?,
+                        ts: r.get(2)?,
+                    })
+                },
+            )
+            .optional()?)
     }
 
     pub fn intake_outbox_has(&self, key: &str) -> Result<bool> {
@@ -446,4 +620,30 @@ impl Db {
         )?;
         Ok(())
     }
+}
+
+fn push(
+    conn: &Connection,
+    intake_id: i64,
+    key: &str,
+    item: &Outgoing,
+    now_ms: i64,
+) -> Result<bool> {
+    Ok(conn.execute(
+        "INSERT OR IGNORE INTO intake_outbox (intake_id, dedupe_key, target, text, blocks, \
+            reaction, remove_reaction, message_ts, update_of, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            intake_id,
+            key,
+            item.target.name(),
+            item.text,
+            item.blocks,
+            item.reaction,
+            item.remove_reaction,
+            item.message_ts,
+            item.update_of,
+            now_ms
+        ],
+    )? > 0)
 }

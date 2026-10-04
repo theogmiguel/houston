@@ -27,6 +27,7 @@ static SHIM: OnceLock<PathBuf> = OnceLock::new();
 const OWNER: &str = "UOWNER";
 const REQUESTER: &str = "UREQ";
 const CHANNEL: &str = "C0TEST";
+const DM: &str = "D0OWNER";
 
 /// A Claude that stays up without hooks, like the task Start tests use, and
 /// prints its arguments so a test can read the brief it was started with.
@@ -70,7 +71,8 @@ fn git(dir: &Path, args: &[&str]) {
 #[derive(Default)]
 struct Recorded {
     posts: Vec<Value>,
-    reactions: Vec<Value>,
+    /// (method, arguments) of every write besides `chat.postMessage`.
+    calls: Vec<(String, Value)>,
     acks: Vec<String>,
     history: Vec<Value>,
     next_ts: u64,
@@ -115,27 +117,94 @@ impl Fake {
         self.push.send(env.to_string()).expect("a connected socket");
     }
 
+    fn send_interactive(&self, envelope_id: &str, payload: Value) {
+        let env = json!({"envelope_id": envelope_id, "type": "interactive", "payload": payload});
+        self.push.send(env.to_string()).expect("a connected socket");
+    }
+
     fn posts(&self) -> Vec<Value> {
         self.rec.lock().unwrap().posts.clone()
     }
 
-    async fn await_post(&self, needle: &str) -> Value {
+    fn thread_posts(&self) -> Vec<Value> {
+        self.posts()
+            .into_iter()
+            .filter(|p| p["channel"] == CHANNEL)
+            .collect()
+    }
+
+    fn calls(&self, method: &str) -> Vec<Value> {
+        self.rec
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(m, _)| m == method)
+            .map(|(_, v)| v.clone())
+            .collect()
+    }
+
+    /// The reactions Houston leaves on the message at `ts`, after every add
+    /// and remove it made.
+    fn reactions_on(&self, ts: &str) -> Vec<String> {
+        let mut shown: Vec<String> = Vec::new();
+        for (method, args) in self.rec.lock().unwrap().calls.iter() {
+            if args["timestamp"] != ts {
+                continue;
+            }
+            let name = args["name"].as_str().unwrap_or_default().to_string();
+            match method.as_str() {
+                "reactions.add" if !shown.contains(&name) => shown.push(name),
+                "reactions.remove" => shown.retain(|n| *n != name),
+                _ => {}
+            }
+        }
+        shown
+    }
+
+    async fn await_reactions(&self, ts: &str, expected: &[&str]) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        while self.reactions_on(ts) != expected {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "reactions on {ts} are {:?}, expected {expected:?}",
+                self.reactions_on(ts)
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// The first `chat.postMessage` (or, with `method`, call) whose JSON
+    /// contains `needle`, waiting for it.
+    async fn await_call(&self, method: &str, needle: &str) -> Value {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
         loop {
-            if let Some(p) = self
-                .posts()
-                .into_iter()
-                .find(|p| p["text"].as_str().is_some_and(|t| t.contains(needle)))
-            {
+            let pool = if method == "chat.postMessage" {
+                self.posts()
+            } else {
+                self.calls(method)
+            };
+            if let Some(p) = pool.into_iter().find(|p| p.to_string().contains(needle)) {
                 return p;
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
-                "no post containing {needle:?}; posts: {:?}",
-                self.posts()
+                "no {method} containing {needle:?}; posts: {:?}; calls: {:?}",
+                self.posts(),
+                self.rec.lock().unwrap().calls
             );
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
+    }
+
+    async fn await_post(&self, needle: &str) -> Value {
+        self.await_call("chat.postMessage", needle).await
+    }
+
+    async fn await_dm(&self, needle: &str) -> Value {
+        let dm = self.await_post(needle).await;
+        assert_eq!(dm["channel"], DM, "{dm}");
+        dm
     }
 }
 
@@ -148,17 +217,27 @@ async fn api(
     let mut rec = fake.rec.lock().unwrap();
     rec.next_ts += 1;
     let ts = format!("1900000000.{:06}", rec.next_ts);
+    let args: Value = if body.is_empty() {
+        json!(query)
+    } else {
+        serde_json::from_slice(&body).unwrap_or(Value::Null)
+    };
     Json(match method.as_str() {
         "auth.test" => json!({"ok": true, "team_id": "T1", "team": "Test team", "user_id": "UBOT"}),
         "apps.connections.open" => json!({"ok": true, "url": format!("ws://{}/socket", fake.addr)}),
         "chat.postMessage" => {
-            rec.posts
-                .push(serde_json::from_slice(&body).unwrap_or(Value::Null));
+            rec.posts.push(args);
             json!({"ok": true, "ts": ts})
         }
-        "reactions.add" => {
-            rec.reactions.push(json!(query));
+        "reactions.add" | "reactions.remove" | "chat.update" | "chat.postEphemeral"
+        | "views.open" => {
+            rec.calls.push((method.clone(), args));
             json!({"ok": true})
+        }
+        "conversations.open" => {
+            assert_eq!(args["users"], OWNER, "a DM goes to the owner only");
+            rec.calls.push((method.clone(), args));
+            json!({"ok": true, "channel": {"id": DM}})
         }
         "chat.getPermalink" => {
             json!({"ok": true, "permalink": format!("https://test.slack.com/archives/{}/p{}", query["channel"], query["message_ts"].replace('.', ""))})
@@ -376,6 +455,32 @@ fn check_mark(ts: &str, user: &str) -> Value {
         "item": {"type": "message", "channel": CHANNEL, "ts": ts}})
 }
 
+fn click(user: &str, action_id: &str, value: &str) -> Value {
+    json!({"type": "block_actions", "team": {"id": "T1"}, "user": {"id": user},
+        "trigger_id": "13345224609.738474920.8088930838d88f008e0", "channel": {"id": DM},
+        "actions": [{"action_id": action_id, "value": value, "type": "button"}]})
+}
+
+fn refuse_submission(user: &str, intake_id: &str, reason: Option<&str>) -> Value {
+    json!({"type": "view_submission", "team": {"id": "T1"}, "user": {"id": user},
+        "view": {"callback_id": "houston_refuse", "private_metadata": intake_id,
+            "state": {"values": {"reason": {"reason": {"type": "plain_text_input", "value": reason}}}}}})
+}
+
+/// The request id the owner's new-request message carries on its buttons.
+fn accept_value(dm: &Value) -> String {
+    dm["blocks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|b| b["elements"].as_array())
+        .flatten()
+        .find(|e| e["action_id"] == "houston_accept")
+        .and_then(|e| e["value"].as_str())
+        .expect("an Accept button")
+        .to_string()
+}
+
 #[tokio::test]
 async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
     let _guard = SERIAL.lock().await;
@@ -395,10 +500,24 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
         tasks[0].2.as_deref().is_some_and(|u| u.contains(CHANNEL)),
         "permalink as ref_url: {tasks:?}"
     );
-    let filed = r.fake.await_post("Filed as HOU-").await;
-    assert_eq!(
-        filed["thread_ts"], "1800000000.000100",
-        "replies go to the request's thread"
+    r.fake.await_reactions("1800000000.000100", &["eyes"]).await;
+    let dm = r.fake.await_dm("Novo pedido").await;
+    let dm_text = dm.to_string();
+    assert!(
+        dm_text.contains(&format!("<@{REQUESTER}>"))
+            && dm_text.contains(&format!("<#{CHANNEL}>"))
+            && dm_text.contains("fix the footer"),
+        "the owner's message names the requester, the channel and the request: {dm_text}"
+    );
+    assert!(
+        dm_text.contains("Aceitar")
+            && dm_text.contains("Recusar")
+            && dm_text.contains("Ver mensagem"),
+        "{dm_text}"
+    );
+    assert!(
+        dm_text.contains("nenhum trabalho em andamento, começa na hora"),
+        "{dm_text}"
     );
     assert!(
         r.fake.rec.lock().unwrap().acks.contains(&"e1".to_string()),
@@ -438,46 +557,172 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
     assert_eq!(runs[0].0, tasks[0].0);
     r.await_output(runs[0].1, "in Brazilian Portuguese (pt-BR)")
         .await;
-    r.fake.await_post("Started HOU-").await;
+    r.fake.await_reactions("1800000000.000100", &["gear"]).await;
+    r.fake.await_call("chat.update", "Aceito · começou").await;
+    assert!(
+        r.fake.thread_posts().is_empty(),
+        "nothing is written in the thread before the agent writes: {:?}",
+        r.fake.thread_posts()
+    );
+    assert!(
+        !r.fake
+            .posts()
+            .iter()
+            .any(|p| p.to_string().contains("HOU-")),
+        "no message names the task key: {:?}",
+        r.fake.posts()
+    );
     r.finish();
 }
 
 #[tokio::test]
-async fn the_owners_check_mark_on_houstons_reply_starts_the_request() {
+async fn the_owners_accept_button_starts_the_request_and_nobody_elses_does() {
     let _guard = SERIAL.lock().await;
-    let r = rig("slack-accept-reply").await;
+    let r = rig("slack-accept-button").await;
     r.fake.send_event(
         "e1",
         mention("1800000000.000100", REQUESTER, "rename the button"),
     );
     r.await_tasks(1).await;
-    r.fake.await_post("Filed as HOU-").await;
-    let reply_ts: String = r
-        .db()
-        .query_row(
-            "SELECT posted_ts FROM intake_outbox WHERE text LIKE 'Filed as HOU-%'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
+    let dm = r.fake.await_dm("Novo pedido").await;
+    let id = accept_value(&dm);
 
-    r.fake.send_event("e2", check_mark(&reply_ts, REQUESTER));
     r.fake
-        .send_event("e3", check_mark("1900000000.999999", OWNER));
+        .send_interactive("i1", click(REQUESTER, "houston_accept", &id));
+    let mut foreign = click(OWNER, "houston_accept", &id);
+    foreign["team"]["id"] = json!("T2");
+    r.fake.send_interactive("i2", foreign);
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(
         r.runs().is_empty(),
-        "the requester's mark on the reply and the owner's on an unrelated message start nothing"
+        "a click from someone other than the owner, or from another team, starts nothing"
+    );
+    assert!(
+        r.fake.rec.lock().unwrap().acks.contains(&"i1".to_string()),
+        "the interaction was acknowledged"
     );
 
-    r.fake.send_event("e4", check_mark(&reply_ts, OWNER));
+    r.fake
+        .send_interactive("i3", click(OWNER, "houston_accept", &id));
     r.await_runs(1).await;
-    r.fake.await_post("Started HOU-").await;
+    r.fake.await_reactions("1800000000.000100", &["gear"]).await;
     r.finish();
 }
 
 #[tokio::test]
-async fn a_task_canceled_before_it_starts_closes_its_request_and_tells_the_thread() {
+async fn the_owner_refuses_with_a_reason_that_reaches_the_thread_as_written() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-refuse").await;
+    r.fake.send_event(
+        "e1",
+        mention("1800000000.000100", REQUESTER, "delete production"),
+    );
+    r.fake.send_event(
+        "e2",
+        mention("1800000000.000200", REQUESTER, "rename the button"),
+    );
+    let tasks = r.await_tasks(2).await;
+    r.fake.await_dm("delete production").await;
+    let first = accept_value(&r.fake.await_dm("delete production").await);
+    let second = accept_value(&r.fake.await_dm("rename the button").await);
+
+    r.fake
+        .send_interactive("i1", click(OWNER, "houston_refuse", &first));
+    let view = r.fake.await_call("views.open", "houston_refuse").await;
+    assert_eq!(
+        view["trigger_id"], "13345224609.738474920.8088930838d88f008e0",
+        "the modal opens on the click's trigger"
+    );
+    assert!(view.to_string().contains("Motivo (opcional)"), "{view}");
+
+    r.fake.send_interactive(
+        "i2",
+        refuse_submission(REQUESTER, &first, Some("not from you")),
+    );
+    r.fake.send_interactive(
+        "i3",
+        refuse_submission(
+            OWNER,
+            &first,
+            Some("Isso precisa passar pelo time de dados."),
+        ),
+    );
+    let posted = r
+        .fake
+        .await_post("Isso precisa passar pelo time de dados.")
+        .await;
+    assert_eq!(posted["thread_ts"], "1800000000.000100");
+    assert_eq!(posted["text"], "Isso precisa passar pelo time de dados.");
+    r.fake
+        .await_reactions("1800000000.000100", &["no_entry_sign"])
+        .await;
+    r.fake.await_call("chat.update", "Recusado por você").await;
+
+    r.fake
+        .send_interactive("i4", refuse_submission(OWNER, &second, None));
+    r.fake
+        .await_reactions("1800000000.000200", &["no_entry_sign"])
+        .await;
+    assert_eq!(
+        r.fake.thread_posts().len(),
+        1,
+        "without a reason the request only gets 🚫: {:?}",
+        r.fake.thread_posts()
+    );
+    assert!(
+        !r.fake
+            .posts()
+            .iter()
+            .any(|p| p.to_string().contains("not from you")),
+        "a submission by someone else is ignored"
+    );
+    let statuses: Vec<String> = {
+        let conn = r.db();
+        let mut stmt = conn
+            .prepare("SELECT status FROM backlog_tasks ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(statuses, ["canceled", "canceled"], "{tasks:?}");
+
+    r.fake
+        .send_event("e3", check_mark("1800000000.000100", OWNER));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(r.runs().is_empty(), "a refused request does not start");
+    r.finish();
+}
+
+#[tokio::test]
+async fn a_request_over_the_text_limit_is_marked_and_the_owner_is_told_why() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-too-long").await;
+    let long = "x".repeat(proto::SLACK_REQUEST_TEXT_MAX + 1);
+    r.fake
+        .send_event("e1", mention("1800000000.000100", REQUESTER, &long));
+    r.fake
+        .await_reactions("1800000000.000100", &["warning"])
+        .await;
+    let dm = r
+        .fake
+        .await_dm(&format!(
+            "acima do limite de {}",
+            proto::SLACK_REQUEST_TEXT_MAX
+        ))
+        .await;
+    assert!(dm.to_string().contains("Atenção"), "{dm}");
+    assert!(r.tasks().is_empty(), "nothing was filed");
+    assert!(
+        r.fake.thread_posts().is_empty(),
+        "the requester reads no text"
+    );
+    r.finish();
+}
+
+#[tokio::test]
+async fn a_task_canceled_before_it_starts_closes_its_request() {
     let _guard = SERIAL.lock().await;
     let r = rig("slack-canceled").await;
     r.fake.send_event(
@@ -485,7 +730,7 @@ async fn a_task_canceled_before_it_starts_closes_its_request_and_tells_the_threa
         mention("1800000000.000100", REQUESTER, "rename the button"),
     );
     let tasks = r.await_tasks(1).await;
-    r.fake.await_post("Filed as HOU-").await;
+    r.fake.await_dm("Novo pedido").await;
     let revision: i64 = r
         .db()
         .query_row(
@@ -511,8 +756,13 @@ async fn a_task_canceled_before_it_starts_closes_its_request_and_tells_the_threa
         "{canceled:?}"
     );
 
-    let closed = r.fake.await_post("was closed in Houston").await;
-    assert_eq!(closed["thread_ts"], "1800000000.000100");
+    r.fake
+        .await_reactions("1800000000.000100", &["no_entry_sign"])
+        .await;
+    r.fake
+        .await_call("chat.update", "Fechado no Houston antes de começar")
+        .await;
+    assert!(r.fake.thread_posts().is_empty());
     let state: String = r
         .db()
         .query_row("SELECT state FROM intake_events", [], |row| row.get(0))
@@ -633,13 +883,14 @@ async fn accepted_requests_past_the_working_cap_wait_in_a_queue() {
         );
     }
     let runs = r.await_runs(2).await;
-    let queued = r.fake.await_post("number 1 in the queue").await;
-    assert_eq!(queued["thread_ts"], "1800000002.000003");
-    assert!(queued["text"]
-        .as_str()
-        .unwrap()
-        .contains(&format!("the limit is {}", proto::SLACK_RUNS_WORKING_MAX)));
+    r.fake
+        .await_call("chat.update", "Aceito · na fila, posição 1")
+        .await;
     assert_eq!(r.runs().len(), 2, "the third waits");
+    assert!(
+        r.fake.thread_posts().is_empty(),
+        "the queue is the owner's business, not the thread's"
+    );
 
     let (task_id, session, _) = runs[0];
     r.daemon

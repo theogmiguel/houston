@@ -8,13 +8,15 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::{mpsc, Notify};
 
 use super::{now_unix_ms, Daemon};
 use crate::db::{
-    IntakeRow, IntakeWrite, INTAKE_PENDING, INTAKE_QUEUED, INTAKE_REFUSED, INTAKE_STARTED,
+    IntakeRow, IntakeWrite, OutboxTarget, Outgoing, Posted, INTAKE_PENDING, INTAKE_QUEUED,
+    INTAKE_REFUSED, INTAKE_STARTED,
 };
+use crate::slack::text::Text;
 use crate::slack::{api, credentials, intake, socket};
 
 const SOURCE: &str = "slack";
@@ -34,6 +36,24 @@ const OUTBOX_ATTEMPTS_MAX: u32 = 5;
 const SUMMARY_MAX_CHARS: usize = 3_000;
 const TITLE_MAX_CHARS: usize = 72;
 const SIGNAL_QUEUE: usize = 256;
+/// The owner's new-request message quotes this much of the request.
+const EXCERPT_MAX_CHARS: usize = 280;
+/// Where a filed task's description lists the request's saved images.
+const IMAGES_HEADING: &str = "\n\nImages attached to the request (local files):";
+
+/// The request's status reaction, one at a time beside the owner's ✅.
+const R_SEEN: &str = "eyes";
+const R_WORKING: &str = "gear";
+const R_ASKING: &str = "question";
+const R_READY: &str = "checkered_flag";
+const R_DROPPED: &str = "no_entry_sign";
+const R_ATTENTION: &str = "warning";
+
+const ACTION_ACCEPT: &str = "houston_accept";
+const ACTION_REFUSE: &str = "houston_refuse";
+/// A link button: Slack still sends the click, and it needs no handling.
+const ACTION_LINK: &str = "houston_link";
+const VIEW_REFUSE: &str = "houston_refuse";
 
 pub(crate) struct SlackRuntime {
     state: Mutex<RuntimeState>,
@@ -47,6 +67,8 @@ struct RuntimeState {
     last_event_at_ms: Option<i64>,
     last_catchup_at_ms: Option<i64>,
     error: Option<String>,
+    /// The owner and the bot's direct-message channel with them.
+    dm: Option<(String, String)>,
 }
 
 impl Default for SlackRuntime {
@@ -59,6 +81,7 @@ impl Default for SlackRuntime {
                 last_event_at_ms: None,
                 last_catchup_at_ms: None,
                 error: None,
+                dm: None,
             }),
             wake: Notify::new(),
         }
@@ -144,6 +167,97 @@ fn title_of(text: &str, author: &str) -> String {
         Some(line) => truncate_chars(line, TITLE_MAX_CHARS),
         None => format!("Slack request from {author}"),
     }
+}
+
+fn dm_request_key(intake_id: i64) -> String {
+    format!("dm-request:{intake_id}")
+}
+
+/// What a sent outbox row left behind for later edits.
+#[derive(Default)]
+struct Delivered {
+    channel: Option<String>,
+    ts: Option<String>,
+}
+
+enum Footer<'a> {
+    Buttons(&'a str),
+    Status(&'a str),
+}
+
+/// Slack's mrkdwn treats these three as control characters in any text.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn quote(text: &str) -> String {
+    escape(text)
+        .lines()
+        .map(|l| format!("> {l}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A notification's plain fallback for a message whose blocks carry the mrkdwn.
+fn strip_mrkdwn(text: &str) -> String {
+    text.replace('*', "")
+}
+
+fn section(mrkdwn: &str) -> Value {
+    json!({"type": "section", "text": {"type": "mrkdwn", "text": mrkdwn}})
+}
+
+fn context(mrkdwn: &str) -> Value {
+    json!({"type": "context", "elements": [{"type": "mrkdwn", "text": mrkdwn}]})
+}
+
+fn button(label: &str, action_id: &str, value: &str, style: Option<&str>) -> Value {
+    let mut b = json!({
+        "type": "button",
+        "text": {"type": "plain_text", "text": label},
+        "action_id": action_id,
+        "value": value,
+    });
+    if let Some(style) = style {
+        b["style"] = json!(style);
+    }
+    b
+}
+
+fn link_button(label: &str, url: &str) -> Value {
+    json!({
+        "type": "button",
+        "text": {"type": "plain_text", "text": label},
+        "action_id": ACTION_LINK,
+        "url": url,
+    })
+}
+
+/// The owner's refusal: one optional text field whose words go to the thread.
+fn refuse_view(t: Text, intake_id: i64) -> Value {
+    json!({
+        "type": "modal",
+        "callback_id": VIEW_REFUSE,
+        "private_metadata": intake_id.to_string(),
+        "title": {"type": "plain_text", "text": t.refuse_title()},
+        "submit": {"type": "plain_text", "text": t.refuse()},
+        "close": {"type": "plain_text", "text": t.cancel()},
+        "blocks": [{
+            "type": "input",
+            "block_id": "reason",
+            "optional": true,
+            "label": {"type": "plain_text", "text": t.refuse_label()},
+            "hint": {"type": "plain_text", "text": t.refuse_hint()},
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "reason",
+                "multiline": true,
+                "max_length": proto::SLACK_QUESTION_MAX,
+            },
+        }],
+    })
 }
 
 impl Daemon {
@@ -438,6 +552,7 @@ impl Daemon {
         self.slack_update(|st| {
             st.identity = Some(identity.clone());
             st.tokens = Some(tokens.clone());
+            st.dm = None;
         });
         let (tx, mut rx) = mpsc::channel(SIGNAL_QUEUE);
         let mut sock = tokio::spawn(socket::run(url, tx));
@@ -490,6 +605,16 @@ impl Daemon {
                     });
                 } else {
                     self.slack_update(|st| st.last_catchup_at_ms = Some(now_unix_ms()));
+                }
+            }
+            socket::Signal::Interactive(payload) => {
+                self.slack_update(|st| st.last_event_at_ms = Some(now_unix_ms()));
+                if let Err(e) = self
+                    .slack_interactive(api, tokens, identity, &payload)
+                    .await
+                {
+                    tracing::warn!("slack: interaction: {e:#}");
+                    self.slack_update(|st| st.error = Some(format!("{e:#}")));
                 }
             }
             socket::Signal::Event(payload) => {
@@ -681,14 +806,11 @@ impl Daemon {
         let Some(workspace) = config.workspace_of(channel) else {
             return Ok(());
         };
+        let t = Text(config.language);
         let refusal = if text.len() > proto::SLACK_REQUEST_TEXT_MAX {
-            Some(format!(
-                "This request is {} bytes, over the {}-byte limit; it was not filed. Shorten it and mention me again.",
-                text.len(),
-                proto::SLACK_REQUEST_TEXT_MAX
-            ))
+            Some(t.too_long(text.len(), proto::SLACK_REQUEST_TEXT_MAX))
         } else if text.is_empty() && files.is_empty() {
-            Some("This mention has no request text; it was not filed.".to_string())
+            Some(t.empty_request().to_string())
         } else {
             None
         };
@@ -710,25 +832,19 @@ impl Daemon {
             return Ok(());
         };
         if let Some(refusal) = refusal {
-            self.db.intake_outbox_push(
-                row.id,
-                &format!("refused:{}", row.id),
-                &refusal,
-                None,
-                now,
-            )?;
+            self.db.intake_set_status(row.id, R_ATTENTION, now)?;
+            self.slack_dm_notice(&row, &format!("refused:{}", row.id), &t.not_filed(&refusal))?;
             return Ok(());
         }
-        self.db
-            .intake_outbox_push(row.id, &format!("seen:{}", row.id), "", Some("eyes"), now)?;
+        self.db.intake_set_status(row.id, R_SEEN, now)?;
         let mut notes = Vec::new();
         let images = self
-            .slack_download_images(api, tokens, workspace, row.id, files, &mut notes)
+            .slack_download_images(api, tokens, t, workspace, row.id, files, &mut notes)
             .await;
         let permalink = api.permalink(&tokens.bot, channel, ts).await.ok();
         let mut description = text.to_string();
         if !images.is_empty() {
-            description.push_str("\n\nImages attached to the request (local files):");
+            description.push_str(IMAGES_HEADING);
             for path in &images {
                 description.push_str(&format!("\n- {}", path.display()));
             }
@@ -751,33 +867,25 @@ impl Daemon {
             proto::ServerMsg::TaskChanged { id, .. } => {
                 self.db.intake_set_task(row.id, *id, permalink.as_deref())?;
                 self.broadcast_control(&created);
-                let key = self.task_key_of(*id)?.unwrap_or_default();
-                let owner = config
-                    .owner
-                    .as_deref()
-                    .map(|o| format!("<@{o}>"))
-                    .unwrap_or_else(|| "the owner".into());
-                let mut reply = format!("Filed as {key} in Houston. It starts when {owner} reacts to the request with :white_check_mark: or starts it in Houston.");
-                for note in notes {
-                    reply.push_str(&format!("\n{note}"));
-                }
+                let row = self.db.intake(row.id)?.unwrap_or(row);
+                let outlook =
+                    t.start_outlook(self.slack_working_runs()?, proto::SLACK_RUNS_WORKING_MAX);
+                let blocks = self.slack_request_blocks(&row, &notes, Footer::Buttons(&outlook));
                 self.db.intake_outbox_push(
                     row.id,
-                    &format!("created:{}", row.id),
-                    &reply,
-                    None,
+                    &dm_request_key(row.id),
+                    &Outgoing::message(
+                        OutboxTarget::Dm,
+                        strip_mrkdwn(&t.new_request(channel, author)),
+                        Some(blocks.to_string()),
+                    ),
                     now,
                 )?;
             }
             proto::ServerMsg::TaskRefused { message, .. } => {
                 self.db.intake_set_state(row.id, INTAKE_REFUSED, now)?;
-                self.db.intake_outbox_push(
-                    row.id,
-                    &format!("refused:{}", row.id),
-                    &format!("Not filed: {message}"),
-                    None,
-                    now,
-                )?;
+                self.db.intake_set_status(row.id, R_ATTENTION, now)?;
+                self.slack_dm_notice(&row, &format!("refused:{}", row.id), &t.not_filed(message))?;
             }
             _ => {}
         }
@@ -786,11 +894,13 @@ impl Daemon {
 
     /// Images go under the workspace's `.houston/intake/<id>/`, ignored by git.
     /// A file that is not an image, too big or over the count is named in the
-    /// reply and left out; the request is filed without it.
+    /// owner's message and left out; the request is filed without it.
+    #[allow(clippy::too_many_arguments)]
     async fn slack_download_images(
         &self,
         api: &api::Api,
         tokens: &credentials::Tokens,
+        t: Text,
         workspace: &str,
         intake_id: i64,
         files: &[intake::FileRef],
@@ -801,20 +911,11 @@ impl Daemon {
         let mut saved = Vec::new();
         for (i, file) in files.iter().enumerate() {
             if i >= proto::SLACK_IMAGES_MAX {
-                notes.push(format!(
-                    "Only the first {} files were kept ({} attached).",
-                    proto::SLACK_IMAGES_MAX,
-                    files.len()
-                ));
+                notes.push(t.images_over_count(proto::SLACK_IMAGES_MAX, files.len()));
                 break;
             }
             if file.size > proto::SLACK_IMAGE_BYTES_MAX {
-                notes.push(format!(
-                    "{} is {} bytes, over the {}-byte limit; left out.",
-                    file.name,
-                    file.size,
-                    proto::SLACK_IMAGE_BYTES_MAX
-                ));
+                notes.push(t.image_too_big(&file.name, file.size, proto::SLACK_IMAGE_BYTES_MAX));
                 continue;
             }
             let bytes = match api
@@ -823,18 +924,12 @@ impl Daemon {
             {
                 Ok(b) => b,
                 Err(e) => {
-                    notes.push(format!(
-                        "{} could not be downloaded ({e}); left out.",
-                        file.name
-                    ));
+                    notes.push(t.image_failed(&file.name, &e.to_string()));
                     continue;
                 }
             };
             let Some(ext) = crate::slack::image_extension(&bytes) else {
-                notes.push(format!(
-                    "{} is not a PNG, JPEG, GIF or WebP image; left out.",
-                    file.name
-                ));
+                notes.push(t.not_an_image(&file.name));
                 continue;
             };
             let path = dir.join(format!("{}.{ext}", i + 1));
@@ -847,12 +942,13 @@ impl Daemon {
             });
             match written {
                 Ok(()) => saved.push(path),
-                Err(e) => notes.push(format!("{} could not be saved ({e}); left out.", file.name)),
+                Err(e) => notes.push(t.image_failed(&file.name, &e.to_string())),
             }
         }
         saved
     }
 
+    /// The owner's ✅ on the request (or on one of Houston's messages in its thread).
     async fn slack_accept(self: &Arc<Self>, channel: &str, ts: &str) -> Result<()> {
         let row = match self.db.intake_by_message(SOURCE, channel, ts)? {
             Some(row) => Some(row),
@@ -864,9 +960,14 @@ impl Daemon {
             );
             return Ok(());
         };
+        self.slack_accept_row(&row).await
+    }
+
+    /// Accepting starts the request now, or queues it when the working cap is full.
+    async fn slack_accept_row(self: &Arc<Self>, row: &IntakeRow) -> Result<()> {
         if row.state != INTAKE_PENDING || row.task_id.is_none() {
             tracing::info!(
-                "slack: accept reaction on request {}, which is {}",
+                "slack: accept of request {}, which is {}",
                 row.id,
                 row.state
             );
@@ -883,23 +984,12 @@ impl Daemon {
                 .iter()
                 .position(|r| r.id == row.id)
                 .map_or(0, |p| p + 1);
-            let key = self
-                .task_key_of(row.task_id.unwrap_or_default())?
-                .unwrap_or_default();
-            self.db.intake_outbox_push(
-                row.id,
-                &format!("queued:{}", row.id),
-                &format!(
-                    "Accepted. {working} runs are working, the limit is {}; {key} is number {position} in the queue.",
-                    proto::SLACK_RUNS_WORKING_MAX
-                ),
-                None,
-                now,
-            )?;
+            let status = self.slack_text().accepted_queued(position);
+            self.slack_dm_request_status(row, &status)?;
             self.slack_broadcast_task(row.task_id);
             return Ok(());
         }
-        self.slack_start(&row).await
+        self.slack_start(row).await
     }
 
     fn slack_broadcast_task(&self, task_id: Option<i64>) {
@@ -914,7 +1004,8 @@ impl Daemon {
     }
 
     /// Starts the request's task as a click on Start would. A refusal puts
-    /// the request back to pending and says why in the thread.
+    /// the request back to pending, marks it ⚠️ and tells the owner why, with
+    /// a button to try again.
     async fn slack_start(self: &Arc<Self>, row: &IntakeRow) -> Result<()> {
         let Some(task_id) = row.task_id else {
             return Ok(());
@@ -926,24 +1017,299 @@ impl Daemon {
         })
         .await??;
         let now = now_unix_ms();
+        let t = self.slack_text();
         match &started {
             proto::ServerMsg::TaskChanged { .. } => {
                 self.db.intake_set_state(row.id, INTAKE_STARTED, now)?;
+                self.db.intake_set_status(row.id, R_WORKING, now)?;
+                self.slack_dm_request_status(row, t.accepted_started())?;
                 self.broadcast_control(&started);
             }
             proto::ServerMsg::TaskRefused { message, .. } => {
                 self.db.intake_set_state(row.id, INTAKE_PENDING, now)?;
+                self.db.intake_set_status(row.id, R_ATTENTION, now)?;
+                let text = format!(
+                    "{} · {} {}",
+                    t.attention(),
+                    self.slack_ident(row),
+                    t.could_not_start(message)
+                );
+                let blocks = json!([
+                    section(&text),
+                    {"type": "actions", "elements": [
+                        button(t.accept(), ACTION_ACCEPT, &row.id.to_string(), Some("primary")),
+                        button(t.refuse(), ACTION_REFUSE, &row.id.to_string(), Some("danger")),
+                    ]},
+                ]);
                 self.db.intake_outbox_push(
                     row.id,
                     &format!("start-refused:{}:{now}", row.id),
-                    &format!("Could not start: {message}"),
-                    None,
+                    &Outgoing::message(
+                        OutboxTarget::Dm,
+                        strip_mrkdwn(&text),
+                        Some(blocks.to_string()),
+                    ),
                     now,
                 )?;
                 self.slack_broadcast_task(row.task_id);
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    /// The owner refused a pending request: its task is canceled in Houston,
+    /// the request gets 🚫, and the owner's reason, when given, goes to the
+    /// thread exactly as written.
+    async fn slack_refuse(self: &Arc<Self>, row: &IntakeRow, reason: &str) -> Result<()> {
+        if row.state != INTAKE_PENDING && row.state != INTAKE_QUEUED {
+            tracing::info!(
+                "slack: refusal of request {}, which is {}",
+                row.id,
+                row.state
+            );
+            return Ok(());
+        }
+        let now = now_unix_ms();
+        self.db.intake_set_state(row.id, INTAKE_REFUSED, now)?;
+        self.db.intake_set_status(row.id, R_DROPPED, now)?;
+        let reason = reason.trim();
+        if !reason.is_empty() {
+            self.db.intake_outbox_push(
+                row.id,
+                &format!("owner-refusal:{}", row.id),
+                &Outgoing::message(OutboxTarget::Thread, reason.to_string(), None),
+                now,
+            )?;
+        }
+        self.slack_dm_request_status(row, self.slack_text().refused_by_owner())?;
+        if let Some(task) = row
+            .task_id
+            .map(|id| self.db.task(id))
+            .transpose()?
+            .flatten()
+        {
+            let this = self.clone();
+            let canceled = tokio::task::spawn_blocking(move || {
+                this.task_save(
+                    task.workspace.as_deref().unwrap_or_default(),
+                    Some(task.id),
+                    Some(task.revision),
+                    proto::TaskPatch {
+                        status: Some(proto::TaskStatus::Canceled),
+                        ..Default::default()
+                    },
+                )
+            })
+            .await??;
+            match &canceled {
+                proto::ServerMsg::TaskRefused { message, .. } => tracing::warn!(
+                    "slack: canceling the task of refused request {}: {message}",
+                    row.id
+                ),
+                other => self.broadcast_control(other),
+            }
+        }
+        Ok(())
+    }
+
+    /// A click on one of Houston's buttons or a modal submission. Only the
+    /// owner's count here; the payload's own values are checked against the
+    /// database before anything happens.
+    async fn slack_interactive(
+        self: &Arc<Self>,
+        api: &api::Api,
+        tokens: &credentials::Tokens,
+        identity: &api::Identity,
+        payload: &Value,
+    ) -> Result<()> {
+        let str_at = |ptr: &str| {
+            payload
+                .pointer(ptr)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        };
+        if str_at("/team/id") != identity.team_id {
+            tracing::info!(
+                "slack: dropped an interaction from team {:?}",
+                str_at("/team/id")
+            );
+            return Ok(());
+        }
+        let user = str_at("/user/id");
+        let config = self.slack_config();
+        let from_owner = config.owner.as_deref() == Some(user);
+        let t = Text(config.language);
+        match str_at("/type") {
+            "block_actions" => {
+                let Some(action) = payload.pointer("/actions/0") else {
+                    return Ok(());
+                };
+                let action_id = action
+                    .get("action_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let value = action
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if action_id == ACTION_LINK {
+                    return Ok(());
+                }
+                if !from_owner {
+                    tracing::info!(
+                        "slack: ignored {action_id} from {user:?}, who is not the owner"
+                    );
+                    return Ok(());
+                }
+                let Some(row) = value
+                    .parse::<i64>()
+                    .ok()
+                    .map(|id| self.db.intake(id))
+                    .transpose()?
+                    .flatten()
+                else {
+                    tracing::info!("slack: {action_id} names no request ({value:?})");
+                    return Ok(());
+                };
+                match action_id {
+                    ACTION_ACCEPT => self.slack_accept_row(&row).await,
+                    ACTION_REFUSE => {
+                        let view = refuse_view(t, row.id);
+                        api.open_view(&tokens.bot, str_at("/trigger_id"), &view)
+                            .await
+                    }
+                    other => {
+                        tracing::info!("slack: unknown action {other:?}");
+                        Ok(())
+                    }
+                }
+            }
+            "view_submission" => {
+                let callback = str_at("/view/callback_id");
+                if callback != VIEW_REFUSE || !from_owner {
+                    return Ok(());
+                }
+                let Some(row) = str_at("/view/private_metadata")
+                    .parse::<i64>()
+                    .ok()
+                    .map(|id| self.db.intake(id))
+                    .transpose()?
+                    .flatten()
+                else {
+                    return Ok(());
+                };
+                let reason = str_at("/view/state/values/reason/reason/value");
+                self.slack_refuse(&row, reason).await
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn slack_text(&self) -> Text {
+        Text(self.slack_config().language)
+    }
+
+    /// How the owner's messages name a request.
+    fn slack_ident(&self, row: &IntakeRow) -> String {
+        self.slack_text().request_of(&row.channel, &row.author)
+    }
+
+    /// The request's text as filed, without the list of saved images.
+    fn slack_request_excerpt(&self, row: &IntakeRow) -> String {
+        let description = row
+            .task_id
+            .and_then(|id| self.db.task(id).ok().flatten())
+            .map(|task| task.description)
+            .unwrap_or_default();
+        let text = description
+            .split(IMAGES_HEADING)
+            .next()
+            .unwrap_or_default()
+            .trim();
+        truncate_chars(text, EXCERPT_MAX_CHARS)
+    }
+
+    /// The owner's message about a new request; `footer` is the buttons while
+    /// it waits, then a line saying what happened to it.
+    fn slack_request_blocks(&self, row: &IntakeRow, notes: &[String], footer: Footer<'_>) -> Value {
+        let t = self.slack_text();
+        let mut blocks = vec![
+            section(&t.new_request(&row.channel, &row.author)),
+            section(&quote(&self.slack_request_excerpt(row))),
+        ];
+        if !notes.is_empty() {
+            blocks.push(context(&escape(&notes.join(" "))));
+        }
+        let place = Path::new(&row.workspace)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| row.workspace.clone());
+        match footer {
+            Footer::Buttons(outlook) => {
+                let id = row.id.to_string();
+                let mut buttons = vec![
+                    button(t.accept(), ACTION_ACCEPT, &id, Some("primary")),
+                    button(t.refuse(), ACTION_REFUSE, &id, Some("danger")),
+                ];
+                if let Some(link) = &row.permalink {
+                    buttons.push(link_button(t.view_message(), link));
+                }
+                blocks.push(json!({"type": "actions", "elements": buttons}));
+                blocks.push(context(&format!("{} · {outlook}", escape(&place))));
+            }
+            Footer::Status(status) => {
+                blocks.push(context(&format!("{} · {}", escape(&place), escape(status))));
+            }
+        }
+        Value::Array(blocks)
+    }
+
+    /// Edits the owner's new-request message to say what became of it.
+    fn slack_dm_request_status(&self, row: &IntakeRow, status: &str) -> Result<()> {
+        let blocks = self.slack_request_blocks(row, &[], Footer::Status(status));
+        let t = self.slack_text();
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("{}:{status}", dm_request_key(row.id)),
+            &Outgoing::update(
+                &dm_request_key(row.id),
+                strip_mrkdwn(&format!(
+                    "{} · {status}",
+                    t.new_request(&row.channel, &row.author)
+                )),
+                Some(blocks.to_string()),
+            ),
+            now_unix_ms(),
+        )?;
+        Ok(())
+    }
+
+    /// A direct message to the owner about a request no agent can speak for.
+    fn slack_dm_notice(&self, row: &IntakeRow, key: &str, what: &str) -> Result<()> {
+        let t = self.slack_text();
+        let text = format!(
+            "{} · {} {}",
+            t.attention(),
+            self.slack_ident(row),
+            escape(what)
+        );
+        let mut blocks = vec![section(&text)];
+        if let Some(link) = &row.permalink {
+            blocks.push(
+                json!({"type": "actions", "elements": [link_button(t.view_message(), link)]}),
+            );
+        }
+        self.db.intake_outbox_push(
+            row.id,
+            key,
+            &Outgoing::message(
+                OutboxTarget::Dm,
+                strip_mrkdwn(&text),
+                Some(Value::Array(blocks).to_string()),
+            ),
+            now_unix_ms(),
+        )?;
         Ok(())
     }
 
@@ -1051,11 +1417,14 @@ impl Daemon {
         self.db.intake_outbox_push(
             row.id,
             &format!("question:{id}"),
-            &format!(
-                "{key} asks: {question}\nReply in this thread, <@{}>{owner}.",
-                row.author
+            &Outgoing::message(
+                OutboxTarget::Thread,
+                format!(
+                    "{key} asks: {question}\nReply in this thread, <@{}>{owner}.",
+                    row.author
+                ),
+                None,
             ),
-            None,
             now,
         )?;
         Ok(format!(
@@ -1091,8 +1460,10 @@ impl Daemon {
     }
 
     /// A request still waiting to start whose task was canceled, finished,
-    /// archived or deleted in Houston stops waiting, and its thread is told.
+    /// archived or deleted in Houston stops waiting: 🚫 on the request, and
+    /// the owner's message says so.
     fn slack_close_dropped(&self) -> Result<()> {
+        let t = self.slack_text();
         for row in self.db.intake_by_task()? {
             if row.state != INTAKE_PENDING && row.state != INTAKE_QUEUED {
                 continue;
@@ -1111,105 +1482,57 @@ impl Daemon {
             }
             let now = now_unix_ms();
             self.db.intake_set_state(row.id, INTAKE_REFUSED, now)?;
-            let what = match &task {
-                Some(t) => format!("{} was closed in Houston", Self::task_key(t.number)),
-                None => "The task was deleted in Houston".to_string(),
-            };
-            self.db.intake_outbox_push(
-                row.id,
-                &format!("closed:{}", row.id),
-                &format!("{what} before it started; this request will not run."),
-                None,
-                now,
-            )?;
+            self.db.intake_set_status(row.id, R_DROPPED, now)?;
+            self.slack_dm_request_status(&row, t.closed_in_houston())?;
             self.slack_broadcast_task(Some(task_id));
         }
         Ok(())
     }
 
-    /// Turns each intake task's newest run into the replies its thread is
-    /// owed. Every reply has a key, so seeing the same state again is a no-op.
+    /// Turns each intake task's newest run into the request's status reaction
+    /// and the owner's notices. Every notice has a key, so seeing the same
+    /// state again is a no-op.
     async fn slack_follow_runs(self: &Arc<Self>) -> Result<()> {
+        let t = self.slack_text();
         for row in self.db.intake_by_task()? {
             let Some(task_id) = row.task_id else { continue };
             let Some(run) = self.db.latest_implementation_run(task_id)? else {
                 continue;
             };
+            let closed = self.db.task(task_id)?.is_none_or(|task| {
+                matches!(
+                    task.status,
+                    proto::TaskStatus::Done | proto::TaskStatus::Canceled
+                )
+            });
+            if closed {
+                continue;
+            }
             let now = now_unix_ms();
             if row.state != INTAKE_STARTED && row.state != INTAKE_REFUSED {
                 self.db.intake_set_state(row.id, INTAKE_STARTED, now)?;
                 self.slack_broadcast_task(Some(task_id));
             }
-            let key = self.task_key_of(task_id)?.unwrap_or_default();
-            let branch = run.branch.clone().unwrap_or_default();
-            self.db.intake_outbox_push(
-                row.id,
-                &format!("started:{}", run.id),
-                &format!(
-                    "Started {key} (attempt {}) on branch `{branch}`.",
-                    run.attempt
-                ),
-                None,
-                now,
-            )?;
             match run.state {
-                proto::TaskRunState::HandedBack
-                    if !self.db.intake_outbox_has(&format!("handback:{}", run.id))? =>
-                {
-                    let pr_url = match (&run.pr_url, &run.worktree_path) {
-                        (Some(url), _) => Some(url.clone()),
-                        (None, Some(dir)) => {
-                            let dir = PathBuf::from(dir);
-                            let found = tokio::task::spawn_blocking(move || {
-                                crate::gh::pr_for_checkout(&dir)
-                            })
-                            .await?;
-                            match found {
-                                crate::gh::PrLookup::Found(facts) => {
-                                    self.db.task_run_set_pr_url(run.id, Some(&facts.url))?;
-                                    self.broadcast_task_run(run.id);
-                                    Some(facts.url)
-                                }
-                                _ => None,
-                            }
-                        }
-                        (None, None) => None,
-                    };
-                    let pushed = match &run.worktree_path {
-                        Some(dir) => {
-                            let dir = PathBuf::from(dir);
-                            tokio::task::spawn_blocking(move || {
-                                crate::git::upstream_branch(&dir)
-                                    .map(|b| (b, crate::git::remote_url(&dir)))
-                            })
-                            .await?
-                        }
-                        None => None,
-                    };
-                    let open_pr = match (&pr_url, &pushed) {
-                        (None, Some((remote_branch, Some(remote)))) => {
-                            pr_creation_url(remote, remote_branch)
-                        }
-                        _ => None,
-                    };
-                    let branch_line = match &pushed {
-                        Some((remote_branch, _)) => format!("Branch: `{remote_branch}` (pushed)"),
-                        None => format!("Branch: `{branch}` (local, not pushed)"),
-                    };
-                    let text = Self::slack_result_text(
-                        &key,
-                        &row.workspace,
-                        &branch_line,
-                        pr_url.as_deref(),
-                        open_pr.as_deref(),
-                        run.summary.as_deref(),
-                    );
-                    self.db.intake_outbox_push(
-                        row.id,
-                        &format!("handback:{}", run.id),
-                        &text,
-                        None,
-                        now,
+                proto::TaskRunState::Preparing
+                | proto::TaskRunState::Running
+                | proto::TaskRunState::Validating => {
+                    let asking = self.db.intake_open_question(row.id)?.is_some();
+                    let status = if asking { R_ASKING } else { R_WORKING };
+                    self.db.intake_set_status(row.id, status, now)?;
+                }
+                proto::TaskRunState::HandedBack => {
+                    self.db.intake_set_status(row.id, R_READY, now)?;
+                    if !self.db.intake_outbox_has(&format!("handback:{}", run.id))? {
+                        self.slack_handed_back(&row, &run).await?;
+                    }
+                }
+                proto::TaskRunState::WaitingForInput => {
+                    self.db.intake_set_status(row.id, R_ATTENTION, now)?;
+                    self.slack_dm_notice(
+                        &row,
+                        &format!("attention:{}", run.id),
+                        t.waiting_for_confirmation(),
                     )?;
                 }
                 proto::TaskRunState::Interrupted => {
@@ -1217,40 +1540,82 @@ impl Daemon {
                         .reason
                         .clone()
                         .unwrap_or_else(|| "the pane ended".into());
-                    self.db.intake_outbox_push(
-                        row.id,
+                    self.db.intake_set_status(row.id, R_ATTENTION, now)?;
+                    self.slack_dm_notice(
+                        &row,
                         &format!("interrupted:{}", run.id),
-                        &format!("{key} stopped without handing back ({reason}). The owner can resume or retry it in Houston."),
-                        None,
-                        now,
-                    )?;
-                }
-                proto::TaskRunState::WaitingForInput => {
-                    self.db.intake_outbox_push(
-                        row.id,
-                        &format!("attention:{}", run.id),
-                        &format!("{key} is waiting for a confirmation in Houston; the owner answers it there."),
-                        None,
-                        now,
+                        &t.stopped(&reason),
                     )?;
                 }
                 proto::TaskRunState::Failed
                 | proto::TaskRunState::Cancelled
                 | proto::TaskRunState::NeedsReview => {
-                    self.db.intake_outbox_push(
-                        row.id,
-                        &format!("ended:{}", run.id),
-                        &format!(
-                            "{key}'s run ended as {} in Houston.",
-                            crate::db::wire_name(&run.state).unwrap_or_default()
-                        ),
-                        None,
-                        now,
-                    )?;
+                    let state = crate::db::wire_name(&run.state).unwrap_or_default();
+                    self.db.intake_set_status(row.id, R_ATTENTION, now)?;
+                    self.slack_dm_notice(&row, &format!("ended:{}", run.id), &t.ended_as(&state))?;
                 }
-                _ => {}
             }
         }
+        Ok(())
+    }
+
+    async fn slack_handed_back(
+        self: &Arc<Self>,
+        row: &IntakeRow,
+        run: &crate::db::TaskRunRow,
+    ) -> Result<()> {
+        let now = now_unix_ms();
+        let key = self.task_key_of(run.task_id)?.unwrap_or_default();
+        let branch = run.branch.clone().unwrap_or_default();
+        let pr_url = match (&run.pr_url, &run.worktree_path) {
+            (Some(url), _) => Some(url.clone()),
+            (None, Some(dir)) => {
+                let dir = PathBuf::from(dir);
+                let found =
+                    tokio::task::spawn_blocking(move || crate::gh::pr_for_checkout(&dir)).await?;
+                match found {
+                    crate::gh::PrLookup::Found(facts) => {
+                        self.db.task_run_set_pr_url(run.id, Some(&facts.url))?;
+                        self.broadcast_task_run(run.id);
+                        Some(facts.url)
+                    }
+                    _ => None,
+                }
+            }
+            (None, None) => None,
+        };
+        let pushed = match &run.worktree_path {
+            Some(dir) => {
+                let dir = PathBuf::from(dir);
+                tokio::task::spawn_blocking(move || {
+                    crate::git::upstream_branch(&dir).map(|b| (b, crate::git::remote_url(&dir)))
+                })
+                .await?
+            }
+            None => None,
+        };
+        let open_pr = match (&pr_url, &pushed) {
+            (None, Some((remote_branch, Some(remote)))) => pr_creation_url(remote, remote_branch),
+            _ => None,
+        };
+        let branch_line = match &pushed {
+            Some((remote_branch, _)) => format!("Branch: `{remote_branch}` (pushed)"),
+            None => format!("Branch: `{branch}` (local, not pushed)"),
+        };
+        let text = Self::slack_result_text(
+            &key,
+            &row.workspace,
+            &branch_line,
+            pr_url.as_deref(),
+            open_pr.as_deref(),
+            run.summary.as_deref(),
+        );
+        self.db.intake_outbox_push(
+            row.id,
+            &format!("handback:{}", run.id),
+            &Outgoing::message(OutboxTarget::Thread, text, None),
+            now,
+        )?;
         Ok(())
     }
 
@@ -1326,34 +1691,135 @@ impl Daemon {
             .clone();
         let Some(tokens) = tokens else { return Ok(()) };
         let api = api::Api::new(api::base_from_env()?)?;
-        for item in self.db.intake_outbox_pending(OUTBOX_BATCH)? {
-            let Some(row) = self.db.intake(item.intake_id)? else {
+        for out in self.db.intake_outbox_pending(OUTBOX_BATCH)? {
+            let Some(row) = self.db.intake(out.intake_id)? else {
                 continue;
             };
-            let sent = match &item.reaction {
-                Some(name) => api
-                    .add_reaction(&tokens.bot, &row.channel, &row.ts, name)
-                    .await
-                    .map(|()| None),
-                None => api
-                    .post_message(&tokens.bot, &row.channel, &row.ts, &item.text)
-                    .await
-                    .map(Some),
+            let sent = match self.slack_send_one(&api, &tokens, &row, &out.item).await {
+                Ok(Some(sent)) => Ok(sent),
+                Ok(None) => continue,
+                Err(e) => Err(e),
             };
             let now = now_unix_ms();
             match sent {
-                Ok(ts) => self.db.intake_outbox_sent(item.id, ts.as_deref(), now)?,
+                Ok(Delivered { channel, ts }) => {
+                    self.db
+                        .intake_outbox_sent(out.id, channel.as_deref(), ts.as_deref(), now)?
+                }
                 Err(e) => {
                     let message = e.to_string();
-                    tracing::warn!("slack: reply {} to {}: {message}", item.id, row.channel);
-                    self.db.intake_outbox_failed(item.id, &message)?;
-                    if item.attempts + 1 >= OUTBOX_ATTEMPTS_MAX {
-                        self.db.intake_outbox_sent(item.id, None, now)?;
+                    tracing::warn!(
+                        "slack: outbox row {} for {}: {message}",
+                        out.id,
+                        row.channel
+                    );
+                    self.db.intake_outbox_failed(out.id, &message)?;
+                    if out.attempts + 1 >= OUTBOX_ATTEMPTS_MAX {
+                        self.db.intake_outbox_sent(out.id, None, None, now)?;
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    /// `Ok(None)` leaves the row for a later tick: an edit waits until the
+    /// message it edits has been posted.
+    async fn slack_send_one(
+        &self,
+        api: &api::Api,
+        tokens: &credentials::Tokens,
+        row: &IntakeRow,
+        item: &Outgoing,
+    ) -> Result<Option<Delivered>> {
+        let blocks: Option<Value> = item
+            .blocks
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?;
+        let target = match item.target {
+            OutboxTarget::Thread if item.reaction.is_some() => OutboxTarget::React,
+            other => other,
+        };
+        match target {
+            OutboxTarget::Thread => {
+                let ts = api
+                    .post_message(
+                        &tokens.bot,
+                        &row.channel,
+                        Some(&row.ts),
+                        &item.text,
+                        blocks.as_ref(),
+                    )
+                    .await?;
+                Ok(Some(Delivered {
+                    channel: Some(row.channel.clone()),
+                    ts: Some(ts),
+                }))
+            }
+            OutboxTarget::Dm => {
+                let channel = self.slack_dm_channel(api, tokens).await?;
+                let ts = api
+                    .post_message(&tokens.bot, &channel, None, &item.text, blocks.as_ref())
+                    .await?;
+                Ok(Some(Delivered {
+                    channel: Some(channel),
+                    ts: Some(ts),
+                }))
+            }
+            OutboxTarget::Update => {
+                let of = item.update_of.as_deref().unwrap_or_default();
+                match self.db.intake_outbox_posted(of)? {
+                    Some(posted) if !posted.sent => Ok(None),
+                    Some(Posted {
+                        channel: Some(channel),
+                        ts: Some(ts),
+                        ..
+                    }) => {
+                        api.update_message(&tokens.bot, &channel, &ts, &item.text, blocks.as_ref())
+                            .await?;
+                        Ok(Some(Delivered::default()))
+                    }
+                    _ => {
+                        tracing::info!("slack: dropping an edit of {of:?}, which was never posted");
+                        Ok(Some(Delivered::default()))
+                    }
+                }
+            }
+            OutboxTarget::React => {
+                let ts = item.message_ts.as_deref().unwrap_or(&row.ts);
+                if let Some(name) = &item.remove_reaction {
+                    api.remove_reaction(&tokens.bot, &row.channel, ts, name)
+                        .await?;
+                }
+                if let Some(name) = &item.reaction {
+                    api.add_reaction(&tokens.bot, &row.channel, ts, name)
+                        .await?;
+                }
+                Ok(Some(Delivered::default()))
+            }
+        }
+    }
+
+    /// The owner's direct-message channel, opened once per connection.
+    async fn slack_dm_channel(
+        &self,
+        api: &api::Api,
+        tokens: &credentials::Tokens,
+    ) -> Result<String> {
+        let owner = self.slack_config().owner.ok_or_else(|| {
+            anyhow!("no owner is configured (Settings ▸ Accounts ▸ Slack), so there is no one to message directly")
+        })?;
+        if let Some((cached_owner, channel)) =
+            &self.slack.state.lock().expect("slack state lock").dm
+        {
+            if *cached_owner == owner {
+                return Ok(channel.clone());
+            }
+        }
+        let channel = api.open_dm(&tokens.bot, &owner).await?;
+        self.slack.state.lock().expect("slack state lock").dm = Some((owner, channel.clone()));
+        Ok(channel)
     }
 }
 

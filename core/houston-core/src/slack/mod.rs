@@ -5,6 +5,7 @@ pub mod api;
 pub mod credentials;
 pub mod intake;
 pub mod socket;
+pub mod text;
 
 /// The image type by its leading bytes, never by the name or Slack's mimetype.
 pub fn image_extension(bytes: &[u8]) -> Option<&'static str> {

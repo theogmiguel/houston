@@ -1,5 +1,5 @@
 //! One Socket Mode connection: ack every envelope before handling it, forward
-//! event payloads, and return when Slack asks for a reconnect or the link dies.
+//! event and interaction payloads, and return when Slack asks for a reconnect or the link dies.
 //! Reconnecting (and catching up on what the gap missed) is the caller's job.
 
 use anyhow::{anyhow, Result};
@@ -29,6 +29,9 @@ pub enum Signal {
     Hello,
     /// The `payload` of an `events_api` envelope, already acknowledged.
     Event(Value),
+    /// The `payload` of an `interactive` envelope (a button click or a modal
+    /// submission), already acknowledged; an empty acknowledgement closes a modal.
+    Interactive(Value),
 }
 
 pub async fn run(url: Url, signals: mpsc::Sender<Signal>) -> Result<Ended> {
@@ -78,6 +81,11 @@ pub async fn run(url: Url, signals: mpsc::Sender<Signal>) -> Result<Ended> {
             Some("events_api") => {
                 if let Some(payload) = envelope.get("payload") {
                     let _ = signals.send(Signal::Event(payload.clone())).await;
+                }
+            }
+            Some("interactive") => {
+                if let Some(payload) = envelope.get("payload") {
+                    let _ = signals.send(Signal::Interactive(payload.clone())).await;
                 }
             }
             Some("disconnect") => {

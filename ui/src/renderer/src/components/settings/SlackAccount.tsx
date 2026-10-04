@@ -79,7 +79,7 @@ export function SlackAccount({ client }: { client: HoustonClient | null }): Reac
       <SubHead>Slack</SubHead>
       <Row
         title="Slack intake"
-        desc="Off by default. When connected, Houston keeps a Socket Mode connection to your own Slack app: a mention of the bot in a mapped channel becomes a pending task, and the owner's ✅ reaction starts it. Houston posts the run's progress, questions and hand-back summary to the request's thread. See the Slack page of the user guide for what is sent."
+        desc="Off by default. When connected, Houston keeps a Socket Mode connection to your own Slack app: a mention of the bot in a mapped channel becomes a pending task, and the owner accepts it from a direct message or with a ✅ reaction. The request shows its state as a reaction, and the agent's questions and hand-back go to its thread. See the Slack page of the user guide for what is sent."
       >
         <span data-testid="slack-status" className={`${NOTE} text-[var(--text-secondary)]`}>
           {info ? statusLine(info) : 'Loading'}
