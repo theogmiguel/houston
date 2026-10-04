@@ -208,6 +208,27 @@ fn quote(text: &str) -> String {
         .join("\n")
 }
 
+/// The text of a message's blocks, links included, for when Slack refuses
+/// the blocks themselves.
+fn blocks_to_text(blocks: &str) -> Option<String> {
+    let blocks: Value = serde_json::from_str(blocks).ok()?;
+    let mut lines = Vec::new();
+    for block in blocks.as_array()? {
+        if let Some(text) = block.pointer("/text/text").and_then(Value::as_str) {
+            lines.push(text.to_string());
+        }
+        for el in block["elements"].as_array().into_iter().flatten() {
+            let label = el.pointer("/text/text").and_then(Value::as_str);
+            match (el["text"].as_str(), label, el["url"].as_str()) {
+                (Some(text), _, _) => lines.push(text.to_string()),
+                (None, Some(label), Some(url)) => lines.push(format!("{label}: {url}")),
+                _ => {}
+            }
+        }
+    }
+    Some(truncate_chars(&lines.join("\n"), SECTION_TEXT_MAX))
+}
+
 /// A notification's plain fallback for a message whose blocks carry the mrkdwn.
 fn strip_mrkdwn(text: &str) -> String {
     text.replace('*', "")
@@ -2414,7 +2435,25 @@ impl Daemon {
             let Some(row) = self.db.intake(out.intake_id)? else {
                 continue;
             };
-            let sent = match self.slack_send_one(&api, &tokens, &row, &out.item).await {
+            let mut sent = self.slack_send_one(&api, &tokens, &row, &out.item).await;
+            // Blocks Slack refuses would refuse every retry; the same content
+            // as plain text still reaches the reader.
+            if let (Err(e), Some(blocks)) = (&sent, &out.item.blocks) {
+                let refused = e.to_string();
+                if refused.ends_with("invalid_blocks") || refused.ends_with("msg_too_long") {
+                    tracing::warn!(
+                        "slack: outbox row {} refused ({refused}); resending it as text",
+                        out.id
+                    );
+                    let plain = Outgoing {
+                        text: blocks_to_text(blocks).unwrap_or_else(|| out.item.text.clone()),
+                        blocks: None,
+                        ..out.item.clone()
+                    };
+                    sent = self.slack_send_one(&api, &tokens, &row, &plain).await;
+                }
+            }
+            let sent = match sent {
                 Ok(Some(sent)) => Ok(sent),
                 Ok(None) => continue,
                 Err(e) => Err(e),
@@ -2439,6 +2478,17 @@ impl Daemon {
                             out.id
                         );
                         self.db.intake_outbox_dropped(out.id, now)?;
+                        let what = if out.item.target == OutboxTarget::Dm {
+                            "a direct message to the owner"
+                        } else {
+                            "a message"
+                        };
+                        self.slack_update(|st| {
+                            st.error = Some(format!(
+                                "Slack refused {what} about {} {OUTBOX_ATTEMPTS_MAX} times and it was dropped: {message}; the request's task in Houston has the details",
+                                strip_mrkdwn(&self.slack_ident(&row))
+                            ))
+                        });
                     }
                 }
             }

@@ -59,7 +59,9 @@ Open **Settings ▸ Accounts ▸ Slack**:
   change reaches the next run, not one already working.
 
 The status line shows whether the connection is up, the Slack team and the last event. An
-error stays visible until the next successful connection.
+error stays visible until the next successful connection. A message Slack refuses to lay out
+is sent again as plain text with the same content; one Slack keeps refusing is dropped after
+five attempts, and the status line names it.
 
 ## How a request flows
 

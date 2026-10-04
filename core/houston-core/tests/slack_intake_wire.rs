@@ -77,6 +77,11 @@ struct Recorded {
     acks: Vec<String>,
     history: Vec<Value>,
     next_ts: u64,
+    /// Refuse every message that carries blocks, as Slack does with blocks it
+    /// cannot render.
+    refuse_blocks: bool,
+    /// Refuse every post to the owner's direct messages.
+    refuse_dm: bool,
 }
 
 #[derive(Clone)]
@@ -223,6 +228,12 @@ async fn api(
     } else {
         serde_json::from_slice(&body).unwrap_or(Value::Null)
     };
+    if rec.refuse_dm && method == "chat.postMessage" && args["channel"] == DM {
+        return Json(json!({"ok": false, "error": "channel_not_found"}));
+    }
+    if rec.refuse_blocks && args.get("blocks").is_some() {
+        return Json(json!({"ok": false, "error": "invalid_blocks"}));
+    }
     if let Some(error) = invalid_blocks(&args) {
         rec.calls
             .push(("refused".into(), json!({"method": method, "error": error})));
@@ -1575,4 +1586,40 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(r.runs().len(), 2, "a refused adjustment starts nothing");
     r.finish();
+}
+
+#[tokio::test]
+async fn a_message_slack_refuses_goes_out_as_text_and_a_dropped_one_is_reported() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-refused").await;
+    r.fake.rec.lock().unwrap().refuse_blocks = true;
+    r.fake.send_event(
+        "r1",
+        mention("1800000006.000100", REQUESTER, "rename the button"),
+    );
+    let dm = r.fake.await_dm("rename the button").await;
+    assert!(dm.get("blocks").is_none(), "resent without blocks: {dm}");
+    assert!(
+        dm["text"].as_str().unwrap().contains("Novo pedido"),
+        "the text carries what the blocks said: {dm}"
+    );
+
+    r.fake.rec.lock().unwrap().refuse_dm = true;
+    r.fake.send_event(
+        "r2",
+        mention("1800000006.000200", REQUESTER, "rename the other button"),
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        let error = r.daemon.slack_info().error.unwrap_or_default();
+        if error.contains("direct message to the owner") && error.contains("channel_not_found") {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "a dropped message never showed in the status: {error:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    r.daemon.slack_disconnect();
 }
