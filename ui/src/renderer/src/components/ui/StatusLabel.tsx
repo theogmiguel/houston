@@ -38,10 +38,14 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Verified: 'var(--ok)'
 }
 
-export function StatusLabel({ status }: { status: StatusLabelValue }): React.JSX.Element {
+const STATUS_TEXT: Partial<Record<StatusLabelValue, string>> = {
+  Off: 'text-[var(--text-muted)]'
+}
+
+export function StatusLabel({ status, size = 'ui' }: { status: StatusLabelValue; size?: 'ui' | 'small' }): React.JSX.Element {
   const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off'
   return (
-    <span aria-label={status} className="inline-flex items-center gap-[var(--space-1-5)] text-[var(--text-secondary)]">
+    <span aria-label={status} className={`inline-flex items-center gap-[var(--space-1-5)] text-[var(--text-secondary)] ${STATUS_TEXT[status] ?? ''} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span
         aria-hidden="true"
         className="h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full"

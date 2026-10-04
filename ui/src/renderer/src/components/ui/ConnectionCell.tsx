@@ -6,7 +6,6 @@ export type ConnectionCellStatus = Extract<StatusLabelValue, 'In sync' | 'Off' |
 export function ConnectionCell({
   status,
   reason,
-  showStatus = true,
   onClick,
   server,
   agent,
@@ -14,7 +13,6 @@ export function ConnectionCell({
 }: {
   status: ConnectionCellStatus
   reason?: string
-  showStatus?: boolean
   onClick: () => void
   server: string
   agent: string
@@ -29,10 +27,10 @@ export function ConnectionCell({
       aria-label={`${action} ${server} for ${agent}`}
       data-testid={testId}
       onClick={onClick}
-      className="flex min-w-0 flex-row items-center gap-[var(--space-1-5)] whitespace-normal"
+      className="flex w-full min-w-0 flex-row items-center justify-start gap-[var(--space-1-5)] overflow-hidden whitespace-normal"
     >
-      {showStatus && <StatusLabel status={status} />}
-      {status === 'Failed' && reason && <span className="min-w-0 break-words text-left text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]"><code className="font-mono">{command}</code>{details.length > 0 && ` ${details.join(' ')}`}</span>}
+      <StatusLabel status={status} />
+      {status === 'Failed' && reason && <span className="block min-w-0 flex-1 truncate whitespace-nowrap text-left text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)]"><code className="font-mono font-semibold text-[var(--text-primary)]">{command}</code>{details.length > 0 && <span className="text-[var(--text-muted)]"> {details.join(' ')}</span>}</span>}
     </Button>
   )
 }

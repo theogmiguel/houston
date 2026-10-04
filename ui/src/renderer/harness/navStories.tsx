@@ -26,11 +26,11 @@ function Frame({ children, active = 'Routines' }: { children: React.ReactNode; a
       <aside style={{ width: 148, flex: 'none', padding: 8, background: 'var(--rail-bg)', color: 'var(--text-secondary)' }}>
         <div style={{ padding: 8, color: 'var(--text-faint)', fontSize: 11 }}>HOUSTON</div>
         <div style={{ display: 'grid', gap: 2, marginBottom: 8 }}>
-          {['auth-refactor', 'migrate-db', 'shell'].map((item) => <div key={item} style={{ padding: '5px 8px', fontSize: 12 }}>{item}</div>)}
+          {['auth-refactor', 'migrate-db', 'shell'].map((item, index) => <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', fontSize: 12 }}><i style={{ width: 6, height: 6, borderRadius: '50%', background: index === 0 ? 'var(--info)' : index === 1 ? 'var(--warn)' : 'transparent', border: index === 2 ? '1px solid var(--text-faint)' : undefined }} />{item}</div>)}
         </div>
         <div style={{ height: 1, background: 'var(--divider)', margin: '0 8px 8px' }} />
         <div style={{ display: 'grid', gap: 2, fontSize: 13 }}>
-          {['Tasks', 'Routines', 'Skills', 'Harness', 'Connections', 'Usage'].map((item) => <div key={item} style={{ padding: '5px 8px', borderRadius: 6, background: item === active ? 'var(--hover-fill)' : 'transparent', color: item === active ? 'var(--text-primary)' : undefined }}>{item}</div>)}
+          {['Tasks', 'Routines', 'Skills', 'Harness', 'Connections', 'Usage'].map((item) => <div key={item} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 6, background: item === active ? 'var(--hover-fill)' : 'transparent', color: item === active ? 'var(--text-primary)' : undefined }}><span>{item}</span>{item === 'Tasks' ? <span style={{ color: 'var(--warn)' }}>2</span> : item === 'Harness' ? <span style={{ color: 'var(--warn)' }}>1</span> : null}</div>)}
         </div>
       </aside>
       <div style={{ display: 'flex', minWidth: 0, flex: 1 }}>{children}</div>
