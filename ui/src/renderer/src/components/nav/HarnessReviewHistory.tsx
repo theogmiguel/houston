@@ -90,12 +90,12 @@ function ReviewGroups({ review, findings }: { review: HarnessReview; findings: H
   const still = related.filter((finding) => !gone.includes(finding) && !fresh.includes(finding))
 
   return (
-    <div className="grid gap-[var(--space-1)] px-[var(--space-2-5)] pb-[var(--space-2)]">
+    <Card.Content>
       <ReviewGroup label="New" rail="new" findings={fresh} />
       <ReviewGroup label="Still there" rail="still" findings={still} />
       <ReviewGroup label="Gone" rail="gone" findings={gone} />
       {related.length === 0 && <p>No finding details are available for this review.</p>}
-    </div>
+    </Card.Content>
   )
 }
 

@@ -11,6 +11,10 @@ export interface CardProps {
   className?: string
 }
 
+export interface CardContentProps {
+  children: ReactNode
+}
+
 export interface CardRowProps {
   heading: ReactNode
   meta?: ReactNode
@@ -45,4 +49,8 @@ function CardBase({ children, tone = 'default', className = '' }: CardProps): Re
   return <div className={`${cardClasses({ tone })} ${className}`}>{children}</div>
 }
 
-export const Card = Object.assign(CardBase, { Row: CardRow })
+function CardContent({ children }: CardContentProps): React.JSX.Element {
+  return <div className="grid gap-[var(--space-1)] px-[var(--space-2-5)] pb-[var(--space-2)]">{children}</div>
+}
+
+export const Card = Object.assign(CardBase, { Row: CardRow, Content: CardContent })

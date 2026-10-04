@@ -709,7 +709,8 @@ Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
 places its title and metadata on the left and status or action on the right. Its
 `compact` variant keeps history rows on one line. The `rail` variant marks New,
 Still there and Gone review groups with warn, stop and ok rules. Keep the rule to
-this primitive; feature files supply the group content.
+this primitive; feature files supply the group content. Use `Card.Content` for a
+padded, vertically grouped set of section rows.
 
 `BarSparkline` shows a short sequence of comparable values with an accessible text
 summary. `Caption` carries supporting information in the small, secondary text step.

@@ -119,6 +119,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Card.Row rail="gone" heading="Gone review group" meta="Ok rule" />
             <Card.Row compact rail="new" heading="Compact history row" meta="One line for recent history" />
           </Card>
+          <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
         </SpecimenGroup>
 
