@@ -41,7 +41,7 @@ BASELINE=(
   "ui/src/renderer/src/components/settings/ShortcutsSection.tsx 1"
   "ui/src/renderer/src/components/settings/TerminalSection.tsx 2"
   "ui/src/renderer/src/components/settings/VoiceSection.tsx 4"
-  "ui/src/renderer/src/components/Sidebar.tsx 12"
+  "ui/src/renderer/src/components/Sidebar.tsx 10"
   "ui/src/renderer/src/components/SkillsView.tsx 8"
   "ui/src/renderer/src/components/SshConnectModal.tsx 2"
   "ui/src/renderer/src/components/UsageSection.tsx 1"

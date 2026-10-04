@@ -150,30 +150,24 @@ describe('Sidebar workspace tree — every open workspace shows its tabs', () =>
     expect(JSON.parse(localStorage.getItem('tr-ws-collapsed') ?? '[]')).toEqual([])
   })
 
-  it('a collapsed workspace shows its PANE total, not its tab count, and a static chevron', () => {
+  it('a collapsed workspace keeps the row simple and the chevron static', () => {
     render({ ...TWO_WORKSPACES, sessions: sessionsIn('/a', 7) })
     act(() => wsRow('/a').click())
     const row = wsRow('/a')
-    expect(row.querySelector('[data-testid="nav-count"]')?.textContent).toBe('7')
+    expect(row.textContent).toContain('alpha')
+    expect(row.querySelector('[data-testid="nav-count"]')).toBeNull()
     expect(row.querySelector('span[aria-hidden]')?.className).not.toContain('opacity-0')
   })
 
-  it('an expanded workspace shows the same pane total, capped at 99+ with the true count in its tooltip', () => {
+  it('an expanded workspace row does not include a pane-count chip', () => {
     render({ ...TWO_WORKSPACES, sessions: sessionsIn('/a', 104) })
-    const chip = wsRow('/a').querySelector('[data-testid="nav-count"]')
-    expect(chip?.textContent).toBe('99+')
-    expect(chip?.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toBe('104 panes')
+    expect(wsRow('/a').querySelector('[data-testid="nav-count"]')).toBeNull()
   })
 
-  it('no pane running dims the chip and says so, but the number stays the total', () => {
+  it('a workspace row remains simple when its panes have exited', () => {
     const dead = sessionsIn('/a', 4).map((sess) => ({ ...sess, state: 'exited' })) as SessionInfo[]
     render({ ...TWO_WORKSPACES, sessions: dead })
-    const chip = wsRow('/a').querySelector('[data-testid="nav-count"]')
-    expect(chip?.textContent).toBe('4')
-    expect(chip?.className).toContain('opacity-[0.55]')
-    expect(chip?.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toBe(
-      '4 panes, none running'
-    )
+    expect(wsRow('/a').querySelector('[data-testid="nav-count"]')).toBeNull()
   })
 
   it('a single pane gets no chip, on a workspace with tabs as on one without', () => {
