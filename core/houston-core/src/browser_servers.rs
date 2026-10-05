@@ -1,4 +1,3 @@
-#[cfg(target_os = "linux")]
 use houston_protocol::LocalServer;
 #[cfg(target_os = "linux")]
 use std::collections::{BTreeMap, HashSet};
