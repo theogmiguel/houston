@@ -82,9 +82,11 @@ describe('AddPanePopover (step 13, reference shape)', () => {
 
   it('lists the current workspace actions in the new pane menu', () => {
     const el = mount({ workspaceActions: [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }] })
-    expect(el.textContent).toContain('ACTIONS')
-    expect(el.textContent).toContain('▶ test')
-    expect(el.textContent).toContain('＋ Add action')
+    const section = el.querySelector('[data-testid="workspace-actions"]')!
+    expect(section.getAttribute('data-variant')).toBe('menu')
+    expect(section.textContent).toContain('Actions')
+    expect(section.textContent).toContain('test')
+    expect(section.textContent).toContain('Add action')
   })
 
   it('draws a distinct bespoke SVG mark for every agent row, not a shared fallback', () => {

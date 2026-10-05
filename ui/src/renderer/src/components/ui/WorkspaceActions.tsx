@@ -7,6 +7,8 @@ import { Field } from './Field'
 import { TextInput } from './TextInput'
 import { MODAL_SCRIM_CLS } from '../overlayChrome'
 import { ConfirmModal } from '../ConfirmModal'
+import { Icon } from '../Icon'
+import { IconPlay, IconPlus } from '../icons'
 
 interface Props {
   actions: WorkspaceAction[]
@@ -14,24 +16,44 @@ interface Props {
   onRun: (action: WorkspaceAction) => void
   onSave: (action: WorkspaceAction) => void
   onDelete: (id: string) => void
+  /** `menu` renders a section of the new-pane menu; `inline` is the centred row under the empty grid. */
+  variant?: 'inline' | 'menu'
 }
 
-export function WorkspaceActions({ actions, keymapOverrides, onRun, onSave, onDelete }: Props): React.JSX.Element {
+const MENU_LABEL_CLS = 'px-3 pt-1 pb-0.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]'
+const MENU_ROW_CLS = 'flex w-full items-center gap-2.5 px-3 min-h-[var(--h-ctl)] text-left bg-transparent border-none [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)]'
+
+export function WorkspaceActions({ actions, keymapOverrides, onRun, onSave, onDelete, variant = 'inline' }: Props): React.JSX.Element {
   const [editing, setEditing] = useState<WorkspaceAction | null | undefined>(undefined)
   const [deleting, setDeleting] = useState<WorkspaceAction | null>(null)
+  const rowMenu = (action: WorkspaceAction, position: string): React.JSX.Element => (
+    <ActionMenu className={`absolute ${position} pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100`} label={`More actions for ${action.name}`} iconOnly items={[
+      { label: 'Edit', onSelect: () => setEditing(action) },
+      { label: 'Delete', tone: 'danger', onSelect: () => setDeleting(action) }
+    ]} />
+  )
+  const menu = variant === 'menu'
   return (
-    <div data-testid="workspace-actions" className="flex w-full flex-wrap items-center justify-start gap-[var(--space-2)] border-t border-[var(--divider)] pt-[var(--space-2)] text-left">
-      <span className="[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">ACTIONS</span>
-      {actions.map((action) => (
+    <div data-testid="workspace-actions" data-variant={variant} className={menu ? 'flex flex-col gap-0.5' : 'flex w-full flex-wrap items-center justify-center gap-[var(--space-2)] border-t border-[var(--divider)] pt-[var(--space-2)]'}>
+      {menu ? <><div aria-hidden className="h-px my-1 mx-0 bg-[var(--glass-brd)]" /><div className={MENU_LABEL_CLS}>Actions</div></> : <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">ACTIONS</span>}
+      {actions.map((action) => menu ? (
+        <span key={action.id} className="group relative flex items-center">
+          <button type="button" className={MENU_ROW_CLS} onClick={() => onRun(action)}>
+            <Icon glyph={IconPlay} role="ui" className="flex-none text-[var(--text-muted)]" />
+            <span className="flex-1 truncate">{action.name}</span>
+            {action.shortcut && <span className="font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)] group-hover:invisible">{action.shortcut}</span>}
+          </button>
+          {rowMenu(action, 'right-[var(--space-1)] top-1/2 -translate-y-1/2')}
+        </span>
+      ) : (
         <span key={action.id} className="group relative inline-flex items-center">
           <Button variant="secondary" onClick={() => onRun(action)}>▶ {action.name}</Button>
-          <ActionMenu className="absolute left-[calc(100%+var(--space-1))] top-0 pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100" label={`More actions for ${action.name}`} iconOnly items={[
-            { label: 'Edit', onSelect: () => setEditing(action) },
-            { label: 'Delete', tone: 'danger', onSelect: () => setDeleting(action) }
-          ]} />
+          {rowMenu(action, 'left-[calc(100%+var(--space-1))] top-0')}
         </span>
       ))}
-      <Button variant="secondary" onClick={() => setEditing(null)}>＋ Add action</Button>
+      {menu
+        ? <button type="button" className={MENU_ROW_CLS} onClick={() => setEditing(null)}><Icon glyph={IconPlus} role="ui" className="flex-none text-[var(--text-muted)]" /><span className="flex-1">Add action</span></button>
+        : <Button variant="secondary" onClick={() => setEditing(null)}>＋ Add action</Button>}
       {editing !== undefined && <ActionForm action={editing} actions={actions} keymapOverrides={keymapOverrides} onCancel={() => setEditing(undefined)} onSave={(action) => { onSave(action); setEditing(undefined) }} />}
       {deleting && <ConfirmModal title="DELETE ACTION" message={`Delete “${deleting.name}”?`} confirmLabel="Delete" onCancel={() => setDeleting(null)} onConfirm={() => { onDelete(deleting.id); setDeleting(null) }} />}
     </div>

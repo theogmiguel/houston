@@ -100,6 +100,10 @@ import {
 import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
+import { AddPanePopover } from '../src/components/AddPanePopover'
+import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
+
+const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
 import { UiPrimitivesStory } from './uiStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
@@ -197,6 +201,8 @@ function RailWorkspacesMulti(): React.JSX.Element {
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
   'new-session/default': () => <NewSession />,
+  'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
+  'shell/workspace-empty': () => <WorkspaceEmpty onNewSession={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
   'launch/docked': () => <DockedLaunchStory />,
   'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,
   'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' />,

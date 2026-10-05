@@ -45,6 +45,26 @@ describe('WorkspaceActions', () => {
     expect(menu.className).toContain('opacity-0')
     expect(menu.className).toContain('group-hover:opacity-100')
     expect(menu.className).toContain('group-focus-within:opacity-100')
+    expect(menu.className).toMatch(/(^|\s)absolute(\s|$)/)
+    expect(menu.className).not.toMatch(/(^|\s)relative(\s|$)/)
+  })
+
+  it('centres the empty-grid row under the doors above it', () => {
+    const group = mount().querySelector('[data-testid="workspace-actions"]')!
+    expect(group.className).toContain('justify-center')
+  })
+
+  it('renders as a section of the new-pane menu, with rows like the other menu items', () => {
+    const run = vi.fn()
+    act(() => root.render(<WorkspaceActions variant="menu" actions={[ACTION]} keymapOverrides={KEYMAP} onRun={run} onSave={vi.fn()} onDelete={vi.fn()} />))
+    const group = container.querySelector('[data-testid="workspace-actions"]')!
+    expect(group.className).not.toContain('border-t')
+    expect(group.children[1]?.textContent).toBe('Actions')
+    const rows = Array.from(group.querySelectorAll('button')).filter((button) => !button.getAttribute('aria-label'))
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['test', 'Add action'])
+    expect(rows.every((row) => row.className.includes('min-h-[var(--h-ctl)]') && row.className.includes('px-3'))).toBe(true)
+    act(() => rows[0].click())
+    expect(run).toHaveBeenCalledWith(ACTION)
   })
 
   it('uses compact, left-aligned fields in the action form', () => {

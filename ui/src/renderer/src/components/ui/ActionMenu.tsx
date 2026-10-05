@@ -41,7 +41,7 @@ export function ActionMenu({
   }, [open])
 
   return (
-    <div ref={root} className={`relative inline-flex ${className}`}>
+    <div ref={root} className={`${/(^|\s)(absolute|fixed)(\s|$)/.test(className) ? '' : 'relative'} inline-flex ${className}`}>
       {iconOnly
         ? <Button variant="icon" icon={IconMoreHorizontal} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} />
         : <Button variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{label}</Button>}

@@ -104,6 +104,7 @@ export function AddPanePopover({
       </button>
       {hasWorkspace && (
         <WorkspaceActions
+          variant="menu"
           actions={workspaceActions}
           keymapOverrides={keymapOverrides}
           onRun={(action) => { onClose(); onRunWorkspaceAction(action) }}
