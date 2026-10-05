@@ -1082,6 +1082,7 @@ export function App(): React.JSX.Element {
     onError: pushError,
   });
   const { actions: workspaceActions } = workspaceActionState;
+  const workspaceActionsFor = (path: string) => workspaceActionState.byWorkspace[path] ?? [];
   const onBackgroundUnavailable = useCallback(
     (reason: string) => {
       pushError(`The window background could not be loaded (${reason}).`);
@@ -3661,12 +3662,12 @@ export function App(): React.JSX.Element {
                               launchPreview={gridSelected ? activeLaunchPreview : undefined}
                             />
                           ) : gridSelected ? (
-                            <div data-theme={document.documentElement.dataset.theme ?? 'graphite'} className="relative flex-1 min-w-0 min-h-0">
+                            <div className="relative flex-1 min-w-0 min-h-0">
                               <WorkspaceEmpty
                                 onNewSession={() => setComposer("current-grid")}
                                 onTerminal={newTerminal}
                                 onBrowser={() => openBrowserPane(w.path, null)}
-                                actions={workspaceActionState.byWorkspace[w.path] ?? []}
+                                actions={workspaceActionsFor(w.path)}
                                 keymapOverrides={keymapOverrides}
                                 onRunAction={workspaceActionState.run}
                                 onSaveAction={workspaceActionState.save}
