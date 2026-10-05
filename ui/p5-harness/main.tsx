@@ -33,6 +33,13 @@ import { deliverToApp, installHarnessBridge, makeTerminalPaneClient } from './St
 import oldCss from './old-full.css?raw'
 import { injectOldSheet } from './scopeOld'
 import props from './props.json'
+import '@fontsource/plus-jakarta-sans/400.css'
+import '@fontsource/plus-jakarta-sans/500.css'
+import '@fontsource/plus-jakarta-sans/600.css'
+import '@fontsource/plus-jakarta-sans/700.css'
+import '@fontsource/jetbrains-mono/400.css'
+import '@fontsource/jetbrains-mono/500.css'
+import '@fontsource/jetbrains-mono/700.css'
 import '../src/renderer/src/tailwind.css'
 import '../src/renderer/src/theme.css'
 import '../src/renderer/src/base.css'
@@ -142,7 +149,9 @@ const helloOk = (): ServerMsg => ({
 })
 
 function resetSingletons(): void {
+  const chromeTheme = document.documentElement.dataset.theme ?? 'graphite'
   localStorage.clear()
+  localStorage.setItem('tr-chrome-theme', chromeTheme)
 }
 
 const raf = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()))

@@ -3661,7 +3661,7 @@ export function App(): React.JSX.Element {
                               launchPreview={gridSelected ? activeLaunchPreview : undefined}
                             />
                           ) : gridSelected ? (
-                            <div className="relative flex-1 min-w-0 min-h-0">
+                            <div data-theme={document.documentElement.dataset.theme ?? 'graphite'} className="relative flex-1 min-w-0 min-h-0">
                               <WorkspaceEmpty
                                 onNewSession={() => setComposer("current-grid")}
                                 onTerminal={newTerminal}

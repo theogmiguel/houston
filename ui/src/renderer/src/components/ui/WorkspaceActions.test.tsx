@@ -37,6 +37,27 @@ describe('WorkspaceActions', () => {
     expect(run).toHaveBeenCalledWith(ACTION)
   })
 
+  it('keeps row actions hidden until hover or keyboard focus', () => {
+    const el = mount()
+    const group = el.querySelector('[data-testid="workspace-actions"]')!
+    const menu = el.querySelector('[aria-label="More actions for test"]')!.parentElement!
+    expect(group.className).toContain('border-t')
+    expect(menu.className).toContain('opacity-0')
+    expect(menu.className).toContain('group-hover:opacity-100')
+    expect(menu.className).toContain('group-focus-within:opacity-100')
+  })
+
+  it('uses compact, left-aligned fields in the action form', () => {
+    const el = mount()
+    act(() => Array.from(el.querySelectorAll('button')).find((button) => button.textContent === '＋ Add action')!.click())
+    const dialog = el.querySelector('[role="dialog"]')!
+    expect(dialog.className).toContain('text-left')
+    expect(el.querySelector('input[aria-labelledby$="-label"]')?.className).toContain('bg-[var(--card-bg)]')
+    expect(el.querySelectorAll('input')[1].className).toContain('font-mono')
+    expect(Array.from(el.querySelectorAll('button')).some((button) => button.textContent === 'Save')).toBe(true)
+    expect(Array.from(el.querySelectorAll('button')).some((button) => button.textContent === 'Press shortcut' && button.className.includes('bg-[var(--card-bg)]'))).toBe(true)
+  })
+
   it('requires confirmation before deleting a saved action', () => {
     const onDelete = vi.fn()
     const el = mount(vi.fn(), vi.fn(), onDelete)

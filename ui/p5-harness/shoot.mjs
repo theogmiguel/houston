@@ -25,6 +25,7 @@ const page = await browser.newPage({ deviceScaleFactor: 2, viewport: { width: 90
 await page.emulateMedia({ reducedMotion: MOTION })
 await page.goto(URL, { waitUntil: 'networkidle' })
 await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), THEME)
+await page.evaluate(() => document.fonts.ready)
 await page.waitForFunction(() => typeof window.__setView === 'function')
 
 const ONLY = process.env.CASE ? process.env.CASE.split(',').map((s) => s.trim()) : null
@@ -43,6 +44,7 @@ const cases = ONLY ? allCases.filter((c) => ONLY.includes(c.id)) : allCases
 const shot = async (id, side) => {
   await page.mouse.move(page.viewportSize().width - 1, page.viewportSize().height - 1)
   await page.evaluate(([i, s]) => window.__setView(i, s), [id, side])
+  await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(60)
   const c = cases.find((x) => x.id === id)
   if (c.prep && c.prep.length) {

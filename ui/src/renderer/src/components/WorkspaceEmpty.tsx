@@ -43,7 +43,7 @@ export function WorkspaceEmpty({
       >
       <div
         data-testid="workspace-empty-headline"
-        className="font-[family-name:var(--tr-text-display-family)] text-[length:var(--tr-text-display-size)] leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] max-w-[20ch]"
+        className="font-[family-name:var(--font-sans)] text-[length:var(--tr-text-display-size)] leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] max-w-[20ch]"
         style={{ fontWeight: 'var(--tr-text-display-weight)' }}
       >
         Nothing running here yet

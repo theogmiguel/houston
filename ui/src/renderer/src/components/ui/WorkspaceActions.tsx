@@ -20,12 +20,12 @@ export function WorkspaceActions({ actions, keymapOverrides, onRun, onSave, onDe
   const [editing, setEditing] = useState<WorkspaceAction | null | undefined>(undefined)
   const [deleting, setDeleting] = useState<WorkspaceAction | null>(null)
   return (
-    <div data-testid="workspace-actions" className="flex flex-wrap items-center justify-center gap-[var(--space-2)]">
-      <span className="basis-full [font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">ACTIONS</span>
+    <div data-testid="workspace-actions" className="flex w-full flex-wrap items-center justify-start gap-[var(--space-2)] border-t border-[var(--divider)] pt-[var(--space-2)] text-left">
+      <span className="[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">ACTIONS</span>
       {actions.map((action) => (
-      <span key={action.id} className="inline-flex items-center gap-1">
+        <span key={action.id} className="group relative inline-flex items-center">
           <Button variant="secondary" onClick={() => onRun(action)}>▶ {action.name}</Button>
-          <ActionMenu label={`More actions for ${action.name}`} iconOnly items={[
+          <ActionMenu className="absolute left-[calc(100%+var(--space-1))] top-0 pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100" label={`More actions for ${action.name}`} iconOnly items={[
             { label: 'Edit', onSelect: () => setEditing(action) },
             { label: 'Delete', tone: 'danger', onSelect: () => setDeleting(action) }
           ]} />
@@ -83,7 +83,7 @@ function ActionForm({ action, actions, keymapOverrides, onCancel, onSave }: {
 
   return (
     <div className={MODAL_SCRIM_CLS} onMouseDown={onCancel}>
-      <div ref={rootRef} role="dialog" aria-modal="true" aria-labelledby="workspace-action-title" className="pop w-[420px] max-w-[92vw] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] p-[var(--space-5)]" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => {
+      <div ref={rootRef} role="dialog" aria-modal="true" aria-labelledby="workspace-action-title" className="pop w-[420px] max-w-[92vw] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] p-[var(--space-5)] text-left" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => {
         if (event.key === 'Escape') { event.stopPropagation(); onCancel() }
         if (event.key === 'Tab') {
           const focusable = rootRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)')
@@ -97,13 +97,13 @@ function ActionForm({ action, actions, keymapOverrides, onCancel, onSave }: {
         <div className="grid gap-[var(--space-5)]">
           <h2 id="workspace-action-title" className="m-0 text-[length:var(--tr-text-heading-size)] text-[var(--text-primary)]">{action ? 'Edit action' : 'Add action'}</h2>
           <div className="grid gap-[var(--space-3)]">
-            <Field label="Name"><TextInput ref={nameRef} value={name} onChange={(event) => setName(event.target.value)} maxLength={64} /></Field>
-            <Field label="Command"><TextInput value={command} onChange={(event) => setCommand(event.target.value)} maxLength={4096} /></Field>
-            <Field label="Shortcut" error={error || undefined}><Button variant="secondary" onClick={() => setCapturing(true)}>{capturing ? 'Press shortcut' : shortcut || 'Press shortcut'}</Button></Field>
+            <Field label="Name" size="compact" align="start"><TextInput ref={nameRef} surface="card" value={name} onChange={(event) => setName(event.target.value)} maxLength={64} /></Field>
+            <Field label="Command" size="compact" align="start"><TextInput surface="card" font="mono" value={command} onChange={(event) => setCommand(event.target.value)} maxLength={4096} /></Field>
+            <Field label="Shortcut" size="compact" align="start" error={error || undefined}><Button variant="field" className="w-full" onClick={() => setCapturing(true)}>{capturing ? 'Press shortcut' : shortcut || 'Press shortcut'}</Button></Field>
           </div>
           <div className="flex justify-end gap-[var(--space-2)]">
             <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-            <Button disabled={!name.trim() || !command.trim()} onClick={() => onSave({ id: action?.id ?? crypto.randomUUID(), name: name.trim(), command, shortcut: shortcut || null })}>Save action</Button>
+            <Button disabled={!name.trim() || !command.trim()} onClick={() => onSave({ id: action?.id ?? crypto.randomUUID(), name: name.trim(), command, shortcut: shortcut || null })}>Save</Button>
           </div>
         </div>
       </div>

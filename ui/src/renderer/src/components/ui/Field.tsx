@@ -9,10 +9,12 @@ export interface FieldProps {
   label: string
   hint?: string
   error?: string
+  size?: 'default' | 'compact'
+  align?: 'start' | 'center'
   children: ReactElement
 }
 
-export function Field({ label, hint, error, children }: FieldProps): React.JSX.Element {
+export function Field({ label, hint, error, size = 'default', align, children }: FieldProps): React.JSX.Element {
   const generatedId = useId()
   const childProps = children.props as { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }
   const controlId = childProps.id ?? generatedId
@@ -29,7 +31,7 @@ export function Field({ label, hint, error, children }: FieldProps): React.JSX.E
   })
 
   return (
-    <div className="grid gap-[var(--space-1-5)]">
+    <div className={`grid ${size === 'compact' ? 'gap-[var(--space-1)]' : 'gap-[var(--space-1-5)]'} ${align === 'start' ? 'text-left' : align === 'center' ? 'text-center' : ''}`}>
       <FieldLabel id={labelId}>{label}</FieldLabel>
       {nativeControl ? control : <div role="group" aria-labelledby={labelId} aria-describedby={describedBy} aria-invalid={error ? true : undefined}>{control}</div>}
       {message && <p id={messageId} className={`m-0 text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] ${error ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>{message}</p>}
