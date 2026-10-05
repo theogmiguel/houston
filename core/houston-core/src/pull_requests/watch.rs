@@ -15,6 +15,8 @@ pub const PR_WATCH_SNIPPET_MAX: usize = 200;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct State {
     pub started_at: u64,
+    #[serde(default)]
+    pub last_checked_at_ms: Option<i64>,
     pub head_sha: String,
     pub failed_checks: HashSet<String>,
     pub passed: bool,
@@ -83,6 +85,7 @@ pub fn evaluate(
     }
 
     let mut changes = Vec::new();
+    state.last_checked_at_ms = Some(crate::daemon::now_unix_ms());
     state.read_failures = 0;
     if detail.head_sha != state.head_sha {
         state.head_sha.clone_from(&detail.head_sha);
@@ -201,6 +204,7 @@ pub fn evaluate(
 }
 
 pub fn failed_read(mut state: State) -> Evaluation {
+    state.last_checked_at_ms = Some(crate::daemon::now_unix_ms());
     state.read_failures = state.read_failures.saturating_add(1);
     if state.read_failures >= PR_WATCH_READ_FAILURE_LIMIT {
         Evaluation {
@@ -296,6 +300,7 @@ mod tests {
     fn state() -> State {
         State {
             started_at: 1,
+            last_checked_at_ms: None,
             head_sha: "abc".into(),
             failed_checks: HashSet::new(),
             passed: false,
@@ -306,6 +311,14 @@ mod tests {
             read_failures: 0,
             own_login: None,
         }
+    }
+
+    #[test]
+    fn persisted_state_without_last_checked_time_defaults_to_unknown() {
+        let mut value = serde_json::to_value(state()).unwrap();
+        value.as_object_mut().unwrap().remove("last_checked_at_ms");
+        let restored: State = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.last_checked_at_ms, None);
     }
 
     fn link(state: proto::PullRequestState) -> proto::PullRequestLink {

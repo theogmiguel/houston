@@ -88,6 +88,22 @@ describe('the palette lists open tabs', () => {
   })
 })
 
+describe('the palette lists workspace actions in Run', () => {
+  it('runs the selected saved command for the current workspace', () => {
+    const runWorkspaceAction = vi.fn()
+    const action = { id: 'test', name: 'test', command: 'bun run test', shortcut: 'Ctrl+Shift+T' }
+    const rows = buildCommands({
+      actions: makeActions({ workspaceActions: [action], runWorkspaceAction }),
+      hasWorkspace: true,
+      workspaces: WORKSPACES
+    }).filter((command) => command.group === 'Run')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ title: 'test', subtitle: 'bun run test', enabled: true })
+    rows[0].run()
+    expect(runWorkspaceAction).toHaveBeenCalledWith(action)
+  })
+})
+
 describe('recency decides the order', () => {
   it('most recently opened first', () => {
     touchGrid('/p/bravo', 'b1', 3000)

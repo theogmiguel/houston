@@ -606,6 +606,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitDiff { .. }
             | proto::ClientMsg::HistoryCount
             | proto::ClientMsg::GitBranch { .. }
+            | proto::ClientMsg::GitBranchCommits { .. }
             | proto::ClientMsg::PrStatus { .. }
             | proto::ClientMsg::PrDetail { .. }
             | proto::ClientMsg::PrWatchList
@@ -629,6 +630,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::TasksAccessGet { .. }
             | proto::ClientMsg::TaskStartSettingsGet { .. }
             | proto::ClientMsg::TaskReviewSettingsGet { .. }
+            | proto::ClientMsg::WorkspaceActionsGet { .. }
     )
 }
 
@@ -935,6 +937,30 @@ async fn dispatch(
         proto::ClientMsg::WorkspaceRoutingSet { workspace, routes } => {
             daemon.set_workspace_routing(&workspace, &routes)?;
             daemon.broadcast_control(&proto::ServerMsg::WorkspaceRouting { workspace, routes });
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionsGet { workspace } => {
+            let actions = daemon.workspace_actions(&workspace)?;
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::WorkspaceActions { workspace, actions },
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionSet { workspace, action } => {
+            let msg = daemon.set_workspace_action(&workspace, action)?;
+            match msg {
+                msg @ proto::ServerMsg::WorkspaceActionRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                msg => daemon.broadcast_control(&msg),
+            }
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionDelete { workspace, id } => {
+            let msg = daemon.delete_workspace_action(&workspace, &id)?;
+            daemon.broadcast_control(&msg);
             Ok(())
         }
         proto::ClientMsg::OrchestrationCapsSet {
@@ -1707,6 +1733,28 @@ async fn dispatch(
             )
             .await;
             Ok(())
+        }
+        proto::ClientMsg::GitBranchCommits { dir } => {
+            let d = PathBuf::from(&dir);
+            let result = tokio::task::spawn_blocking(move || crate::git::branch_commits(&d))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("git branch commits task panicked: {e}")));
+            match result {
+                Ok((commits, total, truncated)) => {
+                    let _ = send_msg(
+                        sink,
+                        &proto::ServerMsg::GitBranchCommits {
+                            dir,
+                            commits,
+                            total,
+                            truncated,
+                        },
+                    )
+                    .await;
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
         }
         proto::ClientMsg::GitStage { dir, paths } => {
             let d = PathBuf::from(&dir);

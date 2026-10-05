@@ -1835,6 +1835,9 @@ pub struct PrWatchInfo {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub url: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_checked_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1866,6 +1869,15 @@ pub const MAX_TAGS_PER_SESSION: usize = 5;
 pub struct Workspace {
     pub path: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorkspaceAction {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub shortcut: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1933,6 +1945,15 @@ pub struct GitBranchInfo {
     /// holds the branch, so it cannot be switched to or deleted here.
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub worktree_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct GitBranchCommit {
+    pub sha: String,
+    pub subject: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub author_time_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2827,6 +2848,9 @@ pub enum ClientMsg {
     GitBranch {
         dir: String,
     },
+    GitBranchCommits {
+        dir: String,
+    },
     GitStage {
         dir: String,
         #[serde(default)]
@@ -3582,6 +3606,17 @@ pub enum ClientMsg {
         workspace: String,
         routes: Vec<RoleRoute>,
     },
+    WorkspaceActionsGet {
+        workspace: String,
+    },
+    WorkspaceActionSet {
+        workspace: String,
+        action: WorkspaceAction,
+    },
+    WorkspaceActionDelete {
+        workspace: String,
+        id: String,
+    },
     OrchestrationCapsSet {
         max_live_children: u32,
         max_spawn_depth: u32,
@@ -3729,6 +3764,17 @@ pub enum ServerMsg {
         workspace: String,
         routes: Vec<RoleRoute>,
     },
+    WorkspaceActions {
+        workspace: String,
+        actions: Vec<WorkspaceAction>,
+    },
+    WorkspaceActionRefused {
+        workspace: String,
+        reason: String,
+        limit: u32,
+        actual: u32,
+        requested: u32,
+    },
     DelegationResults {
         parent: u32,
         results: Vec<DelegationResult>,
@@ -3779,6 +3825,13 @@ pub enum ServerMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         common_dir: Option<String>,
+    },
+    GitBranchCommits {
+        dir: String,
+        commits: Vec<GitBranchCommit>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        total: u64,
+        truncated: bool,
     },
     GitCommit {
         dir: String,

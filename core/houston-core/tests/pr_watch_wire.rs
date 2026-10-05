@@ -116,11 +116,19 @@ async fn fake_gh_wakes_once_per_failed_head_then_merge_ends_persisted_watch() {
 
     rig.daemon.pr_watch_start(rig.session, "7").unwrap();
     assert_eq!(rig.daemon.pr_watch_infos().unwrap()[0].watches[0].number, 7);
+    let before_read = rig.daemon.pr_watch_infos().unwrap()[0].watches[0]
+        .last_checked_at_ms
+        .unwrap();
     let reopened = houston_core::db::Db::open(&rig.state.path().join("test.db")).unwrap();
     assert_eq!(reopened.pr_watch_list(Some(rig.session)).unwrap().len(), 1);
 
     std::fs::write(&fixture, pr("OPEN", "abc", "FAILURE")).unwrap();
+    tokio::time::sleep(Duration::from_millis(2)).await;
     rig.daemon.pr_watch_tick();
+    let after_successful_read = rig.daemon.pr_watch_infos().unwrap()[0].watches[0]
+        .last_checked_at_ms
+        .unwrap();
+    assert!(after_successful_read > before_read);
     rig.daemon.pr_watch_tick();
     let rows = rig.daemon.inbox_rows_for_test(rig.session);
     assert_eq!(rows.len(), 1);
@@ -156,7 +164,16 @@ async fn fake_gh_wakes_once_per_failed_head_then_merge_ends_persisted_watch() {
     std::fs::write(&fixture, pr("OPEN", "def", "SUCCESS")).unwrap();
     rig.daemon.pr_watch_start(rig.session, "7").unwrap();
     std::fs::write(&fixture, "{}").unwrap();
-    for _ in 0..15 {
+    let before_failed_read = rig.daemon.pr_watch_infos().unwrap()[0].watches[0]
+        .last_checked_at_ms
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(2)).await;
+    rig.daemon.pr_watch_tick();
+    let after_failed_read = rig.daemon.pr_watch_infos().unwrap()[0].watches[0]
+        .last_checked_at_ms
+        .unwrap();
+    assert!(after_failed_read > before_failed_read);
+    for _ in 1..15 {
         rig.daemon.pr_watch_tick();
     }
     assert!(rig.daemon.pr_watch_infos().unwrap().is_empty());
