@@ -77,11 +77,12 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { SettingsAgentSetup, SettingsAppearance, SettingsDiagnostics, SettingsTerminal } from './settingsStories'
+import { SettingsAgentSetup, SettingsAppearance, SettingsDiagnostics, SettingsNotifications, SettingsTerminal } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
   NoticesPaneCorner,
+  NoticesOrchestration,
   NoticesResting,
   NoticesStacked
 } from './noticeStories'
@@ -207,12 +208,14 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/agent-setup': () => <SettingsAgentSetup />,
   'settings/appearance': () => <SettingsAppearance />,
   'settings/terminal': () => <SettingsTerminal />,
+  'settings/notifications': () => <SettingsNotifications />,
   'settings/diagnostics': () => <SettingsDiagnostics />,
   'notices/resting': () => <NoticesResting />,
   'notices/stacked': () => <NoticesStacked />,
   'notices/error': () => <NoticesError />,
   'notices/exiting': () => <NoticesExiting />,
   'notices/pane-corner': () => <NoticesPaneCorner />,
+  'notices/orchestration': () => <NoticesOrchestration />,
   'nav/routines': () => <NavRoutines />,
   'nav/routines-empty': () => <NavRoutinesEmpty />,
   'nav/routine-editor': () => <NavRoutineEditor />,

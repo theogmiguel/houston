@@ -54,6 +54,14 @@ export function SettingsTerminal(): React.JSX.Element {
   return <SettingsScreen section="terminal" />
 }
 
+export function SettingsNotifications(): React.JSX.Element {
+  return <SettingsScreen section="notifications" props={{
+    desktopNotificationMode: 'notifications-sound',
+    inAppNotifications: true,
+    desktopNotificationDelivery: { allowed: true }
+  }} />
+}
+
 export function SettingsDiagnostics(): React.JSX.Element {
   return <SettingsScreen section="diagnostics" props={{ hostInfo: hostInfoFixture() }} />
 }

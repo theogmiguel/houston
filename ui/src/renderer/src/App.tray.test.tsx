@@ -10,7 +10,7 @@ import {
   renderReadyApp,
   resetHarness
 } from './test/appTestHarness'
-import { TRAY_SYNC_MIN_INTERVAL_MS, type TraySyncPayload } from './houston/tray'
+import { NOTIFICATION_EVENT_FOCUS_PANE, TRAY_SYNC_MIN_INTERVAL_MS, type TraySyncPayload } from './houston/tray'
 
 const { syncTrayMock, onTrayEventMock, appQuitMock, listeners } = vi.hoisted(() => {
   const listeners = new Map<string, (payload: never) => void>()
@@ -156,6 +156,21 @@ describe('the tray is fed by this window', () => {
 
     const focus = listeners.get('tray://focus-pane')
     if (!focus) throw new Error('App never subscribed to tray://focus-pane')
+    await act(async () => {
+      ;(focus as (session: number) => void)(2)
+      await Promise.resolve()
+    })
+    expect(selectedWorkspaceName(harness)).toBe('other-repo')
+  })
+
+  it('opens the workspace a desktop-notification click targets', async () => {
+    harness = await renderReadyApp({
+      sessions: [makeSession({ id: 1, project_dir: HERE, cwd: HERE }), makeSession({ id: 2, project_dir: ELSEWHERE, cwd: ELSEWHERE, title: 'session-2' })],
+      workspaces: [makeWorkspace({ path: HERE, name: 'project' }), makeWorkspace({ path: ELSEWHERE, name: 'other-repo' })]
+    })
+    await flush()
+    const focus = listeners.get(NOTIFICATION_EVENT_FOCUS_PANE)
+    if (!focus) throw new Error(`App never subscribed to ${NOTIFICATION_EVENT_FOCUS_PANE}`)
     await act(async () => {
       ;(focus as (session: number) => void)(2)
       await Promise.resolve()

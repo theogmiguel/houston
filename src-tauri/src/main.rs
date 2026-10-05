@@ -490,6 +490,7 @@ fn main() {
             fs::fs_write_file,
             fs::fs_write_file_checked,
             notifications::native_notify,
+            notifications::native_notifications_supported,
             fs::fs_stat,
             fs::fs_exists,
             fs::fs_delete,
@@ -694,6 +695,7 @@ fn main() {
         })
         .setup(move |app| {
             let _ = APP_HANDLE.set(app.handle().clone());
+            notifications::start_action_listener(app.handle().clone());
 
             {
                 let app_handle = app.handle().clone();

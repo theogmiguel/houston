@@ -10,6 +10,7 @@ export interface NoticeAction {
 export interface NoticeInput {
   code: string
   kind?: NoticeKind
+  presentation?: 'standard' | 'orchestration'
   title: string
   body?: string
   action?: NoticeAction
@@ -21,6 +22,7 @@ export interface NoticeRecord {
   id: number
   code: string
   kind: NoticeKind
+  presentation: 'standard' | 'orchestration'
   title: string
   body?: string
   action?: NoticeAction
@@ -43,6 +45,7 @@ export function resolveNotice(input: NoticeInput, id: number): NoticeRecord {
     id,
     code: input.code,
     kind,
+    presentation: input.presentation ?? 'standard',
     title: input.title,
     body: input.body,
     action: input.action,

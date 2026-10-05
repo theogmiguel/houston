@@ -366,8 +366,17 @@ and actual hashes. Rename is atomic for readers; the save lock does not exclude 
 by external processes, and the filesystem allowlist retains its resolve/syscall race.
 
 Native notifications use the Linux desktop notification service over the existing session
-bus. Unsupported platforms return an explicit refusal. The renderer owns aggregation and
-calls the bridge once when an orchestrator newly requires operator input.
+bus. The daemon is not involved: the renderer detects top-level status transitions, checks
+the OS window focus state, and sends only the pane, agent and workspace to the desktop
+service. The service's `ActionInvoked` signal returns a pane id to the renderer's existing
+focus path. Windows returns an explicit unsupported-platform error. Linux has no standard
+permission query on this D-Bus interface; Houston reports successful delivery or a refusal
+after a notification attempt.
+
+The window badge count is updated from top-level, visible panes waiting for input and is
+cleared when a pane is opened. Tauri exposes a badge count on Linux and macOS and an overlay
+icon on Windows. Windows desktop notifications remain explicitly unsupported until a click
+route is verified. macOS desktop notification delivery is also explicitly unsupported.
 
 ## Testing
 

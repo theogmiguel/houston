@@ -24,14 +24,12 @@ import { UsageTabSection } from './settings/UsageTabSection'
 import { AppearanceSection } from './settings/AppearanceSection'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
-import { DaemonSection } from './settings/DaemonSection'
 import { AccountsSection } from './settings/AccountsSection'
 import { AgentStatusSection } from './settings/AgentStatusSection'
-import { PrivacySection } from './settings/PrivacySection'
-import { VoiceSection } from './settings/VoiceSection'
-import { ShortcutsSection } from './settings/ShortcutsSection'
 import { OrchestrationSection } from './settings/OrchestrationSection'
 import { TasksSection } from './settings/TasksSection'
+import { SupplementalSettingsSections } from './settings/SupplementalSettingsSections'
+import type { DesktopNotificationMode } from '../usePreferences'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
 import type { AgentProfileActive } from '../houston/generated/AgentProfileActive'
 import type { SessionPolicy } from '../houston/generated/SessionPolicy'
@@ -62,7 +60,7 @@ export interface McpStateView {
   checks: Extract<ServerMsg, { type: 'mcp_state' }>['checks']
 }
 
-interface Props {
+export interface Props {
   daemonClient?: HoustonClient | null
 
   chromeTheme: ChromeTheme
@@ -133,6 +131,11 @@ interface Props {
   onUpdatePolicySet: (policy: UpdatePolicy) => void
   onOpenExternal: (url: string) => void
   liveSessionCount?: number
+  desktopNotificationMode?: DesktopNotificationMode
+  onDesktopNotificationMode?: (mode: DesktopNotificationMode) => void
+  inAppNotifications?: boolean
+  onInAppNotifications?: (enabled: boolean) => void
+  desktopNotificationDelivery?: { allowed: boolean; error?: string } | null
 
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
@@ -241,10 +244,43 @@ function SectionDispatch({
   onAgentHooksSet,
   onAgentHooksRefresh,
   onOpenHooks,
-  onRevealSessionDb
+  onRevealSessionDb,
+  desktopNotificationMode = 'off',
+  onDesktopNotificationMode = NOOP,
+  inAppNotifications = false,
+  onInAppNotifications = NOOP,
+  desktopNotificationDelivery = null
 }: SectionDispatchProps): React.JSX.Element {
   return (
     <>
+        <SupplementalSettingsSections {...{
+          section,
+          keymapOverrides,
+          onKeymapOverrides,
+          desktopNotificationMode,
+          onDesktopNotificationMode,
+          inAppNotifications,
+          onInAppNotifications,
+          desktopNotificationDelivery,
+          voiceSettings,
+          voiceCloudKeyPresent,
+          voiceKeyringError,
+          voiceModels,
+          voiceDevices,
+          onVoiceLevelMonitor,
+          onVoiceSettingsSet,
+          onVoiceKeySet,
+          onVoiceKeyClear,
+          onVoiceDevicesRefresh,
+          onVoiceModelDownload,
+          onVoiceModelDelete,
+          historyCount,
+          onClearHistory,
+          historyIgnoreGlobs,
+          onHistoryIgnoreGlobsSet,
+          hostInfo,
+          onRevealSessionDb
+        }} />
         {section === 'appearance' && (
           <AppearanceSection
             chromeTheme={chromeTheme}
@@ -281,28 +317,6 @@ function SectionDispatch({
             onCopyOnSelect={onCopyOnSelect}
             stripBoxGlyphs={stripBoxGlyphs}
             onStripBoxGlyphs={onStripBoxGlyphs}
-          />
-        )}
-
-        {section === 'shortcuts' && (
-          <ShortcutsSection keymapOverrides={keymapOverrides} onKeymapOverrides={onKeymapOverrides} />
-        )}
-
-        {section === 'voice' && (
-          <VoiceSection
-            voiceSettings={voiceSettings}
-            voiceCloudKeyPresent={voiceCloudKeyPresent}
-            voiceKeyringError={voiceKeyringError}
-            voiceModels={voiceModels}
-            voiceDevices={voiceDevices}
-            onVoiceLevelMonitor={onVoiceLevelMonitor}
-            onVoiceSettingsSet={onVoiceSettingsSet}
-            onVoiceKeySet={onVoiceKeySet}
-            onVoiceKeyClear={onVoiceKeyClear}
-            onVoiceDevicesRefresh={onVoiceDevicesRefresh}
-            onVoiceModelDownload={onVoiceModelDownload}
-            onVoiceModelDelete={onVoiceModelDelete}
-            keymapOverrides={keymapOverrides}
           />
         )}
 
@@ -347,17 +361,6 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'privacy' && (
-          <PrivacySection
-            historyCount={historyCount}
-            onClearHistory={onClearHistory}
-            historyIgnoreGlobs={historyIgnoreGlobs}
-            onHistoryIgnoreGlobsSet={onHistoryIgnoreGlobsSet}
-            hostInfo={hostInfo}
-            onRevealSessionDb={onRevealSessionDb}
-          />
-        )}
-
         {section === 'about' && (
           <AboutSection
             onContact={onContact}
@@ -399,7 +402,6 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'daemon' && <DaemonSection />}
     </>
   )
 }
