@@ -1546,6 +1546,7 @@ dependencies = [
  "uuid",
  "whisper-rs",
  "windows-sys 0.59.0",
+ "zbus",
  "zeroize",
 ]
 

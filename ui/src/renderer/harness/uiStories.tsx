@@ -121,6 +121,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="StatusLabel">
           <SpecimenRow>{STATUS_LABELS.map((status) => <StatusLabel key={status} status={status} />)}</SpecimenRow>
+          <SpecimenRow>{STATUS_LABELS.map((status) => <Tooltip key={status} label={status}><StatusLabel status={status} variant="dot" /></Tooltip>)}</SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="PageFrame, PageHeader and SectionHead">

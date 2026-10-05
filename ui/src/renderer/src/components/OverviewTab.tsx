@@ -9,10 +9,11 @@ import type { DelegationResult } from '../houston/generated/DelegationResult'
 import type { InboxRow } from '../houston/generated/InboxRow'
 import { selectOverviewChild } from '../sidePanel'
 import { ChildStatusDot, childGroup, childStateWord, DelegationAge } from './ChildrenRoster'
-import { sessionIdentity } from './DelegationCard'
+import { pendingDeliveryStatus, sessionIdentity } from './DelegationCard'
 import { IconAgent, IconEye, IconGitBranch, IconStopCircle, IconRespawn, IconCornerDownRight } from './icons'
 import { StatusDot } from './SessionPane'
 import { BTN_GHOST, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
+import { StatusLabel } from './ui/StatusLabel'
 
 export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   parentId: number
@@ -101,6 +102,7 @@ function OverviewChildCard({ child, parent, parentId, children, result, counts, 
   const cardAction = (label: string, glyph: typeof IconEye, onClick: () => void): React.JSX.Element => <Tooltip label={label}><button className={BTN_ICO} aria-label={label} onClick={onClick}><Icon glyph={glyph} role="label" /></button></Tooltip>
       const needs = childGroup(child) === 'Needs you'
       const settled = childGroup(child) === 'Settled'
+      const deliveryStatus = pendingDeliveryStatus(child.delegation)
 
       const shared = isLive(child.state) ? children.find((other) => other.id !== child.id && isLive(other.state) && child.checkout_root != null && other.checkout_root === child.checkout_root) : undefined
       return <article key={child.id} className={`overview-child ${needs ? 'needs' : ''}`}>
@@ -108,12 +110,13 @@ function OverviewChildCard({ child, parent, parentId, children, result, counts, 
         <div className="overview-task">{child.title}</div>
         <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.worktree?.path ?? child.project_dir)} />
         <div className="overview-actions">{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</div>
+        {deliveryStatus != null && <StatusLabel status={deliveryStatus} />}
         <div className="overview-result">{needs && <Icon glyph={IconCornerDownRight} role="label" />}<span>{childResultExcerpt(child, result, needs)}</span>{needs && <button className={`btn border ${BTN_PRIMARY}`} onClick={() => selectOverviewChild(parentId, child.id)}>Answer</button>}</div>
       </article>
 }
 
 function childResultExcerpt(child: SessionInfo, result: DelegationResult | undefined, needs: boolean): string {
-  return (needs ? child.delegation?.hold_reason : null) || result?.excerpt || result?.summary || 'no result yet'
+  return (needs ? child.delegation?.hold_reason : null) || result?.excerpt || result?.summary || child.delegation?.hold_reason || 'no result yet'
 }
 
 

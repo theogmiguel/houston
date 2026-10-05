@@ -12,6 +12,7 @@ pub mod browser_relay;
 pub mod checkpoints;
 pub mod claude_hooks;
 pub mod cli_probe;
+pub mod codex_pane;
 pub mod context_window;
 pub mod daemon;
 pub mod db;
@@ -58,6 +59,8 @@ pub mod sanitize;
 pub mod scope;
 pub mod scrollback;
 pub mod server;
+#[cfg(target_os = "linux")]
+pub mod session_isolation;
 pub mod shellint;
 pub mod skill_sync;
 pub mod slack;

@@ -228,11 +228,26 @@ reads as "Codex hooks installed, not confirmed for this pane" rather than a bare
 `Spawning`, since a missing `SessionStart` drop looks the same whether trust is pending,
 the helper is slow, or the file is broken.
 
-Codex 0.159.1 defers `SessionStart` until the first user turn. Resuming a thread already
-loaded in its shared app-server can reuse that thread without another `SessionStart`.
-A restored terminal therefore can wait for input before Houston receives a lifecycle
-event. Restoration does not synthesize an idle event; the next native prompt and stop
-hooks report activity normally.
+Codex defers `SessionStart` until the first user turn. On Linux with user systemd and
+Codex 0.160.0 or later, a pane owns its app-server and connects its real TUI over a private Unix socket.
+A separate startup observer uses documented, read-only `thread/read` requests with
+`includeTurns: false`; fresh sessions discover loaded root threads first. A loaded,
+Idle root produces one SessionStart drop through the existing guarded event path.
+The observer never starts, resumes or subscribes to a thread, and never reads terminal
+text. It rejects subagents, mismatched directories and ambiguous root identities.
+
+The private server inherits the pane's current credentials and configuration. A shared
+server retains its launch environment, and its old Idle thread cannot prove that a new
+TUI passed hook review. The helper supervises the real TUI with inherited PTY descriptors
+and stops its server before exiting. The observer remains in the owned scope and
+watches the helper and PTY owner's process identities; their exit ends that exact scope,
+including tool processes that created another Unix session. An interactive Codex inside
+a shell uses its own scope, so closing Codex preserves the shell and closing the shell
+ends Codex. Startup observation lasts until the pane ends or reports Idle; individual
+RPCs, frame sizes and polling rates are bounded. After Idle, only the lifetime watch remains.
+Normal turn hooks remain authoritative, and a late SessionStart cannot replace Working
+or NeedsInput. Unsupported CLI flags, missing user systemd and other platforms retain the hook-only path;
+supported direct fallbacks disable the shared daemon with `--no-daemon`.
 
 OpenCode has no shell-hook contract — its plugin bus fires JS callbacks, not a
 shell command with its own stdin — so `houston-notify.js` is the hook contract: it builds

@@ -360,7 +360,7 @@ every refusal names the setting.
 | `session_cwd` | `session`, `cwd` | direct reply to `session_cwd` |
 | `session_cwds` | `entries: SessionCwdEntry[]` | direct reply to `session_cwds` |
 | `session_running_procs` | `entries: SessionProcsEntry[]` | direct reply to `session_running_procs` |
-| `live_children_changed` | `session`, `live_children`, `children_waiting` | bcast after any transition that can change either of a parent's child counts — a child spawning, dying or respawning moves the first; a child blocking, stalling or being released moves the second |
+| `live_children_changed` | `session`, `live_children`, `children_waiting` | bcast after any transition that can change either of a parent's child counts — a child spawning, dying or respawning moves the first; a child reporting needs-input or being released moves the second; a stall warning alone does not raise this count |
 | `delegation_changed` | `session` (the CHILD), `delegation: DelegationInfo` | bcast after every write to a delegation record — spawn, state transition, stall flag, staging, flush, close. The whole record, so a client replaces rather than patches |
 | `delegation_results` | `parent`, `results: DelegationResult[]`, `truncated: bool` | direct; newest first (timestamp then inbox id), at most 256 children; `truncated` reports omitted older children |
 | `inbox_rows` | `workspace`, `rows: InboxRow[]` | v96: direct reply to `inbox_list` — every row addressed to the operator for that workspace, oldest first |

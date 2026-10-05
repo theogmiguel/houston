@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { openSideOverview } from '../sidePanel'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
-import { HeaderDelegationBadge, stateWord, type PaneRoster } from './DelegationCard'
+import { HeaderDelegationBadge, needsHumanInput, pendingDeliveryStatus, stateWord, type PaneRoster } from './DelegationCard'
 import { StatusDot } from './SessionPane'
 import { IconAgent, IconClose, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
 import { Icon } from './Icon'
@@ -12,6 +12,7 @@ import { BTN_GHOST, BTN_ICO } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { MATERIAL_CLS } from './material'
 import { Segmented } from './Segmented'
+import { StatusLabel } from './ui/StatusLabel'
 
 // The queue view and the task chip carry the backlog helpers; both load on
 // demand so the Tasks modules stay off the boot path.
@@ -43,12 +44,13 @@ const ROSTER_ICON = `${BTN_ICO} ${CONTROL_SIZE_SQUARE_CLS.regular}`
 
 export function childGroup(info: SessionInfo): 'Needs you' | 'Working' | 'Settled' {
   if (!isLive(info.state)) return 'Settled'
-  if (info.status === 'needs-input' || info.delegation?.stalled || info.delegation?.state === 'needs_input') return 'Needs you'
+  if (needsHumanInput(info)) return 'Needs you'
   return 'Working'
 }
 
 export function childStateWord(info: SessionInfo): string {
-  if (isLive(info.state) && ['done', 'failed', 'unknown'].includes(info.delegation?.state ?? '')) return info.status ?? 'working'
+  if (childGroup(info) === 'Needs you') return 'needs input'
+  if (isLive(info.state) && info.delegation?.state === 'unknown') return info.status ?? 'working'
   return info.delegation ? stateWord(info.delegation) : childGroup(info) === 'Settled' ? 'done' : info.status ?? 'working'
 }
 
@@ -63,8 +65,21 @@ export function delegationAge(start: number, now: number): string {
 }
 
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
-  if (!isLive(info.state)) return <Tooltip label="Ended"><span className="agent-dot w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
-  return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
+  if (!isLive(info.state)) {
+    const status = info.delegation?.state === 'done' ? 'Done' : info.delegation?.state === 'failed' ? 'Failed' : 'Ended'
+    return <Tooltip label="Ended"><StatusLabel status={status} variant="dot" /></Tooltip>
+  }
+  const state = childStateWord(info)
+  if (state === 'done' || state === 'failed' || state === 'stalled') {
+    const status = state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : 'Stalled'
+    return <Tooltip label={status}><StatusLabel status={status} variant="dot" /></Tooltip>
+  }
+  return <StatusDot live status={childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
+}
+
+function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element | null {
+  const status = pendingDeliveryStatus(info.delegation)
+  return status == null ? null : <div className="children-detail"><StatusLabel status={status} /></div>
 }
 
 export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
@@ -177,6 +192,7 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
                 </span>
               </span>
               <div className="children-detail"><span className="truncate">{child.title}</span></div>
+              <ChildDeliveryStatus info={child} />
             </div>)}
           </div>
         })}

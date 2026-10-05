@@ -1238,17 +1238,18 @@ export function TerminalPane({
 
   const runWakeRepaint = (): void => {
     cancelWakeRepaint()
-    const paint = (): void => {
+    const paint = (refit = true): void => {
       const term = termRef.current
       const host = hostRef.current
       if (!term || !host) return
       if (!host.offsetWidth || !host.offsetHeight) return
+      if (refit) syncSizeRef.current()
       try {
         term.refresh(0, Math.max(0, term.rows - 1))
       } catch {
       }
     }
-    paint()
+    paint(false)
     wakeRepaintRef.current.raf = requestAnimationFrame(() => {
       wakeRepaintRef.current.raf = null
       paint()
