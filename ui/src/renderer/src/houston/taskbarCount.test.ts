@@ -16,6 +16,7 @@ const userAgent = navigator.userAgent
 
 afterEach(() => {
   vi.clearAllMocks()
+  vi.restoreAllMocks()
   Object.defineProperty(navigator, 'userAgent', { configurable: true, value: userAgent })
   delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
 })
@@ -39,6 +40,29 @@ describe('taskbar attention count', () => {
     setPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')
     await setTaskbarAttentionCount(0)
     expect(setOverlayIcon).toHaveBeenCalledWith(undefined)
+    expect(setBadgeCount).not.toHaveBeenCalled()
+  })
+
+  it('uses a Windows overlay icon and caps its label at 9+', async () => {
+    setPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')
+    const fillText = vi.fn()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      clearRect: vi.fn(),
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      fillText,
+      fillStyle: '',
+      font: '',
+      textAlign: 'center',
+      textBaseline: 'middle'
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AQID')
+
+    await setTaskbarAttentionCount(12)
+
+    expect(fillText).toHaveBeenCalledWith('9+', 8, 8)
+    expect(setOverlayIcon).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]))
     expect(setBadgeCount).not.toHaveBeenCalled()
   })
 })
