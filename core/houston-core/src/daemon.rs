@@ -6764,6 +6764,59 @@ impl Daemon {
         self.db.list_workspaces()
     }
 
+    pub fn workspace_local_servers(&self, workspace: String) -> proto::ServerMsg {
+        #[cfg(target_os = "linux")]
+        {
+            let roots: Vec<_> = self
+                .sessions
+                .lock()
+                .expect("sessions lock")
+                .values()
+                .filter(|session| {
+                    session.state.lock().expect("state lock").is_live()
+                        && *session.project_dir.lock().expect("project dir lock") == workspace
+                })
+                .map(|session| session.info.id)
+                .collect();
+            let mut ids = roots.clone();
+            for root in roots {
+                ids.extend(self.descendants_of(root));
+            }
+            ids.sort_unstable();
+            ids.dedup();
+            let processes: Vec<_> = {
+                let sessions = self.sessions.lock().expect("sessions lock");
+                ids.into_iter()
+                    .filter_map(|id| {
+                        let session = sessions.get(&id)?;
+                        if !session.state.lock().expect("state lock").is_live()
+                            || *session.project_dir.lock().expect("project dir lock") != workspace
+                        {
+                            return None;
+                        }
+                        Some((id, session.pid?, session.snapshot_info().title))
+                    })
+                    .collect()
+            };
+            let (servers, truncated) = crate::browser_servers::detect(&processes);
+            proto::ServerMsg::WorkspaceLocalServers {
+                workspace,
+                servers,
+                unsupported: None,
+                truncated,
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            proto::ServerMsg::WorkspaceLocalServers {
+                workspace,
+                servers: Vec::new(),
+                unsupported: Some(std::env::consts::OS.to_owned()),
+                truncated: false,
+            }
+        }
+    }
+
     pub fn workspace_rename(&self, path: &str, name: &str) -> Result<Vec<proto::Workspace>> {
         let name = name.trim();
         let len = name.chars().count();

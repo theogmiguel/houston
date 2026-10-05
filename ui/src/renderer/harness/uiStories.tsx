@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import {
   BarSparkline,
+  BrowserBlankState,
+  BrowserUnreachableState,
   ActionMenu,
   Button,
   Card,
@@ -221,6 +223,24 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="danger" disabled>Disabled danger</Button>
             <Button variant="icon" icon={IconClose} aria-label="Disabled close" disabled />
           </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Browser pane states">
+          <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+            {(['graphite', 'paper'] as const).map((theme) => (
+              <section key={theme} data-theme={theme} style={{ display: 'grid', gap: 'var(--space-3)', background: 'var(--content-bg)', border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                <h3 style={{ margin: 0 }}>{theme === 'graphite' ? 'Graphite' : 'Paper'}</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(300px, 1fr)', gap: 'var(--space-4)' }}>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserBlankState recents={[{ url: 'http://localhost:6006/?path=/story/ui-primitives--all', onOpen: () => {} }]} servers={[{ port: 5173, process: 'vite', session: 8, pane_title: 'dev-server pane' }, { port: 3000, process: 'node', session: 9, pane_title: 'shell pane' }]} unsupported={null} truncated={false} onClear={() => {}} onOpenPage={() => {}} onOpenServer={() => {}} />
+                  </div>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserUnreachableState host="localhost:8080" message="Nothing is listening on port 8080. Start the server, then retry." rawError="ERR_CONNECTION_REFUSED" url="http://localhost:8080/" attempts={2} details onRetry={() => {}} onToggleDetails={() => {}} />
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Card and Card.Row">

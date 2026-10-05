@@ -125,6 +125,7 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_remove` | `path` | kills and removes every session rooted there; `workspace_list` + `orchestration_state` (bcast) |
 | `workspace_rename` | `path`, `name` | `workspace_list` (bcast) |
 | `workspace_list` | — | `workspace_list` (direct) |
+| `workspace_local_servers` | `workspace` | `workspace_local_servers` with loopback listeners owned by live workspace session processes (direct) |
 
 ### Orchestration
 
@@ -372,6 +373,7 @@ every refusal names the setting.
 | `update` | `policy: UpdatePolicy`, `state: UpdateState` | direct reply to `update_get`; bcast on every state change. Policy and state travel together, so a client can never render one against a stale copy of the other |
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
 | `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
+| `workspace_local_servers` | `workspace: string`, `servers: LocalServer[]`, `unsupported: string | null`, `truncated: boolean` | direct reply; Linux reads local TCP listeners owned by live workspace session process trees; other platforms name their refusal |
 | `orchestration_state` | `enabled`, `caps: OrchestrationCaps`, `acp_agents: AcpAgentInfo[]` | direct reply to `orchestration_settings_get`; bcast after any switch or cap change |
 | `swarm_message` | `message: SwarmMessage` | bcast — the mailbox layer recorded a message, status, escalation or completion |
 | `swarm_agent` | `agent: SwarmAgentInfo` | bcast — an orchestrated agent's status or activity changed |
