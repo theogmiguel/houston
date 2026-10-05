@@ -636,3 +636,84 @@ async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
         "a denial fires no hook; the turn going on with another tool closes the dialog"
     );
 }
+
+/// The Agent setup toggle on a `dev` channel daemon: the plugin is written and listed,
+/// both carry the channel's name, the pane gets that channel's URL, and off removes all.
+#[tokio::test]
+async fn the_zcode_toggle_writes_and_removes_the_channels_plugin() {
+    let env = setup().await;
+    let home = tempfile::tempdir().unwrap();
+    let state_dir = env.state.path().join(".houston-dev");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    let previous_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", home.path());
+    std::env::set_var("ZCODE_HOUSTON_MCP_URL", "http://127.0.0.1:1/mcp");
+    let daemon = Daemon::new(DaemonConfig {
+        token: TOKEN.to_string(),
+        db_path: state_dir.join("test.db"),
+    })
+    .unwrap();
+    let _addr = serve(&daemon).await;
+
+    let rows = daemon.agent_hooks_set(proto::AgentKind::Zcode, true);
+    let row = rows
+        .iter()
+        .find(|r| r.provider == proto::AgentKind::Zcode)
+        .expect("a ZCode row");
+    assert!(row.installed && row.error.is_none(), "{row:?}");
+    let plugin = state_dir.join("zcode-plugin");
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(plugin.join(".zcode-plugin/plugin.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest["name"], "houston-dev");
+    let servers: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(plugin.join(".mcp.json")).unwrap()).unwrap();
+    assert_eq!(
+        servers["mcpServers"]["houston"]["url"],
+        "${ZCODE_HOUSTON_MCP_URL_DEV}"
+    );
+    let config_path = home.path().join(".zcode/cli/config.json");
+    let config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+    assert_eq!(
+        config["plugins"]["dirs"],
+        serde_json::json!([plugin.display().to_string()])
+    );
+    assert_eq!(config["hooks"]["enabled"], true);
+
+    let dir = tempfile::tempdir().unwrap();
+    let pane = zcode_pane(&daemon, dir.path(), None);
+    let argv = argv_of(&env, pane.id).await;
+    let urls: Vec<&str> = argv
+        .iter()
+        .filter_map(|a| a.strip_prefix("env:ZCODE_HOUSTON_MCP_URL"))
+        .collect();
+    assert_eq!(
+        urls.len(),
+        1,
+        "only this channel's URL reaches the pane: {argv:?}"
+    );
+    assert!(urls[0].starts_with("_DEV=http://127.0.0.1:"), "{argv:?}");
+
+    let rows = daemon.agent_hooks_set(proto::AgentKind::Zcode, false);
+    let row = rows
+        .iter()
+        .find(|r| r.provider == proto::AgentKind::Zcode)
+        .expect("a ZCode row");
+    assert!(!row.installed && row.error.is_none(), "{row:?}");
+    assert!(!plugin.exists(), "the plugin goes with the toggle");
+    let config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+    assert_eq!(
+        config,
+        serde_json::json!({}),
+        "nothing of Houston's is left"
+    );
+
+    std::env::remove_var("ZCODE_HOUSTON_MCP_URL");
+    match previous_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+}
