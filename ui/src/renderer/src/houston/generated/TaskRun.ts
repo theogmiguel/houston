@@ -13,4 +13,8 @@ export type TaskRun = { id: number, task_id: number, attempt: number, kind: Task
  * or unauthenticated during the PR watch, or a refused resume. Cleared
  * when the run moves again.
  */
-reason?: string | null, started_at_ms: number, ended_at_ms?: number | null, };
+reason?: string | null, started_at_ms: number, ended_at_ms?: number | null,
+/**
+ * The pull request found for the run's branch when it was handed back.
+ */
+pr_url?: string | null, };

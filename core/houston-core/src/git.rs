@@ -787,6 +787,29 @@ pub fn status_vs_base(dir: &Path, base: &str) -> Result<Vec<proto::GitFileStatus
     Ok(out)
 }
 
+/// Files and lines a branch changed since its merge base with `base`; a
+/// binary file counts as a file with no lines.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiffSize {
+    pub files: usize,
+    pub added: u64,
+    pub deleted: u64,
+}
+
+pub fn diff_size(dir: &Path, base: &str) -> Result<DiffSize> {
+    ensure_repo(dir)?;
+    let mb = merge_base(dir, base)?;
+    let raw = run_git(dir, &["diff", "--numstat", &format!("{mb}..HEAD")])?;
+    let mut size = DiffSize::default();
+    for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let mut parts = line.split('\t');
+        size.files += 1;
+        size.added += parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        size.deleted += parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+    }
+    Ok(size)
+}
+
 pub fn ref_slug(raw: &str) -> String {
     // Keep generated branch and directory segments short enough for nested paths.
     const MAX_CHARS: usize = 60;
@@ -831,6 +854,23 @@ pub fn remote_url(dir: &Path) -> Option<String> {
     } else {
         Some(url.to_string())
     }
+}
+
+/// The remote branch the checked-out branch tracks, without the remote's
+/// name: `feat/x` for `origin/feat/x`. `None` before the first push.
+pub fn upstream_branch(dir: &Path) -> Option<String> {
+    let out = run_git(
+        dir,
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+    )
+    .ok()?;
+    let (_, branch) = out.trim().split_once('/')?;
+    (!branch.is_empty()).then(|| branch.to_string())
 }
 
 pub fn is_git_repo(dir: &Path) -> bool {

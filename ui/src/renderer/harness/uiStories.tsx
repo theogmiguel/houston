@@ -17,6 +17,7 @@ import {
   Field,
   FieldLabel,
   FirstRunHooksStepSpecimen,
+  TextInput,
   IconTile,
   ListDetail,
   LaunchGridPreviewSpecimen,
@@ -39,7 +40,6 @@ import {
   StatusLabel,
   RoutineDetail,
   RosterSurfaceSpecimen,
-  TextInput,
   Table,
   TaskProgress,
   TaskAcceptanceRow,
@@ -413,6 +413,11 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Field label="Command" size="compact" align="start"><TextInput surface="card" font="mono" value="bun run test" readOnly /></Field>
             <Field label="Shortcut" size="compact" align="start"><Button variant="field">Press shortcut</Button></Field>
           </div>
+        </SpecimenGroup>
+        <SpecimenGroup heading="TextInput">
+          <Field label="Owner's member ID" hint="A plain text field."><TextInput value="U012ABCDEF" font="mono" width="md" readOnly /></Field>
+          <Field label="Bot token" hint="A secret: the value is never shown back."><TextInput type="password" font="mono" width="md" placeholder="xoxb-…" /></Field>
+          <Field label="Search"><TextInput width="full" placeholder="Filter by name" /></Field>
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">

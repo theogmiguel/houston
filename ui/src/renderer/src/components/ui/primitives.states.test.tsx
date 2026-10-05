@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel } from './index'
+import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel, TextInput } from './index'
 import { ThemeRevealSpecimen } from './ThemeRevealSpecimen'
 import { OrchestrationNoticeSpecimen } from './OrchestrationNotice'
 import { variants } from './variants'
@@ -37,6 +37,19 @@ describe('components/ui primitives', () => {
     expect(screen.getAllByTestId('orchestration-notice')).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Open pane' })).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'Dismiss api-refactor needs your input' })).toBeTruthy()
+  })
+
+  it('TextInput keeps its role, width and face, and passes layout and aria through', () => {
+    render(<TextInput aria-label="Bot token" type="password" font="mono" width="full" className="flex-1" defaultValue="x" />)
+    const input = screen.getByLabelText('Bot token') as HTMLInputElement
+    expect(input.type).toBe('password')
+    expect(input.className).toContain('font-mono')
+    expect(input.className).toContain('w-full')
+    expect(input.className).toContain('flex-1')
+    render(<TextInput aria-label="Owner" />)
+    const plain = screen.getByLabelText('Owner') as HTMLInputElement
+    expect(plain.type).toBe('text')
+    expect(plain.className).not.toContain('font-mono')
   })
 
   it('variants applies defaults and chosen axis classes', () => {

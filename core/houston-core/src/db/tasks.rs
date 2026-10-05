@@ -93,6 +93,7 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             ON backlog_task_runs(session_id);",
     )?;
     super::add_column_if_missing(conn, "backlog_task_runs", "reason", "reason TEXT")?;
+    super::add_column_if_missing(conn, "backlog_task_runs", "pr_url", "pr_url TEXT")?;
     migrate_global_tasks(conn)?;
     Ok(())
 }
@@ -231,6 +232,7 @@ pub struct TaskRunRow {
     pub reason: Option<String>,
     pub started_at_ms: i64,
     pub ended_at_ms: Option<i64>,
+    pub pr_url: Option<String>,
 }
 
 /// The fields a new run is inserted with; `attempt` is allocated as the task's
@@ -384,12 +386,12 @@ pub(crate) const TASK_COLUMN_COUNT: usize = 14;
 /// The columns `map_task_run_offset` reads, in order.
 pub(crate) const TASK_RUN_COLUMNS: &str = "id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at";
-pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 17;
+    reason, started_at, ended_at, pr_url";
+pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 18;
 
 const TASK_RUN_SELECT: &str = "SELECT id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at FROM backlog_task_runs";
+    reason, started_at, ended_at, pr_url FROM backlog_task_runs";
 
 /// The column list of a two-table join, qualified per alias.
 fn prefixed_columns(columns: &str, alias: &str) -> String {
@@ -476,6 +478,7 @@ fn map_task_run_offset(r: &rusqlite::Row, base: usize) -> rusqlite::Result<TaskR
         reason: r.get(base + 14)?,
         started_at_ms: r.get(base + 15)?,
         ended_at_ms: r.get(base + 16)?,
+        pr_url: r.get(base + 17)?,
     })
 }
 

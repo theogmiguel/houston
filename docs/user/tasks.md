@@ -145,6 +145,7 @@ their scope is the brief they were spawned with.
     hs-task comment [HOU-n] TEXT
     hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
     hs-task handback [HOU-n] --summary T
+    hs-task ask QUESTION                (a Slack-filed task: asks in its thread)
 
 The task key defaults to `$HOUSTON_TASK` when a task started the pane; otherwise pass
 `HOU-n`. Priorities are `1` urgent through `4` low.
@@ -158,6 +159,9 @@ a default or per-task reviewer sends the task text, the acceptance list and the
 implementation summary to the reviewer CLI as well. Access is per workspace and starts at
 **Read and write**. An agent's write is recorded with the pane's codename and role, so the
 attribution survives the pane.
+
+Tasks filed from Slack mentions are described in [Slack requests](slack.md), including
+what that connection sends.
 
 The only network call Tasks makes on its own is the merge check: while a task is in review
 with a run branch, Houston runs the GitHub CLI (`gh pr view`) in that task's worktree every

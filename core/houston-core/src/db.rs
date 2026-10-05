@@ -7,10 +7,16 @@ use std::path::Path;
 use std::sync::Mutex;
 
 mod harness;
+mod intake;
 pub use harness::{
     HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
     HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
     HarnessVerificationRow, HarnessVerificationWrite,
+};
+pub use intake::{
+    AdjustmentRow, IntakeRow, IntakeWrite, OutboxRow, OutboxTarget, Outgoing, Posted, QuestionRow,
+    STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
+    STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 mod tasks;
 pub use tasks::{
@@ -1589,6 +1595,7 @@ impl Db {
         )?;
         harness::migrate(&conn)?;
         tasks::migrate(&conn)?;
+        intake::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",

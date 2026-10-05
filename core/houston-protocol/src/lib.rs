@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 125;
+pub const PROTOCOL_VERSION: u32 = 126;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -616,6 +616,98 @@ pub enum TaskRunState {
     Interrupted,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum IntakeState {
+    /// Waiting for the owner to accept it.
+    Pending,
+    /// Accepted while the working cap was full; starts when a slot frees.
+    Queued,
+    Started,
+    Refused,
+}
+
+/// The external request a task was created from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskIntake {
+    /// `slack`.
+    pub source: String,
+    /// The requester's Slack member ID.
+    pub author: String,
+    pub state: IntakeState,
+    /// 1-based place in the start queue while `queued`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub queue_position: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub permalink: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SlackChannelMap {
+    /// A channel ID (`C…` or `G…`), not a name.
+    pub channel_id: String,
+    /// The workspace path a request from this channel is filed under.
+    pub workspace: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SlackConnection {
+    Off,
+    Connecting,
+    Connected,
+    /// Waiting to reconnect after `error`.
+    Retrying,
+}
+
+/// The language of everything the Slack intake writes: Houston's own phrases
+/// in the owner's direct messages and the thread, and the fields the agent is
+/// told to write for the requester.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SlackLanguage {
+    #[default]
+    En,
+    PtBr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SlackInfo {
+    pub enabled: bool,
+    /// Both tokens are in the system keychain.
+    pub has_tokens: bool,
+    pub connection: SlackConnection,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub team: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub bot_user_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub owner_user_id: Option<String>,
+    pub channels: Vec<SlackChannelMap>,
+    #[serde(default)]
+    pub language: SlackLanguage,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_event_at_ms: Option<i64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_catchup_at_ms: Option<i64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub error: Option<String>,
+}
+
 /// A task as the snapshot lists it: no description, so a 5 000-task list stays
 /// bounded; the detail message carries the text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -650,6 +742,10 @@ pub struct TaskSummary {
     pub acceptance_checked: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_total: u32,
+    /// Where the task came from when it was not typed into Houston.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub intake: Option<TaskIntake>,
     /// The newest run still in flight for this task, if any; the snapshot
     /// carries it so the list can show the execution card without a detail
     /// fetch. Handed-back and finished runs stay only in `task_detail.runs`.
@@ -782,6 +878,10 @@ pub struct TaskRun {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ended_at_ms: Option<i64>,
+    /// The pull request found for the run's branch when it was handed back.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub pr_url: Option<String>,
 }
 
 /// The task a session is bound to, as a pane chip shows it: the newest run
@@ -3266,6 +3366,31 @@ pub enum ClientMsg {
         policy: UpdatePolicy,
     },
     UpdateCheckNow,
+    /// The Slack intake's configuration and connection state.
+    SlackGet,
+    /// Stores the two tokens in the system keychain and turns the connector
+    /// on. Both omitted turns it on with tokens already in the keychain.
+    SlackConnect {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        app_token: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        bot_token: Option<String>,
+    },
+    /// Closes the connection, turns the connector off and deletes both tokens.
+    SlackDisconnect,
+    /// Replaces the owner and the channel map; the tokens are untouched.
+    /// `language` absent keeps the current one.
+    SlackConfigure {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        owner_user_id: Option<String>,
+        channels: Vec<SlackChannelMap>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        language: Option<SlackLanguage>,
+    },
     KeymapGet,
     KeymapSet {
         overrides: KeymapOverrides,
@@ -4124,6 +4249,14 @@ pub enum ServerMsg {
         policy: UpdatePolicy,
         state: UpdateState,
     },
+    /// After a read, a change, or any move of the connection. A refused
+    /// change keeps the old state and names why in `refusal`.
+    Slack {
+        info: SlackInfo,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        refusal: Option<String>,
+    },
     Keymap {
         overrides: KeymapOverrides,
     },
@@ -4559,6 +4692,25 @@ pub const TASK_DESCRIPTION_MAX: usize = 65_536;
 pub const TASK_COMMENT_MAX: usize = 16_384;
 /// Tasks the global backlog may hold; snapshot sends summaries only.
 pub const TASKS_PER_WORKSPACE: u32 = 5_000;
+/// Far above a Slack token's length, low enough to refuse a paste of
+/// something else.
+pub const SLACK_TOKEN_LEN_MAX: u32 = 512;
+/// Slack intake runs working at once; a run waiting for an answer or for
+/// input does not count. Accepted requests beyond it wait in a queue.
+pub const SLACK_RUNS_WORKING_MAX: usize = 2;
+/// A request's text; longer ones are refused in the thread by this limit.
+pub const SLACK_REQUEST_TEXT_MAX: usize = 8_192;
+/// Images downloaded per request and bytes per image.
+pub const SLACK_IMAGES_MAX: usize = 4;
+pub const SLACK_IMAGE_BYTES_MAX: u64 = 10 * 1024 * 1024;
+/// How far back a reconnect replays a channel; older mentions are not
+/// turned into tasks after a long absence.
+pub const SLACK_CATCHUP_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
+/// Text a person types into one of Houston's Slack dialogs: a refusal reason
+/// or an answer in their own words.
+pub const SLACK_DIALOG_TEXT_MAX: usize = 2_000;
+/// Channels the intake listens to.
+pub const SLACK_CHANNELS_MAX: usize = 16;
 /// Comments one task may hold; keeps `task_get` bounded.
 pub const COMMENTS_PER_TASK: u32 = 500;
 /// Acceptance items one task may hold; keeps the brief readable.

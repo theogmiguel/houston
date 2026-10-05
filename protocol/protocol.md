@@ -1,4 +1,4 @@
-# Wire protocol v125
+# Wire protocol v126
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -116,6 +116,10 @@ failure not given a typed refusal comes back as `error`.
 | `update_get` | — | `update` (direct) |
 | `update_policy_set` | `policy: UpdatePolicy` | `update` (bcast) |
 | `update_check_now` | — | no direct reply; the daemon's check loop is woken and broadcasts `update` as the state moves |
+| `slack_get` | — | `slack` (direct) |
+| `slack_connect` | `app_token?`, `bot_token?` (both, or neither to use the tokens already in the keychain; each ≤ `SLACK_TOKEN_LEN_MAX`, prefixed `xapp-` / `xoxb-`) | `slack` (bcast); a refusal is `slack` (direct) with `refusal` set and nothing changed. Stores the tokens in the system keychain and turns the intake on |
+| `slack_disconnect` | — | `slack` (bcast). Turns the intake off, closes the connection and deletes both tokens |
+| `slack_configure` | `owner_user_id?` (a Slack member ID), `channels: SlackChannelMap[]` (≤ `SLACK_CHANNELS_MAX`, one workspace per channel, registered workspaces only), `language?: SlackLanguage` (absent keeps the current one) | `slack` (bcast); refusal as for `slack_connect` |
 
 ### Workspace
 
@@ -376,6 +380,7 @@ every refusal names the setting.
 | `session_policy` | `policy: SessionPolicy` | direct reply to `session_policy_get`; bcast after a set |
 | `update` | `policy: UpdatePolicy`, `state: UpdateState` | direct reply to `update_get`; bcast on every state change. Policy and state travel together, so a client can never render one against a stale copy of the other |
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
+| `slack` | `info: SlackInfo`, `refusal?` | direct reply to `slack_get` or a refused change; bcast after an applied change and on every move of the connection |
 | `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
 | `workspace_actions` | `workspace`, `actions: WorkspaceAction[]` | direct reply to `workspace_actions_get`; bcast after a saved action is changed |
 | `workspace_action_refused` | `workspace`, `reason`, `limit`, `actual`, `requested` | direct refusal when command length or per-workspace action count exceeds its limit |
@@ -650,6 +655,7 @@ TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number
                    open_run? (the newest run still in preparing/running/waiting_for_input/
                    validating, so the list can draw the execution card without a detail fetch),
                    origin?: TaskOrigin
+                   intake?: TaskIntake (set when the task was filed from Slack)
 Task               as TaskSummary plus description (≤ `TASK_DESCRIPTION_MAX`)
 TaskOrigin         harness_finding: workspace, key, review_id
 TaskStatus         backlog | todo | in_progress | in_review | done | canceled
@@ -662,13 +668,23 @@ TaskRun            id, task_id, attempt, kind: TaskRunKind, state: TaskRunState,
                    worktree_path?, branch?, base_commit?, initial_revision, summary?,
                    reason? (why the run is not running: an interrupted pane, a missing or
                    unauthenticated `gh` during the PR watch, or a refused resume),
-                   started_at_ms, ended_at_ms?
+                   started_at_ms, ended_at_ms?, pr_url? (the pull request `gh` found for the
+                   branch when a Slack-filed run was handed back)
 TaskRunKind        implementation | review
 TaskRunState       preparing | running | waiting_for_input | validating | handed_back |
                    needs_review | failed | cancelled | interrupted
 TaskRunAction      stop | resume | retry (retry reopens the same worktree with the newest
                    failed review's findings appended to the brief)
 TaskPromptDelivery send | prefill — how a Start hands the brief over, per workspace
+TaskIntake         source ('slack'), author (Slack member ID), state: IntakeState,
+                   queue_position? (1-based, while queued), permalink?
+IntakeState        pending | queued | started | refused
+SlackChannelMap    channel_id (C… or G…), workspace (a registered workspace path)
+SlackConnection    off | connecting | connected | retrying
+SlackLanguage      en | pt_br — what Houston writes in Slack and asks the agent to write
+SlackInfo          enabled, has_tokens, connection: SlackConnection, team?, bot_user_id?,
+                   owner_user_id?, channels: SlackChannelMap[], language: SlackLanguage,
+                   last_event_at_ms?, last_catchup_at_ms?, error?
 TaskCounts         ready (todo with no unfinished blocker; the queue's pool), backlog, todo,
                    in_progress, in_review, done, canceled
 TaskQueueRefusal   id, key, message — one ready task a task_queue_run could not start
@@ -1057,7 +1073,8 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 125 | **Usage buckets and durable activity gain detail.** Usage buckets gain category and speed costs plus workspace attribution; `usage_summary_get.workspace?`; `usage_activity_summary_get` → `usage_activity_summary` reads up to 365 local calendar days persisted in `usage_daily_rollup`. **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. **Pull-request watches** add `pr_watch_list` / `pr_watch_unwatch` and the `pr_watch_list` / `pr_watch_changed` replies with `PrWatchInfo` and `SessionPrWatches`; the watch remains local daemon state. The same batch adds `git_branch_commits` and optional `PrWatchInfo.last_checked_at_ms` without changing this protocol version |
+| 126 | **Usage buckets and durable activity gain detail.** Usage buckets gain category and speed costs plus workspace attribution; `usage_summary_get.workspace?`; `usage_activity_summary_get` → `usage_activity_summary` reads up to 365 local calendar days persisted in `usage_daily_rollup`. **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. **Pull-request watches** add `pr_watch_list` / `pr_watch_unwatch` and the `pr_watch_list` / `pr_watch_changed` replies with `PrWatchInfo` and `SessionPrWatches`; the watch remains local daemon state. The same batch adds `git_branch_commits` and optional `PrWatchInfo.last_checked_at_ms` without changing this protocol version |
+| 125 | **A Slack mention becomes a pending task; the owner's ✅ starts it.** New `slack_get`, `slack_connect`, `slack_disconnect` and `slack_configure` client messages and the `slack` reply, with `SlackInfo`, `SlackConnection`, `SlackChannelMap`, `SlackLanguage`, `TaskIntake` and `IntakeState`; `TaskSummary.intake?` and `TaskRun.pr_url?`. The daemon holds an opt-in Socket Mode connection, files mentions in mapped channels as tasks, starts them on the owner's reaction or direct-message button within `SLACK_RUNS_WORKING_MAX`, shows each request's state as a reaction, and posts the agent's questions (one button per option) and hand-back to the request's thread. Agents get `hs-task ask` / MCP `task_ask` (HTTP `/task/ask`, fields `context?`, `question`, `options`, `recommended`, `why?`). Existing messages are unchanged |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |
 | 123 | **A local task backlog per workspace.** New `task_snapshot`, `task_get`, `task_save`, `task_comment`, `task_check`, `task_archive`, `tasks_access_get` and `tasks_access_set` client messages and `task_snapshot`, `task_detail`, `task_changed`, `task_refused` and `tasks_access` replies, with `Task`, `TaskSummary`, `TaskPatch`, `TaskStatus`, `TaskPriority`, `TaskAcceptanceItem`, `TaskComment`, `TaskHistoryEntry`, `TaskRun`, `TaskCounts`, `TaskErrorKind` and `TasksAccess`. Tasks live in per-workspace `backlog_*` SQLite tables, get a monotonic `HOU-<n>` number and an integer `revision`, and are gated by a per-workspace Tasks access (`off`/`read`/`write`, default `write`) in Settings ▸ Tasks; the orphan `tasks`/`task_events` tables are unrelated and untouched. Removing a workspace deletes its tasks. No existing message changes |
 | 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |
@@ -1109,4 +1126,4 @@ Only the current window; older bumps live in git history.
 `WorkspaceAction` contains an `id`, `name`, `command` and optional `shortcut` chord. Actions are
 saved per workspace in the daemon database. A workspace can store up to 24 actions, and each
 command is limited to 4096 UTF-8 bytes. Refusals report the limit, actual value, requested value
-and reason. Protocol version remains 125 for this phase-4 batch.
+and reason.
