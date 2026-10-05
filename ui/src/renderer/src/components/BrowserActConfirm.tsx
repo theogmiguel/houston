@@ -7,6 +7,7 @@ import {
   type ConfirmRequest
 } from '../houston/browserConfirm'
 import { Tooltip } from './Tooltip'
+import { DialogBackdrop, DialogPanel } from './ui'
 
 function originOf(url: string | null): string {
   if (!url) return 'unknown page'
@@ -365,12 +366,15 @@ export function BrowserActConfirmModal({
   }, [])
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] grid place-items-center bg-[var(--overlay)] motion-safe:animate-[backdrop-in_var(--animate-t-scrim)_var(--animate-ease-scrim)]">
-      <div
+    <DialogBackdrop tone="browser" className="bg-[var(--overlay)] motion-safe:animate-[backdrop-in_var(--animate-t-scrim)_var(--animate-ease-scrim)]">
+      <DialogPanel
+        size="browser"
+        surface="browser"
+        animated={false}
         role="dialog"
         aria-modal="true"
         aria-label="Confirm browser action"
-        className="w-[428px] max-w-[calc(100vw-32px)] flex flex-col gap-3 rounded-xl border border-[var(--border-hover)] bg-[var(--card-bg)] p-4 shadow-[var(--shadow-lg)] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)]"
+        className="rounded-xl border-[var(--border-hover)] p-4 motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)]"
       >
         <ConfirmBody
           request={request}
@@ -385,7 +389,7 @@ export function BrowserActConfirmModal({
           The browser pane is not on screen, so this cannot show you the element in place — only
           describe it. Open the pane and retry if that matters for this action.
         </p>
-      </div>
-    </div>
+      </DialogPanel>
+    </DialogBackdrop>
   )
 }

@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_PRIMARY } from './buttonChrome'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
+import { Button, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle } from './ui'
 
 interface Props {
   onCancel: () => void
@@ -44,15 +43,13 @@ export function SaveDiscardModal({ onCancel, onDiscard, onSave, saving }: Props)
   }
 
   return (
-    <div
-      className={MODAL_SCRIM_CLS}
+    <DialogBackdrop
       onMouseDown={() => {
         if (!saving) onCancel()
       }}
     >
-      <div
+      <DialogPanel
         ref={rootRef}
-        className="pop w-[380px] max-w-[92vw] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="save-discard-modal-title"
@@ -60,39 +57,16 @@ export function SaveDiscardModal({ onCancel, onDiscard, onSave, saving }: Props)
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <div
-          id="save-discard-modal-title"
-          className="px-3.5 py-[11px] border-b border-border [font-size:var(--tr-text-subhead-size)] [font-weight:var(--tr-text-subhead-weight)] [letter-spacing:var(--tr-text-subhead-tracking)] text-text-primary"
-        >
-          Save changes?
-        </div>
-        <div className="p-5 space-y-4">
-          <div
-            id="save-discard-modal-msg"
-            className="text-text-secondary [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-relaxed"
-          >
-            This file has unsaved changes.
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 px-5 pb-5">
-          <div className="flex gap-2 justify-end">
-            <button ref={cancelRef} className={`btn ${BTN_GHOST}`} disabled={saving} onClick={onCancel}>
-              Cancel
-            </button>
-            <button
-              ref={discardRef}
-              className={`btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER} ${BTN_GHOST_DANGER_ARM}`}
-              disabled={saving}
-              onClick={onDiscard}
-            >
-              Discard
-            </button>
-            <button ref={saveRef} className={`btn ${BTN_PRIMARY}`} disabled={saving} onClick={onSave}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+        <DialogTitle id="save-discard-modal-title">Save changes?</DialogTitle>
+        <DialogBody>
+          <DialogDescription id="save-discard-modal-msg">This file has unsaved changes.</DialogDescription>
+        </DialogBody>
+        <DialogActions>
+          <Button ref={cancelRef} variant="legacy-ghost" disabled={saving} onClick={onCancel}>Cancel</Button>
+          <Button ref={discardRef} variant="legacy-danger" armed disabled={saving} onClick={onDiscard}>Discard</Button>
+          <Button ref={saveRef} variant="legacy-primary" disabled={saving} onClick={onSave}>{saving ? 'Saving…' : 'Save'}</Button>
+        </DialogActions>
+      </DialogPanel>
+    </DialogBackdrop>
   )
 }

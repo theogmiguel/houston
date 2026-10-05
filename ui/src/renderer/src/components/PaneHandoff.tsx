@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentKind } from '../houston/client'
-import { BTN_GHOST, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
+import { Button, DialogBackdrop, DialogPanel } from './ui'
 import { useFocusTrap } from './dialogFocus'
 import { Icon, ICON_ROLE_CLS } from './Icon'
 import { IconAgent, IconCheck, IconClose } from './icons'
@@ -80,15 +79,16 @@ export function PaneHandoff({ source, onCancel, onHandoff }: Props): React.JSX.E
   }
 
   return (
-    <div className={MODAL_SCRIM_CLS} onMouseDown={onCancel}>
-      <div
+    <DialogBackdrop onMouseDown={onCancel}>
+      <DialogPanel
+        size="paneHandoff"
+        surface="raised"
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="pane-handoff-title"
         tabIndex={-1}
         data-testid="pane-handoff"
-        className="pop flex h-[min(940px,92vh)] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--raised)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
@@ -106,14 +106,12 @@ export function PaneHandoff({ source, onCancel, onHandoff }: Props): React.JSX.E
               {shortCwd(source.cwd)}
             </span>
           </span>
-          <button
-            type="button"
+          <Button
             aria-label="Close handoff"
-            className={`btn ${BTN_ICO} ml-auto flex-none`}
+            variant="legacy-icon"
+            className="ml-auto flex-none"
             onClick={onCancel}
-          >
-            <Icon glyph={IconClose} role="ui" />
-          </button>
+          ><Icon glyph={IconClose} role="ui" /></Button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-8 py-10">
@@ -206,13 +204,12 @@ export function PaneHandoff({ source, onCancel, onHandoff }: Props): React.JSX.E
         </div>
 
         <div className="flex flex-none items-center justify-end gap-2 border-t border-divider px-3.5 py-[11px]">
-          <button type="button" className={`btn ${BTN_GHOST}`} onClick={onCancel}>
+          <Button variant="legacy-ghost" onClick={onCancel}>
             Cancel <span className="opacity-55 font-normal">esc</span>
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             data-testid="handoff-confirm"
-            className={`btn ${BTN_PRIMARY}`}
+            variant="legacy-primary"
             disabled={target === null}
             onClick={() => {
               if (target === null) return
@@ -220,9 +217,9 @@ export function PaneHandoff({ source, onCancel, onHandoff }: Props): React.JSX.E
             }}
           >
             Handoff
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogPanel>
+    </DialogBackdrop>
   )
 }

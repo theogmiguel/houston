@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BTN_DANGER_SOLID, BTN_GHOST, BTN_PRIMARY } from './buttonChrome'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
+import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from './ui'
 import { IconAlertTriangle, IconCheck, IconRefresh } from './icons'
 import { Icon } from './Icon'
 import { useFocusRestore, useFocusTrap } from './dialogFocus'
@@ -413,27 +412,24 @@ export function UpdateInstallModal({
   }
 
   return (
-    <div className={MODAL_SCRIM_CLS} onMouseDown={onClose}>
-      <div
+    <DialogBackdrop onMouseDown={onClose}>
+      <DialogPanel
+        size="update"
         ref={dialogRef}
         data-testid="update-install-modal"
-        className="pop flex max-h-[92vh] w-[460px] max-w-[92vw] flex-col bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
         role={stopMode ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby="update-install-h"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <div
-          id="update-install-h"
-          className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-[11px] [font-size:var(--tr-text-subhead-size)] [font-weight:var(--tr-text-subhead-weight)] [letter-spacing:var(--tr-text-subhead-tracking)] text-text-primary"
-        >
+        <DialogTitle id="update-install-h" layout="between">
           <span>{header}</span>
           <span className="rounded-[var(--tr-radius-sm)] border border-[var(--border)] px-[6px] py-[2px] font-mono text-[var(--text-muted)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">
             {currentVersion} → {version}
           </span>
-        </div>
-        <div className="grid gap-[var(--space-3)] overflow-auto px-5 py-[18px]">
+        </DialogTitle>
+        <DialogBody variant="plain" className="grid gap-[var(--space-3)] overflow-auto px-5 py-[18px]">
           {running ? (
             <StepList steps={steps} active={currentStepIndex(install, steps)} percent={downloadPercent(install)} />
           ) : (
@@ -448,42 +444,43 @@ export function UpdateInstallModal({
               onChoose={setChoice}
             />
           )}
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 px-5 pb-5">
+        </DialogBody>
+        <DialogActions variant="plain" className="flex flex-wrap items-center justify-end gap-2 px-5 pb-5">
           {running ? (
             <>
               <span className="mr-auto text-[var(--text-muted)] [font-size:var(--tr-text-small-size)]">
                 Houston reopens by itself when this finishes.
               </span>
-              <button
+              <Button
                 ref={laterRef}
                 type="button"
                 data-testid="update-hide"
-                className={`btn ${BTN_GHOST}`}
+                variant="legacy-ghost"
                 onClick={onClose}
               >
                 Hide
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <button
+              <Button
                 type="button"
                 data-testid="update-modal-notes"
-                className={`btn ${BTN_GHOST} mr-auto`}
+                variant="legacy-ghost"
+                className="mr-auto"
                 onClick={() => onOpenExternal(release.notes_url)}
               >
                 Release notes
-              </button>
-              <button
+              </Button>
+              <Button
                 ref={laterRef}
                 type="button"
                 data-testid="update-modal-later"
-                className={`btn ${BTN_GHOST}`}
+                variant="legacy-ghost"
                 onClick={onLater}
               >
                 Later
-              </button>
+              </Button>
               <OfferAction
                 status={status.kind}
                 stopMode={stopMode}
@@ -495,9 +492,9 @@ export function UpdateInstallModal({
               />
             </>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogActions>
+      </DialogPanel>
+    </DialogBackdrop>
   )
 }
 
@@ -653,36 +650,34 @@ function OfferAction({
 }): React.JSX.Element | null {
   if (status === 'error') {
     return (
-      <button type="button" className={`btn ${BTN_PRIMARY}`} onClick={onRetry}>
+      <Button type="button" variant="legacy-primary" onClick={onRetry}>
         Check again
-      </button>
+      </Button>
     )
   }
   if (status !== 'ready') return null
   if (stopMode) {
     return (
-      <button
+      <Button
         type="button"
         data-testid="update-confirm-stop"
-        className={`btn ${BTN_DANGER_SOLID} inline-flex items-center gap-[var(--space-1-5)]`}
+        variant="legacy-danger-solid"
         disabled={busy}
         onClick={onConfirm}
       >
-        <Icon glyph={IconAlertTriangle} role="ui" />
-        {`Stop ${plural(live, 'session')} and ${failed ? 'try again' : 'install'}`}
-      </button>
+        <><Icon glyph={IconAlertTriangle} role="ui" />{`Stop ${plural(live, 'session')} and ${failed ? 'try again' : 'install'}`}</>
+      </Button>
     )
   }
   return (
-    <button
+    <Button
       type="button"
       data-testid="update-confirm-keep"
-      className={`btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)]`}
+      variant="legacy-primary"
       disabled={busy}
       onClick={onConfirm}
     >
-      <Icon glyph={IconRefresh} role="ui" />
-      {failed ? 'Try again' : 'Install and reopen'}
-    </button>
+      <><Icon glyph={IconRefresh} role="ui" />{failed ? 'Try again' : 'Install and reopen'}</>
+    </Button>
   )
 }
