@@ -62,7 +62,7 @@ class InspectorClient {
   }
 
   send(message: Record<string, unknown>): void {
-    if (message.type === 'pr_watch_list') queueMicrotask(() => this.emit({ type: 'pr_watch_list', watches: [{ session: sessionId, watches: [{ number: 412, url: 'https://github.com/acme/houston/pull/412' }] }] }))
+    if (message.type === 'pr_watch_list') queueMicrotask(() => this.emit({ type: 'pr_watch_list', watches: [sessionId, orchestratorId].map((session) => ({ session, watches: [{ number: 412, url: 'https://github.com/acme/houston/pull/412' }] })) }))
   }
 
   gitStage(): void {}
