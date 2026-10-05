@@ -31,6 +31,7 @@ import { PrSummary } from './PrSummary'
 import { PrStackSection } from './PrStack'
 import { PrFooterBar } from './PrFooterBar'
 import { PrWatchRow, PrWatchStack } from '../ui/PrWatch'
+import { PrInspectorSections } from '../ui/PrInspectorSections'
 import { usePrWatch } from './usePrWatch'
 import {
   usePrDetail,
@@ -683,7 +684,7 @@ export function pendingMergeReason(detail: PrDetail): string | null {
   return reason
 }
 
-function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approvalsRequired, approvalsReceived, onOpenUrlInPane, onSendToOrchestrator, reviewBar, openPicker, setOpenPicker }: {
+function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approvalsRequired, approvalsReceived, onOpenUrlInPane, onSendToOrchestrator, reviewBar, watchRows, openPicker, setOpenPicker }: {
   link: PullRequestLink
   detail: PrDetail
   pr: PrDetailController
@@ -695,25 +696,23 @@ function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approva
   onOpenUrlInPane?: (url: string) => void
   onSendToOrchestrator?: (text: string) => void
   reviewBar: React.ReactNode
+  watchRows: React.ReactNode
   openPicker: 'reviewers' | 'labels' | 'stack' | null
   setOpenPicker: (value: 'reviewers' | 'labels' | 'stack' | null) => void
 }): React.JSX.Element {
   return <PrSummary>
-    <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}><PrHeader link={link} detail={detail} busy={busy} editBusy={false} onEdit={() => {}} onReact={() => {}} onOpenUrlInPane={onOpenUrlInPane} compact /></div>
-    <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}><PrChecks checks={detail.checks} /></div>
-    <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
-      <Disclosure summary={<span className="flex w-full items-center gap-2"><span data-testid="pr-review-requirement">Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span><span className="ml-auto font-mono text-[var(--warn)]" data-review-count>{Math.min(approvalsReceived, approvalsRequired)} / {approvalsRequired}</span></span>} defaultOpen={detail.reviews_total > 0 || detail.threads.length > 0} scrollBody={false} className="rounded-none border-0 bg-transparent">
-        {detail.reviews_total > 0 && <PrReviews detail={detail} />}
-        {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && <PrThreads detail={detail} busy={busy} number={number} onSendToOrchestrator={onSendToOrchestrator} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />}
-        <PrComments detail={detail} busy={busy} onComment={(body) => pr.comment(number, body)} onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />
-        {reviewBar}
-      </Disclosure>
-    </div>
+    <div className="pr-inspector-head"><PrHeader link={link} detail={detail} busy={busy} editBusy={false} onEdit={() => {}} onReact={() => {}} onOpenUrlInPane={onOpenUrlInPane} compact /></div>
+    {watchRows}
+    <PrInspectorSections checks={detail.checks} detail={detail} approvalsRequired={approvalsRequired} approvalsReceived={approvalsReceived} number={number} busy={busy} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onSendToOrchestrator={onSendToOrchestrator} />
     <div data-testid="pr-details" className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
       <Disclosure summary="Details" scrollBody={false} className="rounded-none border-0 bg-transparent">
         <div className="flex flex-col gap-3">
           <PrEditDetails link={link} detail={detail} busy={busy} editBusy={pr.write.busy === `edit:${number}`} onEdit={(title, body) => pr.edit(number, title, body)} />
           <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
+          {detail.reviews_total > 0 && <PrReviews detail={detail} />}
+          {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && <PrThreads detail={detail} busy={busy} number={number} onSendToOrchestrator={onSendToOrchestrator} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />}
+          <PrComments detail={detail} busy={busy} onComment={(body) => pr.comment(number, body)} onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />
+          {reviewBar}
           <div><div className={SECTION_HEAD_CLS}>People &amp; labels</div>
             <PrReviewerPicker detail={detail} busy={busy} candidates={pr.reviewers} loading={pr.reviewersBusy} message={pr.reviewersMessage} onLoad={() => pr.loadReviewers(number)} onApply={(added, removed) => pr.reviewerApply(number, added, removed)} open={openPicker === 'reviewers'} onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)} />
             <PrLabelPicker detail={detail} busy={busy} candidates={pr.labels} loading={pr.labelsBusy} message={pr.labelsMessage} onLoad={() => pr.loadLabels(number)} onToggle={(name, applied) => pr.labelSet(number, [name], applied)} open={openPicker === 'labels'} onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)} />
@@ -736,7 +735,8 @@ function PrDetailView({
   onSendToOrchestrator,
   onBrowse,
   linkMessage,
-  compact
+  compact,
+  watchRows
 }: {
   compact: boolean
   view: PrDetailView
@@ -749,6 +749,7 @@ function PrDetailView({
   onSendToOrchestrator?: (text: string) => void
   onBrowse: () => void
   linkMessage: React.ReactNode
+  watchRows: React.ReactNode
 }): React.JSX.Element {
   const [pane, setPane] = useState<'summary' | 'files'>('summary')
   const [drafts, setDrafts] = useState<PrReviewDraft[]>([])
@@ -874,7 +875,7 @@ function PrDetailView({
         </span>
       </div>}
       <PrNotices pr={pr} linkMessage={linkMessage} />
-      <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
+      <div data-testid="pr-scroll-area" className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
         {compact ? <PrInspectorBoard
           link={link}
           detail={detail}
@@ -887,6 +888,7 @@ function PrDetailView({
           onOpenUrlInPane={onOpenUrlInPane}
           onSendToOrchestrator={onSendToOrchestrator}
           reviewBar={reviewBar}
+          watchRows={watchRows}
           openPicker={openPicker}
           setOpenPicker={setOpenPicker}
         /> : pane === 'files' ? (
@@ -1018,14 +1020,15 @@ export function PullRequestTab({
       key={`${watch.number}:${watch.url}`}
       number={watch.number}
       lastCheckedAtMs={watch.last_checked_at_ms}
+      compact={compact}
       onStop={() => {
         if (client && session != null) client.send({ type: 'pr_watch_unwatch', session, number: watch.number })
       }}
     />
   ))
-  const withWatchRows = (content: React.ReactNode): React.JSX.Element => (
+  const withWatchRows = (content: React.ReactNode, showWatchRows = true): React.JSX.Element => (
     <PrWatchStack>
-      {watchRows}
+      {showWatchRows && watchRows}
       {content}
     </PrWatchStack>
   )
@@ -1108,6 +1111,8 @@ export function PullRequestTab({
       onSendToOrchestrator={onSendToOrchestrator}
       onBrowse={() => setBrowsing(true)}
       linkMessage={linkMessage}
-    />
+      watchRows={compact ? watchRows : null}
+    />,
+    !compact
   )
 }

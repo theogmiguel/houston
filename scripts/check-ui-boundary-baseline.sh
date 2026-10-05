@@ -93,7 +93,7 @@ BASELINE=(
   "ui/src/renderer/src/components/git/PrReviewBar.tsx 16"
   "ui/src/renderer/src/components/git/PrStack.tsx 18"
   "ui/src/renderer/src/components/git/PrSummary.tsx 2"
-  "ui/src/renderer/src/components/git/PullRequestTab.tsx 61"
+  "ui/src/renderer/src/components/git/PullRequestTab.tsx 54"
   "ui/src/renderer/src/components/git/ReviewProviderModal.tsx 16"
   "ui/src/renderer/src/components/git/WorktreeCleanupSection.tsx 30"
   "ui/src/renderer/src/components/git/WorktreesDialog.tsx 47"
