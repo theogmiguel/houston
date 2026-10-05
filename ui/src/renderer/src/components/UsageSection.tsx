@@ -29,6 +29,7 @@ import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { Select } from './Select'
 import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar } from './ui'
+import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
 export type UsageSummaryMsg = Extract<ServerMsg, { type: 'usage_summary' }>
@@ -282,7 +283,7 @@ export function UsageSection({
 
   useEffect(() => {
     const now = Date.now()
-    onActivityRequest(now - 365 * 86_400_000, now, selectedWorkspace === 'all' ? null : selectedWorkspace)
+    onActivityRequest(calendarStartMs(now), now, selectedWorkspace === 'all' ? null : selectedWorkspace)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWorkspace])
 

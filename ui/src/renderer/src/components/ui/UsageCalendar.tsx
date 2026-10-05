@@ -18,6 +18,16 @@ export function usageCalendarLevel(value: number, max: number): number {
   return levelFor(value, max)
 }
 
+export const CALENDAR_DAYS = 365
+
+// Local midnight of the first calendar day; the daemon counts local calendar days, not 24h spans.
+export function calendarStartMs(nowMs: number): number {
+  const start = new Date(nowMs)
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - (CALENDAR_DAYS - 1))
+  return start.getTime()
+}
+
 export function UsageCalendar({
   days,
   metric,
@@ -31,12 +41,10 @@ export function UsageCalendar({
   onSelect: (day: string) => void
   caption?: string
 }): React.JSX.Element {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  start.setDate(start.getDate() - 364)
+  const start = new Date(calendarStartMs(Date.now()))
   const keyOf = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   const byDay = new Map(days.map((day) => [day.day, day]))
-  const all = Array.from({ length: 365 }, (_, index) => {
+  const all = Array.from({ length: CALENDAR_DAYS }, (_, index) => {
     const date = new Date(start)
     date.setDate(date.getDate() + index)
     const key = keyOf(date)

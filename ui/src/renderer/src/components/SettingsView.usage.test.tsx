@@ -93,7 +93,12 @@ describe('Usage page', () => {
     expect(onRequest.mock.calls[0][3]).toBe('/proj')
     expect(onActivityRequest).toHaveBeenCalledTimes(1)
     expect(onActivityRequest.mock.calls[0][2]).toBe('/proj')
-    expect(onActivityRequest.mock.calls[0][1] - onActivityRequest.mock.calls[0][0]).toBe(365 * DAY)
+    const [since, until] = onActivityRequest.mock.calls[0] as [number, number]
+    const first = new Date(since)
+    expect([first.getHours(), first.getMinutes(), first.getSeconds(), first.getMilliseconds()]).toEqual([0, 0, 0, 0])
+    const last = new Date(until - 1)
+    const calendarDays = Math.round((new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime() - since) / DAY) + 1
+    expect(calendarDays).toBe(365)
   })
 
   it('shows the API estimate and a tooltip with the full-rate caveat', () => {
