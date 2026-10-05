@@ -17,7 +17,7 @@ import { META_ROW_CLS, SCM_CARD_ATTRS, SCM_CARD_CLS, SECTION_HEAD_CLS } from './
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../Disclosure'
 import { Icon } from '../Icon'
-import { IconLoaderCircle, IconPencil, IconCheck, IconEllipsis, IconExternal, IconGitPullRequest } from '../icons'
+import { IconLoaderCircle, IconPencil, IconExternal, IconGitPullRequest } from '../icons'
 import { Tooltip } from '../Tooltip'
 import { prDecisionLabel } from './changes'
 import { SPIN_CLASS } from './DiffBody'
@@ -416,15 +416,66 @@ function PrReadError({
 }
 
 /** Title, branch pair, and the edit form that rewrites them. */
-function PrHeader({
-  link,
-  detail,
-  busy,
-  editBusy,
-  onEdit,
-  onReact,
-  onOpenUrlInPane
-}: {
+function PrHeaderMetadata({ link, detail, onOpenUrlInPane }: {
+  link: PullRequestLink
+  detail: PrDetail
+  onOpenUrlInPane?: (url: string) => void
+}): React.JSX.Element {
+  const head = detail.head_ref ?? null
+  const base = detail.base_ref ?? null
+  const branchPair = head !== null && base !== null ? `${head} → ${base}` : null
+  return <>
+    <div data-testid="pr-header-top">
+      <span data-testid="pr-state" className={`flex-none px-1.5 rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] leading-4 ${stateTone(link)}`}>
+        <Icon glyph={IconGitPullRequest} role="small" />{stateLabel(link)}
+      </span>
+      <span data-testid="pr-number">#{link.number}</span>
+      {onOpenUrlInPane && <button type="button" className={`btn ${BTN_GHOST} ml-auto ${ACTION}`} onClick={() => onOpenUrlInPane(link.url)}><Icon glyph={IconExternal} role="small" />Open on GitHub</button>}
+    </div>
+    <div data-testid="pr-title" className="text-[length:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)] break-words">{link.title ?? `Pull request #${link.number}`}</div>
+    <div data-testid="pr-sub" className={`font-mono ${SMALL} text-[var(--text-faint)] break-words`}>
+      {branchPair ? `${branchPair} · ` : ''}{detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
+      {' · '}<span data-testid="pr-additions">+{link.additions}</span>{' '}<span data-testid="pr-deletions">−{link.deletions}</span>
+      {detail.behind_by !== null && detail.behind_by !== undefined ? (detail.behind_by === 0 ? ' · up to date' : ` · ${detail.behind_by} behind`) : ''}
+      {detail.auto_merge_enabled === true ? ` · auto-merge ${detail.auto_merge_method ?? 'merge'}` : ''}
+    </div>
+  </>
+}
+
+function PrHeaderEditor({ link, detail, busy, editBusy, onEdit, onReact }: {
+  link: PullRequestLink
+  detail: PrDetail
+  busy: boolean
+  editBusy: boolean
+  onEdit: (title: string, body: string) => void
+  onReact: (content: PrDetail['reactions'][number]['content'], reacted: boolean) => void
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(link.title ?? `Pull request #${link.number}`)
+  const [body, setBody] = useState(detail.body ?? '')
+  return <>
+    <Tooltip label="Edit title and description">
+      <button type="button" data-testid="pr-edit-open" disabled={busy} onClick={() => {
+        setTitle(link.title ?? '')
+        setBody(detail.body ?? '')
+        setEditing((value) => !value)
+      }} className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ml-auto text-[var(--text-muted)] disabled:opacity-55`}>
+        <Icon glyph={IconPencil} role="small" />
+      </button>
+    </Tooltip>
+    {editing ? <div className="flex flex-col gap-1.5" data-testid="pr-edit-form">
+      <input data-testid="pr-edit-title" aria-label="Pull request title" value={title} onChange={(event) => setTitle(event.target.value)} className={`${INPUT} w-full`} />
+      <textarea data-testid="pr-edit-body" aria-label="Pull request description" rows={5} value={body} onChange={(event) => setBody(event.target.value)} className={TEXTAREA} />
+      <div className="flex items-center gap-2">
+        <button type="button" data-testid="pr-edit-save" disabled={editBusy || title.trim().length === 0} onClick={() => { setEditing(false); onEdit(title, body) }} className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-55`}>Save</button>
+        <button type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)} className={`btn ${ACTION} ${BTN_SECONDARY}`}>Cancel</button>
+      </div>
+    </div> : <PrDescription body={detail.body} />}
+    {!editing && <PrReactions reactions={detail.reactions} busy={busy} onToggle={onReact} />}
+  </>
+}
+
+function PrHeader({ link, detail, busy, editBusy, onEdit, onReact, onOpenUrlInPane, compact = false }: {
   link: PullRequestLink
   detail: PrDetail
   busy: boolean
@@ -432,113 +483,14 @@ function PrHeader({
   onEdit: (title: string, body: string) => void
   onReact: (content: PrDetail['reactions'][number]['content'], reacted: boolean) => void
   onOpenUrlInPane?: (url: string) => void
+  compact?: boolean
 }): React.JSX.Element {
-  const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(link.title ?? `Pull request #${link.number}`)
-  const [body, setBody] = useState(detail.body ?? '')
-  const head = detail.head_ref ?? null
-  const base = detail.base_ref ?? null
-  const branchPair = head !== null && base !== null ? `${head} → ${base}` : null
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1.5">
-        <div data-testid="pr-header-top">
-        <span
-          data-testid="pr-state"
-          className={`flex-none px-1.5 rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] leading-4 ${stateTone(link)}`}
-        >
-          <Icon glyph={IconGitPullRequest} role="small" />
-          {stateLabel(link)}
-        </span>
-        <span data-testid="pr-number">#{link.number}</span>
-        {onOpenUrlInPane && <button type="button" className={`btn ${BTN_GHOST} ml-auto ${ACTION}`} onClick={() => onOpenUrlInPane(link.url)}><Icon glyph={IconExternal} role="small" />Open on GitHub</button>}
-        </div>
-          <div
-            data-testid="pr-title"
-            className="text-[length:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)] break-words"
-          >
-            {link.title ?? `Pull request #${link.number}`}
-          </div>
-          <div
-            data-testid="pr-sub"
-            className={`font-mono ${SMALL} text-[var(--text-faint)] break-words`}
-          >
-            {branchPair ? `${branchPair} · ` : ''}
-            {detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
-            {' · '}<span data-testid="pr-additions">+{link.additions}</span>{' '}<span data-testid="pr-deletions">−{link.deletions}</span>
-            {detail.behind_by !== null && detail.behind_by !== undefined
-              ? detail.behind_by === 0
-                ? ' · up to date'
-                : ` · ${detail.behind_by} behind`
-              : ''}
-            {detail.auto_merge_enabled === true
-              ? ` · auto-merge ${detail.auto_merge_method ?? 'merge'}`
-              : ''}
-      </div>
-        <Tooltip label="Edit title and description">
-          <button
-            type="button"
-            data-testid="pr-edit-open"
-            disabled={busy}
-            onClick={() => {
-              setTitle(link.title ?? '')
-              setBody(detail.body ?? '')
-              setEditing((v) => !v)
-            }}
-            className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ml-auto text-[var(--text-muted)] disabled:opacity-55`}
-          >
-            <Icon glyph={IconPencil} role="small" />
-          </button>
-        </Tooltip>
-      </div>
-      {editing ? (
-        <div className="flex flex-col gap-1.5" data-testid="pr-edit-form">
-          <input
-            data-testid="pr-edit-title"
-            aria-label="Pull request title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className={`${INPUT} w-full`}
-          />
-          <textarea
-            data-testid="pr-edit-body"
-            aria-label="Pull request description"
-            rows={5}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            className={TEXTAREA}
-          />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-testid="pr-edit-save"
-              disabled={editBusy || title.trim().length === 0}
-              onClick={() => {
-                setEditing(false)
-                onEdit(title, body)
-              }}
-              className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-55`}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              data-testid="pr-edit-cancel"
-              onClick={() => setEditing(false)}
-              className={`btn ${ACTION} ${BTN_SECONDARY}`}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <PrDescription body={detail.body} />
-      )}
-      {!editing && (
-        <PrReactions reactions={detail.reactions} busy={busy} onToggle={onReact} />
-      )}
+  return <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
+      <PrHeaderMetadata link={link} detail={detail} onOpenUrlInPane={onOpenUrlInPane} />
+      {!compact && <PrHeaderEditor link={link} detail={detail} busy={busy} editBusy={editBusy} onEdit={onEdit} onReact={onReact} />}
     </div>
-  )
+  </div>
 }
 
 function PrCheckRow({ check }: { check: PrCheck }): React.JSX.Element {
@@ -554,6 +506,35 @@ function PrCheckRow({ check }: { check: PrCheck }): React.JSX.Element {
       </span>
     </div>
   )
+}
+
+function PrEditDetails({ link, detail, busy, editBusy, onEdit }: {
+  link: PullRequestLink
+  detail: PrDetail
+  busy: boolean
+  editBusy: boolean
+  onEdit: (title: string, body: string) => void
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(link.title ?? '')
+  const [body, setBody] = useState(detail.body ?? '')
+  return <div className="flex flex-col gap-2">
+    <button type="button" data-testid="pr-edit-open" disabled={busy} onClick={() => {
+      setTitle(link.title ?? '')
+      setBody(detail.body ?? '')
+      setEditing((value) => !value)
+    }} className={`btn ${BTN_GHOST} ${ACTION} self-start`}>
+      <Icon glyph={IconPencil} role="small" />Edit title and description
+    </button>
+    {editing && <div className="flex flex-col gap-1.5" data-testid="pr-edit-form">
+      <input data-testid="pr-edit-title" aria-label="Pull request title" value={title} onChange={(event) => setTitle(event.target.value)} className={`${INPUT} w-full`} />
+      <textarea data-testid="pr-edit-body" aria-label="Pull request description" rows={5} value={body} onChange={(event) => setBody(event.target.value)} className={TEXTAREA} />
+      <div className="flex items-center gap-2">
+        <button type="button" data-testid="pr-edit-save" disabled={editBusy || title.trim().length === 0} onClick={() => { setEditing(false); onEdit(title, body) }} className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-55`}>Save</button>
+        <button type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)} className={`btn ${ACTION} ${BTN_SECONDARY}`}>Cancel</button>
+      </div>
+    </div>}
+  </div>
 }
 
 function checkSummary(checks: PrCheck[]): { text: string; tone: string } {
@@ -702,31 +683,46 @@ export function pendingMergeReason(detail: PrDetail): string | null {
   return reason
 }
 
-function PrCompactSummary({ link, detail, pr, method, onOpenUrlInPane, onDetails, linkMessage, actionBar }: {
+function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approvalsRequired, approvalsReceived, onOpenUrlInPane, onSendToOrchestrator, reviewBar, openPicker, setOpenPicker }: {
   link: PullRequestLink
   detail: PrDetail
   pr: PrDetailController
-  method: PrMergeMethod
+  number: number
+  busy: boolean
+  mergeReason: string | null
+  approvalsRequired: number
+  approvalsReceived: number
   onOpenUrlInPane?: (url: string) => void
-  onDetails: () => void
-  linkMessage: React.ReactNode
-  actionBar: React.ReactNode
+  onSendToOrchestrator?: (text: string) => void
+  reviewBar: React.ReactNode
+  openPicker: 'reviewers' | 'labels' | 'stack' | null
+  setOpenPicker: (value: 'reviewers' | 'labels' | 'stack' | null) => void
 }): React.JSX.Element {
-  const number = link.number
-  const busy = pr.write.busy !== null
-  const mergeReason = pendingMergeReason(detail)
-  return <div className="pr-compact" data-testid="pr-tab">
-    <PrNotices pr={pr} linkMessage={linkMessage} />
-    <div className="pr-compact-content">
-      <div className="pr-compact-title"><strong data-testid="pr-title">{link.title ?? `Pull request #${number}`}</strong><Tooltip label="Pull request details and actions"><button className="pr-compact-details" aria-label="Pull request details and actions" onClick={() => onDetails()}><Icon glyph={IconEllipsis} role="ui" /></button></Tooltip></div>
-      <div className="pr-compact-sub" data-testid="pr-sub"><span className={`pr-compact-state ${STATE_PILL[link.state]}`}>{stateLabel(link)}</span><span>#{number}</span><span>{detail.head_ref} → {detail.base_ref}</span><span>· {detail.commit_count} {detail.commit_count === 1 ? 'commit' : 'commits'}</span></div>
-      <h3 className="pr-compact-group">Checks <span className={detail.checks.some((check) => check.state !== 'passing') ? 'text-[var(--warn)]' : undefined}>{detail.checks.filter((check) => check.state === 'passing').length}/{detail.checks.length}</span></h3>
-      {detail.checks.map((check, index) => <div className="pr-compact-check" data-testid="pr-check-row" key={`${check.name}-${index}`}><span className={check.state === 'passing' ? 'text-[var(--ok)]' : `pr-compact-check-dot ${CHECK_DOT[check.state]}`}>{check.state === 'passing' && <Icon glyph={IconCheck} role="label" />}</span><span className="truncate">{check.name}</span><span className="pr-compact-duration">{checkMeta(check)}</span></div>)}
-      <h3 className="pr-compact-group">Reviews <span className={link.review_decision !== 'APPROVED' ? 'text-[var(--warn)]' : undefined}>{detail.reviews_total}</span></h3>
-      {detail.reviews_total > 0 ? <PrReviews detail={detail} /> : <div className="pr-compact-check text-[var(--text-muted)]">No reviews yet</div>}
+  return <PrSummary>
+    <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}><PrHeader link={link} detail={detail} busy={busy} editBusy={false} onEdit={() => {}} onReact={() => {}} onOpenUrlInPane={onOpenUrlInPane} compact /></div>
+    <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}><PrChecks checks={detail.checks} /></div>
+    <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+      <Disclosure summary={<span className="flex w-full items-center gap-2"><span data-testid="pr-review-requirement">Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span><span className="ml-auto font-mono text-[var(--warn)]" data-review-count>{Math.min(approvalsReceived, approvalsRequired)} / {approvalsRequired}</span></span>} defaultOpen={detail.reviews_total > 0 || detail.threads.length > 0} scrollBody={false} className="rounded-none border-0 bg-transparent">
+        {detail.reviews_total > 0 && <PrReviews detail={detail} />}
+        {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && <PrThreads detail={detail} busy={busy} number={number} onSendToOrchestrator={onSendToOrchestrator} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />}
+        <PrComments detail={detail} busy={busy} onComment={(body) => pr.comment(number, body)} onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />
+        {reviewBar}
+      </Disclosure>
     </div>
-    {link.state === 'open' && !link.is_draft ? <footer className="pr-compact-footer"><span className="truncate" data-testid="pr-merge-reason">{mergeReason}</span><button className={`btn ${BTN_GHOST}`} disabled={!onOpenUrlInPane} onClick={() => onOpenUrlInPane?.(link.url)}>Open on GitHub</button><Tooltip label={mergeReason ?? undefined}><button className={`btn ${BTN_PRIMARY}`} data-testid="pr-merge" disabled={mergeReason !== null || busy || pr.mergeBusy} onClick={() => pr.merge(number, method, detail.head_sha)}>Merge</button></Tooltip></footer> : actionBar}
-  </div>
+    <div data-testid="pr-details" className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+      <Disclosure summary="Details" scrollBody={false} className="rounded-none border-0 bg-transparent">
+        <div className="flex flex-col gap-3">
+          <PrEditDetails link={link} detail={detail} busy={busy} editBusy={pr.write.busy === `edit:${number}`} onEdit={(title, body) => pr.edit(number, title, body)} />
+          <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
+          <div><div className={SECTION_HEAD_CLS}>People &amp; labels</div>
+            <PrReviewerPicker detail={detail} busy={busy} candidates={pr.reviewers} loading={pr.reviewersBusy} message={pr.reviewersMessage} onLoad={() => pr.loadReviewers(number)} onApply={(added, removed) => pr.reviewerApply(number, added, removed)} open={openPicker === 'reviewers'} onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)} />
+            <PrLabelPicker detail={detail} busy={busy} candidates={pr.labels} loading={pr.labelsBusy} message={pr.labelsMessage} onLoad={() => pr.loadLabels(number)} onToggle={(name, applied) => pr.labelSet(number, [name], applied)} open={openPicker === 'labels'} onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)} />
+            <PrStackSection number={number} busy={busy} stack={pr.stack} checked={pr.stackChecked} loading={pr.stackBusy} message={pr.stackMessage} onLoad={() => pr.loadStack(number)} open={openPicker === 'stack'} onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)} />
+          </div>
+        </div>
+      </Disclosure>
+    </div>
+  </PrSummary>
 }
 
 function PrDetailView({
@@ -754,7 +750,6 @@ function PrDetailView({
   onBrowse: () => void
   linkMessage: React.ReactNode
 }): React.JSX.Element {
-  const [showDetails, setShowDetails] = useState(false)
   const [pane, setPane] = useState<'summary' | 'files'>('summary')
   const [drafts, setDrafts] = useState<PrReviewDraft[]>([])
   const [reviewVerdict, setReviewVerdict] = useState<PrReviewVerdict>('comment')
@@ -835,11 +830,10 @@ function PrDetailView({
     />
   )
 
-  if (compact && !showDetails) return <PrCompactSummary link={link} detail={detail} pr={pr} method={method} onOpenUrlInPane={onOpenUrlInPane} onDetails={() => setShowDetails(true)} linkMessage={linkMessage} actionBar={actionBar} />
 
   return (
     <div className="flex-1 min-h-0 flex flex-col" data-testid="pr-tab">
-      <div className="flex-none flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)]">
+      {!compact && <div className="flex-none flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)]">
         <Segmented
           aria-label="Pull request view"
           value={pane}
@@ -878,11 +872,24 @@ function PrDetailView({
         <span className={`ml-auto font-mono ${SMALL} text-[var(--text-faint)]`}>
           {detail.mergeable === 'conflicting' ? 'conflicts' : ''}
         </span>
-      </div>
-      {compact && <button className={`btn ${BTN_GHOST}`} onClick={() => setShowDetails(false)}>Back to summary</button>}
+      </div>}
       <PrNotices pr={pr} linkMessage={linkMessage} />
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
-        {pane === 'files' ? (
+        {compact ? <PrInspectorBoard
+          link={link}
+          detail={detail}
+          pr={pr}
+          number={number}
+          busy={busy}
+          mergeReason={mergeReason}
+          approvalsRequired={approvalsRequired}
+          approvalsReceived={approvalsReceived}
+          onOpenUrlInPane={onOpenUrlInPane}
+          onSendToOrchestrator={onSendToOrchestrator}
+          reviewBar={reviewBar}
+          openPicker={openPicker}
+          setOpenPicker={setOpenPicker}
+        /> : pane === 'files' ? (
           <div className="flex flex-col gap-2.5 p-3">
             <PrFiles
               diff={pr.diff}
@@ -986,8 +993,8 @@ function PrDetailView({
           </PrSummary>
         )}
       </div>
-      {pane === 'files' && reviewBar}
-      {pane === 'summary' && actionBar}
+      {!compact && pane === 'files' && reviewBar}
+      {((compact && pane === 'summary') || (!compact && pane === 'summary')) && actionBar}
     </div>
   )
 }

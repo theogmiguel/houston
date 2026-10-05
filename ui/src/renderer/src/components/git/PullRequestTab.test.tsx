@@ -854,7 +854,7 @@ describe('PullRequestTab — editing, comments and reviews', () => {
       detail: detail({ reviewers: [{ id: 'reviewer', kind: 'user' }], threads: [thread()] })
     }))
 
-    expect(q('[data-testid="pr-review-requirement"]')?.textContent).toContain('0 / 1')
+    expect(q('[data-review-count]')?.textContent).toBe('0 / 1')
     expect(q('[data-testid="pr-thread-comment-time"]')).not.toBeNull()
     click(qa('button').find((button) => button.textContent === 'Send to orchestrator') ?? null)
     expect(sendToOrchestrator).toHaveBeenCalledWith('PR #61 · src/a.rs:12\nrev: rename this')
@@ -1159,17 +1159,26 @@ describe('PullRequestTab — stacks', () => {
 
 
 describe('compact side panel pull request', () => {
-  it('shows checks and the merge gate, with the complete workflow available through details', () => {
+  it('opens on the board view and keeps editing and management inside collapsed Details', () => {
     const client = mount({ compact: true })
-    emit(client, detailMsg())
+    emit(client, detailMsg({ detail: detail({
+      reviewers: [{ id: 'reviewer', kind: 'user' }],
+      reviews: [{ id: 'review-1', author: 'reviewer', state: 'COMMENTED', body: 'Please review this change.', submitted_at: 2, reactions: [] }],
+      reviews_total: 1
+    }) }))
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
     expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
     expect(q('[data-testid="pr-pane-files"]')).toBeNull()
-    click(q('[aria-label="Pull request details and actions"]'))
-    expect(q('[data-testid="pr-pane-files"]')).not.toBeNull()
+    expect(q('[data-testid="pr-browse-open"]')).toBeNull()
+    expect(q('[data-testid="pr-details"] [data-testid="disclosure"]')?.getAttribute('data-state')).toBe('closed')
+    expect(q('[data-review-count]')?.closest('[data-testid="disclosure"]')?.getAttribute('data-state')).toBe('open')
+    expect(q('[data-review-count]')?.textContent).toBe('0 / 1')
+    expect(q('[data-testid="pr-details"] button')?.getAttribute('aria-expanded')).toBe('false')
+    click(q('[data-testid="pr-details"] button'))
+    expect(q('[data-testid="pr-details"] button')?.getAttribute('aria-expanded')).toBe('true')
+    expect(q('[data-testid="pr-edit-open"]')).not.toBeNull()
+    expect(q('[data-testid="pr-merge-method"]')).toBeNull()
     expect(q('[data-testid="pr-actions-menu"]')).not.toBeNull()
-    click(qa('button').find((button) => button.textContent === 'Back to summary')!)
-    expect(q('[data-testid="pr-pane-files"]')).toBeNull()
   })
 })
 
@@ -1188,13 +1197,11 @@ describe('pending merge check names', () => {
   })
 })
 
-it('uses emphasis for incomplete counters and clears it for approved reviews', () => {
+it('uses emphasis for the review counter and shows running checks in the inspector board', () => {
   const client = mount({ compact: true })
   emit(client, detailMsg())
-  const counters = (): Element[] => qa('.pr-compact-group span')
-  expect(counters()[0].className).toContain('text-[var(--warn)]')
-  expect(counters()[1].className).toContain('text-[var(--warn)]')
-  expect(q('.pr-compact-check-dot')!.className).toContain('bg-[var(--info)]')
-  emit(client, detailMsg({ link: link({ review_decision: 'APPROVED' }) }))
-  expect(counters()[1].className).not.toContain('text-[var(--warn)]')
+  expect(q('[data-review-count]')!.className).toContain('text-[var(--warn)]')
+  expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
+  expect(qa('[data-testid="pr-pane-summary"]')).toHaveLength(0)
+  expect(qa('[data-testid="pr-pane-files"]')).toHaveLength(0)
 })

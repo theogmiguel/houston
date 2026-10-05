@@ -311,15 +311,6 @@ export function PrFooterBar({
         {mergeReason ?? 'Ready when checks and required reviews pass'}
       </span>
       <span className="flex-1" />
-      {primary?.testId === 'pr-merge' && (
-        <Select
-          aria-label="Merge method"
-          data-testid="pr-merge-method"
-          value={method}
-          options={MERGE_METHODS}
-          onChange={(value) => setMethod(value as PrMergeMethod)}
-        />
-      )}
       {primary?.testId === 'pr-merge' ? (
         <SplitButton
           label={method === 'squash' ? 'Squash and merge' : 'Merge'}

@@ -400,7 +400,7 @@ export function SourceControlPanel({
                 onOpenUrlInPane={onOpenUrlInPane}
                 onSendToOrchestrator={onSendToTerminal}
                 onShowChanges={() => onTab('changes')}
-                compact={false}
+                compact={embedded}
                 active={tab === 'pull-request'}
                 refreshSignal={prRefresh}
                 onPrPresenceChange={onPrPresenceChange}
