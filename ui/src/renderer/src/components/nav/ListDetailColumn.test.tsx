@@ -70,13 +70,15 @@ describe('wide surfaces have room for their main content', () => {
   }
 
   function expectBothColumnsAtTheWideRung(): void {
-    const column = container.querySelector('[data-testid="nav-column"]')!
     const shell = container.querySelector('[data-testid="list-detail"]')!
+    const column = shell.closest('main')!
     const list = container.querySelector('[data-testid="list-detail-list"]')!
     const detail = container.querySelector('[data-testid="list-detail-detail"]')!
 
     const maxWidth = Number(/max-w-\[(\d+)px\]/.exec(column.className)![1])
-    const padding = 2 * Number(/px-\[(\d+)px\]/.exec(column.className)![1])
+    // PageFrame pads with a spacing token; theme.css defines --space-4-5 as 20px.
+    expect(column.className).toContain('px-[var(--space-4-5)]')
+    const padding = 2 * 20
     const rung = Number(
       /\[@container_\(min-width:(\d+)px\)\]:grid-cols-\[280px/.exec(shell.className)![1]
     )
