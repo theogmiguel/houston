@@ -74,3 +74,4 @@ export { OrchestrationNotice, OrchestrationNoticeSpecimen } from './Orchestratio
 export { BrowserBlankState, BrowserUnreachableState } from './BrowserPaneStates'
 export { unreachableHost, unreachableMessage } from './browserUnreachable'
 export { DoneDisclosure, TaskAcceptanceRow, TaskDetailFrame, TaskDrawerCard, TaskDrawerExecutionPanel, TaskDrawerHeader, TaskDrawerOrigin, TaskQueueMeta } from './TaskPagePrimitives'
+export { EndedStatusDot, RosterColumn, RosterStrip, RosterQueuePanel, RosterOverview, RosterSurfaceSpecimen } from './RosterSurface'

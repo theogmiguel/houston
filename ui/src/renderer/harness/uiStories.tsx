@@ -34,6 +34,7 @@ import {
   STATUS_LABELS,
   StatusLabel,
   RoutineDetail,
+  RosterSurfaceSpecimen,
   TextInput,
   Table,
   TaskProgress,
@@ -51,7 +52,7 @@ import {
   UsageSectionHeading,
   UsageShareBar
 } from '../src/components/ui'
-import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconPlus, IconSearch } from '../src/components/icons'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
 import { AnimOut } from '../src/components/AnimOut'
@@ -219,6 +220,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="legacy-primary">Legacy primary</Button>
             <Button variant="legacy-secondary">Legacy secondary</Button>
             <Button variant="legacy-ghost">Legacy ghost</Button>
+            <Button variant="legacy-focus-lever"><IconEye />Focus parent</Button>
+            <Button variant="legacy-roster-footer">Roster footer action</Button>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
@@ -234,6 +237,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="danger" disabled>Disabled danger</Button>
             <Button variant="icon" icon={IconClose} aria-label="Disabled close" disabled />
           </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Roster surfaces">
+          <RosterSurfaceSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Dialog">
@@ -300,6 +307,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Caption">
           <UiCaption>Supporting text and coverage details.</UiCaption>
           <UiCaption tone="faint">Quiet supporting footnote.</UiCaption>
+          <UiCaption variant="provisional">May be corrected</UiCaption>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Task progress">
