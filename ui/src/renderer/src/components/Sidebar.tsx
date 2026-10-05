@@ -26,11 +26,11 @@ import {
 } from "../settingsNav";
 import { useCustomSurface } from "./customChrome";
 import {
-  SETTINGS_GROUPS,
   NAVIGABLE_SETTINGS_SECTIONS,
-  type SettingsGroupDef,
   type SettingsSectionDef,
 } from "../settingsSections";
+import { searchSettingsRows } from "../settingsRowRegistry";
+import { requestSettingsRowJump } from "../settingsRowJump";
 import { translateFilteredDropIndex } from "../layout/wsOrder";
 import {
   IconAlertTriangle,
@@ -74,7 +74,7 @@ import { Tooltip } from "./Tooltip";
 import logoUrl from "../assets/logo-chrome.svg";
 import { openExternal, showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
-import { ICON_ROLE_CLS, Icon } from "./Icon";
+import { Icon } from "./Icon";
 import { Count } from "./ui/Count";
 import {
   RAIL_VIEWS,
@@ -96,12 +96,15 @@ import { useRailPrCache } from "./git/railPrCache";
 import type { RailDiffTotals } from "./git/useRailGitFacts";
 import type { RailPrState } from "./git/railPrCache";
 import { GridRailRowFallback } from "./ui/GridRailRowFallback";
+import { SettingsRailRow } from "./ui/SettingsRailRow";
+import { SettingsSearch } from "./ui/SettingsSearch";
 
 const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   palette: IconPalette,
   terminal: IconTerminal,
   keyboard: IconKeyboard,
   user: IconUser,
+  bell: IconInfo,
   folder: IconFolder,
   fork: IconGitFork,
   tasks: IconTasks,
@@ -1768,17 +1771,14 @@ function TagFilterMenu({
 function SettingsTree({
   treeFilter,
   setTreeFilter,
-  settingsGroupRows,
+  settingsSections,
   activeSettingsSection,
 }: {
   treeFilter: string | null;
   setTreeFilter: (
     v: string | null | ((cur: string | null) => string | null),
   ) => void;
-  settingsGroupRows: {
-    group: SettingsGroupDef;
-    sections: SettingsSectionDef[];
-  }[];
+  settingsSections: readonly SettingsSectionDef[];
   activeSettingsSection: string;
 }): React.JSX.Element {
   const filterRef = useRef<HTMLInputElement>(null);
@@ -1797,87 +1797,37 @@ function SettingsTree({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  const query = (treeFilter ?? '').trim().toLowerCase();
+  const rowHits = query ? searchSettingsRows(query) : [];
+  const sections = settingsSections.filter((s) => !query || s.label.toLowerCase().includes(query) || s.keywords.some((keyword) => keyword.toLowerCase().includes(query)));
   return (
-    <>
-      <div className="px-[var(--space-3)] pt-[var(--space-3)] pb-[var(--space-2)]">
-        <input
-          ref={filterRef}
-          type="text"
+    <div className="grid gap-[var(--space-1)]">
+      <SettingsSearch
+          inputRef={filterRef}
           value={treeFilter ?? ""}
           onChange={(e) => setTreeFilter(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
-              e.stopPropagation();
-              setTreeFilter(null);
+              if (treeFilter) {
+                e.preventDefault();
+                e.stopPropagation();
+                setTreeFilter(null);
+                filterRef.current?.blur();
+              }
             }
           }}
-          placeholder="Filter settings…  /"
-          aria-label="Filter settings"
-          className="w-full h-7 px-2 rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] outline-none focus-visible:border-[var(--accent)]"
         />
-      </div>
-      <nav className="flex flex-col gap-2 p-2" aria-label="Settings sections">
-        {settingsGroupRows.map(({ group, sections }) => (
-          <Fragment key={group.id}>
-            {}
-            {group.quiet ? (
-              <div
-                aria-hidden
-                data-testid="settings-group-divider"
-                className="mx-[var(--space-2)] border-t border-t-[var(--divider)]"
-              />
-            ) : (
-              <div className="px-[var(--space-2)] pt-[var(--space-1)] pb-[2px]">
-                <span className="[font-size:var(--tr-text-label-size)] font-semibold tracking-wider uppercase text-[var(--text-secondary)]">
-                  {group.label}
-                </span>
-              </div>
-            )}
-            {sections.map((s) => {
-              const Icon = SETTINGS_ICON_MAP[s.icon];
+      <nav className="flex flex-col gap-[var(--space-1)] px-2 pb-2" aria-label="Settings sections">
+        {query ? rowHits.length > 0 ? rowHits.map(({ section: s, title }) => {
+          const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
+          return <SettingsRailRow key={`${s.id}:${title}`} kind="search" icon={Icon} label={title} subtitle={s.label} sectionId={s.id} rowTitle={title} onClick={() => { requestSettingsRowJump(s.id, title); setSettingsSection(s.id); setTreeFilter(null); }} />
+        }) : <div className="px-2 py-2 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">No settings match your search.</div> : sections.map((s) => {
+              const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
               const on = activeSettingsSection === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  data-testid="settings-section-row"
-                  data-section-id={s.id}
-                  data-quiet={group.quiet ? "true" : undefined}
-                  aria-current={on ? "true" : undefined}
-                  className={`treerow relative flex items-center gap-2 h-[var(--h-row)] px-2 rounded-[var(--tr-radius-sm)] border-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-left w-full hover:bg-hover-fill hover:text-[var(--text-primary)] ${
-                    on
-                      ? RAIL_SELECTED_CLS
-                      : group.quiet
-                        ? "bg-transparent text-[var(--text-muted)]"
-                        : "bg-transparent text-[var(--text-secondary)]"
-                  }`}
-                  onClick={() => {
-                    setSettingsSection(s.id);
-                  }}
-                >
-                  {}
-                  {!group.quiet && (
-                    <span
-                      className={`flex-none w-[14px] h-[14px] flex items-center justify-center ${on ? "text-[var(--accent)]" : "opacity-70"}`}
-                    >
-                      <Icon className={ICON_ROLE_CLS.ui} />
-                    </span>
-                  )}
-                  <span className="whitespace-nowrap overflow-hidden text-ellipsis">
-                    {s.label}
-                  </span>
-                </button>
-              );
+              return <SettingsRailRow key={s.id} kind="section" icon={Icon} label={s.label} selected={on} sectionId={s.id} onClick={() => setSettingsSection(s.id)} />;
             })}
-          </Fragment>
-        ))}
-        {settingsGroupRows.length === 0 && (
-          <div className="text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] px-[10px] py-2 leading-[1.5]">
-            No settings match your filter.
-          </div>
-        )}
       </nav>
-    </>
+    </div>
   );
 }
 
@@ -2266,7 +2216,6 @@ export function Sidebar({
 
   const [treeFilter, setTreeFilter] = useState<string | null>(null);
   const filterOpen = tagMenu !== null;
-  const filterQuery = (treeFilter ?? "").trim().toLowerCase();
   const tags = useMemo(() => tagsProp ?? [], [tagsProp]);
   const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
   const activeTagIds = useMemo(
@@ -2639,16 +2588,7 @@ export function Sidebar({
 
   const treeLabel = "Workspaces";
 
-  const settingsGroupRows = SETTINGS_GROUPS.map((g) => ({
-    group: g,
-    sections: NAVIGABLE_SETTINGS_SECTIONS.filter(
-      (s) =>
-        s.group === g.id &&
-        (!filterQuery ||
-          s.label.toLowerCase().includes(filterQuery) ||
-          s.keywords.some((k) => k.toLowerCase().includes(filterQuery))),
-    ),
-  })).filter((g) => g.sections.length > 0);
+  const settingsSections = NAVIGABLE_SETTINGS_SECTIONS;
 
   return (
     <aside
@@ -2680,7 +2620,7 @@ export function Sidebar({
           <SettingsTree
             treeFilter={treeFilter}
             setTreeFilter={setTreeFilter}
-            settingsGroupRows={settingsGroupRows}
+            settingsSections={settingsSections}
             activeSettingsSection={activeSettingsSection}
           />
         ) : (

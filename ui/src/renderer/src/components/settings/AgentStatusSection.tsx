@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { AgentKind } from '../../houston/generated/AgentKind'
+import type { AgentProfileState } from '../SettingsView'
+import { AgentProfiles } from '../AgentProfiles'
 import { CheckedStamp } from '../CheckedStamp'
 import { Icon, ICON_ROLE_CLS } from '../Icon'
 import { IconAgent, IconLoaderCircle, IconRefresh, IconZap } from '../icons'
 import { ListDetail, type ListDetailItem } from '../nav/ListDetail'
 import { CHROME_BUTTON, NavDetailState, NavEmpty, NavSwitch } from '../nav/navChrome'
+import { Caption } from '../ui/Caption'
 import { Group, SectionHead, SettingsRow } from '../settingsPrimitives'
 import { StatusIcon, type StatusIconState } from '../StatusIcon'
 import { Tooltip } from '../Tooltip'
@@ -43,6 +46,10 @@ export interface AgentStatusSectionProps {
   onSet: (provider: AgentKind, enabled: boolean) => void
   onRefresh: () => void
   checkedAt?: number | null
+  agentProfiles?: AgentProfileState | null
+  onAgentProfileUpsert?: (id: number | null, agent: AgentKind, name: string, configDir: string) => void
+  onAgentProfileDelete?: (id: number) => void
+  onAgentProfileSetActive?: (agent: AgentKind, id: number | null) => void
 }
 
 function copyFor(state: AgentHookState): { label: string; writes: string } {
@@ -90,21 +97,25 @@ function switchFor(
 }
 
 function VersionText({ version }: { version: string | null }): React.JSX.Element {
-  return (
-    <span className="font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)] tabular-nums">
-      {version ?? 'Unknown'}
-    </span>
-  )
+  return <Caption tone="faint" variant="code">{version ?? 'Unknown'}</Caption>
 }
 
 function AgentDetail({
   state,
   pending,
-  onSet
+  onSet,
+  agentProfiles,
+  onAgentProfileUpsert,
+  onAgentProfileDelete,
+  onAgentProfileSetActive
 }: {
   state: AgentHookState
   pending: boolean
   onSet: (provider: AgentKind, enabled: boolean) => void
+  agentProfiles: AgentProfileState | null
+  onAgentProfileUpsert?: AgentStatusSectionProps['onAgentProfileUpsert']
+  onAgentProfileDelete?: AgentStatusSectionProps['onAgentProfileDelete']
+  onAgentProfileSetActive?: AgentStatusSectionProps['onAgentProfileSetActive']
 }): React.JSX.Element {
   const copy = copyFor(state)
   const scope = state.scope === 'workspace' ? 'Every workspace Houston opens' : 'This machine'
@@ -183,6 +194,18 @@ function AgentDetail({
           <VersionText version={state.version} />
         </SettingsRow>
       </Group>
+      {(state.provider === 'claude' || state.provider === 'codex') && (
+        <Group heading="Accounts">
+          <AgentProfiles
+            agents={[state.provider]}
+            profiles={agentProfiles?.profiles ?? []}
+            active={agentProfiles?.active ?? []}
+            onUpsert={onAgentProfileUpsert ?? (() => {})}
+            onDelete={onAgentProfileDelete ?? (() => {})}
+            onSetActive={onAgentProfileSetActive ?? (() => {})}
+          />
+        </Group>
+      )}
     </div>
   )
 }
@@ -191,7 +214,11 @@ export function AgentStatusSection({
   providers,
   onSet,
   onRefresh,
-  checkedAt = null
+  checkedAt = null,
+  agentProfiles = null,
+  onAgentProfileUpsert,
+  onAgentProfileDelete,
+  onAgentProfileSetActive
 }: AgentStatusSectionProps): React.JSX.Element {
   const [pending, setPending] = useState<Partial<Record<AgentKind, boolean>>>({})
   const [checking, setChecking] = useState(false)
@@ -254,48 +281,34 @@ export function AgentStatusSection({
 
   const items: ListDetailItem[] = (providers ?? []).map((state) => {
     const copy = copyFor(state)
+    const accountCount = agentProfiles?.profiles.filter((profile) => profile.agent === state.provider).length ?? 0
+    const subtitle = [
+      state.version ?? 'Unknown',
+      !state.present ? 'Not found on PATH' : state.error || (state.enabled && !state.installed)
+        ? 'Hooks need attention' : state.installed ? 'Hooks on' : 'Hooks off',
+      accountCount > 0 ? `${accountCount} account${accountCount === 1 ? '' : 's'}` : null
+    ].filter(Boolean).join(' · ')
     return {
       id: state.provider,
       title: (
         <span
           data-testid="agent-status-row"
+          data-settings-row-name={copy.label}
           data-provider={state.provider}
           data-status={markFor(state)}
-          className={`flex items-baseline gap-[var(--space-2)] ${
-            state.present ? '' : 'text-[var(--text-secondary)]'
-          }`}
+          className={`flex min-w-0 flex-col items-start whitespace-normal ${state.present ? '' : 'text-[var(--text-secondary)]'}`}
         >
-          <span className="truncate">{copy.label}</span>
-          {state.version && (
-            <span className="flex-none font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)] tabular-nums">
-              {state.version}
-            </span>
-          )}
+          <span className="max-w-full truncate">{copy.label}</span>
+          <span className="max-w-full truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">{subtitle}</span>
         </span>
       ),
-      sub: stateLine(state),
-      right: (
-        <span className="flex items-center gap-[var(--space-2)]">
-          <StatusIcon state={markFor(state)} />
-          {switchFor(
-            state,
-            copy.label,
-            pending[state.provider] !== undefined,
-            handleSet,
-            'agent-status-row-switch'
-          )}
-        </span>
-      )
+      right: <StatusIcon state={markFor(state)} />
     }
   })
 
   return (
     <>
-      <SectionHead
-        title="Agent setup"
-        lede="Show when agents are working or need input. Houston learns this from a small hook it installs in each CLI's own config — never by reading the terminal. Every switch here edits that CLI's own file, and turning one off removes exactly what Houston wrote."
-        actions={actions}
-      />
+      <SectionHead title="Agent CLIs" actions={actions} />
       {providers === null ? (
         <NavDetailState
           testId="agent-status-loading"
@@ -314,12 +327,7 @@ export function AgentStatusSection({
       ) : (
         <ListDetail
           items={items}
-          backLabel="Agent setup"
-          listHead={
-            <span className="px-[2px] py-[4px] block [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
-              Agent CLIs · <span className="tabular-nums">{items.length}</span>
-            </span>
-          }
+          backLabel="Agent CLIs"
           renderDetail={(item) => {
             const state = providers.find((p) => p.provider === item?.id)
             if (!state) {
@@ -335,6 +343,10 @@ export function AgentStatusSection({
                 state={state}
                 pending={pending[state.provider] !== undefined}
                 onSet={handleSet}
+                agentProfiles={agentProfiles}
+                onAgentProfileUpsert={onAgentProfileUpsert}
+                onAgentProfileDelete={onAgentProfileDelete}
+                onAgentProfileSetActive={onAgentProfileSetActive}
               />
             )
           }}

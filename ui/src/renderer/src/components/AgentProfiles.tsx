@@ -22,6 +22,7 @@ const AGENT_VAR: Record<'claude' | 'codex', string> = {
 }
 
 interface Props {
+  agents?: Array<'claude' | 'codex'>
   profiles: AgentProfile[]
   active: AgentProfileActive[]
   onUpsert: (id: number | null, agent: AgentKind, name: string, configDir: string) => void
@@ -57,7 +58,7 @@ function AgentProfileCard({
         <span className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">{AGENT_VAR[agent]}</span>
       </div>
 
-      <div className="px-[14px] py-2">
+      <div data-settings-row-name="Active profile" className="px-[14px] py-2">
         {}
         <label className="mb-1 block [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
           Spawned panes — active profile
@@ -82,7 +83,7 @@ function AgentProfileCard({
         />
       </div>
 
-      <div className="border-t border-[var(--divider)] px-[14px] pb-[2px] pt-2">
+      <div data-settings-row-name="Saved profiles" className="border-t border-[var(--divider)] px-[14px] pb-[2px] pt-2">
         <div className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
           Saved profiles
         </div>
@@ -117,7 +118,7 @@ function AgentProfileCard({
         </ul>
       )}
 
-      <div className="flex items-end gap-2 border-t border-[var(--divider)] px-[14px] py-[9px]">
+      <div data-settings-row-name="Add profile" className="flex items-end gap-2 border-t border-[var(--divider)] px-[14px] py-[9px]">
         <div className="flex-1 flex flex-col gap-1">
           <label className="block [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">Name</label>
           <input
@@ -153,7 +154,7 @@ function AgentProfileCard({
   )
 }
 
-export function AgentProfiles({ profiles, active, onUpsert, onDelete, onSetActive }: Props): React.JSX.Element {
+export function AgentProfiles({ profiles, active, onUpsert, onDelete, onSetActive, agents = ['claude', 'codex'] }: Props): React.JSX.Element {
   const activeFor = (agent: 'claude' | 'codex'): number | null =>
     active.find((a) => a.agent === agent)?.id ?? null
 
@@ -165,22 +166,22 @@ export function AgentProfiles({ profiles, active, onUpsert, onDelete, onSetActiv
         however the agent was started.
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <AgentProfileCard
+        {agents.includes('claude') && <AgentProfileCard
           agent="claude"
           profiles={profiles.filter((p) => p.agent === 'claude')}
           activeId={activeFor('claude')}
           onUpsert={onUpsert}
           onDelete={onDelete}
           onSetActive={onSetActive}
-        />
-        <AgentProfileCard
+        />}
+        {agents.includes('codex') && <AgentProfileCard
           agent="codex"
           profiles={profiles.filter((p) => p.agent === 'codex')}
           activeId={activeFor('codex')}
           onUpsert={onUpsert}
           onDelete={onDelete}
           onSetActive={onSetActive}
-        />
+        />}
       </div>
     </div>
   )

@@ -72,14 +72,7 @@ export function PrivacySection({
 
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Privacy &amp; data</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          What Houston keeps on this machine, and what it never sends anywhere. Command
-          history is captured via shell integration (Terminal → Shell integration).
-        </div>
-      </div>
-      <SubHead>What Houston stores</SubHead>
+      <SubHead>What Houston keeps on this machine</SubHead>
       <SettingsList>
         <Row
           title="Command history"
@@ -227,14 +220,14 @@ export function PrivacySection({
           )}
         </Row>
       </SettingsList>
-      <SubHead>What Houston does not do</SubHead>
+      <SubHead>What Houston never does</SubHead>
       <SettingsList>
-        <Row title="Telemetry" desc="Houston sends no usage data, crash reports or analytics anywhere">
+        <Row title="Telemetry" desc="Houston sends no usage data, crash reports or analytics anywhere.">
           <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">None</span>
         </Row>
         <Row
           title="Agent transcripts"
-          desc="Houston reads no agent transcripts — only hooks and documented event streams."
+          desc="Houston reads no agent transcripts, only hooks and documented event streams."
         >
           <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">Never read</span>
         </Row>

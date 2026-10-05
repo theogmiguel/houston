@@ -3,7 +3,6 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type AppHarness, renderReadyApp, resetHarness, settleLazySurface, toggleSettings } from './test/appTestHarness'
 import { setSettingsNavForTests } from './settingsNav'
-import { pickOption, selectOptionLabels, selectOptionValues } from './test/selectHarness'
 import { AUTO_TERMINAL_PALETTE, CHROME_THEMES, THEMES, THEME_LABELS } from './theme'
 
 beforeEach(() => {
@@ -11,16 +10,16 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-async function openAppearance(): Promise<void> {
+async function openSection(section: 'appearance' | 'terminal'): Promise<void> {
   toggleSettings()
   await settleLazySurface(
     () => document.querySelector('[data-testid="settings-row"]') !== null,
     'Settings'
   )
-  act(() => setSettingsNavForTests({ section: 'appearance' }))
+  act(() => setSettingsNavForTests({ section }))
 }
 
-describe('Settings → Appearance (settings-shape-a, 2026-08-26)', () => {
+describe('Settings → Terminal palette', () => {
   let harness: AppHarness | null = null
 
   afterEach(() => {
@@ -30,18 +29,20 @@ describe('Settings → Appearance (settings-shape-a, 2026-08-26)', () => {
 
   it('keeps every one of the 24 palettes reachable, plus Auto', async () => {
     harness = await renderReadyApp()
-    await openAppearance()
-    const values = selectOptionValues(harness.container, 'palette-select')
-    expect(values[0]).toBe(AUTO_TERMINAL_PALETTE)
-    expect(values.slice(1)).toEqual([...THEMES])
-    expect(selectOptionLabels(harness.container, 'palette-select').slice(1)).toEqual(
-      THEMES.map((t) => THEME_LABELS[t])
+    await openSection('terminal')
+    const tiles = [...harness.container.querySelectorAll<HTMLButtonElement>('[data-testid^="palette-tile-"]')]
+    expect(tiles.map((tile) => tile.dataset.testid?.replace('palette-tile-', ''))).toEqual([
+      AUTO_TERMINAL_PALETTE,
+      ...THEMES
+    ])
+    expect(tiles.slice(1).map((tile) => tile.lastElementChild?.textContent?.trim())).toEqual(
+      THEMES.map((theme) => THEME_LABELS[theme])
     )
   })
 
   it('no longer renders a palette grid, a theme search box or mode tabs', async () => {
     harness = await renderReadyApp()
-    await openAppearance()
+    await openSection('appearance')
     const { container } = harness
     expect(container.querySelector('[data-testid="theme-mock"]')).toBeNull()
     expect(container.querySelector('[aria-label="Search themes"]')).toBeNull()
@@ -51,22 +52,25 @@ describe('Settings → Appearance (settings-shape-a, 2026-08-26)', () => {
 
   it('offers exactly the two chrome themes, as tiles — no "Match system"', async () => {
     harness = await renderReadyApp()
-    await openAppearance()
+    await openSection('appearance')
     const tiles = [...harness.container.querySelectorAll('[data-testid="chrome-theme-tile"]')]
     expect(tiles.map((t) => t.getAttribute('data-chrome-theme'))).toEqual([...CHROME_THEMES])
     expect(tiles.filter((t) => t.getAttribute('aria-checked') === 'true')).toHaveLength(1)
   })
 
-  it('the chrome tiles and the palette select are independent axes', async () => {
+  it('the chrome tiles and terminal palette tiles are independent axes', async () => {
     harness = await renderReadyApp()
-    await openAppearance()
+    await openSection('terminal')
     const { container } = harness
-    pickOption(container, 'palette-select', 'dracula')
+    const dracula = container.querySelector('[data-testid="palette-tile-dracula"]') as HTMLButtonElement
+    act(() => dracula.click())
 
+    act(() => setSettingsNavForTests({ section: 'appearance' }))
     const paper = container.querySelector('[data-chrome-theme="paper"]') as HTMLButtonElement
     act(() => paper.click())
 
     expect(localStorage.getItem('tr-theme')).toBe('dracula')
     expect(localStorage.getItem('tr-chrome-theme')).toBe('paper')
+    expect(dracula.getAttribute('aria-pressed')).toBe('true')
   })
 })

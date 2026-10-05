@@ -13,7 +13,7 @@ import { BTN_DANGER_SOLID, BTN_GHOST } from "../buttonChrome";
 import { ConfirmModal } from "../ConfirmModal";
 import { pluralize, stopConfirmCopy } from "../daemonStopConfirmCopy";
 import { Toggle } from "../settingsPrimitives";
-import { Group, Row, SectionHead } from "./shared";
+import { Group, Row } from "./shared";
 
 // Fallback only, used before `reap.deadline_ms` arrives — must match the
 // daemon's own grace period or the copy below states the wrong number.
@@ -160,10 +160,6 @@ export function DaemonSection(): React.JSX.Element {
 
   return (
     <>
-      <SectionHead
-        title="Daemon"
-        lede="Houston's background process — it keeps your sessions running after you close the window. See what it's doing, or stop it outright."
-      />
       {stopped ? (
         <div
           data-testid="daemon-section-stopped"
