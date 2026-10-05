@@ -51,7 +51,7 @@ describe('SkillsLeaf — still has its Run control (regression, step 13)', () =>
       Array.from(container.querySelectorAll('button')).find(
         (b) => b.getAttribute('aria-label') === label
       )
-    for (let i = 0; i < 200 && findByLabel('View deploy') === undefined; i++) {
+    for (let i = 0; i < 60 && findByLabel('View deploy') === undefined; i++) {
       await act(async () => {
         await new Promise((r) => setTimeout(r, 5))
       })
