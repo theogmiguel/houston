@@ -133,6 +133,7 @@ export function BrowserPane({
   const [popover, setPopover] = useState(false)
   const [failMsg, setFailMsg] = useState<string | null>(null)
   const [failureAttempts, setFailureAttempts] = useState(0)
+  const [lastFailureAt, setLastFailureAt] = useState<number | null>(null)
   const [showFailureDetails, setShowFailureDetails] = useState(false)
   const gridHidden = useContext(GridHiddenContext)
   const [recents, setRecents] = useState<string[]>(loadRecents)
@@ -164,6 +165,11 @@ export function BrowserPane({
     { hiddenByExpand, onNativeError, setUrlInput, setFailMsg }
   )
 
+  const recordFailureAttempt: React.Dispatch<React.SetStateAction<number>> = (update) => {
+    setLastFailureAt(Date.now())
+    setFailureAttempts(update)
+  }
+
   const onNavigateRef = useRef(onNavigate)
   onNavigateRef.current = onNavigate
   useEffect(() => {
@@ -171,6 +177,7 @@ export function BrowserPane({
     if (active.url) {
       setFailMsg(null)
       setFailureAttempts(0)
+      setLastFailureAt(null)
       setShowFailureDetails(false)
     }
   }, [active.url])
@@ -389,7 +396,7 @@ export function BrowserPane({
               const text = nativeCommandErrorMessage(context, surfaceId, err)
               console.error(text)
               setFailMsg(text)
-              setFailureAttempts((count) => count + 1)
+              recordFailureAttempt((count) => count + 1)
               setShowFailureDetails(true)
               onNativeError?.(text)
             }}
@@ -409,7 +416,7 @@ export function BrowserPane({
                   }}
                   onMeta={(meta) => patchTab(t.id, meta)}
                   onLoading={(loading) => patchTab(t.id, { loading })}
-                  onFail={tabFailureHandler(t.id, active.id, setFailMsg, setFailureAttempts, setShowFailureDetails)}
+                  onFail={tabFailureHandler(t.id, active.id, setFailMsg, recordFailureAttempt, setShowFailureDetails)}
                 />
               ))}
           </BrowserViewport>
@@ -420,6 +427,7 @@ export function BrowserPane({
         failMsg={failMsg}
         url={active.url ?? ''}
         attempts={failureAttempts}
+        lastFailureAt={lastFailureAt}
         details={showFailureDetails}
         recents={recents}
         setRecents={setRecents}

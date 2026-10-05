@@ -250,7 +250,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
                     <BrowserBlankState recents={[{ url: 'http://localhost:6006/?path=/story/ui-primitives--all', onOpen: () => {} }, { url: 'https://docs.rs/portable-pty/latest/portable_pty/', onOpen: () => {} }]} servers={[{ port: 5173, process: 'vite', session: 8, pane_title: 'dev-server pane' }, { port: 3000, process: 'node', session: 9, pane_title: 'shell pane' }]} unsupported={null} truncated={false} onClear={() => {}} onOpenPage={() => {}} onOpenServer={() => {}} />
                   </div>
                   <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
-                    <BrowserUnreachableState host="localhost:8080" message="Nothing is listening on port 8080. Start the server, then retry." rawError="ERR_CONNECTION_REFUSED" url="http://localhost:8080/" attempts={2} details onRetry={() => {}} onToggleDetails={() => {}} />
+                    <BrowserUnreachableState host="localhost:8080" message="Nothing is listening on port 8080. Start the server, then retry." rawError="ERR_CONNECTION_REFUSED" url="http://localhost:8080/" attempts={2} lastFailureAt={Date.now() - 12_000} details onRetry={() => {}} onToggleDetails={() => {}} />
                   </div>
                 </div>
               </section>

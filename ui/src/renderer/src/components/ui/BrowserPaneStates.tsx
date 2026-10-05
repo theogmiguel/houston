@@ -6,6 +6,7 @@ import type { LocalServer } from '../../houston/generated/LocalServer'
 import { clearRecents, faviconInitial, hostLabel } from '../browserTabs'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 import { unreachableHost, unreachableMessage } from './browserUnreachable'
+import { lastRunLabel } from '../nav/routineFormat'
 
 const groupTitle = variants(
   'inline-flex items-center gap-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-muted)]',
@@ -90,6 +91,7 @@ export function BrowserUnreachableState({
   rawError,
   url,
   attempts,
+  lastFailureAt,
   details,
   onRetry,
   onToggleDetails
@@ -99,6 +101,7 @@ export function BrowserUnreachableState({
   rawError: string
   url: string
   attempts: number
+  lastFailureAt: number | null
   details: boolean
   onRetry: () => void
   onToggleDetails: () => void
@@ -115,7 +118,7 @@ export function BrowserUnreachableState({
           <Button variant="outline" size="sm" icon={IconRefresh} onClick={onRetry}>Retry</Button>
           <Button variant="label" onClick={onToggleDetails}>{details ? 'Hide details' : 'Show details'}</Button>
         </div>
-        {details && <pre className="m-0 w-full box-border whitespace-pre-wrap rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-[var(--space-2-5)] py-[var(--space-2)] font-mono [font-size:var(--tr-text-label-size)] leading-[1.6] text-[var(--text-muted)]">{rawError}{'\n'}{url}{'\n'}{attempts} {attempts === 1 ? 'attempt' : 'attempts'}</pre>}
+        {details && <pre className="m-0 w-full box-border whitespace-pre-wrap rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-[var(--space-2-5)] py-[var(--space-2)] font-mono [font-size:var(--tr-text-label-size)] leading-[1.6] text-[var(--text-muted)]">{rawError}{'\n'}{url}{'\n'}{attempts} {attempts === 1 ? 'attempt' : 'attempts'} · last {lastFailureAt === null ? 'unknown time' : lastRunLabel(lastFailureAt, Date.now())}</pre>}
       </div>
     </div>
   )
@@ -126,6 +129,7 @@ export function BrowserPaneStageState({
   failMsg,
   url,
   attempts,
+  lastFailureAt,
   details,
   recents,
   setRecents,
@@ -142,6 +146,7 @@ export function BrowserPaneStageState({
   failMsg: string | null
   url: string
   attempts: number
+  lastFailureAt: number | null
   details: boolean
   recents: string[]
   setRecents: Dispatch<SetStateAction<string[]>>
@@ -175,6 +180,7 @@ export function BrowserPaneStageState({
       rawError={failMsg}
       url={url}
       attempts={attempts}
+      lastFailureAt={lastFailureAt}
       details={details}
       onRetry={() => { setFailMsg(null); setDetails(false); reload() }}
       onToggleDetails={() => setDetails((visible) => !visible)}
