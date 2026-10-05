@@ -58,6 +58,13 @@ describe('shared table, list-detail, drawer and notice primitives', () => {
     expect(screen.getByRole('alert').textContent).toContain('Could not load usage.')
   })
 
+  it('shows one empty card, not an empty list beside an empty detail, when there is nothing to list', () => {
+    render(<ListDetail items={[]} selectedId={null} onSelect={() => {}} backLabel="Back" listEmpty={<p>No routines</p>} renderDetail={() => <p>Select a routine</p>} />)
+    expect(screen.getByText('No routines')).toBeTruthy()
+    expect(screen.queryByText('Select a routine')).toBeNull()
+    expect(screen.queryByTestId('list-detail-detail')).toBeNull()
+  })
+
   it('controls list selection and moves it with the arrow keys', () => {
     function ControlledList(): React.JSX.Element {
       const [selectedId, setSelectedId] = useState<string | null>('one')
