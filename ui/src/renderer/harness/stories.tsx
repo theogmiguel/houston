@@ -101,6 +101,24 @@ import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { UiPrimitivesStory } from './uiStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
+import {
+  LegacyBranchesStory,
+  LegacyBrowserActStory,
+  LegacyCheckpointsStory,
+  LegacyConfirmStory,
+  LegacyDelegationBadgeStory,
+  LegacyDelegationPanelStory,
+  LegacyGitShellStory,
+  LegacyHandoffStory,
+  LegacyHostKeyStory,
+  LegacyPaneHandoffStory,
+  LegacyQuestionStory,
+  LegacySaveDiscardStory,
+  LegacyShortcutStory,
+  LegacySshStory,
+  LegacyTagsStory,
+  LegacyUpdateStory
+} from './dialogStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
@@ -194,6 +212,22 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
       harness ok — theme tokens, fonts and Tailwind layers loaded
     </div>
   ),
+  'legacy/confirm': () => <LegacyConfirmStory />,
+  'legacy/save-discard': () => <LegacySaveDiscardStory />,
+  'legacy/shortcuts': () => <LegacyShortcutStory />,
+  'legacy/host-key': () => <LegacyHostKeyStory />,
+  'legacy/ssh': () => <LegacySshStory />,
+  'legacy/handoff': () => <LegacyHandoffStory />,
+  'legacy/pane-handoff': () => <LegacyPaneHandoffStory />,
+  'legacy/tags': () => <LegacyTagsStory />,
+  'legacy/question': () => <LegacyQuestionStory />,
+  'legacy/git-shell': () => <LegacyGitShellStory />,
+  'legacy/branches': () => <LegacyBranchesStory />,
+  'legacy/checkpoints': () => <LegacyCheckpointsStory />,
+  'legacy/delegation-badge': () => <LegacyDelegationBadgeStory />,
+  'legacy/delegation-panel': () => <LegacyDelegationPanelStory />,
+  'legacy/update': () => <LegacyUpdateStory />,
+  'legacy/browser-act': () => <LegacyBrowserActStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
   'firstrun/hooks': () => (
     <div className="flex h-full bg-[var(--content-bg)] text-[var(--text-primary)]">
