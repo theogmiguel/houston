@@ -88,7 +88,11 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element {
   const [filesRoot, setFilesRoot] = useState(props.dir ?? props.workspace)
   const [hostWidth, setHostWidth] = useState(0)
   const initialTabSync = useRef(true)
-  const focused = props.activeSessionId == null ? undefined : props.sessions.get(props.activeSessionId)
+  // Clicking chrome outside a pane hands the keyboard back to the app; the inspector keeps the last pane it described.
+  const [lastFocusedId, setLastFocusedId] = useState(props.activeSessionId)
+  if (props.activeSessionId != null && props.activeSessionId !== lastFocusedId) setLastFocusedId(props.activeSessionId)
+  const subjectId = props.activeSessionId ?? lastFocusedId
+  const focused = subjectId == null ? undefined : props.sessions.get(subjectId)
   const isOrchestrator = hasChildren(focused, props.sessions)
   useEffect(() => {
     if (initialTabSync.current) { initialTabSync.current = false; return }

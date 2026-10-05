@@ -57,6 +57,14 @@ describe('pane inspector focus', () => {
     expect(screen.getByText('No focused pane')).toBeTruthy()
   })
 
+  it('keeps describing the last focused pane after a click outside the grid clears keyboard focus', () => {
+    const sessions = new Map([[1, session(1, 'terminal pane')]])
+    const view = render(<SidePanel {...props(sessions, 1)} />)
+    view.rerender(<SidePanel {...props(sessions, null)} />)
+    expect(screen.getByText('terminal pane')).toBeTruthy()
+    expect(screen.queryByText('No focused pane')).toBeNull()
+  })
+
   it('opens Overview only for the focused orchestrator through the roster request', async () => {
     const parent = session(1, 'orchestrator')
     const child = session(2, 'child', 1)
