@@ -72,7 +72,7 @@ export function PrivacySection({
 
   return (
     <>
-      <SubHead>What Houston stores</SubHead>
+      <SubHead>What Houston keeps on this machine</SubHead>
       <SettingsList>
         <Row
           title="Command history"
@@ -220,14 +220,14 @@ export function PrivacySection({
           )}
         </Row>
       </SettingsList>
-      <SubHead>What Houston does not do</SubHead>
+      <SubHead>What Houston never does</SubHead>
       <SettingsList>
-        <Row title="Telemetry" desc="Houston sends no usage data, crash reports or analytics anywhere">
+        <Row title="Telemetry" desc="Houston sends no usage data, crash reports or analytics anywhere.">
           <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">None</span>
         </Row>
         <Row
           title="Agent transcripts"
-          desc="Houston reads no agent transcripts — only hooks and documented event streams."
+          desc="Houston reads no agent transcripts, only hooks and documented event streams."
         >
           <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">Never read</span>
         </Row>

@@ -13,6 +13,7 @@ import type { AgentHookState } from '../src/houston/generated/AgentHookState'
 import type { UpdateState } from '../src/houston/generated/UpdateState'
 import type { SessionPolicy } from '../src/houston/generated/SessionPolicy'
 import type { SettingsSectionId } from '../src/settingsSections'
+import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 
 const noop = (): void => {}
 
@@ -108,7 +109,14 @@ export function SettingsDiagnostics(): React.JSX.Element {
     }
     return originalFetch(input, init)
   }
-  return <SettingsScreen section="daemon" props={{ hostInfo: hostInfoFixture(), agentHooks: agentHookFixture }} />
+  const sessions = [
+    { id: 1, title: 'orchestrator', codename: 'heron', project_dir: '/home/dev/code/houston', agent: 'claude', status: 'needs-input', state: 'running' },
+    { id: 2, title: 'inbox-api', codename: 'otter', project_dir: '/home/dev/code/houston', agent: 'codex', status: 'working', state: 'running' },
+    { id: 3, title: 'pr-watch', codename: 'tern', project_dir: '/home/dev/code/houston', agent: 'claude', status: 'idle', state: 'running' },
+    { id: 4, title: 'flow-ui', codename: 'eagle', project_dir: '/home/dev/code/dispatch', agent: 'opencode', status: 'working', state: 'running' }
+  ] as unknown as SessionInfo[]
+  const store = createSessionsStore(new Map(sessions.map((session) => [session.id, session])))
+  return <SessionsStoreContext.Provider value={store}><SettingsScreen section="daemon" props={{ hostInfo: hostInfoFixture(), agentHooks: agentHookFixture }} /></SessionsStoreContext.Provider>
 }
 
 const agentHookFixture: AgentHookState[] = [
@@ -137,7 +145,13 @@ function routingClient(routes: RoleRoute[]): HoustonClient {
 }
 
 export function SettingsAgentSetup(): React.JSX.Element {
-  return <SettingsScreen section="agents" props={{ agentHooks: agentHookFixture }} />
+  return <SettingsScreen section="agents" props={{
+    agentHooks: agentHookFixture,
+    agentProfiles: {
+      profiles: [{ id: 1, agent: 'claude', name: 'work', config_dir: '~/.claude-work' }],
+      active: [{ agent: 'claude', id: 1 }]
+    } as React.ComponentProps<typeof SettingsView>['agentProfiles']
+  }} />
 }
 
 export function SettingsOrchestration(): React.JSX.Element {

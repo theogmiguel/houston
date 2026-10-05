@@ -53,7 +53,6 @@ import {
   UsageSectionHeading,
   UsageShareBar
 } from '../src/components/ui'
-import { TERMINAL_PALETTES, THEME_LABELS } from '../src/theme'
 import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
@@ -214,11 +213,12 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <SettingsBreadcrumb open section="Terminal" />
             <SettingsScope workspace="houston" />
             <SettingsScope workspace="houston" row />
+            <SettingsScope workspace={null} row scope="global" />
           </SpecimenRow>
         </SpecimenGroup>
         <SpecimenGroup heading="Terminal palette picker">
           <SpecimenRow>
-            <TerminalPalettePicker palette={TERMINAL_PALETTES.black} paletteName={THEME_LABELS.black} value="black" onChange={noop} />
+            <TerminalPalettePicker chromeTheme="graphite" value="black" onChange={noop} />
           </SpecimenRow>
         </SpecimenGroup>
 

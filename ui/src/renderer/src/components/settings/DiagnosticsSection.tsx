@@ -4,6 +4,8 @@ import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { HostInfo } from '../SettingsView'
 import { SettingsList } from '../settingsPrimitives'
+import { useSessions } from '../../sessionsStore'
+import { Table } from '../ui/Table'
 import { Row, SubHead } from './shared'
 
 function formatUptime(ms: number): string {
@@ -128,6 +130,7 @@ export function DiagnosticsSection({
   onOpenHooks,
   onOpenLogsFolder
 }: DiagnosticsSectionProps): React.JSX.Element {
+  const sessions = useSessions()
   return (
     <>
 
@@ -182,6 +185,28 @@ export function DiagnosticsSection({
               label="Mailbox files on disk"
               value={String(hostInfo.mailbox_files_on_disk)}
               numeric
+            />
+          </div>
+
+          <div data-testid="daemon-live-sessions">
+            <SubHead>Sessions {sessions.size} live</SubHead>
+            <Table
+              aria-label="Live sessions"
+              rows={[...sessions.values()].map((session) => ({
+                id: session.id,
+                title: session.title || session.codename,
+                workspace: session.project_dir.split(/[\\/]/).filter(Boolean).at(-1) ?? session.project_dir,
+                agent: session.agent,
+                status: session.status ?? (session.state === 'exited' ? 'done' : session.state)
+              }))}
+              getRowId={(session) => String(session.id)}
+              empty={{ heading: 'No live sessions', description: 'Sessions appear here while they are running.' }}
+              columns={[
+                { key: 'title', header: 'Session' },
+                { key: 'workspace', header: 'Workspace', tone: 'muted' },
+                { key: 'agent', header: 'Agent', tone: 'muted' },
+                { key: 'status', header: 'Status', tone: 'muted' }
+              ]}
             />
           </div>
 

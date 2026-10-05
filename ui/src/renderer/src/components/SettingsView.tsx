@@ -24,7 +24,6 @@ import { AppearanceSection } from './settings/AppearanceSection'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
 import { DaemonSection } from './settings/DaemonSection'
-import { AccountsSection } from './settings/AccountsSection'
 import { AgentStatusSection } from './settings/AgentStatusSection'
 import { PrivacySection } from './settings/PrivacySection'
 import { VoiceSection } from './settings/VoiceSection'
@@ -314,13 +313,11 @@ function SectionDispatch({
               onSet={onAgentHooksSet}
               onRefresh={onAgentHooksRefresh}
               checkedAt={agentHooksCheckedAt}
+              agentProfiles={agentProfiles}
+              onAgentProfileUpsert={onAgentProfileUpsert}
+              onAgentProfileDelete={onAgentProfileDelete}
+              onAgentProfileSetActive={onAgentProfileSetActive}
             />
-          <AccountsSection
-            agentProfiles={agentProfiles}
-            onAgentProfileUpsert={onAgentProfileUpsert}
-            onAgentProfileDelete={onAgentProfileDelete}
-            onAgentProfileSetActive={onAgentProfileSetActive}
-          />
           </>
         )}
 

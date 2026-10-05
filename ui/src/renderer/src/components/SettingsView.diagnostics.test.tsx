@@ -6,6 +6,8 @@ import { SettingsView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
 import { baseSettingsViewProps, hostInfoFixture } from './settingsViewTestFixtures'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
+import type { SessionInfo } from '../houston/client'
+import { createSessionsStore, SessionsStoreContext } from '../sessionsStore'
 
 function openDiagnostics(): void {
   act(() => setSettingsNavForTests({ section: 'diagnostics' }))
@@ -90,6 +92,21 @@ describe('Settings › Diagnostics (settings-03/-65..-69/-61)', () => {
     expect(text).toContain('0 of 8')
     expect(text).toContain('2 of 4')
     expect(text).toContain('31')
+  })
+
+  it('renders the live sessions table from the same renderer store as the rail and grid', () => {
+    const session = {
+      id: 7, title: 'API review', codename: 'owl', project_dir: '/work/api', agent: 'codex',
+      status: 'working', state: 'running'
+    } as SessionInfo
+    const store = createSessionsStore(new Map([[session.id, session]]))
+    act(() => root.render(<SessionsStoreContext.Provider value={store}><SettingsView {...baseSettingsViewProps()} hostInfo={hostInfoFixture({})} /></SessionsStoreContext.Provider>))
+    openDiagnostics()
+    const table = container.querySelector('[data-testid="daemon-live-sessions"]')
+    expect(table?.textContent).toContain('API review')
+    expect(table?.textContent).toContain('api')
+    expect(table?.textContent).toContain('codex')
+    expect(table?.textContent).toContain('working')
   })
 
   it('settings-67: Hooks — wired count, per-CLI dot list, warn callout for the unwired one, no toggle (read-only mirror)', () => {

@@ -94,7 +94,7 @@ describe('AgentStatusSection', () => {
 
     const claude = rowFor('claude')
     expect(claude.textContent).toContain('Claude Code')
-    expect(claude.textContent).toContain('2.1.263')
+    expect(claude.closest('[data-testid="list-detail-item"]')?.textContent).toContain('2.1.263')
     expect(claude.getAttribute('data-status')).toBe('ok')
 
     const codex = rowFor('codex')

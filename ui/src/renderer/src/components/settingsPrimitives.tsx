@@ -168,7 +168,7 @@ export function Row({
               className={`mt-[2px] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] ${
                 variant === 'list'
                   ? typeof desc === 'string'
-                    ? 'max-w-[58ch] overflow-hidden text-ellipsis whitespace-nowrap'
+                    ? 'max-w-[58ch] whitespace-normal break-words'
                     : ''
                   : variant === 'flush'
                     ? 'max-w-[62ch]'

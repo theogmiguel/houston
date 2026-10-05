@@ -2,7 +2,12 @@ import { RESTORE_BUDGET_MAX, WORKTREE_CLEANUP_GRACE_HOURS_MAX } from '../../hous
 import { SettingsList, Toggle } from '../settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
+import { SettingsScope } from '../ui/SettingsScope'
 import { NumberSetting, Row, SubHead } from './shared'
+
+function globalDescription(description: string): React.JSX.Element {
+  return <><SettingsScope workspace={null} row scope="global" />{description}</>
+}
 
 export interface WorkspaceDefaultsSectionProps {
   onRestoreBudgetSet: (n: number) => void
@@ -31,7 +36,7 @@ export function WorkspaceDefaultsSection({
       <SettingsList>
         <Row
           title="Restore budget"
-          desc={`How many sessions boot at once. The rest come back deferred. Up to ${RESTORE_BUDGET_MAX}.`}
+          desc={globalDescription(`How many sessions boot at once. The rest come back deferred. Up to ${RESTORE_BUDGET_MAX}.`)}
         >
           {!hostInfo ? (
             <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">Asking the daemon…</span>
@@ -47,7 +52,7 @@ export function WorkspaceDefaultsSection({
         </Row>
         <Row
           title="Resume conversations when restoring panes"
-          desc="After an orderly shutdown, each restored Claude pane reopens the conversation it was running. Nothing is sent to the model until you type. Off: restored panes start a fresh CLI."
+          desc={globalDescription('After an orderly shutdown, each restored Claude pane reopens the conversation it was running. Nothing is sent to the model until you type. Off: restored panes start a fresh CLI.')}
         >
           <Toggle
             on={hostInfo?.restore_resume ?? true}
@@ -61,7 +66,7 @@ export function WorkspaceDefaultsSection({
       <SettingsList>
         <Row
           title="Remove merged worktrees automatically"
-          desc="Every 6 h, remove a worktree Houston created once its PR has merged, with its branch. A worktree with uncommitted changes, commits outside the PR or a pane inside it stays. Off by default, because it deletes files."
+          desc={globalDescription('Every 6 h, remove a worktree Houston created once its PR has merged, with its branch. A worktree with uncommitted changes, commits outside the PR or a pane inside it stays. Off by default, because it deletes files.')}
         >
           <Toggle
             on={hostInfo?.worktree_cleanup_enabled ?? false}
@@ -74,7 +79,7 @@ export function WorkspaceDefaultsSection({
         </Row>
         <Row
           title="Grace after merge"
-          desc={`How long a merged worktree is kept before it can be removed. 1 to ${WORKTREE_CLEANUP_GRACE_HOURS_MAX} h.`}
+          desc={globalDescription(`How long a merged worktree is kept before it can be removed. 1 to ${WORKTREE_CLEANUP_GRACE_HOURS_MAX} h.`)}
         >
           {!hostInfo ? (
             <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">Asking the daemon…</span>
@@ -94,7 +99,7 @@ export function WorkspaceDefaultsSection({
       <SettingsList>
         <Row
           title="Close idle background sessions"
-          desc="End sessions that have been idle in a hidden workspace. Closing one ends its process; nothing about it is kept. Off by default, because it ends a process you started."
+          desc={globalDescription('End sessions that have been idle in a hidden workspace. Closing one ends its process; nothing about it is kept. Off by default, because it ends a process you started.')}
         >
           <Toggle
             on={sessionPolicy?.idle_reap_enabled ?? false}
@@ -107,7 +112,7 @@ export function WorkspaceDefaultsSection({
         </Row>
         <Row
           title="Idle for"
-          desc="Minutes of no activity, counted only while the workspace is hidden."
+          desc={globalDescription('Minutes of no activity, counted only while the workspace is hidden.')}
         >
           <input
             type="number"
@@ -129,7 +134,7 @@ export function WorkspaceDefaultsSection({
       <SettingsList>
         <Row
           title="Open links in a browser pane"
-          desc="Links printed in panes open inside Houston instead of your system browser."
+          desc={globalDescription('Links printed in panes open inside Houston instead of your system browser.')}
         >
           <Toggle
             on={openLinksInPane}

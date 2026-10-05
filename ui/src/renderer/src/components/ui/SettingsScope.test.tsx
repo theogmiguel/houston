@@ -20,9 +20,10 @@ describe('SettingsScope', () => {
   })
 
   it('names the workspace scope for the page and for each scoped row', () => {
-    act(() => root.render(<><SettingsScope workspace="Houston" /><SettingsScope workspace="Houston" row /></>))
+    act(() => root.render(<><SettingsScope workspace="Houston" /><SettingsScope workspace="Houston" row /><SettingsScope workspace={null} row scope="global" /></>))
     expect(host.textContent).toContain('Applying settings for Houston')
     expect(host.textContent).toContain('This workspace')
+    expect(host.textContent).toContain('All workspaces')
   })
 
   it('explains why workspace rows cannot be edited without a workspace', () => {
