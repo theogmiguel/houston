@@ -123,7 +123,8 @@ const agentHookFixture: AgentHookState[] = [
   { provider: 'claude', path: '~/.claude/settings.json', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '2.1.263', trust: null },
   { provider: 'codex', path: '~/.codex/config.toml', scope: 'global', enabled: false, installed: false, error: null, present: false, version: null, trust: 'not_confirmed' },
   { provider: 'opencode', path: '~/.config/opencode/plugins/houston.ts', scope: 'global', enabled: true, installed: false, error: 'Managed hook file is missing', present: true, version: '1.18.27', trust: null },
-  { provider: 'grok', path: '~/.config/grok/settings.json', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '0.9.2', trust: null }
+  { provider: 'grok', path: '~/.config/grok/settings.json', scope: 'global', enabled: true, installed: true, error: null, present: true, version: '0.9.2', trust: null },
+  { provider: 'cursor', path: '~/.cursor/hooks.json', scope: 'global', enabled: false, installed: false, error: null, present: false, version: null, trust: null }
 ]
 
 function routingClient(routes: RoleRoute[]): HoustonClient {
@@ -148,7 +149,10 @@ export function SettingsAgentSetup(): React.JSX.Element {
   return <SettingsScreen section="agents" props={{
     agentHooks: agentHookFixture,
     agentProfiles: {
-      profiles: [{ id: 1, agent: 'claude', name: 'work', config_dir: '~/.claude-work' }],
+      profiles: [
+        { id: 1, agent: 'claude', name: 'work', config_dir: '~/.claude-work' },
+        { id: 2, agent: 'claude', name: 'personal', config_dir: '~/.claude-personal' }
+      ],
       active: [{ agent: 'claude', id: 1 }]
     } as React.ComponentProps<typeof SettingsView>['agentProfiles']
   }} />

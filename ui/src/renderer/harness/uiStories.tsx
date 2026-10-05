@@ -291,6 +291,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Caption">
           <UiCaption>Supporting text and coverage details.</UiCaption>
           <UiCaption tone="faint">Quiet supporting footnote.</UiCaption>
+          <UiCaption tone="faint" variant="code">2.1.263</UiCaption>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Task progress">

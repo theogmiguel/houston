@@ -8,7 +8,8 @@ import { Icon, ICON_ROLE_CLS } from '../Icon'
 import { IconAgent, IconLoaderCircle, IconRefresh, IconZap } from '../icons'
 import { ListDetail, type ListDetailItem } from '../nav/ListDetail'
 import { CHROME_BUTTON, NavDetailState, NavEmpty, NavSwitch } from '../nav/navChrome'
-import { Group, SettingsRow } from '../settingsPrimitives'
+import { Caption } from '../ui/Caption'
+import { Group, SectionHead, SettingsRow } from '../settingsPrimitives'
 import { StatusIcon, type StatusIconState } from '../StatusIcon'
 import { Tooltip } from '../Tooltip'
 
@@ -96,11 +97,7 @@ function switchFor(
 }
 
 function VersionText({ version }: { version: string | null }): React.JSX.Element {
-  return (
-    <span className="font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)] tabular-nums">
-      {version ?? 'Unknown'}
-    </span>
-  )
+  return <Caption tone="faint" variant="code">{version ?? 'Unknown'}</Caption>
 }
 
 function AgentDetail({
@@ -284,6 +281,13 @@ export function AgentStatusSection({
 
   const items: ListDetailItem[] = (providers ?? []).map((state) => {
     const copy = copyFor(state)
+    const accountCount = agentProfiles?.profiles.filter((profile) => profile.agent === state.provider).length ?? 0
+    const subtitle = [
+      state.version ?? 'Unknown',
+      !state.present ? 'Not found on PATH' : state.error || (state.enabled && !state.installed)
+        ? 'Hooks need attention' : state.installed ? 'Hooks on' : 'Hooks off',
+      accountCount > 0 ? `${accountCount} account${accountCount === 1 ? '' : 's'}` : null
+    ].filter(Boolean).join(' · ')
     return {
       id: state.provider,
       title: (
@@ -292,36 +296,19 @@ export function AgentStatusSection({
           data-settings-row-name={copy.label}
           data-provider={state.provider}
           data-status={markFor(state)}
-          className={state.present ? '' : 'text-[var(--text-secondary)]'}
+          className={`flex min-w-0 flex-col items-start whitespace-normal ${state.present ? '' : 'text-[var(--text-secondary)]'}`}
         >
-          {copy.label}
+          <span className="max-w-full truncate">{copy.label}</span>
+          <span className="max-w-full truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">{subtitle}</span>
         </span>
       ),
-      sub: [
-        state.version ?? 'Unknown',
-        stateLine(state),
-        agentProfiles?.profiles.some((profile) => profile.agent === state.provider)
-          ? `${agentProfiles.profiles.filter((profile) => profile.agent === state.provider).length} accounts`
-          : null
-      ].filter(Boolean).join(' · '),
-      right: (
-        <span className="flex items-center gap-[var(--space-2)]">
-          <StatusIcon state={markFor(state)} />
-          {switchFor(
-            state,
-            copy.label,
-            pending[state.provider] !== undefined,
-            handleSet,
-            'agent-status-row-switch'
-          )}
-        </span>
-      )
+      right: <StatusIcon state={markFor(state)} />
     }
   })
 
   return (
     <>
-      <div className="flex justify-end pb-[var(--space-2)]">{actions}</div>
+      <SectionHead title="Agent CLIs" actions={actions} />
       {providers === null ? (
         <NavDetailState
           testId="agent-status-loading"
