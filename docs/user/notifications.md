@@ -8,4 +8,4 @@ On Linux, the desktop notification service controls whether these notices are al
 
 In-app notifications appear while Houston is focused when the pane is in another grid or workspace. A pane already on screen only changes its status indicator. Finished notices dismiss after a few seconds; needs-input notices stay until opened or dismissed.
 
-Child panes report to the agent that started them. Top-level panes waiting for input appear in the taskbar count where the platform supports it; opening a pane clears it.
+Child panes report to the agent that started them, not to you. The taskbar icon counts the panes waiting on you.
