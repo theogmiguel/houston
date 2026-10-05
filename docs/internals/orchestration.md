@@ -1362,8 +1362,11 @@ retain their last byte count and measurement timestamp, or null for not measured
 
 Child `needs_input` writes an urgent row to the parent. The parent inspects the prompt
 and answers through `pane_send_keys`, or asks the user for a decision. Child status and
-roll-up badges do not trigger native desktop notifications. Only a top-level pane's
-own `needs-input` status triggers one.
+roll-up badges do not trigger renderer notifications. The renderer reports a top-level
+pane's own transition to `needs-input` or from `working` to `idle`, subject to the user's
+desktop and in-app notification settings; roster snapshots are silent. The renderer updates
+the taskbar count for visible top-level panes waiting on the user where the platform supports
+it, and clears a pane's count when it is opened.
 
 No supported API-failure hook carries a verified machine-readable reset time,
 so Houston does not schedule automatic resume.

@@ -281,6 +281,7 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
           <BrowserPane
             node={node}
             workspaceDir={workspaceDir}
+            client={props.client}
             onNavigate={(url) => props.onBrowserNavigate(node.id, url)}
             onClose={() => props.onCloseBrowser(node.id)}
             onHeaderPointerDown={onHeaderPointerDown}

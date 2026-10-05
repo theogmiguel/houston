@@ -1880,6 +1880,15 @@ pub struct WorkspaceAction {
     pub shortcut: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct LocalServer {
+    pub port: u16,
+    pub process: String,
+    pub session: u32,
+    pub pane_title: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -2800,6 +2809,7 @@ pub enum ClientMsg {
         name: String,
     },
     WorkspaceList,
+    WorkspaceLocalServers { workspace: String },
     SessionClose {
         session: u32,
         #[serde(default)]
@@ -3718,6 +3728,12 @@ pub enum ServerMsg {
     },
     WorkspaceList {
         workspaces: Vec<Workspace>,
+    },
+    WorkspaceLocalServers {
+        workspace: String,
+        servers: Vec<LocalServer>,
+        unsupported: Option<String>,
+        truncated: bool,
     },
     SessionResized {
         session: u32,

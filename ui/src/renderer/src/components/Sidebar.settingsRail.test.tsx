@@ -196,6 +196,7 @@ describe('Sidebar rail — Settings mode state matrix', () => {
       'workspace-defaults',
       'orchestration',
       'tasks',
+      'notifications',
       'voice',
       'privacy',
       'usage',

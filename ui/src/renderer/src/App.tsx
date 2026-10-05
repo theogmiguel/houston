@@ -1,5 +1,8 @@
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
+import type { OrchestrationNotificationContext } from './orchestrationNotifications';
+import type { NoticeInput } from './notices';
+import { setTaskbarAttentionCount } from './houston/taskbarCount';
 import { registerOwned } from './pane/registration';
 import {
   lazy,
@@ -100,6 +103,7 @@ import {
   ZOOM_MAX,
   ZOOM_STEP,
   usePreferences,
+  type DesktopNotificationMode,
 } from "./usePreferences";
 import { Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
@@ -546,13 +550,41 @@ function sessionLabel(sessions: ReadonlyMap<number, { title?: string | null }>, 
   return sessions.get(id)?.title ?? `Session ${id}`;
 }
 
-function SessionEffects({ connection, workspaces, onFocusPane }: {
+function SessionEffects({
+  connection,
+  workspaces,
+  onFocusPane,
+  rosterRevision,
+  desktopNotificationMode,
+  inAppNotifications,
+  visiblePaneIds,
+  getNotificationContext,
+  pushNotificationNotice,
+  onDesktopDelivery
+}: {
   connection: Parameters<typeof useTrayBridge>[0]["connection"];
   workspaces: Workspace[];
   onFocusPane: (id: number) => void;
+  rosterRevision: number;
+  desktopNotificationMode: DesktopNotificationMode;
+  inAppNotifications: boolean;
+  visiblePaneIds: ReadonlySet<number>;
+  getNotificationContext: (session: SessionInfo) => OrchestrationNotificationContext;
+  pushNotificationNotice: (notice: NoticeInput) => void;
+  onDesktopDelivery: (allowed: boolean, error?: string) => void;
 }): null {
   const sessions = useSessions();
-  useOrchestrationNotifications(sessions);
+  useOrchestrationNotifications({
+    sessions,
+    rosterRevision,
+    desktopMode: desktopNotificationMode,
+    inAppEnabled: inAppNotifications,
+    visiblePaneIds,
+    getContext: getNotificationContext,
+    onFocusPane,
+    pushNotice: pushNotificationNotice,
+    onDesktopDelivery
+  });
   useTrayBridge({ connection, sessions, workspaces, onFocusPane });
   return null;
 }
@@ -609,9 +641,13 @@ export function App(): React.JSX.Element {
   const [sessionsStore] = useState(createSessionsStore);
   const sessions = useLayoutSessions(sessionsStore);
   const setSessions = sessionsStore.set;
+  const [rosterRevision, setRosterRevision] = useState(0);
+  const [openedAttention, setOpenedAttention] = useState<ReadonlySet<number>>(() => new Set());
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const appNotices = useNotices();
+  const orchestrationNotices = useNotices();
+  const [desktopNotificationDelivery, setDesktopNotificationDelivery] = useState<{ allowed: boolean; error?: string } | null>(null);
   const [selectedWs, setSelectedWs] = useState("all");
   const harnessOverview = useHarnessSignals(conn.kind === "ready" ? conn.client : null);
   const harnessAttention = harnessAttentionFor(harnessOverview, selectedWs);
@@ -851,6 +887,10 @@ export function App(): React.JSX.Element {
     setCopyOnSelect,
     stripBoxGlyphs,
     setStripBoxGlyphs,
+    desktopNotificationMode,
+    setDesktopNotificationMode,
+    inAppNotifications,
+    setInAppNotifications,
     changeFont,
     changeZoom,
   } = usePreferences();
@@ -1015,6 +1055,27 @@ export function App(): React.JSX.Element {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const sessionsRef = useMemo(() => ({ get current() { return sessionsStore.getSnapshot(); } }), [sessionsStore]);
+  const taskbarAttentionCount = useMemo(() => [...sessions.values()].filter((session) =>
+    session.state === 'running' && session.status === 'needs-input' &&
+    session.spawned_by == null && !session.hidden && !openedAttention.has(session.id)
+  ).length, [sessions, openedAttention]);
+  useEffect(() => {
+    void setTaskbarAttentionCount(taskbarAttentionCount).catch(() => {});
+  }, [taskbarAttentionCount]);
+  useEffect(() => {
+    setOpenedAttention((current) => {
+      const next = new Set(current);
+      for (const id of current) {
+        const session = sessions.get(id);
+        if (!session || session.status !== 'needs-input') next.delete(id);
+      }
+      return next.size === current.size ? current : next;
+    });
+  }, [sessions]);
+  useEffect(() => {
+    if (activeId === null || sessions.get(activeId)?.status !== 'needs-input') return;
+    setOpenedAttention((current) => new Set(current).add(activeId));
+  }, [activeId, sessions]);
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
   const savedLayoutsRef = useRef(layouts);
@@ -1032,6 +1093,9 @@ export function App(): React.JSX.Element {
   const focusPane = (session: number): void => {
     const target = sessionsRef.current.get(session);
     if (!target) return;
+    if (target.status === 'needs-input') {
+      setOpenedAttention((current) => new Set(current).add(session));
+    }
     for (const w of workspacesRef.current) {
       for (const g of gridsFor(w.path)) {
         const key = gridStorageKey(w.path, g.id);
@@ -1138,6 +1202,7 @@ export function App(): React.JSX.Element {
             client.snapshotFormatVersion = msg.snapshot_format_version;
             reconcileGridTags(msg.tags);
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            setRosterRevision((revision) => revision + 1);
             setWorkspaces(msg.workspaces);
             setTags(msg.tags);
             // Facts and pending asks belong to the connection that made them:
@@ -1154,6 +1219,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_list":
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            setRosterRevision((revision) => revision + 1);
             break;
           case "session_created": {
             setSessions((prev) => new Map(prev).set(msg.info.id, msg.info));
@@ -3128,6 +3194,23 @@ export function App(): React.JSX.Element {
     stepGrid,
   ]);
 
+  const visiblePaneIds = useMemo(() => new Set(preorderSessions(currentTree)), [currentTree]);
+  const getNotificationContext = useCallback((session: SessionInfo): OrchestrationNotificationContext => {
+    const workspace = workspaces.find((entry) => entry.path === session.project_dir);
+    const grid = gridsFor(session.project_dir).find((entry) => {
+      const key = gridStorageKey(session.project_dir, entry.id);
+      const tree = layouts.get(key)?.tree ?? warmLayouts.get(key)?.tree ?? loadLayout(key).tree;
+      return preorderSessions(tree).includes(session.id);
+    });
+    const agent = session.detected_agent ?? session.agent;
+    const agentName = agent === 'claude' ? 'Claude Code' : agent === 'opencode' ? 'OpenCode' : agent[0].toUpperCase() + agent.slice(1);
+    return {
+      agent: agentName,
+      workspace: workspace?.name ?? session.project_dir,
+      grid: grid?.name ?? 'Main grid'
+    };
+  }, [gridsFor, layouts, warmLayouts, workspaces]);
+
   if (conn.kind === "connecting")
     return (
       <div className="h-screen flex flex-col items-center justify-center gap-[14px] text-[var(--text-muted)]">
@@ -3272,7 +3355,18 @@ export function App(): React.JSX.Element {
 
   return (
     <SessionsStoreContext.Provider value={sessionsStore}>
-      <SessionEffects connection={conn.kind} workspaces={workspaces} onFocusPane={focusPane} />
+      <SessionEffects
+        connection={conn.kind}
+        workspaces={workspaces}
+        onFocusPane={focusPane}
+        rosterRevision={rosterRevision}
+        desktopNotificationMode={desktopNotificationMode}
+        inAppNotifications={inAppNotifications}
+        visiblePaneIds={visiblePaneIds}
+        getNotificationContext={getNotificationContext}
+        pushNotificationNotice={orchestrationNotices.push}
+        onDesktopDelivery={(allowed, error) => setDesktopNotificationDelivery({ allowed, error })}
+      />
     <TerminalTuningContext.Provider value={terminalTuning}>
       <KeymapOverridesContext.Provider value={keymapOverrides}>
       <TagsContext.Provider value={tags}>
@@ -3485,6 +3579,11 @@ export function App(): React.JSX.Element {
               anchor="workspace-top"
               label="Workspace notices"
               store={appNotices}
+            />
+            <NoticeStack
+              anchor="workspace-top-right"
+              label="Agent notifications"
+              store={orchestrationNotices}
             />
 
             <div className="side-panel-row flex-1 min-w-0 min-h-0 flex" data-testid="side-panel-row">
@@ -4104,6 +4203,11 @@ export function App(): React.JSX.Element {
                         if (hostInfo)
                           void openExternal(`file://${hostInfo.state_dir}`);
                       }}
+                      desktopNotificationMode={desktopNotificationMode}
+                      onDesktopNotificationMode={setDesktopNotificationMode}
+                      inAppNotifications={inAppNotifications}
+                      onInAppNotifications={setInAppNotifications}
+                      desktopNotificationDelivery={desktopNotificationDelivery}
                     />
                   </Suspense>
                   )}

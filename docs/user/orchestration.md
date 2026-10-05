@@ -259,7 +259,8 @@ children are Working; an interrupted mission is not reported as successful.
 Children report results, requests for input and delivery problems to their parent
 orchestrator. The orchestrator answers the child or asks you for a decision. Spawn
 warnings return to the orchestrator; they do not appear in "Addressed to you".
-Only a top-level pane waiting for your input triggers a desktop notification.
+With Settings › Notifications enabled, a top-level pane can trigger a desktop notification
+or an in-app notice when it finishes or needs your input. Child panes report to their parent.
 The "Addressed to you" group is hidden when empty.
 
 Provider usage limits and API failures reported by Claude, Grok or OpenCode leave

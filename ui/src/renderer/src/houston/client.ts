@@ -675,6 +675,10 @@ export class HoustonClient {
     this.send({ type: 'workspace_remove', path })
   }
 
+  workspaceLocalServers(workspace: string): void {
+    this.send({ type: 'workspace_local_servers', workspace })
+  }
+
   renameWorkspace(path: string, name: string): void {
     this.send({ type: 'workspace_rename', path, name })
   }

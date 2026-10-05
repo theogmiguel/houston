@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BTN_GHOST, BTN_GHOST_DANGER_HOVER } from './buttonChrome'
 import { IconAlertTriangle, IconCheck } from './icons'
 import { Icon } from './Icon'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
+import { DialogBackdrop, DialogPanel } from './ui'
 
 export interface HandoffUiState {
   request: number
@@ -328,24 +328,22 @@ export function HandoffOverlay({
 
   if (variant === 'modal') {
     return (
-      <div
-        className={MODAL_SCRIM_CLS}
-        onMouseDown={() => {
+      <DialogBackdrop onMouseDown={() => {
           if (state.phase !== 'generating') onClose()
-        }}
-      >
-        <div
+        }}>
+        <DialogPanel
+          size="handoff"
+          surface="raised"
           ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-label={`Handoff — ${state.sessionTitle}`}
           tabIndex={-1}
-          className="pop w-[720px] max-w-[92vw] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
           onMouseDown={(e) => e.stopPropagation()}
         >
           {content}
-        </div>
-      </div>
+        </DialogPanel>
+      </DialogBackdrop>
     )
   }
   return (

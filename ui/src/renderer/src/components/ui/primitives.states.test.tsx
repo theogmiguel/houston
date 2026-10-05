@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel } from './index'
 import { ThemeRevealSpecimen } from './ThemeRevealSpecimen'
+import { OrchestrationNoticeSpecimen } from './OrchestrationNotice'
 import { variants } from './variants'
 
 const textClass = variants('base', { tone: { quiet: 'muted', loud: 'strong' } }, { tone: 'quiet' })
@@ -29,6 +30,13 @@ describe('components/ui primitives', () => {
     expect(screen.getByRole('table', { name: 'Terminal palette contrast ratios' }).querySelectorAll('tbody tr')).toHaveLength(24)
     expect(screen.getByRole('button', { name: 'Switch to Paper' })).toBeTruthy()
     expect(screen.getByTestId('theme-reveal-specimen').getAttribute('data-theme')).toBe('graphite')
+  })
+
+  it('specimens both orchestration notice states with working actions', () => {
+    render(<OrchestrationNoticeSpecimen />)
+    expect(screen.getAllByTestId('orchestration-notice')).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Open pane' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Dismiss api-refactor needs your input' })).toBeTruthy()
   })
 
   it('variants applies defaults and chosen axis classes', () => {

@@ -602,6 +602,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::SessionCwds { .. }
             | proto::ClientMsg::SessionRunningProcs { .. }
             | proto::ClientMsg::WorkspaceList
+            | proto::ClientMsg::WorkspaceLocalServers { .. }
             | proto::ClientMsg::GitStatus { .. }
             | proto::ClientMsg::GitDiff { .. }
             | proto::ClientMsg::HistoryCount
@@ -813,6 +814,12 @@ async fn dispatch(
             )
             .await;
             Ok(())
+        }
+        proto::ClientMsg::WorkspaceLocalServers { workspace } => {
+            let msg = daemon.workspace_local_servers(workspace);
+            send_msg(sink, &msg)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending workspace local servers failed"))
         }
         proto::ClientMsg::SkillSync => {
             let _ = send_msg(sink, &daemon.skill_sync_state()).await;

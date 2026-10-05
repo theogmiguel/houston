@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { TagInfo } from "../houston/generated/TagInfo";
 import { MAX_TAG_NAME_LEN } from "../houston/generated/DEFAULTS";
-import { BTN_GHOST, BTN_PRIMARY } from "./buttonChrome";
 import { ConfirmModal } from "./ConfirmModal";
 import { Icon } from "./Icon";
 import { IconPencil, IconPlus, IconTrash } from "./icons";
-import { MODAL_SCRIM_CLS } from "./overlayChrome";
 import { Tooltip } from "./Tooltip";
 import { useFocusTrap } from "./dialogFocus";
 import { TagChip } from "./tags";
 import { TagColorPicker, tagRejection } from "./tagEditing";
+import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from "./ui";
 
 const FIELD_CLS = "flex flex-col gap-[5px]";
 const FIELD_LABEL_CLS =
@@ -83,19 +82,19 @@ function TagForm({
           </span>
         )}
         <span className="flex-1" />
-        <button type="button" className={`btn ${BTN_GHOST}`} onClick={onCancel}>
+        <Button type="button" variant="legacy-ghost" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
         <Tooltip label={reason ?? undefined}>
-          <button
+          <Button
             type="button"
             data-testid="tag-form-submit"
             disabled={reason !== null}
-            className={`btn ${BTN_PRIMARY} disabled:opacity-45 disabled:cursor-default`}
+            variant="legacy-primary"
             onClick={submit}
           >
             {submitLabel}
-          </button>
+          </Button>
         </Tooltip>
       </div>
     </div>
@@ -224,10 +223,11 @@ export function TagManager({
 
   return (
     <>
-      <div className={MODAL_SCRIM_CLS} onMouseDown={onClose}>
-        <div
+      <DialogBackdrop onMouseDown={onClose}>
+        <DialogPanel
+          size="medium"
+          surface="raised"
           ref={dialogRef}
-          className="pop w-[420px] max-w-[92vw] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
           role="dialog"
           aria-modal="true"
           aria-labelledby="tag-manager-title"
@@ -235,13 +235,10 @@ export function TagManager({
           onMouseDown={(e) => e.stopPropagation()}
           onKeyDown={onKeyDown}
         >
-          <div
-            className="px-3.5 py-[11px] border-b border-divider [font-size:var(--tr-text-subhead-size)] [font-weight:var(--tr-text-subhead-weight)] [letter-spacing:var(--tr-text-subhead-tracking)] text-text-primary"
-            id="tag-manager-title"
-          >
+          <DialogTitle border="divider" id="tag-manager-title">
             Tags
-          </div>
-          <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          </DialogTitle>
+          <DialogBody variant="bounded">
             <div className={HINT_CLS}>
               Tags are shared across every workspace. Attach one to a tab from its
               right-click menu, then filter the rail by it with the funnel.
@@ -300,13 +297,14 @@ export function TagManager({
                 onCancel={() => setCreating(false)}
               />
             )}
-          </div>
-          <div className="flex gap-2 justify-end items-center px-5 pb-5">
-            <button
+          </DialogBody>
+          <DialogActions variant="row">
+            <Button
               type="button"
               data-testid="tag-manager-new"
               disabled={creating}
-              className={`btn ${BTN_GHOST} mr-auto inline-flex items-center gap-[var(--space-1)] disabled:opacity-45 disabled:cursor-default`}
+              variant="legacy-ghost"
+              className="mr-auto gap-[var(--space-1)]"
               onClick={() => {
                 setEditing(null);
                 setCreating(true);
@@ -314,18 +312,18 @@ export function TagManager({
             >
               <Icon glyph={IconPlus} role="ui" />
               New tag
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               data-testid="tag-manager-done"
-              className={`btn ${BTN_PRIMARY}`}
+              variant="legacy-primary"
               onClick={onClose}
             >
               Done
-            </button>
-          </div>
-        </div>
-      </div>
+            </Button>
+          </DialogActions>
+        </DialogPanel>
+      </DialogBackdrop>
       {confirmDelete && (
         <TagDeleteConfirm
           tag={confirmDelete}

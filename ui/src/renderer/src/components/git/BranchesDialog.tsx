@@ -12,11 +12,11 @@ import {
 import { ConfirmModal } from '../ConfirmModal'
 import { Select } from '../Select'
 import { Toggle } from '../settingsPrimitives'
-import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
 import { FIELD_INPUT, FIELD_LABEL } from '../nav/navChrome'
-import { IconAlertTriangle, IconGitBranch, IconPencil, IconRefresh, IconTrash } from '../icons'
+import { IconGitBranch, IconPencil, IconRefresh, IconTrash } from '../icons'
 import { Icon } from '../Icon'
 import { Tooltip } from '../Tooltip'
+import { Button, Notice } from '../ui'
 
 export interface BranchesDialogProps {
   branches: GitBranchInfo[]
@@ -89,17 +89,17 @@ function DeleteBranchControl({
   return (
     <div className="relative flex-none">
       <Tooltip label={reason ?? 'Delete'} className="inline-flex">
-        <button
+        <Button
           type="button"
+          variant="legacy-ghost-icon-danger"
           data-testid="branch-delete"
           aria-label={`Delete ${branch.name}`}
           aria-expanded={open}
           disabled={disabled}
           onClick={onToggle}
-          className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`}
         >
           <Icon glyph={IconTrash} role="label" />
-        </button>
+        </Button>
       </Tooltip>
       {open && (
         <div
@@ -204,17 +204,17 @@ function BranchRow({
               if (e.key === 'Escape') onRenameCancel()
             }}
           />
-          <button
+          <Button
             type="submit"
             data-testid="branch-rename-save"
-            className={`btn ${BTN_PRIMARY}`}
+            variant="legacy-primary"
             disabled={busy || !renameTargetLooksValid(branch.name, renamingValue.trim())}
           >
             Rename
-          </button>
-          <button type="button" className={`btn ${BTN_GHOST}`} onClick={onRenameCancel}>
+          </Button>
+          <Button variant="legacy-ghost" onClick={onRenameCancel}>
             Cancel
-          </button>
+          </Button>
         </form>
       ) : (
         <>
@@ -252,16 +252,16 @@ function BranchRow({
           {!remote && (
             <>
               <Tooltip label="Rename" className="inline-flex">
-                <button
+                <Button
                   type="button"
+                  variant="legacy-ghost-icon"
                   data-testid="branch-rename"
                   aria-label={`Rename ${branch.name}`}
                   disabled={busy}
                   onClick={onStartRename}
-                  className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`}
                 >
                   <Icon glyph={IconPencil} role="label" />
-                </button>
+                </Button>
               </Tooltip>
               <DeleteBranchControl
                 branch={branch}
@@ -327,32 +327,23 @@ export function BranchesDialog({
         onClose={onClose}
         footer={
           <>
-            <button
-              className={`btn ${BTN_GHOST}`}
+            <Button
+              variant="legacy-ghost"
               data-testid="branches-refresh"
               disabled={busy}
               onClick={onRefresh}
             >
               <Icon glyph={IconRefresh} role="small" />
               Refresh
-            </button>
-            <button className={`btn ${BTN_GHOST}`} onClick={onClose}>
+            </Button>
+            <Button variant="legacy-ghost" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </>
         }
       >
         {error && (
-          <div
-            role="alert"
-            data-testid="branches-error"
-            className="flex items-start gap-1.5 py-2 px-3 rounded-[var(--tr-radius-sm)] border border-[color-mix(in_srgb,var(--danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--danger)_11%,transparent)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)]"
-          >
-            <span className="flex-none text-[var(--danger)] pt-0.5">
-              <Icon glyph={IconAlertTriangle} role="small" />
-            </span>
-            <span>{error}</span>
-          </div>
+          <Notice tone="danger" variant="callout" data-testid="branches-error">{error}</Notice>
         )}
 
         <div className="flex flex-col gap-2 p-2.5 rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--content-bg)]">
@@ -378,8 +369,8 @@ export function BranchesDialog({
                 disabled={busy}
               />
             </div>
-            <button
-              className={`btn ${BTN_PRIMARY}`}
+            <Button
+              variant="legacy-primary"
               data-testid="branch-new-create"
               disabled={createDisabled}
               onClick={() => {
@@ -389,7 +380,7 @@ export function BranchesDialog({
               }}
             >
               Create
-            </button>
+            </Button>
           </div>
           <div className="flex items-center gap-1.5 text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)]">
             <Toggle on={switchToNew} onChange={setSwitchToNew} data-testid="branch-new-switch" />

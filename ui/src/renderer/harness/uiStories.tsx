@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import {
   BarSparkline,
+  BrowserBlankState,
+  BrowserUnreachableState,
   ActionMenu,
   Button,
   Card,
@@ -10,6 +12,7 @@ import {
   ConnectionCell,
   DoneDisclosure,
   Drawer,
+  DialogSpecimen,
   EmptyState,
   Field,
   FieldLabel,
@@ -202,13 +205,20 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="primary" icon={IconPlus}>Primary</Button>
             <Button variant="secondary">Secondary</Button>
             <Button variant="field">Field</Button>
+            <Button variant="outline">Outline</Button>
             <Button variant="ghost">Ghost</Button>
+            <Button variant="label">Label action</Button>
             <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
             <Button variant="icon" icon={IconClose} aria-label="Close" />
             <Button variant="text">Task row title</Button>
+            <Button variant="badge">Orchestrator</Button>
+            <Button variant="ghost-icon"><IconClose /></Button>
+            <Button variant="legacy-primary">Legacy primary</Button>
+            <Button variant="legacy-secondary">Legacy secondary</Button>
+            <Button variant="legacy-ghost">Legacy ghost</Button>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
@@ -226,7 +236,31 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Dialog">
+          <DialogSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Browser pane states">
+          <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+            {(['graphite', 'paper'] as const).map((theme) => (
+              <section key={theme} data-theme={theme} style={{ display: 'grid', gap: 'var(--space-3)', background: 'color-mix(in srgb, var(--content-bg) 70%, var(--rail-bg))', border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                <h3 style={{ margin: 0 }}>{theme === 'graphite' ? 'Graphite' : 'Paper'}</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(300px, 1fr)', gap: 'var(--space-4)' }}>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserBlankState recents={[{ url: 'http://localhost:6006/?path=/story/ui-primitives--all', onOpen: () => {} }, { url: 'https://docs.rs/portable-pty/latest/portable_pty/', onOpen: () => {} }]} servers={[{ port: 5173, process: 'vite', session: 8, pane_title: 'dev-server pane' }, { port: 3000, process: 'node', session: 9, pane_title: 'shell pane' }]} unsupported={null} truncated={false} onClear={() => {}} onOpenPage={() => {}} onOpenServer={() => {}} />
+                  </div>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserUnreachableState host="localhost:8080" message="Nothing is listening on port 8080. Start the server, then retry." rawError="ERR_CONNECTION_REFUSED" url="http://localhost:8080/" attempts={2} details onRetry={() => {}} onToggleDetails={() => {}} />
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Card and Card.Row">
+          <Card tone="danger" shape="card" padding="md">Question card error state</Card>
+          <Card disabled>Disabled card</Card>
           <Card>
             <Card.Row heading="Default card" meta="Heading and supporting detail" status={<StatusLabel status="Working" />} action={<Button size="sm">Open</Button>} />
             <Card.Row heading="Second row" meta="Rows keep their shared structure" />
@@ -289,6 +323,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="StatusLabel">
           <SpecimenRow>{STATUS_LABELS.map((status) => <StatusLabel key={status} status={status} />)}</SpecimenRow>
           <SpecimenRow><StatusLabel status="Open" size="small" /><StatusLabel status="Fixing" size="small" /><StatusLabel status="Not seen" size="small" /></SpecimenRow>
+          <SpecimenRow><StatusLabel status="Needs input" variant="pill" tone="waiting" /><StatusLabel status="Failed" variant="pill" tone="failed" /><StatusLabel status="Working" variant="pill" tone="working">stalled</StatusLabel></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="RoutineDetail and ConnectionCell">
@@ -441,6 +476,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Notice tone="info">Not read: 4 OpenCode sessions in this window.</Notice>
           <Notice tone="info" indicator="dot" action={{ label: 'Dismiss', onClick: noop }}>Review #13 found one new thing to fix and confirmed one fix worked.</Notice>
           <Notice tone="danger" action={{ label: 'Open settings', onClick: noop }}>Limits are unavailable until a quota reader is configured.</Notice>
+          <Notice tone="danger" variant="callout">The action could not be completed.</Notice>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Tooltip">
@@ -472,7 +508,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           {(['sm', 'md', 'lg'] as const).map((size) => (
             <div key={size} style={{ display: 'grid', gap: 'var(--space-2)' }}>
               <Caption>{size}</Caption>
-              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'muted'] as const).map((tone) => (
+              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'danger-outline', 'muted'] as const).map((tone) => (
                 <IconTile key={`${size}-${tone}`} size={size} tone={tone} icon={<IconCheck role="ui" />} label={`${size} ${tone}`} />
               ))}</SpecimenRow>
             </div>

@@ -6,7 +6,7 @@ import type { SessionInfo } from '../houston/client'
 import { Icon } from './Icon'
 import { IconCornerDownRight, IconGitFork } from './icons'
 import { HOVER_DELAY_MS, Tooltip } from './Tooltip'
-import { HEAD_BADGE_CLS } from './headBadge'
+import { Button } from './ui'
 
 const DelegationPanel = lazy(() => import('./DelegationPanel'))
 
@@ -118,11 +118,6 @@ function BadgeContent({
   )
 }
 
-const BADGE_CLS =
-  `${HEAD_BADGE_CLS} gap-1.5 [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] ` +
-  'hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] ' +
-  'focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px]'
-
 export function HeaderDelegationBadge({
   kind,
   info: infoProp,
@@ -208,14 +203,15 @@ export function HeaderDelegationBadge({
   const glyphWarn = kind === 'origin' && info.delegation?.stalled === true
 
   const badge = (
-    <button
+    <Button
+      variant="badge"
       ref={btnRef}
       type="button"
       data-testid={kind === 'origin' ? 'origin-badge' : 'orchestrator-badge'}
       aria-label={label}
       aria-expanded={open}
       aria-controls={open ? id : undefined}
-      className={className ?? BADGE_CLS}
+      className={className}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerEnter={openAfterDelay}
       onPointerLeave={leave}
@@ -239,7 +235,7 @@ export function HeaderDelegationBadge({
       />
       <BadgeContent kind={kind} info={info} selfName={selfName} />
       </>}
-    </button>
+    </Button>
   )
   return (
     <>
