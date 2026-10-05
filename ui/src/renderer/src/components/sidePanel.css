@@ -123,6 +123,7 @@
 .changes-pane[data-compact="true"] .changes-group-head{color:var(--text-faint)}
 .changes-pane[data-compact="true"] .changes-group-head>span:first-of-type{margin-left:0}
 .changes-pane[data-compact="true"] .changes-group-head button{opacity:0}
+.changes-pane[data-compact="true"] .changes-group-head button[data-testid="changes-stage-all"]{opacity:1}
 .changes-pane[data-compact="true"] .changes-group-head:hover button,.changes-pane[data-compact="true"] .changes-group-head button:focus-visible{opacity:1}
 
 .side-card [data-testid="source-control-panel"],.side-card .changes-pane{background:transparent}
