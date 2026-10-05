@@ -49,6 +49,7 @@ import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { UiPrimitivesStory } from './uiStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
+import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 
@@ -172,5 +173,11 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'tasks/detail': () => <TasksDetailStory />,
   'tasks/roster': () => <TasksRosterStory />,
   'tasks/queue': () => <TasksQueueStory />,
+  'shell-a/changes-graphite': () => <InspectorChangesGraphite />,
+  'shell-a/changes-paper': () => <InspectorChangesPaper />,
+  'shell-a/pr-graphite': () => <InspectorPrGraphite />,
+  'shell-a/pr-paper': () => <InspectorPrPaper />,
+  'shell-a/children-graphite': () => <InspectorChildrenGraphite />,
+  'shell-a/children-paper': () => <InspectorChildrenPaper />,
   'settings/tasks': () => <TasksSettingsStory />
 }
