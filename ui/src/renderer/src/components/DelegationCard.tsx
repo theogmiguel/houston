@@ -6,7 +6,7 @@ import type { SessionInfo } from '../houston/client'
 import { Icon } from './Icon'
 import { IconCornerDownRight, IconGitFork } from './icons'
 import { HOVER_DELAY_MS, Tooltip } from './Tooltip'
-import { Button } from './ui'
+import { Button, Caption } from './ui'
 
 const DelegationPanel = lazy(() => import('./DelegationPanel'))
 
@@ -55,9 +55,9 @@ export function stateWord(d: DelegationInfo): string {
 export function ProvisionalMarker(): React.JSX.Element {
   return (
     <Tooltip label="released on a stop with no sub-agent evidence; a correction may follow">
-      <span className="shrink-0 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
+      <Caption variant="provisional">
         may be corrected
-      </span>
+      </Caption>
     </Tooltip>
   )
 }
