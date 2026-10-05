@@ -2939,6 +2939,36 @@ impl Db {
         Ok(())
     }
 
+    pub fn workspace_actions(&self, workspace: &str) -> Result<Vec<proto::WorkspaceAction>> {
+        let conn = self.conn.lock().expect("db lock");
+        let value = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                rusqlite::params![format!("workspace_actions:{workspace}")],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        value
+            .map(|json| serde_json::from_str(&json).context("decoding workspace actions"))
+            .transpose()
+            .map(|actions| actions.unwrap_or_default())
+    }
+
+    pub fn set_workspace_actions(
+        &self,
+        workspace: &str,
+        actions: &[proto::WorkspaceAction],
+    ) -> Result<()> {
+        let json = serde_json::to_string(actions)?;
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            rusqlite::params![format!("workspace_actions:{workspace}"), json],
+        )?;
+        Ok(())
+    }
+
     /// The one pull request manually associated with a project directory. The
     /// settings table is already the (key, payload) store, so the association
     /// needs no table of its own; the directory rides in the key.

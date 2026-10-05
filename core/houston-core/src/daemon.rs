@@ -11727,6 +11727,82 @@ impl Daemon {
         Ok(())
     }
 
+    pub fn workspace_actions(&self, workspace: &str) -> Result<Vec<proto::WorkspaceAction>> {
+        self.db.workspace_actions(workspace)
+    }
+
+    pub fn set_workspace_action(
+        &self,
+        workspace: &str,
+        action: proto::WorkspaceAction,
+    ) -> Result<proto::ServerMsg> {
+        const ACTION_LIMIT: usize = 24;
+        const COMMAND_LIMIT: usize = 4096;
+        if !self
+            .workspace_list()?
+            .iter()
+            .any(|item| item.path == workspace)
+        {
+            bail!("workspace action: {workspace:?} must be a registered workspace");
+        }
+        let mut actions = self.db.workspace_actions(workspace)?;
+        if action.command.len() > COMMAND_LIMIT {
+            return Ok(proto::ServerMsg::WorkspaceActionRefused {
+                workspace: workspace.to_owned(),
+                reason: format!(
+                    "command length {} exceeds the {COMMAND_LIMIT}-byte limit for saving an action",
+                    action.command.len()
+                ),
+                limit: COMMAND_LIMIT as u32,
+                actual: action.command.len() as u32,
+                requested: action.command.len() as u32,
+            });
+        }
+        if action.name.trim().is_empty() || action.command.trim().is_empty() {
+            anyhow::bail!("workspace action name and command must not be empty");
+        }
+        let name_len = action.name.chars().count();
+        if name_len > 64
+            || action.id.len() > 128
+            || action.shortcut.as_ref().is_some_and(|s| s.len() > 128)
+        {
+            bail!("invalid workspace action: name must be 1..=64 characters; id and shortcut must be at most 128 bytes (got name {name_len}, id {}, shortcut {})", action.id.len(), action.shortcut.as_ref().map_or(0, String::len));
+        }
+        let is_new = !actions.iter().any(|item| item.id == action.id);
+        if is_new && actions.len() >= ACTION_LIMIT {
+            return Ok(proto::ServerMsg::WorkspaceActionRefused {
+                workspace: workspace.to_owned(),
+                reason: format!(
+                    "workspace has {} actions; the {ACTION_LIMIT}-action limit refuses another action",
+                    actions.len()
+                ),
+                limit: ACTION_LIMIT as u32,
+                actual: actions.len() as u32,
+                requested: (actions.len() + 1) as u32,
+            });
+        }
+        if let Some(existing) = actions.iter_mut().find(|item| item.id == action.id) {
+            *existing = action;
+        } else {
+            actions.push(action);
+        }
+        self.db.set_workspace_actions(workspace, &actions)?;
+        Ok(proto::ServerMsg::WorkspaceActions {
+            workspace: workspace.to_owned(),
+            actions,
+        })
+    }
+
+    pub fn delete_workspace_action(&self, workspace: &str, id: &str) -> Result<proto::ServerMsg> {
+        let mut actions = self.db.workspace_actions(workspace)?;
+        actions.retain(|action| action.id != id);
+        self.db.set_workspace_actions(workspace, &actions)?;
+        Ok(proto::ServerMsg::WorkspaceActions {
+            workspace: workspace.to_owned(),
+            actions,
+        })
+    }
+
     pub fn orchestration_max_live_children(&self) -> u32 {
         match self.db.get_setting(ORCHESTRATION_MAX_LIVE_CHILDREN_KEY) {
             Ok(Some(v)) => v.parse().unwrap_or(orchestrate::MAX_LIVE_CHILDREN),

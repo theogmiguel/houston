@@ -22,6 +22,14 @@ New terminal sessions support 256-colour and true-colour output even when the
 launcher disables its own colours. Existing sessions retain their original
 environment; restart an affected session after updating Houston.
 
+### Workspace actions
+
+From an empty grid or the new pane menu, choose **Add action** and enter a name, command
+and optional shortcut. Houston saves actions per workspace. Run one from either list or
+from the command palette's **Run** group; Houston opens a real shell pane and submits the
+command there. Edit or delete an action from its More actions menu. Deleting asks for
+confirmation.
+
 ## Splitting and stacking
 
 Split a cell to place two panes side by side, or stack several panes into one cell as a

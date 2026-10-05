@@ -856,6 +856,8 @@ const CASES: Case[] = [
   { id: 'app-agent-status', w: 1200, h: 800, surface: 'app', prep: [{ name: '/home/dev/status-fixture' }] },
 
   { id: 'app-empty-grid', w: 1200, h: 800, surface: 'app', prep: [{ name: '/home/dev/empty-workspace' }] },
+  { id: 'app-empty-grid-actions', w: 1200, h: 800, surface: 'app', prep: [{ name: '/home/dev/empty-workspace' }] },
+  { id: 'app-empty-grid-actions-form', w: 1200, h: 800, surface: 'app', prep: [{ name: '/home/dev/empty-workspace' }, { name: '＋ Add action' }] },
 
   {
     id: 'app-shell-base',

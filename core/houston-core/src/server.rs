@@ -629,6 +629,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::TasksAccessGet { .. }
             | proto::ClientMsg::TaskStartSettingsGet { .. }
             | proto::ClientMsg::TaskReviewSettingsGet { .. }
+            | proto::ClientMsg::WorkspaceActionsGet { .. }
     )
 }
 
@@ -931,6 +932,30 @@ async fn dispatch(
         proto::ClientMsg::WorkspaceRoutingSet { workspace, routes } => {
             daemon.set_workspace_routing(&workspace, &routes)?;
             daemon.broadcast_control(&proto::ServerMsg::WorkspaceRouting { workspace, routes });
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionsGet { workspace } => {
+            let actions = daemon.workspace_actions(&workspace)?;
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::WorkspaceActions { workspace, actions },
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionSet { workspace, action } => {
+            let msg = daemon.set_workspace_action(&workspace, action)?;
+            match msg {
+                msg @ proto::ServerMsg::WorkspaceActionRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                msg => daemon.broadcast_control(&msg),
+            }
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionDelete { workspace, id } => {
+            let msg = daemon.delete_workspace_action(&workspace, &id)?;
+            daemon.broadcast_control(&msg);
             Ok(())
         }
         proto::ClientMsg::OrchestrationCapsSet {

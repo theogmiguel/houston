@@ -135,6 +135,9 @@ failure not given a typed refusal comes back as `error`.
 | `settled_retention_set` | `hours` (1..=8760, default 24) | `host_info` (bcast); named `SETTLED_RETENTION` refusal outside the range |
 | `workspace_routing_get` | `workspace` | `workspace_routing` with current `routes` |
 | `workspace_routing_set` | registered `workspace`, `routes: RoleRoute[]` (max 64) | `workspace_routing` (bcast) |
+| `workspace_actions_get` | `workspace` | `workspace_actions` with the saved actions |
+| `workspace_action_set` | `workspace`, `action: WorkspaceAction` | `workspace_actions` (bcast), or `workspace_action_refused` |
+| `workspace_action_delete` | `workspace`, `id` | `workspace_actions` (bcast) |
 | `orchestration_caps_set` | `max_live_children`, `max_spawn_depth` (both `1..=ORCHESTRATION_CAP_MAX`) | `orchestration_state` (bcast); out of range is an `error` naming cap and value |
 | `delegation_results_list` | `parent: u32` (nonzero) | `delegation_results` (direct); latest durable result per child for this parent, including delivered, staged and operator-routed rows; authenticated `/ws` clients only |
 | `inbox_list` | `workspace` | `inbox_rows` (direct) — every row addressed to the operator for that workspace |
@@ -372,6 +375,8 @@ every refusal names the setting.
 | `update` | `policy: UpdatePolicy`, `state: UpdateState` | direct reply to `update_get`; bcast on every state change. Policy and state travel together, so a client can never render one against a stale copy of the other |
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
 | `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
+| `workspace_actions` | `workspace`, `actions: WorkspaceAction[]` | direct reply to `workspace_actions_get`; bcast after a saved action is changed |
+| `workspace_action_refused` | `workspace`, `reason`, `limit`, `actual`, `requested` | direct refusal when command length or per-workspace action count exceeds its limit |
 | `orchestration_state` | `enabled`, `caps: OrchestrationCaps`, `acp_agents: AcpAgentInfo[]` | direct reply to `orchestration_settings_get`; bcast after any switch or cap change |
 | `swarm_message` | `message: SwarmMessage` | bcast — the mailbox layer recorded a message, status, escalation or completion |
 | `swarm_agent` | `agent: SwarmAgentInfo` | bcast — an orchestrated agent's status or activity changed |
@@ -1097,3 +1102,7 @@ Only the current window; older bumps live in git history.
 | 93 | **Detach.** `hello_ok` gains `safe_mode: SafeModeSummary` (`disable_auto_restore`, `disable_swarm_autolaunch`) — under Detach the app is a separate process from the daemon and can no longer read the daemon's own `HOUSTON_SAFE_MODE` env var, so this rides the connect-time message the same way `recovery` already does. New `ServerMsg::BrowserToolCall{request_id, tool, args}` / `ClientMsg::BrowserToolResult{request_id, ok, output?, error?}`: the browser-tool relay's wire half, for the `ToolProvider` that moved from the app's own process into the daemon and now must ask whichever `/ws` connection owns the window to actually run the tool |
 | 92 | **Frames leave the broadcast; a drop is a gap.** Each `/ws` connection takes PTY frames from its own bounded queue per attached session (144 frames / 4 MiB); a client that falls behind drops only its own frames and receives a `FRAME_GAP` anchored where loss began. Control lag closes the socket with `error{context:"control_lag"}` instead of dropping lifecycle events silently. `scrollback` gains `attempt`, the attachment generation, so a late reply cannot re-sync a pane to an older boundary, and nothing a replay covers follows its reply |
 | 91 | Connections adds `McpServer.destinations` (empty = all supported tools), `mcp_server_upsert`, `mcp_server_remove`, and `mcp_test`. Upsert/remove change Houston's list; `mcp_sync` applies it. `mcp_state.checks` reports ephemeral `McpConnectionCheck` results from explicit connection tests. |
+`WorkspaceAction` contains an `id`, `name`, `command` and optional `shortcut` chord. Actions are
+saved per workspace in the daemon database. A workspace can store up to 24 actions, and each
+command is limited to 4096 UTF-8 bytes. Refusals report the limit, actual value, requested value
+and reason. Protocol version remains 125 for this phase-4 batch.
