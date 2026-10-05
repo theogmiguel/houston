@@ -24,6 +24,21 @@ fn git(dir: &Path, args: &[&str]) {
     );
 }
 
+fn git_stdout(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
 fn init_repo(dir: &Path) {
     git(dir, &["init", "-b", "main"]);
     git(dir, &["config", "user.email", "t@t.local"]);
@@ -124,6 +139,17 @@ async fn expect_git_branch(ws: &mut WsStream) -> BranchReply {
     }
 }
 
+async fn request_git_branch_commits(ws: &mut WsStream, dir: String) -> proto::ServerMsg {
+    send(ws, &proto::ClientMsg::GitBranchCommits { dir }).await;
+    loop {
+        match next_control(ws).await {
+            reply @ proto::ServerMsg::GitBranchCommits { .. }
+            | reply @ proto::ServerMsg::Error { .. } => return reply,
+            _ => continue,
+        }
+    }
+}
+
 // A read that cannot answer replies with nulls; an `error` envelope after it
 // would be a second, contradictory answer. Nothing else is in flight in these
 // tests, so a short quiet window is the evidence that no second answer came.
@@ -177,6 +203,111 @@ async fn git_branch_over_the_wire() {
         Some(common),
         "the reply must carry the repository's common dir"
     );
+}
+
+#[tokio::test]
+async fn git_branch_commits_over_the_wire_are_newest_first() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(repo.path(), &["checkout", "-b", "feature"]);
+    for subject in ["first feature commit", "second feature commit"] {
+        std::fs::write(repo.path().join("README.md"), format!("{subject}\n")).unwrap();
+        git(repo.path(), &["add", "README.md"]);
+        git(repo.path(), &["commit", "-m", subject]);
+    }
+    git(
+        repo.path(),
+        &["branch", "--set-upstream-to=main", "feature"],
+    );
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let dir = repo.path().display().to_string();
+    let reply = request_git_branch_commits(&mut ws, dir.clone()).await;
+    let proto::ServerMsg::GitBranchCommits {
+        dir: reply_dir,
+        commits,
+        total,
+        truncated,
+    } = reply
+    else {
+        panic!("expected branch commits reply, got {reply:?}");
+    };
+    assert_eq!(reply_dir, dir);
+    assert_eq!(total, 2);
+    assert!(!truncated);
+    assert_eq!(
+        commits
+            .iter()
+            .map(|commit| commit.subject.as_str())
+            .collect::<Vec<_>>(),
+        ["second feature commit", "first feature commit"]
+    );
+    assert!(commits.iter().all(|commit| commit.author_time_ms > 0));
+}
+
+#[tokio::test]
+async fn git_branch_commits_report_when_the_cap_trims_the_reply() {
+    let (addr, _state) = start_daemon().await;
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    git(repo.path(), &["checkout", "-b", "feature"]);
+    git(
+        repo.path(),
+        &["branch", "--set-upstream-to=main", "feature"],
+    );
+
+    let tree = git_stdout(repo.path(), &["rev-parse", "HEAD^{tree}"]);
+    let mut parent = git_stdout(repo.path(), &["rev-parse", "HEAD"]);
+    let total = houston_core::git::GIT_BRANCH_COMMITS_CAP + 1;
+    for index in 0..total {
+        parent = git_stdout(
+            repo.path(),
+            &[
+                "commit-tree",
+                &tree,
+                "-p",
+                &parent,
+                "-m",
+                &format!("commit {index}"),
+            ],
+        );
+    }
+    git(repo.path(), &["update-ref", "refs/heads/feature", &parent]);
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let dir = repo.path().display().to_string();
+    let reply = request_git_branch_commits(&mut ws, dir).await;
+    let proto::ServerMsg::GitBranchCommits {
+        commits,
+        total: actual,
+        truncated,
+        ..
+    } = reply
+    else {
+        panic!("expected branch commits reply, got {reply:?}");
+    };
+    assert_eq!(actual, total as u64);
+    assert_eq!(commits.len(), houston_core::git::GIT_BRANCH_COMMITS_CAP);
+    assert!(truncated);
+}
+
+#[tokio::test]
+async fn git_branch_commits_refuse_a_non_git_directory_by_name() {
+    let (addr, _state) = start_daemon().await;
+    let plain = tempfile::tempdir().unwrap();
+    let dir = plain.path().display().to_string();
+
+    let mut ws = connect_and_hello(addr, TOKEN).await;
+    let _ = next_control(&mut ws).await;
+    let reply = request_git_branch_commits(&mut ws, dir.clone()).await;
+    let proto::ServerMsg::Error { message, .. } = reply else {
+        panic!("expected a refused non-git directory, got {reply:?}");
+    };
+    assert!(message.contains(&dir), "error must name {dir:?}: {message}");
+    assert!(message.contains("not a git repository"), "{message}");
 }
 
 #[tokio::test]
