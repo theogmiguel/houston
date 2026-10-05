@@ -11091,7 +11091,7 @@ async fn workspace_info_reports_bounded_local_provider_catalog() {
     assert_eq!(info["isError"], false, "{info}");
     let info = &info["structuredContent"];
     let providers = info["providers"].as_array().unwrap();
-    assert_eq!(providers.len(), 6);
+    assert_eq!(providers.len(), 7);
     assert!(info.get("routing").is_some());
     for provider in providers {
         assert!(provider["installed"].is_boolean());
@@ -11109,7 +11109,16 @@ async fn workspace_info_reports_bounded_local_provider_catalog() {
     }
     let codex = providers.iter().find(|p| p["provider"] == "codex").unwrap();
     assert_eq!(codex["models"], serde_json::json!(["fixture-codex-model"]));
-    for provider in providers.iter().filter(|p| p["provider"] != "codex") {
+    let zcode = providers.iter().find(|p| p["provider"] == "zcode").unwrap();
+    assert!(zcode["models"].is_null());
+    assert!(zcode["model_note"]
+        .as_str()
+        .unwrap()
+        .contains("no model flag"));
+    for provider in providers
+        .iter()
+        .filter(|p| p["provider"] != "codex" && p["provider"] != "zcode")
+    {
         assert!(provider["models"].is_null());
         assert!(provider["model_note"].as_str().unwrap().contains("unknown"));
     }
