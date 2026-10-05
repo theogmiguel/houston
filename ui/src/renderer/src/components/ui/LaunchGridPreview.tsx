@@ -46,7 +46,7 @@ export function LaunchGridPreview({ tree, slots, target, sessions }: LaunchGridP
   if (!projected) return null
   const leaves = computeRects(projected).leaves
   return (
-    <div role="group" aria-label="Layout preview" data-testid="launch-grid-preview" className="pointer-events-none absolute inset-0 z-[var(--z-pane)] overflow-hidden">
+    <div role="group" aria-label="Layout preview" data-testid="launch-grid-preview" className="pointer-events-none absolute inset-0 z-[var(--z-pane)] overflow-hidden bg-[var(--gutter-bg)]">
       {leaves.map(({ node, rect }, index) => {
         const newSlot = node.kind === 'leaf' && node.session < 0 ? slots[-node.session - 1] : undefined
         return (

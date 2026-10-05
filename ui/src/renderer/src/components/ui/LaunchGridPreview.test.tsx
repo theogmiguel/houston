@@ -55,4 +55,9 @@ describe('LaunchGridPreview', () => {
     expect(container.querySelectorAll('[data-layout-slot]')).toHaveLength(2)
     expect(container.querySelectorAll('[data-new="true"]')).toHaveLength(2)
   })
+
+  it('paints its own backdrop so the live panes never show through the gutters', () => {
+    const { container } = render(<div className="relative"><LaunchGridPreview tree={tree} slots={slots} target="this-grid" sessions={sessions} /></div>)
+    expect(container.querySelector('[data-testid="launch-grid-preview"]')?.className.split(' ')).toContain('bg-[var(--gutter-bg)]')
+  })
 })
