@@ -26,6 +26,15 @@ function navRow(container: HTMLElement, view: string): HTMLButtonElement {
 const surface = (c: HTMLElement): Element | null => c.querySelector('[data-testid="nav-surface"]')
 
 describe('the rail nav rows drive the content area', () => {
+  it.each(RAIL_VIEWS)('the %s page fills the content region, so its column centres', async (view) => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    act(() => navRow(container, view).click())
+    await waitFor(() => expect(surface(container)).not.toBeNull())
+    expect(surface(container)!.className).toMatch(/(^|\s)(flex-1|w-full)(\s|$)/)
+  })
+
   it('Ctrl+, closes Settings even while its search input is focused', async () => {
     harness = await renderReadyApp()
     const { container } = harness

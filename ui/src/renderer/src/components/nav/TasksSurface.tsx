@@ -9,6 +9,7 @@ import { TaskComposer } from '../tasks/TaskComposer'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { formatAge, queueActionOf, queueGroupOf, queueGroups, taskAgentLabel } from '../tasks/format'
 import type { InboxRow } from '../../houston/generated/InboxRow'
+import { MATERIAL_CLS, materialAttrs } from '../material'
 
 export function TasksSurface({
   client,
@@ -94,7 +95,7 @@ export function TasksSurface({
   }
 
   return (
-    <div data-testid="nav-surface" data-page="tasks" className="h-full min-h-0 overflow-y-auto">
+    <div data-testid="nav-surface" data-page="tasks" {...materialAttrs('base')} className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
       <PageFrame width="form">
         {create ? (
           <TaskComposer parentOptions={parentOptions} initialTitle={createDraft?.title} initialDescription={createDraft?.description} onCancel={() => setCreate(false)} onCreate={(patch) => {
