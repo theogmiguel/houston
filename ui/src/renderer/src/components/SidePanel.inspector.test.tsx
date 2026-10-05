@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidePanel } from './SidePanel'
 import type { SourceControlPanelProps } from './SourceControlPanel'
@@ -48,17 +48,16 @@ describe('pane inspector focus', () => {
     expect(screen.getByText('No focused pane')).toBeTruthy()
   })
 
-  it('offers Overview only for the focused orchestrator', async () => {
+  it('opens Overview only for the focused orchestrator through the roster request', async () => {
     const parent = session(1, 'orchestrator')
     const child = session(2, 'child', 1)
     const sessions = new Map([[1, parent], [2, child]])
     const view = render(<SidePanel {...props(sessions, 2)} />)
     expect(screen.queryByRole('tab', { name: 'Overview' })).toBeNull()
-    view.rerender(<SidePanel {...props(sessions, 1)} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    view.rerender(<SidePanel {...props(sessions, 1)} request={{ kind: 'overview', orchestrator: 1 }} />)
     expect(await screen.findByTestId('overview-content')).toBeTruthy()
     view.rerender(<SidePanel {...props(sessions, 2)} />)
-    expect(screen.queryByRole('tab', { name: 'Overview' })).toBeNull()
+    expect(screen.queryByTestId('overview-content')).toBeNull()
     expect(screen.getByRole('tab', { name: 'Changes' }).getAttribute('aria-selected')).toBe('true')
   })
 })

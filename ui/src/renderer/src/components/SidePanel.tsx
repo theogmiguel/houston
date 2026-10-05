@@ -59,10 +59,9 @@ function InspectorContent({ props, tab, focused, isOrchestrator, filesRoot, open
   return null
 }
 
-function PaneInspectorHeader({ props, focused, isOrchestrator, tab, summary, onTab }: {
+function PaneInspectorHeader({ props, focused, tab, summary, onTab }: {
   props: SidePanelProps
   focused: SessionInfo | undefined
-  isOrchestrator: boolean
   tab: InspectorTab
   summary: ChangesSummary | null
   onTab: (tab: string) => void
@@ -73,8 +72,7 @@ function PaneInspectorHeader({ props, focused, isOrchestrator, tab, summary, onT
   const tabs = [
     { id: 'changes', label: 'Changes', count: summary?.changed },
     { id: 'pull-request', label: 'PR', count: summary?.prNumber, countPrefix: '#' },
-    { id: 'files', label: 'Files' },
-    ...(isOrchestrator ? [{ id: 'overview', label: 'Overview' }] : [])
+    { id: 'files', label: 'Files' }
   ]
   return <InspectorHeader tabs={tabs} active={tab} onSelect={onTab} icon={focused ? <IconAgent brand agent={focused.detected_agent ?? focused.agent} /> : null} title={focused?.title ?? 'No focused pane'} checkout={checkout} ahead={summary?.ahead} branch={summary?.branch} />
 }
@@ -136,7 +134,7 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element {
 
   return <aside aria-label="Pane inspector" data-testid="side-panel" data-dir={props.dir ?? undefined} className={`pane-inspector ${props.hiddenByOverlay ? 'invisible' : ''}`} style={{ width: rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={onKeyDown}>
     <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />
-    <PaneInspectorHeader props={props} focused={focused} isOrchestrator={isOrchestrator} tab={activeTab} summary={summary} onTab={selectTab} />
+    <PaneInspectorHeader props={props} focused={focused} tab={activeTab} summary={summary} onTab={selectTab} />
     <div className="pane-inspector-content"><InspectorContent props={props} tab={activeTab} focused={focused} isOrchestrator={isOrchestrator} filesRoot={filesRoot} openFile={openFile} setTab={setActiveTab} setSummary={setSummary} /></div>
   </aside>
 }
