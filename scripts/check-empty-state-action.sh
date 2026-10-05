@@ -15,7 +15,7 @@ while IFS= read -r hit; do
   checked=$((checked + 1))
   block=$(sed -n "${line},$((line + 40))p" "$file")
   joined=$(printf '%s' "$block" | tr '\n' ' ')
-  has_control=$(printf '%s' "$block" | grep -cE '<button|<a |<EmptyState' || true)
+  has_control=$(printf '%s' "$block" | grep -cE '<button|<Button([ >]|$)|<a |<EmptyState' || true)
   imp_out=$(printf '%s' "$joined" | perl -ne '
     my $verbs = qr/(?:add|start|create|pick|choose|click|open|connect|install|enable|select|run)/i;
     my @m;
