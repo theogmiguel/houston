@@ -34,13 +34,15 @@ pub fn plugin_dir(state_dir: &Path) -> PathBuf {
 /// (and therefore unregistered) in this channel's panes.
 pub fn url_env(channel: Option<&str>) -> String {
     match channel {
-        None => "ZCODE_HOUSTON_MCP_URL".to_string(),
+        None => URL_ENV_PREFIX.to_string(),
         Some(c) => format!(
-            "ZCODE_HOUSTON_MCP_URL_{}",
+            "{URL_ENV_PREFIX}_{}",
             c.to_ascii_uppercase().replace('-', "_")
         ),
     }
 }
+
+pub const URL_ENV_PREFIX: &str = "ZCODE_HOUSTON_MCP_URL";
 
 pub fn plugin_name(channel: Option<&str>) -> String {
     match channel {
@@ -87,10 +89,28 @@ pub fn remove_plugin(state_dir: &Path) -> Result<()> {
     }
 }
 
+// Through a temporary file and a rename: a ZCode starting mid-write would otherwise
+// read truncated JSON and reject the whole config, the user's own settings included.
 fn write_json(path: &Path, value: &Value) -> Result<()> {
+    use std::io::Write as _;
     let mut out = serde_json::to_string_pretty(value)?;
     out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))
+    let dir = path
+        .parent()
+        .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)
+        .with_context(|| format!("creating a temporary file in {}", dir.display()))?;
+    tmp.write_all(out.as_bytes())
+        .with_context(|| format!("writing a temporary file for {}", path.display()))?;
+    if let Ok(meta) = std::fs::metadata(path) {
+        tmp.as_file()
+            .set_permissions(meta.permissions())
+            .with_context(|| format!("keeping the permissions of {}", path.display()))?;
+    }
+    tmp.persist(path)
+        .map_err(|e| e.error)
+        .with_context(|| format!("replacing {}", path.display()))?;
+    Ok(())
 }
 
 fn read_root(path: &Path) -> Result<Option<Value>> {
@@ -207,12 +227,22 @@ fn remove_our_groups(events: &mut Map<String, Value>, sentinel: &str) -> bool {
     removed
 }
 
+/// `keep_disabled` is the boot refresh: a `hooks.enabled: false` found next to entries
+/// already installed was the user's own choice and stays, and `is_installed` reports it.
 pub fn install(
     path: &Path,
     commands: &[(&str, String)],
     sentinel: &str,
     plugin_dir: Option<&Path>,
+    keep_disabled: bool,
 ) -> Result<()> {
+    if cfg!(windows) {
+        bail!(
+            "ZCode hooks are not installed on Windows: Houston's hook command needs a POSIX \
+             shell and ZCode runs command hooks through the platform shell; ZCode panes still \
+             run, without status or pane tools"
+        );
+    }
     let mut root = read_root(path)?.unwrap_or_else(|| json!({}));
     let obj = root.as_object_mut().expect("read_root returns an object");
     let enabled_before = match obj.get("hooks").and_then(|h| h.get("enabled")) {
@@ -233,6 +263,13 @@ pub fn install(
             shape(&events[event])
         );
     }
+    let user_disabled = keep_disabled
+        && enabled_before == Some(false)
+        && events
+            .values()
+            .filter_map(|v| v.as_array())
+            .flatten()
+            .any(group_is_any_houston);
     remove_our_groups(events, sentinel);
     for (event, command) in commands {
         let mut group = json!({ "hooks": [{ "type": "command", "command": command }] });
@@ -246,8 +283,10 @@ pub fn install(
             .expect("checked above")
             .push(group);
     }
-    hooks.insert("enabled".to_string(), json!(true));
-    if enabled_before != Some(true) && !obj.contains_key(PARKED_ENABLED_KEY) {
+    if !user_disabled {
+        hooks.insert("enabled".to_string(), json!(true));
+    }
+    if enabled_before != Some(true) && !user_disabled && !obj.contains_key(PARKED_ENABLED_KEY) {
         obj.insert(
             PARKED_ENABLED_KEY.to_string(),
             enabled_before.map_or(Value::Null, Value::Bool),
@@ -317,13 +356,16 @@ pub fn uninstall(path: &Path, sentinel: &str) -> Result<bool> {
         if let Some(parked) = obj.remove(PARKED_ENABLED_KEY) {
             changed = true;
             if let Some(hooks) = obj.get_mut("hooks").and_then(|h| h.as_object_mut()) {
+                // Only the `true` Houston wrote is given back; a later `false` is the user's.
+                let still_ours = hooks.get("enabled") == Some(&Value::Bool(true));
                 match parked {
-                    Value::Bool(b) => {
+                    Value::Bool(b) if still_ours => {
                         hooks.insert("enabled".to_string(), Value::Bool(b));
                     }
-                    _ => {
+                    _ if still_ours => {
                         hooks.remove("enabled");
                     }
+                    _ => {}
                 }
                 if hooks.is_empty() {
                     obj.remove("hooks");
@@ -338,23 +380,42 @@ pub fn uninstall(path: &Path, sentinel: &str) -> Result<bool> {
     Ok(true)
 }
 
+/// Installed means ZCode will run the entries: they are present and `hooks.enabled` is on.
 pub fn is_installed(path: &Path, sentinel: &str) -> bool {
     let Ok(Some(root)) = read_root(path) else {
         return false;
     };
-    root.get("hooks")
-        .and_then(|h| h.get("events"))
-        .and_then(|e| e.as_object())
-        .is_some_and(|events| {
-            events
-                .values()
-                .filter_map(|v| v.as_array())
-                .flatten()
-                .any(|g| group_is_ours(g, sentinel))
-        })
+    let hooks = root.get("hooks");
+    hooks.and_then(|h| h.get("enabled")) == Some(&Value::Bool(true))
+        && hooks
+            .and_then(|h| h.get("events"))
+            .and_then(|e| e.as_object())
+            .is_some_and(|events| {
+                events
+                    .values()
+                    .filter_map(|v| v.as_array())
+                    .flatten()
+                    .any(|g| group_is_ours(g, sentinel))
+            })
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
+mod windows_tests {
+    #[test]
+    fn the_zcode_toggle_is_refused_on_windows_by_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.json");
+        let err =
+            super::install(&path, &[], "--houston-managed", None, false).expect_err("refused");
+        assert!(
+            format!("{err:#}").contains("not installed on Windows"),
+            "{err:#}"
+        );
+        assert!(!path.exists());
+    }
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::agent_hooks::{self, ConfigHome};
@@ -554,6 +615,70 @@ mod tests {
         let err = agent_hooks::uninstall(Zcode, &h, DEV).expect_err("uninstall refuses too");
         assert!(format!("{err:#}").contains("not valid JSON"), "{err:#}");
         assert_eq!(std::fs::read_to_string(&path).expect("read"), "{ not json");
+    }
+
+    #[test]
+    fn a_switch_the_user_turned_off_survives_the_boot_refresh_and_reads_as_not_installed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let h = home(&dir);
+        let path =
+            agent_hooks::install(Zcode, &h, &launcher(".houston-dev"), DEV).expect("install");
+        let mut root = read(&path);
+        root["hooks"]["enabled"] = json!(false);
+        std::fs::write(&path, root.to_string()).expect("the user turns ZCode hooks off");
+        assert!(
+            !agent_hooks::is_installed(Zcode, &h, DEV),
+            "ZCode would run none of them"
+        );
+
+        agent_hooks::refresh(Zcode, &h, &launcher(".houston-dev"), DEV).expect("boot refresh");
+        assert_eq!(
+            read(&path)["hooks"]["enabled"],
+            json!(false),
+            "the refresh keeps it off"
+        );
+        assert!(!agent_hooks::is_installed(Zcode, &h, DEV));
+
+        assert!(agent_hooks::uninstall(Zcode, &h, DEV).expect("uninstall"));
+        assert_eq!(
+            read(&path),
+            json!({"hooks": {"enabled": false}}),
+            "a false the user set is not overwritten by the parked value"
+        );
+
+        agent_hooks::install(Zcode, &h, &launcher(".houston-dev"), DEV).expect("explicit install");
+        assert_eq!(
+            read(&path)["hooks"]["enabled"],
+            json!(true),
+            "turning it on is explicit"
+        );
+        assert!(agent_hooks::is_installed(Zcode, &h, DEV));
+        agent_hooks::refresh(Zcode, &h, &launcher(".houston-dev"), DEV).expect("refresh");
+        assert_eq!(read(&path)["hooks"]["enabled"], json!(true));
+    }
+
+    #[test]
+    fn the_config_is_replaced_whole_and_keeps_its_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let h = home(&dir);
+        let path = agent_hooks::config_path(Zcode, &h).expect("path");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "{}").expect("write");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+        agent_hooks::install(Zcode, &h, &launcher(".houston-dev"), DEV).expect("install");
+        let mode = std::fs::metadata(&path).expect("stat").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let leftovers: Vec<_> = std::fs::read_dir(path.parent().expect("parent"))
+            .expect("list")
+            .flatten()
+            .map(|e| e.file_name())
+            .filter(|n| n != "config.json")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "no temporary file is left: {leftovers:?}"
+        );
     }
 
     #[test]
