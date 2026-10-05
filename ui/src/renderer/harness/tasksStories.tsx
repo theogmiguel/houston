@@ -8,6 +8,7 @@ import type { TaskSummary } from '../src/houston/generated/TaskSummary'
 import type { TasksAccess } from '../src/houston/generated/TasksAccess'
 import type { TaskDetailData } from '../src/houston/useTasks'
 import { ChildrenRoster } from '../src/components/ChildrenRoster'
+import { OverviewTab } from '../src/components/OverviewTab'
 import { TaskDetail } from '../src/components/tasks/TaskDetail'
 import { TasksList } from '../src/components/tasks/TasksList'
 import { SettingsView } from '../src/components/SettingsView'
@@ -375,6 +376,27 @@ const ROSTER_SESSIONS: ReadonlyMap<number, SessionInfo> = new Map(
     rosterChild(435, 'lock', 'idle', 45)
   ].map((child) => [child.id, child])
 )
+
+function OverviewRosterStory(): React.JSX.Element {
+  const client = React.useMemo(() => new Proxy({
+    subscribe: () => () => {},
+    delegationResultsList: noop,
+    inboxList: noop,
+    gitStatus: noop
+  }, {
+    get(target, prop, receiver) {
+      if (prop in target) return Reflect.get(target, prop, receiver)
+      if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined
+      return noop
+    }
+  }) as unknown as HoustonClient, [])
+  const sessions = new Map([[ROSTER_PARENT.id, ROSTER_PARENT], ...ROSTER_SESSIONS])
+  return <div style={{ height: '100%', overflow: 'auto', background: 'var(--content-bg)' }}><OverviewTab parentId={ROSTER_PARENT.id} sessions={sessions} client={client} onClose={noop} onReview={noop} /></div>
+}
+
+export function TasksOverviewRosterStory(): React.JSX.Element {
+  return <OverviewRosterStory />
+}
 
 function rosterClient(): HoustonClient {
   const handlers = new Set<(msg: ServerMsg) => void>()

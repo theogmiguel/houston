@@ -97,7 +97,7 @@ import {
   NavSkills,
   HarnessPageStory
 } from './navStories'
-import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory } from './tasksStories'
+import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { UiPrimitivesStory } from './uiStories'
@@ -281,5 +281,6 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'tasks/detail': () => <TasksDetailStory />,
   'tasks/roster': () => <TasksRosterStory />,
   'tasks/queue': () => <TasksQueueStory />,
+  'tasks/overview-roster': () => <TasksOverviewRosterStory />,
   'settings/tasks': () => <TasksSettingsStory />
 }
