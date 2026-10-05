@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from '../../houston/client'
+import type { TagInfo } from '../../houston/generated/TagInfo'
 import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
 import { GridRailRow } from './GridRailRow'
 import { GridRailRowFallback } from './GridRailRowFallback'
@@ -17,16 +18,17 @@ const session = {
   status: 'working', status_since_ms: 1, title: 'Rail task', codename: 'Rail', hidden: false,
   live_children: 0, children_waiting: 0, spawned_by: null
 } as unknown as SessionInfo
+const TAGS: TagInfo[] = [{ id: 1, name: 'Bug', color: '#f472b6' }, { id: 2, name: 'Teste', color: '#f59e0b' }]
 const pr = { number: 41, url: 'https://example.test/pull/41', state: 'OPEN', review_decision: null, checks: 'passing' } as const
 
-function mount(): { inspector: ReturnType<typeof vi.fn>; external: ReturnType<typeof vi.fn>; contextMenu: ReturnType<typeof vi.fn> } {
+function mount({ tags = [], width = 240 }: { tags?: TagInfo[]; width?: number } = {}): { inspector: ReturnType<typeof vi.fn>; external: ReturnType<typeof vi.fn>; contextMenu: ReturnType<typeof vi.fn> } {
   const inspector = vi.fn()
   const external = vi.fn()
   const contextMenu = vi.fn()
   const store = createSessionsStore(new Map([[session.id, session]]))
   root = createRoot(container)
   act(() => root.render(<SessionsStoreContext.Provider value={store}>
-    <GridRailRow name="Rail" selected paneIds={[session.id]} fallbackSessions={[session]} branches={new Map([[session.id, 'feature/rail']])} diffByDir={new Map()} prByDir={new Map([['/work', { gh: 'ready', pr }]])} width={240} jumpNumber={1} onSelect={() => {}} onContextMenu={contextMenu} onOpenInspector={inspector} onOpenExternal={external} />
+    <GridRailRow name="Rail" selected paneIds={[session.id]} tags={tags} fallbackSessions={[session]} branches={new Map([[session.id, 'feature/rail']])} diffByDir={new Map()} prByDir={new Map([['/work', { gh: 'ready', pr }]])} width={width} jumpNumber={1} onSelect={() => {}} onContextMenu={contextMenu} onOpenInspector={inspector} onOpenExternal={external} />
   </SessionsStoreContext.Provider>))
   return { inspector, external, contextMenu }
 }
@@ -106,6 +108,45 @@ describe('grid rail row interactions', () => {
 })
 
 describe('GridRailRowFallback', () => {
+  it('marks grid tags with one tag glyph in the first tag colour and counts the rest', async () => {
+    mount({ tags: TAGS })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="rail-tags"]')).not.toBeNull())
+    const mark = container.querySelector<HTMLElement>('[data-testid="rail-tags"]')!
+    expect(mark.querySelector<HTMLElement>('[data-testid="rail-tag-glyph"]')!.style.color).toBe('rgb(244, 114, 182)')
+    expect(mark.textContent).toBe('+1')
+    expect(mark.getAttribute('aria-label')).toBe('Tags: Bug, Teste')
+  })
+
+  it('drops the tag mark below its width so the branch keeps its room', async () => {
+    mount({ tags: TAGS, width: 200 })
+    await vi.waitFor(() => expect(container.querySelector('.rail-grid-line2')).not.toBeNull())
+    expect(container.querySelector('[data-testid="rail-tags"]')).toBeNull()
+  })
+
+  it('shows PR checks as a glyph, never as a dot that reads like agent status', async () => {
+    mount()
+    await vi.waitFor(() => expect(container.querySelector('.rail-pr')).not.toBeNull())
+    const badge = container.querySelector('.rail-pr')!
+    expect(badge.querySelectorAll('svg')).toHaveLength(2)
+    expect(badge.querySelector('.rounded-full')).toBeNull()
+  })
+
+  it('leaves agent icons to the hover card even on a wide rail', async () => {
+    mount({ width: 420 })
+    await vi.waitFor(() => expect(container.querySelector('.rail-grid-line2')).not.toBeNull())
+    expect(container.querySelector('.rail-agents')).toBeNull()
+  })
+
+  it('names the grid tags in the hover card', async () => {
+    vi.useFakeTimers()
+    mount({ tags: TAGS })
+    const row = container.querySelector('[data-testid="grid-row"]')!
+    act(() => row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    act(() => vi.advanceTimersByTime(260))
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="grid-hover-tags"]')).not.toBeNull())
+    expect(document.querySelector('[data-testid="grid-hover-tags"]')!.textContent).toBe('BugTeste')
+  })
+
   it('claims no status while the row loads', () => {
     root = createRoot(container)
     act(() => root.render(<GridRailRowFallback name="Review" selected={false} jumpNumber={1} onSelect={() => {}} onContextMenu={() => {}} />))

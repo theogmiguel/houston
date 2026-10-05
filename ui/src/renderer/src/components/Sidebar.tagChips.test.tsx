@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Sidebar } from './Sidebar'
 import {
-  RAIL_TAG_DOT_AT,
+  RAIL_TAG_MARK_AT,
   resetRailWidthForTests,
   setRailWidth
 } from '../railWidth'
@@ -178,6 +178,16 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(chipsOf(gridRow('bravo main'))).toHaveLength(0)
   })
 
+  it('marks each tagged grid row with its first tag colour and counts the rest', async () => {
+    render(TREE)
+    const markOf = (name: string): HTMLElement | null => gridRow(name).querySelector<HTMLElement>('[data-testid="rail-tags"]')
+    await vi.waitFor(() => expect(markOf('alpha review')).not.toBeNull())
+    expect(markOf('alpha review')!.textContent).toBe('+1')
+    expect(markOf('alpha main')!.querySelector<HTMLElement>('[data-testid="rail-tag-glyph"]')!.style.color).toBe('rgb(167, 139, 250)')
+    expect(markOf('alpha main')!.textContent).toBe('')
+    expect(markOf('bravo main')).toBeNull()
+  })
+
   it('a single tag shows no count beside it', () => {
     render(TREE)
     const row = gridRow('alpha main')
@@ -344,10 +354,10 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     const chips = (): HTMLElement[] => chipsOf(gridRow('alpha main'))
     expect(chips()).toHaveLength(0)
 
-    act(() => setRailWidth(RAIL_TAG_DOT_AT - 40))
+    act(() => setRailWidth(RAIL_TAG_MARK_AT - 40))
     expect(chips()).toHaveLength(0)
 
-    act(() => setRailWidth(RAIL_TAG_DOT_AT + 60))
+    act(() => setRailWidth(RAIL_TAG_MARK_AT + 60))
     expect(chips()).toHaveLength(0)
   })
 

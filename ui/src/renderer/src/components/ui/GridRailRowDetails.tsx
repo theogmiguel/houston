@@ -1,8 +1,10 @@
 import { lazy, Suspense } from 'react'
 import type { PrInfo, SessionInfo } from '../../houston/client'
+import type { TagInfo } from '../../houston/generated/TagInfo'
+import { RAIL_TAG_MARK_AT } from '../../railWidth'
 import { Icon } from '../Icon'
 import { Tooltip } from '../Tooltip'
-import { IconAgent, IconGitBranch, IconGitPullRequest, IconFolder } from '../icons'
+import { IconCheck, IconClose, IconGitBranch, IconGitPullRequest, IconFolder, IconLoaderCircle, IconTag } from '../icons'
 import { line2DetailsForWidth, railHoverCardModel } from './railRowModel'
 import type { RailLine2Details } from './railRowModel'
 import type { RailDiffTotals } from '../git/useRailGitFacts'
@@ -17,24 +19,11 @@ function prTone(state: string | undefined): string {
   return 'text-[var(--ok)]'
 }
 
-function prChecksTone(checks: PrInfo['checks'] | undefined): string {
-  if (checks === 'passing') return 'bg-[var(--ok)]'
-  if (checks === 'failing') return 'bg-[var(--stop)]'
-  if (checks === 'running') return 'bg-[var(--warn)]'
-  return 'bg-[var(--text-faint)]'
-}
-
-function agentTone(session: SessionInfo): string {
-  if (session.state !== 'running') return 'text-[var(--text-faint)] opacity-50'
-  switch (session.agent) {
-    case 'claude': return 'text-[var(--claude)]'
-    case 'antigravity': return 'text-[var(--antigravity)]'
-    case 'codex': return 'text-[var(--codex)]'
-    case 'opencode': return 'text-[var(--opencode)]'
-    case 'cursor': return 'text-[var(--cursor)]'
-    case 'grok': return 'text-[var(--grok)]'
-    default: return 'text-[var(--text-primary)]'
-  }
+function ChecksGlyph({ checks }: { checks: PrInfo['checks'] }): React.JSX.Element {
+  if (checks === 'passing') return <Icon glyph={IconCheck} role="small" className="flex-none text-[var(--ok)]" />
+  if (checks === 'failing') return <Icon glyph={IconClose} role="small" className="flex-none text-[var(--stop)]" />
+  if (checks === 'running') return <Icon glyph={IconLoaderCircle} role="small" className="flex-none text-[var(--warn)]" />
+  return <></>
 }
 
 function PullRequestBadge({ panes, prStatus, onOpenInspector, onOpenExternal }: {
@@ -53,7 +42,7 @@ function PullRequestBadge({ panes, prStatus, onOpenInspector, onOpenExternal }: 
   }}>
     {pr && <Icon glyph={IconGitPullRequest} role="small" className="flex-none" />}
     {pr ? `#${pr.number}` : 'GitHub unavailable'}
-    {pr && pr.state !== 'MERGED' && <span aria-hidden className={`inline-block h-[5px] w-[5px] rounded-full ${prChecksTone(pr.checks)}`} />}
+    {pr && pr.state !== 'MERGED' && <ChecksGlyph checks={pr.checks} />}
   </button></Tooltip>
 }
 
@@ -70,19 +59,22 @@ function ChangesBadge({ panes, details, diff, onOpenInspector }: {
   }}><span className="text-[var(--ok)]">+{diff.added}</span><span className="text-[var(--stop)]">−{diff.deleted}</span></button></Tooltip>
 }
 
-function RailAgentIcons({ panes, visible }: { panes: SessionInfo[]; visible: boolean }): React.JSX.Element | null {
-  if (!visible) return null
-  return <span className="rail-agents flex flex-none items-center gap-[var(--space-1)]" aria-label="Agents">
-    {panes.filter((pane) => pane.agent !== 'shell' && pane.agent !== 'ssh').map((pane) => <IconAgent key={pane.id} agent={pane.agent} className={`h-[11px] w-[11px] ${agentTone(pane)}`} />)}
-  </span>
+function RailTags({ tags, width }: { tags: readonly TagInfo[]; width: number }): React.JSX.Element | null {
+  if (tags.length === 0 || width < RAIL_TAG_MARK_AT) return null
+  const names = tags.map((tag) => tag.name)
+  return <Tooltip label={names.join(' · ')}><span data-testid="rail-tags" className="rail-tags flex flex-none items-center gap-[2px]" aria-label={`Tags: ${names.join(', ')}`}>
+    <span data-testid="rail-tag-glyph" className="inline-flex" style={{ color: tags[0].color }}><Icon glyph={IconTag} role="small" /></span>
+    {tags.length > 1 && <span className="text-[var(--text-faint)]">+{tags.length - 1}</span>}
+  </span></Tooltip>
 }
 
 export function GridRailRowDetails({
-  name, sessions, paneIds, branches, diffByDir, prByDir, width, card, closeTimer, scheduleClose, onOpenInspector, onOpenExternal,
+  name, sessions, paneIds, tags, branches, diffByDir, prByDir, width, card, closeTimer, scheduleClose, onOpenInspector, onOpenExternal,
 }: {
   name: string
   sessions: SessionInfo[]
   paneIds: number[]
+  tags: readonly TagInfo[]
   branches: ReadonlyMap<number, string>
   diffByDir: ReadonlyMap<string, RailDiffTotals>
   prByDir: ReadonlyMap<string, RailPrState>
@@ -117,8 +109,8 @@ export function GridRailRowDetails({
     {otherBranches.length > 0 && details.otherBranches && <Tooltip label={otherBranches.join(' · ')}><span className="rail-more flex-none">+{otherBranches.length}</span></Tooltip>}
     <PullRequestBadge panes={panes} prStatus={prStatus} onOpenInspector={onOpenInspector} onOpenExternal={onOpenExternal} />
     <ChangesBadge panes={panes} details={details} diff={diff} onOpenInspector={onOpenInspector} />
-    <RailAgentIcons panes={panes} visible={details.agents} />
+    <RailTags tags={tags} width={width} />
     </span>
-    {card && <Suspense fallback={null}><GridRailHoverCard name={name} position={card} closeTimer={closeTimer} scheduleClose={scheduleClose} paneRows={model.panes} checkouts={model.checkouts} onOpenInspector={onOpenInspector} /></Suspense>}
+    {card && <Suspense fallback={null}><GridRailHoverCard name={name} position={card} closeTimer={closeTimer} scheduleClose={scheduleClose} paneRows={model.panes} tags={tags} checkouts={model.checkouts} onOpenInspector={onOpenInspector} /></Suspense>}
   </>
 }

@@ -6,7 +6,6 @@ export interface RailLine2Details {
   pullRequest: true
   otherBranches: boolean
   diff: boolean
-  agents: boolean
 }
 export function line2DetailsForWidth(width: number): RailLine2Details {
   return {
@@ -15,7 +14,6 @@ export function line2DetailsForWidth(width: number): RailLine2Details {
     pullRequest: true,
     otherBranches: width >= 260,
     diff: width >= 280,
-    agents: width >= 320,
   }
 }
 

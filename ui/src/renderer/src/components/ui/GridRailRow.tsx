@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SessionInfo } from '../../houston/client'
+import type { TagInfo } from '../../houston/generated/TagInfo'
 import { Icon } from '../Icon'
 import { IconClose, IconGrid } from '../icons'
 import { formatRailDuration, gridStatus } from './railRows'
@@ -15,6 +16,7 @@ export interface GridRailRowProps {
   name: string
   selected: boolean
   paneIds: number[]
+  tags?: readonly TagInfo[]
   fallbackSessions: readonly SessionInfo[]
   branches: ReadonlyMap<number, string>
   diffByDir: ReadonlyMap<string, RailDiffTotals>
@@ -50,7 +52,7 @@ function statusLabelFor(model: GridStatusModel, age: string | null): string {
 }
 
 export function GridRailRow({
-  name, selected, paneIds, fallbackSessions, branches, diffByDir, prByDir, width, jumpNumber,
+  name, selected, paneIds, tags = [], fallbackSessions, branches, diffByDir, prByDir, width, jumpNumber,
   onSelect, onContextMenu, onOpenInspector, onOpenExternal, onRemove,
 }: GridRailRowProps): React.JSX.Element {
   const [card, setCard] = useState<{ left: number; top: number } | null>(null)
@@ -134,7 +136,7 @@ export function GridRailRow({
         {jumpNumber != null && <span aria-hidden data-testid="rail-jump-number" className={`rail-jump absolute left-[var(--space-1)] top-1/2 -translate-y-1/2 font-mono text-[var(--accent)] ${altHeld ? '' : 'hidden'}`}>{jumpNumber}</span>}
         {onRemove && <button type="button" data-testid="grid-close" aria-label={`Remove ${name}`} className="absolute right-[var(--space-1)] top-1/2 hidden h-[var(--h-ctl-mini)] w-[var(--h-ctl-mini)] -translate-y-1/2 items-center justify-center rounded-[var(--tr-radius-sm)] bg-transparent text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] group-hover:flex" onClick={(event) => { event.stopPropagation(); onRemove() }}><Icon glyph={IconClose} role="small" /></button>}
       </span>
-      <Suspense fallback={null}><GridRailRowDetails name={name} sessions={panes} paneIds={paneIds} branches={branches} diffByDir={diffByDir} prByDir={prByDir} width={width} card={card} closeTimer={closeTimer} scheduleClose={scheduleClose} onOpenInspector={onOpenInspector} onOpenExternal={onOpenExternal} /></Suspense>
+      <Suspense fallback={null}><GridRailRowDetails name={name} sessions={panes} paneIds={paneIds} tags={tags} branches={branches} diffByDir={diffByDir} prByDir={prByDir} width={width} card={card} closeTimer={closeTimer} scheduleClose={scheduleClose} onOpenInspector={onOpenInspector} onOpenExternal={onOpenExternal} /></Suspense>
     </div>
   </>
 }

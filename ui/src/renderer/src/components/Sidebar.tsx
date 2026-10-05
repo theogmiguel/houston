@@ -1146,6 +1146,7 @@ function ExpandedGridsRow({
   pinned,
   grids,
   activeTagIds,
+  tagById,
   dragPath,
   dropBefore,
   dragActiveRef,
@@ -1176,6 +1177,7 @@ function ExpandedGridsRow({
   pinned: boolean;
   grids: GridItem[];
   activeTagIds: number[];
+  tagById: ReadonlyMap<number, TagInfo>;
   dragPath: string | null;
   dropBefore: React.ReactNode;
   dragActiveRef: React.RefObject<boolean>;
@@ -1340,6 +1342,7 @@ function ExpandedGridsRow({
           selected={gridOn}
           paneIds={g.sessionIds ?? []}
           fallbackSessions={sessions}
+          tags={(g.tagIds ?? []).flatMap((id) => tagById.get(id) ?? [])}
           branches={checkoutBranches}
           diffByDir={railDiffByDir}
           prByDir={railPrByDir}
@@ -1896,6 +1899,7 @@ function RailTree({
   colorOf,
   gridsByWorkspace,
   activeTagIds,
+  tagById,
   dropIndex,
   dragPath,
   isWsOpen,
@@ -1938,6 +1942,7 @@ function RailTree({
   colorOf: (path: string) => string;
   gridsByWorkspace: Record<string, GridItem[]>;
   activeTagIds: number[];
+  tagById: ReadonlyMap<number, TagInfo>;
   dropIndex: number | null;
   dragPath: string | null;
   isWsOpen: (path: string) => boolean;
@@ -2052,6 +2057,7 @@ function RailTree({
                     pinned={pinned}
                     grids={grids}
                     activeTagIds={activeTagIds}
+                    tagById={tagById}
                     dragPath={dragPath}
                     dropBefore={dropBefore}
                     dragActiveRef={dragActiveRef}
@@ -2648,6 +2654,7 @@ export function Sidebar({
             colorOf={colorOf}
             gridsByWorkspace={gridsByWorkspace}
             activeTagIds={activeTagIds}
+            tagById={tagById}
             dropIndex={dropIndex}
             dragPath={dragPath}
             isWsOpen={isWsOpen}

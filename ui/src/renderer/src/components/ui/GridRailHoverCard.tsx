@@ -1,5 +1,7 @@
 import { createPortal } from 'react-dom'
 import type { SessionInfo } from '../../houston/client'
+import type { TagInfo } from '../../houston/generated/TagInfo'
+import { TagChip } from '../tags'
 import { Icon } from '../Icon'
 import { IconAgent, IconGitBranch, IconFolder } from '../icons'
 import { formatRailDuration, gridStatus } from './railRows'
@@ -36,19 +38,21 @@ function checkoutStats(stats: RailHoverCheckout['diff']): string {
 }
 
 export function GridRailHoverCard({
-  name, position, closeTimer, scheduleClose, paneRows, checkouts, onOpenInspector,
+  name, position, closeTimer, scheduleClose, paneRows, tags, checkouts, onOpenInspector,
 }: {
   name: string
   position: { left: number; top: number }
   closeTimer: React.MutableRefObject<ReturnType<typeof setTimeout> | null>
   scheduleClose: () => void
   paneRows: RailPaneRow[]
+  tags: readonly TagInfo[]
   checkouts: RailHoverCheckout[]
   onOpenInspector: (paneId: number, tab: 'changes' | 'pull-request') => void
 }): React.JSX.Element {
   const prs = checkouts.filter((checkout) => checkout.pr?.pr)
   return createPortal(<div className="grid-hover-card fixed z-[var(--z-tooltip)] grid w-[360px] gap-[var(--space-2)] rounded-[var(--tr-radius-md)] border border-[var(--border-hover)] bg-[var(--raised)] p-[var(--space-3)] text-[length:var(--tr-text-small-size)] shadow-[var(--shadow-2)]" style={position} role="tooltip" data-testid="grid-hover-card" onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current) }} onMouseLeave={scheduleClose}>
     <strong className="truncate text-[var(--text-primary)]">{name}</strong>
+    {tags.length > 0 && <div data-testid="grid-hover-tags" className="flex flex-wrap items-center gap-[var(--space-1)] [--tag-chip-max:140px]">{tags.map((tag) => <TagChip key={tag.id} tag={tag} />)}</div>}
     <div className="grid grid-cols-[14px_minmax(0,1fr)_auto_auto_auto] items-center gap-x-[var(--space-2)] gap-y-[var(--space-1)]">
       {paneRows.map(({ session, depth }) => <PaneHoverRow key={session.id} session={session} depth={depth} />)}
     </div>

@@ -37,10 +37,10 @@ describe('rail row models', () => {
   })
 
   it('degrades line two by rail width while keeping checkout and PR identity', () => {
-    expect(line2DetailsForWidth(200)).toEqual({ branch: true, worktree: true, pullRequest: true, otherBranches: false, diff: false, agents: false })
+    expect(line2DetailsForWidth(200)).toEqual({ branch: true, worktree: true, pullRequest: true, otherBranches: false, diff: false })
     expect(line2DetailsForWidth(260).otherBranches).toBe(true)
     expect(line2DetailsForWidth(280).diff).toBe(true)
-    expect(line2DetailsForWidth(320).agents).toBe(true)
+    expect(line2DetailsForWidth(420)).toEqual({ branch: true, worktree: true, pullRequest: true, otherBranches: true, diff: true })
   })
 
   it('orders child panes below their parent and preserves unrelated pane order', () => {
