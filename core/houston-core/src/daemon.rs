@@ -9472,6 +9472,10 @@ impl Daemon {
 
     pub fn write_stdin_from_renderer(&self, id: u32, data: &[u8]) -> Result<()> {
         let Ok(session) = self.get(id) else {
+            // Bytes the renderer had in flight when the operator closed the pane.
+            if self.db.session_is_closed(id)? {
+                return Ok(());
+            }
             return self.write_stdin(id, data);
         };
         if !session.state.lock().expect("state lock").is_live() {

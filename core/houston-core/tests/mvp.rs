@@ -538,6 +538,32 @@ async fn close_kills_a_live_session_and_removes_it() {
 }
 
 #[tokio::test]
+async fn renderer_input_racing_a_close_is_dropped_but_an_unknown_id_is_refused() {
+    let state_dir = tempfile::tempdir().unwrap();
+    let daemon = Daemon::new(DaemonConfig {
+        token: TOKEN.to_string(),
+        db_path: state_dir.path().join("test.db"),
+    })
+    .unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let id = create_custom_session(&daemon, tmp.path(), vec!["cat"]).id;
+    daemon.close(id).unwrap();
+
+    // A focus-out report the terminal emits while its pane unmounts.
+    daemon
+        .write_stdin_from_renderer(id, b"\x1b[O")
+        .expect("input for a pane the operator just closed must be dropped, not reported");
+    let err = daemon
+        .write_stdin_from_renderer(id + 1000, b"x")
+        .expect_err("input for a session that never existed must still be refused");
+    assert!(
+        err.to_string().contains("unknown session id"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[tokio::test]
 async fn respawn_reuses_the_directory() {
     let state_dir = tempfile::tempdir().unwrap();
     let daemon = Daemon::new(DaemonConfig {
