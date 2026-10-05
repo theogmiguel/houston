@@ -29,13 +29,15 @@ describe('NoticeStack placement', () => {
     expect(screen.getByText('hello').closest('[data-notice]')?.className).toContain('pointer-events-auto')
   })
 
-  it('anchors the pane stack in the corner it lives in, growing upward', () => {
+  it('anchors pane notices below the pane header and grows downward', () => {
     render(<NoticeStack anchor="pane-corner" label="Pane notices" store={store([rec({ code: 'a', title: 'hi' })])} />)
     const section = screen.getByLabelText('Pane notices')
-    expect(section.className).toContain('bottom-[12px]')
+    expect(section.className).toContain('top-[12px]')
     expect(section.className).toContain('right-[12px]')
-    expect(section.className).toContain('flex-col-reverse')
+    expect(section.className).toContain('max-w-[min(400px,100%-24px)]')
+    expect(section.className).toContain('flex-col items-end')
     expect(section.className).toContain('items-end')
+    expect(section.className).not.toContain('bottom-[12px]')
   })
 
   it('renders the newest row last in DOM order', () => {
@@ -59,6 +61,21 @@ describe('NoticeStack placement', () => {
 })
 
 describe('NoticeStack rows', () => {
+  it('renders orchestration Open pane as a filled secondary action', () => {
+    render(
+      <NoticeStack
+        anchor="pane-corner"
+        label="Pane notices"
+        store={store([
+          rec({ code: 'agent', title: 'agent needs your input', presentation: 'orchestration', kind: 'warning' })
+        ])}
+      />
+    )
+    const open = screen.getByRole('button', { name: 'Open pane' })
+    expect(open.className).toContain('bg-[var(--hover-fill)]')
+    expect(open.className).toContain('border-[var(--border)]')
+  })
+
   it('gives an error row role=alert and every other kind role=status', () => {
     render(
       <NoticeStack

@@ -34,7 +34,7 @@ const ANCHOR_CLS: Record<NoticeAnchor, string> = {
   'workspace-top-right':
     'absolute top-[var(--space-3)] right-[var(--space-3)] z-[var(--z-toast)] flex flex-col items-end gap-[var(--space-2)]',
   'pane-corner':
-    'absolute bottom-[12px] right-[12px] z-[calc(var(--z-pane)+3)] max-w-[min(300px,100%-24px)] flex flex-col-reverse items-end gap-[6px]'
+    'absolute top-[12px] right-[12px] z-[calc(var(--z-pane)+3)] max-w-[min(400px,100%-24px)] flex flex-col items-end gap-[8px]'
 }
 
 const ANCHOR_MOTION: Record<NoticeAnchor, string> = {
