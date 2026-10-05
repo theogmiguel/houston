@@ -2809,7 +2809,9 @@ pub enum ClientMsg {
         name: String,
     },
     WorkspaceList,
-    WorkspaceLocalServers { workspace: String },
+    WorkspaceLocalServers {
+        workspace: String,
+    },
     SessionClose {
         session: u32,
         #[serde(default)]
