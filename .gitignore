@@ -41,3 +41,6 @@ docs/implementation-notes.md
 # Python bytecode is local build output.
 __pycache__/
 *.py[cod]
+
+# Local memory-tool configuration.
+.texas-ranger.toml
