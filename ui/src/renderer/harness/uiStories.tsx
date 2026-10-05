@@ -30,6 +30,10 @@ import {
   PopoverViews,
   SectionHead,
   Select,
+  SettingsBreadcrumb,
+  SettingsRailRow,
+  SettingsScope,
+  SettingsSearch,
   Segmented,
   STATUS_LABELS,
   StatusLabel,
@@ -44,6 +48,7 @@ import {
   TaskDrawerExecutionPanel,
   TaskDrawerHeader,
   TaskDrawerOrigin,
+  TerminalPalettePicker,
   Tooltip,
   UsageCalendar,
   UsageChart,
@@ -52,7 +57,7 @@ import {
   UsageSectionHeading,
   UsageShareBar
 } from '../src/components/ui'
-import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconPlus, IconSearch } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
 import { AnimOut } from '../src/components/AnimOut'
@@ -179,6 +184,7 @@ function MotionThemeSpecimens({ theme, reducedMotion }: { theme: 'graphite' | 'p
 export function UiPrimitivesStory(): React.JSX.Element {
   const [selectedRoutine, setSelectedRoutine] = useState<string | null>('nightly')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [search, setSearch] = useState('font')
   return (
     <div
       className="ui-primitives-specimen"
@@ -199,6 +205,25 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <MotionThemeSpecimens theme="graphite" reducedMotion />
           <MotionThemeSpecimens theme="paper" reducedMotion={false} />
           <MotionThemeSpecimens theme="paper" reducedMotion />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Settings navigation and scope">
+          <SpecimenRow>
+            <SettingsRailRow kind="section" icon={IconTerminal} label="Terminal" selected />
+            <SettingsRailRow kind="search" icon={IconSearch} label="Font family" subtitle="Terminal" />
+            <div className="w-72"><SettingsSearch inputRef={React.createRef<HTMLInputElement>()} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={noop} /></div>
+          </SpecimenRow>
+          <SpecimenRow>
+            <SettingsBreadcrumb open section="Terminal" />
+            <SettingsScope workspace="houston" />
+            <SettingsScope workspace="houston" row />
+            <SettingsScope workspace={null} row scope="global" />
+          </SpecimenRow>
+        </SpecimenGroup>
+        <SpecimenGroup heading="Terminal palette picker">
+          <SpecimenRow>
+            <TerminalPalettePicker chromeTheme="graphite" value="black" onChange={noop} />
+          </SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Button">
@@ -308,6 +333,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <UiCaption>Supporting text and coverage details.</UiCaption>
           <UiCaption tone="faint">Quiet supporting footnote.</UiCaption>
           <UiCaption variant="provisional">May be corrected</UiCaption>
+          <UiCaption tone="faint" variant="code">2.1.263</UiCaption>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Task progress">

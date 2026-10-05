@@ -9,8 +9,9 @@ import { IconAgent } from '../icons'
 import { Segmented } from '../Segmented'
 import { Select, type SelectOption } from '../Select'
 import { SettingsList } from '../settingsPrimitives'
+import { SettingsScope } from '../ui/SettingsScope'
 import { parseReworkRounds, TASK_AGENTS, taskAgentLabel } from '../tasks/format'
-import { SectionHead, Row, SubHead } from './shared'
+import { Row, SubHead } from './shared'
 
 const ACCESS_LABEL: Readonly<Record<TasksAccess, string>> = {
   off: 'Off',
@@ -41,10 +42,7 @@ export function TasksSection({
 
   return (
     <>
-      <SectionHead
-        title="Tasks"
-        lede="A global local backlog. Tasks never leave this machine; their text reaches a hosted agent CLI only when an agent you allowed reads it or you start a task."
-      />
+      <SettingsScope workspace={workspaceName} />
       <SubHead>Agent access · {workspaceName ?? 'no workspace selected'}</SubHead>
       <SettingsList>
         <AgentAccessRow
@@ -68,7 +66,7 @@ export function TasksSection({
       </SettingsList>
       <SubHead>Starting a task</SubHead>
       <SettingsList>
-        <Row title="Default agent" desc="Used by Start. Pick another one from the Start menu.">
+        <Row title="Default agent" desc={<><span>Used by Start. Pick another one from the Start menu.</span><SettingsScope workspace={workspaceName} row /></>}>
           <Select
             aria-label="Default agent"
             data-testid="settings-tasks-agent"
@@ -82,7 +80,7 @@ export function TasksSection({
         </Row>
         <Row
           title="Prompt delivery"
-          desc="Send the brief when you press Start, or only place it in the input box."
+          desc={<><span>Send the brief when you press Start, or only place it in the input box.</span><SettingsScope workspace={workspaceName} row /></>}
         >
           <Segmented
             aria-label="Prompt delivery"
@@ -102,7 +100,7 @@ export function TasksSection({
       <SettingsList>
         <Row
           title="Independent reviewer"
-          desc="Runs read-only in the same worktree when a task is handed back. Reports evidence; it does not mark a task done."
+          desc={<><span>Runs read-only in the same worktree when a task is handed back. Reports evidence; it does not mark a task done.</span><SettingsScope workspace={workspaceName} row /></>}
         >
           <Select
             aria-label="Independent reviewer"
@@ -123,7 +121,7 @@ export function TasksSection({
         </Row>
         <Row
           title="Automatic rework rounds"
-          desc="How many times a failed review restarts the implementer on its own. 0 asks you first."
+          desc={<><span>How many times a failed review restarts the implementer on its own. 0 asks you first.</span><SettingsScope workspace={workspaceName} row /></>}
         >
           <ReworkRoundsInput
             value={review?.reworkRounds ?? null}
@@ -173,6 +171,7 @@ function AgentAccessRow({
                 {access === null ? 'loading…' : ACCESS_LABEL[access]}
               </b>
             </span>
+            <SettingsScope workspace={workspace} row />
           </span>
         }
       >

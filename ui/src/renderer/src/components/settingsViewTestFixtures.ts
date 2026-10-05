@@ -83,7 +83,7 @@ export function baseSettingsViewProps(): React.ComponentProps<typeof SettingsVie
     onAgentHooksSet: () => {},
     onAgentHooksRefresh: () => {},
     onRevealSessionDb: () => {},
-    keymapOverrides: {} as KeymapOverrides,
+    keymapOverrides: { bindings: {}, shortcuts_enabled: true } as KeymapOverrides,
     onKeymapOverrides: () => {}
   }
 }

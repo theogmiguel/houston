@@ -19,8 +19,8 @@ async function openSettings(): Promise<void> {
   )
 }
 
-function openAppearance(): void {
-  act(() => setSettingsNavForTests({ section: 'appearance' }))
+function openSection(section: 'appearance' | 'terminal'): void {
+  act(() => setSettingsNavForTests({ section }))
 }
 
 const PALETTE = 'palette-select'
@@ -45,7 +45,7 @@ describe('Auto terminal-palette option', () => {
     harness = await renderReadyApp()
     const { container } = harness
     await openSettings()
-    openAppearance()
+    openSection('terminal')
 
     const autoLabel = `Auto — ${THEME_LABELS[DEFAULT_TERMINAL_PALETTE_FOR_CHROME[DEFAULT_CHROME_THEME]]}`
     expect(selectValue(container, PALETTE)).toBe(autoLabel)
@@ -56,9 +56,11 @@ describe('Auto terminal-palette option', () => {
     harness = await renderReadyApp()
     const { container } = harness
     await openSettings()
-    openAppearance()
+    openSection('terminal')
 
+    openSection('appearance')
     act(() => chromeTile(container, 'paper').click())
+    openSection('terminal')
 
     const autoLabel = `Auto — ${THEME_LABELS[DEFAULT_TERMINAL_PALETTE_FOR_CHROME.paper]}`
     expect(selectValue(container, PALETTE)).toBe(autoLabel)
@@ -69,14 +71,16 @@ describe('Auto terminal-palette option', () => {
     harness = await renderReadyApp()
     const { container } = harness
     await openSettings()
-    openAppearance()
+    openSection('terminal')
 
     pickOption(container, PALETTE, 'dracula')
 
     expect(selectValue(container, PALETTE)).toBe(THEME_LABELS.dracula)
     expect(localStorage.getItem('tr-theme')).toBe('dracula')
 
+    openSection('appearance')
     act(() => chromeTile(container, 'paper').click())
+    openSection('terminal')
 
     expect(localStorage.getItem('tr-theme')).toBe('dracula')
     expect(selectValue(container, PALETTE)).toBe(THEME_LABELS.dracula)
@@ -86,7 +90,7 @@ describe('Auto terminal-palette option', () => {
     harness = await renderReadyApp()
     const { container } = harness
     await openSettings()
-    openAppearance()
+    openSection('terminal')
 
     const chips = container.querySelectorAll('[data-testid="palette-chips"] i')
     expect(chips).toHaveLength(8)

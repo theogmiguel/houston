@@ -111,7 +111,7 @@ import { MATERIAL_CLS, materialAttrs } from "./components/material";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
 import { canUseSkillInFocusedPane } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
-import { setSettingsSection, useSettingsSection } from "./settingsNav";
+import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
 import { HarnessView, useHarnessActions } from "./components/nav/HarnessView";
 import { useHarnessSignals } from "./houston/useHarnessSignals";
@@ -232,6 +232,7 @@ import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
+import { SettingsBreadcrumb } from "./components/ui/SettingsBreadcrumb";
 import { liveSessionCount, UpdateInstallHost } from "./components/UpdateInstallHost";
 import { useCheckoutFacts } from "./useCheckoutFacts";
 import {
@@ -774,7 +775,7 @@ export function App(): React.JSX.Element {
   }, [settings]);
 
   useEffect(() => {
-    if (settings && settingsSection === "agent-setup" && conn.kind === "ready") {
+    if (settings && settingsSection === "agents" && conn.kind === "ready") {
       conn.client.agentHooks();
     }
   }, [settings, settingsSection, conn]);
@@ -2969,11 +2970,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement;
-      if (
-        ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName) &&
-        e.key !== "Escape"
-      )
-        return;
+      if (shouldIgnoreInputKey(target, e, settings)) return;
       if (target.isContentEditable) return;
       if (paletteOpen) return;
       // Prefix layer: one-shot. Whatever key follows the prefix resolves once, then
@@ -3481,6 +3478,7 @@ export function App(): React.JSX.Element {
             onDoubleClick={handleTitlebarDoubleClick}
           >
             <div className="flex items-center gap-1.5 min-w-0 pl-2.5">
+              <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
               {}
               {sidebarRail && (
                 <Tooltip label="Show sidebar (Ctrl+B)">

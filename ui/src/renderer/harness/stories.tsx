@@ -77,7 +77,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { SettingsAgentSetup, SettingsAppearance, SettingsDiagnostics, SettingsNotifications, SettingsTerminal } from './settingsStories'
+import { SettingsAbout, SettingsAgentSetup, SettingsAppearance, SettingsAppearanceCustom, SettingsDiagnostics, SettingsDictation, SettingsNotifications, SettingsOrchestration, SettingsPrivacy, SettingsSearchStory, SettingsShortcuts, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -256,10 +256,20 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'rail/grid-row-paper-240': () => <RailGridRowStory theme="paper" width={240} />,
   'rail/grid-row-paper-420': () => <RailGridRowStory theme="paper" width={420} />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
+  'settings/agents': () => <SettingsAgentSetup />,
   'settings/appearance': () => <SettingsAppearance />,
+  'settings/appearance-custom': () => <SettingsAppearanceCustom />,
+  'settings/search': () => <SettingsSearchStory />,
   'settings/terminal': () => <SettingsTerminal />,
   'settings/notifications': () => <SettingsNotifications />,
+  'settings/shortcuts': () => <SettingsShortcuts />,
   'settings/diagnostics': () => <SettingsDiagnostics />,
+  'settings/daemon': () => <SettingsDiagnostics />,
+  'settings/orchestration': () => <SettingsOrchestration />,
+  'settings/dictation': () => <SettingsDictation />,
+  'settings/workspaces': () => <SettingsWorkspaces />,
+  'settings/privacy': () => <SettingsPrivacy />,
+  'settings/about': () => <SettingsAbout />,
   'notices/resting': () => <NoticesResting />,
   'notices/stacked': () => <NoticesStacked />,
   'notices/error': () => <NoticesError />,

@@ -1,7 +1,9 @@
 import { BTN_GHOST } from '../buttonChrome'
 import { TERMINAL_FONTS, terminalFontStack } from '../../pane/terminalFonts'
+import type { ChromeTheme, TerminalPaletteChoice } from '../../theme'
 import { Select } from '../Select'
 import { SettingsList, Toggle } from '../settingsPrimitives'
+import { TerminalPalettePicker } from '../ui/TerminalPalettePicker'
 import {
   TERMINAL_LINE_HEIGHT_MAX,
   TERMINAL_LINE_HEIGHT_MIN,
@@ -23,6 +25,9 @@ import {
 import { ClampedNumberSetting, Row, SubHead } from './shared'
 
 export interface TerminalSectionProps {
+  chromeTheme: ChromeTheme
+  theme: TerminalPaletteChoice
+  onTheme: (theme: TerminalPaletteChoice) => void
   fontSize: number
   onFontSize: (px: number) => void
   fontMin: number
@@ -49,6 +54,9 @@ export interface TerminalSectionProps {
 }
 
 export function TerminalSection({
+  chromeTheme,
+  theme,
+  onTheme,
   fontSize,
   onFontSize,
   fontMin,
@@ -77,13 +85,16 @@ export function TerminalSection({
   const idleQuiet = useIdleQuietMsDefault()
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Terminal</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          Most changes reach open panes immediately. Shell integration and clipboard
-          access apply to new terminals only.
-        </div>
-      </div>
+      <SubHead>Palette</SubHead>
+      <SettingsList>
+        <Row title="Palette" desc="The canvas your agents print onto.">
+          <TerminalPalettePicker
+            chromeTheme={chromeTheme}
+            value={theme}
+            onChange={onTheme}
+          />
+        </Row>
+      </SettingsList>
       <SubHead>Type</SubHead>
       <SettingsList>
         <Row

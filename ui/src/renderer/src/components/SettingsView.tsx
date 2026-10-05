@@ -17,18 +17,20 @@ import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
-import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
+import { PageFrame } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
-import { UsageTabSection } from './settings/UsageTabSection'
 import { AppearanceSection } from './settings/AppearanceSection'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
-import { AccountsSection } from './settings/AccountsSection'
+import { DaemonSection } from './settings/DaemonSection'
 import { AgentStatusSection } from './settings/AgentStatusSection'
+import { PrivacySection } from './settings/PrivacySection'
+import { VoiceSection } from './settings/VoiceSection'
+import { ShortcutsSection } from './settings/ShortcutsSection'
 import { OrchestrationSection } from './settings/OrchestrationSection'
 import { TasksSection } from './settings/TasksSection'
-import { SupplementalSettingsSections } from './settings/SupplementalSettingsSections'
+import { NotificationsSection } from './settings/NotificationsSection'
 import type { DesktopNotificationMode } from '../usePreferences'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
 import type { AgentProfileActive } from '../houston/generated/AgentProfileActive'
@@ -245,48 +247,19 @@ function SectionDispatch({
   onAgentHooksRefresh,
   onOpenHooks,
   onRevealSessionDb,
-  desktopNotificationMode = 'off',
-  onDesktopNotificationMode = NOOP,
-  inAppNotifications = false,
-  onInAppNotifications = NOOP,
-  desktopNotificationDelivery = null
+  desktopNotificationMode,
+  onDesktopNotificationMode,
+  inAppNotifications,
+  onInAppNotifications,
+  desktopNotificationDelivery
 }: SectionDispatchProps): React.JSX.Element {
   return (
     <>
-        <SupplementalSettingsSections {...{
-          section,
-          keymapOverrides,
-          onKeymapOverrides,
-          desktopNotificationMode,
-          onDesktopNotificationMode,
-          inAppNotifications,
-          onInAppNotifications,
-          desktopNotificationDelivery,
-          voiceSettings,
-          voiceCloudKeyPresent,
-          voiceKeyringError,
-          voiceModels,
-          voiceDevices,
-          onVoiceLevelMonitor,
-          onVoiceSettingsSet,
-          onVoiceKeySet,
-          onVoiceKeyClear,
-          onVoiceDevicesRefresh,
-          onVoiceModelDownload,
-          onVoiceModelDelete,
-          historyCount,
-          onClearHistory,
-          historyIgnoreGlobs,
-          onHistoryIgnoreGlobsSet,
-          hostInfo,
-          onRevealSessionDb
-        }} />
         {section === 'appearance' && (
           <AppearanceSection
             chromeTheme={chromeTheme}
             onChromeTheme={onChromeTheme}
             theme={theme}
-            onTheme={onTheme}
             uiZoom={uiZoom}
             onUiZoom={onUiZoom}
           />
@@ -294,6 +267,9 @@ function SectionDispatch({
 
         {section === 'terminal' && (
           <TerminalSection
+            chromeTheme={chromeTheme}
+            theme={theme}
+            onTheme={onTheme}
             fontSize={fontSize}
             onFontSize={onFontSize}
             fontMin={fontMin}
@@ -320,22 +296,41 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'agent-setup' && (
-          <AgentStatusSection
-            providers={agentHooks}
-            onSet={onAgentHooksSet}
-            onRefresh={onAgentHooksRefresh}
-            checkedAt={agentHooksCheckedAt}
+        {section === 'shortcuts' && (
+          <ShortcutsSection keymapOverrides={keymapOverrides} onKeymapOverrides={onKeymapOverrides} />
+        )}
+
+        {section === 'dictation' && (
+          <VoiceSection
+            voiceSettings={voiceSettings}
+            voiceCloudKeyPresent={voiceCloudKeyPresent}
+            voiceKeyringError={voiceKeyringError}
+            voiceModels={voiceModels}
+            voiceDevices={voiceDevices}
+            onVoiceLevelMonitor={onVoiceLevelMonitor}
+            onVoiceSettingsSet={onVoiceSettingsSet}
+            onVoiceKeySet={onVoiceKeySet}
+            onVoiceKeyClear={onVoiceKeyClear}
+            onVoiceDevicesRefresh={onVoiceDevicesRefresh}
+            onVoiceModelDownload={onVoiceModelDownload}
+            onVoiceModelDelete={onVoiceModelDelete}
+            keymapOverrides={keymapOverrides}
           />
         )}
 
-        {section === 'accounts' && (
-          <AccountsSection
-            agentProfiles={agentProfiles}
-            onAgentProfileUpsert={onAgentProfileUpsert}
-            onAgentProfileDelete={onAgentProfileDelete}
-            onAgentProfileSetActive={onAgentProfileSetActive}
-          />
+        {section === 'agents' && (
+          <>
+            <AgentStatusSection
+              providers={agentHooks}
+              onSet={onAgentHooksSet}
+              onRefresh={onAgentHooksRefresh}
+              checkedAt={agentHooksCheckedAt}
+              agentProfiles={agentProfiles}
+              onAgentProfileUpsert={onAgentProfileUpsert}
+              onAgentProfileDelete={onAgentProfileDelete}
+              onAgentProfileSetActive={onAgentProfileSetActive}
+            />
+          </>
         )}
 
         {section === 'orchestration' && (
@@ -361,6 +356,26 @@ function SectionDispatch({
           />
         )}
 
+        {section === 'privacy' && (
+          <PrivacySection
+            historyCount={historyCount}
+            onClearHistory={onClearHistory}
+            historyIgnoreGlobs={historyIgnoreGlobs}
+            onHistoryIgnoreGlobsSet={onHistoryIgnoreGlobsSet}
+            hostInfo={hostInfo}
+            onRevealSessionDb={onRevealSessionDb}
+          />
+        )}
+
+        <NotificationsSlot
+          section={section}
+          desktopNotificationMode={desktopNotificationMode}
+          onDesktopNotificationMode={onDesktopNotificationMode}
+          inAppNotifications={inAppNotifications}
+          onInAppNotifications={onInAppNotifications}
+          desktopNotificationDelivery={desktopNotificationDelivery}
+        />
+
         {section === 'about' && (
           <AboutSection
             onContact={onContact}
@@ -374,34 +389,30 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'workspace-defaults' && (
+        {section === 'workspaces' && (
           <WorkspaceDefaultsSection
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
             onWorktreeCleanupSet={onWorktreeCleanupSet}
             openLinksInPane={openLinksInPane}
             onOpenLinksInPane={onOpenLinksInPane}
-            historyWorkspace={historyWorkspace}
-            historyWorkspaceName={historyWorkspaceName}
             hostInfo={hostInfo}
             sessionPolicy={sessionPolicy}
             onSessionPolicy={onSessionPolicy}
           />
         )}
 
-        {section === 'usage' && (
-          <UsageTabSection />
+        {section === 'daemon' && (
+          <>
+            <DiagnosticsSection
+              hostInfo={hostInfo}
+              agentHooks={agentHooks}
+              onOpenHooks={onOpenHooks}
+              onOpenLogsFolder={onOpenLogsFolder}
+            />
+            <DaemonSection />
+          </>
         )}
-
-        {section === 'diagnostics' && (
-          <DiagnosticsSection
-            hostInfo={hostInfo}
-            agentHooks={agentHooks}
-            onOpenHooks={onOpenHooks}
-            onOpenLogsFolder={onOpenLogsFolder}
-          />
-        )}
-
     </>
   )
 }
@@ -419,6 +430,21 @@ type SectionDispatchProps = Omit<Props, keyof ResolvedTuningProps> &
   ResolvedTuningProps & { section: SettingsSectionId }
 
 const NOOP = (): void => {}
+
+type NotificationsSlotProps = Pick<Props, 'desktopNotificationMode' | 'onDesktopNotificationMode' | 'inAppNotifications' | 'onInAppNotifications' | 'desktopNotificationDelivery'> & { section: SettingsSectionId }
+
+function NotificationsSlot(props: NotificationsSlotProps): React.JSX.Element | null {
+  if (props.section !== 'notifications') return null
+  return (
+    <NotificationsSection
+      desktopMode={props.desktopNotificationMode ?? 'off'}
+      onDesktopMode={props.onDesktopNotificationMode ?? NOOP}
+      inApp={props.inAppNotifications ?? false}
+      onInApp={props.onInAppNotifications ?? NOOP}
+      delivery={props.desktopNotificationDelivery ?? null}
+    />
+  )
+}
 
 export function SettingsView(props: Props): React.JSX.Element {
   const section = useSettingsSection()
@@ -453,13 +479,7 @@ export function SettingsView(props: Props): React.JSX.Element {
       className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
       {}
-      <div
-        className={`w-full min-w-0 mx-auto px-[var(--space-6)] pt-[var(--space-6)] pb-[60px] ${
-          section === 'agent-setup'
-            ? PAGE_COLUMN_WIDE_CLS
-            : PAGE_COLUMN_CLS
-        }`}
-      >
+      <PageFrame width={section === 'agents' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
         <SectionDispatch
           {...props}
           section={section}
@@ -470,7 +490,7 @@ export function SettingsView(props: Props): React.JSX.Element {
           terminalScrollbackLines={terminalScrollbackLines}
           onTerminalScrollbackLines={onTerminalScrollbackLines}
         />
-      </div>
+      </PageFrame>
     </div>
   )
 }
