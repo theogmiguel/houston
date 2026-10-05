@@ -287,15 +287,17 @@ function CommitBox({
 
 function PrLine({
   pr,
-  onOpenUrlInPane
+  onOpenUrlInPane,
+  hidden = false
 }: {
   pr: PrState | null
   onOpenUrlInPane?: (url: string) => void
+  hidden?: boolean
 }): React.JSX.Element | null {
   if (!pr) return null
   if (pr.gh !== 'ready') {
     return (
-      <div data-testid="changes-pr-blocked" className="flex-none px-2.5 py-1.5 border-t border-t-[var(--divider)] text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
+      <div hidden={hidden} data-testid="changes-pr-blocked" className="flex-none px-2.5 py-1.5 border-t border-t-[var(--divider)] text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
         {pr.hint ?? 'gh is unavailable.'}
       </div>
     )
@@ -304,7 +306,7 @@ function PrLine({
   const checks = prChecksLabel(pr.pr.checks)
   const decision = prDecisionLabel(pr.pr.review_decision)
   return (
-    <div data-testid="changes-pr-line" className="flex-none flex items-center gap-2 px-2.5 py-1.5 border-t border-t-[var(--divider)] text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
+    <div hidden={hidden} data-testid="changes-pr-line" className="flex-none flex items-center gap-2 px-2.5 py-1.5 border-t border-t-[var(--divider)] text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
       <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
         PR #{pr.pr.number} · {checks}
         {decision ? ` · ${decision}` : ''}
@@ -784,7 +786,7 @@ export function ChangesPane({
     />
   )
 
-  const prLine = <PrLine pr={pr} onOpenUrlInPane={onOpenUrlInPane} />
+  const prLine = <PrLine pr={pr} onOpenUrlInPane={onOpenUrlInPane} hidden={compact} />
 
   const body =
     paneState === 'loading' || paneState === 'empty' ? (

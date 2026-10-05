@@ -53,13 +53,19 @@ export function lineKind(line: string): string {
   return 'ctx'
 }
 
-export function DiffBody({ patch, truncated }: { patch: string; truncated: boolean }): React.JSX.Element {
+export function diffBodyLines(patch: string): string[] {
   const lines = patch.split('\n')
+  const firstHunk = lines.findIndex((line) => line.startsWith('@@'))
+  return firstHunk < 0 ? [] : lines.slice(firstHunk)
+}
+
+export function DiffBody({ patch, truncated }: { patch: string; truncated: boolean }): React.JSX.Element {
+  const lines = diffBodyLines(patch)
   // Above this, one <div> per line makes the DOM too heavy; fall back to a plain <pre>.
   if (lines.length > 4000)
     return (
       <pre className={PLAIN_CLASS}>
-        {patch}
+        {lines.join('\n')}
         {truncated ? '\n… patch truncated at 512 KiB — review locally' : ''}
       </pre>
     )

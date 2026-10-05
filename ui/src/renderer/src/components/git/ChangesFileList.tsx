@@ -69,7 +69,11 @@ export function ChangesFileList({
   bulkForGroup: (group: ChangeRow['group'], paths: string[]) => void
   setStatusError: (message: string) => void
 }): React.JSX.Element {
-  const groups = files ? groupRows(files) : []
+  const groups = files
+    ? compact
+      ? [{ group: 'unstaged' as const, rows: groupRows(files).flatMap((group) => group.rows) }]
+      : groupRows(files)
+    : []
   if (files === null) {
     return (
       <div className={DIFF_EMPTY_CLASS} data-testid="changes-loading">

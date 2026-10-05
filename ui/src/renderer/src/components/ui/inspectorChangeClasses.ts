@@ -6,7 +6,7 @@ const SECTION_HEAD_CLS = 'flex items-center gap-[var(--space-2)] h-[var(--h-row)
 const SCM_ROW_CLS = 'group/row relative flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)] hover:bg-[var(--hover-fill)]'
 
 export const changeFileClasses = {
-  list: 'min-h-0 overflow-y-auto [scrollbar-width:thin] py-1 focus-visible:outline-none focus-visible:shadow-[' + RING_ACCENT_INSET_45 + ']',
+  list: `min-h-0 overflow-y-auto [scrollbar-width:thin] py-1 focus-visible:outline-none focus-visible:shadow-[${RING_ACCENT_INSET_45}]`,
   bulk: `btn ${BTN_GHOST} h-[var(--h-ctl-mini)] px-[var(--space-1-5)] text-[length:var(--tr-text-xs)] normal-case tracking-normal`,
   groupCount: 'ml-auto font-mono font-medium text-[length:var(--tr-text-xs)] text-[var(--text-faint)] tabular-nums',
   stage: `flex-none w-[var(--h-ctl-mini)] h-[var(--h-ctl-mini)] rounded-[var(--tr-radius-sm)] grid place-items-center text-[var(--text-faint)] opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:shadow-[${RING_ACCENT_ICON}]`,

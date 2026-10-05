@@ -30,8 +30,8 @@ class InspectorClient {
       type: 'git_status', dir, base: null, branch: 'feat/tasks-backlog', upstream: 'origin/main',
       ahead: 4, behind: 0, default_base: 'main', not_a_repo: false,
       files: [
-        { path: 'core/houston-core/src/orchestrate.rs', status: 'modified', staged: false, added: 52, deleted: 12, is_sensitive: false },
-        { path: 'core/houston-core/tests/batch_wake_wire.rs', status: 'added', staged: false, added: 12, deleted: 0, is_sensitive: false }
+        { path: 'core/houston-core/src/orchestrate.rs', status: 'modified', staged: true, added: 52, deleted: 12, is_sensitive: false },
+        { path: 'core/houston-core/tests/batch_wake_wire.rs', status: 'added', staged: true, added: 12, deleted: 0, is_sensitive: false }
       ]
     }))
   }

@@ -70,6 +70,14 @@ describe('Changes pane — state matrix (§14)', () => {
     expect(q('[data-testid="changes-commit-target"]')?.textContent).toBe('to wt/inbox-api')
   })
 
+  it('counts only staged files for commit and keeps the PR link out of Changes', () => {
+    const h = mount({ compact: true })
+    h.status([file({ path: 'src/a.ts', staged: true }), file({ path: 'src/b.ts', staged: true })])
+    expect(q('[data-testid="changes-commit"]')?.textContent).toContain('Commit 2 files')
+    h.prStatus()
+    expect(q('[data-testid="changes-pr-line"]')?.hasAttribute('hidden')).toBe(true)
+  })
+
   it('error: a generic status failure names the message and offers a working Retry', () => {
     const h = mount({})
     const before = h.client.gitStatusCalls.length
