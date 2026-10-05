@@ -123,6 +123,12 @@ describe('settingsRowRegistry — every registered title actually renders', () =
       })
       await flush()
 
+      if (section === 'agents') {
+        const claude = host.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+        expect(claude?.textContent).toContain('Claude Code')
+        act(() => claude?.click())
+      }
+
       for (const title of titles) {
         const row = Array.from(
           host.querySelectorAll<HTMLElement>('[data-settings-row-name]')

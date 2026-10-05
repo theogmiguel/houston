@@ -22,7 +22,7 @@ function state(overrides: Partial<AgentHookState> = {}): AgentHookState {
   }
 }
 
-describe('HooksSurface — the same screen as Settings → Agent setup', () => {
+describe('HooksSurface — the Agents detail screen', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -44,19 +44,22 @@ describe('HooksSurface — the same screen as Settings → Agent setup', () => {
     expect(container.textContent).toContain('Asking the daemon what is installed.')
   })
 
-  it('renders the section itself — one list + detail, not a second hook screen', () => {
+  it('renders the Agent CLIs list and its selected detail', () => {
     act(() => {
       root.render(
         <HooksSurface providers={[state({ provider: 'claude' })]} onSet={noop} onRefresh={noop} />
       )
     })
     expect(container.querySelector('[data-testid="settings-section-title"]')?.textContent).toBe(
-      'Agent setup'
+      'Agent CLIs'
     )
     expect(container.querySelector('[data-testid="list-detail"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="agent-status-row"]')?.textContent).toContain(
       'Claude Code'
     )
+    const cli = container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+    act(() => cli?.click())
+    expect(container.querySelector('[data-testid="agent-status-detail"]')).not.toBeNull()
   })
 
   it('opts into the wide page column, so the shell can be two columns at all', () => {
@@ -67,13 +70,15 @@ describe('HooksSurface — the same screen as Settings → Agent setup', () => {
     expect(column.className).toContain('max-w-[1040px]')
   })
 
-  it('says the consent story once, in the lede — no footnote repeating it under the card', () => {
+  it('keeps the provider-specific install and removal explanation in the detail', () => {
     act(() => {
       root.render(<HooksSurface providers={[state()]} onSet={noop} onRefresh={noop} />)
     })
+    const cli = container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+    act(() => cli?.click())
     expect(container.querySelector('[data-testid="nav-footnote"]')).toBeNull()
     const text = container.textContent ?? ''
-    expect(text).toContain("edits that CLI's own file")
-    expect(text).toContain('removes exactly what Houston wrote')
+    expect(text).toContain('Your own hooks are untouched')
+    expect(text).toContain('removes exactly what Houston added')
   })
 })

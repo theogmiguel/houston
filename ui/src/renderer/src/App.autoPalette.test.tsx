@@ -3,7 +3,6 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type AppHarness, renderReadyApp, resetHarness, settleLazySurface, toggleSettings } from './test/appTestHarness'
 import { setSettingsNavForTests } from './settingsNav'
-import { pickOption, selectOptionLabels, selectValue } from './test/selectHarness'
 import { DEFAULT_CHROME_THEME, DEFAULT_TERMINAL_PALETTE_FOR_CHROME, THEME_LABELS } from './theme'
 
 beforeEach(() => {
@@ -23,7 +22,11 @@ function openSection(section: 'appearance' | 'terminal'): void {
   act(() => setSettingsNavForTests({ section }))
 }
 
-const PALETTE = 'palette-select'
+function paletteTile(container: HTMLElement, theme: string): HTMLButtonElement {
+  const tile = container.querySelector(`[data-testid="palette-tile-${theme}"]`)
+  if (!(tile instanceof HTMLButtonElement)) throw new Error(`no palette tile ${theme}`)
+  return tile
+}
 
 function chromeTile(container: HTMLElement, pref: string): HTMLButtonElement {
   const group = container.querySelector('[role="radiogroup"][aria-label="Chrome theme"]')
@@ -47,9 +50,10 @@ describe('Auto terminal-palette option', () => {
     await openSettings()
     openSection('terminal')
 
-    const autoLabel = `Auto — ${THEME_LABELS[DEFAULT_TERMINAL_PALETTE_FOR_CHROME[DEFAULT_CHROME_THEME]]}`
-    expect(selectValue(container, PALETTE)).toBe(autoLabel)
-    expect(selectOptionLabels(container, PALETTE)[0]).toBe(autoLabel)
+    const autoTile = paletteTile(container, 'auto')
+    expect(autoTile.getAttribute('aria-pressed')).toBe('true')
+    expect(autoTile.textContent).toContain(`Auto · ${THEME_LABELS[DEFAULT_TERMINAL_PALETTE_FOR_CHROME[DEFAULT_CHROME_THEME]]}`)
+    expect(autoTile.textContent).toContain('follows Graphite')
   })
 
   it('re-resolves live when the chrome theme switches, and stays selected', async () => {
@@ -62,9 +66,10 @@ describe('Auto terminal-palette option', () => {
     act(() => chromeTile(container, 'paper').click())
     openSection('terminal')
 
-    const autoLabel = `Auto — ${THEME_LABELS[DEFAULT_TERMINAL_PALETTE_FOR_CHROME.paper]}`
-    expect(selectValue(container, PALETTE)).toBe(autoLabel)
-    expect(selectOptionLabels(container, PALETTE)[0]).toBe(autoLabel)
+    const autoTile = paletteTile(container, 'auto')
+    expect(autoTile.getAttribute('aria-pressed')).toBe('true')
+    expect(autoTile.textContent).toContain(`Auto · ${THEME_LABELS[DEFAULT_TERMINAL_PALETTE_FOR_CHROME.paper]}`)
+    expect(autoTile.textContent).toContain('follows Paper')
   })
 
   it('picking a concrete palette pins it, no longer following chrome switches', async () => {
@@ -73,9 +78,9 @@ describe('Auto terminal-palette option', () => {
     await openSettings()
     openSection('terminal')
 
-    pickOption(container, PALETTE, 'dracula')
+    act(() => paletteTile(container, 'dracula').click())
 
-    expect(selectValue(container, PALETTE)).toBe(THEME_LABELS.dracula)
+    expect(paletteTile(container, 'dracula').getAttribute('aria-pressed')).toBe('true')
     expect(localStorage.getItem('tr-theme')).toBe('dracula')
 
     openSection('appearance')
@@ -83,7 +88,7 @@ describe('Auto terminal-palette option', () => {
     openSection('terminal')
 
     expect(localStorage.getItem('tr-theme')).toBe('dracula')
-    expect(selectValue(container, PALETTE)).toBe(THEME_LABELS.dracula)
+    expect(paletteTile(container, 'dracula').getAttribute('aria-pressed')).toBe('true')
   })
 
   it('the chip strip fingerprints the palette actually in force', async () => {
@@ -92,8 +97,8 @@ describe('Auto terminal-palette option', () => {
     await openSettings()
     openSection('terminal')
 
-    const chips = container.querySelectorAll('[data-testid="palette-chips"] i')
-    expect(chips).toHaveLength(8)
+    const chips = paletteTile(container, 'auto').querySelectorAll('i')
+    expect(chips).toHaveLength(6)
     expect([...chips].every((c) => (c as HTMLElement).style.background !== '')).toBe(true)
   })
 })

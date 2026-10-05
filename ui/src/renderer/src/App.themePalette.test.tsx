@@ -3,7 +3,6 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type AppHarness, renderReadyApp, resetHarness, settleLazySurface, toggleSettings } from './test/appTestHarness'
 import { setSettingsNavForTests } from './settingsNav'
-import { pickOption, selectOptionLabels, selectOptionValues } from './test/selectHarness'
 import { AUTO_TERMINAL_PALETTE, CHROME_THEMES, THEMES, THEME_LABELS } from './theme'
 
 beforeEach(() => {
@@ -31,11 +30,13 @@ describe('Settings → Terminal palette', () => {
   it('keeps every one of the 24 palettes reachable, plus Auto', async () => {
     harness = await renderReadyApp()
     await openSection('terminal')
-    const values = selectOptionValues(harness.container, 'palette-select')
-    expect(values[0]).toBe(AUTO_TERMINAL_PALETTE)
-    expect(values.slice(1)).toEqual([...THEMES])
-    expect(selectOptionLabels(harness.container, 'palette-select').slice(1)).toEqual(
-      THEMES.map((t) => THEME_LABELS[t])
+    const tiles = [...harness.container.querySelectorAll<HTMLButtonElement>('[data-testid^="palette-tile-"]')]
+    expect(tiles.map((tile) => tile.dataset.testid?.replace('palette-tile-', ''))).toEqual([
+      AUTO_TERMINAL_PALETTE,
+      ...THEMES
+    ])
+    expect(tiles.slice(1).map((tile) => tile.lastElementChild?.textContent?.trim())).toEqual(
+      THEMES.map((theme) => THEME_LABELS[theme])
     )
   })
 
@@ -57,11 +58,12 @@ describe('Settings → Terminal palette', () => {
     expect(tiles.filter((t) => t.getAttribute('aria-checked') === 'true')).toHaveLength(1)
   })
 
-  it('the chrome tiles and the palette select are independent axes', async () => {
+  it('the chrome tiles and terminal palette tiles are independent axes', async () => {
     harness = await renderReadyApp()
     await openSection('terminal')
     const { container } = harness
-    pickOption(container, 'palette-select', 'dracula')
+    const dracula = container.querySelector('[data-testid="palette-tile-dracula"]') as HTMLButtonElement
+    act(() => dracula.click())
 
     act(() => setSettingsNavForTests({ section: 'appearance' }))
     const paper = container.querySelector('[data-chrome-theme="paper"]') as HTMLButtonElement
@@ -69,5 +71,6 @@ describe('Settings → Terminal palette', () => {
 
     expect(localStorage.getItem('tr-theme')).toBe('dracula')
     expect(localStorage.getItem('tr-chrome-theme')).toBe('paper')
+    expect(dracula.getAttribute('aria-pressed')).toBe('true')
   })
 })
