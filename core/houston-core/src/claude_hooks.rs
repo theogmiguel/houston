@@ -1926,7 +1926,7 @@ mod tests {
     #[test]
     fn zcode_payloads_keep_ids_and_drop_the_temporary_transcript() {
         let z = proto::AgentKind::Zcode;
-        let start = parse_hook_payload(&zcode_fixture("zcode-src-01-SessionStart.json"), z);
+        let start = parse_hook_payload(&zcode_fixture("zcode-3.14.3-src-01-SessionStart.json"), z);
         assert_eq!(
             start.session_id.as_deref(),
             Some("sess_01J9ZCDEMO0000000000000000")
@@ -1935,19 +1935,19 @@ mod tests {
             start.transcript_path, None,
             "ZCode deletes it after the hook"
         );
-        let stop = parse_hook_payload(&zcode_fixture("zcode-src-03-Stop.json"), z);
+        let stop = parse_hook_payload(&zcode_fixture("zcode-3.14.3-src-03-Stop.json"), z);
         assert_eq!(
             stop.last_message.as_deref(),
             Some("Added the regression test; cargo test passes.")
         );
         let ask = parse_hook_payload(
-            &zcode_fixture("zcode-src-04-PreToolUse-AskUserQuestion.json"),
+            &zcode_fixture("zcode-3.14.3-src-04-PreToolUse-AskUserQuestion.json"),
             z,
         );
         assert_eq!(ask.tool_name.as_deref(), Some("AskUserQuestion"));
         assert_eq!(ask.tool_use_id.as_deref(), Some("call_ask_01"));
         let aborted = parse_hook_payload(
-            &zcode_fixture("zcode-src-08-PostToolUseFailure-interrupt.json"),
+            &zcode_fixture("zcode-3.14.3-src-08-PostToolUseFailure-interrupt.json"),
             z,
         );
         assert!(aborted.interrupted);
@@ -1955,10 +1955,13 @@ mod tests {
             aborted.error.as_deref(),
             Some("Tool execution aborted by user")
         );
-        let plain = parse_hook_payload(&zcode_fixture("zcode-src-07-PostToolUse-Bash.json"), z);
+        let plain = parse_hook_payload(
+            &zcode_fixture("zcode-3.14.3-src-07-PostToolUse-Bash.json"),
+            z,
+        );
         assert!(!plain.interrupted);
         let claude = parse_hook_payload(
-            &zcode_fixture("zcode-src-08-PostToolUseFailure-interrupt.json"),
+            &zcode_fixture("zcode-3.14.3-src-08-PostToolUseFailure-interrupt.json"),
             proto::AgentKind::Claude,
         );
         assert!(!claude.interrupted, "is_interrupt is read for ZCode only");

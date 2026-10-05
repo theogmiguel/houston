@@ -1,5 +1,5 @@
 {
-  "_note": "reconstructed from zai-org/ZCode apps/zcode-cli packages/core/src/hooks/configured-runner-input.ts (createCompatibleHookStdin) and packages/contracts/src/hooks \u2014 not captured live. camelCase fields are ZCode's own; snake_case ones are its Claude-compatible aliases.",
+  "_note": "reconstructed from zai-org/ZCode (main after tag v3.14.3) apps/zcode-cli packages/core/src/hooks/configured-runner-input.ts (createCompatibleHookStdin) and packages/contracts/src/hooks \u2014 not captured live. camelCase fields are ZCode's own; snake_case ones are its Claude-compatible aliases.",
   "agentName": "zcode-agent",
   "cwd": "/tmp/example",
   "hookEventName": "SessionStart",
