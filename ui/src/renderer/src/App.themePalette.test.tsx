@@ -30,6 +30,8 @@ describe('Settings → Terminal palette', () => {
   it('keeps every one of the 24 palettes reachable, plus Auto', async () => {
     harness = await renderReadyApp()
     await openSection('terminal')
+    const all = [...harness.container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === `All ${THEMES.length} palettes`)!
+    act(() => all.click())
     const tiles = [...harness.container.querySelectorAll<HTMLButtonElement>('[data-testid^="palette-tile-"]')]
     expect(tiles.map((tile) => tile.dataset.testid?.replace('palette-tile-', ''))).toEqual([
       AUTO_TERMINAL_PALETTE,

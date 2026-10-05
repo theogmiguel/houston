@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { BTN_GHOST } from '../buttonChrome'
 import { TERMINAL_FONTS, terminalFontStack } from '../../pane/terminalFonts'
-import type { ChromeTheme, TerminalPaletteChoice } from '../../theme'
+import { THEMES, type ChromeTheme, type TerminalPaletteChoice } from '../../theme'
+import { Button } from '../ui/Button'
 import { Select } from '../Select'
 import { SettingsList, Toggle } from '../settingsPrimitives'
 import { TerminalPalettePicker } from '../ui/TerminalPalettePicker'
@@ -81,22 +83,36 @@ export function TerminalSection({
   stripBoxGlyphs,
   onStripBoxGlyphs
 }: TerminalSectionProps): React.JSX.Element {
+  const [allPalettes, setAllPalettes] = useState(false)
   const stackCap = useStackCapacity()
   const idleQuiet = useIdleQuietMsDefault()
   return (
     <>
-      <SubHead>Palette</SubHead>
-      <SettingsList>
-        <Row title="Palette" desc="The canvas your agents print onto.">
-          <TerminalPalettePicker
-            chromeTheme={chromeTheme}
-            value={theme}
-            onChange={onTheme}
-          />
-        </Row>
-      </SettingsList>
+      <SubHead actions={<Button variant="ghost" size="sm" aria-expanded={allPalettes} onClick={() => setAllPalettes((open) => !open)}>{allPalettes ? 'Fewer palettes' : `All ${THEMES.length} palettes`}</Button>}>Palette</SubHead>
+      <div data-settings-row-name="Palette">
+        <TerminalPalettePicker
+          chromeTheme={chromeTheme}
+          value={theme}
+          onChange={onTheme}
+          expanded={allPalettes}
+        />
+      </div>
       <SubHead>Type</SubHead>
       <SettingsList>
+        <Row
+          title="Font family"
+          desc={
+            TERMINAL_FONTS.find((f) => f.id === fontFamilyId)?.note ??
+            'Applies to every terminal pane immediately'
+          }
+        >
+          <Select
+            value={fontFamilyId}
+            data-testid="settings-font-family"
+            options={TERMINAL_FONTS.map((f) => ({ value: f.id, label: f.label }))}
+            onChange={onFontFamilyId}
+          />
+        </Row>
         <Row
           title="Font size"
           desc="Applies to every pane. Ctrl +/− does the same."
@@ -132,20 +148,6 @@ export function TerminalSection({
               Reset
             </button>
           </div>
-        </Row>
-        <Row
-          title="Font family"
-          desc={
-            TERMINAL_FONTS.find((f) => f.id === fontFamilyId)?.note ??
-            'Applies to every terminal pane immediately'
-          }
-        >
-          <Select
-            value={fontFamilyId}
-            data-testid="settings-font-family"
-            options={TERMINAL_FONTS.map((f) => ({ value: f.id, label: f.label }))}
-            onChange={onFontFamilyId}
-          />
         </Row>
         <Row title="Line height" desc="A multiplier of font size. Below 1.0 clips descenders.">
           <ClampedNumberSetting

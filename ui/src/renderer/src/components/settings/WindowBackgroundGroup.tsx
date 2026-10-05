@@ -441,7 +441,7 @@ export function WindowBackgroundGroup({
               <BackgroundPreview chromeTheme={chromeTheme} palette={palette} />
             </div>
           )}
-          <Row title="Background">
+          <Row title="Background" desc="Solid paints the theme colour. Custom puts a picture behind the rail and panes.">
             <Segmented<'solid' | 'custom'>
               aria-label="Background"
               options={[

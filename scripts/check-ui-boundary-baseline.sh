@@ -134,7 +134,7 @@ BASELINE=(
   "ui/src/renderer/src/components/settings/WindowBackgroundGroup.tsx 66"
   "ui/src/renderer/src/components/settings/WorkspaceDefaultsSection.tsx 17"
   "ui/src/renderer/src/components/settings/shared.tsx 38"
-  "ui/src/renderer/src/components/settingsPrimitives.tsx 38"
+  "ui/src/renderer/src/components/settingsPrimitives.tsx 35"
   "ui/src/renderer/src/components/tagEditing.tsx 38"
   "ui/src/renderer/src/components/tags.tsx 17"
   "ui/src/renderer/src/components/tasks/RosterQueue.tsx 18"

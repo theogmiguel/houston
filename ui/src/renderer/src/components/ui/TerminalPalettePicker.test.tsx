@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TerminalPalettePicker } from './TerminalPalettePicker'
+import { FEATURED_PALETTES, TerminalPalettePicker } from './TerminalPalettePicker'
 
 afterEach(cleanup)
 
@@ -17,5 +17,10 @@ describe('TerminalPalettePicker', () => {
     expect(tile.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(tile)
     expect(onChange).toHaveBeenCalledWith('marble')
+  })
+  it('collapsed, shows Auto and the featured palettes, plus the selected one when it is not featured', () => {
+    render(<TerminalPalettePicker chromeTheme="graphite" value="marble" onChange={() => {}} expanded={false} />)
+    const ids = screen.getAllByTestId(/^palette-tile-/).map((tile) => tile.dataset.testid?.replace('palette-tile-', ''))
+    expect(ids).toEqual(['auto', ...FEATURED_PALETTES, 'marble'])
   })
 })
