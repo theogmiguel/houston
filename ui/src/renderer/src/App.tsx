@@ -129,6 +129,7 @@ import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
 import type { HandoffSource } from "./components/PaneHandoff";
 import type { SessionSlot } from "./components/sessionPresets";
+import { LaunchComposerDock, visibleLaunchPreview, type LaunchPreview } from "./components/LaunchComposerDock";
 import { WorkspaceEmpty } from "./components/WorkspaceEmpty";
 import { WorkspacesEmpty } from "./components/WorkspacesEmpty";
 import { FirstRun } from "./components/FirstRun";
@@ -335,9 +336,6 @@ const SshConnectModal = lazy(() =>
 );
 const PaneHandoff = lazy(() =>
   import("./components/PaneHandoff").then((m) => ({ default: m.PaneHandoff })),
-);
-const NewSessionComposer = lazy(() =>
-  import("./components/NewSessionComposer").then((m) => ({ default: m.NewSessionComposer })),
 );
 const LaunchGridPreview = lazy(() =>
   import("./components/ui/LaunchGridPreview").then((m) => ({ default: m.LaunchGridPreview })),
@@ -752,10 +750,7 @@ export function App(): React.JSX.Element {
   const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
     null,
   );
-  const [launchPreview, setLaunchPreview] = useState<{
-    slots: SessionSlot[];
-    target: "this-grid" | "new-grid";
-  } | null>(null);
+  const [launchPreview, setLaunchPreview] = useState<LaunchPreview | null>(null);
   const [showLauncher, setShowLauncher] = useState(false);
   const [pickingWorkspace, setPickingWorkspace] = useState(false);
   const [workspaceRefusals, setWorkspaceRefusals] = useState<string[]>([]);
@@ -3144,6 +3139,7 @@ export function App(): React.JSX.Element {
     );
   const client = conn.client;
   const connected = conn.kind === "ready";
+  const activeLaunchPreview = visibleLaunchPreview(composer, launchPreview);
 
   const renameWorkspaceSubmit = (path: string, name: string): void => {
     setWsRenaming(null);
@@ -3646,7 +3642,7 @@ export function App(): React.JSX.Element {
                               focusUrlRequest={
                                 gridSelected ? focusBrowserUrl : undefined
                               }
-                              launchPreview={gridSelected && composer ? launchPreview ?? undefined : undefined}
+                              launchPreview={gridSelected ? activeLaunchPreview : undefined}
                             />
                           ) : gridSelected ? (
                             <div className="relative flex-1 min-w-0 min-h-0">
@@ -3655,9 +3651,9 @@ export function App(): React.JSX.Element {
                                 onTerminal={newTerminal}
                                 onBrowser={() => openBrowserPane(w.path, null)}
                               />
-                              {composer && launchPreview && (
+                              {activeLaunchPreview && (
                                 <Suspense fallback={null}>
-                                  <LaunchGridPreview tree={null} slots={launchPreview.slots} target={launchPreview.target} sessions={sessions} />
+                                  <LaunchGridPreview tree={null} slots={activeLaunchPreview.slots} target={activeLaunchPreview.target} sessions={sessions} />
                                 </Suspense>
                               )}
                             </div>
@@ -3669,20 +3665,19 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </div>
-              {composer && selectedWs !== "all" && !settings && railView === null && (
-                <Suspense fallback={null}>
-                  <NewSessionComposer
-                    workspaceName={basename(selectedWs)}
-                    workspacePath={selectedWs}
-                    gridName={gridsFor(selectedWs).find((grid) => grid.id === activeGridId(selectedWs))?.name ?? 'Grid'}
-                    client={conn.kind === "ready" ? conn.client : null}
-                    initialTarget={composer === "new-grid" ? "new-grid" : "this-grid"}
-                    onPreviewChange={handleLaunchPreview}
-                    onLaunch={launchSessions}
-                    onCancel={() => { setComposer(null); setLaunchPreview(null) }}
-                  />
-                </Suspense>
-              )}
+              <LaunchComposerDock
+                composer={composer}
+                workspace={selectedWs}
+                settingsOpen={Boolean(settings)}
+                railOpen={railView !== null}
+                workspaceName={basename(selectedWs)}
+                gridName={() => gridsFor(selectedWs).find((grid) => grid.id === activeGridId(selectedWs))?.name}
+                client={client}
+                connected={connected}
+                onPreviewChange={handleLaunchPreview}
+                onLaunch={launchSessions}
+                onClose={() => { setComposer(null); setLaunchPreview(null) }}
+              />
               {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
                 <SidePanelIntegration
                   expanded={sideExpanded}
