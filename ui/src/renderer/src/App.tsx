@@ -4100,10 +4100,9 @@ export function App(): React.JSX.Element {
                         conn.client.orchestrationSet(true);
                     }}
                     hooksInstalled={firstRunHooksInstalled}
-                    onOpenHooks={() => {
-                      setFirstRunOpen(false);
-                      setSettingsSection("agent-setup");
-                      setSettings(true);
+                    agentHooks={agentHooks}
+                    onAgentHooksSet={(provider, enabled) => {
+                      if (conn.kind === "ready") conn.client.agentHooksSet(provider, enabled);
                     }}
                     onDone={closeFirstRun}
                   />
