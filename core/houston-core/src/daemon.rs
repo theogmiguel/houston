@@ -6288,7 +6288,15 @@ impl Daemon {
             if !self.hook_consent(provider) {
                 continue;
             }
-            if let Err(e) = self.install_agent_hooks(provider, &home, &launcher, &sentinel) {
+            let refreshed = if provider == proto::AgentKind::Zcode {
+                crate::zcode_config::write_plugin(&self.state_dir, self.channel.as_deref())
+                    .and_then(|_| {
+                        crate::agent_hooks::refresh(provider, &home, &launcher, &sentinel)
+                    })
+            } else {
+                self.install_agent_hooks(provider, &home, &launcher, &sentinel)
+            };
+            if let Err(e) = refreshed {
                 tracing::warn!("refreshing {provider:?} hooks: {e:#}");
             }
         }

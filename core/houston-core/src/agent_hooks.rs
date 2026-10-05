@@ -76,6 +76,27 @@ pub fn install(
     launcher: &Path,
     sentinel: &str,
 ) -> Result<PathBuf> {
+    install_with(provider, home, launcher, sentinel, false)
+}
+
+/// The boot-time reinstall of a consented provider. Unlike an explicit install it keeps
+/// a ZCode `hooks.enabled: false` the user set after Houston's entries went in.
+pub fn refresh(
+    provider: proto::AgentKind,
+    home: &ConfigHome,
+    launcher: &Path,
+    sentinel: &str,
+) -> Result<PathBuf> {
+    install_with(provider, home, launcher, sentinel, true)
+}
+
+fn install_with(
+    provider: proto::AgentKind,
+    home: &ConfigHome,
+    launcher: &Path,
+    sentinel: &str,
+    refreshing: bool,
+) -> Result<PathBuf> {
     let path = config_path(provider, home)?;
     let mut commands: Vec<(&'static str, String)> = crate::agent_events::events_for(provider)
         .iter()
@@ -145,7 +166,7 @@ pub fn install(
                 .parent()
                 .and_then(Path::parent)
                 .map(crate::zcode_config::plugin_dir);
-            crate::zcode_config::install(&path, &commands, sentinel, plugin.as_deref())?
+            crate::zcode_config::install(&path, &commands, sentinel, plugin.as_deref(), refreshing)?
         }
         other => bail!("{other:?} has no hook installer here"),
     }
