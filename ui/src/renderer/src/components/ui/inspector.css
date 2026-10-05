@@ -1,0 +1,18 @@
+.pane-inspector{container-type:inline-size;position:relative;display:flex;flex:none;flex-direction:column;min-width:0;min-height:0;background:var(--rail-bg);border-left:1px solid var(--divider)}
+.inspector-tabs{display:flex;align-items:center;gap:var(--space-1);height:30px;min-height:30px;padding:0 var(--space-2);border-bottom:1px solid var(--divider)}
+.inspector-tab{display:inline-flex;align-items:center;gap:var(--space-1);height:22px;padding:0 var(--space-2);border:0;border-radius:var(--tr-radius-sm);background:transparent;color:var(--text-secondary);font:inherit;font-size:var(--tr-text-small-size);white-space:nowrap}
+.inspector-tab:hover{background:var(--hover-fill);color:var(--text-primary)}
+.inspector-tab.is-selected{background:var(--card-hover);color:var(--text-primary)}
+.inspector-tab-count{color:var(--text-muted);font-variant-numeric:tabular-nums}
+.inspector-subject{display:flex;align-items:center;gap:var(--space-1-5);min-width:0;padding:var(--space-2-5) var(--space-3) var(--space-2);border-bottom:1px solid var(--divider);font-size:var(--tr-text-small-size)}
+.inspector-subject-icon{display:inline-flex;flex:none;align-items:center;justify-content:center}
+.inspector-subject-icon svg{width:14px;height:14px}
+.inspector-subject strong{flex:none;min-width:0;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);font-weight:600}
+.inspector-subject-meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);font-family:var(--font-mono);font-size:var(--tr-text-label-size)}
+.pane-inspector-content{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;overflow:hidden}
+.pane-inspector-content>.side-card{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;overflow:hidden;margin:0;border:0;border-radius:0;background:transparent}
+.pane-inspector-content [data-testid="source-control-panel"]{border:0;border-radius:0;background:transparent}
+.pane-inspector-content .files-panel{border:0;border-radius:0;background:transparent}
+.pane-inspector-content .files-panel .files-tree-column{width:100%;border:0;max-height:45%;display:flex}
+.pane-inspector-content .files-panel .files-columns{flex-direction:column}
+.pane-inspector-content .files-panel .editor-leaf{border-top:1px solid var(--border)}

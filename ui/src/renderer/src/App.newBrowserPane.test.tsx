@@ -26,19 +26,15 @@ function savedTree(): Record<string, unknown> | null {
   return raw ? (JSON.parse(raw).tree as Record<string, unknown>) : null
 }
 
-function sideBrowsers(): Record<string, unknown>[] {
-  return (JSON.parse(localStorage.getItem('tr-side:/tmp/project') ?? 'null')?.tabs ?? []).filter((tab: { kind: string }) => tab.kind === 'browser')
-}
-
 function browserLeaves(node: unknown): Record<string, unknown>[] {
   if (!node || typeof node !== 'object') return []
   const n = node as Record<string, unknown>
   if (n.kind === 'browser') return [n]
-  if (n.kind !== 'split') return []
+  if (n.kind !== 'split' && n.kind !== 'stack') return []
   return (n.children as unknown[]).flatMap(browserLeaves)
 }
 
-describe('the new browser side-panel shortcut', () => {
+describe('the browser pane shortcut', () => {
   let harness: AppHarness | null = null
 
   afterEach(() => {
@@ -46,16 +42,17 @@ describe('the new browser side-panel shortcut', () => {
     harness = null
   })
 
-  it('opens a browser side tab without changing the workspace grid', async () => {
+  it('opens a browser pane in the workspace grid', async () => {
     harness = await renderReadyApp()
     expect(browserLeaves(savedTree())).toHaveLength(0)
 
     pressB()
 
-    const leaves = sideBrowsers()
+    const leaves = browserLeaves(savedTree())
     expect(leaves).toHaveLength(1)
     expect(leaves[0].url).toBe('')
     expect(typeof leaves[0].id).toBe('string')
+    expect(localStorage.getItem('tr-side:/tmp/project')).toBeNull()
     const addressBar = (): HTMLInputElement | undefined =>
       Array.from(harness!.container.querySelectorAll('input')).find(
         (i) => i.placeholder === 'enter a url to open a new tab'
@@ -64,12 +61,12 @@ describe('the new browser side-panel shortcut', () => {
     expect(addressBar()).toBeDefined()
   })
 
-  it('gives every pane its own id, so two panes never share a tab store', async () => {
+  it('gives browser panes unique ids', async () => {
     harness = await renderReadyApp()
     pressB()
     pressB()
 
-    const ids = sideBrowsers().map((l) => l.id)
+    const ids = browserLeaves(savedTree()).map((l) => l.id)
     expect(ids).toHaveLength(2)
     expect(new Set(ids).size).toBe(2)
   })
@@ -87,28 +84,11 @@ describe('the new browser side-panel shortcut', () => {
     expect(browserLeaves(savedTree())).toHaveLength(0)
   })
 
-  it('clicking into a browser pane releases the selected terminal', async () => {
+  it('opens another browser pane after the first one is focused', async () => {
     harness = await renderReadyApp()
     pressB()
-    expect(sideBrowsers()).toHaveLength(1)
-
-    await settleLazySurface(() => harness!.container.querySelector('.pane.browser') !== null, 'BrowserPane')
-    const terminal = harness.container.querySelector('.pane:not(.browser)')
-    const browser = harness.container.querySelector('.pane.browser')
-    if (!(terminal instanceof HTMLElement) || !(browser instanceof HTMLElement)) {
-      throw new Error('expected a terminal and a side-panel browser')
-    }
-    act(() => {
-      terminal.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
-      terminal.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    })
-    act(() => {
-      browser.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
-      browser.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    })
-
     pressB()
-    expect(sideBrowsers()).toHaveLength(2)
+    expect(browserLeaves(savedTree())).toHaveLength(2)
   })
 
   it('a clicked browser pane takes the focus ring, and gives it back', async () => {

@@ -12,17 +12,21 @@ import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 
 export function TaskComposer({
   defaultStatus = 'backlog',
+  initialTitle = '',
+  initialDescription = '',
   parentOptions,
   onCancel,
   onCreate
 }: {
   defaultStatus?: TaskStatus
+  initialTitle?: string
+  initialDescription?: string
   parentOptions: SelectOption[]
   onCancel: () => void
   onCreate: (patch: TaskPatch) => void
 }): React.JSX.Element {
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(initialTitle)
+  const [description, setDescription] = useState(initialDescription)
   const [status, setStatus] = useState<TaskStatus>(defaultStatus)
   const [priority, setPriority] = useState<TaskPriority>('none')
   const [parent, setParent] = useState('')

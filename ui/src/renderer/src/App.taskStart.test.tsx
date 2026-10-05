@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_GRID_ID, gridStorageKey, type LayoutNode } from './layout/tree'
+import { openSideTasks } from './sidePanel'
 import type { TaskRun } from './houston/generated/TaskRun'
 import {
   type AppHarness,
@@ -87,13 +88,6 @@ describe('Start places the pane the daemon creates', () => {
   })
 
   async function boot(): Promise<void> {
-    // The panel opens on the Tasks tab, so no key press is needed (and a
-    // focused terminal would swallow one).
-    localStorage.setItem('tr-scm-open', '1')
-    localStorage.setItem(
-      `tr-side:${WS}`,
-      JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'tasks' }], active: 2 })
-    )
     harness = await renderReadyApp()
     deliverHelloOk({
       sessions: [1, 2].map((id) => makeSession({ id, project_dir: WS, cwd: WS })),
@@ -118,8 +112,9 @@ describe('Start places the pane the daemon creates', () => {
   }
 
   async function clickStart(): Promise<void> {
-    await until(() => q('[data-testid="side-panel"]') !== null, 'side panel')
-    await until(() => q('[data-testid="tasks-list"], [data-testid="tasks-access-off"]') !== null, 'tasks tab')
+    act(() => openSideTasks())
+    await until(() => q('[data-testid="nav-surface"][data-page="tasks"]') !== null, 'Tasks page')
+    deliverClientMsg('tasks_access', { type: 'tasks_access', workspace: 'all', access: 'write' })
     deliverClientMsg('tasks_access', { type: 'tasks_access', workspace: WS, access: 'write' })
     deliverClientMsg('task_start_settings', {
       type: 'task_start_settings',
@@ -127,14 +122,19 @@ describe('Start places the pane the daemon creates', () => {
       agent: 'claude',
       delivery: 'send'
     })
-    deliverClientMsg('task_snapshot', {
+    const snapshot = {
       type: 'task_snapshot',
       scope: 'all',
       counts: { ready: 1, backlog: 0, todo: 1, in_progress: 0, in_review: 0, done: 0, canceled: 0 },
       tasks: [TASK]
-    })
-    await until(() => q('[data-task="1"]') !== null, 'task row')
-    act(() => q('[data-task="1"]')!.click())
+    }
+    deliverClientMsg('task_snapshot', snapshot)
+    deliverClientMsg('task_snapshot', { ...snapshot, scope: WS })
+    const taskTitle = (): HTMLButtonElement | null =>
+      Array.from(harness!.container.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.trim() === TASK.title) ?? null
+    await until(() => taskTitle() !== null, 'task row')
+    act(() => taskTitle()!.click())
     deliverClientMsg('task_detail', {
       type: 'task_detail',
       task: { ...TASK, description: '' },
@@ -143,8 +143,9 @@ describe('Start places the pane the daemon creates', () => {
       history: [],
       runs: []
     })
-    await until(() => q('[data-testid="task-start"]') !== null, 'Start button')
-    act(() => q('[data-testid="task-start"]')!.click())
+    const startButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="task-start"]')
+    await until(() => startButton() !== null, 'Start button')
+    act(() => startButton()!.click())
   }
 
   function focusPane(session: number): void {
@@ -177,7 +178,7 @@ describe('Start places the pane the daemon creates', () => {
     expect(q('[data-panekey="3"]')).not.toBeNull()
     const focused = q('section.pane.focus[data-panekey]')
     expect(focused?.getAttribute('data-panekey')).toBe('3')
-    expect(q('[data-testid="side-panel"]')?.getAttribute('data-dir')).toBe(WS)
+    expect(q('[data-testid="nav-surface"][data-page="tasks"]')).not.toBeNull()
   })
 
   it('leaves a run started elsewhere to the default placement', async () => {

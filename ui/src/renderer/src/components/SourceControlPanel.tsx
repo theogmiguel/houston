@@ -50,6 +50,8 @@ const PR_DOT_TONE: Record<PrPresenceTone, string> = {
 
 export interface SourceControlPanelProps {
   onChangedCount?: (count: number) => void
+  hideHeader?: boolean
+  onSummaryChange?: (summary: ChangesSummary) => void
   reviewTarget?: number
   embedded?: boolean
   dir: string | null
@@ -240,6 +242,8 @@ export function ScmResizeHandle({
 
 export function SourceControlPanel({
   onChangedCount,
+  hideHeader = false,
+  onSummaryChange,
   reviewTarget,
   embedded = false,
   dir,
@@ -311,9 +315,10 @@ export function SourceControlPanel({
   const onSummary = useCallback((next: ChangesSummary): void => {
     setSummary(next)
     onChangedCount?.(next.changed)
+    onSummaryChange?.(next)
     setHasPr(next.hasPr)
     setPrTone(next.prTone)
-  }, [onChangedCount])
+  }, [onChangedCount, onSummaryChange])
 
   const onPrPresenceChange = useCallback((exists: boolean, tone: PrPresenceTone = 'ok'): void => {
     setHasPr(exists)
@@ -355,7 +360,7 @@ export function SourceControlPanel({
         onReset={onResetWidth}
       />}
       <div className="flex-1 min-h-0 flex flex-col gap-1 overflow-hidden">
-      <SourceControlHeader dir={dir} client={client} tab={tab} onTab={onTab} summary={summary} hasPr={hasPr} prTone={prTone} branchText={branchText} review={review} refresh={refresh} />
+      {!hideHeader && <SourceControlHeader dir={dir} client={client} tab={tab} onTab={onTab} summary={summary} hasPr={hasPr} prTone={prTone} branchText={branchText} review={review} refresh={refresh} />}
       <div className="flex-1 min-h-0 flex flex-col">
         <div
           className={`flex-1 min-h-0 flex-col ${tab === 'changes' ? 'flex' : 'hidden'}`}
@@ -398,10 +403,34 @@ export function SourceControlPanel({
           </div>
         )}
       </div>
-      {reviewTarget != null && <form aria-label={`Review session ${reviewTarget}`} className="flex-none flex flex-col gap-2 p-2 border-t border-[var(--divider)]" onSubmit={(event) => { event.preventDefault(); if (!client || !dir || !comments.trim()) return; setReviewError(null); pendingChildReview.current = { target: reviewTarget, comments }; client.gitReviewDiffs(dir) }}><textarea aria-label="Diff comments" placeholder={`Comments for session ${reviewTarget}`} value={comments} onChange={(event) => setComments(event.target.value)} className="min-w-0 bg-[var(--tool-code-bg)] text-[var(--text-primary)]" /><button className="btn border-none" disabled={!client || !dir || !comments.trim()}>Send comments to child</button>{reviewError && <span role="alert">{reviewError}</span>}</form>}
+      {reviewTarget != null && <ReviewForm reviewTarget={reviewTarget} client={client} dir={dir} comments={comments} setComments={setComments} reviewError={reviewError} setReviewError={setReviewError} pendingChildReview={pendingChildReview} />}
       </div>
     </aside>
   )
+}
+
+function ReviewForm({ reviewTarget, client, dir, comments, setComments, reviewError, setReviewError, pendingChildReview }: {
+  reviewTarget: number
+  client: HoustonClient | null
+  dir: string | null
+  comments: string
+  setComments: (value: string) => void
+  reviewError: string | null
+  setReviewError: (value: string | null) => void
+  pendingChildReview: { current: { target: number; comments: string } | null }
+}): React.JSX.Element {
+  const submit = (event: React.FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    if (!client || !dir || !comments.trim()) return
+    setReviewError(null)
+    pendingChildReview.current = { target: reviewTarget, comments }
+    client.gitReviewDiffs(dir)
+  }
+  return <form aria-label={`Review session ${reviewTarget}`} className="flex-none flex flex-col gap-2 p-2 border-t border-[var(--divider)]" onSubmit={submit}>
+    <textarea aria-label="Diff comments" placeholder={`Comments for session ${reviewTarget}`} value={comments} onChange={(event) => setComments(event.target.value)} className="min-w-0 bg-[var(--tool-code-bg)] text-[var(--text-primary)]" />
+    <button className="btn border-none" disabled={!client || !dir || !comments.trim()}>Send comments to child</button>
+    {reviewError && <span role="alert">{reviewError}</span>}
+  </form>
 }
 
 function SourceControlHeader({ dir, client, tab, onTab, summary, hasPr, prTone, branchText, review, refresh }: Pick<SourceControlPanelProps, 'dir' | 'client' | 'tab' | 'onTab' | 'review'> & {

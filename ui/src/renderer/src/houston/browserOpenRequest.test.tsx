@@ -100,7 +100,7 @@ describe('useBrowserOpenRequest', () => {
 
 
 describe('native browser reveal routing', () => {
-  it('reveals the exact stored surface without navigating before native acknowledgement', () => {
+  it('does not restore a legacy side browser', () => {
     localStorage.setItem('tr-side:/work', JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'browser', id: 'other', url: 'https://other.test/' }, { kind: 'browser', id: 'target', url: 'https://current.test/' }], active: 0 }))
     const load = vi.fn()
     function Loader(): null { useBrowserPaneLoad('target', load); return null }
@@ -108,21 +108,21 @@ describe('native browser reveal routing', () => {
     const opens: unknown[] = []
     const listener = (event: Event): void => { opens.push((event as CustomEvent).detail) }
     window.addEventListener('houston:side-open', listener)
-    expect(reuseSideBrowser('/work', 'https://next.test/', 'target')).toBe(true)
-    expect(opens).toEqual([{ kind: 'browser', id: 'target', url: 'https://current.test/', workspace: '/work', revealOnly: true }])
+    expect(reuseSideBrowser('/work', 'https://next.test/', 'target')).toBe(false)
+    expect(opens).toEqual([])
     expect(load).not.toHaveBeenCalled()
     expect(reuseSideBrowser('/work', 'https://next.test/', 'missing')).toBe(false)
-    expect(opens).toHaveLength(1)
+    expect(opens).toHaveLength(0)
     window.removeEventListener('houston:side-open', listener)
   })
 
-  it('retains URL-seeded loading when the request does not name a native surface', () => {
+  it('does not load a URL into a stale side browser tab', () => {
     localStorage.setItem('tr-side:/work', JSON.stringify({ tabs: [{ kind: 'scm' }, { kind: 'files' }, { kind: 'browser', id: 'target', url: 'https://current.test/' }], active: 0 }))
     const load = vi.fn()
     function Loader(): null { useBrowserPaneLoad('target', load); return null }
     act(() => root.render(<Loader />))
-    expect(reuseSideBrowser('/work', 'https://next.test/')).toBe(true)
-    expect(load).toHaveBeenCalledWith('https://next.test/')
+    expect(reuseSideBrowser('/work', 'https://next.test/')).toBe(false)
+    expect(load).not.toHaveBeenCalled()
     expect(reuseSideBrowser('/empty', 'https://next.test/')).toBe(false)
   })
 })

@@ -221,7 +221,7 @@ import {
 import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, openSideTasks, loadSideState } from "./sidePanel";
+import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";
 import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
@@ -242,7 +242,6 @@ import {
   leaf,
   loadGrids,
   loadLayout,
-  migrateSavedGitLeaves,
   moveLeaf,
   preorderLeaves,
   preorderNonSessionPanes,
@@ -700,6 +699,16 @@ export function App(): React.JSX.Element {
 
   const settingsSection = useSettingsSection();
   const railView = useRailView();
+  const [taskSurfaceRequest, setTaskSurfaceRequest] = useState<{ openId?: number; compose?: boolean; create?: { title: string; description: string } } | null>(null);
+  useEffect(() => {
+    const open = (event: Event): void => {
+      setTaskSurfaceRequest((event as CustomEvent<{ openId?: number; compose?: boolean; create?: { title: string; description: string } }>).detail);
+      setRailView('tasks');
+      setScmOpen(false);
+    };
+    window.addEventListener(TASKS_OPEN_EVENT, open);
+    return () => window.removeEventListener(TASKS_OPEN_EVENT, open);
+  }, []);
   useEffect(() => {
     if (conn.kind !== "ready") {
       setTaskTurnCount(0);
@@ -841,13 +850,11 @@ export function App(): React.JSX.Element {
   // Migrate saved trees before any layout read, so a legacy Changes leaf can
   // never cost a browser/editor/terminal leaf; a workspace that had the pane
   // comes back with the panel already open.
-  const [scmOpen, setScmOpen] = useState<boolean>(() =>
-    migrateSavedGitLeaves().length > 0 ? true : loadScmOpen(),
-  );
+  const [scmOpen, setScmOpen] = useState<boolean>(() => loadScmOpen());
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
   const scmWidth = useScmWidth();
-  const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview, sideExpanded, setSideExpanded } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
-  const gridSurfaceHidden = gridHidden || sideExpanded;
+  const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
+  const gridSurfaceHidden = gridHidden;
   const [wsRenaming, setWsRenaming] = useState<string | null>(null);
   // Keyed by `gridStorageKey(path, gridId)` for a real workspace, never the
   // bare path — 'all' is the one exception, bypassing grids entirely.
@@ -2224,10 +2231,6 @@ export function App(): React.JSX.Element {
   const openBrowserPane = useCallback(
     (workspaceDir: string, anchor: PaneKey | null, url = ""): void => {
       setExpandedId(null);
-      if (anchor === null) {
-        openSideBrowser(`b${Date.now()}-${++browserLeafSeq.current}`, url, workspaceDir);
-        return;
-      }
       const key = keyForRef(workspaceDir);
       setLayouts((prev) => {
         const cur = prev.get(key) ?? loadLayout(key);
@@ -2355,11 +2358,11 @@ export function App(): React.JSX.Element {
   );
   const openRailInspector = useCallback((paneId: number, tab: ScmTab): void => {
     setActiveId(paneId);
+    setSideReview(null);
     setScmTab(tab);
     setScmOpen(true);
-    setSideExpanded(true);
     setActiveSurface("side");
-  }, [setActiveId, setActiveSurface, setSideExpanded]);
+  }, [setActiveId, setActiveSurface, setSideReview]);
   const openTerminalDir = useCallback(
     (path: string, session?: number): void => {
       const root = session == null ? selectedWs : sessionsRef.current.get(session)?.project_dir ?? selectedWs;
@@ -2381,10 +2384,12 @@ export function App(): React.JSX.Element {
     [openEditorFile],
   );
 
-  // The panel reviews the focused pane's workspace in All view, and the
-  // selected workspace otherwise — never a session's dir left over from
-  // another workspace, which would point the panel at the wrong repo.
+  // In All view the focused pane supplies its checkout; within a workspace the
+  // selected workspace stays authoritative when a stale pane has focus.
   const scmDir = reviewCheckoutDir(sideReview) ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
+  useEffect(() => {
+    setSideReview((current) => current?.id === activeId ? current : null);
+  }, [activeId, sideReview, setSideReview]);
   // Editing or browsing from the panel must land where the user can see it:
   // in All view the focused pane's repo has no visible grid, so reveal it
   // first rather than inserting into a hidden tree.
@@ -2802,12 +2807,15 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onDown = (e: PointerEvent): void => {
       const t = e.target as HTMLElement;
-      if (!t.closest(".side-panel")) setActiveSurface("grid");
+      const inspector = t.closest(".pane-inspector");
       const paneEl = t.closest(".pane");
       const paneKeyAttr = paneEl?.getAttribute("data-panekey") ?? null;
       const sessionPane = paneKeyAttr !== null && /^\d+$/.test(paneKeyAttr);
-      if (!sessionPane) setActiveId(null);
-      setActiveLeaf(paneEl && !sessionPane ? paneKeyAttr : null);
+      if (!inspector) {
+        setActiveSurface("grid");
+        if (!sessionPane) setActiveId(null);
+        setActiveLeaf(paneEl && !sessionPane ? paneKeyAttr : null);
+      }
       if (!t.closest(".add-pane-popover")) setAddPanePopover(null);
     };
     window.addEventListener("pointerdown", onDown, true);
@@ -2815,8 +2823,6 @@ export function App(): React.JSX.Element {
   }, []);
 
   useBrowserFocus((id) => {
-    const tab = loadSideState(sideWorkspace).tabs.find((tab) => tab.kind === "browser" && tab.id === id);
-    if (tab?.kind === "browser") { setActiveSurface("side"); setActiveId(null); return; }
     setActiveSurface("grid");
     setActiveId(null);
     const tree = currentTreeRef.current;
@@ -2831,7 +2837,6 @@ export function App(): React.JSX.Element {
       handleSelectGrid(workspace, grid.id);
       const stack = findStackContaining(tree, surfaceId);
       if (stack) setLayouts((current) => new Map(current).set(key, { ...layout, tree: setActiveStackTab(tree, stack.id, surfaceId) }));
-      setSideExpanded(false);
       setExpandedId(null);
       setActiveLeaf(surfaceId);
       setActiveSurface("grid");
@@ -3444,7 +3449,7 @@ export function App(): React.JSX.Element {
               store={appNotices}
             />
 
-            <div className="side-panel-row flex-1 min-w-0 min-h-0 flex">
+            <div className="side-panel-row flex-1 min-w-0 min-h-0 flex" data-testid="side-panel-row">
               <div
                 aria-hidden={gridSurfaceHidden || undefined}
                 inert={gridSurfaceHidden}
@@ -3634,13 +3639,10 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </div>
-              {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
+              {scmOpen && (
                 <SidePanelIntegration
-                  expanded={sideExpanded}
-                  onExpanded={setSideExpanded}
                   focused={activeSurface === "side"}
                   closed={!scmOpen}
-                  onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
                   selectedWorkspace={sideWorkspace}
                   activeId={activeId}
                   sessions={sessions}
@@ -3650,8 +3652,7 @@ export function App(): React.JSX.Element {
                   onFocusPane={focusPane}
                   onRevealWorkspace={revealWorkspace}
                   onOpenEditor={openEditorFile}
-                  onReviewChild={(child) => { setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
-                  onTaskStartRequested={handleTaskStartRequested}
+                  onReviewChild={(child) => { setActiveId(child.id); setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
                   workspaces={workspaces}
                   dir={scmProps.dir}
                   client={scmProps.client}
@@ -3680,6 +3681,11 @@ export function App(): React.JSX.Element {
                         workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
                         sessions={sessions}
                         now={Date.now()}
+                        openTaskId={taskSurfaceRequest?.openId}
+                        compose={taskSurfaceRequest?.compose}
+                        createDraft={taskSurfaceRequest?.create}
+                        onOpenTaskHandled={() => setTaskSurfaceRequest(null)}
+                        onCreateHandled={() => setTaskSurfaceRequest(null)}
                         onStartRequested={handleTaskStartRequested}
                         onOpenSession={(sessionId) => {
                           setRailView(null);

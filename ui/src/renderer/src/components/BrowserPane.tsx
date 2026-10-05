@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
 import type { BrowserNode } from '../layout/tree'
-import { openSideBrowser } from '../sidePanel'
 import { openExternal } from '../houston/bridge'
 import { isTauri } from '../houston/host'
 import { nativeCommandErrorMessage } from '../houston/browserHost'
@@ -272,7 +271,7 @@ export function BrowserPane({
             autoCorrect="off"
           />
         </div>
-        <BrowserHeadActions node={node} tabs={tabs} active={active} popover={popover} setPopover={setPopover} selectTab={selectTab} closeTab={closeTab} newTab={newTab} urlInput={urlInput} fullscreen={fullscreen} setFullscreen={setFullscreen} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} panel={panel} workspaceDir={workspaceDir} onSendToTerminal={onSendToTerminal} onMoveToGrid={onMoveToGrid} onClose={onClose} />
+        <BrowserHeadActions node={node} tabs={tabs} active={active} popover={popover} setPopover={setPopover} selectTab={selectTab} closeTab={closeTab} newTab={newTab} urlInput={urlInput} fullscreen={fullscreen} setFullscreen={setFullscreen} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} panel={panel} onSendToTerminal={onSendToTerminal} onMoveToGrid={onMoveToGrid} onClose={onClose} />
       </header>
       <div className="relative h-0.5 w-full overflow-hidden flex-none z-[var(--z-base)]" aria-hidden>
         {active.loading &&
@@ -510,7 +509,7 @@ function DevicePresetButtons({ device, onDevice, refusal, ready }: { device: Bro
   return <div className="browser-device-buttons" role="group" aria-label="Device preset">{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={refusal && value !== 'desktop' ? `${label} unavailable: ${refusal}` : label}><button className={NAV_BTN_CLS} aria-label={label} aria-pressed={device === value} disabled={value !== 'desktop' && (refusal != null || (isTauri() && !ready))} onClick={() => onDevice(value)}><Icon glyph={glyph} role="label" /></button></Tooltip>)}</div>
 }
 
-function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab, closeTab, newTab, urlInput, fullscreen, setFullscreen, detached, viewportRef, setDetachError, picker, panel, workspaceDir, onSendToTerminal, onMoveToGrid, onClose }: {
+function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab, closeTab, newTab, urlInput, fullscreen, setFullscreen, detached, viewportRef, setDetachError, picker, panel, onSendToTerminal, onMoveToGrid, onClose }: {
   node: BrowserNode
   tabs: ReturnType<typeof useBrowserTabs>['tabs']
   active: ReturnType<typeof useBrowserTabs>['active']
@@ -527,7 +526,6 @@ function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab
   setDetachError: React.Dispatch<React.SetStateAction<string | null>>
   picker: ReturnType<typeof usePickerController>
   panel: boolean
-  workspaceDir: string
   onSendToTerminal?: (text: string) => void
   onMoveToGrid?: (url: string) => void
   onClose: () => void
@@ -587,7 +585,7 @@ function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab
             </button>
           </Tooltip>
           <BrowserNativeActions nodeId={node.id} fresh={fresh} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} onSendToTerminal={onSendToTerminal} />
-          <Tooltip label={panel ? 'Move to grid' : 'Move to side panel'}><button className={`${NAV_BTN_CLS}`} aria-label={panel ? 'Move to grid' : 'Move to side panel'} onClick={() => { if (panel) onMoveToGrid?.(active.url ?? ''); else { openSideBrowser(node.id, active.url ?? '', workspaceDir); onClose() } }}><Icon glyph={IconExternal} role="ui" /></button></Tooltip>
+          {panel && <Tooltip label="Move to grid"><button className={NAV_BTN_CLS} aria-label="Move to grid" onClick={() => onMoveToGrid?.(active.url ?? '')}><Icon glyph={IconExternal} role="ui" /></button></Tooltip>}
           <Tooltip label="Close">
             <button
               className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}

@@ -55,7 +55,7 @@ BASELINE=(
   "ui/src/renderer/src/components/SettingsView.tsx 1"
   "ui/src/renderer/src/components/Shell/Shell.tsx 1"
   "ui/src/renderer/src/components/ShortcutSheet.tsx 49"
-  "ui/src/renderer/src/components/SidePanel.tsx 12"
+  "ui/src/renderer/src/components/SidePanel.tsx 3"
   "ui/src/renderer/src/components/Sidebar.tsx 317"
   "ui/src/renderer/src/components/SkillDistribution.tsx 123"
   "ui/src/renderer/src/components/SkillInstallDialog.tsx 140"
