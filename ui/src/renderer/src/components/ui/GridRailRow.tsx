@@ -81,6 +81,7 @@ export function GridRailRow({
     }, 260)
   }
   const scheduleClose = (): void => {
+    if (openTimer.current) clearTimeout(openTimer.current)
     closeTimer.current = setTimeout(() => setCard(null), 90)
   }
   useEffect(() => () => {
@@ -112,7 +113,7 @@ export function GridRailRow({
       data-selected={selected ? 'true' : undefined}
       aria-current={selected ? 'true' : undefined}
       aria-label={`${name}, ${statusLabel}`}
-      className={`rail-grid-row group relative flex min-h-[var(--h-row)] min-w-0 flex-col gap-[1px] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-8)] [font-weight:var(--tr-text-ui-weight)] hover:bg-hover-fill hover:text-[var(--text-primary)] ${selected ? 'bg-selected-fill text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`}
+      className={`rail-grid-row group relative flex min-h-[var(--h-row)] min-w-0 flex-col gap-[1px] rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] pl-[var(--space-6)] [font-weight:var(--tr-text-ui-weight)] hover:bg-hover-fill hover:text-[var(--text-primary)] ${selected ? 'bg-selected-fill text-[var(--text-primary)]' : 'bg-transparent text-[var(--text-secondary)]'}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return
@@ -126,14 +127,14 @@ export function GridRailRow({
       <span className="flex h-[var(--h-ctl-mini)] min-w-0 items-center gap-[var(--space-2)]">
         <Icon glyph={IconGrid} role="small" className="flex-none text-[var(--text-faint)]" />
         <span data-testid="grid-name" className="min-w-0 flex-1 truncate">{name}</span>
-        <span role="img" data-testid="grid-state-dot" data-state={aggregate.kind === 'exited' ? 'stopped' : aggregate.kind === 'starting' ? 'starting' : aggregate.kind} className={`inline-flex flex-none items-center gap-[var(--space-1)] whitespace-nowrap [font-size:var(--tr-text-label-size)] [font-variant-numeric:tabular-nums] ${statusTone(aggregate.kind)}`} aria-label={aggregate.kind === 'unavailable' ? 'status unavailable' : statusLabel}>
+        <span role="img" data-testid="grid-state-dot" data-state={aggregate.kind === 'exited' ? 'stopped' : aggregate.kind === 'starting' ? 'starting' : aggregate.kind} className={`inline-flex flex-none items-center gap-[var(--space-1)] whitespace-nowrap [font-size:var(--tr-text-label-size)] [font-variant-numeric:tabular-nums] ${onRemove ? 'group-hover:invisible' : ''} ${statusTone(aggregate.kind)}`} aria-label={aggregate.kind === 'unavailable' ? 'status unavailable' : statusLabel}>
           {aggregate.kind !== 'idle' && <span aria-hidden className="inline-block h-[6px] w-[6px] rounded-full bg-current" />}
           {statusLabel}
         </span>
         {jumpNumber != null && <span aria-hidden data-testid="rail-jump-number" className={`rail-jump absolute left-[var(--space-1)] top-1/2 -translate-y-1/2 font-mono text-[var(--accent)] ${altHeld ? '' : 'hidden'}`}>{jumpNumber}</span>}
         {onRemove && <button type="button" data-testid="grid-close" aria-label={`Remove ${name}`} className="absolute right-[var(--space-1)] top-1/2 hidden h-[var(--h-ctl-mini)] w-[var(--h-ctl-mini)] -translate-y-1/2 items-center justify-center rounded-[var(--tr-radius-sm)] bg-transparent text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] group-hover:flex" onClick={(event) => { event.stopPropagation(); onRemove() }}><Icon glyph={IconClose} role="small" /></button>}
       </span>
-      <Suspense fallback={null}><GridRailRowDetails name={name} sessions={panes} paneIds={paneIds} branches={branches} diffByDir={diffByDir} prByDir={prByDir} width={width} card={card} closeTimer={closeTimer} scheduleClose={scheduleClose} emptyGrid={paneIds.length === 0} onOpenInspector={onOpenInspector} onOpenExternal={onOpenExternal} /></Suspense>
+      <Suspense fallback={null}><GridRailRowDetails name={name} sessions={panes} paneIds={paneIds} branches={branches} diffByDir={diffByDir} prByDir={prByDir} width={width} card={card} closeTimer={closeTimer} scheduleClose={scheduleClose} onOpenInspector={onOpenInspector} onOpenExternal={onOpenExternal} /></Suspense>
     </div>
   </>
 }

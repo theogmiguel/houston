@@ -78,7 +78,7 @@ function RailAgentIcons({ panes, visible }: { panes: SessionInfo[]; visible: boo
 }
 
 export function GridRailRowDetails({
-  name, sessions, paneIds, branches, diffByDir, prByDir, width, card, closeTimer, scheduleClose, emptyGrid, onOpenInspector, onOpenExternal,
+  name, sessions, paneIds, branches, diffByDir, prByDir, width, card, closeTimer, scheduleClose, onOpenInspector, onOpenExternal,
 }: {
   name: string
   sessions: SessionInfo[]
@@ -90,7 +90,6 @@ export function GridRailRowDetails({
   card: { left: number; top: number } | null
   closeTimer: React.MutableRefObject<ReturnType<typeof setTimeout> | null>
   scheduleClose: () => void
-  emptyGrid: boolean
   onOpenInspector: OpenInspector
   onOpenExternal: (url: string) => void
 }): React.JSX.Element | null {
@@ -108,9 +107,9 @@ export function GridRailRowDetails({
     return { added: sum.added + (facts?.added ?? 0), deleted: sum.deleted + (facts?.deleted ?? 0) }
   }, { added: 0, deleted: 0 })
   const otherBranches = uniqueCheckouts.slice(1).map(([, pane]) => branches.get(pane.id) ?? pane.worktree?.branch ?? pane.worktree?.path ?? pane.checkout_root ?? pane.cwd)
-  if (panes.length === 0) return emptyGrid ? <span className="rail-grid-line2 pl-[var(--space-8)] font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-faint)]">No live panes</span> : null
+  if (panes.length === 0) return null
   return <>
-    <span className="rail-grid-line2 flex min-w-0 items-center gap-[var(--space-1-5)] pl-[var(--space-5)] font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-muted)]">
+    <span className="rail-grid-line2 flex min-w-0 items-center gap-[var(--space-1-5)] pl-[var(--space-4-5)] font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-muted)]">
     {branch && <Tooltip label={worktreePath ? `Worktree: ${worktreePath}` : branch}><span className="rail-branch flex min-w-0 flex-1 items-center gap-[var(--space-1)] truncate">
       {worktreePath ? <Icon glyph={IconFolder} role="small" className="flex-none text-[var(--ok)]" /> : <Icon glyph={IconGitBranch} role="small" className="flex-none" />}
       <span className="truncate">{branch}</span>

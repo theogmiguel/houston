@@ -56,6 +56,28 @@ describe('grid rail row interactions', () => {
     expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
   })
 
+  it('a pointer that only crosses the row never opens the hover card', async () => {
+    vi.useFakeTimers()
+    mount()
+    const row = container.querySelector('[data-testid="grid-row"]')!
+    act(() => row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    act(() => vi.advanceTimersByTime(50))
+    act(() => row.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
+    act(() => vi.advanceTimersByTime(1000))
+    await act(async () => { await Promise.resolve() })
+    expect(document.querySelector('[data-testid="grid-hover-card"]')).toBeNull()
+  })
+
+  it('hides the status label while the remove button shows on hover', () => {
+    const store = createSessionsStore(new Map())
+    root = createRoot(container)
+    act(() => root.render(<SessionsStoreContext.Provider value={store}>
+      <GridRailRow name="Empty" selected={false} paneIds={[]} fallbackSessions={[]} branches={new Map()} diffByDir={new Map()} prByDir={new Map()} width={240} onSelect={() => {}} onRemove={() => {}} onOpenInspector={() => {}} onOpenExternal={() => {}} />
+    </SessionsStoreContext.Provider>))
+    expect(container.querySelector('[data-testid="grid-state-dot"]')?.className).toContain('group-hover:invisible')
+    expect(container.textContent).not.toContain('No live panes')
+  })
+
   it('opens the grid context menu on right click', () => {
     const { contextMenu } = mount()
     const row = container.querySelector('[data-testid="grid-row"]')!
