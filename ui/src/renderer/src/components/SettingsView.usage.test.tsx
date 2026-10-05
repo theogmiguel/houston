@@ -143,6 +143,14 @@ describe('Usage page', () => {
     expect(speedTotals(buckets).map((item) => item.label)).toEqual(['Standard', 'Fast', 'Ultrafast'])
   })
 
+  it('shows Cost by speed beside Cost by type even when every request ran at standard speed', () => {
+    const standard = summary().buckets.map((b) => ({ ...b, fast_cost_usd: 0, ultrafast_cost_usd: 0, speed_premium_usd: 0 }))
+    render({ summary: summary({ buckets: standard }) })
+    expect(text()).toContain('Cost by type')
+    expect(text()).toContain('Cost by speed')
+    expect(text()).toContain('Premium $0.00')
+  })
+
   it('reports unpriced models without assigning them a zero rate', () => {
     render()
     expect(q('[data-testid="usage-breakdown"]')?.textContent).toContain('<synthetic>')

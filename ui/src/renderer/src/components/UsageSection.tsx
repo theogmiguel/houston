@@ -128,7 +128,7 @@ function UsageHero({
 
 function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element {
   return (
-    <div className="mt-[var(--space-2)] grid grid-cols-2 border-y border-[var(--border)] py-[var(--space-3)] sm:grid-cols-5">
+    <div className="mt-[var(--space-2)] grid grid-cols-2 py-[var(--space-2)] sm:grid-cols-5">
       <StatCell
         label="Processed tokens"
         value={formatTokens(totals.tokens)}
@@ -409,7 +409,7 @@ export function UsageSection({
           <UsageTokenStrip totals={totals} />
         </section>
 
-        <section className="mt-[var(--space-2)] grid gap-[var(--space-2)]" data-testid="usage-calendar-section">
+        <section className="mt-[var(--space-4)] grid gap-[var(--space-2)]" data-testid="usage-calendar-section">
           <div className="flex items-center justify-between gap-[var(--space-3)]">
             <UsageSectionHeading fullWidth aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
           </div>
@@ -418,7 +418,7 @@ export function UsageSection({
 
         {metric === 'cost' && totals.tokens > 0 && <div className="mt-[var(--space-6)] grid grid-cols-1 gap-[var(--space-4)] md:grid-cols-2">
           <UsageShareBar heading="Cost by type" segments={categoryTotals(buckets)} />
-          {buckets.some((bucket) => bucket.fast_cost_usd + bucket.ultrafast_cost_usd > 0) && <UsageShareBar heading="Cost by speed" aside={`Premium ${formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}`} segments={speedTotals(buckets)} />}
+          <UsageShareBar heading="Cost by speed" aside={`Premium ${formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}`} segments={speedTotals(buckets)} />
         </div>}
 
         {}
