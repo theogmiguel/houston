@@ -198,3 +198,14 @@ async fn a_prompt_on_a_shell_is_refused_by_name_never_silently_dropped() {
         "the refusal must name the offending kind and the expected ones; got {msg:?}"
     );
 }
+
+#[tokio::test]
+async fn a_shell_without_a_prompt_spawns_with_no_launch_arguments() {
+    let _serial = SERIAL.lock().await;
+    shim_dir();
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+
+    daemon
+        .create_session(params(state.path(), proto::AgentKind::Shell, None))
+        .expect("a bare shell takes no launch arguments and must spawn");
+}

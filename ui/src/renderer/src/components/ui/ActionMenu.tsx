@@ -13,11 +13,13 @@ export interface ActionMenuItem {
 export function ActionMenu({
   label,
   items,
-  iconOnly = false
+  iconOnly = false,
+  className = ''
 }: {
   label: string
   items: ActionMenuItem[]
   iconOnly?: boolean
+  className?: string
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -39,7 +41,7 @@ export function ActionMenu({
   }, [open])
 
   return (
-    <div ref={root} className="relative inline-flex">
+    <div ref={root} className={`relative inline-flex ${className}`}>
       {iconOnly
         ? <Button variant="icon" icon={IconMoreHorizontal} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} />
         : <Button variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{label}</Button>}

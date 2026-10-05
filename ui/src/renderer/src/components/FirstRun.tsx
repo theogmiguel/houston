@@ -2,9 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { EmptyState } from './EmptyState'
 import { WorkspacesEmpty, type WorkspacesEmptyProps } from './WorkspacesEmpty'
 import { Icon } from './Icon'
-import { IconGitFork, IconSquareTerminal } from './icons'
+import { IconGitFork } from './icons'
 import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import { MATERIAL_CLS, materialAttrs } from './material'
+import type { AgentHookState } from '../houston/generated/AgentHookState'
+import type { AgentKind } from '../houston/generated/AgentKind'
+import { FirstRunHooksStep } from './ui/FirstRunHooksStep'
+import { firstRunHookInstallCount, firstRunHookRows } from './firstRunHooks'
 
 export type FirstRunStepId = 'workspace' | 'orchestration' | 'hooks'
 
@@ -16,9 +20,12 @@ export interface FirstRunProps {
   caps: OrchestrationCaps | null
   onEnableOrchestration: () => void
   hooksInstalled: boolean
-  onOpenHooks: () => void
+  agentHooks: AgentHookState[] | null
+  onAgentHooksSet: (provider: AgentKind, enabled: boolean) => void
   onDone: () => void
 }
+
+const FIRST_RUN_STEPS: FirstRunStepId[] = ['workspace', 'orchestration', 'hooks']
 
 function unmetSteps(p: {
   hasWorkspace: boolean
@@ -43,7 +50,8 @@ export function FirstRun({
   caps,
   onEnableOrchestration,
   hooksInstalled,
-  onOpenHooks,
+  agentHooks,
+  onAgentHooksSet,
   onDone
 }: FirstRunProps): React.JSX.Element | null {
   const planRef = useRef<FirstRunStepId[] | null>(null)
@@ -55,7 +63,7 @@ export function FirstRun({
 
   const satisfied = useRef<Set<FirstRunStepId>>(new Set()).current
   const stillUnmet = unmetSteps({ hasWorkspace, orchestrationConsented, hooksInstalled })
-  for (const s of plan ?? []) {
+  for (const s of FIRST_RUN_STEPS) {
     if (!stillUnmet.includes(s)) satisfied.add(s)
   }
   const current = plan?.find((s) => !satisfied.has(s) && !skipped.includes(s))
@@ -67,7 +75,7 @@ export function FirstRun({
   if (!plan) return <WorkspacesEmpty {...workspaces} />
   if (!current) return null
 
-  const stepNumber = plan.indexOf(current) + 1
+  const stepNumber = FIRST_RUN_STEPS.indexOf(current) + 1
   const skip = (): void => setSkipped((prev) => [...prev, current])
 
   const footer = (
@@ -79,7 +87,7 @@ export function FirstRun({
         data-testid="first-run-step"
         className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]"
       >
-        Step <span className="tabular-nums">{stepNumber}</span> of {plan.length}
+        Step <span className="tabular-nums">{stepNumber}</span> of {FIRST_RUN_STEPS.length}
       </span>
       {current !== 'workspace' && (
         <button
@@ -96,6 +104,32 @@ export function FirstRun({
 
   if (current === 'workspace') return <WorkspacesEmpty {...workspaces} footer={footer} />
 
+  if (current === 'hooks') {
+    const rows = firstRunHookRows(agentHooks ?? [])
+    const installCount = firstRunHookInstallCount(rows)
+    const absentCount = rows.filter((row) => row.status === 'not-found').length
+    const disabledReason = installCount > 0
+      ? null
+      : absentCount === rows.length
+        ? 'No supported CLI was found on PATH.'
+        : 'All present CLIs are already reporting.'
+
+    return (
+      <FirstRunHooksStep
+        steps={FIRST_RUN_STEPS.map((step) => ({
+          label: step === 'workspace' ? 'Workspace' : step === 'orchestration' ? 'Orchestration' : 'Hooks',
+          state: satisfied.has(step) ? 'done' : skipped.includes(step) ? 'skipped' : step === current ? 'current' : 'upcoming'
+        }))}
+        rows={rows}
+        installCount={installCount}
+        disabledReason={disabledReason}
+        onSet={onAgentHooksSet}
+        onInstallAll={() => rows.filter((row) => row.status === 'silent').forEach((row) => onAgentHooksSet(row.provider, true))}
+        onSkip={skip}
+      />
+    )
+  }
+
   const screen =
     current === 'orchestration'
       ? {
@@ -109,13 +143,9 @@ export function FirstRun({
           },
           glyph: IconGitFork
         }
-      : {
-          headline: 'Hook up an agent CLI',
-          description:
-            'Houston reads agent status from the CLI’s own lifecycle hooks, never from the screen. Install them for the CLIs you use and panes report themselves; skip it and they run fine but stay silent.',
-          action: { label: 'Open Hooks', onClick: onOpenHooks },
-          glyph: IconSquareTerminal
-        }
+      : null
+
+  if (!screen) return null
 
   return (
     <div

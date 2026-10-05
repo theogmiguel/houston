@@ -10,12 +10,12 @@ say() { printf '%s\n' "$*"; }
 
 # The public tree's shape: three doc directories with one job each, the root
 # files a repository carries, and the wire reference.
-allowed='^(AGENTS|CLAUDE|README|CONTRIBUTING|SECURITY|CODE_OF_CONDUCT)\.md$|^docs/README\.md$|^docs/(user|internals|operations)/[^/]+\.md$|^\.github/[^/]+\.md$|^protocol/protocol\.md$|^ui/p5-harness/README\.md$|^core/houston-core/tests/fixtures/[^/]+/[^/]+/README\.md$'
+allowed='^(AGENTS|CLAUDE|README|CONTRIBUTING|SECURITY|CODE_OF_CONDUCT)\.md$|^docs/README\.md$|^docs/(user|internals|operations)/[^/]+\.md$|^\.github/[^/]+\.md$|^protocol/protocol\.md$|^core/houston-core/tests/fixtures/[^/]+/[^/]+/README\.md$'
 
 stray="$(git ls-files -co --exclude-standard '*.md' | grep -vE '/node_modules/|^\.research/' | grep -vE "$allowed" || true)"
 if [ -n "$stray" ]; then
   fail=1
-  say "check-doc-hygiene: Markdown outside the allowed tree (the root files, docs/{user,internals,operations}/, .github/, protocol/protocol.md, ui/p5-harness/README.md):"
+  say "check-doc-hygiene: Markdown outside the allowed tree (the root files, docs/{user,internals,operations}/, .github/, protocol/protocol.md):"
   say "$stray" | sed 's/^/  /'
   say "  → a plan, a notes file or an agent's scratch file is not committed at all; a durable rule goes in docs/internals/, a task guide in docs/user/, a runbook in docs/operations/"
 fi

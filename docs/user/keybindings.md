@@ -114,3 +114,7 @@ Three chords Houston binds globally — `Ctrl+B`, `Ctrl+K`, `Ctrl+L` — are als
 reflexes inside a shell or many CLIs. Inside a focused terminal, the terminal wins: those
 three keys reach the agent even though the same chords are bound at the app level
 elsewhere.
+
+Workspace actions can optionally bind a shortcut when you add or edit them. The shortcut
+runs the saved command in a new shell pane in the current workspace. A chord already owned
+by Houston or another workspace action is refused with its owner named.

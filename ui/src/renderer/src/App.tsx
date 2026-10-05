@@ -131,6 +131,7 @@ import type { HandoffSource } from "./components/PaneHandoff";
 import type { SessionSlot } from "./components/sessionPresets";
 import { LaunchComposerDock, visibleLaunchPreview, type LaunchPreview } from "./components/LaunchComposerDock";
 import { WorkspaceEmpty } from "./components/WorkspaceEmpty";
+import { useWorkspaceActions } from "./houston/useWorkspaceActions";
 import { WorkspacesEmpty } from "./components/WorkspacesEmpty";
 import { FirstRun } from "./components/FirstRun";
 import { workspaceRefusal } from "./components/workspaceEligibility";
@@ -303,6 +304,10 @@ export type Conn =
       since: number;
     }
   | { kind: "failed"; error: string };
+
+function readyClient(conn: Conn): HoustonClient | null {
+  return conn.kind === "ready" ? conn.client : null;
+}
 
 import { isTitlebarDragEligible, isBareTitlebarTarget } from "./titlebar";
 import { WindowControls } from "./components/WindowControls";
@@ -1069,6 +1074,16 @@ export function App(): React.JSX.Element {
     [pushNotice],
   );
 
+  const workspaceActionState = useWorkspaceActions({
+    client: readyClient(conn),
+    workspace: selectedWs,
+    shellIntegration,
+    keymapOverrides,
+    setExpandedId,
+    onError: pushError,
+  });
+  const { actions: workspaceActions } = workspaceActionState;
+  const workspaceActionsFor = (path: string) => workspaceActionState.byWorkspace[path] ?? [];
   const onBackgroundUnavailable = useCallback(
     (reason: string) => {
       pushError(`The window background could not be loaded (${reason}).`);
@@ -3170,6 +3185,8 @@ export function App(): React.JSX.Element {
   };
 
   const paletteActions: PaletteActions = {
+    workspaceActions,
+    runWorkspaceAction: workspaceActionState.run,
     newTerminal,
     insertPane: (kind) => {
       if (kind === "browser" && selectedWs !== "all")
@@ -3648,6 +3665,11 @@ export function App(): React.JSX.Element {
                                 onNewSession={() => setComposer("current-grid")}
                                 onTerminal={newTerminal}
                                 onBrowser={() => openBrowserPane(w.path, null)}
+                                actions={workspaceActionsFor(w.path)}
+                                keymapOverrides={keymapOverrides}
+                                onRunAction={workspaceActionState.run}
+                                onSaveAction={workspaceActionState.save}
+                                onDeleteAction={workspaceActionState.remove}
                               />
                               {activeLaunchPreview && (
                                 <Suspense fallback={null}>
@@ -4098,10 +4120,9 @@ export function App(): React.JSX.Element {
                         conn.client.orchestrationSet(true);
                     }}
                     hooksInstalled={firstRunHooksInstalled}
-                    onOpenHooks={() => {
-                      setFirstRunOpen(false);
-                      setSettingsSection("agent-setup");
-                      setSettings(true);
+                    agentHooks={agentHooks}
+                    onAgentHooksSet={(provider, enabled) => {
+                      if (conn.kind === "ready") conn.client.agentHooksSet(provider, enabled);
                     }}
                     onDone={closeFirstRun}
                   />
@@ -4157,6 +4178,10 @@ export function App(): React.JSX.Element {
               onNewTerminal={newTerminal}
               onSpawnAgent={spawnAgentPane}
               agentProfiles={agentProfiles}
+              workspaceActions={workspaceActions}
+              onRunWorkspaceAction={workspaceActionState.run}
+              onSaveWorkspaceAction={workspaceActionState.save}
+              onDeleteWorkspaceAction={workspaceActionState.remove}
               onSplitDown={
                 typeof addPanePopover.anchor === "number"
                   ? () =>

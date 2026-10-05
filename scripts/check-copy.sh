@@ -9,7 +9,7 @@ ui_src="${SCAN_ROOT:-ui/src/renderer/src}"
 mapfile -t sources < <(find "$ui_src" -type f -name '*.tsx' \
   -not -name '*.test.tsx' -not -path '*/components/ui/*' \
   -not -path '*/generated/*' -not -path '*/stories/*' \
-  -not -path '*/p5-harness/*' -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
+  -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
 
 reports="$(perl -e '
   my $proper = qr/(?:Houston|Claude|Codex|OpenCode|Cursor|Antigravity|Grok|ACP|MCP|PR|UI|API|GitHub|Linux|Windows|macOS|OAuth|PTY|SSH|URL|JSON|SQLite|ID|CPU|RAM|GPU|CLI|URL)/;
