@@ -290,6 +290,13 @@ bun run check:css         # reads the emitted stylesheet — must run after buil
 bun run check:bundle      # reads bundle-stats.json — must run after build
 ```
 
+Captures for UI pull requests come from the story harness in
+`ui/src/renderer/harness/`. `node ui/harness/shot.mjs <story> <out.png>` serves it,
+renders one story in WebKit and writes a PNG (`--width`, `--height`, `--theme`,
+`--scale`); `node ui/harness/measure.mjs <story> '<selectors>'` prints the
+measured boxes of the given elements. Write captures outside the tracked tree
+(`ui/harness-shots/` is ignored).
+
 `bun run test`, never bare `bun test` — `bun test` invokes Bun's own test
 runner, which fails the jsdom-based suite.
 
