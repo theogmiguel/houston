@@ -3,7 +3,7 @@ import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOV
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -71,7 +71,9 @@ const buttonClasses = variants(
       'legacy-danger-solid': `btn ${BTN_DANGER_SOLID}`,
       'legacy-icon': `btn ${BTN_ICO}`,
       'legacy-ghost-icon': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`,
-      'legacy-ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`
+      'legacy-ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`,
+      'legacy-focus-lever': 'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer transition-[background,border-color] hover:bg-[var(--hover-fill)] hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]',
+      'legacy-roster-footer': `btn ${BTN_GHOST} min-h-[var(--h-ctl)]`
     },
     size: sizeClasses
   },
@@ -104,7 +106,10 @@ export function Button(props: ButtonProps): React.JSX.Element {
     ref,
     ...buttonProps
   } = props
-  const classSet = buttonClasses({ variant, size: buttonSize(variant, size) })
+  const selectedClasses = buttonClasses({ variant, size: buttonSize(variant, size) })
+  const classSet = variant === 'legacy-roster-footer'
+    ? selectedClasses.replace(/^btn inline-flex items-center justify-center disabled:cursor-not-allowed /, '')
+    : selectedClasses
   const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${buttonChrome(variant)} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd

@@ -283,14 +283,6 @@ function RosterBody({
   )
 }
 
-const LEVER_CLS =
-  'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] ' +
-  'rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] ' +
-  'font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer ' +
-  'transition-[background,border-color] hover:bg-[var(--hover-fill)] ' +
-  'hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] ' +
-  'focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]'
-
 const OFFSET_PX = 6
 const VIEWPORT_MARGIN_PX = 8
 const CARD_W = 304
@@ -369,8 +361,7 @@ function FocusLever({
     <div className={SECTION_CLS}>
       <Button
         type="button"
-        variant="ghost"
-        className={LEVER_CLS}
+        variant="legacy-focus-lever"
         onClick={() => {
           onDone()
           onFocusPane(target)

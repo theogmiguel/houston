@@ -8,10 +8,10 @@ import { StatusDot } from './SessionPane'
 import { IconAgent, IconClose, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
-import { BTN_GHOST, BTN_ICO } from './buttonChrome'
+import { BTN_ICO } from './buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { MATERIAL_CLS } from './material'
 import { Segmented } from './Segmented'
+import { Button, EndedStatusDot, RosterColumn, RosterStrip } from './ui'
 
 // The queue view and the task chip carry the backlog helpers; both load on
 // demand so the Tasks modules stay off the boot path.
@@ -63,7 +63,7 @@ export function delegationAge(start: number, now: number): string {
 }
 
 export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Element {
-  if (!isLive(info.state)) return <Tooltip label="Ended"><span className="agent-dot w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" /></Tooltip>
+  if (!isLive(info.state)) return <Tooltip label="Ended"><EndedStatusDot /></Tooltip>
   return <StatusDot live status={info.children_waiting > 0 || childGroup(info) === 'Needs you' ? 'needs-input' : info.status ?? 'working'} />
 }
 
@@ -124,15 +124,15 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
   const cap = roster?.maxLiveChildren ?? null
   const dot = (child: SessionInfo): React.JSX.Element => <ChildStatusDot info={child} />
   const glyph = (child: SessionInfo): React.JSX.Element => <IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" />
-  const strip = <aside aria-label="Children strip" className={`children-strip ${MATERIAL_CLS.shell}`}>
+  const strip = <RosterStrip aria-label="Children strip">
     <Tooltip label="Orchestrator"><button className={`${ROSTER_ICON} children-glyph`} aria-label="Orchestrator" aria-pressed={selected == null} onClick={() => onSelect(null)}>{glyph(parent)}{dot(parent)}</button></Tooltip>
     <span className="children-rule" />
     {ordered.map((child) => <Tooltip key={child.id} label={glyphLabel(child)}><button className={`${ROSTER_ICON} children-glyph`} aria-label={`Open ${child.delegation?.role ?? child.title}`} aria-pressed={selected === child.id} onClick={() => onSelect(child.id)}>{glyph(child)}<span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span></button></Tooltip>)}
     {pending.length > 0 && <Tooltip label={`Undo closing ${pending.length} children`}><button className={ROSTER_ICON} aria-label="Undo closing settled children" onClick={undoClose}><Icon glyph={IconUndo} role="ui" /></button></Tooltip>}
     <Tooltip label="Show children"><button className={`${ROSTER_ICON} mt-auto`} aria-label="Show children" onClick={onCollapse}><Icon glyph={IconChevronRight} role="ui" /></button></Tooltip>
-  </aside>
+  </RosterStrip>
   return <>
-    {!collapsed && <aside aria-label="Children roster" className={`children-column ${MATERIAL_CLS.shell}`}>
+    {!collapsed && <RosterColumn aria-label="Children roster">
       <div className="children-head">
         <Segmented<'children' | 'queue'>
           aria-label="Roster view"
@@ -183,10 +183,10 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
       </div>
       )}
       <footer className="children-footer">
-        {pending.length > 0 ? <><span className="truncate">Closing {pending.length}</span><button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={undoClose}>Undo</button></> : <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} disabled={!settled.length} onClick={closeSettled}>Close settled ({settled.length})</button>}
-        <button className={`${BTN_GHOST} btn min-h-[var(--h-ctl)]`} onClick={() => openSideOverview(parent.id)}><Icon glyph={IconGrid} role="label" />Overview</button>
+        {pending.length > 0 ? <><span className="truncate">Closing {pending.length}</span><Button variant="legacy-roster-footer" onClick={undoClose}>Undo</Button></> : <Button variant="legacy-roster-footer" disabled={!settled.length} onClick={closeSettled}>Close settled ({settled.length})</Button>}
+        <Button variant="legacy-roster-footer" onClick={() => openSideOverview(parent.id)}><Icon glyph={IconGrid} role="label" />Overview</Button>
       </footer>
-    </aside>}
+    </RosterColumn>}
     {strip}
   </>
 }
