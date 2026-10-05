@@ -10061,7 +10061,13 @@ impl Daemon {
                     "grok".into(),
                 ),
                 (proto::AgentKind::Zcode, _) => (
-                    vec!["zcode".into(), "-p".into(), read_the_file(&path_arg)],
+                    vec![
+                        "zcode".into(),
+                        "--mode".into(),
+                        "plan".into(),
+                        "-p".into(),
+                        read_the_file(&path_arg),
+                    ],
                     "zcode".into(),
                 ),
                 (other, _) => {
@@ -13314,7 +13320,13 @@ impl Daemon {
                         Some(sender) => {
                             daemon.note_to_sender(session, sender, "prompt_failed", &why)
                         }
-                        None => tracing::warn!("{why}"),
+                        None => {
+                            tracing::warn!("{why}");
+                            daemon.broadcast_control(&proto::ServerMsg::Error {
+                                message: why,
+                                context: Some(format!("first prompt for session {session}")),
+                            });
+                        }
                     }
                 }
             });
