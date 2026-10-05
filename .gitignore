@@ -24,6 +24,9 @@ target/
 # visual-harness photographs (ui/harness/shot.mjs) — artifacts, never source
 ui/harness-shots/
 
+# local CSS-conversion measuring harness, path-coupled to ui/ — never committed
+ui/p5-harness/
+
 # staged Tauri sidecars (scripts/build-app.sh copies tr-helper here as
 # tr-helper-<target triple>) — build output, never source
 src-tauri/binaries/
@@ -38,3 +41,6 @@ docs/implementation-notes.md
 # Python bytecode is local build output.
 __pycache__/
 *.py[cod]
+
+# Local memory-tool configuration.
+.texas-ranger.toml
