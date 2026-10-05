@@ -242,14 +242,24 @@ fn all_specs() -> Vec<ToolSpec> {
             "task_handback",
             "Hand a task back",
             "Return finished work: the summary becomes a comment and the task moves to \
-             in_review, never done.",
+             in_review, never done. A Slack-filed task gives `result` (fields in its brief).",
+            handback_schema(true),
+        ),
+        local_write(
+            "task_ask",
+            "Ask in the request's thread",
+            "Slack-filed task: post one question to its thread, one button per option, then \
+             end your turn; the answer arrives as your next prompt.",
             json!({
                 "type": "object",
                 "properties": {
-                    "id": id_property(),
-                    "summary": { "type": "string" },
+                    "context": { "type": "string" },
+                    "question": { "type": "string" },
+                    "options": { "type": "array", "items": { "type": "string" } },
+                    "recommended": { "type": "integer" },
+                    "why": { "type": "string" },
                 },
-                "required": ["id", "summary"],
+                "required": ["question", "options", "recommended"],
                 "additionalProperties": false,
             }),
         ),
@@ -395,7 +405,45 @@ fn advertised(daemon: &Daemon, scope: &McpScope) -> Vec<ToolSpec> {
     if !daemon.spawnable_by(scope.session_id) {
         specs.retain(|spec| spec.name != "task_execute" && spec.name != "task_review");
     }
+    // The Slack verbs cost every other pane advertisement bytes, so only a
+    // pane running a Slack-filed task sees them.
+    if !daemon.slack_task_session(scope.session_id) {
+        specs.retain(|spec| spec.name != "task_ask");
+        for spec in specs.iter_mut().filter(|s| s.name == "task_handback") {
+            spec.description = HANDBACK_DESCRIPTION.to_string();
+            spec.input_schema = handback_schema(false);
+        }
+    }
     specs
+}
+
+const HANDBACK_DESCRIPTION: &str = "Return finished work: the summary becomes a comment and \
+     the task moves to in_review, never done.";
+
+/// `result` carries a Slack-filed task's fields instead of the summary.
+fn handback_schema(slack: bool) -> Value {
+    if slack {
+        json!({
+            "type": "object",
+            "properties": {
+                "id": id_property(),
+                "summary": { "type": "string" },
+                "result": { "type": "object" },
+            },
+            "required": ["id"],
+            "additionalProperties": false,
+        })
+    } else {
+        json!({
+            "type": "object",
+            "properties": {
+                "id": id_property(),
+                "summary": { "type": "string" },
+            },
+            "required": ["id", "summary"],
+            "additionalProperties": false,
+        })
+    }
 }
 
 fn dispatch(
@@ -560,11 +608,31 @@ fn dispatch(
         }
         "task_handback" => {
             let id = task_ref(daemon, workspace, args, name)?;
-            let summary = required_string(args, "summary")?;
-            let msg =
-                daemon.task_handback(workspace, id, &summary, session, &actor, "task_handback")?;
+            let summary = args.get("summary").and_then(Value::as_str);
+            let result = match args.get("result") {
+                Some(raw) => Some(
+                    serde_json::from_value::<crate::slack::form::ResultForm>(raw.clone())
+                        .map_err(|e| anyhow::anyhow!("task_handback result does not parse: {e}"))?,
+                ),
+                None => None,
+            };
+            let msg = daemon.task_handback_from(
+                workspace,
+                id,
+                summary,
+                result,
+                session,
+                &actor,
+                "task_handback",
+            )?;
             let output = changed_output(daemon, msg, Some("handed back"))?;
             Ok(with_status(output, "in_review"))
+        }
+        "task_ask" => {
+            let form: crate::slack::form::QuestionForm = serde_json::from_value(args.clone())
+                .map_err(|e| anyhow::anyhow!("task_ask arguments do not parse: {e}"))?;
+            let text = daemon.slack_task_ask(session, form)?;
+            Ok(task_output(json!({ "posted": true, "next": text })))
         }
         "task_execute" => {
             let id = spawn_task_ref(daemon, workspace, args, name)?;
@@ -585,7 +653,7 @@ fn dispatch(
         other => Err(ToolError(format!(
             "task provider has no tool {other:?}; expected one of [\"task_list\", \"task_get\", \
              \"task_next\", \"task_create\", \"task_update\", \"task_comment\", \"task_check\", \
-             \"task_claim\", \"task_handback\", \"task_execute\", \"task_review\"]"
+             \"task_claim\", \"task_handback\", \"task_ask\", \"task_execute\", \"task_review\"]"
         ))),
     }
 }

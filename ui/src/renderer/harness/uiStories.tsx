@@ -7,6 +7,7 @@ import {
   Drawer,
   EmptyState,
   Field,
+  TextInput,
   IconTile,
   ListDetail,
   Notice,
@@ -139,6 +140,11 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Field label="Required field" error="A value is required."><input value="" readOnly aria-invalid="true" /></Field>
             <Field label="Disabled field" hint="This value is managed elsewhere."><input value="Managed" readOnly disabled /></Field>
           </div>
+        </SpecimenGroup>
+        <SpecimenGroup heading="TextInput">
+          <Field label="Owner's member ID" hint="A plain text field."><TextInput value="U012ABCDEF" mono readOnly /></Field>
+          <Field label="Bot token" hint="A secret: the value is never shown back."><TextInput type="password" mono placeholder="xoxb-…" /></Field>
+          <Field label="Search"><TextInput width="full" placeholder="Filter by name" /></Field>
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">
