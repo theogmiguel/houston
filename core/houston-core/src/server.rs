@@ -606,6 +606,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitDiff { .. }
             | proto::ClientMsg::HistoryCount
             | proto::ClientMsg::GitBranch { .. }
+            | proto::ClientMsg::GitBranchCommits { .. }
             | proto::ClientMsg::PrStatus { .. }
             | proto::ClientMsg::PrDetail { .. }
             | proto::ClientMsg::PrWatchList
@@ -1732,6 +1733,28 @@ async fn dispatch(
             )
             .await;
             Ok(())
+        }
+        proto::ClientMsg::GitBranchCommits { dir } => {
+            let d = PathBuf::from(&dir);
+            let result = tokio::task::spawn_blocking(move || crate::git::branch_commits(&d))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("git branch commits task panicked: {e}")));
+            match result {
+                Ok((commits, total, truncated)) => {
+                    let _ = send_msg(
+                        sink,
+                        &proto::ServerMsg::GitBranchCommits {
+                            dir,
+                            commits,
+                            total,
+                            truncated,
+                        },
+                    )
+                    .await;
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
         }
         proto::ClientMsg::GitStage { dir, paths } => {
             let d = PathBuf::from(&dir);

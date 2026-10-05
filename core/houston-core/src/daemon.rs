@@ -18409,6 +18409,7 @@ mod pr_watch_stall_tests {
                 &link,
                 &crate::pull_requests::watch::State {
                     started_at: 1,
+                    last_checked_at_ms: None,
                     head_sha: "abc".into(),
                     failed_checks: Default::default(),
                     passed: false,
