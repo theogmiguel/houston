@@ -43,6 +43,14 @@
 .pane-inspector-content .changes-diff [data-line-number]{display:block;box-sizing:border-box;width:28px;min-width:0;padding-right:var(--space-1-5);color:var(--text-faint);text-align:right;user-select:none}
 .pane-inspector-content .changes-diff [data-kind="hunk"]{display:block;padding:var(--space-1) var(--space-2)}
 .pane-inspector-content .changes-commit{margin-top:auto;padding:var(--space-2-5) var(--space-3);gap:var(--space-2)}
+.pane-inspector-content [data-testid="branch-commits"]{flex:none;overflow-y:auto;padding:var(--space-2) var(--space-3);border-top:1px solid var(--divider)}
+.pane-inspector-content [data-branch-commits-head]{display:flex;align-items:center;gap:var(--space-2);height:var(--h-row);font-size:var(--tr-text-label-size);font-weight:var(--tr-text-label-weight);letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted)}
+.pane-inspector-content [data-branch-commits-toggle]{margin-left:auto;padding:0;border:0;background:transparent;color:var(--text-secondary);font:inherit;letter-spacing:normal;text-transform:none}
+.pane-inspector-content [data-testid="branch-commit-row"]{display:flex;min-width:0;align-items:center;gap:var(--space-2);padding:var(--space-1) 0;font-size:var(--tr-text-xs)}
+.pane-inspector-content [data-branch-commit-sha],.pane-inspector-content [data-branch-commit-age]{flex:none;font-family:var(--font-mono);color:var(--text-faint)}
+.pane-inspector-content [data-branch-commit-subject]{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pane-inspector-content [data-branch-commit-age]{margin-left:auto}
+.pane-inspector-content [data-testid="branch-commits-error"]{font-size:var(--tr-text-xs);color:var(--text-muted)}
 .pane-inspector-content .changes-actions{align-items:center}
 .pane-inspector-content [data-testid="changes-commit-target"]{white-space:nowrap}
 .pane-inspector-content [data-testid="pr-watch-row"]{display:flex;flex-direction:column;align-items:stretch;gap:var(--space-1-5);margin:var(--space-2-5) var(--space-3) 0;padding:var(--space-2) var(--space-2-5);border:1px solid color-mix(in srgb,var(--info) 30%,var(--border));border-radius: var(--tr-radius-card);background:color-mix(in srgb,var(--info) 6%,transparent)}

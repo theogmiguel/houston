@@ -36,6 +36,18 @@ class InspectorClient {
     }))
   }
 
+  gitBranchCommits(dir: string): void {
+    queueMicrotask(() => this.emit({
+      type: 'git_branch_commits', dir, total: 4, truncated: false,
+      commits: [
+        { sha: 'a1c3f09', subject: 'Add the batch wake fixture', author_time_ms: Date.now() - 12 * 60_000 },
+        { sha: '7d20e44', subject: 'Read inbox rows per parent', author_time_ms: Date.now() - 31 * 60_000 },
+        { sha: '26f4f70', subject: 'Add the task backlog', author_time_ms: Date.now() - 2 * 3_600_000 },
+        { sha: 'e8412ab', subject: 'Create the orchestration base', author_time_ms: Date.now() - 4 * 3_600_000 }
+      ]
+    }))
+  }
+
   gitDiff(dir: string, path?: string): void {
     queueMicrotask(() => this.emit({
       type: 'git_diff', dir, base: null, path: path ?? 'core/houston-core/src/orchestrate.rs', truncated: false,
@@ -62,7 +74,7 @@ class InspectorClient {
   }
 
   send(message: Record<string, unknown>): void {
-    if (message.type === 'pr_watch_list') queueMicrotask(() => this.emit({ type: 'pr_watch_list', watches: [sessionId, orchestratorId].map((session) => ({ session, watches: [{ number: 412, url: 'https://github.com/acme/houston/pull/412' }] })) }))
+    if (message.type === 'pr_watch_list') queueMicrotask(() => this.emit({ type: 'pr_watch_list', watches: [sessionId, orchestratorId].map((session) => ({ session, watches: [{ number: 412, url: 'https://github.com/acme/houston/pull/412', last_checked_at_ms: Date.now() - 40_000 }] })) }))
   }
 
   gitStage(): void {}

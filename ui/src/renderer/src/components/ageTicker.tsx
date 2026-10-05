@@ -35,6 +35,10 @@ function ageText(start: number, end: number): string {
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`
 }
 
+export function relativeAge(start: number, end = Date.now()): string {
+  return ageText(start, end) + ' ago'
+}
+
 export function AgeLabel({ start, end, ticking }: { start: number; end?: number | null; ticking: boolean }): React.JSX.Element {
   const current = useAgeNow(ticking)
   return <>{ageText(start, end ?? current)}</>

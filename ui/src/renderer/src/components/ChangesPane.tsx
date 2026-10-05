@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle } from './overlayChrome'
-import { RING_ACCENT_ICON, RING_ACCENT_INSET_45 } from './shadowChrome'
 import type { AgentKind, GitFileStatus, HoustonClient } from '../houston/client'
-import { DIFF_EMPTY_CLASS, SPIN_CLASS } from './git/DiffBody'
+import { SPIN_CLASS } from './git/DiffBody'
 import { DiffArea } from './git/DiffArea'
 import {
-  bulkLabelFor,
   discardConfirmLabel,
   discardConfirmMessage,
   discardKindFor,
   flatRows,
-  groupBulkDisabledReason,
-  groupBulkPaths,
-  groupRows,
   pushDisabledReason,
   paneStateFor,
   prChecksLabel,
@@ -24,7 +19,6 @@ import {
   stageAllPaths,
   stagedCount,
   unstageAllPaths,
-  GROUP_LABEL,
   type ChangeRow
 } from './git/changes'
 import type { ReviewDiffsData } from '../git/review'
@@ -37,30 +31,25 @@ import { useGitErrorRouter } from './git/useGitErrorRouter'
 import { GitToolsBar } from './git/GitToolsBar'
 import { PullQuickButton, ToolsNoticeLine } from './git/ChangesControls'
 import { ScmNotice } from './git/ScmNotice'
-import { MARK_TONE, SCM_ROW_CLS, SECTION_HEAD_CLS } from './git/scmChrome'
 import { ConfirmModal } from './ConfirmModal'
-import { OpenInMenu } from './OpenInMenu'
 import { loadScmDraft, saveScmDraft } from '../scmPanel'
 import {
   IconAlertTriangle,
-  IconArrowDown,
-  IconArrowUp,
   IconExternal,
   IconLoaderCircle,
-  IconShieldAlert,
-  IconFile,
   IconEllipsis,
   IconSparkles
 } from './icons'
-import { HIT_TARGET_28 } from './hitTarget'
 import { Tooltip } from './Tooltip'
 import { Icon } from './Icon'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
+import { BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { Segmented } from './Segmented'
 import { SplitButton } from './SplitButton'
-
-const SCROLL = 'min-h-0 overflow-y-auto [scrollbar-width:thin]'
+import { ChangesFileList } from './git/ChangesFileList'
+import { BranchCommits } from './git/BranchCommits'
+import { changeListKeyDown } from './git/changeListKeyboard'
+import { canCommit as canCommitForState, offerCreatePr as offerPrCreateForState, openSelectedFile, pushBlockedReason, reviewDisabledReason } from './git/changesPaneDerived'
 
 const STATE_BODY =
   'flex-1 min-h-0 flex flex-col items-center justify-center gap-2 p-6 text-center'
@@ -97,25 +86,12 @@ export interface ChangesPaneProps {
   refreshSignal?: number
 }
 
-function toEditorPath(dir: string, relPath: string): string {
-  return `${dir.replace(/\/+$/, '')}/${relPath}`
-}
-
 type GitTools = ReturnType<typeof useGitToolsSubscription>
 
 function prToneForSummary(pr: PrState | null): 'ok' | 'warn' | 'stop' {
   if (pr?.pr?.checks === 'failing') return 'stop'
   if (pr?.pr?.checks === 'running') return 'warn'
   return 'ok'
-}
-
-const MARK_GLYPH: Record<GitFileStatus['status'], string> = {
-  modified: 'M',
-  added: 'A',
-  deleted: 'D',
-  renamed: 'R',
-  untracked: 'U',
-  conflicted: 'C'
 }
 
 function ChangesStrip({
@@ -206,186 +182,6 @@ function ChangesStrip({
         fallbackBase={defaultBase}
         onAddWorkspace={onAddWorkspace}
       />
-    </div>
-  )
-}
-
-function ChangesFileList({
-  compact = false,
-  files,
-  rows,
-  branch,
-  scope,
-  defaultBase,
-  ahead,
-  offerCreatePr,
-  listRef,
-  onKeyDown,
-  selected,
-  menuFor,
-  select,
-  setMenuFor,
-  stageToggle,
-  setConfirmDiscard,
-  onOpenFileInEditor,
-  repoDir,
-  stageAll,
-  unstageAll,
-  bulkForGroup,
-  setStatusError
-}: {
-  compact?: boolean
-  files: GitFileStatus[] | null
-  rows: ChangeRow[]
-  branch: string | null
-  scope: 'working' | 'branch'
-  defaultBase: string | null
-  ahead: number
-  offerCreatePr: boolean
-  listRef: React.RefObject<HTMLDivElement | null>
-  onKeyDown: (event: React.KeyboardEvent) => void
-  selected: string | null
-  menuFor: string | null
-  select: (path: string) => void
-  setMenuFor: React.Dispatch<React.SetStateAction<string | null>>
-  stageToggle: (row: ChangeRow) => void
-  setConfirmDiscard: (row: ChangeRow | null) => void
-  onOpenFileInEditor?: (absPath: string) => void
-  repoDir: string
-  stageAll: string[]
-  unstageAll: string[]
-  bulkForGroup: (group: ChangeRow['group'], paths: string[]) => void
-  setStatusError: (message: string) => void
-}): React.JSX.Element {
-  const groups = files ? groupRows(files) : []
-  if (files === null) {
-    return (
-      <div className={DIFF_EMPTY_CLASS} data-testid="changes-loading">
-        <span className={SPIN_CLASS}>
-          <Icon glyph={IconLoaderCircle} role="subhead" />
-        </span>
-        Loading status…
-      </div>
-    )
-  }
-  if (rows.length === 0) {
-    return (
-      <div className={STATE_BODY} data-testid="changes-clean">
-        <div className={STATE_TITLE}>Nothing to commit</div>
-        <p className={STATE_HINT}>
-          {scope === 'branch'
-            ? `${branch ?? 'This branch'} matches ${defaultBase ?? 'its base'}.`
-            : [
-                'The working tree is clean.',
-                ahead > 0
-                  ? `${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${defaultBase ?? 'the base'}.`
-                  : null,
-                offerCreatePr ? 'This branch has no pull request yet.' : null
-              ]
-                .filter(Boolean)
-                .join(' ')}
-        </p>
-      </div>
-    )
-  }
-  return (
-    <div
-      ref={listRef}
-      role="listbox"
-      aria-label="Changed files"
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      data-testid="changes-list"
-      className={`${SCROLL} py-1 focus-visible:outline-none focus-visible:shadow-[${RING_ACCENT_INSET_45}]`}
-    >
-      {groups.map((group) => {
-        const bulkPaths = groupBulkPaths(group.rows)
-        return (
-          <div key={group.group}>
-            <div className={`changes-group-head ${SECTION_HEAD_CLS} ${group.group === 'conflicted' ? 'text-[var(--warn)]' : ''}`}>
-              {compact && group.group === 'unstaged'
-                ? `UNCOMMITTED · ${group.rows.length} FILE${group.rows.length === 1 ? '' : 'S'}`
-                : GROUP_LABEL[group.group]}
-              {compact && group.group === 'unstaged' ? <span data-testid="changes-total"><span data-tone="added">+{group.rows.reduce((sum, row) => sum + (row.added ?? 0), 0)}</span><span data-tone="deleted">−{group.rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)}</span></span> : <span className="ml-auto font-mono font-medium text-[length:var(--tr-text-xs)] text-[var(--text-faint)] tabular-nums">{group.rows.length}</span>}
-              {!(compact && group.group === 'unstaged') && <Tooltip
-                label={bulkPaths.length === 0 ? groupBulkDisabledReason(group.group) : undefined}
-                className="inline-flex"
-              >
-                <button
-                  className={`btn ${BTN_GHOST} h-[var(--h-ctl-mini)] px-[var(--space-1-5)] text-[length:var(--tr-text-xs)] normal-case tracking-normal`}
-                  data-testid={`changes-bulk-${group.group}`}
-                  disabled={bulkPaths.length === 0}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    bulkForGroup(group.group, bulkPaths)
-                  }}
-                >
-                  {bulkLabelFor(group.group)}
-                </button>
-              </Tooltip>}
-              {group.group === 'unstaged' && (
-                <Tooltip
-                  label={stageAll.length === 0 ? (rows.length === 0 ? 'Nothing to stage' : 'Every unstaged file here is a blocked path — its contents were never shown') : undefined}
-                  className="inline-flex"
-                >
-                  <button
-                    className={`btn ${BTN_GHOST} h-[var(--h-ctl-mini)] px-[var(--space-1-5)] text-[length:var(--tr-text-xs)] normal-case tracking-normal`}
-                    data-testid="changes-stage-all"
-                    disabled={stageAll.length === 0}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      if (stageAll.length > 0) bulkForGroup('unstaged', stageAll)
-                    }}
-                  >
-                    Stage all
-                  </button>
-                </Tooltip>
-              )}
-              {group.group === 'staged' && (
-                <Tooltip label={unstageAll.length === 0 ? 'Nothing is staged' : undefined} className="inline-flex">
-                  <button
-                    className={`btn ${BTN_GHOST} h-[var(--h-ctl-mini)] px-[var(--space-1-5)] text-[length:var(--tr-text-xs)] normal-case tracking-normal`}
-                    data-testid="changes-unstage-all"
-                    disabled={unstageAll.length === 0}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      if (unstageAll.length > 0) bulkForGroup('staged', unstageAll)
-                    }}
-                  >
-                    Unstage all
-                  </button>
-                </Tooltip>
-              )}
-            </div>
-            {group.rows.map((row) => (
-              <FileRow
-                key={row.key}
-                row={row}
-                selected={selected === row.path}
-                menuOpen={menuFor === row.key}
-                onSelect={() => select(row.path)}
-                onToggleMenu={() => setMenuFor((value) => (value === row.key ? null : row.key))}
-                onStageToggle={() => stageToggle(row)}
-                onDiscard={() => {
-                  setMenuFor(null)
-                  setConfirmDiscard(row)
-                }}
-                onOpenInEditor={
-                  onOpenFileInEditor
-                    ? () => {
-                        setMenuFor(null)
-                        onOpenFileInEditor(toEditorPath(repoDir, row.path))
-                      }
-                    : undefined
-                }
-                absPath={toEditorPath(repoDir, row.path)}
-                onCloseMenu={() => setMenuFor(null)}
-                onOpenInEditorError={setStatusError}
-              />
-            ))}
-          </div>
-        )
-      })}
     </div>
   )
 }
@@ -764,25 +560,7 @@ export function ChangesPane({
   }, [client, repoDir, confirmDiscard, selected])
 
   const onKeyDown = useCallback(
-    (e: React.KeyboardEvent): void => {
-      if (rows.length === 0) return
-      const idx = rows.findIndex((r) => r.path === selected)
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault()
-        const next = e.key === 'ArrowDown' ? Math.min(rows.length - 1, idx + 1) : Math.max(0, idx - 1)
-        setSelected(rows[next === -1 ? 0 : next].path)
-        return
-      }
-      if (e.key === 'Enter' && idx >= 0) {
-        e.preventDefault()
-        select(rows[idx].path)
-        return
-      }
-      if ((e.key === 's' || e.key === 'S') && idx >= 0 && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault()
-        stageToggle(rows[idx])
-      }
-    },
+    changeListKeyDown(rows, selected, setSelected, select, stageToggle),
     [rows, selected, select, stageToggle]
   )
 
@@ -849,9 +627,9 @@ export function ChangesPane({
 
   const reviewing = review !== null
 
-  const canCommit = staged > 0 && commitMsg.trim().length > 0 && !committing
-  const pushBlocked = !client || !repoDir ? 'Not connected' : pushDisabledReason(upstream, ahead, pushing)
-  const offerCreatePr = pr?.gh === 'ready' && pr.hasUpstream && pr.pr === null
+  const canCommit = canCommitForState(staged, commitMsg, committing)
+  const pushBlocked = pushBlockedReason(client !== null, repoDir !== null, upstream, ahead, pushing)
+  const offerCreatePr = offerPrCreateForState(pr)
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
     <section
@@ -974,9 +752,9 @@ export function ChangesPane({
         headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
         description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${defaultBase ?? 'the base'}` : ''}. Pick a file to read its diff.`
       }}
-      onOpenInEditor={onOpenFileInEditor && selectedRow ? () => onOpenFileInEditor(toEditorPath(repoDir, selectedRow.path)) : undefined}
+      onOpenInEditor={openSelectedFile(onOpenFileInEditor, repoDir, selectedRow)}
       onReview={openReviewPicker}
-      reviewDisabledReason={!client || reviewBusy ? 'Not connected' : null}
+      reviewDisabledReason={reviewDisabledReason(client !== null, reviewBusy)}
     />
   )
 
@@ -1042,6 +820,7 @@ export function ChangesPane({
           </div>
           {diffPane}
         </div>
+        <BranchCommits client={client} dir={repoDir} />
         <div className={`flex-none flex flex-col [@container_(min-width:720px)]:hidden`}>
           {commitBox}
           {prLine}
@@ -1051,192 +830,6 @@ export function ChangesPane({
 
   return shell(body)
 }
-
-function StageToggleButton({
-  stage,
-  onStageToggle
-}: {
-  stage: 'stage' | 'unstage' | null
-  onStageToggle: () => void
-}): React.JSX.Element | null {
-  if (stage === null) return null
-  const label = stage === 'unstage' ? 'Unstage' : 'Stage'
-  return (
-    <Tooltip label={label} className="inline-flex">
-      <button
-        type="button"
-        aria-label={label}
-        onClick={(event) => {
-          event.stopPropagation()
-          onStageToggle()
-        }}
-        className={`flex-none w-[var(--h-ctl-mini)] h-[var(--h-ctl-mini)] rounded-[var(--tr-radius-sm)] grid place-items-center text-[var(--text-faint)] opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:shadow-[${RING_ACCENT_ICON}] ${HIT_TARGET_28}`}
-      >
-        <Icon glyph={stage === 'unstage' ? IconArrowDown : IconArrowUp} role="small" />
-      </button>
-    </Tooltip>
-  )
-}
-
-function FileRow({
-  row,
-  selected,
-  menuOpen,
-  onSelect,
-  onToggleMenu,
-  onStageToggle,
-  onDiscard,
-  onOpenInEditor,
-  absPath,
-  onOpenInEditorError,
-  onCloseMenu
-}: {
-  row: ChangeRow
-  selected: boolean
-  menuOpen: boolean
-  onSelect: () => void
-  onToggleMenu: () => void
-  onStageToggle: () => void
-  onDiscard: () => void
-  onOpenInEditor?: () => void
-  absPath?: string
-  onOpenInEditorError?: (message: string) => void
-  onCloseMenu?: () => void
-}): React.JSX.Element {
-  const stage = stageActionFor(row)
-  const discard = discardKindFor(row)
-  const counts =
-    row.added !== null || row.deleted !== null ? (
-      <span className="flex-none min-w-[52px] text-right font-mono text-[length:var(--tr-text-xs)] font-medium tabular-nums">
-        {row.added !== null && <span className="text-[var(--ok)]">+{row.added}</span>}
-        {row.added !== null && row.deleted !== null ? ' ' : ''}
-        {row.deleted !== null && <span className="text-[var(--danger)]">−{row.deleted}</span>}
-      </span>
-    ) : (
-      <span className="flex-none min-w-[52px] text-right font-mono text-[length:var(--tr-text-xs)] text-[var(--text-faint)]">
-        {row.blocked ? 'blocked' : row.state === 'untracked' ? 'new' : row.state === 'conflicted' ? 'both modified' : ''}
-      </span>
-    )
-  return (
-    <div
-      className={`changes-file-row ${SCM_ROW_CLS} ${
-        selected
-          ? 'bg-[var(--selected-fill)] text-[var(--text-primary)]'
-          : ''
-      }`}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        onToggleMenu()
-      }}
-    >
-      <button
-        type="button"
-        role="option"
-        aria-selected={selected}
-        data-testid="changes-file"
-        data-path={row.path}
-        data-tag={row.tag}
-        aria-label={`${row.path} — ${row.tag}`}
-        onClick={onSelect}
-        className="flex-1 min-w-0 flex items-center gap-2 bg-transparent border-0 p-0 text-left text-inherit"
-      >
-        <span className="changes-file-glyph"><Icon glyph={IconFile} role="label" /></span>
-        <span className={`changes-file-mark flex-none w-[14px] text-center font-mono text-[length:var(--tr-text-xs)] [font-weight:var(--tr-text-label-weight)] ${MARK_TONE[row.state] ?? MARK_TONE[row.tag]}`} aria-hidden>
-          {row.blocked ? <Icon glyph={IconShieldAlert} role="label" /> : MARK_GLYPH[row.state]}
-        </span>
-        <span className="changes-file-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[length:var(--tr-text-xs)]">
-          <span>{row.name}</span>
-          <span className="text-[var(--text-faint)]">{row.dir}</span>
-        </span>
-      </button>
-      <StageToggleButton stage={stage} onStageToggle={onStageToggle} />
-      {counts}
-      <span aria-hidden className={`changes-file-status font-mono ${MARK_TONE[row.state] ?? MARK_TONE[row.tag]}`}>{MARK_GLYPH[row.state]}</span>
-      <button
-        type="button"
-        data-testid="changes-row-menu"
-        aria-label={`Actions for ${row.path}`}
-        aria-expanded={menuOpen}
-        onClick={onToggleMenu}
-        className={`flex-none w-[var(--h-ctl-mini)] h-[var(--h-ctl-mini)] rounded-[var(--tr-radius-sm)] grid place-items-center text-[var(--text-faint)] opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:shadow-[${RING_ACCENT_ICON}] ${HIT_TARGET_28}`}
-      >
-        <span aria-hidden>···</span>
-      </button>
-      {menuOpen && (
-        <div
-          role="menu"
-          data-testid="changes-row-menu-items"
-          className={`absolute right-1 top-[var(--h-row)] z-[var(--z-sticky)] min-w-[170px] flex flex-col rounded-[var(--tr-radius-sm)] py-[var(--space-1)] ${MATERIAL_CLS.raised}`}
-          {...materialAttrs('raised')}
-        >
-          <MenuItem
-            label={stage === 'unstage' ? 'Unstage' : 'Stage'}
-            disabled={stage === null}
-            disabledReason="Blocked path — its contents were never shown here"
-            onClick={onStageToggle}
-          />
-          <MenuItem
-            label={row.group === 'untracked' ? 'Delete file' : 'Discard changes'}
-            danger
-            disabled={discard === null}
-            disabledReason="Blocked path — its contents were never shown here"
-            onClick={onDiscard}
-          />
-          <MenuItem
-            label="Open in editor"
-            disabled={!onOpenInEditor || row.blocked}
-            disabledReason="Blocked path"
-            onClick={() => onOpenInEditor?.()}
-          />
-          {absPath && !row.blocked && (
-            <OpenInMenu
-              path={absPath}
-              itemClass={MENU_ITEM_CLS}
-              onDone={() => onCloseMenu?.()}
-              onError={(m) => onOpenInEditorError?.(m)}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const MENU_ITEM_CLS =
-  'text-left px-2.5 py-1 text-[length:var(--tr-text-sm)] bg-transparent border-0 flex items-center gap-1.5 disabled:opacity-45 disabled:cursor-not-allowed text-[var(--text-secondary)] enabled:hover:bg-[var(--card-hover)]'
-
-function MenuItem({
-  label,
-  onClick,
-  disabled = false,
-  disabledReason,
-  danger = false
-}: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-  disabledReason?: string
-  danger?: boolean
-}): React.JSX.Element {
-  return (
-    <Tooltip label={disabled ? disabledReason : undefined} className="inline-flex w-full">
-      <button
-        type="button"
-        role="menuitem"
-        disabled={disabled}
-        onClick={onClick}
-        className={`text-left px-2.5 py-1 text-[length:var(--tr-text-sm)] bg-transparent border-0 disabled:opacity-45 disabled:cursor-not-allowed ${
-          danger
-            ? 'text-[var(--danger)] enabled:hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)]'
-            : 'text-[var(--text-secondary)] enabled:hover:bg-[var(--card-hover)]'
-        }`}
-      >
-        {label}
-      </button>
-    </Tooltip>
-  )
-}
-
 
 function ChangesToolbar({ compact, strip }: { compact: boolean; strip: React.ReactNode }): React.JSX.Element {
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)

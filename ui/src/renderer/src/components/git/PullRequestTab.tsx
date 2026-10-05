@@ -1010,6 +1010,7 @@ export function PullRequestTab({
     <PrWatchRow
       key={`${watch.number}:${watch.url}`}
       number={watch.number}
+      lastCheckedAtMs={watch.last_checked_at_ms}
       onStop={() => {
         if (client && session != null) client.send({ type: 'pr_watch_unwatch', session, number: watch.number })
       }}
