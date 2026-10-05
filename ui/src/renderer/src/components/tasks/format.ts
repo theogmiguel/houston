@@ -245,7 +245,8 @@ const TASK_AGENT_LABEL: Readonly<Record<string, string>> = {
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
   cursor: 'Cursor',
-  grok: 'Grok'
+  grok: 'Grok',
+  zcode: 'ZCode'
 }
 
 export function taskAgentLabel(agent: AgentKind): string {

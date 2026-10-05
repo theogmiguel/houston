@@ -136,12 +136,16 @@ Seven recorded carve-outs stand. Further exceptions need the same recorded treat
 ### App-initiated config writes use reversible managed markers
 
 Hook entries in `.claude/settings.local.json`, `~/.codex/config.toml`, `~/.cursor/hooks.json`,
-`~/.grok/hooks/…` and the OpenCode plugin carry `--houston-managed[=<channel>]`
-matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
+`~/.grok/hooks/…`, `~/.zcode/cli/config.json` and the OpenCode plugin carry
+`--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
 matching would let one channel evict the other. What Houston created (the file, the top-level
 `hooks` object) is recorded in `workspace_hooks` so uninstall removes exactly Houston's residue.
 Codex's `notify` is a single key, so a second channel parks the displaced line as a
-sentinel-carrying comment rather than clobbering it. User-initiated writes into a CLI's
+sentinel-carrying comment rather than clobbering it. ZCode's `hooks.enabled` is a single
+switch shared by every hook in `~/.zcode/cli/config.json`: the value Houston replaced is
+parked in a top-level `houstonParkedHooksEnabled` key and restored once no channel's
+sentinel remains. Its `plugins.dirs` entry is a path inside the channel's own state dir.
+User-initiated writes into a CLI's
 skill directories (`writeSkill`, skill push with backup) are fine.
 
 ### Measured values yes, class strings never
@@ -158,7 +162,7 @@ after.
 ### Agent status is hooks-driven; PTY content is not a status machine
 
 `Daemon::set_status` is the single mutation point. Its inputs are hook drop files (mapped
-through `agent_events.rs`) and ACP streams. Three exceptions are named; anything beyond them
+through `agent_events.rs`) and ACP streams. Four exceptions are named; anything beyond them
 must be named and recorded here, not blended in.
 
 1. **OS process liveness** (`has_child_procs` / `has_running_procs` in `daemon.rs`) is a
@@ -203,7 +207,7 @@ must be named and recorded here, not blended in.
    `AgentEvent::TurnEnded`, which `Custom` never fires. Bounded four ways: it runs **only**
    for a child whose
    `TurnEndSource` is `QuietSettle` — which is also what keeps it from delivering a second
-   time for the six providers whose hook already did (every other delegation is released
+   time for the seven providers whose hook already did (every other delegation is released
    by its CLI's hook or its ACP stream and never reaches here); never while
    `has_running_procs` says a descendant is alive; the no-handback notice **once per
    silence**, never once per poll, latched on the same sample that measures the quiet so
@@ -214,6 +218,12 @@ must be named and recorded here, not blended in.
    read of #2 it shares with the reported path —
    the tail IS the payload of a no-handback notice, and it is labelled as the child's
    screen in the subject line and again in the body.
+4. **First-prompt paste timing.** A CLI that takes no prompt in argv (ZCode) gets its
+   first prompt pasted once the PTY has produced output and then stayed quiet for
+   `FIRST_PROMPT_QUIET_MS` (`Daemon::first_prompt_paste`, deadline
+   `FIRST_PROMPT_DEADLINE`). It reads byte counters, never text, runs once per spawn and
+   decides only when input is written — never an `AgentStatus`. The emulator's
+   bracketed-paste mode would be a sharper signal but is not exposed by the VT binding.
 
 **One turn end per provider.** A provider's `agent_events.rs` table carries at most one
 `AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a

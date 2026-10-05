@@ -18,7 +18,7 @@ import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle 
 
 // Only the agents spawnable via `hs-pane`/handoff today, not the full
 // `AgentKind` union (shell/custom/ssh/the ACP long tail are not offered here).
-const POPOVER_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok']
+const POPOVER_AGENTS: readonly AgentKind[] = ['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode']
 
 // Tooltip's wrapper shrink-wraps when given no class, so a wrapped disabled
 // row needs this to fill the popover width like its enabled siblings.

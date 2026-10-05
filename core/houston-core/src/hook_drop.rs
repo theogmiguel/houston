@@ -94,6 +94,9 @@ pub struct HookDrop {
     // digest so command contents never enter daemon state or hook drops.
     #[serde(default)]
     pub tool_input_fingerprint: Option<String>,
+    // ZCode's PostToolUseFailure.is_interrupt: the operator aborted the turn mid-tool.
+    #[serde(default)]
+    pub interrupted: bool,
 }
 
 impl Default for HookDrop {
@@ -126,6 +129,7 @@ impl Default for HookDrop {
             subagent_type: None,
             tool_name: None,
             tool_input_fingerprint: None,
+            interrupted: false,
         }
     }
 }

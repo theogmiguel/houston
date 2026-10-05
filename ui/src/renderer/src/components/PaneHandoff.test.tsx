@@ -17,7 +17,7 @@ const SOURCE: HandoffSource = {
 
 describe('handoffTargets', () => {
   it('offers every spawnable engine but the one already running the thread', () => {
-    expect(handoffTargets('claude')).toEqual(['codex', 'cursor', 'antigravity', 'opencode', 'grok'])
+    expect(handoffTargets('claude')).toEqual(['codex', 'cursor', 'antigravity', 'opencode', 'grok', 'zcode'])
   })
 
   it('never offers a shell — a shell takes no opening prompt', () => {

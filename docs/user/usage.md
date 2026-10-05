@@ -13,7 +13,7 @@ provider and model. Those two CLIs are the only ones it covers.
 ## What it does not cover
 
 Every other CLI Houston can spawn and that spends tokens — Antigravity, OpenCode,
-Cursor, Grok — is not read by this feature. Houston shows these explicitly as "not
+Cursor, Grok, ZCode — is not read by this feature. Houston shows these explicitly as "not
 tracked" rather than as zero usage, because a `0` next to one of them would read as "you
 spent nothing," which the daemon has no way to actually confirm. Shell, SSH and custom
 sessions spend no tokens, so they're outside the feature by nature, not by omission;

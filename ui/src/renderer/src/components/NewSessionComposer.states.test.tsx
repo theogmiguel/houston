@@ -108,6 +108,7 @@ describe('NewSessionComposer — state matrix', () => {
       'Antigravity',
       'OpenCode',
       'Grok Build',
+      'ZCode',
       'Terminal'
     ])
     expect(container.querySelectorAll('[data-testid^="new-session-agent-check-"]')).toHaveLength(1)

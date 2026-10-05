@@ -2,12 +2,13 @@ use anyhow::{anyhow, bail, Context, Result};
 use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
-pub const PROVIDERS: [proto::AgentKind; 5] = [
+pub const PROVIDERS: [proto::AgentKind; 6] = [
     proto::AgentKind::Codex,
     proto::AgentKind::Opencode,
     proto::AgentKind::Cursor,
     proto::AgentKind::Grok,
     proto::AgentKind::Antigravity,
+    proto::AgentKind::Zcode,
 ];
 
 #[derive(Debug, Clone)]
@@ -57,8 +58,9 @@ pub fn config_path(provider: proto::AgentKind, home: &ConfigHome) -> Result<Path
             .join(PLUGIN_FILE),
         proto::AgentKind::Grok => home.home.join(".grok").join("hooks").join(GROK_HOOKS_FILE),
         proto::AgentKind::Antigravity => home.home.join(".gemini").join("config").join("hooks.json"),
+        proto::AgentKind::Zcode => crate::zcode_config::config_path(&home.home),
         other => bail!(
-            "{other:?} has no hook installer here (expected codex, opencode, cursor, grok or antigravity; \
+            "{other:?} has no hook installer here (expected codex, opencode, cursor, grok, antigravity or zcode; \
              Claude Code installs per workspace via claude_hooks.rs)"
         ),
     })
@@ -73,6 +75,27 @@ pub fn install(
     home: &ConfigHome,
     launcher: &Path,
     sentinel: &str,
+) -> Result<PathBuf> {
+    install_with(provider, home, launcher, sentinel, false)
+}
+
+/// The boot-time reinstall of a consented provider. Unlike an explicit install it keeps
+/// a ZCode `hooks.enabled: false` the user set after Houston's entries went in.
+pub fn refresh(
+    provider: proto::AgentKind,
+    home: &ConfigHome,
+    launcher: &Path,
+    sentinel: &str,
+) -> Result<PathBuf> {
+    install_with(provider, home, launcher, sentinel, true)
+}
+
+fn install_with(
+    provider: proto::AgentKind,
+    home: &ConfigHome,
+    launcher: &Path,
+    sentinel: &str,
+    refreshing: bool,
 ) -> Result<PathBuf> {
     let path = config_path(provider, home)?;
     let mut commands: Vec<(&'static str, String)> = crate::agent_events::events_for(provider)
@@ -113,6 +136,13 @@ pub fn install(
                 .map(|event| (*event, hook_command(launcher, provider, event, sentinel))),
         );
     }
+    if provider == proto::AgentKind::Zcode {
+        commands.extend(
+            crate::agent_events::ZCODE_CORRELATION_EVENTS
+                .iter()
+                .map(|event| (*event, hook_command(launcher, provider, event, sentinel))),
+        );
+    }
     if provider == proto::AgentKind::Antigravity {
         commands.extend(
             crate::agent_events::ANTIGRAVITY_CORRELATION_EVENTS
@@ -130,6 +160,14 @@ pub fn install(
         proto::AgentKind::Opencode => opencode_install(&path, &commands, sentinel)?,
         proto::AgentKind::Grok => grok_install(&path, &commands, sentinel, proto::AgentKind::Grok)?,
         proto::AgentKind::Antigravity => antigravity_install(&path, &commands, sentinel)?,
+        proto::AgentKind::Zcode => {
+            // The launcher sits in <state dir>/bin; the plugin dir is that channel's own.
+            let plugin = launcher
+                .parent()
+                .and_then(Path::parent)
+                .map(crate::zcode_config::plugin_dir);
+            crate::zcode_config::install(&path, &commands, sentinel, plugin.as_deref(), refreshing)?
+        }
         other => bail!("{other:?} has no hook installer here"),
     }
     Ok(path)
@@ -143,6 +181,7 @@ pub fn uninstall(provider: proto::AgentKind, home: &ConfigHome, sentinel: &str) 
         proto::AgentKind::Opencode => opencode_uninstall(&path, sentinel),
         proto::AgentKind::Grok => grok_uninstall(&path, sentinel),
         proto::AgentKind::Antigravity => antigravity_uninstall(&path, sentinel),
+        proto::AgentKind::Zcode => crate::zcode_config::uninstall(&path, sentinel),
         other => bail!("{other:?} has no hook installer here"),
     }
 }
@@ -161,6 +200,7 @@ pub fn is_installed(provider: proto::AgentKind, home: &ConfigHome, sentinel: &st
                 .any(|c| has_sentinel(c, sentinel))
         }
         proto::AgentKind::Antigravity => antigravity_is_installed(&path, sentinel),
+        proto::AgentKind::Zcode => crate::zcode_config::is_installed(&path, sentinel),
         proto::AgentKind::Opencode => has_sentinel(&text, sentinel),
         _ => false,
     }
@@ -195,6 +235,7 @@ pub fn provider_slug(provider: proto::AgentKind) -> &'static str {
         proto::AgentKind::Copilot => "copilot",
         proto::AgentKind::Aider => "aider",
         proto::AgentKind::Grok => "grok",
+        proto::AgentKind::Zcode => "zcode",
         proto::AgentKind::Shell => "shell",
         proto::AgentKind::Ssh => "ssh",
         proto::AgentKind::Custom => "custom",
@@ -209,7 +250,7 @@ pub fn provider_from_slug(slug: &str) -> Result<proto::AgentKind> {
         .find(|p| provider_slug(*p) == slug)
         .ok_or_else(|| {
             anyhow!(
-                "unknown --agent {slug:?} (expected one of: claude, codex, opencode, cursor, grok, antigravity)"
+                "unknown --agent {slug:?} (expected one of: claude, codex, opencode, cursor, grok, antigravity, zcode)"
             )
         })
 }
@@ -217,9 +258,21 @@ pub fn provider_from_slug(slug: &str) -> Result<proto::AgentKind> {
 // Token-exact, never `contains`: the release sentinel is a prefix of every
 // channel's, so a substring test would let release claim (and evict) dev's
 // entry — the same trap claude_hooks::command_has_sentinel avoids.
-fn has_sentinel(text: &str, sentinel: &str) -> bool {
+pub(crate) fn has_sentinel(text: &str, sentinel: &str) -> bool {
+    sentinel_tokens(text).any(|t| t == sentinel)
+}
+
+/// Any channel's sentinel, for state shared by every channel that installed.
+pub(crate) fn has_any_sentinel(text: &str) -> bool {
+    let base = crate::claude_hooks::SENTINEL;
+    sentinel_tokens(text).any(|t| {
+        t.strip_prefix(base)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('='))
+    })
+}
+
+fn sentinel_tokens(text: &str) -> impl Iterator<Item = &str> {
     text.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ',' | '[' | ']' | ';'))
-        .any(|t| t == sentinel)
 }
 
 fn ensure_parent(path: &Path) -> Result<()> {

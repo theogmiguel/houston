@@ -12,7 +12,8 @@ pane's status is guessed from what is printed on screen.
 A pane can show:
 
 - **Spawning** — the session just started; Houston is waiting for the first report from
-  the CLI.
+  the CLI. A ZCode pane stays here until its first prompt, because ZCode reports its start
+  only with its first turn.
 - **Working** — a turn is in progress.
 - **Idle** — ready for another prompt after the CLI reported that the turn ended.
 - **Needs input** — the agent asked a question or is waiting on a permission decision. It
@@ -59,6 +60,17 @@ exactly what Houston added:
 - **Grok** — writes its own hooks file under `~/.grok/hooks/`, one entry per lifecycle
   event; your own entries in that file stay, and turning Houston's off deletes only what
   it added, removing the file once nothing is left in it.
+- **ZCode** — adds one entry per lifecycle event to `~/.zcode/cli/config.json`, turns on
+  `hooks.enabled` (which also runs any hooks of yours that were switched off) and lists
+  Houston's plugin for the pane tools. Turning it off removes only Houston's entries and
+  restores `hooks.enabled` once no Houston channel has entries left; a `false` you set
+  yourself afterwards is kept, and the row then shows that the hooks need attention. ZCode
+  sends no hook when a turn fails (an API error, an exhausted Coding Plan quota, a network
+  failure) or when you interrupt it between tool calls, so such a pane shows Working until
+  its next prompt; a parent waiting on it gets no turn end. A denied permission sends no
+  hook either: the pane leaves Needs input when ZCode runs its next tool, and if you
+  dismiss the dialog with Esc it stays in Needs input until the next prompt. On Windows
+  the switch is refused: Houston's hook command needs a POSIX shell.
 - **Antigravity** — also installs a hook, into its own config; it has no dedicated
   write-up on this screen beyond the generic "installs a hook for this CLI."
 

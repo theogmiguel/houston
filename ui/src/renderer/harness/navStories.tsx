@@ -283,7 +283,8 @@ export function NavHooks(): React.JSX.Element {
             scope: 'global',
             error: 'hooks.json is not valid JSON — Houston refused to rewrite it.'
           }),
-          hook({ provider: 'grok', path: '~/.grok/hooks/houston.json', scope: 'global' })
+          hook({ provider: 'grok', path: '~/.grok/hooks/houston.json', scope: 'global' }),
+          hook({ provider: 'zcode', path: '~/.zcode/cli/config.json', scope: 'global' })
         ]}
         onSet={noop}
         onRefresh={noop}

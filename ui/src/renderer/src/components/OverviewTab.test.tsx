@@ -15,7 +15,7 @@ describe('orchestrator overview', () => {
     rerender(<OverviewTab parentId={1} sessions={new Map([[1, { ...session(1, null), agent: 'antigravity', compactions: null }]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
     expect(screen.getByText('compactions not reported by antigravity')).toBeTruthy()
   })
-  it.each(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok'] as const)('tints %s provider glyphs in child cards', (agent) => {
+  it.each(['claude', 'codex', 'antigravity', 'opencode', 'cursor', 'grok', 'zcode'] as const)('tints %s provider glyphs in child cards', (agent) => {
     const child = { ...session(2, 1, true), agent }
     const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
     const { container } = render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)

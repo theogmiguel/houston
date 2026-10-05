@@ -27,8 +27,8 @@ Context · 6% used
 ## Coverage
 
 Claude and Codex are supported through their lifecycle hooks. Enable Codex hooks in
-Settings ▸ Agent setup if they are not already enabled. Cursor, Grok, OpenCode and Antigravity
-show no ring because Houston has no context signal for them. A model with an unknown limit
+Settings ▸ Agent setup if they are not already enabled. Cursor, Grok, OpenCode, Antigravity and
+ZCode show no ring because Houston has no context signal for them. A model with an unknown limit
 shows its token count without a percentage. Model changes appear after the next completed
 response. Refreshed catalog metadata also appears after the next completed response; refreshing
 rates does not recompute the reading already shown for a pane.

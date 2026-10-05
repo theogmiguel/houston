@@ -12,7 +12,7 @@ mapfile -t sources < <(find "$ui_src" -type f -name '*.tsx' \
   -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
 
 reports="$(perl -e '
-  my $proper = qr/(?:Houston|Claude|Codex|OpenCode|Cursor|Antigravity|Grok|ACP|MCP|PR|UI|API|GitHub|Linux|Windows|macOS|OAuth|PTY|SSH|URL|JSON|SQLite|ID|CPU|RAM|GPU|CLI|URL)/;
+  my $proper = qr/(?:Houston|Claude|Codex|OpenCode|Cursor|Antigravity|Grok|ZCode|ACP|MCP|PR|UI|API|GitHub|Linux|Windows|macOS|OAuth|PTY|SSH|URL|JSON|SQLite|ID|CPU|RAM|GPU|CLI|URL)/;
   for my $f (@ARGV) {
     next if $f =~ m{/components/ui/StatusLabel\.tsx$};
     open my $fh, "<", $f or next;

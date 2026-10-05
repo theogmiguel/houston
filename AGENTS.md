@@ -69,8 +69,8 @@ Before completing a change, identify which of these checks apply:
   `check-loop-spawn-sync.sh` enforces this boundary.
 - **Transport:** control JSON and binary PTY frames share the authenticated `/ws`
   connection in the app, other clients and tests. Terminal-byte features use `server.rs`.
-- **Providers:** Claude, Codex, Antigravity, OpenCode, Cursor and Grok have distinct launch
-  and hook installation paths. Support each relevant provider or refuse it by name.
+- **Providers:** Claude, Codex, Antigravity, OpenCode, Cursor, Grok and ZCode have distinct
+  launch and hook installation paths. Support each relevant provider or refuse it by name.
   Droid, Copilot and Aider are recognised identities only; they are not spawnable.
 - **Protocol:** type all `/ws` messages in `core/houston-protocol`. Bump
   `PROTOCOL_VERSION` once per wire-changing batch, regenerate TypeScript and update

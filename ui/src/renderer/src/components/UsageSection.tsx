@@ -48,6 +48,7 @@ const AGENT_LABEL: Partial<Record<AgentKind, string>> = {
   opencode: 'opencode',
   cursor: 'Cursor',
   grok: 'Grok',
+  zcode: 'ZCode',
   droid: 'Droid',
   copilot: 'Copilot',
   aider: 'Aider'

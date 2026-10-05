@@ -22,7 +22,8 @@ const HOOK_LABELS: Partial<Record<AgentKind, string>> = {
   antigravity: 'Antigravity',
   opencode: 'opencode',
   cursor: 'Cursor',
-  grok: 'Grok'
+  grok: 'Grok',
+  zcode: 'ZCode'
 }
 
 function DiagRead({
