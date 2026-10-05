@@ -28,4 +28,10 @@ describe('DiffBody', () => {
     expect(host.textContent).toContain('@@ -1 +1 @@')
     act(() => root.unmount())
   })
+
+  it('keeps a patch that has no hunk header, such as a mode change or binary file', () => {
+    const modeOnly = ['diff --git a/run.sh b/run.sh', 'old mode 100644', 'new mode 100755'].join('\n')
+    expect(diffBodyLines(modeOnly)).toEqual(modeOnly.split('\n'))
+    expect(diffBodyLines('+x')).toEqual(['+x'])
+  })
 })

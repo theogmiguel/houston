@@ -56,7 +56,7 @@ export function lineKind(line: string): string {
 export function diffBodyLines(patch: string): string[] {
   const lines = patch.split('\n')
   const firstHunk = lines.findIndex((line) => line.startsWith('@@'))
-  return firstHunk < 0 ? [] : lines.slice(firstHunk)
+  return firstHunk < 0 ? lines : lines.slice(firstHunk)
 }
 
 export function DiffBody({ patch, truncated }: { patch: string; truncated: boolean }): React.JSX.Element {
