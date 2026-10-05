@@ -703,7 +703,7 @@ function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approva
   return <PrSummary>
     <div className="pr-inspector-head"><PrHeader link={link} detail={detail} busy={busy} editBusy={false} onEdit={() => {}} onReact={() => {}} onOpenUrlInPane={onOpenUrlInPane} compact /></div>
     {watchRows}
-    <PrInspectorSections checks={detail.checks} detail={detail} approvalsRequired={approvalsRequired} approvalsReceived={approvalsReceived} number={number} busy={busy} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onSendToOrchestrator={onSendToOrchestrator} />
+    <PrInspectorSections checks={detail.checks} detail={detail} approvalsRequired={approvalsRequired} approvalsReceived={approvalsReceived} number={number} busy={busy} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onSendToOrchestrator={onSendToOrchestrator} onOpenChecks={onOpenUrlInPane ? () => onOpenUrlInPane(`${link.url}/checks`) : undefined} />
     <div data-testid="pr-details" className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
       <Disclosure summary="Details" scrollBody={false} className="rounded-none border-0 bg-transparent">
         <div className="flex flex-col gap-3">

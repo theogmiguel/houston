@@ -59,7 +59,7 @@ function ReviewComment({ thread, comment, number, busy, onReply, onSendToOrchest
   </article>
 }
 
-export function PrInspectorSections({ checks, detail, approvalsRequired, approvalsReceived, number, busy, onReply, onSendToOrchestrator }: {
+export function PrInspectorSections({ checks, detail, approvalsRequired, approvalsReceived, number, busy, onReply, onSendToOrchestrator, onOpenChecks }: {
   checks: PrCheck[]
   detail: PrDetail
   approvalsRequired: number
@@ -68,6 +68,7 @@ export function PrInspectorSections({ checks, detail, approvalsRequired, approva
   busy: boolean
   onReply: (threadId: string, body: string) => void
   onSendToOrchestrator?: (text: string) => void
+  onOpenChecks?: () => void
 }): React.JSX.Element {
   const passed = checks.filter((check) => check.state === 'passing').length
   const openThreads = detail.threads.filter((thread) => !thread.resolved)
@@ -75,7 +76,7 @@ export function PrInspectorSections({ checks, detail, approvalsRequired, approva
     <section className="pr-inspector-checks" data-testid="pr-checks">
       <div className="pr-inspector-check-caption">
         <span data-testid="pr-check-summary">Checks · {passed} of {checks.length} passed</span>
-        <Button type="button" variant="link" size="sm" data-testid="pr-check-details">Details</Button>
+        {onOpenChecks && <Button type="button" variant="link" size="sm" data-testid="pr-check-details" onClick={onOpenChecks}>Details</Button>}
       </div>
       {checks.map((check, index) => <CheckRow key={`${check.name}-${index}`} check={check} />)}
     </section>

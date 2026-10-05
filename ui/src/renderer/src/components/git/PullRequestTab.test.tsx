@@ -1163,7 +1163,8 @@ describe('PullRequestTab — stacks', () => {
 
 describe('compact side panel pull request', () => {
   it('matches the board and keeps full review controls inside collapsed Details', () => {
-    const client = mount({ compact: true, session: 1 })
+    const onOpenUrl = vi.fn()
+    const client = mount({ compact: true, session: 1, onOpenUrlInPane: onOpenUrl })
     emit(client, { type: 'pr_watch_list', watches: [{ session: 1, watches: [{ number: 61, url: 'https://github.com/o/r/pull/61', last_checked_at_ms: Date.now() - 40_000 }] }] })
     emit(client, detailMsg({ detail: detail({
       reviewers: [{ id: 'reviewer', kind: 'user' }],
@@ -1181,6 +1182,8 @@ describe('compact side panel pull request', () => {
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
     expect(q('[data-testid="pr-check-summary"]')?.textContent).toBe('Checks · 1 of 2 passed')
     expect(q('[data-testid="pr-check-details"]')?.textContent).toBe('Details')
+    click(q('[data-testid="pr-check-details"]'))
+    expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/o/r/pull/61/checks')
     expect(q('[data-testid="pr-check-row"]')?.textContent).toContain('running 6m')
     expect(q('[data-testid="pr-header-top"]')!.compareDocumentPosition(q('[data-testid="pr-watch-row"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
