@@ -9,10 +9,8 @@ import {
   defaultCheckpointLabel
 } from './checkpoints'
 import { ConfirmModal } from '../ConfirmModal'
-import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
 import { FIELD_INPUT } from '../nav/navChrome'
 import {
-  IconAlertTriangle,
   IconEye,
   IconHistory,
   IconLoaderCircle,
@@ -22,6 +20,7 @@ import {
 } from '../icons'
 import { Icon } from '../Icon'
 import { Tooltip } from '../Tooltip'
+import { Button, Notice } from '../ui'
 
 export interface CheckpointInspect {
   ref: string
@@ -76,27 +75,18 @@ export function CheckpointsDialog({
         onClose={onClose}
         footer={
           <>
-            <button className={`btn ${BTN_GHOST}`} data-testid="checkpoints-refresh" disabled={busy} onClick={onRefresh}>
+            <Button variant="legacy-ghost" data-testid="checkpoints-refresh" disabled={busy} onClick={onRefresh}>
               <Icon glyph={IconRefresh} role="small" />
               Refresh
-            </button>
-            <button className={`btn ${BTN_GHOST}`} onClick={onClose}>
+            </Button>
+            <Button variant="legacy-ghost" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </>
         }
       >
         {error && (
-          <div
-            role="alert"
-            data-testid="checkpoints-error"
-            className="flex items-start gap-1.5 py-2 px-3 rounded-[var(--tr-radius-sm)] border border-[color-mix(in_srgb,var(--danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--danger)_11%,transparent)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)]"
-          >
-            <span className="flex-none text-[var(--danger)] pt-0.5">
-              <Icon glyph={IconAlertTriangle} role="small" />
-            </span>
-            <span>{error}</span>
-          </div>
+          <Notice tone="danger" variant="callout" data-testid="checkpoints-error">{error}</Notice>
         )}
 
         <div className="flex items-center gap-2">
@@ -113,9 +103,9 @@ export function CheckpointsDialog({
               if (e.key === 'Enter') submit()
             }}
           />
-          <button className={`btn ${BTN_PRIMARY}`} data-testid="checkpoint-create" disabled={busy} onClick={submit}>
+          <Button variant="legacy-primary" data-testid="checkpoint-create" disabled={busy} onClick={submit}>
             Capture
-          </button>
+          </Button>
         </div>
         <p className="m-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
           A checkpoint is a hidden git ref holding the whole working copy — tracked edits, staged
@@ -153,40 +143,40 @@ export function CheckpointsDialog({
                     </span>
                   </div>
                   <Tooltip label="Inspect changes" className="inline-flex">
-                    <button
+                    <Button
                       type="button"
+                      variant="legacy-ghost-icon"
                       data-testid="checkpoint-inspect"
                       aria-label={`Inspect ${c.label}`}
                       disabled={busy}
                       onClick={() => onInspect(c.ref)}
-                      className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`}
                     >
                       <Icon glyph={IconEye} role="label" />
-                    </button>
+                    </Button>
                   </Tooltip>
                   <Tooltip label="Restore this snapshot" className="inline-flex">
-                    <button
+                    <Button
                       type="button"
+                      variant="legacy-ghost-icon"
                       data-testid="checkpoint-restore"
                       aria-label={`Restore ${c.label}`}
                       disabled={busy}
                       onClick={() => setRestoring(c)}
-                      className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`}
                     >
                       <Icon glyph={IconUndo} role="label" />
-                    </button>
+                    </Button>
                   </Tooltip>
                   <Tooltip label="Delete" className="inline-flex">
-                    <button
+                    <Button
                       type="button"
+                      variant="legacy-ghost-icon-danger"
                       data-testid="checkpoint-delete"
                       aria-label={`Delete ${c.label}`}
                       disabled={busy}
                       onClick={() => setDeleting(c)}
-                      className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`}
                     >
                       <Icon glyph={IconTrash} role="label" />
-                    </button>
+                    </Button>
                   </Tooltip>
                 </div>
                 {inspect && inspect.ref === c.ref && (
