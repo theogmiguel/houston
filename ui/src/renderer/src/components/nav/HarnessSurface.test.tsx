@@ -164,6 +164,7 @@ describe('HarnessSurface', () => {
     pickOption(container, 'harness-provider', 'codex')
     pickOption(container, 'harness-model', 'gpt-test')
     click(button('Mondays 09:00'))
+    expect(button('Run first review').closest('header')).not.toBeNull()
     click(button('Run first review'))
     expect(props.onCreateRoutine).toHaveBeenCalledWith({
       engine: 'codex',
@@ -178,6 +179,12 @@ describe('HarnessSurface', () => {
     expect(props.onRunNow).toHaveBeenCalledWith(9)
     render({ state: harnessState({ routine: routine({ id: 9 }), reviews: [], findings: [] }) })
     expect(props.onRunNow).toHaveBeenCalledTimes(1)
+  })
+
+  it('a routine without a published review shows no 0 → 0 trend line', () => {
+    render({ state: harnessState({ routine: routine({ id: 9 }), reviews: [], findings: [] }) })
+    expect(container.textContent).not.toContain('Repeated mistakes per 100 sessions')
+    expect(container.textContent).toContain('No published reviews yet.')
   })
 
   it('filters catalog models by provider and resets the model when the provider changes', () => {

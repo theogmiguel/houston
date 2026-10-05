@@ -416,7 +416,7 @@ function harnessFinding(overrides: Partial<HarnessFinding>): HarnessFinding {
   }
 }
 
-export function HarnessPageStory(): React.JSX.Element {
+export function HarnessPageStory({ firstRun = false, noReviews = false }: { firstRun?: boolean; noReviews?: boolean }): React.JSX.Element {
   const latest = harnessReview(13, 38, 7)
   const reviews = [latest, harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]
   const findings = [
@@ -463,6 +463,7 @@ export function HarnessPageStory(): React.JSX.Element {
     models: [],
     providerCoverage: [{ agent: 'opencode', sessions: 4 }]
   }
+  const shown: HarnessState = firstRun || noReviews ? { ...state, routine: firstRun ? null : state.routine, reviews: [], findings: [], providerCoverage: [] } : state
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', minWidth: 0 }}>
@@ -485,14 +486,14 @@ export function HarnessPageStory(): React.JSX.Element {
         workspaces={[{ id: HARNESS_WS, name: 'auth-refactor' }]}
         workspace={HARNESS_WS}
         onWorkspace={noop}
-        state={state}
+        state={shown}
         report={null}
         running={false}
         error={null}
         onCreateRoutine={noop}
         onRunNow={noop}
         onDecide={noop}
-        attention={{
+        attention={firstRun || noReviews ? null : {
           workspace: HARNESS_WS,
           open: 1,
           fixing: 2,

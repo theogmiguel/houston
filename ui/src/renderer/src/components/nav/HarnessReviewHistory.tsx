@@ -4,7 +4,7 @@ import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { HarnessState } from '../../houston/useHarness'
 import { openSideTasks } from '../../sidePanel'
 import { IconChevronDown, IconChevronRight } from '../icons'
-import { Button, Card, SectionHead, StatusLabel } from '../ui'
+import { Button, Caption, Card, SectionHead, StatusLabel } from '../ui'
 import { HarnessReportView } from './HarnessReportView'
 import { formatHarnessDate } from './harnessFormat'
 
@@ -61,7 +61,7 @@ export function HarnessReviewHistory({
           <ReviewGroups review={latest} findings={state.findings} />
         </Card>
       ) : (
-        <p>No published reviews yet.</p>
+        <Card padding="md"><Caption>No published reviews yet. Each review lists what it found new, what is still there and what is gone.</Caption></Card>
       )}
       {published.slice(1).map((review) => (
         <Card key={review.id}>

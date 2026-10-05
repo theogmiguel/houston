@@ -103,7 +103,7 @@ BASELINE=(
   "ui/src/renderer/src/components/nav/HarnessFindings.tsx 2"
   "ui/src/renderer/src/components/nav/HarnessHistory.tsx 12"
   "ui/src/renderer/src/components/nav/HarnessReportView.tsx 14"
-  "ui/src/renderer/src/components/nav/HarnessSurface.tsx 22"
+  "ui/src/renderer/src/components/nav/HarnessSurface.tsx 15"
   "ui/src/renderer/src/components/nav/ListDetail.tsx 29"
   "ui/src/renderer/src/components/nav/McpSurface.tsx 0"
   "ui/src/renderer/src/components/nav/RoutineEditor.tsx 65"

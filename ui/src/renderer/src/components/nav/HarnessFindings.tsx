@@ -4,7 +4,7 @@ import type { HarnessFinding } from '../../houston/generated/HarnessFinding'
 import type { HarnessFindingPhase } from '../../houston/generated/HarnessFindingPhase'
 import type { HarnessFindingState } from '../../houston/generated/HarnessFindingState'
 import { openSideTasks } from '../../sidePanel'
-import { Button, Card, Segmented, StatusLabel, type StatusLabelValue } from '../ui'
+import { Button, Caption, Card, Segmented, StatusLabel, type StatusLabelValue } from '../ui'
 import { formatHarnessDate } from './harnessFormat'
 
 export type HarnessFilter = 'active' | 'resolved' | 'dismissed'
@@ -83,7 +83,7 @@ export function HarnessFindings({
           ))}
         </Card>
       ) : (
-        <p>{filter === 'active' ? 'No active findings.' : `No ${filter} findings.`}</p>
+        <Card padding="md"><Caption>{filter === 'active' ? 'No active findings.' : `No ${filter} findings.`}</Caption></Card>
       )}
     </section>
   )

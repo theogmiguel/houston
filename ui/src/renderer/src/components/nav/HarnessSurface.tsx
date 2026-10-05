@@ -7,29 +7,18 @@ import type { Routine } from '../../houston/generated/Routine'
 import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
 import { Select } from '../Select'
-import { BarSparkline, Button, Caption, Notice, PageFrame, PageHeader } from '../ui'
+import { BarSparkline, Button, Caption, Card, Field, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
 import { engineLabel } from '../engineLabel'
 import { HarnessFindings } from './HarnessFindings'
 import { HarnessReviewHistory } from './HarnessReviewHistory'
-import {
-  BLOCK,
-  FIELD_INPUT,
-  FIELD_LABEL,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  chipClass
-} from './navChrome'
 import {
   HARNESS_ENGINES,
   SCHEDULE_OPTIONS,
   scheduleFields,
   type HarnessSchedule
 } from './harnessFormat'
-import { formatCadence, nextUpTimeLabel } from './routineFormat'
+import { nextUpTimeLabel } from './routineFormat'
 import { formatHarnessDate } from './harnessFormat'
-
-const TEXT_CLS =
-  '[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-secondary)]'
 
 export interface HarnessSetupValue {
   engine: AgentKind
@@ -92,6 +81,7 @@ function HarnessHeader({
   error,
   onDismissError
 }: HarnessSurfaceProps & { routine: Routine | null }): React.JSX.Element {
+  const firstRun = workspace !== null && state !== null && state.routine === null
   const noticeReviewId = attention?.latest_published_review_id ?? null
   const noticeVisible = noticeReviewId !== null && noticeReviewId > (attention?.seen_review_id ?? 0)
   const noticeFindings = state?.findings ?? []
@@ -107,7 +97,9 @@ function HarnessHeader({
       <PageHeader
         heading="Harness"
         description="Reads your agents' sessions and turns repeated mistakes into tasks. The next review checks whether each fix worked."
-        actions={routine ? <Button data-testid="harness-run" variant="primary" disabled={running} onClick={() => onRunNow(routine.id)}>{running ? 'Review running…' : 'Run review now'}</Button> : undefined}
+        actions={routine
+          ? <Button data-testid="harness-run" variant="primary" disabled={running} onClick={() => onRunNow(routine.id)}>{running ? 'Review running…' : 'Run review now'}</Button>
+          : firstRun ? <Button type="submit" form={FIRST_RUN_FORM_ID} variant="primary">Run first review</Button> : undefined}
       />
       {error && <Notice tone="danger" className="w-full" action={{ label: 'Dismiss', onClick: onDismissError ?? (() => {}) }}>{error}</Notice>}
     </>
@@ -142,6 +134,8 @@ function HarnessWorkspaceContent({
   return <HarnessBody {...props} state={state} routine={state.routine} published={published} latestReview={published[0] ?? null} trend={trend} trendReviewCount={trendReviewCount} />
 }
 
+const FIRST_RUN_FORM_ID = 'harness-first-run-form'
+
 function FirstRun({
   onStart,
   models
@@ -150,36 +144,29 @@ function FirstRun({
   models: HarnessModelOption[]
 }): React.JSX.Element {
   return (
-    <div className="flex flex-col gap-[14px]" data-testid="harness-first-run">
-      <p className={TEXT_CLS}>
-        A harness review reads this workspace&apos;s recent agent sessions, compares them with its
-        instructions, rules, skills and settings, and recommends what to change. It never edits them.
-      </p>
+    <div className="grid gap-[var(--space-3)]" data-testid="harness-first-run">
+      <Card padding="md" className="grid gap-[var(--space-3)]">
+        <div className="grid gap-[var(--space-1)]">
+          <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">No reviews yet</h2>
+          <Caption>
+            A review reads this workspace&apos;s recent agent sessions, compares them with its instructions,
+            rules, skills and settings, and lists what to change. It never edits them.
+          </Caption>
+        </div>
+        <SetupFields models={models} onSubmit={onStart} />
+      </Card>
       <WhatARunSends />
-      <div className={`${BLOCK} p-[14px]`}>
-        <SetupFields
-          models={models}
-          initial={{
-            engine: 'claude',
-            model: null,
-            schedule: 'off',
-            cadence: null
-          }}
-          submitLabel="Run first review"
-          onSubmit={onStart}
-        />
-      </div>
     </div>
   )
 }
 
 function WhatARunSends(): React.JSX.Element {
   return (
-    <section className={`${BLOCK} p-[14px] flex flex-col gap-[6px]`} data-testid="harness-consent">
-      <h3 className="[font-size:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">
+    <Card tone="inset" padding="md" className="grid gap-[var(--space-1-5)]" data-testid="harness-consent">
+      <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">
         What a review sends to its provider
-      </h3>
-      <ul className={`${TEXT_CLS} list-disc pl-[18px] flex flex-col gap-[2px]`}>
+      </h2>
+      <ul className="m-0 grid list-disc gap-[var(--space-1)] pl-[var(--space-4)] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]">
         <li>
           The harness files: CLAUDE.md, AGENTS.md, rules, skills, settings, hooks and MCP configuration.
         </li>
@@ -189,144 +176,63 @@ function WhatARunSends(): React.JSX.Element {
           session&apos;s last assistant message.
         </li>
       </ul>
-      <p className={TEXT_CLS}>
+      <Caption>
         The run is an agent pane you can watch. It sends those excerpts through the chosen provider&apos;s own
         CLI, like any turn of that agent. The findings it publishes stay on this machine.
-      </p>
-    </section>
+      </Caption>
+    </Card>
   )
 }
 
 function SetupFields({
   models,
-  initial,
-  submitLabel,
-  onSubmit,
-  onCancel
+  onSubmit
 }: {
   models: HarnessModelOption[]
-  initial: {
-    engine: AgentKind
-    model: string | null
-    schedule: HarnessSchedule
-    cadence: Cadence | null
-  }
-  submitLabel: string
   onSubmit: (value: HarnessSetupValue) => void
-  onCancel?: () => void
 }): React.JSX.Element {
-  const [engine, setEngine] = useState<AgentKind>(initial.engine)
-  const [model, setModel] = useState(initial.model ?? '')
-  const [schedule, setSchedule] = useState<HarnessSchedule>(initial.schedule)
+  const [engine, setEngine] = useState<AgentKind>('claude')
+  const [model, setModel] = useState('')
+  const [schedule, setSchedule] = useState<Exclude<HarnessSchedule, 'custom'>>('off')
   const catalogProvider = engine === 'claude' || engine === 'codex'
-  const availableModels = models.filter((entry) => entry.provider === engine)
   const modelOptions = [
     { value: '', label: "The provider's default" },
-    ...availableModels.map(({ id }) => ({ value: id, label: id })),
-    ...(model && !availableModels.some(({ id }) => id === model)
-      ? [{ value: model, label: `${model} (saved)` }]
-      : [])
+    ...models.filter((entry) => entry.provider === engine).map(({ id }) => ({ value: id, label: id }))
   ]
   return (
     <form
-      className="flex flex-col gap-[12px]"
+      id={FIRST_RUN_FORM_ID}
+      className="grid gap-[var(--space-3)]"
       onSubmit={(e) => {
         e.preventDefault()
-        const fields =
-          schedule === 'custom' && initial.cadence
-            ? { cadence: initial.cadence, enabled: true }
-            : scheduleFields(schedule === 'custom' ? 'off' : schedule, initial.cadence)
-        onSubmit({ engine, model: model.trim() || null, ...fields })
+        onSubmit({ engine, model: model.trim() || null, ...scheduleFields(schedule, null) })
       }}
     >
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">
-        <div className="flex flex-col min-w-0">
-          <span className={FIELD_LABEL}>Provider</span>
+      <div className="grid grid-cols-1 items-start gap-[var(--space-3)] sm:grid-cols-2">
+        <Field label="Provider">
           <Select
             aria-label="Provider"
             data-testid="harness-provider"
             className="w-full"
             value={engine}
-            options={HARNESS_ENGINES.map((k) => ({
-              value: k,
-              label: engineLabel(k)
-            }))}
+            options={HARNESS_ENGINES.map((k) => ({ value: k, label: engineLabel(k) }))}
             onChange={(v) => {
               setEngine(v as AgentKind)
               setModel('')
             }}
           />
-        </div>
-        <div className="flex flex-col min-w-0">
-          <span className={FIELD_LABEL}>Model</span>
+        </Field>
+        <Field label="Model" hint={catalogProvider ? "Models come from Houston's shared catalog. Availability depends on your provider account." : undefined}>
           {catalogProvider ? (
-            <Select
-              aria-label="Model"
-              data-testid="harness-model"
-              className="w-full"
-              value={model}
-              options={modelOptions}
-              onChange={setModel}
-            />
+            <Select aria-label="Model" data-testid="harness-model" className="w-full" value={model} options={modelOptions} onChange={setModel} />
           ) : (
-            <input
-              aria-label="Model"
-              id="harness-model"
-              className={`${FIELD_INPUT} w-full`}
-              autoComplete="off"
-              value={model}
-              placeholder="The provider's default"
-              onChange={(e) => setModel(e.target.value)}
-            />
+            <TextInput aria-label="Model" autoComplete="off" surface="card" value={model} placeholder="The provider's default" onChange={(e) => setModel(e.target.value)} />
           )}
-        </div>
+        </Field>
       </div>
-      {catalogProvider && (
-        <p className={TEXT_CLS}>
-          Models come from Houston's shared catalog. Availability depends on your provider account.
-        </p>
-      )}
-      <div className="flex flex-col">
-        <span className={FIELD_LABEL}>Schedule</span>
-        <div className="flex flex-col gap-[6px]">
-          <div role="group" aria-label="Schedule" className="flex flex-wrap gap-[6px]">
-            {SCHEDULE_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                aria-pressed={schedule === o.value}
-                className={chipClass(schedule === o.value)}
-                onClick={() => setSchedule(o.value)}
-              >
-                {o.label}
-              </button>
-            ))}
-            {initial.schedule === 'custom' && initial.cadence && (
-              <button
-                type="button"
-                aria-pressed={schedule === 'custom'}
-                className={chipClass(schedule === 'custom')}
-                onClick={() => setSchedule('custom')}
-              >
-                Keep {formatCadence(initial.cadence)}
-              </button>
-            )}
-          </div>
-          <p className={TEXT_CLS}>
-            Every run spends tokens. A scheduled run reads from where the previous review stopped.
-          </p>
-        </div>
-      </div>
-      <div className="flex items-center gap-[8px]">
-        <button type="submit" className={PRIMARY_BUTTON}>
-          {submitLabel}
-        </button>
-        {onCancel && (
-          <button type="button" className={SECONDARY_BUTTON} onClick={onCancel}>
-            Cancel
-          </button>
-        )}
-      </div>
+      <Field label="Schedule" hint="Every run spends tokens. A scheduled run reads from where the previous review stopped.">
+        <Segmented aria-label="Schedule" value={schedule} options={SCHEDULE_OPTIONS} onChange={setSchedule} />
+      </Field>
     </form>
   )
 }
@@ -349,14 +255,14 @@ function HarnessBody(
   return (
     <div className="grid gap-[var(--space-2)]">
       {published.length === 0 && <WhatARunSends />}
-      <div className="flex min-w-0 items-center gap-[var(--space-2)]">
+      {published.length > 0 && <div className="flex min-w-0 items-center gap-[var(--space-2)]">
         <BarSparkline values={trend} label={`Repeated mistakes per 100 sessions: ${firstValue} to ${lastValue}`} />
         <Caption className="min-w-0">
           Repeated mistakes per 100 sessions: {firstValue} → {lastValue} over {trendReviewCount} reviews
           {latestReview && <> · last review #{latestReview.id} {formatHarnessDate(latestReview.started_at_ms, true)}, {latestReview.sessions ?? 0} sessions</>}
           {routine.enabled && <> · next {nextUpTimeLabel(routine.next_run_at_ms, Date.now())}</>}
         </Caption>
-      </div>
+      </div>}
       <HarnessFindings
         workspace={state.workspace}
         findings={state.findings}

@@ -249,6 +249,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'palette/graphite': () => <PaletteGraphiteStory />,
   'palette/paper': () => <PalettePaperStory />,
   'harness/page': () => <HarnessPageStory />,
+  'harness/first-run': () => <HarnessPageStory firstRun />,
+  'harness/no-reviews': () => <HarnessPageStory noReviews />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
   'rail/grid-row-graphite-200': () => <RailGridRowStory theme="graphite" width={200} />,
   'rail/grid-row-graphite-240': () => <RailGridRowStory theme="graphite" width={240} />,
