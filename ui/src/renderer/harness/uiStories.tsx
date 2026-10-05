@@ -13,6 +13,7 @@ import {
   EmptyState,
   Field,
   FieldLabel,
+  FirstRunHooksStepSpecimen,
   IconTile,
   ListDetail,
   LaunchGridPreviewSpecimen,
@@ -244,6 +245,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
         <SpecimenGroup heading="Launch composer header">
           <LaunchComposerHeaderSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="First run hooks step">
+          <div className="h-[700px] border border-[var(--border)]"><FirstRunHooksStepSpecimen /></div>
         </SpecimenGroup>
         <SpecimenGroup heading="Launch preset outline">
           <LaunchPresetOutlineSpecimen />
