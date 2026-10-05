@@ -64,6 +64,38 @@ function PrActionButton({
   )
 }
 
+function PrMergeWhenGreen({
+  detail,
+  pr,
+  method,
+  busy,
+  number,
+  open,
+  draft,
+  reason
+}: {
+  detail: PrDetail
+  pr: PrDetailController
+  method: PrMergeMethod
+  busy: boolean
+  number: number
+  open: boolean
+  draft: boolean
+  reason: (key: PrActionKey) => string | null
+}): React.JSX.Element | null {
+  if (!open || draft) return null
+  const enabled = detail.auto_merge_enabled === true
+  return (
+    <PrActionButton
+      label="Merge when green"
+      testId="pr-auto-merge"
+      disabledReason={enabled ? 'Auto-merge is already enabled' : reason('enable_auto_merge')}
+      busy={busy}
+      onClick={() => pr.action(number, 'enable_auto_merge', { mergeMethod: method })}
+    />
+  )
+}
+
 function PrFooterMenu({
   link,
   detail,
@@ -331,13 +363,16 @@ export function PrFooterBar({
           onClick={() => pr.action(link.number, 'revert')}
         />
       ) : null}
-      {open && !draft && <PrActionButton
-        label="Merge when green"
-        testId="pr-auto-merge"
-        disabledReason={detail.auto_merge_enabled === true ? 'Auto-merge is already enabled' : reason('enable_auto_merge')}
+      <PrMergeWhenGreen
+        detail={detail}
+        pr={pr}
+        method={method}
         busy={busy}
-        onClick={() => pr.action(link.number, 'enable_auto_merge', { mergeMethod: method })}
-      />}
+        number={link.number}
+        open={open}
+        draft={draft}
+        reason={reason}
+      />
       {menuOpen && (
         <PrFooterMenu
           link={link}

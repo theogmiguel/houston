@@ -54,7 +54,7 @@ class InspectorClient {
       detail: {
         body: 'Wake each parent once per batch of inbox rows.', author: 'theo', base_ref: 'main', head_ref: 'feat/tasks-backlog', head_sha: 'a1c3f09', commit_count: 3, created_at: 1, updated_at: 2, mergeable: 'mergeable', merge_state: 'blocked',
         checks: [{ name: 'safety-checks', state: 'passing', url: null, duration_ms: 38000 }, { name: 'core-checks', state: 'passing', url: null, duration_ms: 134000 }, { name: 'renderer-checks', state: 'passing', url: null, duration_ms: 94000 }, { name: 'windows', state: 'running', url: null, duration_ms: null }],
-        comments: [], reviews: [{ id: 'review-1', author: 'alice', state: 'COMMENTED', body: 'Please keep the wake bounded to one pass per parent.', submitted_at: 2, reactions: [] }], comments_total: 0, reviews_total: 1, merge_disabled_reason: 'PR #412 is waiting on 1 check: windows', viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: [], reviewers: [], reactions: [], threads: [], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
+        comments: [], reviews: [{ id: 'review-1', author: 'alice', state: 'COMMENTED', body: 'Please keep the wake bounded to one pass per parent.', submitted_at: 2, reactions: [] }], comments_total: 0, reviews_total: 1, merge_disabled_reason: 'PR #412 is waiting on 1 check: windows', viewer: { can_write: true, can_triage: true, can_update: true, did_author: false, can_update_branch: true }, viewer_message: null, behind_by: null, labels: [], reviewers: [{ id: 'reviewer', kind: 'user' }], reactions: [], threads: [{ id: 'thread-1', path: 'src/PaneHeader.tsx', line: 88, resolved: false, outdated: false, comments: [{ id: 'comment-1', author: 'reviewer', body: 'Hide the watch chip when the pane is narrower than the header budget; it pushes the context meter off the edge.', created_at: Math.floor(Date.now() / 1000) - 9 * 60, reactions: [] }] }], threads_truncated: false, threads_message: null, auto_merge_enabled: null, auto_merge_method: null, cross_repository: false
       }
     }))
     return request
@@ -88,6 +88,7 @@ function Frame({ theme, board }: { theme: Theme; board: Board }): React.JSX.Elem
       onWidth={() => {}}
       onResetWidth={() => {}}
       onOpenUrlInPane={() => {}}
+      onSendToTerminal={() => {}}
       tab={tab === 'pull-request' ? 'pull-request' : 'changes'}
       onTab={() => {}}
       sessions={sessions}

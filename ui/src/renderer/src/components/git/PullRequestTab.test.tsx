@@ -298,6 +298,7 @@ function render(client: FakeClient | null, opts: Record<string, unknown> = {}): 
         onOpenUrlInPane={opts.onOpenUrlInPane as ((url: string) => void) | undefined}
         onShowChanges={opts.onShowChanges as (() => void) | undefined}
         onPrPresenceChange={opts.onPrPresenceChange as ((exists: boolean) => void) | undefined}
+        onSendToOrchestrator={opts.onSendToOrchestrator as ((text: string) => void) | undefined}
       />
     )
   })
@@ -313,6 +314,7 @@ function mount(
     onOpenUrlInPane?: (url: string) => void
     onShowChanges?: () => void
     onPrPresenceChange?: (exists: boolean) => void
+    onSendToOrchestrator?: (text: string) => void
   } = {}
 ): FakeClient {
   container = document.createElement('div')
@@ -842,6 +844,20 @@ describe('PullRequestTab — editing, comments and reviews', () => {
     expect(client.prThreadResolveCalls).toEqual([
       { number: 61, threadId: 'PRT_1', resolved: true, request: 3 }
     ])
+  })
+
+  it('shows the required approval count and forwards an anchored review to the orchestrator', () => {
+    const sendToOrchestrator = vi.fn()
+    const client = mount({ onSendToOrchestrator: sendToOrchestrator })
+    emit(client, detailMsg({
+      link: link({ review_decision: 'REVIEW_REQUIRED' }),
+      detail: detail({ reviewers: [{ id: 'reviewer', kind: 'user' }], threads: [thread()] })
+    }))
+
+    expect(q('[data-testid="pr-review-requirement"]')?.textContent).toContain('0 / 1')
+    expect(q('[data-testid="pr-thread-comment-time"]')).not.toBeNull()
+    click(qa('button').find((button) => button.textContent === 'Send to orchestrator') ?? null)
+    expect(sendToOrchestrator).toHaveBeenCalledWith('PR #61 · src/a.rs:12\nrev: rename this')
   })
 
   it('reacts to the pull request through the picker', () => {

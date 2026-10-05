@@ -44,6 +44,7 @@ export interface PullRequestTabProps {
   dir: string | null
   session?: number | null
   onOpenUrlInPane?: (url: string) => void
+  onSendToOrchestrator?: (text: string) => void
   onShowChanges?: () => void
   active?: boolean
   onPrPresenceChange?: (exists: boolean, tone?: PrPresenceTone) => void
@@ -736,6 +737,7 @@ function PrDetailView({
   method,
   setMethod,
   onOpenUrlInPane,
+  onSendToOrchestrator,
   onBrowse,
   linkMessage,
   compact
@@ -748,6 +750,7 @@ function PrDetailView({
   method: PrMergeMethod
   setMethod: (method: PrMergeMethod) => void
   onOpenUrlInPane?: (url: string) => void
+  onSendToOrchestrator?: (text: string) => void
   onBrowse: () => void
   linkMessage: React.ReactNode
 }): React.JSX.Element {
@@ -761,6 +764,8 @@ function PrDetailView({
   const mergeReason = pendingMergeReason(detail)
   const busy = pr.write.busy !== null
   const number = link.number
+  const approvalsRequired = detail.reviewers.length
+  const approvalsReceived = detail.reviews.filter((review) => review.state === 'APPROVED').length
 
   // A different pull request is a different review: drafts never travel with a
   // subject change.
@@ -943,6 +948,12 @@ function PrDetailView({
               />
             </div>
             <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+              {link.review_decision === 'REVIEW_REQUIRED' && approvalsRequired > 0 && (
+                <div className="flex items-center" data-testid="pr-review-requirement">
+                  <span>Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span>
+                  <span data-review-count>{Math.min(approvalsReceived, approvalsRequired)} / {approvalsRequired}</span>
+                </div>
+              )}
               {detail.reviews_total > 0 && <PrReviews detail={detail} />}
               {(detail.threads.length > 0 ||
                 detail.threads_message !== null ||
@@ -950,6 +961,8 @@ function PrDetailView({
                 <PrThreads
                   detail={detail}
                   busy={busy}
+                  number={number}
+                  onSendToOrchestrator={onSendToOrchestrator}
                   onReply={(threadId, body) => pr.threadReply(number, threadId, body)}
                   onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)}
                   onReact={(subjectId, content, reacted) =>
@@ -984,6 +997,7 @@ export function PullRequestTab({
   dir,
   session = null,
   onOpenUrlInPane,
+  onSendToOrchestrator,
   onShowChanges,
   active = true,
   onPrPresenceChange,
@@ -1083,6 +1097,7 @@ export function PullRequestTab({
       method={method}
       setMethod={setMethod}
       onOpenUrlInPane={onOpenUrlInPane}
+      onSendToOrchestrator={onSendToOrchestrator}
       onBrowse={() => setBrowsing(true)}
       linkMessage={linkMessage}
     />

@@ -65,6 +65,7 @@ export interface SourceControlPanelProps {
   onTab: (tab: ScmTab) => void
   onOpenFileInEditor?: (absPath: string) => void
   onOpenUrlInPane?: (url: string) => void
+  onSendToTerminal?: (text: string) => void
   onReviewPacket?: (data: ReviewDiffsData) => void
   review?: ChangesReview | null
   // The grid hides rather than unmounts under an overlay; the panel keeps its
@@ -258,6 +259,7 @@ export function SourceControlPanel({
   onTab,
   onOpenFileInEditor,
   onOpenUrlInPane,
+  onSendToTerminal,
   onReviewPacket,
   review = null,
   hiddenByOverlay = false
@@ -396,6 +398,7 @@ export function SourceControlPanel({
                 dir={dir}
                 session={session}
                 onOpenUrlInPane={onOpenUrlInPane}
+                onSendToOrchestrator={onSendToTerminal}
                 onShowChanges={() => onTab('changes')}
                 compact={false}
                 active={tab === 'pull-request'}
