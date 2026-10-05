@@ -70,8 +70,8 @@
       "over": 1
     },
     "src/renderer/src/components/QuestionCard.tsx": {
-      "total": 56,
-      "worst": 29,
+      "total": 55,
+      "worst": 28,
       "over": 1
     },
     "src/renderer/src/components/SessionPane.tsx": {
