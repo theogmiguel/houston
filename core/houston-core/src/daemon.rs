@@ -9552,6 +9552,14 @@ impl Daemon {
         if agent == proto::AgentKind::Zcode {
             // Updates require an explicit user action, never a CLI's own check.
             cmd.env("ZCODE_DISABLE_UPDATE_CHECK", "1");
+            // An inherited URL of another channel would resolve that channel's plugin here.
+            let own = crate::zcode_config::url_env(self.channel.as_deref());
+            for (name, _) in std::env::vars_os() {
+                let name = name.to_string_lossy();
+                if name.starts_with(crate::zcode_config::URL_ENV_PREFIX) && name != own {
+                    cmd.env_remove(name.as_ref());
+                }
+            }
         }
         for (k, v) in &extra_env {
             cmd.env(k, v);
