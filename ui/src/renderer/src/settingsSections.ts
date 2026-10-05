@@ -9,6 +9,7 @@ export type SettingsSectionId =
   | 'workspace-defaults'
   | 'orchestration'
   | 'tasks'
+  | 'notifications'
   | 'voice'
   | 'privacy'
   | 'usage'
@@ -24,6 +25,7 @@ export type SettingsIconKey =
   | 'folder'
   | 'fork'
   | 'tasks'
+  | 'message'
   | 'mic'
   | 'database'
   | 'chart'
@@ -126,6 +128,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     icon: 'tasks',
     group: 'agents',
     keywords: ['backlog', 'task', 'access', 'read only', 'agent access', 'todo', 'key prefix']
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    icon: 'message',
+    group: 'agents',
+    keywords: ['desktop notifications', 'in-app notices', 'sound', 'taskbar', 'finished', 'needs input']
   },
   {
     id: 'voice',

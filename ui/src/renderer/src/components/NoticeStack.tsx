@@ -2,8 +2,9 @@ import { HIT_TARGET_28 } from './hitTarget'
 import { IconAlertTriangle, IconCheck, IconClose, IconInfo, type IconComponent } from './icons'
 import { MAX_NOTICES, type NoticeKind, type NoticeStore } from '../notices'
 import { ICON_ROLE_CLS } from './Icon'
+import { OrchestrationNotice } from './ui/OrchestrationNotice'
 
-export type NoticeAnchor = 'workspace-top' | 'pane-corner'
+export type NoticeAnchor = 'workspace-top' | 'workspace-top-right' | 'pane-corner'
 
 const KIND_ICON: Record<NoticeKind, IconComponent> = {
   info: IconInfo,
@@ -30,12 +31,15 @@ const KIND_BOX_CLS: Record<NoticeKind, string> = {
 const ANCHOR_CLS: Record<NoticeAnchor, string> = {
   'workspace-top':
     'absolute top-[8px] left-1/2 -translate-x-1/2 z-[calc(var(--z-leaf)+1)] w-[min(560px,100%-24px)] flex flex-col gap-[4px]',
+  'workspace-top-right':
+    'absolute top-[var(--space-3)] right-[var(--space-3)] z-[var(--z-toast)] flex flex-col items-end gap-[var(--space-2)]',
   'pane-corner':
     'absolute bottom-[12px] right-[12px] z-[calc(var(--z-pane)+3)] max-w-[min(300px,100%-24px)] flex flex-col-reverse items-end gap-[6px]'
 }
 
 const ANCHOR_MOTION: Record<NoticeAnchor, string> = {
   'workspace-top': 'motion-safe:[animation:notice-in-top_200ms_var(--motion-menu-ease)]',
+  'workspace-top-right': 'motion-safe:[animation:notice-in-corner_200ms_var(--motion-menu-ease)]',
   'pane-corner': 'motion-safe:[animation:notice-in-corner_200ms_var(--motion-menu-ease)]'
 }
 
@@ -58,6 +62,22 @@ export function NoticeStack({
       className={`${ANCHOR_CLS[anchor]} pointer-events-none`}
     >
       {rows.map((n) => {
+        if (n.presentation === 'orchestration') {
+          return (
+            <div key={n.id} data-notice={n.code}>
+              <OrchestrationNotice
+                heading={n.title}
+                body={n.body ?? ''}
+                needsInput={n.kind === 'warning'}
+                onOpen={() => {
+                  n.action?.onClick()
+                  store.dismiss(n.code)
+                }}
+                onDismiss={() => store.dismiss(n.code)}
+              />
+            </div>
+          )
+        }
         const Icon = KIND_ICON[n.kind]
         return (
           <div

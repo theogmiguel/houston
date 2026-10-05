@@ -31,6 +31,7 @@ export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly s
     'Mailbox retention'
   ],
   tasks: ['Agent access', 'Task key prefix'],
+  notifications: ['Desktop notifications', 'In-app notifications'],
   voice: [
     'Groq API key',
     'Enable dictation',

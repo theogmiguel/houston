@@ -19,28 +19,30 @@ export function SettingsScreen({
   const ws = (path: string, name: string): Workspace => ({ path, name }) as Workspace
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
-      <Sidebar
-        workspaces={[ws('/home/dev/code/houston', 'houston')]}
-        sessions={[] as SessionInfo[]}
-        selected="/home/dev/code/houston"
-        customColors={{}}
-        colorIndexByPath={{}}
-        renaming={null}
-        onSelect={noop}
-        onAddWorkspace={noop}
-        onRemoveWorkspace={noop}
-        onRenameStart={noop}
-        onRenameSubmit={noop}
-        onRenameCancel={noop}
-        onChangeColor={noop}
-        onReorderWorkspace={noop}
-        pinnedWorkspaces={new Set()}
-        onTogglePinWorkspace={noop}
-        onSshConnect={noop}
-        chromeTheme="graphite"
-        onToggleChromeTheme={noop}
-        onOpenSettings={noop}
-      />
+      <div style={{ width: 240, flex: 'none', height: '100%' }}>
+        <Sidebar
+          workspaces={[ws('/home/dev/code/houston', 'houston')]}
+          sessions={[] as SessionInfo[]}
+          selected="/home/dev/code/houston"
+          customColors={{}}
+          colorIndexByPath={{}}
+          renaming={null}
+          onSelect={noop}
+          onAddWorkspace={noop}
+          onRemoveWorkspace={noop}
+          onRenameStart={noop}
+          onRenameSubmit={noop}
+          onRenameCancel={noop}
+          onChangeColor={noop}
+          onReorderWorkspace={noop}
+          pinnedWorkspaces={new Set()}
+          onTogglePinWorkspace={noop}
+          onSshConnect={noop}
+          chromeTheme="graphite"
+          onToggleChromeTheme={noop}
+          onOpenSettings={noop}
+        />
+      </div>
       <SettingsView {...baseSettingsViewProps()} {...props} />
     </div>
   )
@@ -52,6 +54,14 @@ export function SettingsAppearance(): React.JSX.Element {
 
 export function SettingsTerminal(): React.JSX.Element {
   return <SettingsScreen section="terminal" />
+}
+
+export function SettingsNotifications(): React.JSX.Element {
+  return <SettingsScreen section="notifications" props={{
+    desktopNotificationMode: 'notifications-sound',
+    inAppNotifications: true,
+    desktopNotificationDelivery: { allowed: true }
+  }} />
 }
 
 export function SettingsDiagnostics(): React.JSX.Element {

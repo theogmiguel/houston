@@ -203,10 +203,16 @@ export async function writeFileChecked(path: string, content: string, expectedSh
   return invoke<string>('fs_write_file_checked', { filePath: path, content, expectedSha256 })
 }
 
-export async function notifyNative(title: string, body: string): Promise<void> {
+export async function notifyNative(title: string, body: string, sessionId: number): Promise<void> {
   if (!isTauri()) throw new Error('Native notifications require the native desktop bridge')
   const invoke = await invoker()
-  return invoke<void>('native_notify', { title, body })
+  return invoke<void>('native_notify', { title, body, sessionId })
+}
+
+export async function nativeNotificationsSupported(): Promise<boolean> {
+  if (!isTauri()) return false
+  const invoke = await invoker()
+  return invoke<boolean>('native_notifications_supported', {})
 }
 
 export async function statFile(path: string): Promise<{ mtimeMs: number } | null> {

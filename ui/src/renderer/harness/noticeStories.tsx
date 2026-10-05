@@ -155,3 +155,34 @@ export function NoticesPaneCorner(): React.JSX.Element {
     </Ground>
   )
 }
+
+export function NoticesOrchestration(): React.JSX.Element {
+  return (
+    <Ground>
+      <NoticeStack
+        anchor="workspace-top-right"
+        label="Agent notifications"
+        store={store([
+          rec({
+            code: 'agent-2',
+            kind: 'warning',
+            presentation: 'orchestration',
+            title: 'eagle-api needs your input',
+            body: 'Claude Code · project_eagle › Review',
+            durationMs: null,
+            action: { label: 'Open pane', onClick: () => {} }
+          }, 1),
+          rec({
+            code: 'agent-1',
+            kind: 'success',
+            presentation: 'orchestration',
+            title: 'auth-refactor finished',
+            body: 'Claude Code · Houston › Tasks backlog',
+            durationMs: 5_000,
+            action: { label: 'Open pane', onClick: () => {} }
+          }, 2)
+        ])}
+      />
+    </Ground>
+  )
+}

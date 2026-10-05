@@ -6,6 +6,7 @@ import {
   appQuit,
   buildTrayPayload,
   createTraySync,
+  NOTIFICATION_EVENT_FOCUS_PANE,
   onTrayEvent,
   syncTray,
   TRAY_EVENT_FOCUS_PANE,
@@ -73,6 +74,9 @@ export function useTrayBridge(options: {
       else unlisten.push(off)
     }
     void onTrayEvent<number>(TRAY_EVENT_FOCUS_PANE, (session) => {
+      focusPane.current(session)
+    }).then(track)
+    void onTrayEvent<number>(NOTIFICATION_EVENT_FOCUS_PANE, (session) => {
       focusPane.current(session)
     }).then(track)
     void onTrayEvent<null>(TRAY_EVENT_STOP_DAEMON, stopDaemonThenQuit).then(track)
