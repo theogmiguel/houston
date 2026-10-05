@@ -5,6 +5,7 @@ import { baseSettingsViewProps, hostInfoFixture } from '../src/components/settin
 import { setSettingsNavForTests, settingsSectionLabel } from '../src/settingsNav'
 import { setMode } from '../src/backgroundMode'
 import { SettingsBreadcrumb } from '../src/components/ui/SettingsBreadcrumb'
+import { AUTO_TERMINAL_PALETTE } from '../src/theme'
 import type { HoustonClient, SessionInfo, Workspace } from '../src/houston/client'
 import type { RoleRoute } from '../src/houston/generated/RoleRoute'
 import type { VoiceModelState } from '../src/houston/generated/VoiceModelState'
@@ -61,6 +62,7 @@ export function SettingsScreen({
           historyWorkspace="/home/dev/code/houston"
           historyWorkspaceName="houston"
           {...props}
+          chromeTheme={props?.chromeTheme ?? (document.documentElement.dataset.theme === 'paper' ? 'paper' : 'graphite')}
         />
       </div>
     </div>
@@ -77,7 +79,7 @@ export function SettingsAppearanceCustom(): React.JSX.Element {
 }
 
 export function SettingsTerminal(): React.JSX.Element {
-  return <SettingsScreen section="terminal" />
+  return <SettingsScreen section="terminal" props={{ theme: AUTO_TERMINAL_PALETTE }} />
 }
 
 export function SettingsShortcuts(): React.JSX.Element {
