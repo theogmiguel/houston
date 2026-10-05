@@ -54,6 +54,7 @@ export interface SourceControlPanelProps {
   onSummaryChange?: (summary: ChangesSummary) => void
   reviewTarget?: number
   embedded?: boolean
+  checkoutLabel?: string
   dir: string | null
   session?: number | null
   client: HoustonClient | null
@@ -246,6 +247,7 @@ export function SourceControlPanel({
   onSummaryChange,
   reviewTarget,
   embedded = false,
+  checkoutLabel,
   dir,
   session,
   client,
@@ -284,7 +286,7 @@ export function SourceControlPanel({
   const rootRef = useRef<HTMLElement | null>(null)
   const [hostWidth, setHostWidth] = useState(0)
   const [summary, setSummary] = useState<ChangesSummary | null>(null)
-  const [prVisited, setPrVisited] = useState(false)
+  const [prVisited, setPrVisited] = useState(tab === 'pull-request')
   const [hasPr, setHasPr] = useState(false)
   const [prTone, setPrTone] = useState<PrPresenceTone>('ok')
   const [changesRefresh, setChangesRefresh] = useState(0)
@@ -376,6 +378,7 @@ export function SourceControlPanel({
               onReviewPacket={onReviewPacket}
               review={review}
               compact={embedded}
+              checkoutLabel={checkoutLabel}
               onSummary={onSummary}
               refreshSignal={changesRefresh}
             />
@@ -394,7 +397,7 @@ export function SourceControlPanel({
                 session={session}
                 onOpenUrlInPane={onOpenUrlInPane}
                 onShowChanges={() => onTab('changes')}
-                compact={embedded}
+                compact={false}
                 active={tab === 'pull-request'}
                 refreshSignal={prRefresh}
                 onPrPresenceChange={onPrPresenceChange}

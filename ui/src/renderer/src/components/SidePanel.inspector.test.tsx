@@ -6,7 +6,7 @@ import type { SourceControlPanelProps } from './SourceControlPanel'
 import type { SessionInfo } from '../houston/client'
 
 vi.mock('./SourceControlPanel', () => ({ SourceControlPanel: () => <div data-testid="scm-content" /> , ScmResizeHandle: () => <div /> }))
-vi.mock('./FilesPane', () => ({ FilesPane: () => <div /> }))
+vi.mock('./FilesPane', () => ({ FilesPane: ({ workspaceDir, openFile }: { workspaceDir: string; openFile: { path: string } | null }) => <div data-testid="inspector-files">Files root: {workspaceDir}; file: {openFile?.path ?? 'none'}</div> }))
 vi.mock('./OverviewTab', () => ({ OverviewTab: () => <div data-testid="overview-content" /> }))
 
 afterEach(() => { cleanup(); localStorage.clear() })
@@ -60,5 +60,23 @@ describe('pane inspector focus', () => {
     view.rerender(<SidePanel {...props(sessions, 2)} />)
     expect(screen.queryByRole('tab', { name: 'Overview' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'Changes' }).getAttribute('aria-selected')).toBe('true')
+  })
+})
+
+describe('inspector files tab', () => {
+  it('routes a file request to the session workspace and persists Files as the selected tab', async () => {
+    const request = { kind: 'files' as const, root: '/session-worktree', path: '/session-worktree/src/index.ts', line: 9, col: 2 }
+    render(<SidePanel {...props(new Map([[1, session(1, 'session')]]), 1)} workspace="/workspace" request={request} />)
+
+    expect(await screen.findByText('Files root: /session-worktree; file: /session-worktree/src/index.ts')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Files' }).getAttribute('aria-selected')).toBe('true')
+    expect(localStorage.getItem('tr-inspector-tab:/workspace')).toBe('files')
+  })
+
+  it('restores a pinned Files tab when the inspector remounts for the same workspace', () => {
+    localStorage.setItem('tr-inspector-tab:/workspace', 'files')
+    render(<SidePanel {...props(new Map([[1, session(1, 'session')]]), 1)} workspace="/workspace" />)
+
+    expect(screen.getByRole('tab', { name: 'Files' }).getAttribute('aria-selected')).toBe('true')
   })
 })

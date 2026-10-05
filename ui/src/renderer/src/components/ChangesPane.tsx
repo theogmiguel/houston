@@ -80,11 +80,13 @@ export interface ChangesSummary {
   behind: number
   changed: number
   hasPr: boolean
+  prNumber?: number
   prTone: 'ok' | 'warn' | 'stop'
 }
 
 export interface ChangesPaneProps {
   compact?: boolean
+  checkoutLabel?: string
   client: HoustonClient | null
   dir: string | null
   onOpenFileInEditor?: (absPath: string) => void
@@ -301,11 +303,11 @@ function ChangesFileList({
         return (
           <div key={group.group}>
             <div className={`changes-group-head ${SECTION_HEAD_CLS} ${group.group === 'conflicted' ? 'text-[var(--warn)]' : ''}`}>
-              {compact && group.group === 'unstaged' ? 'Changes' : GROUP_LABEL[group.group]}
-              <span className="ml-auto font-mono font-medium text-[length:var(--tr-text-xs)] text-[var(--text-faint)] tabular-nums">
-                {group.rows.length}
-              </span>
-              <Tooltip
+              {compact && group.group === 'unstaged'
+                ? `UNCOMMITTED · ${group.rows.length} FILE${group.rows.length === 1 ? '' : 'S'}`
+                : GROUP_LABEL[group.group]}
+              {compact && group.group === 'unstaged' ? <span data-testid="changes-total"><span data-tone="added">+{group.rows.reduce((sum, row) => sum + (row.added ?? 0), 0)}</span><span data-tone="deleted">−{group.rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)}</span></span> : <span className="ml-auto font-mono font-medium text-[length:var(--tr-text-xs)] text-[var(--text-faint)] tabular-nums">{group.rows.length}</span>}
+              {!(compact && group.group === 'unstaged') && <Tooltip
                 label={bulkPaths.length === 0 ? groupBulkDisabledReason(group.group) : undefined}
                 className="inline-flex"
               >
@@ -320,8 +322,8 @@ function ChangesFileList({
                 >
                   {bulkLabelFor(group.group)}
                 </button>
-              </Tooltip>
-              {!compact && group.group === 'unstaged' && (
+              </Tooltip>}
+              {group.group === 'unstaged' && (
                 <Tooltip
                   label={stageAll.length === 0 ? (rows.length === 0 ? 'Nothing to stage' : 'Every unstaged file here is a blocked path — its contents were never shown') : undefined}
                   className="inline-flex"
@@ -402,7 +404,9 @@ function CommitBox({
   offerCreatePr,
   prBusy,
   onCreatePr,
-  hasChanges
+  hasChanges,
+  compact = false,
+  target
 }: {
   commitMsg: string
   setCommitMsg: (message: string) => void
@@ -418,6 +422,8 @@ function CommitBox({
   prBusy: boolean
   onCreatePr: () => void
   hasChanges: boolean
+  compact?: boolean
+  target?: string
 }): React.JSX.Element {
   return (
     <div className="changes-commit flex-none flex flex-col gap-[var(--space-2)] p-[var(--space-2-5)] border-t border-t-[var(--border)] bg-[var(--material-shell-bg)]">
@@ -428,12 +434,12 @@ function CommitBox({
           value={commitMsg}
           onChange={(event) => setCommitMsg(event.target.value)}
           placeholder="Commit message"
-          rows={2}
+          rows={compact ? 3 : 2}
           className="flex-1 min-w-0 min-h-[var(--h-ctl)] resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-2)] py-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:border-[var(--border-focus)] focus-visible:outline-none"
         />
       </div>}
       <div data-testid="changes-actions" className="flex items-center gap-[var(--space-2)]">
-        <span data-testid="changes-staged-count" className="font-mono text-[length:var(--tr-text-small-size)] text-[var(--text-faint)] whitespace-nowrap">
+      <span data-testid="changes-staged-count" className={`font-mono text-[length:var(--tr-text-small-size)] text-[var(--text-faint)] whitespace-nowrap ${compact ? 'hidden' : ''}`}>
           {staged} file{staged === 1 ? '' : 's'} staged
         </span>
         <div className="flex flex-wrap items-center justify-end gap-[var(--space-2)] ml-auto">
@@ -466,7 +472,7 @@ function CommitBox({
           )}
           {!offerCreatePr && (
             <SplitButton
-              label="Commit"
+              label={compact ? `Commit ${staged} file${staged === 1 ? '' : 's'}` : 'Commit'}
               testId="changes-commit"
               disabled={!canCommit}
               onClick={() => doCommit(false)}
@@ -476,6 +482,7 @@ function CommitBox({
               ]}
             />
           )}
+          {compact && target && <span data-testid="changes-commit-target">to {target}</span>}
         </div>
       </div>
     </div>
@@ -539,6 +546,7 @@ function ScmErrorLine({ text, testId }: { text: string; testId: string }): React
 export function ChangesPane({
   client,
   dir,
+  checkoutLabel,
   onOpenFileInEditor,
   onOpenUrlInPane,
   onReviewPacket,
@@ -614,6 +622,10 @@ export function ChangesPane({
     client.gitStatus(repoDir, base)
     client.prStatus(repoDir)
   }, [client, repoDir, base])
+
+  useEffect(() => {
+    if (selected === null && rows.length > 0) setSelected(rows[0].path)
+  }, [rows, selected])
   refreshRef.current = refresh
 
   useEffect(() => {
@@ -632,6 +644,7 @@ export function ChangesPane({
       behind,
       changed: rows.length,
       hasPr: pr?.pr != null,
+      prNumber: pr?.pr?.number,
       prTone: prToneForSummary(pr)
     })
   }, [branch, ahead, behind, rows.length, pr])
@@ -961,6 +974,7 @@ export function ChangesPane({
         headline: `${rows.length} file${rows.length === 1 ? '' : 's'} changed`,
         description: `+${rows.reduce((sum, row) => sum + (row.added ?? 0), 0)} added, −${rows.reduce((sum, row) => sum + (row.deleted ?? 0), 0)} removed${ahead > 0 ? ` · ${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${defaultBase ?? 'the base'}` : ''}. Pick a file to read its diff.`
       }}
+      onOpenInEditor={onOpenFileInEditor && selectedRow ? () => onOpenFileInEditor(toEditorPath(repoDir, selectedRow.path)) : undefined}
       onReview={openReviewPicker}
       reviewDisabledReason={!client || reviewBusy ? 'Not connected' : null}
     />
@@ -987,6 +1001,8 @@ export function ChangesPane({
         client.prCreate(repoDir)
       }}
       hasChanges={rows.length > 0}
+      compact={compact === true}
+      target={checkoutLabel ?? (repoDir ? repoDir.split(/[\\/]/).filter(Boolean).at(-1) : undefined)}
     />
   )
 
@@ -1092,7 +1108,7 @@ function FileRow({
   const counts =
     row.added !== null || row.deleted !== null ? (
       <span className="flex-none min-w-[52px] text-right font-mono text-[length:var(--tr-text-xs)] font-medium tabular-nums">
-        {row.added !== null && <span className="text-[var(--success)]">+{row.added}</span>}
+        {row.added !== null && <span className="text-[var(--ok)]">+{row.added}</span>}
         {row.added !== null && row.deleted !== null ? ' ' : ''}
         {row.deleted !== null && <span className="text-[var(--danger)]">−{row.deleted}</span>}
       </span>
@@ -1129,8 +1145,8 @@ function FileRow({
           {row.blocked ? <Icon glyph={IconShieldAlert} role="label" /> : MARK_GLYPH[row.state]}
         </span>
         <span className="changes-file-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[length:var(--tr-text-xs)]">
-          <span className="text-[var(--text-faint)] [@container_(max-width:420px)]:hidden">{row.dir}</span>
           <span>{row.name}</span>
+          <span className="text-[var(--text-faint)]">{row.dir}</span>
         </span>
       </button>
       <StageToggleButton stage={stage} onStageToggle={onStageToggle} />

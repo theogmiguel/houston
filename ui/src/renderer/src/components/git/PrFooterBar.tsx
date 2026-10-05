@@ -275,6 +275,9 @@ export function PrFooterBar({
       >
         ⋯
       </button>
+      <span data-testid="pr-merge-caption">
+        {mergeReason ?? 'Ready when checks and required reviews pass'}
+      </span>
       <span className="flex-1" />
       {primary?.testId === 'pr-merge' && (
         <Select
@@ -287,7 +290,7 @@ export function PrFooterBar({
       )}
       {primary?.testId === 'pr-merge' ? (
         <SplitButton
-          label="Merge"
+          label={method === 'squash' ? 'Squash and merge' : 'Merge'}
           testId="pr-merge"
           disabled={primary.disabledReason !== null || busy || pr.mergeBusy}
           disabledReason={primary.disabledReason ?? undefined}
@@ -328,6 +331,13 @@ export function PrFooterBar({
           onClick={() => pr.action(link.number, 'revert')}
         />
       ) : null}
+      {open && !draft && <PrActionButton
+        label="Merge when green"
+        testId="pr-auto-merge"
+        disabledReason={detail.auto_merge_enabled === true ? 'Auto-merge is already enabled' : reason('enable_auto_merge')}
+        busy={busy}
+        onClick={() => pr.action(link.number, 'enable_auto_merge', { mergeMethod: method })}
+      />}
       {menuOpen && (
         <PrFooterMenu
           link={link}

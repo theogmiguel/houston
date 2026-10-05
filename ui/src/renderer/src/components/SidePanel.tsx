@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SessionInfo } from '../houston/client'
 import type { ChangesSummary } from './ChangesPane'
 import { clampScmWidth, defaultScmWidth, type ScmTab } from '../scmPanel'
@@ -45,7 +45,10 @@ function InspectorContent({ props, tab, focused, isOrchestrator, filesRoot, open
   setSummary: (summary: ChangesSummary) => void
 }): React.JSX.Element | null {
   if (tab === 'changes' || tab === 'pull-request') {
-    return <div className="side-card"><SourceControlPanel {...props} key={`${props.dir ?? 'none'}:${props.activeSessionId ?? 'none'}`} session={props.activeSessionId} tab={tab} hideHeader onSummaryChange={setSummary} embedded /></div>
+    const checkoutLabel = focused?.worktree?.path
+      ? `wt/${focused.worktree.path.split(/[\\/]/).filter(Boolean).at(-1)}`
+      : focused?.checkout_root ?? props.dir ?? ''
+    return <div className="side-card"><SourceControlPanel {...props} key={`${props.dir ?? 'none'}:${props.activeSessionId ?? 'none'}`} session={props.activeSessionId} tab={tab} hideHeader onSummaryChange={setSummary} embedded checkoutLabel={checkoutLabel} /></div>
   }
   if (tab === 'files') {
     return <Suspense fallback={<div className="flex-1" />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'inspector-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} onSendToTerminal={props.onSendToTerminal} sendToTerminalLabel={props.sendToTerminalLabel} /></Suspense>
@@ -69,7 +72,7 @@ function PaneInspectorHeader({ props, focused, isOrchestrator, tab, summary, onT
     : summary?.branch ?? focused?.checkout_root ?? props.dir ?? ''
   const tabs = [
     { id: 'changes', label: 'Changes', count: summary?.changed },
-    { id: 'pull-request', label: 'PR' },
+    { id: 'pull-request', label: 'PR', count: summary?.prNumber, countPrefix: '#' },
     { id: 'files', label: 'Files' },
     ...(isOrchestrator ? [{ id: 'overview', label: 'Overview' }] : [])
   ]
@@ -77,14 +80,23 @@ function PaneInspectorHeader({ props, focused, isOrchestrator, tab, summary, onT
 }
 
 export function SidePanel(props: SidePanelProps): React.JSX.Element {
-  const [activeTab, setActiveTab] = useState<InspectorTab>(props.tab)
+  const tabStorageKey = `tr-inspector-tab:${props.workspace}`
+  const [activeTab, setActiveTab] = useState<InspectorTab>(() => {
+    const stored = localStorage.getItem(tabStorageKey)
+    return stored === 'changes' || stored === 'pull-request' || stored === 'files' ? stored : props.tab
+  })
   const [summary, setSummary] = useState<ChangesSummary | null>(null)
   const [openFile, setOpenFile] = useState<{ path: string; line?: number; col?: number } | null>(null)
   const [filesRoot, setFilesRoot] = useState(props.dir ?? props.workspace)
   const [hostWidth, setHostWidth] = useState(0)
+  const initialTabSync = useRef(true)
   const focused = props.activeSessionId == null ? undefined : props.sessions.get(props.activeSessionId)
   const isOrchestrator = hasChildren(focused, props.sessions)
-  useEffect(() => { setActiveTab(props.tab) }, [props.tab])
+  useEffect(() => {
+    if (initialTabSync.current) { initialTabSync.current = false; return }
+    setActiveTab(props.tab)
+  }, [props.tab])
+  useEffect(() => { localStorage.setItem(tabStorageKey, activeTab) }, [activeTab, tabStorageKey])
   useEffect(() => { setFilesRoot(props.dir ?? props.workspace); setOpenFile(null) }, [props.activeSessionId, props.dir, props.workspace])
   useEffect(() => {
     const request = props.request

@@ -63,12 +63,36 @@ export function DiffBody({ patch, truncated }: { patch: string; truncated: boole
         {truncated ? '\n… patch truncated at 512 KiB — review locally' : ''}
       </pre>
     )
+  let oldLine = 0
+  let newLine = 0
   return (
     <div className={CODE_CLASS} role="presentation">
       {lines.map((line, i) => {
         const kind = lineKind(line)
+        let oldNumber: number | null = null
+        let newNumber: number | null = null
+        if (kind === 'hunk') {
+          const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line)
+          if (match) {
+            oldLine = Number(match[1])
+            newLine = Number(match[2])
+          }
+        } else if (kind === 'ctx') {
+          oldNumber = oldLine
+          newNumber = newLine
+          oldLine += 1
+          newLine += 1
+        } else if (kind === 'del') {
+          oldNumber = oldLine
+          oldLine += 1
+        } else if (kind === 'add') {
+          newNumber = newLine
+          newLine += 1
+        }
         return (
-          <div key={i} className={`${LINE_BASE} ${LINE_KIND_CLASS[kind]}`} data-kind={kind}>
+          <div key={i} className={`${LINE_BASE} ${LINE_KIND_CLASS[kind]}`} data-kind={kind} data-old-line={oldNumber ?? undefined} data-new-line={newNumber ?? undefined}>
+            <span data-line-number="old" aria-hidden>{oldNumber ?? ''}</span>
+            <span data-line-number="new" aria-hidden>{newNumber ?? ''}</span>
             <span className={GUTTER_CLASS} aria-hidden>
               {kind === 'add' ? '+' : kind === 'del' ? '−' : ''}
             </span>
@@ -78,6 +102,8 @@ export function DiffBody({ patch, truncated }: { patch: string; truncated: boole
       })}
       {truncated && (
         <div className={`${LINE_BASE} ${LINE_KIND_CLASS.meta}`} data-kind="meta">
+          <span data-line-number="old" aria-hidden />
+          <span data-line-number="new" aria-hidden />
           <span className={GUTTER_CLASS} aria-hidden />
           <span className={TEXT_CLASS}>… patch truncated at 512 KiB — review locally</span>
         </div>

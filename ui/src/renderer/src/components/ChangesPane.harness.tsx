@@ -186,6 +186,7 @@ export function mount(
     review?: ChangesReview | null
     onSummary?: (s: never) => void
     compact?: boolean
+    checkoutLabel?: string
     refreshSignal?: number
   } = {}
 ): Harness {
@@ -205,6 +206,7 @@ export function mount(
         review={opts.review ?? null}
         onSummary={opts.onSummary as never}
         compact={opts.compact}
+        checkoutLabel={opts.checkoutLabel}
         refreshSignal={opts.refreshSignal ?? 0}
       />
     )

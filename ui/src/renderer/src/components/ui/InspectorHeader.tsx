@@ -6,6 +6,7 @@ export interface InspectorTab {
   id: string
   label: string
   count?: number
+  countPrefix?: string
 }
 
 const tab = variants('inspector-tab', {
@@ -40,7 +41,7 @@ export function InspectorHeader({
         onSelect(tabs[next].id)
         event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
       }}>
-        {item.label}{item.count ? <span className="inspector-tab-count">{item.count}</span> : null}
+        {item.label}{item.count !== undefined && item.count > 0 ? <span className="inspector-tab-count">{item.countPrefix}{item.count}</span> : null}
       </button>)}
     </div>
     <div className="inspector-subject">

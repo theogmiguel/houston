@@ -222,7 +222,7 @@ import {
 import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";
+import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";
 import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";

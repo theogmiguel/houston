@@ -17,7 +17,7 @@ import { META_ROW_CLS, SCM_CARD_ATTRS, SCM_CARD_CLS, SECTION_HEAD_CLS } from './
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../Disclosure'
 import { Icon } from '../Icon'
-import { IconLoaderCircle, IconPencil, IconCheck, IconEllipsis } from '../icons'
+import { IconLoaderCircle, IconPencil, IconCheck, IconEllipsis, IconExternal, IconGitPullRequest } from '../icons'
 import { Tooltip } from '../Tooltip'
 import { prDecisionLabel } from './changes'
 import { SPIN_CLASS } from './DiffBody'
@@ -421,7 +421,8 @@ function PrHeader({
   busy,
   editBusy,
   onEdit,
-  onReact
+  onReact,
+  onOpenUrlInPane
 }: {
   link: PullRequestLink
   detail: PrDetail
@@ -429,6 +430,7 @@ function PrHeader({
   editBusy: boolean
   onEdit: (title: string, body: string) => void
   onReact: (content: PrDetail['reactions'][number]['content'], reacted: boolean) => void
+  onOpenUrlInPane?: (url: string) => void
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(link.title ?? `Pull request #${link.number}`)
@@ -438,14 +440,18 @@ function PrHeader({
   const branchPair = head !== null && base !== null ? `${head} → ${base}` : null
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-start gap-2">
+      <div className="flex flex-col gap-1.5">
+        <div data-testid="pr-header-top">
         <span
           data-testid="pr-state"
           className={`flex-none px-1.5 rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] leading-4 ${stateTone(link)}`}
         >
+          <Icon glyph={IconGitPullRequest} role="small" />
           {stateLabel(link)}
         </span>
-        <div className="min-w-0 flex flex-col gap-0.5">
+        <span data-testid="pr-number">#{link.number}</span>
+        {onOpenUrlInPane && <button type="button" className={`btn ${BTN_GHOST} ml-auto ${ACTION}`} onClick={() => onOpenUrlInPane(link.url)}><Icon glyph={IconExternal} role="small" />Open on GitHub</button>}
+        </div>
           <div
             data-testid="pr-title"
             className="text-[length:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)] break-words"
@@ -456,9 +462,9 @@ function PrHeader({
             data-testid="pr-sub"
             className={`font-mono ${SMALL} text-[var(--text-faint)] break-words`}
           >
-            #{link.number}
-            {branchPair ? ` · ${branchPair}` : ''} ·{' '}
+            {branchPair ? `${branchPair} · ` : ''}
             {detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
+            {' · '}<span data-testid="pr-additions">+{link.additions}</span>{' '}<span data-testid="pr-deletions">−{link.deletions}</span>
             {detail.behind_by !== null && detail.behind_by !== undefined
               ? detail.behind_by === 0
                 ? ' · up to date'
@@ -467,8 +473,7 @@ function PrHeader({
             {detail.auto_merge_enabled === true
               ? ` · auto-merge ${detail.auto_merge_method ?? 'merge'}`
               : ''}
-          </div>
-        </div>
+      </div>
         <Tooltip label="Edit title and description">
           <button
             type="button"
@@ -565,17 +570,19 @@ function checkSummary(checks: PrCheck[]): { text: string; tone: string } {
 
 function PrChecks({ checks }: { checks: PrCheck[] }): React.JSX.Element {
   const summary = checkSummary(checks)
+  const passed = checks.filter((check) => check.state === 'passing').length
   const ordered = [...checks].sort((left, right) => CHECK_PRIORITY[left.state] - CHECK_PRIORITY[right.state])
   return (
     <div data-testid="pr-checks">
       <Disclosure
+        defaultOpen
         className="rounded-none border-0 bg-transparent"
         scrollBody={false}
         summary={
           <span className="flex items-center gap-[var(--space-2)]">
             <span className={`h-[7px] w-[7px] rounded-full ${summary.tone}`} />
-            <span>{summary.text}</span>
-            <span className="text-[var(--text-muted)]">· Details</span>
+            <span data-testid="pr-check-summary">CHECKS · {passed} OF {checks.length} PASSED</span>
+            <span className="ml-auto text-[var(--text-muted)]">Details</span>
           </span>
         }
       >
@@ -627,6 +634,7 @@ function PrReviews({ detail }: { detail: PrDetail }): React.JSX.Element {
     <Disclosure
       summary="Reviews"
       count={detail.reviews_total}
+      defaultOpen
       scrollBody={false}
       className="rounded-none border-0 bg-transparent"
     >
@@ -890,6 +898,7 @@ function PrDetailView({
                 editBusy={pr.write.busy === `edit:${number}`}
                 onEdit={(title, body) => pr.edit(number, title, body)}
                 onReact={(content, reacted) => pr.react(number, null, content, reacted)}
+                onOpenUrlInPane={onOpenUrlInPane}
               />
             </div>
             <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
@@ -990,7 +999,6 @@ export function PullRequestTab({
       onStop={() => {
         if (client && session != null) client.send({ type: 'pr_watch_unwatch', session, number: watch.number })
       }}
-      onOpen={() => onOpenUrlInPane?.(watch.url)}
     />
   ))
   const withWatchRows = (content: React.ReactNode): React.JSX.Element => (
