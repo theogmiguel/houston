@@ -103,6 +103,7 @@ import { UsagePageStory } from './usagePageStory'
 import { UiPrimitivesStory } from './uiStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
+import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 
 const noop = (): void => {}
@@ -195,6 +196,21 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
     </div>
   ),
   'ui-primitives': () => <UiPrimitivesStory />,
+  'firstrun/hooks': () => (
+    <div className="flex h-full bg-[var(--content-bg)] text-[var(--text-primary)]">
+      <aside className="flex w-[240px] flex-none flex-col border-r border-[var(--border)] bg-[var(--rail-bg)]">
+        <div className="px-[var(--space-3)] py-[var(--space-2)] [font-size:var(--tr-text-ui-size)] font-semibold">Houston</div>
+        <div className="mx-[var(--space-2)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] px-[var(--space-2)] py-[var(--space-1)] [font-size:var(--tr-text-label-size)] text-[var(--text-muted)]">Search</div>
+        {['Tasks', 'Skills', 'Routines', 'Harness', 'Connections', 'Usage'].map((item) => <div key={item} className="flex min-h-[var(--h-ctl-mini)] items-center px-[14px] [font-size:var(--tr-text-label-size)] text-[var(--text-secondary)]">{item}</div>)}
+        <div className="px-[14px] py-[var(--space-2)] [font-size:var(--tr-text-ui-size)] font-semibold">Workspaces</div>
+        <div className="flex-1 px-[38px] py-[var(--space-2)] [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">No sessions yet</div>
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="h-[30px] flex-none border-b border-[var(--border)]" />
+        <FirstRunHooksStepSpecimen />
+      </div>
+    </div>
+  ),
   'palette/graphite': () => <PaletteGraphiteStory />,
   'palette/paper': () => <PalettePaperStory />,
   'harness/page': () => <HarnessPageStory />,

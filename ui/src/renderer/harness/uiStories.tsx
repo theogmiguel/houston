@@ -13,6 +13,7 @@ import {
   EmptyState,
   Field,
   FieldLabel,
+  FirstRunHooksStepSpecimen,
   IconTile,
   ListDetail,
   LaunchGridPreviewSpecimen,
@@ -30,6 +31,7 @@ import {
   STATUS_LABELS,
   StatusLabel,
   RoutineDetail,
+  TextInput,
   Table,
   TaskProgress,
   TaskAcceptanceRow,
@@ -199,6 +201,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow>
             <Button variant="primary" icon={IconPlus}>Primary</Button>
             <Button variant="secondary">Secondary</Button>
+            <Button variant="field">Field</Button>
             <Button variant="ghost">Ghost</Button>
             <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
@@ -244,6 +247,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
         <SpecimenGroup heading="Launch composer header">
           <LaunchComposerHeaderSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="First run hooks step">
+          <div className="h-[700px] border border-[var(--border)]"><FirstRunHooksStepSpecimen /></div>
         </SpecimenGroup>
         <SpecimenGroup heading="Launch preset outline">
           <LaunchPresetOutlineSpecimen />
@@ -325,6 +331,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Field label="Workspace" hint="Choose a project folder."><input value="/home/dev/code/houston" readOnly /></Field>
             <Field label="Required field" error="A value is required."><input value="" readOnly aria-invalid="true" /></Field>
             <Field label="Disabled field" hint="This value is managed elsewhere."><input value="Managed" readOnly disabled /></Field>
+            <Field label="Command" size="compact" align="start"><TextInput surface="card" font="mono" value="bun run test" readOnly /></Field>
+            <Field label="Shortcut" size="compact" align="start"><Button variant="field">Press shortcut</Button></Field>
           </div>
         </SpecimenGroup>
 

@@ -4,6 +4,8 @@ import { effectiveLabel, newTerminal } from '../keymap'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentProfileState } from './SettingsView'
 import type { ProfileChoice } from '../houston/generated/ProfileChoice'
+import type { WorkspaceAction } from '../houston/client'
+import { WorkspaceActions } from './ui/WorkspaceActions'
 import {
   AGENT_DOT_COLOR,
   IconAgent,
@@ -35,6 +37,10 @@ export interface AddPanePopoverProps {
   onSplitDown?: () => void
   onNewGrid: () => void
   agentProfiles: AgentProfileState | null
+  workspaceActions?: WorkspaceAction[]
+  onRunWorkspaceAction?: (action: WorkspaceAction) => void
+  onSaveWorkspaceAction?: (action: WorkspaceAction) => void
+  onDeleteWorkspaceAction?: (id: string) => void
 }
 
 export function AddPanePopover({
@@ -47,7 +53,11 @@ export function AddPanePopover({
   onSpawnAgent,
   onSplitDown,
   onNewGrid,
-  agentProfiles
+  agentProfiles,
+  workspaceActions = [],
+  onRunWorkspaceAction = () => {},
+  onSaveWorkspaceAction = () => {},
+  onDeleteWorkspaceAction = () => {}
 }: AddPanePopoverProps): React.JSX.Element {
   const [expandedProfileAgent, setExpandedProfileAgent] = useState<AgentKind | null>(null)
 
@@ -92,6 +102,15 @@ export function AddPanePopover({
           {effectiveLabel(newTerminal, keymapOverrides)}
         </span>
       </button>
+      {hasWorkspace && (
+        <WorkspaceActions
+          actions={workspaceActions}
+          keymapOverrides={keymapOverrides}
+          onRun={(action) => { onClose(); onRunWorkspaceAction(action) }}
+          onSave={onSaveWorkspaceAction}
+          onDelete={onDeleteWorkspaceAction}
+        />
+      )}
       <div className="h-px my-1 mx-0 bg-[var(--glass-brd)]" />
       <div className="px-3 pt-1 pb-0.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
         Agent

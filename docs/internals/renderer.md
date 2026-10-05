@@ -14,8 +14,8 @@ There is **no dev script and no HMR**. The renderer is built once by `vite build
 `ui/out/renderer` and embedded in the Tauri binary; `scripts/dev.sh` re-runs the build
 itself. Losing HMR is a recorded deliberate cost of the one-binary shape.
 
-`ui/package.json` scripts: `build`, `typecheck` (`tsc --noEmit` twice — the app and the
-p5 harness), `test` (`vitest run`), `check:css`, `check:bundle`.
+`ui/package.json` scripts: `build`, `typecheck` (`tsc --noEmit`), `test` (`vitest run`),
+`check:css`, `check:bundle`.
 
 ## Source tree
 
