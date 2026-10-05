@@ -143,7 +143,7 @@ export const openFileShortcut: ShortcutEntry = {
 export const newBrowserPane: ShortcutEntry = {
   id: 'new-browser-pane',
   keyLabel: 'b',
-  description: 'new browser tab in the side panel',
+  description: 'new browser pane',
   category: 'global',
   layer: 'both',
   match: (e) => e.key === 'b'

@@ -201,7 +201,7 @@ function RailWorkspacesMulti(): React.JSX.Element {
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
   'new-session/default': () => <NewSession />,
-  'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
+  'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onNewBrowser={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
   'shell/workspace-empty': () => <WorkspaceEmpty onNewSession={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
   'launch/docked': () => <DockedLaunchStory />,
   'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,

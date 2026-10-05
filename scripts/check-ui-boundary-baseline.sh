@@ -3,7 +3,7 @@
 BASELINE=(
   "ui/src/renderer/src/App.tsx 51"
   "ui/src/renderer/src/BootstrapGate.tsx 33"
-  "ui/src/renderer/src/components/AddPanePopover.tsx 91"
+  "ui/src/renderer/src/components/AddPanePopover.tsx 78"
   "ui/src/renderer/src/components/AgentProfiles.tsx 85"
   "ui/src/renderer/src/components/AnimOut.tsx 3"
   "ui/src/renderer/src/components/AppearancePicker.tsx 16"

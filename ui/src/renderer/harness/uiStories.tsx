@@ -57,7 +57,8 @@ import {
   UsageSectionHeading,
   UsageShareBar
 } from '../src/components/ui'
-import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
+import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
 import { AnimOut } from '../src/components/AnimOut'
@@ -205,6 +206,15 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <MotionThemeSpecimens theme="graphite" reducedMotion />
           <MotionThemeSpecimens theme="paper" reducedMotion={false} />
           <MotionThemeSpecimens theme="paper" reducedMotion />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="New pane menu rows">
+          <SpecimenRow>
+            <div className="w-56">
+              <PaneMenuRow icon={IconTerminal} label="Terminal" shortcut="t" onClick={noop} />
+              <PaneMenuRow icon={IconGlobe} label="Browser" shortcut="b" disabledReason="Open a workspace to open a browser" onClick={noop} />
+            </div>
+          </SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Settings navigation and scope">

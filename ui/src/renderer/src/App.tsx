@@ -4287,6 +4287,9 @@ export function App(): React.JSX.Element {
               keymapOverrides={keymapOverrides}
               onClose={() => setAddPanePopover(null)}
               onNewTerminal={newTerminal}
+              onNewBrowser={() => {
+                if (selectedWs !== "all") openBrowserPane(selectedWs, null);
+              }}
               onSpawnAgent={spawnAgentPane}
               agentProfiles={agentProfiles}
               workspaceActions={workspaceActions}
