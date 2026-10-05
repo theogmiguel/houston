@@ -133,7 +133,14 @@ Claude and Grok children receive a launch-only permission rule for Houston's
 `pane_submit` tool, including when automatic approval is disabled. Other tools keep
 the selected approval mode. No handback-only launch rule is
 configured for Codex, Antigravity, OpenCode, Cursor or ZCode; their capability note names
-this limitation, and their selected approval mode still applies to handback.
+this limitation, and their selected approval mode still applies to handback. Outside yolo
+mode ZCode asks for approval before every Houston tool call, so a ZCode parent also asks
+before each `pane_spawn` and `pane_wait`.
+
+A ZCode child whose turn fails — an API error, an exhausted Coding Plan quota, a network
+failure — or is interrupted between tool calls reports no turn end: its parent's wait
+times out instead of returning, and the child shows Working until it is prompted again.
+Inspect it with `pane_read` when a wait on a ZCode child keeps timing out.
 
 ## Handing work off to a new pane
 
