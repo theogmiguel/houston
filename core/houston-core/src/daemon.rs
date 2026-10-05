@@ -11819,11 +11819,12 @@ impl Daemon {
                 ],
                 "grok".into(),
             ),
+            // `-p` defaults to yolo; a summary needs no write access.
             (proto::AgentKind::Zcode, _) => (
                 vec![
                     "sh".into(),
                     "-c".into(),
-                    r#"exec "$0" -p "$(cat "$1")""#.into(),
+                    r#"exec "$0" --mode plan -p "$(cat "$1")""#.into(),
                     "zcode".into(),
                     path_arg,
                 ],
