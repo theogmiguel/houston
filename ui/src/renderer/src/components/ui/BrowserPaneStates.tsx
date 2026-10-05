@@ -3,7 +3,9 @@ import { variants } from './variants'
 import { IconGlobe, IconHistory, IconPlug, IconPlus, IconRefresh, IconServer } from '../icons'
 import { IconTile } from '../IconTile'
 import type { LocalServer } from '../../houston/generated/LocalServer'
-import { faviconInitial, hostLabel } from '../browserTabs'
+import { clearRecents, faviconInitial, hostLabel } from '../browserTabs'
+import type { Dispatch, RefObject, SetStateAction } from 'react'
+import { unreachableHost, unreachableMessage } from './browserUnreachable'
 
 const groupTitle = variants(
   'inline-flex items-center gap-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-muted)]',
@@ -67,7 +69,7 @@ export function BrowserBlankState({
         )}
         {recents.length > 0 && (
           <div className="w-full flex flex-col gap-[var(--space-1)]">
-            <div className={groupTitle({ icon: 'history' })}><IconHistory />Recently opened<Button variant="text" className="ml-auto [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-[var(--text-muted)]" data-testid="browser-pane-clear-recents" onClick={onClear}>Clear</Button></div>
+            <div className={groupTitle({ icon: 'history' })}><IconHistory />Recently opened<Button variant="ghost" size="sm" className="ml-auto" data-testid="browser-pane-clear-recents" onClick={onClear}>Clear</Button></div>
             <div className="flex flex-col gap-px">
               {recents.map(({ url, onOpen }, index) => (
                 <button key={url} type="button" className={serverRow({ priority: index === 0 ? 'first' : 'normal' })} onClick={onOpen}>
@@ -120,5 +122,66 @@ export function BrowserUnreachableState({
         {details && <pre className="m-0 w-full box-border whitespace-pre-wrap rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-[var(--space-2-5)] py-[var(--space-2)] font-mono [font-size:var(--tr-text-label-size)] leading-[1.6] text-[var(--text-muted)]">{rawError}{'\n'}{url}{'\n'}{attempts} {attempts === 1 ? 'attempt' : 'attempts'}</pre>}
       </div>
     </div>
+  )
+}
+
+export function BrowserPaneStageState({
+  fresh,
+  failMsg,
+  url,
+  attempts,
+  details,
+  recents,
+  setRecents,
+  servers,
+  unsupported,
+  truncated,
+  urlRef,
+  setFailMsg,
+  setDetails,
+  reload,
+  openUrl
+}: {
+  fresh: boolean
+  failMsg: string | null
+  url: string
+  attempts: number
+  details: boolean
+  recents: string[]
+  setRecents: Dispatch<SetStateAction<string[]>>
+  servers: LocalServer[]
+  unsupported: string | null
+  truncated: boolean
+  urlRef: RefObject<HTMLInputElement | null>
+  setFailMsg: Dispatch<SetStateAction<string | null>>
+  setDetails: Dispatch<SetStateAction<boolean>>
+  reload: () => void
+  openUrl: (url: string) => void
+}): React.JSX.Element | null {
+  if (fresh) {
+    return (
+      <BrowserBlankState
+        recents={recents.map((recentUrl) => ({ url: recentUrl, onOpen: () => openUrl(recentUrl) }))}
+        servers={servers}
+        unsupported={unsupported}
+        truncated={truncated}
+        onClear={() => { clearRecents(); setRecents([]) }}
+        onOpenPage={() => urlRef.current?.focus()}
+        onOpenServer={openUrl}
+      />
+    )
+  }
+  if (failMsg === null) return <span className="browser-caption">Select element · click to hand it to the focused agent</span>
+  return (
+    <BrowserUnreachableState
+      host={unreachableHost(url)}
+      message={unreachableMessage(url, failMsg)}
+      rawError={failMsg}
+      url={url}
+      attempts={attempts}
+      details={details}
+      onRetry={() => { setFailMsg(null); setDetails(false); reload() }}
+      onToggleDetails={() => setDetails((visible) => !visible)}
+    />
   )
 }

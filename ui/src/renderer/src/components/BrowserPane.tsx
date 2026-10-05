@@ -16,7 +16,6 @@ import {
   IconCollapse,
   IconExpand,
   IconExternal,
-  IconPlus,
   IconRefresh,
   IconSearch,
   IconTarget,
@@ -39,7 +38,6 @@ import {
   type BrowserTab,
   TabWebview,
   TabsPopover,
-  clearRecents,
   loadRecents,
   loadTabs,
   toNavUrl,
@@ -50,8 +48,8 @@ import { tabsStorageKey } from './browserTabsKey'
 import { Icon } from './Icon'
 import { browserSecurity, useBrowserDevice, type BrowserDevice } from './browserDevices'
 import type { HoustonClient } from '../houston/client'
-import { BrowserBlankState, BrowserUnreachableState } from './ui/BrowserPaneStates'
-import { unreachableHost, unreachableMessage } from './ui/browserUnreachable'
+import { BrowserPaneStageState } from './ui/BrowserPaneStates'
+import { hasBrowserPage, tabFailureHandler, useBrowserPaneLocalServers } from './browserPaneLocalServers'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 
 interface Props {
@@ -136,12 +134,6 @@ export function BrowserPane({
   const [failMsg, setFailMsg] = useState<string | null>(null)
   const [failureAttempts, setFailureAttempts] = useState(0)
   const [showFailureDetails, setShowFailureDetails] = useState(false)
-  const [localServerReply, setLocalServerReply] = useState<{
-    workspace: string
-    servers: import('../houston/generated/LocalServer').LocalServer[]
-    unsupported: string | null
-    truncated: boolean
-  } | null>(null)
   const gridHidden = useContext(GridHiddenContext)
   const [recents, setRecents] = useState<string[]>(loadRecents)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -212,22 +204,7 @@ export function BrowserPane({
   }, [fullscreen, surfaceMountFailed, tabs])
 
   const fresh = active.url === null
-
-  useEffect(() => {
-    if (!client || !fresh || hiddenByExpand || gridHidden) return
-    const unsubscribe = client.subscribe('workspace_local_servers', (message) => {
-      if (message.workspace !== workspaceDir) return
-      setLocalServerReply({ workspace: message.workspace, servers: message.servers, unsupported: message.unsupported, truncated: message.truncated })
-    })
-    const refresh = (): void => client.workspaceLocalServers(workspaceDir)
-    refresh()
-    // Three seconds keeps the list responsive while limiting repeated /proc scans.
-    const interval = window.setInterval(refresh, 3000)
-    return () => {
-      unsubscribe()
-      window.clearInterval(interval)
-    }
-  }, [client, fresh, gridHidden, hiddenByExpand, workspaceDir])
+  const localServers = useBrowserPaneLocalServers(client, workspaceDir, fresh, hiddenByExpand, gridHidden)
 
   useEffect(() => {
     if (hiddenByExpand) { setPopover(false); setFullscreen(false) }
@@ -371,7 +348,7 @@ export function BrowserPane({
       </div>
       <PickerStrip id={node.id} controller={picker} />
       <div ref={stageRef} className="browser-stage">
-      {tabs.some((t) => t.url !== null) && !surfaceMountFailed && failMsg === null && (
+      {hasBrowserPage(tabs, surfaceMountFailed, failMsg) && (
         <BrowserFullscreen
           active={fullscreen}
           onExit={() => setFullscreen(false)}
@@ -413,6 +390,7 @@ export function BrowserPane({
               console.error(text)
               setFailMsg(text)
               setFailureAttempts((count) => count + 1)
+              setShowFailureDetails(true)
               onNativeError?.(text)
             }}
             onDetachedChange={setDetached}
@@ -431,41 +409,27 @@ export function BrowserPane({
                   }}
                   onMeta={(meta) => patchTab(t.id, meta)}
                   onLoading={(loading) => patchTab(t.id, { loading })}
-                  onFail={(desc) => {
-                    if (t.id === active.id) {
-                      setFailMsg(desc)
-                      setFailureAttempts((count) => count + 1)
-                    }
-                  }}
+                  onFail={tabFailureHandler(t.id, active.id, setFailMsg, setFailureAttempts, setShowFailureDetails)}
                 />
               ))}
           </BrowserViewport>
         </BrowserFullscreen>
       )}
-      {!fresh && failMsg === null && <span className="browser-caption">Select element · click to hand it to the focused agent</span>}
-      {fresh && (
-        <BrowserBlankState
-          recents={recents.map((url) => ({ url, onOpen: () => openUrl(url) }))}
-          servers={localServerReply?.workspace === workspaceDir ? localServerReply.servers : []}
-          unsupported={localServerReply?.workspace === workspaceDir ? localServerReply.unsupported : null}
-          truncated={localServerReply?.workspace === workspaceDir && localServerReply.truncated}
-          onClear={() => { clearRecents(); setRecents([]) }}
-          onOpenPage={() => urlRef.current?.focus()}
-          onOpenServer={openUrl}
-        />
-      )}
-      {!fresh && failMsg !== null && (
-        <BrowserUnreachableState
-          host={unreachableHost(active.url ?? '')}
-          message={unreachableMessage(active.url ?? '', failMsg)}
-          rawError={failMsg}
-          url={active.url ?? ''}
-          attempts={failureAttempts}
-          details={showFailureDetails}
-          onRetry={() => { setFailMsg(null); setShowFailureDetails(false); reload(false) }}
-          onToggleDetails={() => setShowFailureDetails((visible) => !visible)}
-        />
-      )}
+      <BrowserPaneStageState
+        fresh={fresh}
+        failMsg={failMsg}
+        url={active.url ?? ''}
+        attempts={failureAttempts}
+        details={showFailureDetails}
+        recents={recents}
+        setRecents={setRecents}
+        {...localServers}
+        urlRef={urlRef}
+        setFailMsg={setFailMsg}
+        setDetails={setShowFailureDetails}
+        reload={() => reload(false)}
+        openUrl={openUrl}
+      />
       </div>
     </section>
   )

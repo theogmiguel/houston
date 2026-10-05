@@ -10,7 +10,7 @@ BASELINE=(
   "ui/src/renderer/src/components/AttachmentChip.tsx 13"
   "ui/src/renderer/src/components/BrowserActConfirm.tsx 127"
   "ui/src/renderer/src/components/BrowserFullscreen.tsx 2"
-  "ui/src/renderer/src/components/BrowserPane.tsx 107"
+  "ui/src/renderer/src/components/BrowserPane.tsx 106"
   "ui/src/renderer/src/components/BrowserPicker.tsx 2"
   "ui/src/renderer/src/components/ChangesPane.tsx 88"
   "ui/src/renderer/src/components/CheckedStamp.tsx 3"

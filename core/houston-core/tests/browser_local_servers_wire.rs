@@ -6,20 +6,20 @@ use futures_util::SinkExt;
 use houston_core::daemon::{CreateParams, Daemon};
 use houston_protocol as proto;
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{TOKEN, WsStream, connect_and_hello, next_control, start_daemon_with_handle};
+use common::{connect_and_hello, next_control, start_daemon_with_handle, WsStream, TOKEN};
 
-fn listener_session(daemon: &Arc<Daemon>, dir: &PathBuf, port: u16) -> proto::SessionInfo {
+fn listener_session(daemon: &Arc<Daemon>, dir: &Path, port: u16) -> proto::SessionInfo {
     let source = format!(
         r#"python3 -u -c 'import socket,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(("127.0.0.1",{port}));s.listen();time.sleep(60)'"#
     );
     daemon
         .create_session(CreateParams {
             agent: proto::AgentKind::Custom,
-            project_dir: dir.clone(),
+            project_dir: dir.to_path_buf(),
             cmd: Some(vec!["sh".into(), "-c".into(), source]),
             cols: 80,
             rows: 24,
@@ -74,8 +74,8 @@ async fn reports_only_listeners_from_live_sessions_in_the_requested_workspace() 
         .local_addr()
         .unwrap()
         .port();
-    let local = listener_session(&daemon, &workspace.path().to_path_buf(), port);
-    let unrelated = listener_session(&daemon, &other_workspace.path().to_path_buf(), other_port);
+    let local = listener_session(&daemon, workspace.path(), port);
+    let unrelated = listener_session(&daemon, other_workspace.path(), other_port);
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     loop {

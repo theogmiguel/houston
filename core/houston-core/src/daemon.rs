@@ -6794,7 +6794,7 @@ impl Daemon {
                         {
                             return None;
                         }
-                        Some((id, session.pid?, session.snapshot_info().title))
+                        Some((session.pid?, id, session.snapshot_info().title))
                     })
                     .collect()
             };

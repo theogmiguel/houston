@@ -30,8 +30,8 @@
       "over": 3
     },
     "src/renderer/src/components/BrowserPane.tsx": {
-      "total": 125,
-      "worst": 37,
+      "total": 118,
+      "worst": 33,
       "over": 1
     },
     "src/renderer/src/components/ChangesPane.tsx": {
