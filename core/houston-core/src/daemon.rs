@@ -6910,7 +6910,12 @@ impl Daemon {
                 p.agent
             );
         }
-        let (mut extra_args, prompt_file) = {
+        // A bare session (shell or agent with nothing to pass) takes no launch arguments;
+        // `launch_args` refuses kinds that are not agent CLIs.
+        let bare = prompt.trim().is_empty() && p.model.is_none() && !p.auto_approve;
+        let (mut extra_args, prompt_file) = if bare {
+            (Vec::new(), None)
+        } else {
             let prompts_dir = if prompt.trim().is_empty() {
                 None
             } else {
