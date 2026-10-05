@@ -28,7 +28,7 @@ import { SkillItemDistribution } from './SkillDistribution'
 import { SkillInstallDialog } from './SkillInstallDialog'
 import { useCopyFeedback } from './useCopyFeedback'
 import { Tooltip } from './Tooltip'
-import { SectionHead, SettingsList, SettingsRow as Row, SubHead } from './settingsPrimitives'
+import { SettingsList, SettingsRow as Row, SubHead } from './settingsPrimitives'
 import { StatusIcon, STATUS_ICON_WORD, type StatusIconState } from './StatusIcon'
 import { ListDetail, type ListDetailItem } from './nav/ListDetail'
 import {
@@ -52,6 +52,8 @@ import {
 import { ICON_ROLE_CLS, Icon } from './Icon'
 import { Button } from './ui/Button'
 import { Caption } from './ui/Caption'
+import { Card } from './ui/Card'
+import { PageHeader } from './ui/PageHeader'
 import { skillCliRelations, skillRelationLines, skillUsageLine } from '../houston/skillSurface'
 
 const AGENT_LABEL: Record<Skill['agent'], string> = {
@@ -1031,6 +1033,20 @@ function SkillsLibraryBody({
   )
 }
 
+function SkillActionError({ message, onDismiss }: { message: string | null; onDismiss: () => void }): React.JSX.Element | null {
+  if (!message) return null
+  return (
+    <div className="pb-[var(--space-2-5)]">
+    <div className="flex items-center justify-between gap-[8px] min-h-[34px] px-[10px] py-[8px] rounded-[var(--tr-radius-sm)] border border-[color-mix(in_srgb,var(--danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--danger)_11%,transparent)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
+      {message}
+      <button type="button" className={CHROME_BUTTON} aria-label="Dismiss" onClick={onDismiss}>
+        <Icon glyph={IconClose} role="label" />
+      </button>
+    </div>
+    </div>
+  )
+}
+
 export function SkillsView({
   dir,
   onRun,
@@ -1199,36 +1215,20 @@ export function SkillsView({
 
     const actions = (
       <>
-        <button type="button" className={SECONDARY_BUTTON} onClick={() => setInstallOpen(true)}>
-          <Icon glyph={IconFileDown} role="small" />
-          Install from link
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={startCreate}>
-          <Icon glyph={IconPlus} role="small" />
-          New skill
-        </button>
+        <Button variant="secondary" icon={IconFileDown} onClick={() => setInstallOpen(true)}>Install from link</Button>
+        <Button variant="primary" icon={IconPlus} onClick={startCreate}>New skill</Button>
       </>
     )
 
     return (
-      <div data-testid="skills-library">
-        <SectionHead title="Skills" lede="Reusable instructions your agents can use." actions={actions} />
-        {actionError && (
-          <div className="pb-[var(--space-2-5)]">
-          <div className="flex items-center justify-between gap-[8px] min-h-[34px] px-[10px] py-[8px] rounded-[var(--tr-radius-sm)] border border-[color-mix(in_srgb,var(--danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--danger)_11%,transparent)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
-            {actionError}
-            <button
-              type="button"
-              className={CHROME_BUTTON}
-              aria-label="Dismiss"
-              onClick={() => setActionError(null)}
-            >
-              <Icon glyph={IconClose} role="label" />
-            </button>
-          </div>
-          </div>
-        )}
-        {loadError ? (
+      <div data-testid="skills-library" className="grid gap-[var(--space-3)]">
+        <PageHeader heading="Skills" description="Reusable instructions your agents can use." actions={actions} />
+        <SkillActionError message={actionError} onDismiss={() => setActionError(null)} />
+        {creating && filtered.length === 0 ? (
+          <Card padding="md" data-testid="skills-create">
+            <SkillEmbeddedEditor form={form!} setForm={setForm} submitForm={submitForm} />
+          </Card>
+        ) : loadError ? (
           <NavEmpty
             title="Couldn't load skills"
             icon={<Icon glyph={IconFile} role="ui" />}
@@ -1247,13 +1247,9 @@ export function SkillsView({
             title="No skills yet"
             icon={<Icon glyph={IconZap} role="display" />}
             action={
-              <div className="flex items-center gap-2">
-                <button type="button" className={SECONDARY_BUTTON} onClick={() => setInstallOpen(true)}>
-                  Install from link
-                </button>
-                <button type="button" className={SECONDARY_BUTTON} onClick={startCreate}>
-                  New skill
-                </button>
+              <div className="flex items-center gap-[var(--space-1-5)]">
+                <Button variant="secondary" onClick={() => setInstallOpen(true)}>Install from link</Button>
+                <Button variant="primary" icon={IconPlus} onClick={startCreate}>New skill</Button>
               </div>
             }
           >

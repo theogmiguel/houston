@@ -7,7 +7,8 @@ import { useHarness } from '../../houston/useHarness'
 import { skillScopeLabel } from '../../houston/skillSurface'
 import { IconRefresh } from '../icons'
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { CHROME_BUTTON, NavColumn, NavFootnote, NavSwitch } from './navChrome'
+import { CHROME_BUTTON, NavFootnote, NavSwitch } from './navChrome'
+import { PageFrame } from '../ui/PageFrame'
 import { CheckedStamp } from '../CheckedStamp'
 import { Icon } from '../Icon'
 import { Tooltip } from '../Tooltip'
@@ -72,7 +73,7 @@ export function SkillsSurface(props: {
       {...materialAttrs('base')}
       className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
-      <NavColumn wide>
+      <PageFrame width="wide" className="flex-1 min-w-0">
         <Suspense fallback={<div />}>
           <SkillsView
             dir={workspace}
@@ -125,7 +126,7 @@ export function SkillsSurface(props: {
         <NavFootnote>
           Open a skill to read its instructions, copy its invocation, or manage which agents can use it.
         </NavFootnote>
-      </NavColumn>
+      </PageFrame>
     </div>
   )
 }

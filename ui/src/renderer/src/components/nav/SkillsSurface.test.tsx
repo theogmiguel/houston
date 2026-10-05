@@ -126,7 +126,7 @@ describe('SkillsSurface — the librarian, no Run', () => {
     expect(row.querySelector('button[aria-label="Refresh distribution"]')).not.toBeNull()
   })
 
-  it('renders exactly one header — the Settings-grammar SectionHead', async () => {
+  it('renders exactly one header — the shared page header', async () => {
     render({ tools: [toolState('claude', ['deploy'])] })
     await settleLibrary()
     for (let i = 0; i < 60 && container.querySelectorAll('[data-testid="list-detail-item"]').length === 0; i++) {
@@ -134,7 +134,7 @@ describe('SkillsSurface — the librarian, no Run', () => {
         await new Promise((r) => setTimeout(r, 5))
       })
     }
-    const heads = container.querySelectorAll('[data-testid="settings-section-title"]')
+    const heads = container.querySelectorAll('h1')
     expect(heads).toHaveLength(1)
     expect(heads[0].textContent).toBe('Skills')
     expect(container.querySelector('[data-testid="skills-library"]')).not.toBeNull()

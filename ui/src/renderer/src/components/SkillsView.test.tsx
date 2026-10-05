@@ -336,10 +336,14 @@ describe('SkillsView — the redesigned library', () => {
       )!
     }
 
-    it('renders one SectionHead and a flat list, name over invocation · scope, no header/count bar', async () => {
+    it('renders one page header with New skill as its primary action, over a flat list', async () => {
       renderEmbedded()
       await flush()
-      expect(container.querySelectorAll('[data-testid="settings-section-title"]')).toHaveLength(1)
+      const headings = container.querySelectorAll('h1')
+      expect(headings).toHaveLength(1)
+      expect(headings[0].textContent).toBe('Skills')
+      const newSkill = Array.from(container.querySelectorAll('header button')).find((b) => b.textContent?.includes('New skill'))
+      expect(newSkill?.className).toContain('bg-[var(--accent)]')
       const row = listItem('deploy')
       expect(row.textContent).toContain('/deploy')
       expect(row.textContent).toContain('project')
@@ -396,6 +400,18 @@ describe('SkillsView — the redesigned library', () => {
       expect(container.textContent).toContain('New skill')
       expect(container.querySelector('[data-testid="list-detail-list"]')).not.toBeNull()
       expect(listItem('deploy')).toBeDefined()
+    })
+
+    it('New skill opens the editor when the library has no skills yet', async () => {
+      listSkills.mockResolvedValue([])
+      renderEmbedded({ tools: [] })
+      await flush()
+      const newSkill = Array.from(container.querySelectorAll('header button')).find((b) => b.textContent?.includes('New skill'))!
+      act(() => newSkill.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await flush()
+      const editor = container.querySelector('[data-testid="skills-create"]')
+      expect(editor).not.toBeNull()
+      expect(editor!.querySelector('input')).not.toBeNull()
     })
 
     it("Edit swaps a selected skill's detail for the editor in place", async () => {
