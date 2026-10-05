@@ -1,8 +1,8 @@
 {
-  "_note": "reconstructed from zai-org/ZCode apps/zcode-cli packages/core/src/hooks/configured-runner-input.ts (createCompatibleHookStdin) and packages/contracts/src/hooks \u2014 not captured live. camelCase fields are ZCode's own; snake_case ones are its Claude-compatible aliases.",
+  "_note": "reconstructed from zai-org/ZCode (main after tag v3.14.3) apps/zcode-cli packages/core/src/hooks/configured-runner-input.ts (createCompatibleHookStdin) and packages/contracts/src/hooks \u2014 not captured live. camelCase fields are ZCode's own; snake_case ones are its Claude-compatible aliases.",
   "agentName": "zcode-agent",
   "cwd": "/tmp/example",
-  "hookEventName": "PermissionRequest",
+  "hookEventName": "PostToolUse",
   "mode": "build",
   "sessionId": "sess_01J9ZCDEMO0000000000000000",
   "timestamp": "2026-01-01T00:00:00.000Z",
@@ -13,12 +13,13 @@
   "toolInput": {
     "command": "cargo test"
   },
-  "reason": "Bash runs a command in the workspace",
-  "requestId": "perm_01",
-  "riskLevel": "medium",
-  "sideEffectScope": "workspace",
+  "toolResponse": {
+    "exitCode": 0,
+    "output": "test result: ok"
+  },
+  "toolResultPreview": "test result: ok",
   "agent_type": "zcode-agent",
-  "hook_event_name": "PermissionRequest",
+  "hook_event_name": "PostToolUse",
   "permission_mode": "build",
   "session_id": "sess_01J9ZCDEMO0000000000000000",
   "transcript_path": "/tmp/zcode-hook-Ab12Cd/transcript.jsonl",
@@ -27,5 +28,9 @@
   "tool_input": {
     "command": "cargo test"
   },
-  "tool_use_id": "call_bash_01"
+  "tool_use_id": "call_bash_01",
+  "tool_response": {
+    "exitCode": 0,
+    "output": "test result: ok"
+  }
 }
