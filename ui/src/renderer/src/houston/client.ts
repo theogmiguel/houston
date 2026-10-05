@@ -658,6 +658,10 @@ export class HoustonClient {
     this.send({ type: 'git_status', dir, base: base ?? null })
   }
 
+  gitBranchCommits(dir: string): void {
+    this.send({ type: 'git_branch_commits', dir })
+  }
+
   gitDiff(dir: string, path?: string, base?: string | null): void {
     this.send({ type: 'git_diff', dir, path: path ?? null, base: base ?? null })
   }

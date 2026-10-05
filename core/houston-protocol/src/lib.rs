@@ -1835,6 +1835,9 @@ pub struct PrWatchInfo {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub url: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_checked_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1942,6 +1945,15 @@ pub struct GitBranchInfo {
     /// holds the branch, so it cannot be switched to or deleted here.
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub worktree_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct GitBranchCommit {
+    pub sha: String,
+    pub subject: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub author_time_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2834,6 +2846,9 @@ pub enum ClientMsg {
         base: Option<String>,
     },
     GitBranch {
+        dir: String,
+    },
+    GitBranchCommits {
         dir: String,
     },
     GitStage {
@@ -3810,6 +3825,13 @@ pub enum ServerMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         common_dir: Option<String>,
+    },
+    GitBranchCommits {
+        dir: String,
+        commits: Vec<GitBranchCommit>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        total: u64,
+        truncated: bool,
     },
     GitCommit {
         dir: String,

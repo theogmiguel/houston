@@ -8,6 +8,7 @@ import type { AgentStatus } from "./AgentStatus";
 import type { DelegationInfo } from "./DelegationInfo";
 import type { DelegationResult } from "./DelegationResult";
 import type { GhState } from "./GhState";
+import type { GitBranchCommit } from "./GitBranchCommit";
 import type { GitBranchInfo } from "./GitBranchInfo";
 import type { GitCheckpointInfo } from "./GitCheckpointInfo";
 import type { GitFileStatus } from "./GitFileStatus";
@@ -95,7 +96,7 @@ toplevel?: string | null,
  * The repository's common dir, absent outside one; a main checkout and
  * its worktrees share it, which is how the same-repository pair is found.
  */
-common_dir?: string | null, } | { "type": "git_commit", dir: string, sha: string, summary: string, } | { "type": "pr_status", dir: string, gh: GhState, has_upstream: boolean, pr: PrInfo | null, hint: string | null, } | { "type": "pr_create", dir: string, gh: GhState, pr: PrInfo | null, message: string | null, } | { "type": "pr_detail", dir: string,
+common_dir?: string | null, } | { "type": "git_branch_commits", dir: string, commits: Array<GitBranchCommit>, total: number, truncated: boolean, } | { "type": "git_commit", dir: string, sha: string, summary: string, } | { "type": "pr_status", dir: string, gh: GhState, has_upstream: boolean, pr: PrInfo | null, hint: string | null, } | { "type": "pr_create", dir: string, gh: GhState, pr: PrInfo | null, message: string | null, } | { "type": "pr_detail", dir: string,
 /**
  * Echoes the request; a detail pushed after link/unlink/merge carries
  * that mutation's id, so a client can drop anything it has superseded.

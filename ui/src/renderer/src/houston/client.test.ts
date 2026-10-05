@@ -364,6 +364,19 @@ describe('HoustonClient subscribe/subscribeAll dispatch (Phase 6 seam)', () => {
   })
 })
 
+describe('HoustonClient branch commits request', () => {
+  it('sends the branch commit listing request for the selected checkout', async () => {
+    const { client, ws } = await connectFakeClient()
+
+    client.gitBranchCommits('/tmp/project')
+
+    expect(JSON.parse(ws.sent.at(-1) as string)).toEqual({
+      type: 'git_branch_commits',
+      dir: '/tmp/project'
+    })
+  })
+})
+
 describe('HoustonClient gap resync (item 10b)', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
