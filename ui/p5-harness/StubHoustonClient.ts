@@ -6,6 +6,7 @@ import type {
 } from '../src/renderer/src/houston/client.ts'
 
 let wiredHandler: ((msg: ServerMsg) => void) | null = null
+const typeHandlers = new Map<string, Set<(msg: ServerMsg) => void>>()
 
 function makeFakeClient(): HoustonClientType {
   const base = {
@@ -15,6 +16,22 @@ function makeFakeClient(): HoustonClientType {
         if (wiredHandler === handler) wiredHandler = null
       }
     }) as (handler: (msg: ServerMsg) => void) => () => void,
+    subscribe: ((type: string, handler: (msg: never) => void) => {
+      const handlers = typeHandlers.get(type) ?? new Set()
+      handlers.add(handler as (msg: ServerMsg) => void)
+      typeHandlers.set(type, handlers)
+      return () => { handlers.delete(handler as (msg: ServerMsg) => void) }
+    }) as HoustonClientType['subscribe'],
+    workspaceActionsGet: (workspace: string) => {
+      queueMicrotask(() => deliverToApp({
+        type: 'workspace_actions',
+        workspace,
+        actions: [
+          { id: 'test', name: 'test', command: 'bun run test', shortcut: null },
+          { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }
+        ]
+      }))
+    },
     onFrame: (() => {}) as (session: number, offset: number, payload: Uint8Array) => void,
     onClose: (() => {}) as () => void,
     close: () => {},
@@ -54,6 +71,7 @@ export const HoustonClient = {
     const client = makeFakeClient()
     lastClient = client
     wiredHandler = null
+    typeHandlers.clear()
     return client
   }
 }
@@ -72,6 +90,7 @@ export function deliverToApp(msg: ServerMsg): void {
     )
   }
   wiredHandler(msg)
+  for (const handler of typeHandlers.get(msg.type) ?? []) handler(msg)
 }
 
 export function installHarnessBridge(): void {

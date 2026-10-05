@@ -1868,6 +1868,15 @@ pub struct Workspace {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorkspaceAction {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub shortcut: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
@@ -3582,6 +3591,17 @@ pub enum ClientMsg {
         workspace: String,
         routes: Vec<RoleRoute>,
     },
+    WorkspaceActionsGet {
+        workspace: String,
+    },
+    WorkspaceActionSet {
+        workspace: String,
+        action: WorkspaceAction,
+    },
+    WorkspaceActionDelete {
+        workspace: String,
+        id: String,
+    },
     OrchestrationCapsSet {
         max_live_children: u32,
         max_spawn_depth: u32,
@@ -3728,6 +3748,17 @@ pub enum ServerMsg {
     WorkspaceRouting {
         workspace: String,
         routes: Vec<RoleRoute>,
+    },
+    WorkspaceActions {
+        workspace: String,
+        actions: Vec<WorkspaceAction>,
+    },
+    WorkspaceActionRefused {
+        workspace: String,
+        reason: String,
+        limit: u32,
+        actual: u32,
+        requested: u32,
     },
     DelegationResults {
         parent: u32,

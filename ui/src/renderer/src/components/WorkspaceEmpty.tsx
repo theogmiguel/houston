@@ -1,11 +1,19 @@
 import { BTN_PRIMARY } from './buttonChrome'
 import { IconGlobe, IconSparkles, IconSquareTerminal } from './icons'
 import { Icon } from './Icon'
+import { WorkspaceActions } from './ui/WorkspaceActions'
+import type { WorkspaceAction } from '../houston/client'
+import type { KeymapOverrides } from '../houston/client'
 
 export interface WorkspaceEmptyProps {
   onNewSession: () => void
   onTerminal: () => void
   onBrowser: () => void
+  actions?: WorkspaceAction[]
+  keymapOverrides?: KeymapOverrides
+  onRunAction?: (action: WorkspaceAction) => void
+  onSaveAction?: (action: WorkspaceAction) => void
+  onDeleteAction?: (id: string) => void
 }
 
 const SECONDARY =
@@ -16,7 +24,12 @@ const SECONDARY =
 export function WorkspaceEmpty({
   onNewSession,
   onTerminal,
-  onBrowser
+  onBrowser,
+  actions = [],
+  keymapOverrides = { bindings: {}, shortcuts_enabled: true },
+  onRunAction = () => {},
+  onSaveAction = () => {},
+  onDeleteAction = () => {}
 }: WorkspaceEmptyProps): React.JSX.Element {
   return (
     <div
@@ -30,7 +43,7 @@ export function WorkspaceEmpty({
       >
       <div
         data-testid="workspace-empty-headline"
-        className="font-[family-name:var(--tr-text-display-family)] text-[length:var(--tr-text-display-size)] leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] max-w-[20ch]"
+        className="font-[family-name:var(--font-sans)] text-[length:var(--tr-text-display-size)] leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] max-w-[20ch]"
         style={{ fontWeight: 'var(--tr-text-display-weight)' }}
       >
         Nothing running here yet
@@ -67,6 +80,7 @@ export function WorkspaceEmpty({
           Browser
         </button>
       </div>
+      <WorkspaceActions actions={actions} keymapOverrides={keymapOverrides} onRun={onRunAction} onSave={onSaveAction} onDelete={onDeleteAction} />
       </div>
     </div>
   )

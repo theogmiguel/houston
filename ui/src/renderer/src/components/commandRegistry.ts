@@ -6,6 +6,7 @@ import { PANE_TYPES, paneTypeButtonState, type PaneTypeKind } from '../layout/pa
 import type { AgentKind } from '../houston/client'
 import type { Workspace } from '../houston/generated/Workspace'
 import type { SessionInfo } from '../houston/generated/SessionInfo'
+import type { WorkspaceAction } from '../houston/generated/WorkspaceAction'
 import { gridRecency, gridRecencyKey } from '../gridRecency'
 import {
   newTerminal as newTerminalShortcut,
@@ -38,6 +39,7 @@ export type CommandGroup =
   | 'Appearance'
   | 'Workspaces'
   | 'Tasks'
+  | 'Run'
   | 'Window'
 
 export interface Command {
@@ -54,6 +56,8 @@ export interface Command {
 }
 
 export interface PaletteActions {
+  workspaceActions?: readonly WorkspaceAction[]
+  runWorkspaceAction?: (action: WorkspaceAction) => void
   newTerminal: () => void
   insertPane: (kind: 'browser') => void
   splitPane?: () => void
@@ -313,6 +317,19 @@ function buildTaskCommands(actions: PaletteActions, hasWorkspace: boolean): Comm
   ]
 }
 
+function buildWorkspaceActionCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
+  return (actions.workspaceActions ?? []).map((action) => ({
+    id: `workspace-action.${action.id}`,
+    title: action.name,
+    group: 'Run',
+    keywords: [action.command, action.shortcut ?? ''],
+    subtitle: action.command,
+    enabled: hasWorkspace && Boolean(actions.runWorkspaceAction),
+    disabledReason: hasWorkspace ? undefined : 'Open a workspace to run this action',
+    run: () => actions.runWorkspaceAction?.(action)
+  }))
+}
+
 function buildAgentCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
   return AGENT_KINDS.map(({ kind, label }) => ({
     id: `agents.spawn.${kind}`,
@@ -563,6 +580,7 @@ export function buildCommands(input: BuildCommandsInput): Command[] {
     },
     ...buildOpenTabCommands(actions, grids ?? []),
     ...buildPaneCommands(actions, hasWorkspace),
+    ...buildWorkspaceActionCommands(actions, hasWorkspace),
     ...buildAgentCommands(actions, hasWorkspace),
     ...buildTaskCommands(actions, hasWorkspace),
     ...buildGridCommands(actions),
