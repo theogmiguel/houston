@@ -17,7 +17,7 @@ const panelClasses = variants(
       handoff: 'w-[720px] max-w-[92vw] rounded-[var(--tr-radius-md)]',
       ssh: 'w-[min(440px,calc(100vw_-_32px))] p-6 flex flex-col gap-4 max-h-[calc(100vh_-_32px)] overflow-y-auto',
       paneHandoff: 'w-[min(1180px,94vw)] h-[min(940px,92vh)] max-w-[94vw] rounded-[var(--tr-radius-md)] overflow-hidden flex flex-col',
-      git: 'w-[560px] max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_4rem)] rounded-[var(--tr-radius-panel)] overflow-hidden flex flex-col'
+      git: 'w-[560px] max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_4rem)] rounded-[var(--tr-radius-card)] overflow-hidden flex flex-col'
     },
     surface: {
       raised: 'bg-[var(--raised)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))]',

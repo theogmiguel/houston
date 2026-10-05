@@ -26,7 +26,7 @@ export function OrchestrationNotice({
       <span className={`flex-none ${needsInput ? 'text-[var(--warn)]' : 'text-[var(--success)]'}`}>
         <StatusIcon className={ICON_ROLE_CLS.ui} />
       </span>
-      <div className="flex flex-col gap-[var(--space-0-5)] flex-1 min-w-0">
+      <div className="flex flex-col gap-[2px] flex-1 min-w-0">
         <span className="truncate text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">
           {heading}
         </span>

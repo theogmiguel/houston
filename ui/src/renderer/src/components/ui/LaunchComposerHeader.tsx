@@ -15,7 +15,7 @@ export function LaunchComposerHeader({ workspaceName, workspacePath, gridName, t
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0">
         <span className="[font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[var(--tr-text-ui-leading)] text-[var(--text-primary)]">New sessions</span>
         <Tooltip label={workspacePath}>
-          <span className="block min-w-0 truncate [font-size:var(--tr-text-label-size)] leading-[var(--tr-text-label-leading)] text-[var(--text-muted)]">
+          <span className="block min-w-0 truncate [font-size:var(--tr-text-label-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]">
             {target === 'this-grid' ? `${workspaceName} · adds to “${gridName}”` : `${workspaceName} · opens a new grid`}
           </span>
         </Tooltip>

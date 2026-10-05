@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 
 const STYLESHEET_RELATIVE_PATHS = [
   'tailwind.css',
@@ -121,5 +121,31 @@ describe('renderer stylesheets custom property tokens', () => {
         `${name} is in RUNTIME_ALLOWLIST but every reference to it now has a fallback or no longer exists — remove the stale entry`
       ).toBe(true)
     }
+  })
+})
+
+// Scale tokens are written into class strings, where an undefined name silently resolves to nothing.
+const SCALE_TOKEN = /var\((--(?:space|tr-radius|tr-text|h)-[a-zA-Z0-9-]+)\)/g
+
+function componentSources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return componentSources(path)
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+  })
+}
+
+describe('renderer source scale tokens', () => {
+  it('every var(--space-*|--tr-radius-*|--tr-text-*|--h-*) in source is defined in a stylesheet', () => {
+    const defined = new Set<string>()
+    for (const path of STYLESHEET_PATHS) for (const name of extractDefinedProps(stripComments(readFileSync(path, 'utf8')))) defined.add(name)
+    const missing: string[] = []
+    for (const file of componentSources(__dirname)) {
+      const text = readFileSync(file, 'utf8')
+      for (const match of text.matchAll(SCALE_TOKEN)) {
+        if (!defined.has(match[1])) missing.push(`${match[1]} at ${relative(__dirname, file)}:${lineAt(text, match.index ?? 0)}`)
+      }
+    }
+    expect(missing, `scale tokens used in source but defined in no stylesheet (expected one of the names in theme.css):\n${missing.join('\n')}`).toEqual([])
   })
 })

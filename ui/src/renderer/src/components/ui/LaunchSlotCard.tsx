@@ -26,7 +26,7 @@ export interface LaunchSlotCardProps {
 }
 
 const FIELD = 'flex min-w-0 flex-col gap-[var(--space-1)]'
-const SOURCE = '[font-size:var(--tr-text-micro-size)] text-[var(--text-muted)]'
+const SOURCE = '[font-size:var(--tr-text-label-size)] text-[var(--text-muted)]'
 const FIELD_VALUE = 'min-w-0 truncate rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--card-bg)] px-[var(--space-2)] py-[var(--space-1)] [font-size:var(--tr-text-small-size)] text-[var(--text-primary)]'
 const editedBorderClass = (isEdited: boolean): string => isEdited ? 'border-[color-mix(in_srgb,var(--warn)_55%,transparent)]' : ''
 
@@ -85,13 +85,13 @@ export function LaunchSlotCard({ slot, workspaceName, override, onAgentChange, o
   return (
     <div data-slot={slot.index} className="flex min-w-0 flex-col gap-[var(--space-2)] rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] p-[var(--space-2)]">
       <div className="flex min-w-0 items-center gap-[var(--space-1-5)]">
-        <span className="w-3 flex-none font-mono [font-size:var(--tr-text-micro-size)] text-[var(--text-faint)]">{slot.index + 1}</span>
+        <span className="w-3 flex-none font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-faint)]">{slot.index + 1}</span>
         <IconAgent agent={slot.agent} brand className={ICON_ROLE_CLS.small} />
         <span className="min-w-0 flex-1 truncate [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]">
           {slot.roleLabel ?? LABELS[slot.agent] ?? slot.agent}
         </span>
         <span className={`${SOURCE} ${edited ? 'text-[var(--warn)]' : ''}`}>{headerSource}</span>
-        {edited && <button type="button" aria-label={`Reset slot ${slot.index + 1}`} onClick={onReset} className="border-0 bg-transparent p-0 [font-size:var(--tr-text-micro-size)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">↺ reset</button>}
+        {edited && <button type="button" aria-label={`Reset slot ${slot.index + 1}`} onClick={onReset} className="border-0 bg-transparent p-0 [font-size:var(--tr-text-label-size)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">↺ reset</button>}
       </div>
       <div className="grid grid-cols-2 gap-x-[var(--space-2)] gap-y-[var(--space-1-5)]">
         <div className={FIELD}>

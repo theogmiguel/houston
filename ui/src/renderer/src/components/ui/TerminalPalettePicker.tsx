@@ -69,7 +69,7 @@ export function TerminalPalettePicker({
 
 function PaletteTilePreview({ palette }: { palette: NonNullable<(typeof TERMINAL_PALETTES)[ThemeName]> }): React.JSX.Element {
   return (
-    <span className="flex min-w-0 items-center justify-between gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] px-[var(--space-1)] py-[2px] font-mono [font-size:var(--tr-text-xs-size)]" style={{ background: palette.background, color: palette.foreground }} aria-hidden="true">
+    <span className="flex min-w-0 items-center justify-between gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] px-[var(--space-1)] py-[2px] font-mono [font-size:var(--tr-text-label-size)]" style={{ background: palette.background, color: palette.foreground }} aria-hidden="true">
       <span>❯ ls -la</span>
       <span className="flex flex-none gap-[2px]">
         {PALETTE_COLORS.map((key) => <i key={key} className="h-2 w-2 rounded-full" style={{ background: palette[key] }} />)}

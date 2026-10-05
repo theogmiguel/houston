@@ -195,7 +195,7 @@ export function NewSessionComposer({
                 {overLimit}
               </p>
             )}
-            <span className="self-end font-mono [font-size:var(--tr-text-micro-size)] text-[var(--text-faint)]">
+            <span className="self-end font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-faint)]">
               {taskByteLength(task).toLocaleString('en-US')} / 8,192 bytes
             </span>
           </div>
