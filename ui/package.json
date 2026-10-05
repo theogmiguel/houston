@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p p5-harness",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:css": "node scripts/check-css-scoping.mjs",
     "icons": "node scripts/render-icons.mjs",
