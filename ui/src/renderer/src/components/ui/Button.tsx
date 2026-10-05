@@ -3,7 +3,7 @@ import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOV
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -53,7 +53,9 @@ const buttonClasses = variants(
       primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:enabled:bg-[var(--accent-hover)]',
       secondary: 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
       field: 'justify-start border-[var(--border)] bg-[var(--card-bg)] text-left font-normal text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
+      outline: 'border-[var(--border)] bg-transparent text-[var(--text-primary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--hover-fill)]',
       ghost: `btn ${BTN_GHOST}`,
+      label: 'h-auto min-h-0 border-0 bg-transparent p-0 text-left [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:0.06em] uppercase text-[var(--text-muted)] hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]',
       link: 'border-transparent bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline text-[length:var(--tr-text-small-size)] text-[var(--accent)] hover:enabled:bg-transparent hover:enabled:underline',
       danger: `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER}`,
       'danger-solid': BTN_DANGER_SOLID,
@@ -76,6 +78,19 @@ const buttonClasses = variants(
   { variant: 'secondary', size: 'md' }
 )
 
+// Variants that carry their own type and padding: no button chrome, no size padding.
+const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'text', 'badge', 'label'])
+const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label'])
+const isLegacy = (variant: ButtonVariant): boolean => variant.startsWith('legacy-')
+
+function buttonSize(variant: ButtonVariant, size: ButtonSize): ButtonSize | 'icon' {
+  return SELF_SIZED.has(variant) || variant.includes('icon') || isLegacy(variant) ? 'icon' : size
+}
+
+function buttonChrome(variant: ButtonVariant): string {
+  return OWN_CHROME.has(variant) || isLegacy(variant) ? '' : 'rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]'
+}
+
 export function Button(props: ButtonProps): React.JSX.Element {
   const {
     variant = 'secondary',
@@ -89,9 +104,8 @@ export function Button(props: ButtonProps): React.JSX.Element {
     ref,
     ...buttonProps
   } = props
-  const legacy = variant.startsWith('legacy-')
-  const classSet = buttonClasses({ variant, size: variant === 'icon' || variant === 'text' || variant === 'badge' || variant.includes('icon') ? 'icon' : legacy ? 'icon' : size })
-  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${variant === 'badge' || legacy ? '' : 'rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]'} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
+  const classSet = buttonClasses({ variant, size: buttonSize(variant, size) })
+  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${buttonChrome(variant)} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd
 

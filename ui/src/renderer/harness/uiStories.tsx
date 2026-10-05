@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import {
   BarSparkline,
+  BrowserBlankState,
+  BrowserUnreachableState,
   ActionMenu,
   Button,
   Card,
@@ -203,7 +205,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="primary" icon={IconPlus}>Primary</Button>
             <Button variant="secondary">Secondary</Button>
             <Button variant="field">Field</Button>
+            <Button variant="outline">Outline</Button>
             <Button variant="ghost">Ghost</Button>
+            <Button variant="label">Label action</Button>
             <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
@@ -234,6 +238,24 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Dialog">
           <DialogSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Browser pane states">
+          <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+            {(['graphite', 'paper'] as const).map((theme) => (
+              <section key={theme} data-theme={theme} style={{ display: 'grid', gap: 'var(--space-3)', background: 'color-mix(in srgb, var(--content-bg) 70%, var(--rail-bg))', border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                <h3 style={{ margin: 0 }}>{theme === 'graphite' ? 'Graphite' : 'Paper'}</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(300px, 1fr)', gap: 'var(--space-4)' }}>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserBlankState recents={[{ url: 'http://localhost:6006/?path=/story/ui-primitives--all', onOpen: () => {} }, { url: 'https://docs.rs/portable-pty/latest/portable_pty/', onOpen: () => {} }]} servers={[{ port: 5173, process: 'vite', session: 8, pane_title: 'dev-server pane' }, { port: 3000, process: 'node', session: 9, pane_title: 'shell pane' }]} unsupported={null} truncated={false} onClear={() => {}} onOpenPage={() => {}} onOpenServer={() => {}} />
+                  </div>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserUnreachableState host="localhost:8080" message="Nothing is listening on port 8080. Start the server, then retry." rawError="ERR_CONNECTION_REFUSED" url="http://localhost:8080/" attempts={2} details onRetry={() => {}} onToggleDetails={() => {}} />
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Card and Card.Row">
@@ -486,7 +508,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           {(['sm', 'md', 'lg'] as const).map((size) => (
             <div key={size} style={{ display: 'grid', gap: 'var(--space-2)' }}>
               <Caption>{size}</Caption>
-              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'muted'] as const).map((tone) => (
+              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'danger-outline', 'muted'] as const).map((tone) => (
                 <IconTile key={`${size}-${tone}`} size={size} tone={tone} icon={<IconCheck role="ui" />} label={`${size} ${tone}`} />
               ))}</SpecimenRow>
             </div>

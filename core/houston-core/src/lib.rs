@@ -9,6 +9,7 @@ pub mod antigravity_transcript;
 pub mod blocks;
 pub mod boot;
 pub mod browser_relay;
+pub mod browser_servers;
 pub mod checkpoints;
 pub mod claude_hooks;
 pub mod cli_probe;

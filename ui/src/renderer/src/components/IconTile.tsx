@@ -1,7 +1,7 @@
 import { FOCUS_HALO } from './shadowChrome'
 
 export type IconTileSize = 'sm' | 'md' | 'lg'
-export type IconTileTone = 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'
+export type IconTileTone = 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'danger-outline' | 'muted'
 
 const SIZE_PX: Record<IconTileSize, number> = { sm: 24, md: 32, lg: 40 }
 
@@ -11,6 +11,7 @@ const TONE_CLASS: Record<IconTileTone, string> = {
   success: 'bg-[var(--status-done-bg)] text-[var(--status-done-text)] border-transparent',
   warning: 'bg-[var(--status-todo-bg)] text-[var(--status-todo-text)] border-transparent',
   danger: 'bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)] border-transparent',
+  'danger-outline': 'bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)] border-[color-mix(in_srgb,var(--status-blocked-text)_35%,transparent)]',
   muted: 'bg-transparent text-[var(--text-muted)] border-[var(--border)]'
 }
 

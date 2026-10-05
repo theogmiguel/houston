@@ -68,6 +68,15 @@ When an agent asks to open its first page, Houston opens a browser tab in the si
 Navigation to an existing hidden browser reveals that exact tab before loading the page.
 Agent browser requests reveal a hidden browser automatically before operating on it.
 
+When a browser pane is blank, it lists recent pages and, on Linux, loopback servers started
+by live sessions in that workspace. Select a server to open its root page. Detection reads
+local process and socket state; it does not send this information over the network. Other
+platforms do not show the local-server list.
+
+If a page cannot be reached, the browser shows the failed host and a retry action in the
+page area. For a refused loopback connection, it names the port and suggests starting the
+server. Show details to view the raw error, attempted URL and failure count.
+
 Desktop fits the available browser area. Phone previews use a 393 × 852 viewport and
 Tablet previews use 820 × 1180, scaled to fit with the current zoom shown. On hosts
 without device zoom, including older binaries, Phone and Tablet are disabled and their

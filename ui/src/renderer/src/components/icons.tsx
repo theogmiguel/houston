@@ -557,6 +557,16 @@ export function IconServer(p: IconProps): React.JSX.Element {
   )
 }
 
+export function IconPlug(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M12 22v-5" />
+      <path d="M9 8V2M15 8V2" />
+      <path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
+    </Svg>
+  )
+}
+
 export function IconPencil(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>
