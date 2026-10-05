@@ -537,7 +537,7 @@ pub fn branch_commits(dir: &Path) -> Result<(Vec<proto::GitBranchCommit>, u64, b
         fields.pop();
     }
     let mut commits = Vec::with_capacity(fields.len() / 3);
-    for record in fields.chunks_exact(3) {
+    for record in fields.as_chunks::<3>().0 {
         let seconds = record[2].parse::<u64>().with_context(|| {
             format!(
                 "git log returned author time {:?}; expected Unix epoch seconds",
