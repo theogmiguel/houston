@@ -9,7 +9,7 @@ ui_src="${SCAN_ROOT:-ui/src/renderer/src}"
 mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \
   -not -name '*.test.ts' -not -name '*.test.tsx' \
   -not -path '*/components/ui/*' -not -path '*/generated/*' \
-  -not -path '*/stories/*' -not -path '*/p5-harness/*' \
+  -not -path '*/stories/*' \
   -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
 
 reports="$(perl -e '
