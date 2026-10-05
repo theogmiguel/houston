@@ -73,6 +73,17 @@ describe('components/ui primitives', () => {
     expect(container.querySelector('span:not([aria-hidden])')?.className).not.toContain('gap-')
   })
 
+  it('StatusLabel exposes a static verdict dot without hidden label text', () => {
+    const { container, rerender, unmount } = render(<StatusLabel status="Done" variant="dot" />)
+    const dot = screen.getByRole('img', { name: 'Done' })
+    expect(dot.textContent).toBe('')
+    expect(dot.querySelector('[aria-hidden="true"]')?.getAttribute('style')).toContain('var(--ok)')
+    rerender(<StatusLabel status="Stalled" variant="dot" />)
+    expect(screen.getByRole('img', { name: 'Stalled' })).toBeTruthy()
+    expect(container.innerHTML).not.toContain('animate')
+    unmount()
+  })
+
   it('StatusLabel renders the fixed words and dot for every state', () => {
     for (const status of STATUS_LABELS) {
       const { unmount } = render(<StatusLabel status={status} />)

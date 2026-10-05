@@ -5873,7 +5873,7 @@ impl PermissionEpisodes {
                         && !ep.strict_correlation
                 }
                 EpisodeEnd::TurnEnded => true,
-                EpisodeEnd::PromptSubmitted => !ep.strict_correlation,
+                EpisodeEnd::PromptSubmitted => true,
             });
         self.open = kept;
         resolved
@@ -6481,7 +6481,7 @@ mod provider_wait_tests {
     }
 
     #[test]
-    fn incomplete_codex_correlation_survives_other_tools_and_new_prompts() {
+    fn incomplete_codex_correlation_survives_other_tools_until_a_new_root_prompt() {
         for (turn, fingerprint) in [(Some("turn"), None), (None, Some("digest")), (None, None)] {
             let mut episodes = PermissionEpisodes::default();
             let (key, _) = episodes.open_with_fingerprint(
@@ -6501,11 +6501,11 @@ mod provider_wait_tests {
                     tool_input_fingerprint: fingerprint.map(str::to_string)
                 })
                 .is_empty());
-            assert!(episodes.resolve_on(&EpisodeEnd::PromptSubmitted).is_empty());
             assert!(episodes
                 .resolve_on(&EpisodeEnd::NextPermissionRequest)
                 .is_empty());
-            assert_eq!(episodes.resolve_on(&EpisodeEnd::TurnEnded).len(), 1);
+            assert_eq!(episodes.resolve_on(&EpisodeEnd::PromptSubmitted).len(), 1);
+            assert!(episodes.resolve_on(&EpisodeEnd::TurnEnded).is_empty());
         }
     }
 }

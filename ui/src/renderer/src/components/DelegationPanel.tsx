@@ -7,10 +7,10 @@ import { IconEye, IconGitFork } from './icons'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS, popOriginStyle } from './overlayChrome'
 import { BTN_GHOST } from './buttonChrome'
 import { Tooltip } from './Tooltip'
-import { ProvisionalMarker, sessionCodename, sessionIdentity, sessionTaskLabel, stateWord, type BadgeKind, type PaneRoster } from './DelegationCard'
+import { ProvisionalMarker, sessionCodename, sessionIdentity, sessionTaskLabel, needsHumanInput, stateWord, type BadgeKind, type PaneRoster } from './DelegationCard'
 
 function isWaiting(d: DelegationInfo | null | undefined): boolean {
-  return d != null && (d.stalled || d.state === 'needs_input')
+  return d != null && d.state === 'needs_input'
 }
 
 function workspaceLabel(path: string): string {
@@ -19,9 +19,9 @@ function workspaceLabel(path: string): string {
 }
 
 function stateTone(d: DelegationInfo): string {
-  if (isWaiting(d)) return 'text-[var(--warn)]'
+  if (isWaiting(d) || (d.stalled && d.state === 'working')) return 'text-[var(--warn)]'
   if (d.state === 'failed') return 'text-[var(--status-blocked-text)]'
-  if (d.state === 'working' || d.state === 'spawning') return 'text-[var(--ok)]'
+  if (d.state === 'working' || d.state === 'spawning') return 'text-[var(--info)]'
   return 'text-[var(--text-muted)]'
 }
 
@@ -31,7 +31,7 @@ const PILL_CLS =
   '[letter-spacing:var(--tr-text-label-tracking)] uppercase'
 
 function pillCls(d: DelegationInfo): string {
-  if (isWaiting(d))
+  if (isWaiting(d) || (d.stalled && d.state === 'working'))
     return `${PILL_CLS} bg-[var(--status-todo-bg)] text-[var(--status-todo-text)]`
   if (d.state === 'failed')
     return `${PILL_CLS} bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)]`
@@ -137,7 +137,7 @@ function RecordBody({
   parent: SessionInfo | undefined
   onDeliverNow?: (session: number) => void
 }): React.JSX.Element {
-  const d = info.delegation
+  const d = info.delegation && needsHumanInput(info) ? { ...info.delegation, state: 'needs_input' as const } : info.delegation
   const parentId = d?.parent ?? info.spawned_by
   return (
     <>
@@ -250,7 +250,7 @@ function RosterBody({
         <p className={SECTION_LABEL_CLS}>Children · waiting first</p>
         <div className="flex flex-col -mx-3 -mb-2.5">
           {crew.map((c) => {
-            const d = c.delegation
+            const d = c.delegation && needsHumanInput(c) ? { ...c.delegation, state: 'needs_input' as const } : c.delegation
             const secondary = [d?.role, sessionTaskLabel(c)].filter(
               (value): value is string => value != null
             )
@@ -309,7 +309,7 @@ function crewOf(
   return [...sessions.values()]
     .filter((s) => s.spawned_by === parentId && isLive(s.state))
     .sort(
-      (a, b) => Number(isWaiting(b.delegation)) - Number(isWaiting(a.delegation)) || a.id - b.id
+      (a, b) => Number(needsHumanInput(b)) - Number(needsHumanInput(a)) || a.id - b.id
     )
 }
 
@@ -318,6 +318,7 @@ const CARD_TITLE_CLS =
   '[font-size:var(--tr-text-base)] font-semibold'
 
 function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React.JSX.Element {
+  const d = info.delegation && needsHumanInput(info) ? { ...info.delegation, state: 'needs_input' as const } : info.delegation
   const waiting = info.children_waiting
   const identity = sessionIdentity(info)
   if (kind === 'orchestrator') {
@@ -350,8 +351,8 @@ function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React
         </span>
       )}
       <span className="ml-auto" />
-      {info.delegation && (
-        <span className={pillCls(info.delegation)}>{stateWord(info.delegation)}</span>
+      {d && (
+        <span className={pillCls(d)}>{stateWord(d)}</span>
       )}
     </div>
   )

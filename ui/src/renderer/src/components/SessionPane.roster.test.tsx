@@ -42,6 +42,9 @@ describe('private child terminal stack', () => {
     expect([...host.querySelectorAll('[data-terminal]')].map(el => Number(el.getAttribute('data-terminal')))).toEqual([1, 5, 4, 3])
     expect(host.querySelector('[data-peek-session="5"]')?.getAttribute('aria-hidden')).toBe('false')
     expect(host.querySelector('[data-peek-session="1"]')?.getAttribute('aria-hidden')).toBe('true')
+    const hidden = host.querySelector<HTMLElement>('[data-peek-session="1"]')!
+    expect(hidden.style.contentVisibility).toBe('')
+    expect(hidden.style.contain).toBe('')
   })
   it('focuses a promoted child instead of rendering it a second time', () => {
     render(); select(2)
@@ -80,4 +83,27 @@ describe('private child terminal stack', () => {
     expect(host.querySelector('[aria-label="Children roster"]')).toBeNull()
     expect(host.querySelector('[aria-label="Children strip"]')).toBeNull()
   })
+})
+
+
+it('shows unread inbox messages in the parent header and opens the overview', () => {
+  sessions.set(1, { ...info(1), inbox_unread: 2 })
+  const open = vi.fn()
+  window.addEventListener('houston:side-open', open)
+  render()
+  const button = host.querySelector<HTMLButtonElement>('.pane-head [aria-label="2 unread inbox messages"]')!
+  expect(button).not.toBeNull()
+  act(() => button.click())
+  expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: 'overview', orchestrator: 1 } }))
+  window.removeEventListener('houston:side-open', open)
+  sessions.set(1, info(1)); render()
+  expect(host.querySelector('.pane-head [aria-label="2 unread inbox messages"]')).toBeNull()
+})
+
+
+it('keeps a promoted live completed child header consistent with its turn verdict', () => {
+  sessions.set(1, { ...info(1, 8), delegation: { state: 'done' } as SessionInfo['delegation'] })
+  render()
+  expect(host.querySelector('.pane-head [aria-label="Done"]')).not.toBeNull()
+  expect(host.querySelector('.pane-head [aria-label="working"]')).toBeNull()
 })

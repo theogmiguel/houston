@@ -144,6 +144,22 @@ describe('TerminalPane repaints when the window comes back', () => {
     expect(ghosttyMock.forceRenderSpy.mock.calls.length).toBeGreaterThanOrEqual(3)
   })
 
+  it('refits after a hidden terminal becomes measurable on a later wake frame', async () => {
+    await render(true)
+    mockWidth = 0
+    mockHeight = 0
+    ghosttyMock.fitSpy.mockClear()
+    await render(false)
+    expect(ghosttyMock.fitSpy).not.toHaveBeenCalled()
+    mockWidth = 600
+    mockHeight = 400
+    ghosttyMock.cols = 120
+    ghosttyMock.rowCount = 35
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(ghosttyMock.fitSpy).toHaveBeenCalled()
+    expect(fakeClient.resizeSession).toHaveBeenLastCalledWith(1, 120, 35)
+  })
+
   it('a pane with no laid-out size (a warm workspace) paints nothing', async () => {
     await render()
     ghosttyMock.forceRenderSpy.mockClear()

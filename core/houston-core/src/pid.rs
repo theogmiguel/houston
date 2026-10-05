@@ -150,6 +150,104 @@ pub fn signal_process_group(pid: u32, sig: Signal) -> Result<(), PidError> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+pub fn signal_owned_process_group(
+    pid: u32,
+    expected_creation: Option<u64>,
+    sig: Signal,
+) -> Result<SignalOutcome, SignalError> {
+    let raw = checked_pid(pid).map_err(SignalError::InvalidPid)?;
+    if pid == 1 {
+        return Err(SignalError::Os(std::io::Error::other(
+            "process group 1 is not an owned child group; expected group ID >= 2",
+        )));
+    }
+    let Some(expected) = expected_creation else {
+        return Ok(SignalOutcome::IdentityMismatch);
+    };
+    match process_creation_token(pid) {
+        None => return Ok(SignalOutcome::NoSuchProcess),
+        Some(actual) if actual != expected => return Ok(SignalOutcome::IdentityMismatch),
+        Some(_) => {}
+    }
+    // An unreaped child anchors its group identity, even after it exits. Never
+    // use this helper for a group outside the launcher's own terminal session.
+    if unsafe { libc::getpgid(raw) } != raw
+        || unsafe { libc::getsid(raw) } != unsafe { libc::getsid(0) }
+    {
+        return Ok(SignalOutcome::IdentityMismatch);
+    }
+    signal_process_group_checked(pid, sig)?;
+    Ok(SignalOutcome::Delivered)
+}
+
+#[cfg(unix)]
+fn signal_process_group_checked(pid: u32, sig: Signal) -> Result<(), SignalError> {
+    if pid == 1 {
+        return Err(SignalError::Os(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "process group 1 would broadcast to every signalable process; expected group ID >= 2",
+        )));
+    }
+    let group = checked_process_group(pid).map_err(SignalError::InvalidPid)?;
+    // SAFETY: the group is an explicitly validated positive process-group ID, negated once.
+    if unsafe { libc::kill(group, sig.as_c_int()) } == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    Err(SignalError::Os(error))
+}
+
+#[cfg(unix)]
+pub fn terminate_pty_session(
+    pid: u32,
+    master_fd: Option<std::os::fd::RawFd>,
+    expected_creation: Option<u64>,
+) -> Result<(), SignalError> {
+    if pid == 1 {
+        return Err(SignalError::Os(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "PTY root pid 1 cannot be an owned terminal session; expected pid >= 2",
+        )));
+    }
+    let root = checked_pid(pid).map_err(SignalError::InvalidPid)?;
+    if expected_creation.is_some_and(|expected| {
+        process_creation_token(pid).is_some_and(|actual| actual != expected)
+    }) {
+        return Err(SignalError::Os(std::io::Error::other(format!(
+            "PTY root pid {pid} was reused; refusing to terminate another process"
+        ))));
+    }
+    // PTY children call setsid before exec; never signal a group belonging to the daemon.
+    let session = unsafe { libc::getsid(root) };
+    if session < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            return Ok(());
+        }
+        return Err(SignalError::Os(error));
+    }
+    if session != root {
+        return Err(SignalError::Os(std::io::Error::other(format!(
+            "PTY root pid {pid} belongs to session {session}, expected session {pid}"
+        ))));
+    }
+    if let Some(fd) = master_fd {
+        // Interactive shells put their foreground command in a separate process group.
+        let foreground = unsafe { libc::tcgetpgrp(fd) };
+        if foreground > 0 && foreground != root {
+            let foreground_session = unsafe { libc::getsid(foreground) };
+            if foreground_session == root {
+                signal_process_group_checked(foreground as u32, Signal::Kill)?;
+            }
+        }
+    }
+    signal_process_group_checked(pid, Signal::Kill)
+}
+
 #[cfg(windows)]
 mod win {
     use std::io;
@@ -409,6 +507,35 @@ mod tests {
         (0, "0 = this process group"),
         (i32::MAX as u32 + 1, "one past pid_t's positive range"),
     ];
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn owned_group_signals_require_a_child_group_with_matching_identity() {
+        for (pid, _) in BROADCAST_VALUES {
+            assert!(signal_owned_process_group(pid, Some(1), Signal::Check).is_err());
+        }
+        assert!(signal_owned_process_group(1, Some(1), Signal::Check).is_err());
+        let current = std::process::id();
+        assert_eq!(
+            signal_owned_process_group(current, None, Signal::Check).unwrap(),
+            SignalOutcome::IdentityMismatch
+        );
+        assert_eq!(
+            signal_owned_process_group(current, Some(0), Signal::Check).unwrap(),
+            SignalOutcome::IdentityMismatch
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn terminal_termination_refuses_broadcast_group_one() {
+        let error = signal_process_group_checked(1, Signal::Check).unwrap_err();
+        assert!(error.to_string().contains("broadcast"));
+        assert!(terminate_pty_session(1, None, None).is_err());
+        for (pid, _) in BROADCAST_VALUES {
+            assert!(terminate_pty_session(pid, None, None).is_err());
+        }
+    }
 
     #[test]
     fn checked_pid_refuses_broadcast_values() {

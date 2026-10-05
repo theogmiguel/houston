@@ -36,16 +36,41 @@ fn create_custom(d: &Arc<Daemon>, dir: &std::path::Path, cmd: Vec<&str>) -> u32 
 
 #[tokio::test]
 #[cfg(unix)]
-async fn a_session_ignoring_sighup_and_sigterm_is_reported_unterminated_with_no_marker() {
+async fn a_session_ignoring_sighup_and_sigterm_confirms_forced_exit_before_the_marker() {
     let state = tempfile::tempdir().unwrap();
     let proj = tempfile::tempdir().unwrap();
     let d = daemon(state.path());
+    let mut updates = d.subscribe();
     let id = create_custom(
         &d,
         proj.path(),
-        vec!["sh", "-c", "trap '' TERM HUP; sleep 100"],
+        vec![
+            "sh",
+            "-c",
+            "trap '' TERM HUP; echo $$ > root.pid; sleep 100 & echo $! > child.pid; wait",
+        ],
     );
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    let pids = loop {
+        let root = std::fs::read_to_string(proj.path().join("root.pid"))
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok());
+        let child = std::fs::read_to_string(proj.path().join("child.pid"))
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok());
+        if let (Some(root), Some(child)) = (root, child) {
+            break [root, child];
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "PTY fixture did not start"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    };
+    assert!(pids
+        .iter()
+        .all(|pid| houston_core::pid::process_is_alive(*pid)));
+    assert!(!state.path().join("clean-shutdown").exists());
 
     d.reap_set_exit_hook_for_test(Box::new(|| {}));
     let result = {
@@ -55,24 +80,67 @@ async fn a_session_ignoring_sighup_and_sigterm_is_reported_unterminated_with_no_
         std::env::remove_var("HOUSTON_SHUTDOWN_DRAIN_MS");
         result
     };
+    let ok = result.expect("SIGKILL must stop a session that ignores SIGHUP and SIGTERM");
+    assert!(ok.ok);
+    assert_eq!(ok.stopped_sessions, 1);
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let houston_core::daemon::Outbound::Control(text) = updates.recv().await.unwrap() {
+                if let proto::ServerMsg::SessionState {
+                    session,
+                    state,
+                    exit_code,
+                } = serde_json::from_str(&text).unwrap()
+                {
+                    if session == id {
+                        assert!(matches!(
+                            state,
+                            proto::SessionState::Killed | proto::SessionState::Exited
+                        ));
+                        assert!(
+                            exit_code.is_some(),
+                            "the backend must confirm its exit status"
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .expect("the forced exit must be reported");
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let alive = pids.iter().any(|pid| {
+            if !houston_core::pid::process_is_alive(*pid) {
+                return false;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+                    stat[stat.rfind(')').unwrap() + 2..]
+                        .split_whitespace()
+                        .next()
+                        != Some("Z")
+                })
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                true
+            }
+        });
+        if !alive {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "shutdown left an owned process alive: {pids:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
     assert!(
-        result.is_err(),
-        "a session that never confirms exit must not read as a successful stop"
-    );
-    let failure = result.unwrap_err();
-    assert_eq!(
-        failure.unterminated,
-        vec![id],
-        "the response must name exactly the session that never confirmed exit"
-    );
-    assert!(
-        failure.reason.contains("did not confirm exit"),
-        "{}",
-        failure.reason
-    );
-    assert!(
-        !state.path().join("clean-shutdown").exists(),
-        "a failed shutdown must never write the clean-shutdown marker"
+        state.path().join("clean-shutdown").exists(),
+        "confirmed forced exit must write the clean-shutdown marker"
     );
 }
 

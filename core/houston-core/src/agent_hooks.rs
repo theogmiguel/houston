@@ -722,6 +722,7 @@ fn grok_install(
             )
         })?
     };
+    let original = root.clone();
     let obj = root.as_object_mut().ok_or_else(|| {
         anyhow!(
             "{}: expected a JSON object at the top level, found {}",
@@ -750,13 +751,17 @@ fn grok_install(
             .or_insert_with(|| serde_json::json!([]))
             .as_array_mut()
             .ok_or_else(|| anyhow!("{}: hooks.{event} is not an array", path.display()))?;
+        // Codex hook trust includes the group's ordinal within its event.
+        let index = arr
+            .iter()
+            .position(|e| grok_entry_is_ours(e, sentinel))
+            .unwrap_or(arr.len());
         arr.retain(|e| !grok_entry_is_ours(e, sentinel));
         let mut group = serde_json::json!({
             "hooks": [{ "type": "command", "command": command }]
         });
         let matcher = match (provider, *event) {
-            (proto::AgentKind::Codex, "PreToolUse") => Some("^request_user_input$"),
-            (proto::AgentKind::Codex, "PostToolUse") => Some("*"),
+            (proto::AgentKind::Codex, "PreToolUse" | "PostToolUse") => Some("*"),
             _ => None,
         };
         if let Some(matcher) = matcher {
@@ -765,9 +770,12 @@ fn grok_install(
                 .expect("hook group is an object")
                 .insert("matcher".to_string(), serde_json::json!(matcher));
         }
-        arr.push(group);
+        arr.insert(index, group);
     }
 
+    if root == original {
+        return Ok(());
+    }
     ensure_parent(path)?;
     let mut out = serde_json::to_string_pretty(&root)?;
     out.push('\n');
@@ -1072,10 +1080,7 @@ mod tests {
         assert_eq!(cmds.len(), events.len() + extra + 1, "{cmds:?}");
         let root: serde_json::Value =
             serde_json::from_str(&read(&path)).expect("valid Codex hooks JSON");
-        assert_eq!(
-            root["hooks"]["PreToolUse"][0]["matcher"],
-            "^request_user_input$"
-        );
+        assert_eq!(root["hooks"]["PreToolUse"][0]["matcher"], "*");
         assert_eq!(root["hooks"]["PostToolUse"][0]["matcher"], "*");
 
         install(proto::AgentKind::Codex, &h, &launcher(), DEV).expect("reinstall");
@@ -1112,6 +1117,36 @@ mod tests {
             is_installed(proto::AgentKind::Codex, &h, DEV),
             "removing release's entries must not touch dev's"
         );
+    }
+
+    #[test]
+    fn codex_reinstall_preserves_hook_order_and_unchanged_file_contents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let h = home(&dir);
+        install(proto::AgentKind::Codex, &h, &launcher(), RELEASE).expect("release install");
+        install(proto::AgentKind::Codex, &h, &launcher(), DEV).expect("dev install");
+        let path = config_path(proto::AgentKind::Codex, &h).expect("path");
+        let mut root: serde_json::Value = serde_json::from_str(&read(&path)).expect("JSON");
+        root["hooks"]["Stop"]
+            .as_array_mut()
+            .expect("stop groups")
+            .insert(
+                1,
+                serde_json::json!({
+                    "hooks": [{ "type": "command", "command": "my-own-hook" }]
+                }),
+            );
+        let original = serde_json::to_string(&root).expect("compact JSON");
+        std::fs::write(&path, &original).expect("write");
+
+        for sentinel in [RELEASE, DEV, RELEASE] {
+            install(proto::AgentKind::Codex, &h, &launcher(), sentinel).expect("reinstall");
+            assert_eq!(
+                read(&path),
+                original,
+                "unchanged hooks must keep their trust ordinals and original formatting"
+            );
+        }
     }
 
     #[test]

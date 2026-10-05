@@ -85,7 +85,9 @@ read the full stored body, including after the child closes. The CLI equivalent 
 the submit storage limit still applies.
 
 A follow-up prompt waits when the child is busy or you have unsubmitted text in its
-terminal. The reply names that hold. If Houston can write immediately, a write failure
+terminal. The reply names that hold. The bounded queue retains the prompt until the
+hold clears or the session ends; a long turn does not expire it. Queued prompts are
+held in memory and do not survive a daemon restart. If Houston can write immediately, a write failure
 is returned directly instead of reporting the prompt as queued.
 
 Cursor does not report needs-input. Its capability note and spawn warning say
@@ -93,7 +95,7 @@ Cursor does not report needs-input. Its capability note and spawn warning say
 
 Codex Auto review can show `stalled?` after an observed approval episode remains unresolved
 for five minutes. This is a diagnostic heuristic, not a request for human input. It clears
-when a matching tool completion or authoritative turn end/interruption arrives. Houston
+when a matching tool completion, a new user prompt or authoritative turn end/interruption arrives. Houston
 does not send keys or a desktop notification in response to it.
 
 ## Workspaces and child lifetime
@@ -224,12 +226,17 @@ The orchestrator's roster groups children into Needs you, Working and Settled. S
 child to inspect its terminal inside the orchestrator pane; return to Orchestrator to
 see the parent. Move to grid gives a child its own cell, and Return to roster reverses
 that placement. A headless child stays in the roster without consuming a grid cell.
-Needs you includes blocked and stalled children; Answer focuses their terminal prompt.
+Needs you includes children reporting human input or children waiting on their own
+descendants; Answer focuses their terminal prompt. Quiet children remain in Working
+with a warning indicator.
 Show only on the Needs you heading hides the other groups until you select it again, or
 until no child needs you. Houston never answers a child's question for you.
 
 Overview opens a closable side-panel tab for that orchestrator. Group its children by
 status or worktree, select a terminal, or review changes in the child's checkout.
+The parent’s Inbox count opens pending messages. A child’s Pending delivery badge
+means messages have not reached its parent; Result staged means a result was submitted
+while the turn was still running. Neither badge means that the child process exited.
 Managed worktrees show their branch and changed-file count. Live siblings sharing a
 checkout are identified by role. The latest result excerpt remains available after reopening
 the overview, subject to inbox retention. Review comments can be sent back to that child. Closing the overview only closes the view.

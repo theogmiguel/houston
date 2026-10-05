@@ -1,7 +1,7 @@
 import { useSession, useSessionFamily } from '../sessionsStore'
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useEffect, useContext, useRef, useState } from 'react'
-import { ChildrenRoster, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
+import { ChildrenRoster, ChildStatusDot, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
 import { RING_ACCENT_ICON } from './shadowChrome'
@@ -81,6 +81,8 @@ import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
 import { ContextIndicator } from './ContextIndicator'
 import { PaneTaskChip } from './tasks/PaneTaskChip'
+import { Button } from './ui/Button'
+import { Count } from './ui/Count'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -462,7 +464,7 @@ function SessionPaneImpl({
           data-testid="head-identity"
           className="head-identity inline-flex items-center gap-2 min-w-0 overflow-hidden [flex:0_1_auto]"
         >
-          <StatusDot status={info.children_waiting > 0 ? 'needs-input' : info.status} live={live || info.children_waiting > 0} />
+          <SessionHeaderStatusDot info={info} live={live} />
           <Tooltip label={`${glyphAgent} session`}>
             <span
               data-testid="engine-glyph"
@@ -491,6 +493,7 @@ function SessionPaneImpl({
             </span>
           )}
         </span>
+        <SessionInboxButton info={info} />
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
       </header>
       <ResumeNotice
@@ -667,7 +670,7 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
               return child && !gridSessionIds?.has(id) ? [child] : []
             })].map((shown) => {
               const hidden = shown.id !== (peek?.id ?? info.id)
-              return <div key={shown.id} data-peek-session={shown.id} className="absolute inset-0 flex min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', contentVisibility: 'hidden', contain: 'strict', pointerEvents: 'none' } : undefined}>
+              return <div key={shown.id} data-peek-session={shown.id} className="absolute inset-0 flex min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', pointerEvents: 'none' } : undefined}>
                 <GridHiddenContext.Provider value={gridHidden || hidden}>
                   <WarmContext.Provider value={gridWarm || hidden}>
                     <TerminalPane client={client} info={shown} theme={theme} active={active && !hidden} connected={connected} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={() => onActivate(info.id)} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={(path, line, col) => onOpenFile(shown.id, path, line, col)} onOpenDir={(path) => onOpenDir(path, shown.id)} actions={shown.id === info.id ? termActions : undefined} />
@@ -675,6 +678,17 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
                 </GridHiddenContext.Provider>
               </div>
             })}</>
+}
+
+function SessionHeaderStatusDot({ info, live }: { info: SessionInfo; live: boolean }): React.JSX.Element {
+  if (info.spawned_by != null) return <ChildStatusDot info={info} />
+  return <StatusDot status={info.children_waiting > 0 ? 'needs-input' : info.status} live={live || info.children_waiting > 0} />
+}
+
+function SessionInboxButton({ info }: { info: SessionInfo }): React.JSX.Element | null {
+  if (!(info.inbox_unread > 0)) return null
+  const label = `${info.inbox_unread} unread inbox messages`
+  return <Tooltip label={label}><Button variant="ghost" size="sm" aria-label={label} className="flex-none" onClick={() => openSideOverview(info.id)}>Inbox<Count value={info.inbox_unread} /></Button></Tooltip>
 }
 
 function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegration, onReconnectSsh, onExpand, onAddPane, menuOpen, closeMenu, openMenuAtButton }: Pick<Props, 'info' | 'client' | 'expanded' | 'shellIntegration' | 'onReconnectSsh' | 'onExpand' | 'onAddPane'> & {

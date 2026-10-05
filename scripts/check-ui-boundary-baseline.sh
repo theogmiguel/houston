@@ -14,7 +14,7 @@ BASELINE=(
   "ui/src/renderer/src/components/BrowserPicker.tsx 2"
   "ui/src/renderer/src/components/ChangesPane.tsx 88"
   "ui/src/renderer/src/components/CheckedStamp.tsx 3"
-  "ui/src/renderer/src/components/ChildrenRoster.tsx 22"
+  "ui/src/renderer/src/components/ChildrenRoster.tsx 18"
   "ui/src/renderer/src/components/Chip.tsx 10"
   "ui/src/renderer/src/components/CommandPalette.tsx 40"
   "ui/src/renderer/src/components/ComposerControls.tsx 18"
