@@ -1811,6 +1811,8 @@ pub struct CreateParams {
     pub acp: Option<String>,
     pub profile: Option<proto::ProfileChoice>,
     pub prompt: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<proto::ChatEffort>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -5615,6 +5617,8 @@ impl Daemon {
                 acp: None,
                 profile: None,
                 prompt: Some(row.prompt.clone()),
+                model: None,
+                effort: None,
             },
             vec![(crate::harness::RUN_ENV.to_string(), run_id.to_string())],
             Vec::new(),
@@ -6899,34 +6903,36 @@ impl Daemon {
         let title = self.next_codename();
         let prompt = p.prompt.as_deref().unwrap_or("");
         let prompt_label = prompt_label.unwrap_or_else(|| format!("session-{id}"));
-        let mut extra_args = if !prompt.trim().is_empty() {
-            let prompts_dir = init_prompts_dir(&p.project_dir)?;
-            let (args, prompt_file) = crate::launch::launch_args(
+        if p.auto_approve && crate::launch::auto_approve_args(p.agent).is_none() {
+            bail!(
+                "agent {:?} has no approval-bypass flag, so auto_approve cannot be honoured \
+                 (expected claude, codex, antigravity, opencode, cursor or grok)",
+                p.agent
+            );
+        }
+        let (mut extra_args, prompt_file) = {
+            let prompts_dir = if prompt.trim().is_empty() {
+                None
+            } else {
+                Some(init_prompts_dir(&p.project_dir)?)
+            };
+            crate::launch::launch_args(
                 p.agent,
                 p.auto_approve,
                 false,
-                None,
+                p.model.as_deref(),
                 prompt,
-                Some(&prompts_dir),
+                prompts_dir.as_deref(),
                 &prompt_label,
-            )?;
-            if let Some((path, contents)) = prompt_file {
-                std::fs::write(&path, contents)
-                    .with_context(|| format!("writing prompt file {}", path.display()))?;
-            }
-            args
-        } else if p.auto_approve {
-            match crate::launch::auto_approve_args(p.agent) {
-                Some(args) => args,
-                None => bail!(
-                    "agent {:?} has no approval-bypass flag, so auto_approve cannot be honoured \
-                     (expected claude, codex, antigravity, opencode, cursor or grok)",
-                    p.agent
-                ),
-            }
-        } else {
-            Vec::new()
+            )?
         };
+        if let Some((path, contents)) = prompt_file {
+            std::fs::write(&path, contents)
+                .with_context(|| format!("writing prompt file {}", path.display()))?;
+        }
+        if let Some(effort) = p.effort {
+            extra_args.extend(crate::launch::effort_args(p.agent, effort)?);
+        }
         extra_args.extend(spawn_args);
         if let Some(slug) = p.acp.as_deref() {
             let known = crate::acp::find_known_acp_agent(slug).ok_or_else(|| {
@@ -18357,6 +18363,8 @@ mod pr_watch_stall_tests {
                     acp: None,
                     profile: None,
                     prompt: None,
+                    model: None,
+                    effort: None,
                 })
                 .unwrap()
         };
@@ -19647,6 +19655,8 @@ mod idle_profile_tests {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
             .id
@@ -19878,6 +19888,8 @@ mod idle_profile_tests {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
             .id;

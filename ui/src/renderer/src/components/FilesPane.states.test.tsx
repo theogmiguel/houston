@@ -196,6 +196,34 @@ describe('Files pane — state matrix (§14)', () => {
     expect(strip.textContent).toContain('UTF-8')
   })
 
+  it('shows the large-file limit, measured size and requested edit in a notice', async () => {
+    readDir.mockResolvedValue([entry('large.ts')])
+    readFile.mockRejectedValue(new Error('file too large to edit: /ws/large.ts is 3000000 bytes (max 2097152)'))
+    await mount()
+    await act(async () => qa('[data-testid="files-tree-row"]')[0].click())
+    await flush()
+    const preview = q('[data-testid="editor-preview-too-large"]')
+    expect(preview?.textContent).toContain('File too large to edit')
+    expect(preview?.textContent).toContain('large.ts')
+    const notice = preview?.querySelector('[role="note"]')
+    expect(notice?.textContent).toContain('2.9 MB')
+    expect(notice?.textContent).toContain('2 MB edit limit')
+    expect(notice?.textContent).toContain('Requested: open for editing')
+  })
+
+  it('exposes a persistent word-wrap control for the active file', async () => {
+    readDir.mockResolvedValue([entry('main.ts')])
+    await mount()
+    await act(async () => qa('[data-testid="files-tree-row"]')[0].click())
+    await flush()
+    const wrap = q('[data-testid="files-word-wrap"]') as HTMLButtonElement
+    expect(wrap.getAttribute('aria-pressed')).toBe('false')
+    await act(async () => wrap.click())
+    await flush()
+    expect(wrap.getAttribute('aria-pressed')).toBe('true')
+    expect(localStorage.getItem('tr-files-word-wrap')).toBe('true')
+  })
+
   it('the editor column carries the gutter CSS hook, so line numbers sit on the code surface', async () => {
     readDir.mockResolvedValue([entry('main.rs')])
     await mount()

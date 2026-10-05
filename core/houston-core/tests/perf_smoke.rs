@@ -64,6 +64,8 @@ async fn flood_throughput_floor() {
         acp: None,
         profile: None,
         prompt: None,
+        model: None,
+        effort: None,
     })
     .unwrap();
     ws.send(Message::text(create)).await.unwrap();
@@ -165,6 +167,8 @@ async fn daemon_rss_at_ten_sessions() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
         ws.send(Message::text(create)).await.unwrap();

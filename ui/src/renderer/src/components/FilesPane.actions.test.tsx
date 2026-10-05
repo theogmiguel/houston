@@ -12,6 +12,37 @@ beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); bridge.readDir.mock
 afterEach(cleanup)
 const mount = (client?: HoustonClient) => render(<FilesPane node={{ kind: 'files', id: 'files', root: '/ws' }} workspaceDir="/ws" onClose={vi.fn()} onHeaderPointerDown={vi.fn()} client={client} />)
 describe('Files tree actions', () => {
+  it('copies absolute and workspace-relative paths from the tree menu', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    mount()
+    const row = await screen.findByRole('treeitem')
+    fireEvent.contextMenu(row, { clientX: 100, clientY: 100 })
+    expect(screen.getByRole('menuitem', { name: /Rename/ }).textContent).toContain('F2')
+    expect(screen.getByRole('menuitem', { name: /Delete/ }).textContent).toContain('Del')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy path' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('/ws/a.ts'))
+    fireEvent.contextMenu(row, { clientX: 100, clientY: 100 })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy relative path' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('a.ts'))
+  })
+
+  it('sends the path as terminal input without submitting it, and explains the disabled state', async () => {
+    const onSendToTerminal = vi.fn()
+    const { rerender } = mount()
+    const row = await screen.findByRole('treeitem')
+    fireEvent.contextMenu(row, { clientX: 100, clientY: 100 })
+    const unavailable = screen.getByRole('menuitem', { name: /Send path to focused pane/ })
+    expect((unavailable as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('Focus a live agent pane first')).toBeTruthy()
+
+    rerender(<FilesPane node={{ kind: 'files', id: 'files', root: '/ws' }} workspaceDir="/ws" onClose={vi.fn()} onHeaderPointerDown={vi.fn()} onSendToTerminal={onSendToTerminal} sendToTerminalLabel="auth-refactor" />)
+    fireEvent.contextMenu(row, { clientX: 100, clientY: 100 })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Send path to auth-refactor' }))
+    expect(onSendToTerminal).toHaveBeenCalledExactlyOnceWith('/ws/a.ts')
+    expect(onSendToTerminal.mock.calls[0][0]).not.toContain('\n')
+  })
+
   it('creates a file through the existing native command', async () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: 'New file' }))

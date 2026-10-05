@@ -122,6 +122,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
     }
@@ -183,7 +185,6 @@ impl Rig {
                 proto::TaskPatch {
                     title: Some(title.into()),
                     status: Some(proto::TaskStatus::Todo),
-                    status_since_ms: None,
                     acceptance: Some(vec!["Windows check passes".into()]),
                     ..Default::default()
                 },

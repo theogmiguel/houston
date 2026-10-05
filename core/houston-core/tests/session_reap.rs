@@ -25,6 +25,8 @@ fn spawn_quiet(daemon: &Arc<Daemon>, dir: &Path) -> proto::SessionInfo {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     assert_eq!(
@@ -139,6 +141,8 @@ fn never_reaps_a_session_that_is_still_doing_something() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 

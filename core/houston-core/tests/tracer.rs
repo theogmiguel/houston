@@ -42,6 +42,8 @@ async fn session_runs_and_exits() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     assert_eq!(info.state, proto::SessionState::Running);
@@ -75,6 +77,8 @@ async fn stdin_reaches_the_pty_and_kill_works() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     let id = info.id;

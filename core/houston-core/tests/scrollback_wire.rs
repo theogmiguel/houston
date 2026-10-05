@@ -21,6 +21,8 @@ fn create_custom_session(daemon: &Arc<Daemon>, dir: &std::path::Path, cmd: Vec<&
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id

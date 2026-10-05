@@ -225,6 +225,8 @@ pub fn create_custom_msg(cmd: Vec<&str>, dir: &std::path::Path) -> String {
         acp: None,
         profile: None,
         prompt: None,
+        model: None,
+        effort: None,
     })
     .unwrap()
 }
