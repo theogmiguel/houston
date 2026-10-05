@@ -6875,6 +6875,13 @@ impl Daemon {
     }
 
     fn expire_spawn_grace(&self, id: u32) {
+        // A CLI that reports its start only with its first turn is silent until prompted.
+        if self
+            .get(id)
+            .is_ok_and(|s| !crate::agent_events::reports_start_at_launch(s.info.agent))
+        {
+            return;
+        }
         if !self.replace_live_status(
             id,
             Some(proto::AgentStatus::Spawning),
@@ -12823,15 +12830,19 @@ impl Daemon {
                 );
                 return Some(crate::hook_drop::DropVerdict::Applied);
             }
-            let resumed = self.resolve_permission_episodes(
-                d.session,
-                &orchestrate::EpisodeEnd::PostToolUse {
+            // ZCode reports nothing when a permission is denied, so any later tool result
+            // means its dialog closed, whichever tool it names.
+            let end = if provider == proto::AgentKind::Zcode {
+                orchestrate::EpisodeEnd::TurnEnded
+            } else {
+                orchestrate::EpisodeEnd::PostToolUse {
                     tool_use_id: d.tool_use_id.clone(),
                     prompt_id: d.prompt_id.clone(),
                     tool_name: d.tool_name.clone(),
                     tool_input_fingerprint: d.tool_input_fingerprint.clone(),
-                },
-            );
+                }
+            };
+            let resumed = self.resolve_permission_episodes(d.session, &end);
             if resumed {
                 self.apply_agent_event(
                     d.session,

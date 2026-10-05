@@ -804,6 +804,13 @@ pub fn capability_note(agent: proto::AgentKind) -> Option<String> {
     ) {
         notes.push(format!("{provider} has no handback-only launch rule configured; pane_submit follows its approval mode"));
     }
+    if agent == proto::AgentKind::Zcode {
+        notes.push(format!(
+            "{provider} reports no turn end for a failed turn (API error, exhausted quota, \
+             network) or an interrupt between tool calls; the pane stays working until its \
+             next prompt"
+        ));
+    }
     if notes.is_empty() {
         None
     } else {
@@ -4560,6 +4567,15 @@ mod tests {
         assert_eq!(
             capability_note(proto::AgentKind::Opencode).as_deref(),
             Some("opencode has no turn-end continuation; results wait for its next idle; opencode has no handback-only launch rule configured; pane_submit follows its approval mode")
+        );
+        assert_eq!(
+            capability_note(proto::AgentKind::Zcode).as_deref(),
+            Some(
+                "zcode has no handback-only launch rule configured; pane_submit follows its \
+                 approval mode; zcode reports no turn end for a failed turn (API error, \
+                 exhausted quota, network) or an interrupt between tool calls; the pane stays \
+                 working until its next prompt"
+            )
         );
         for kind in [
             proto::AgentKind::Custom,
