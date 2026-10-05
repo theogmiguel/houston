@@ -12,7 +12,12 @@ describe('browser pane states', () => {
     expect(screen.getByText('Enter a URL, or open a server this workspace is running.')).toBeTruthy()
     const order = screen.getByText('Local servers').compareDocumentPosition(screen.getByText('Recently opened'))
     expect(order & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
-    fireEvent.click(screen.getByRole('button', { name: /localhost:5173/ }))
+    const row = screen.getByRole('button', { name: /localhost:5173/ })
+    expect(row.className).toContain('bg-transparent')
+    expect(screen.getByText('vite · dev-server pane').className).toContain('font-normal')
+    expect(screen.getByTestId('browser-pane-open-cta').className).toContain('bg-transparent')
+    expect(screen.getByTestId('browser-pane-clear-recents').className).toContain('uppercase')
+    fireEvent.click(row)
     expect(onOpenServer).toHaveBeenCalledWith('http://localhost:5173/')
   })
 
@@ -24,5 +29,9 @@ describe('browser pane states', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show details' }))
     expect(onRetry).toHaveBeenCalledOnce()
     expect(onToggleDetails).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'Show details' }).className).toContain('uppercase')
+    const tile = screen.getByRole('alert').querySelector('[data-testid="icon-tile"]')!
+    expect(tile.className).toContain('border-[color-mix(in_srgb,var(--status-blocked-text)_35%,transparent)]')
+    expect(tile.className).toContain('bg-[var(--status-blocked-bg)]')
   })
 })

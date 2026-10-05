@@ -3,7 +3,7 @@ import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOV
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text'
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -51,7 +51,9 @@ const buttonClasses = variants(
     variant: {
       primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:enabled:bg-[var(--accent-hover)]',
       secondary: 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
+      outline: 'border-[var(--border)] bg-transparent text-[var(--text-primary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--hover-fill)]',
       ghost: BTN_GHOST,
+      label: 'h-auto min-h-0 border-0 bg-transparent p-0 text-left [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:0.06em] uppercase text-[var(--text-muted)] hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]',
       link: 'border-transparent bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline text-[length:var(--tr-text-small-size)] text-[var(--accent)] hover:enabled:bg-transparent hover:enabled:underline',
       danger: BTN_GHOST + ' ' + BTN_GHOST_DANGER_HOVER,
       'danger-solid': BTN_DANGER_SOLID,
@@ -75,7 +77,7 @@ export function Button(props: ButtonProps): React.JSX.Element {
     type = 'button',
     ...buttonProps
   } = props
-  const classes = `${buttonClasses({ variant, size: variant === 'icon' || variant === 'text' ? 'icon' : size })} ${variant === 'danger' && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
+  const classes = `${buttonClasses({ variant, size: variant === 'icon' || variant === 'label' || variant === 'text' ? 'icon' : size })} ${variant === 'danger' && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd
 

@@ -201,7 +201,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow>
             <Button variant="primary" icon={IconPlus}>Primary</Button>
             <Button variant="secondary">Secondary</Button>
+            <Button variant="outline">Outline</Button>
             <Button variant="ghost">Ghost</Button>
+            <Button variant="label">Label action</Button>
             <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
@@ -484,7 +486,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           {(['sm', 'md', 'lg'] as const).map((size) => (
             <div key={size} style={{ display: 'grid', gap: 'var(--space-2)' }}>
               <Caption>{size}</Caption>
-              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'muted'] as const).map((tone) => (
+              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'danger-outline', 'muted'] as const).map((tone) => (
                 <IconTile key={`${size}-${tone}`} size={size} tone={tone} icon={<IconCheck role="ui" />} label={`${size} ${tone}`} />
               ))}</SpecimenRow>
             </div>
