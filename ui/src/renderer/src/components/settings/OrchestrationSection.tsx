@@ -71,7 +71,7 @@ function OrchestrationCapsEditor({
         <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
           {dirty ? 'Both limits save together, as one change.' : 'Matches what the daemon has stored.'}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-[var(--space-2)]">
         <Button
           variant="ghost"
           disabled={!dirty}
