@@ -10,6 +10,7 @@ import {
   ConnectionCell,
   DoneDisclosure,
   Drawer,
+  DialogSpecimen,
   EmptyState,
   Field,
   FieldLabel,
@@ -209,6 +210,11 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
             <Button variant="icon" icon={IconClose} aria-label="Close" />
             <Button variant="text">Task row title</Button>
+            <Button variant="badge">Orchestrator</Button>
+            <Button variant="ghost-icon"><IconClose /></Button>
+            <Button variant="legacy-primary">Legacy primary</Button>
+            <Button variant="legacy-secondary">Legacy secondary</Button>
+            <Button variant="legacy-ghost">Legacy ghost</Button>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
@@ -226,7 +232,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Dialog">
+          <DialogSpecimen />
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Card and Card.Row">
+          <Card tone="danger" shape="card" padding="md">Question card error state</Card>
+          <Card disabled>Disabled card</Card>
           <Card>
             <Card.Row heading="Default card" meta="Heading and supporting detail" status={<StatusLabel status="Working" />} action={<Button size="sm">Open</Button>} />
             <Card.Row heading="Second row" meta="Rows keep their shared structure" />
@@ -289,6 +301,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="StatusLabel">
           <SpecimenRow>{STATUS_LABELS.map((status) => <StatusLabel key={status} status={status} />)}</SpecimenRow>
           <SpecimenRow><StatusLabel status="Open" size="small" /><StatusLabel status="Fixing" size="small" /><StatusLabel status="Not seen" size="small" /></SpecimenRow>
+          <SpecimenRow><StatusLabel status="Needs input" variant="pill" tone="waiting" /><StatusLabel status="Failed" variant="pill" tone="failed" /><StatusLabel status="Working" variant="pill" tone="working">stalled</StatusLabel></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="RoutineDetail and ConnectionCell">
@@ -441,6 +454,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Notice tone="info">Not read: 4 OpenCode sessions in this window.</Notice>
           <Notice tone="info" indicator="dot" action={{ label: 'Dismiss', onClick: noop }}>Review #13 found one new thing to fix and confirmed one fix worked.</Notice>
           <Notice tone="danger" action={{ label: 'Open settings', onClick: noop }}>Limits are unavailable until a quota reader is configured.</Notice>
+          <Notice tone="danger" variant="callout">The action could not be completed.</Notice>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Tooltip">

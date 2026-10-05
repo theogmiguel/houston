@@ -1,9 +1,9 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO } from '../buttonChrome'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
+import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -13,6 +13,7 @@ interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   /** Layout classes only; visual styles belong in Button variants. */
   className?: string
   type?: ButtonHTMLAttributes<HTMLButtonElement>['type']
+  ref?: Ref<HTMLButtonElement>
 }
 
 type LabeledButtonProps = ButtonBaseProps & {
@@ -46,18 +47,29 @@ const sizeClasses = {
 } as const
 
 const buttonClasses = variants(
-  'btn inline-flex items-center justify-center rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] disabled:cursor-not-allowed',
+  'btn inline-flex items-center justify-center disabled:cursor-not-allowed',
   {
     variant: {
       primary: 'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:enabled:bg-[var(--accent-hover)]',
       secondary: 'border-[var(--border)] bg-[var(--hover-fill)] text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
       field: 'justify-start border-[var(--border)] bg-[var(--card-bg)] text-left font-normal text-[var(--text-secondary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--card-hover)] hover:enabled:text-[var(--text-primary)]',
-      ghost: BTN_GHOST,
+      ghost: `btn ${BTN_GHOST}`,
       link: 'border-transparent bg-transparent !px-0 !py-0 !h-auto min-h-0 align-baseline text-[length:var(--tr-text-small-size)] text-[var(--accent)] hover:enabled:bg-transparent hover:enabled:underline',
-      danger: BTN_GHOST + ' ' + BTN_GHOST_DANGER_HOVER,
+      danger: `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER}`,
       'danger-solid': BTN_DANGER_SOLID,
       icon: BTN_ICO,
-      text: 'h-auto min-h-0 border-0 bg-transparent p-0 text-left font-semibold text-[var(--text-primary)] hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]'
+      text: 'h-auto min-h-0 border-0 bg-transparent p-0 text-left font-semibold text-[var(--text-primary)] hover:enabled:bg-transparent hover:enabled:text-[var(--text-primary)]',
+      badge: 'h-auto min-h-0 border-0 bg-transparent p-0 inline-flex items-center text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] flex-none whitespace-nowrap cursor-default gap-1.5 [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px]',
+      'ghost-icon': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`,
+      'ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`,
+      'legacy-primary': `btn ${BTN_PRIMARY}`,
+      'legacy-secondary': BTN_SECONDARY,
+      'legacy-ghost': `btn ${BTN_GHOST}`,
+      'legacy-danger': `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER}`,
+      'legacy-danger-solid': `btn ${BTN_DANGER_SOLID}`,
+      'legacy-icon': `btn ${BTN_ICO}`,
+      'legacy-ghost-icon': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`,
+      'legacy-ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`
     },
     size: sizeClasses
   },
@@ -74,14 +86,17 @@ export function Button(props: ButtonProps): React.JSX.Element {
     className = '',
     children,
     type = 'button',
+    ref,
     ...buttonProps
   } = props
-  const classes = `${buttonClasses({ variant, size: variant === 'icon' || variant === 'text' ? 'icon' : size })} ${variant === 'danger' && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
+  const legacy = variant.startsWith('legacy-')
+  const classSet = buttonClasses({ variant, size: variant === 'icon' || variant === 'text' || variant === 'badge' || variant.includes('icon') ? 'icon' : legacy ? 'icon' : size })
+  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${variant === 'badge' || legacy ? '' : 'rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]'} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd
 
   return (
-    <button {...buttonProps} type={type} className={classes}>
+    <button {...buttonProps} ref={ref} type={type} className={classes}>
       {Icon && <Icon />}
       {children}
       {EndIcon && <EndIcon />}

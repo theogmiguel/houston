@@ -1,5 +1,7 @@
 export { Button } from './Button'
 export type { ButtonProps, ButtonSize, ButtonVariant } from './Button'
+export { DialogBackdrop, DialogPanel, DialogForm, DialogTitle, DialogDescription, DialogBody, DialogActions, DialogSpecimen } from './Dialog'
+export type { DialogPanelProps, DialogFormProps } from './Dialog'
 export { FirstRunHooksStep, FirstRunHooksStepSpecimen } from './FirstRunHooksStep'
 export type { FirstRunHooksStepProps, FirstRunStepState } from './FirstRunHooksStep'
 export { TextInput } from './TextInput'

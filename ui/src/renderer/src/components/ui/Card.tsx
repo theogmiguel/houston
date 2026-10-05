@@ -1,13 +1,26 @@
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { variants } from './variants'
 
-const cardClasses = variants('overflow-hidden rounded-[var(--tr-radius-button)] border border-[var(--divider)] bg-[var(--card-bg)]', {
-  tone: { default: '', inset: 'bg-[var(--content-bg)]' }
-}, { tone: 'default' })
+const cardClasses = variants('border', {
+  tone: {
+    default: 'border-[var(--divider)] bg-[var(--card-bg)]',
+    inset: 'border-[var(--divider)] bg-[var(--content-bg)]',
+    danger: 'border-[var(--danger)] bg-[var(--status-blocked-bg)]',
+    surface: 'border-[var(--border)] bg-[var(--surface)]'
+  },
+  shape: { button: 'rounded-[var(--tr-radius-button)]', card: 'rounded-[var(--tr-radius-card)]' },
+  padding: { none: '', md: 'p-[var(--space-3)]' },
+  disabled: { false: '', true: 'opacity-50' },
+  clip: { false: 'overflow-visible', true: 'overflow-hidden' }
+}, { tone: 'default', shape: 'button', padding: 'none', disabled: 'false', clip: 'true' })
 
-export interface CardProps {
+export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode
-  tone?: 'default' | 'inset'
+  tone?: 'default' | 'inset' | 'danger' | 'surface'
+  disabled?: boolean
+  clip?: boolean
+  shape?: 'button' | 'card'
+  padding?: 'none' | 'md'
   className?: string
 }
 
@@ -51,8 +64,8 @@ function CardRow({ heading, meta, status, action, rail, compact = false, classNa
   )
 }
 
-function CardBase({ children, tone = 'default', className = '' }: CardProps): React.JSX.Element {
-  return <div className={`${cardClasses({ tone })} ${className}`}>{children}</div>
+function CardBase({ children, tone = 'default', shape = 'button', padding = 'none', disabled = false, clip = true, className = '', ...props }: CardProps): React.JSX.Element {
+  return <div {...props} className={`${cardClasses({ tone, shape, padding, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${className}`}>{children}</div>
 }
 
 function CardContent({ children }: CardContentProps): React.JSX.Element {
