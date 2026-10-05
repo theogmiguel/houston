@@ -88,7 +88,7 @@ describe('the rail nav rows drive the content area', () => {
     expect(navRow(container, 'skills').getAttribute('aria-current')).toBeNull()
   })
 
-  it('the rows stay reachable while Settings is open — they are destinations, not sections', async () => {
+  it('the rows leave the rail while Settings is open and drive the content area once it closes', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
@@ -96,10 +96,12 @@ describe('the rail nav rows drive the content area', () => {
     const settingsBtn = container.querySelector('.railfoot button[aria-label="Settings"]')
     act(() => (settingsBtn as HTMLButtonElement).click())
     expect(container.querySelector('[aria-label="Settings sections"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(0)
+
+    act(() => (container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement).click())
     expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(
       RAIL_VIEWS.length
     )
-
     act(() => navRow(container, 'mcp').click())
     expect(container.querySelector('[aria-label="Settings sections"]')).toBeNull()
     expect(surface(container)).not.toBeNull()

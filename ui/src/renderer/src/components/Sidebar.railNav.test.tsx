@@ -153,11 +153,13 @@ describe('the rail nav block', () => {
     expect(localStorage.getItem('tr-rail-views-hidden')).toContain('skills')
   })
 
-  it('the rows survive Settings mode — they are destinations, not sections', () => {
+  it('Settings mode shows only its sections, and the rows come back when Settings closes', () => {
     render()
     const before = rows().length
     act(() => setSettingsNavForTests({ open: true }))
     expect(q('[aria-label="Settings sections"]')).not.toBeNull()
+    expect(rows().length).toBe(0)
+    act(() => setSettingsNavForTests({ open: false }))
     expect(rows().length).toBe(before)
   })
 })

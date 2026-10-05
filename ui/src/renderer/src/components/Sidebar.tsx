@@ -2605,16 +2605,18 @@ export function Sidebar({
       />
       <Suspense fallback={null}><GridRailGitSubscription client={railClient ?? null} sessions={sessions} /></Suspense>
       {}
-      <RailNav
-        view={railView}
-        hidden={hiddenRailViews}
-        paletteChord={paletteChord}
-        taskTurnCount={taskTurnCount}
-        onOpenPalette={onOpenPalette ?? (() => {})}
-        onSelect={selectRailView}
-        onRowMenu={openNavMenu}
-        harnessAttention={harnessAttention}
-      />
+      {!settingsOpen && (
+        <RailNav
+          view={railView}
+          hidden={hiddenRailViews}
+          paletteChord={paletteChord}
+          taskTurnCount={taskTurnCount}
+          onOpenPalette={onOpenPalette ?? (() => {})}
+          onSelect={selectRailView}
+          onRowMenu={openNavMenu}
+          harnessAttention={harnessAttention}
+        />
+      )}
       <div className="railscroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
         {settingsOpen ? (
           <SettingsTree
