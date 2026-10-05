@@ -1,43 +1,53 @@
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use tauri::AppHandle;
+#[cfg(target_os = "linux")]
+use tauri::{Emitter, Manager};
 
-use tauri::{AppHandle, Emitter, Manager};
+#[cfg(target_os = "linux")]
+use targets::{remember_target, take_target};
 
+#[cfg(target_os = "linux")]
 pub const EVENT_FOCUS_PANE: &str = "native-notification://focus-pane";
 
-// Keep only recent notifications so ignored desktop notifications cannot grow this map forever.
-const NOTIFICATION_TARGET_TTL: Duration = Duration::from_secs(60 * 60);
-const NOTIFICATION_TARGET_CAP: usize = 256;
+// Desktop notification actions are delivered only on Linux; elsewhere nothing records a target.
+#[cfg(any(target_os = "linux", test))]
+mod targets {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
 
-static NOTIFICATION_TARGETS: OnceLock<Mutex<HashMap<u32, (i64, Instant)>>> = OnceLock::new();
+    // Keep only recent notifications so ignored desktop notifications cannot grow this map forever.
+    const NOTIFICATION_TARGET_TTL: Duration = Duration::from_secs(60 * 60);
+    const NOTIFICATION_TARGET_CAP: usize = 256;
 
-fn targets() -> &'static Mutex<HashMap<u32, (i64, Instant)>> {
-    NOTIFICATION_TARGETS.get_or_init(|| Mutex::new(HashMap::new()))
-}
+    static NOTIFICATION_TARGETS: OnceLock<Mutex<HashMap<u32, (i64, Instant)>>> = OnceLock::new();
 
-fn remember_target(notification: u32, session: i64) {
-    let now = Instant::now();
-    let mut targets = targets().lock().expect("notification targets mutex");
-    targets.retain(|_, (_, at)| now.duration_since(*at) < NOTIFICATION_TARGET_TTL);
-    if targets.len() >= NOTIFICATION_TARGET_CAP {
-        if let Some(oldest) = targets
-            .iter()
-            .min_by_key(|(_, (_, at))| *at)
-            .map(|(id, _)| *id)
-        {
-            targets.remove(&oldest);
-        }
+    fn targets() -> &'static Mutex<HashMap<u32, (i64, Instant)>> {
+        NOTIFICATION_TARGETS.get_or_init(|| Mutex::new(HashMap::new()))
     }
-    targets.insert(notification, (session, now));
-}
 
-fn take_target(notification: u32) -> Option<i64> {
-    targets()
-        .lock()
-        .expect("notification targets mutex")
-        .remove(&notification)
-        .and_then(|(session, at)| (at.elapsed() < NOTIFICATION_TARGET_TTL).then_some(session))
+    pub(super) fn remember_target(notification: u32, session: i64) {
+        let now = Instant::now();
+        let mut targets = targets().lock().expect("notification targets mutex");
+        targets.retain(|_, (_, at)| now.duration_since(*at) < NOTIFICATION_TARGET_TTL);
+        if targets.len() >= NOTIFICATION_TARGET_CAP {
+            if let Some(oldest) = targets
+                .iter()
+                .min_by_key(|(_, (_, at))| *at)
+                .map(|(id, _)| *id)
+            {
+                targets.remove(&oldest);
+            }
+        }
+        targets.insert(notification, (session, now));
+    }
+
+    pub(super) fn take_target(notification: u32) -> Option<i64> {
+        targets()
+            .lock()
+            .expect("notification targets mutex")
+            .remove(&notification)
+            .and_then(|(session, at)| (at.elapsed() < NOTIFICATION_TARGET_TTL).then_some(session))
+    }
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -79,7 +89,8 @@ pub async fn native_notify(
         )
         .await
         .map_err(|e| format!("Linux notification service: {e}"))?;
-        let hints: HashMap<&str, zbus::zvariant::Value<'_>> = HashMap::new();
+        let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
+            std::collections::HashMap::new();
         let notification: u32 = proxy
             .call(
                 "Notify",
@@ -216,8 +227,8 @@ mod tests {
 
     #[test]
     fn action_target_is_consumed_once() {
-        remember_target(42, 7);
-        assert_eq!(take_target(42), Some(7));
-        assert_eq!(take_target(42), None);
+        targets::remember_target(42, 7);
+        assert_eq!(targets::take_target(42), Some(7));
+        assert_eq!(targets::take_target(42), None);
     }
 }
