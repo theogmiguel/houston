@@ -1132,6 +1132,7 @@ impl DelegationSettleSample {
 }
 
 mod harness_review;
+mod slack;
 pub(crate) mod tasks;
 mod worktree_pass;
 
@@ -1323,6 +1324,7 @@ pub struct Daemon {
     pub(crate) update_wake: Arc<tokio::sync::Notify>,
     pub(crate) update_check_lock: tokio::sync::Mutex<()>,
     pub(crate) release_cache: tokio::sync::Mutex<crate::updates::ReleaseCache>,
+    slack: slack::SlackRuntime,
     tx: broadcast::Sender<Outbound>,
 }
 
@@ -2657,6 +2659,7 @@ impl Daemon {
             update_wake: Arc::new(tokio::sync::Notify::new()),
             update_check_lock: tokio::sync::Mutex::new(()),
             release_cache: tokio::sync::Mutex::new(crate::updates::ReleaseCache::default()),
+            slack: slack::SlackRuntime::default(),
             run_state_started_at: now_ms(),
             run_state_expected_restart: AtomicBool::new(false),
             startup_cause,

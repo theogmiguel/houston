@@ -1,6 +1,7 @@
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import { IconAgent } from '../icons'
+import { Chip } from '../Chip'
 import { Tooltip } from '../Tooltip'
 import { formatAge, runStateLabel, runStateTone, taskAgentLabel } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
@@ -21,6 +22,16 @@ export function TaskRunMark({ run, showProvider = true }: { run: TaskRun; showPr
       <span className={`tk-st ${tone}`}>{runStateLabel(run.state, run.kind)}</span>
     </span>
   )
+}
+
+// A Slack-filed task waiting to start says why: for the owner's ✅, or for a
+// working slot with its place in the queue.
+function intakeLabel(task: TaskSummary): string | null {
+  const intake = task.intake
+  if (!intake || task.open_run) return null
+  if (intake.state === 'pending') return 'Slack · awaiting ✅'
+  if (intake.state === 'queued') return `Slack · queued #${intake.queue_position ?? '?'}`
+  return null
 }
 
 export function TaskRow({
@@ -49,6 +60,11 @@ export function TaskRow({
       <span className="tk-key">{task.key}</span>
       <span className="tk-title">{task.title}</span>
       {showWorkspace && <Tooltip label={task.workspace ?? 'No workspace'} className="inline-flex min-w-0"><span className="chip-branch max-w-[140px]" data-testid="task-workspace-chip"><span className="truncate">{task.workspace?.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'No workspace'}</span></span></Tooltip>}
+      {intakeLabel(task) && (
+        <span data-testid="task-intake-chip">
+          <Chip variant="state" tone="info" label={intakeLabel(task) ?? undefined} />
+        </span>
+      )}
       {task.open_run ? (
         <TaskRunMark run={task.open_run} />
       ) : (

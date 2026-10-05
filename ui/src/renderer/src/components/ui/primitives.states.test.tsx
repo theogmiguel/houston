@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { Button, Count, STATUS_LABELS, StatusLabel } from './index'
+import { Button, Count, STATUS_LABELS, StatusLabel, TextInput } from './index'
 import { variants } from './variants'
 
 const textClass = variants('base', { tone: { quiet: 'muted', loud: 'strong' } }, { tone: 'quiet' })
@@ -14,6 +14,9 @@ const invalidButtonVariant = <Button variant="tertiary">Save</Button>
 const unnamedIconButton = <Button variant="icon" icon={() => <svg />} />
 // @ts-expect-error danger-solid buttons require an icon
 const unlabeledButton = <Button variant="danger-solid">Delete</Button>
+// @ts-expect-error a TextInput is text or a secret, nothing else
+const numberInput = <TextInput type="number" />
+void numberInput
 // @ts-expect-error status values come from the fixed vocabulary
 const unknownStatus = <StatusLabel status="Offline" />
 void unnamedIconButton
@@ -22,6 +25,19 @@ void unlabeledButton
 void unknownStatus
 
 describe('components/ui primitives', () => {
+  it('TextInput keeps its role, width and face, and passes layout and aria through', () => {
+    render(<TextInput aria-label="Bot token" type="password" mono width="full" className="flex-1" defaultValue="x" />)
+    const input = screen.getByLabelText('Bot token') as HTMLInputElement
+    expect(input.type).toBe('password')
+    expect(input.className).toContain('font-mono')
+    expect(input.className).toContain('w-full')
+    expect(input.className).toContain('flex-1')
+    render(<TextInput aria-label="Owner" />)
+    const plain = screen.getByLabelText('Owner') as HTMLInputElement
+    expect(plain.type).toBe('text')
+    expect(plain.className).not.toContain('font-mono')
+  })
+
   it('variants applies defaults and chosen axis classes', () => {
     expect(textClass()).toBe('base muted')
     expect(textClass({ tone: 'loud' })).toBe('base strong')
