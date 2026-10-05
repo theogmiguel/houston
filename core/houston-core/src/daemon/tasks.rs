@@ -4352,6 +4352,7 @@ impl Daemon {
             &link,
             &crate::pull_requests::watch::State {
                 started_at: now_unix(),
+                last_checked_at_ms: Some(now_unix_ms()),
                 head_sha: detail.head_sha,
                 failed_checks,
                 passed,
@@ -4390,6 +4391,7 @@ impl Daemon {
                 .map(|row| proto::PrWatchInfo {
                     number: row.link.number,
                     url: row.link.url,
+                    last_checked_at_ms: row.state.last_checked_at_ms,
                 })
                 .collect(),
             Err(e) => {
@@ -4413,6 +4415,7 @@ impl Daemon {
                 .push(proto::PrWatchInfo {
                     number: row.link.number,
                     url: row.link.url,
+                    last_checked_at_ms: row.state.last_checked_at_ms,
                 });
         }
         Ok(grouped
@@ -4460,6 +4463,7 @@ impl Daemon {
                         if let Some(state) = failed.state {
                             let _ = self.db.pr_watch_set(row.session_id, &row.link, &state);
                         }
+                        self.broadcast_pr_watches(row.session_id);
                         tracing::warn!(
                             "reading PR #{} for pane {}: {e}",
                             row.link.number,
