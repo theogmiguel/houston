@@ -142,9 +142,13 @@ drawn.
 What is transmitted: ZCode sends prompts, code and tool results to the service you signed
 in to — Z.ai, which processes data in Singapore, or BigModel, in China. For GLM Coding Plan
 requests ZCode routes the call, credential included, through its own gateway at
-`zcode.z.ai`. None of this traffic passes through Houston, and Houston sends nothing to
-Z.ai. Houston panes run ZCode with `ZCODE_DISABLE_UPDATE_CHECK=1`, so ZCode does not check
-for updates on its own.
+`zcode.z.ai`. ZCode also attaches device and session identifiers to those calls, makes
+automatic auxiliary calls of its own (titles, compaction, memory, goal checks), fetches
+its catalog and configuration from `cdn-zcode.z.ai` in the background, and keeps local
+logs of model input and output by default. None of this traffic passes through Houston,
+and Houston sends nothing to Z.ai. The official command has no update check of its own;
+Houston panes set `ZCODE_DISABLE_UPDATE_CHECK=1`, which turns off the one in the
+`zcode-app-cli` package.
 
 Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits
 `~/.zcode/cli/config.json`:
@@ -157,11 +161,19 @@ Turning the hook toggle on (Settings ▸ Agent setup ▸ ZCode) edits
 - the path of a plugin directory Houston owns (`~/.houston/zcode-plugin`) in
   `plugins.dirs`. The plugin gives ZCode Houston's pane tools. Its address and token come
   from variables Houston sets only in its own panes, so no token is written to disk and,
-  outside a Houston pane, the plugin's server stays unregistered.
+  outside a Houston pane, the plugin's server stays unregistered. There, `zcode plugins
+  list` shows a `plugin_variable_missing` error for Houston's plugin; that is expected.
+  In a pane, ZCode names the tools `mcp__plugin_houston_houston__pane_*` (the `dev`
+  channel's are `mcp__plugin_houston-dev_houston__pane_*`) and asks for approval before
+  each call unless the pane runs in yolo mode.
 
 Turning the toggle off removes only Houston's entries and its plugin directory. ZCode
 accepts strict JSON only; if the file does not parse, Houston refuses and names the
-problem without changing it.
+problem without changing it. Houston replaces the file whole, so ZCode never reads a
+partly written one, and the keys come back in alphabetical order. If you later set
+`hooks.enabled` to `false` yourself, Houston keeps it when it refreshes its entries at
+startup. The toggle is refused on Windows, because Houston's hook command needs a POSIX
+shell; ZCode panes still run there, without status or pane tools.
 
 ### Droid, Copilot, Aider
 

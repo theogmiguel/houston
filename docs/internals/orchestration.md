@@ -106,7 +106,7 @@ all supported events. Every PTY additionally reports process exit independently.
 | OpenCode | User messages; busy status is activity | Permission/question events | session.idle; session.error is failure | Permission/question requests | PTY exit | 600 s with managed launch timeout | session.error | Unsupported: interrupt-to-idle contract unverified |
 | Cursor | beforeSubmitPrompt | No generic tool signal installed | stop | Needs-input not reported by this provider | PTY exit | 30 s | Unsupported in hooks | Refused: no verified key |
 | Grok | UserPromptSubmit | No generic tool signal installed | Stop; StopFailure is failure, StopCancelled is interruption | Typed blocking notifications | SessionEnd, filtered for subagent teardown; PTY exit separately | Up to 600 s after reading effective tool timeout | StopFailure | Ctrl+C with empty composer |
-| ZCode | UserPromptSubmit | AskUserQuestion PreToolUse; PostToolUse/Failure | Stop (successful turns only); an interrupted tool's PostToolUseFailure is interruption | PermissionRequest, AskUserQuestion | PTY exit | 600 s with the plugin's 630 s tool timeout | Unsupported in hooks | Refused: no hook after an interrupt between tool calls |
+| ZCode | UserPromptSubmit | AskUserQuestion PreToolUse; any PostToolUse/Failure (a denial fires no hook) | Stop (successful turns only); an interrupted tool's PostToolUseFailure is interruption | PermissionRequest, AskUserQuestion | PTY exit | 600 s with the plugin's 630 s tool timeout | Unsupported: a failed turn fires no hook and stays Working | Refused: no hook after an interrupt between tool calls |
 
 Wait budgets belong to the calling parent, regardless of its children's providers. Requests
 above the cap are clamped and report the provider, requested value and cap. Claude's cap
@@ -1160,11 +1160,18 @@ What changes per provider, beyond the shared inbox:
   the first turn rather than at launch, so neither status nor first-prompt delivery can
   wait for it: the first prompt is pasted once the TUI has drawn and stayed quiet for a
   second (delivery timing only, no status). The Claude correlation rules apply
-  (`AskUserQuestion` blocks through `PreToolUse`, `PostToolUse` resolves episodes). `Stop`
-  runs only after a successful turn; a `PostToolUseFailure` with `is_interrupt` is the
+  (`AskUserQuestion` blocks through `PreToolUse`, `PostToolUse` resolves episodes), except
+  that any tool result closes every open episode, because a denied permission fires no hook;
+  an Esc on the dialog fires nothing and leaves the pane in Needs input until the next
+  prompt. A `SessionStart` that arrives with the first turn also exempts ZCode from the
+  spawn-grace expiry to Unavailable. `Stop` runs only after a successful turn, never after
+  an API, quota or network failure; a `PostToolUseFailure` with `is_interrupt` is the
   only interrupt signal, and an interrupt between tool calls reports nothing. Resume is by
   exact `--resume <session id>` without a transcript check, since ZCode keeps sessions in
-  its own database. Tasks, routines and harness runs refuse ZCode by name: they cannot
+  its own database. Handoff generation runs `zcode --mode plan -p`, because `-p` defaults
+  to yolo. The hook toggle is refused on Windows: the hook command is the POSIX guard, and
+  the extension-less launcher copy there cannot be started as a ZCode `process` hook
+  either. Tasks, routines and harness runs refuse ZCode by name: they cannot
   confirm a pasted first prompt unattended. Evidence is ZCode's source, not a live
   authenticated probe.
 - **OpenCode.** No native hook contract at all — its plugin bus fires JS callbacks, not a

@@ -166,7 +166,7 @@ after.
 through `agent_events.rs`) and ACP streams. Codex's pane-owned app-server also supplies
 startup readiness: a bounded observer reads the loaded root thread's native status and
 writes one SessionStart drop through the same guarded path. It never reads terminal
-content or changes the thread. See [agent lifecycle](agent-lifecycle.md). Three
+content or changes the thread. See [agent lifecycle](agent-lifecycle.md). Four
 exceptions are named; anything beyond them must be named and recorded here, not blended in.
 Session activity previews are separate display metadata delivered from provider hooks;
 they are never inferred from terminal text.
@@ -227,6 +227,12 @@ they are never inferred from terminal text.
    read of #2 it shares with the reported path —
    the tail IS the payload of a no-handback notice, and it is labelled as the child's
    screen in the subject line and again in the body.
+4. **First-prompt paste timing.** A CLI that takes no prompt in argv (ZCode) gets its
+   first prompt pasted once the PTY has produced output and then stayed quiet for
+   `FIRST_PROMPT_QUIET_MS` (`Daemon::first_prompt_paste`, deadline
+   `FIRST_PROMPT_DEADLINE`). It reads byte counters, never text, runs once per spawn and
+   decides only when input is written — never an `AgentStatus`. The emulator's
+   bracketed-paste mode would be a sharper signal but is not exposed by the VT binding.
 
 **One turn end per provider.** A provider's `agent_events.rs` table carries at most one
 `AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a
