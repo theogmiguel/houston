@@ -17,10 +17,9 @@ import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
-import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
+import { PageFrame } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
-import { UsageTabSection } from './settings/UsageTabSection'
 import { AppearanceSection } from './settings/AppearanceSection'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
@@ -288,7 +287,7 @@ function SectionDispatch({
           <ShortcutsSection keymapOverrides={keymapOverrides} onKeymapOverrides={onKeymapOverrides} />
         )}
 
-        {section === 'voice' && (
+        {section === 'dictation' && (
           <VoiceSection
             voiceSettings={voiceSettings}
             voiceCloudKeyPresent={voiceCloudKeyPresent}
@@ -306,22 +305,21 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'agent-setup' && (
-          <AgentStatusSection
-            providers={agentHooks}
-            onSet={onAgentHooksSet}
-            onRefresh={onAgentHooksRefresh}
-            checkedAt={agentHooksCheckedAt}
-          />
-        )}
-
-        {section === 'accounts' && (
+        {section === 'agents' && (
+          <>
+            <AgentStatusSection
+              providers={agentHooks}
+              onSet={onAgentHooksSet}
+              onRefresh={onAgentHooksRefresh}
+              checkedAt={agentHooksCheckedAt}
+            />
           <AccountsSection
             agentProfiles={agentProfiles}
             onAgentProfileUpsert={onAgentProfileUpsert}
             onAgentProfileDelete={onAgentProfileDelete}
             onAgentProfileSetActive={onAgentProfileSetActive}
           />
+          </>
         )}
 
         {section === 'orchestration' && (
@@ -371,7 +369,7 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'workspace-defaults' && (
+        {section === 'workspaces' && (
           <WorkspaceDefaultsSection
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
@@ -386,20 +384,17 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'usage' && (
-          <UsageTabSection />
+        {section === 'daemon' && (
+          <>
+            <DiagnosticsSection
+              hostInfo={hostInfo}
+              agentHooks={agentHooks}
+              onOpenHooks={onOpenHooks}
+              onOpenLogsFolder={onOpenLogsFolder}
+            />
+            <DaemonSection />
+          </>
         )}
-
-        {section === 'diagnostics' && (
-          <DiagnosticsSection
-            hostInfo={hostInfo}
-            agentHooks={agentHooks}
-            onOpenHooks={onOpenHooks}
-            onOpenLogsFolder={onOpenLogsFolder}
-          />
-        )}
-
-        {section === 'daemon' && <DaemonSection />}
     </>
   )
 }
@@ -451,13 +446,7 @@ export function SettingsView(props: Props): React.JSX.Element {
       className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
       {}
-      <div
-        className={`w-full min-w-0 mx-auto px-[var(--space-6)] pt-[var(--space-6)] pb-[60px] ${
-          section === 'agent-setup'
-            ? PAGE_COLUMN_WIDE_CLS
-            : PAGE_COLUMN_CLS
-        }`}
-      >
+      <PageFrame width={section === 'agents' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
         <SectionDispatch
           {...props}
           section={section}
@@ -468,7 +457,7 @@ export function SettingsView(props: Props): React.JSX.Element {
           terminalScrollbackLines={terminalScrollbackLines}
           onTerminalScrollbackLines={onTerminalScrollbackLines}
         />
-      </div>
+      </PageFrame>
     </div>
   )
 }

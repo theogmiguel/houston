@@ -73,12 +73,12 @@ export function SectionHead({
   return (
     <header className="pb-[var(--space-5)] flex flex-col gap-[var(--space-1-5)]">
       <div className="flex items-center justify-between gap-[var(--space-4)]">
-        <h1
+        <h2
           data-testid="settings-section-title"
           className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)] m-0"
         >
           {title}
-        </h1>
+        </h2>
         {actions && (
           <div className="flex-none flex items-center gap-[var(--space-2)] h-[var(--h-ctl)]">{actions}</div>
         )}

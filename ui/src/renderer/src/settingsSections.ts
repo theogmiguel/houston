@@ -1,18 +1,14 @@
-export type SettingsGroupId = 'look' | 'agents' | 'data' | 'reference'
-
 export type SettingsSectionId =
   | 'appearance'
   | 'terminal'
   | 'shortcuts'
-  | 'accounts'
-  | 'agent-setup'
-  | 'workspace-defaults'
+  | 'agents'
+  | 'notifications'
+  | 'workspaces'
   | 'orchestration'
   | 'tasks'
-  | 'voice'
+  | 'dictation'
   | 'privacy'
-  | 'usage'
-  | 'diagnostics'
   | 'daemon'
   | 'about'
 
@@ -21,164 +17,44 @@ export type SettingsIconKey =
   | 'terminal'
   | 'keyboard'
   | 'user'
+  | 'bell'
   | 'folder'
   | 'fork'
   | 'tasks'
   | 'mic'
   | 'database'
-  | 'chart'
-  | 'target'
   | 'info'
-  | 'wrench'
   | 'server'
-
-export interface SettingsGroupDef {
-  id: SettingsGroupId
-  label: string
-  quiet?: true
-}
 
 export interface SettingsSectionDef {
   id: SettingsSectionId
   label: string
   icon: SettingsIconKey
-  group: SettingsGroupId
   keywords: string[]
   pending?: true
 }
 
-export const SETTINGS_GROUPS: readonly SettingsGroupDef[] = [
-  { id: 'look', label: 'Look & feel' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'data', label: 'Your data' },
-  { id: 'reference', label: 'Reference', quiet: true }
-] as const
-
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
-  {
-    id: 'appearance',
-    label: 'Appearance',
-    icon: 'palette',
-    group: 'look',
-    keywords: [
-      'theme', 'chrome', 'dark', 'light', 'color', 'swatch', 'palette', 'zoom', 'motion',
-      'sidebar', 'rail', 'hide', 'skills', 'routines', 'connections'
-    ]
-  },
-  {
-    id: 'terminal',
-    label: 'Terminal',
-    icon: 'terminal',
-    group: 'look',
-    keywords: [
-      'font', 'cursor', 'scrollback', 'ligatures', 'copy on select', 'bell', 'libghostty',
-      'panes per stack', 'stack', 'tabs', 'idle quiet window', 'idle'
-    ]
-  },
-  {
-    id: 'shortcuts',
-    label: 'Shortcuts',
-    icon: 'keyboard',
-    group: 'look',
-    keywords: ['keyboard', 'keybind', 'rebind', 'hotkey', 'keys', 'keymap', 'vim', 'emacs']
-  },
-  {
-    id: 'accounts',
-    label: 'Accounts',
-    icon: 'user',
-    group: 'agents',
-    keywords: [
-      'claude_config_dir', 'codex_home', 'profile', 'profiles', 'isolation',
-      'connect accounts', 'per-cli overrides', 'login'
-    ]
-  },
-  {
-    id: 'agent-setup',
-    label: 'Agent setup',
-    icon: 'wrench',
-    group: 'agents',
-    keywords: ['hooks', 'status', 'integration', 'setup', 'repair', 'working', 'needs input', 'claude', 'codex']
-  },
-  {
-    id: 'workspace-defaults',
-    label: 'Workspaces',
-    icon: 'folder',
-    group: 'agents',
-    keywords: [
-      'workspace defaults', 'restore budget',
-      'open links', 'browser pane', 'idle', 'background sessions',
-      'close idle', 'reap'
-    ]
-  },
-  {
-    id: 'orchestration',
-    label: 'Orchestration',
-    icon: 'fork',
-    group: 'agents',
-    keywords: [
-      'spawn', 'spawning', 'agent spawns agent', 'children', 'child panes', 'depth',
-      'hs-pane', 'caps', 'mailbox'
-    ]
-  },
-  {
-    id: 'tasks',
-    label: 'Tasks',
-    icon: 'tasks',
-    group: 'agents',
-    keywords: ['backlog', 'task', 'access', 'read only', 'agent access', 'todo', 'key prefix']
-  },
-  {
-    id: 'voice',
-    label: 'Dictation',
-    icon: 'mic',
-    group: 'agents',
-    keywords: [
-      'dictation', 'voice', 'speech', 'microphone', 'whisper', 'transcribe', 'stt', 'push to talk',
-      'language'
-    ]
-  },
-  {
-    id: 'privacy',
-    label: 'Privacy & data',
-    icon: 'database',
-    group: 'data',
-    keywords: ['telemetry', 'history', 'ignore patterns', 'browsing data', 'session database', 'transcripts', 'clear']
-  },
-  {
-    id: 'usage',
-    label: 'Usage',
-    icon: 'chart',
-    group: 'data',
-    keywords: [
-      'tokens', 'cost', 'spend', 'billing', 'cache savings', 'models', 'transcripts',
-      'ccusage', 'rates', 'litellm', 'claude code', 'codex'
-    ]
-  },
-  {
-    id: 'daemon',
-    label: 'Daemon',
-    icon: 'server',
-    group: 'data',
-    keywords: [
-      'background process', 'detach', 'stop daemon', 'running since', 'reap', 'exit',
-      'live sessions', 'routines armed', 'clients connected', 'quit'
-    ]
-  },
-  {
-    id: 'diagnostics',
-    label: 'Diagnostics',
-    icon: 'target',
-    group: 'reference',
-    keywords: ['channel', 'state directory', 'pid', 'port', 'protocol version', 'uptime', 'mailbox files', 'hooks wired', 'logs']
-  },
-  {
-    id: 'about',
-    label: 'About',
-    icon: 'info',
-    group: 'reference',
-    keywords: ['version', 'build', 'third-party notices', 'release notes', 'licences']
-  }
+  { id: 'appearance', label: 'Appearance', icon: 'palette', keywords: ['theme', 'chrome', 'dark', 'light', 'color', 'palette', 'zoom', 'motion', 'background'] },
+  { id: 'terminal', label: 'Terminal', icon: 'terminal', keywords: ['font', 'cursor', 'scrollback', 'ligatures', 'copy', 'bell', 'stack', 'tabs', 'idle'] },
+  { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard', keywords: ['keyboard', 'keybind', 'rebind', 'hotkey', 'keys', 'keymap', 'vim', 'emacs'] },
+  { id: 'agents', label: 'Agents', icon: 'user', keywords: ['accounts', 'profiles', 'hooks', 'status', 'setup', 'integration', 'login', 'claude', 'codex'] },
+  { id: 'notifications', label: 'Notifications', icon: 'bell', keywords: ['desktop', 'sound', 'in-app'], pending: true },
+  { id: 'workspaces', label: 'Workspaces', icon: 'folder', keywords: ['workspace defaults', 'restore budget', 'open links', 'browser pane', 'background sessions', 'close idle', 'reap'] },
+  { id: 'orchestration', label: 'Orchestration', icon: 'fork', keywords: ['spawn', 'children', 'child panes', 'depth', 'hs-pane', 'caps', 'mailbox'] },
+  { id: 'tasks', label: 'Tasks', icon: 'tasks', keywords: ['backlog', 'task', 'access', 'read only', 'agent access', 'todo', 'key prefix'] },
+  { id: 'dictation', label: 'Dictation', icon: 'mic', keywords: ['dictation', 'voice', 'speech', 'microphone', 'whisper', 'transcribe', 'stt', 'push to talk', 'language'] },
+  { id: 'privacy', label: 'Privacy & data', icon: 'database', keywords: ['telemetry', 'history', 'ignore patterns', 'browsing data', 'session database', 'transcripts', 'clear'] },
+  { id: 'daemon', label: 'Daemon', icon: 'server', keywords: ['diagnostics', 'channel', 'state directory', 'pid', 'port', 'protocol version', 'uptime', 'logs', 'stop daemon', 'live sessions'] },
+  { id: 'about', label: 'About', icon: 'info', keywords: ['version', 'build', 'third-party notices', 'release notes', 'licences'] }
 ] as const
 
-export const NAVIGABLE_SETTINGS_SECTIONS: readonly SettingsSectionDef[] =
-  SETTINGS_SECTIONS.filter((s) => !s.pending)
+export const NAVIGABLE_SETTINGS_SECTIONS = SETTINGS_SECTIONS
+
+export const LEGACY_SETTINGS_SECTION: Readonly<Record<string, SettingsSectionId>> = {
+  accounts: 'agents',
+  'agent-setup': 'agents',
+  'workspace-defaults': 'workspaces',
+  voice: 'dictation',
+  diagnostics: 'daemon'
+}

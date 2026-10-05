@@ -7,6 +7,7 @@ import type { OrchestrationCaps } from '../../houston/generated/OrchestrationCap
 import type { AcpAgentInfo } from '../../houston/generated/AcpAgentInfo'
 import { Tooltip } from '../Tooltip'
 import { SettingsList, Toggle } from '../settingsPrimitives'
+import { Button } from '../ui/Button'
 import type { HostInfo, OrchestrationStateView } from '../SettingsView'
 import { NumberSetting, Row, SubHead } from './shared'
 
@@ -70,15 +71,23 @@ function OrchestrationCapsEditor({
         <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
           {dirty ? 'Both limits save together, as one change.' : 'Matches what the daemon has stored.'}
         </div>
-        <button
-          type="button"
-          className={`btn ${BTN_GHOST}`}
+        <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          disabled={!dirty}
+          onClick={() => { setChildren(String(caps.max_live_children)); setDepth(String(caps.max_spawn_depth)) }}
+        >
+          Discard
+        </Button>
+        <Button
+          variant="primary"
           disabled={!dirty}
           data-testid="settings-orchestration-caps-save"
           onClick={() => valid && onSave(childrenN, depthN)}
         >
           Save
-        </button>
+        </Button>
+        </div>
       </div>
     </>
   )

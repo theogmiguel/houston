@@ -31,7 +31,7 @@ neutral gray for ready, amber for needs input, and a hollow gray dot when status
 unavailable. Green is reserved for successful completion and red for failure. A grid's
 tooltip lists the contributing pane states, so the indicator does not rely on color alone.
 
-## Settings ▸ Agent setup
+## Settings ▸ Agents
 
 This screen lists every CLI Houston knows how to wire, and what each row means:
 

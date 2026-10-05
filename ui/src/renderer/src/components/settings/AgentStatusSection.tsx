@@ -259,6 +259,7 @@ export function AgentStatusSection({
       title: (
         <span
           data-testid="agent-status-row"
+          data-settings-row-name={copy.label}
           data-provider={state.provider}
           data-status={markFor(state)}
           className={`flex items-baseline gap-[var(--space-2)] ${

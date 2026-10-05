@@ -26,6 +26,38 @@ function navRow(container: HTMLElement, view: string): HTMLButtonElement {
 const surface = (c: HTMLElement): Element | null => c.querySelector('[data-testid="nav-surface"]')
 
 describe('the rail nav rows drive the content area', () => {
+  it('Ctrl+, closes Settings even while its search input is focused', async () => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    const gear = container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement
+    act(() => gear.click())
+    const search = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
+    search.focus()
+    act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true, bubbles: true, cancelable: true })))
+    expect(gear.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('Escape clears and leaves search first, then closes Settings on the next press', async () => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    const gear = container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement
+    act(() => gear.click())
+    const search = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(search, 'font size')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    search.focus()
+    act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(gear.getAttribute('aria-pressed')).toBe('true')
+    expect(search.value).toBe('')
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(gear.getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('each destination opens a surface — none of them opens onto nothing', async () => {
     harness = await renderReadyApp()
     const { container } = harness

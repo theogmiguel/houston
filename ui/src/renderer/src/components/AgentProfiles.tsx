@@ -57,7 +57,7 @@ function AgentProfileCard({
         <span className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">{AGENT_VAR[agent]}</span>
       </div>
 
-      <div className="px-[14px] py-2">
+      <div data-settings-row-name="Active profile" className="px-[14px] py-2">
         {}
         <label className="mb-1 block [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
           Spawned panes — active profile
@@ -82,7 +82,7 @@ function AgentProfileCard({
         />
       </div>
 
-      <div className="border-t border-[var(--divider)] px-[14px] pb-[2px] pt-2">
+      <div data-settings-row-name="Saved profiles" className="border-t border-[var(--divider)] px-[14px] pb-[2px] pt-2">
         <div className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
           Saved profiles
         </div>
@@ -117,7 +117,7 @@ function AgentProfileCard({
         </ul>
       )}
 
-      <div className="flex items-end gap-2 border-t border-[var(--divider)] px-[14px] py-[9px]">
+      <div data-settings-row-name="Add profile" className="flex items-end gap-2 border-t border-[var(--divider)] px-[14px] py-[9px]">
         <div className="flex-1 flex flex-col gap-1">
           <label className="block [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">Name</label>
           <input

@@ -418,7 +418,7 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
 export const dictationShortcut: ShortcutEntry = {
   id: 'voice-dictate',
   keyLabel: 'Ctrl+Shift+Space',
-  description: 'hold to dictate into this terminal (Settings → Voice)',
+  description: 'hold to dictate into this terminal (Settings → Dictation)',
   category: 'terminal',
   chord: { code: 'Space', ctrl: true, alt: false, shift: true, meta: false },
   remappable: true

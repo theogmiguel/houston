@@ -24,7 +24,7 @@ afterEach(() => {
   resetVoiceStoreForTests()
 })
 
-const MISSING_KEY_MSG = 'No groq API key stored — add one in Settings → Voice, or switch back to the local engine.'
+const MISSING_KEY_MSG = 'No groq API key stored — add one in Settings → Dictation, or switch back to the local engine.'
 
 function voiceSettings(overrides: Partial<VoiceSettings> = {}): VoiceSettings {
   return {

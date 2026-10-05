@@ -81,18 +81,11 @@ describe('Sidebar rail — Settings mode state matrix', () => {
     expect(container.querySelector('[data-testid="settings-section-row"]')).toBeNull()
   })
 
-  it('Filled — every group with a navigable section renders, in SETTINGS_GROUPS order', () => {
+  it('Filled — the flat section list renders in the approved order', () => {
     render()
-    const groupLabels = Array.from(
-      container.querySelectorAll('nav[aria-label="Settings sections"] > div > span')
-    ).map((s) => s.textContent)
-    expect(groupLabels).toEqual(['Look & feel', 'Agents', 'Your data'])
-
-    expect(sectionRow('workspace-defaults')).not.toBeNull()
-    expect(sectionRow('diagnostics')).not.toBeNull()
-    for (const section of SETTINGS_SECTIONS.filter((x) => x.pending)) {
-      expect(sectionRow(section.id), `pending section ${section.id} rendered a row`).toBeNull()
-    }
+    expect(SETTINGS_SECTIONS.map(({ id }) => id).every((id) => sectionRow(id) !== null)).toBe(true)
+    expect(sectionRow('notifications')).not.toBeNull()
+    expect(container.querySelectorAll('nav[aria-label="Settings sections"] > div > span')).toHaveLength(0)
 
     expect(sectionRow('appearance')).not.toBeNull()
     expect(sectionRow('sessions')).toBeNull()
@@ -105,14 +98,14 @@ describe('Sidebar rail — Settings mode state matrix', () => {
   it('D2: no "SETTINGS" header renders above the first group, and the filter is visible without any hover or click', () => {
     render()
     expect(container.textContent).not.toContain('Settings')
-    const input = container.querySelector('[aria-label="Filter settings"]') as HTMLInputElement | null
+    const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement | null
     expect(input).not.toBeNull()
     expect(container.querySelector('[data-testid="tree-filter-toggle"]')).toBeNull()
   })
 
   it('a bare "/" anywhere on the screen focuses the filter; a slash typed into another field is left alone', () => {
     render()
-    const input = container.querySelector('[aria-label="Filter settings"]') as HTMLInputElement
+    const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
     expect(document.activeElement).not.toBe(input)
     const slash = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
     act(() => {
@@ -182,7 +175,7 @@ describe('Sidebar rail — Settings mode state matrix', () => {
     expect(seen).toBe('privacy')
   })
 
-  it('Filled — the rows come out in the decided order, with Diagnostics, Daemon and About last', () => {
+  it('Filled — the rows come out in the decided order', () => {
     render()
     const ids = Array.from(
       container.querySelectorAll('[data-testid="settings-section-row"]')
@@ -191,54 +184,44 @@ describe('Sidebar rail — Settings mode state matrix', () => {
       'appearance',
       'terminal',
       'shortcuts',
-      'accounts',
-      'agent-setup',
-      'workspace-defaults',
+      'agents',
+      'notifications',
+      'workspaces',
       'orchestration',
       'tasks',
-      'voice',
+      'dictation',
       'privacy',
-      'usage',
       'daemon',
-      'diagnostics',
       'about'
     ])
   })
 
-  it('Filled — the renamed sections show their new labels under their old ids', () => {
+  it('Filled — renamed sections use their final ids', () => {
     render()
-    expect(sectionRow('workspace-defaults')?.textContent).toContain('Workspaces')
-    expect(sectionRow('voice')?.textContent).toContain('Dictation')
+    expect(sectionRow('workspaces')?.textContent).toContain('Workspaces')
+    expect(sectionRow('dictation')?.textContent).toContain('Dictation')
   })
 
-  it('Filled — the read-only tail sits behind a divider, muted and with no glyph', () => {
+  it('Filled — each section renders a glyph', () => {
     render()
-    const dividers = container.querySelectorAll('[data-testid="settings-group-divider"]')
-    expect(dividers).toHaveLength(1)
-    for (const id of ['diagnostics', 'about'] as const) {
+    for (const id of ['daemon', 'about'] as const) {
       const row = sectionRow(id)
-      expect(row?.getAttribute('data-quiet')).toBe('true')
-      expect(row?.querySelector('svg'), `${id} drew a glyph`).toBeNull()
-      expect(row?.className).toContain('text-[var(--text-muted)]')
+      expect(row?.querySelector('svg'), `${id} has no glyph`).not.toBeNull()
     }
     expect(sectionRow('appearance')?.querySelector('svg')).not.toBeNull()
-    expect(sectionRow('appearance')?.getAttribute('data-quiet')).toBeNull()
   })
 
-  it('the filter still reaches the read-only tail: "pid" finds Diagnostics, "version" finds About', () => {
+  it('row search includes matching rows and their section labels', () => {
     render()
-    const input = container.querySelector('[aria-label="Filter settings"]') as HTMLInputElement
+    const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
 
     typeInto(input, 'pid')
-    expect(sectionRow('diagnostics')).not.toBeNull()
-    expect(sectionRow('about')).toBeNull()
-    expect(
-      container.querySelectorAll('nav[aria-label="Settings sections"] > div > span')
-    ).toHaveLength(0)
+    expect(container.querySelector('[data-testid="settings-search-hit"][data-section-id="daemon"]')).not.toBeNull()
+    expect(sectionRow('daemon')).toBeNull()
 
     typeInto(input, 'version')
-    expect(sectionRow('about')).not.toBeNull()
-    expect(sectionRow('appearance')).toBeNull()
+    expect(container.querySelector('[data-testid="settings-search-hit"][data-section-id="about"]')).not.toBeNull()
+    expect(sectionRow('about')).toBeNull()
   })
 
   it('Disabled — N/A: no settings-section row is ever disabled; every navigable section always has a real detail column to open (that is exactly what NAVIGABLE_SETTINGS_SECTIONS guarantees).', () => {
@@ -255,24 +238,23 @@ describe('Sidebar rail — Settings mode state matrix', () => {
 
   it('Overflow — a section label truncates with an ellipsis rather than wrapping', () => {
     render()
-    const label = sectionRow('workspace-defaults')?.querySelector('span:last-child')
-    expect(label?.className).toContain('text-ellipsis')
-    expect(label?.className).toContain('whitespace-nowrap')
+    const label = sectionRow('workspaces')?.querySelector('span:last-child')
+    expect(label?.className).toContain('truncate')
   })
 
   it('Empty set — a filter matching no section renders the empty-set message, not a blank list', () => {
     render()
-    const input = container.querySelector('[aria-label="Filter settings"]') as HTMLInputElement
+    const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
     typeInto(input, 'zzz-no-such-section')
     expect(container.querySelector('[data-testid="settings-section-row"]')).toBeNull()
-    expect(container.textContent).toContain('No settings match your filter.')
+    expect(container.textContent).toContain('No settings match your search.')
   })
 
   it('Empty set — the filter also matches on a section\'s search keywords, not just its label', () => {
     render()
-    const input = container.querySelector('[aria-label="Filter settings"]') as HTMLInputElement
+    const input = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
     typeInto(input, 'ligatures')
-    expect(sectionRow('terminal')).not.toBeNull()
+    expect(container.querySelector('[data-testid="settings-search-hit"][data-section-id="terminal"]')).not.toBeNull()
     expect(sectionRow('appearance')).toBeNull()
   })
 })

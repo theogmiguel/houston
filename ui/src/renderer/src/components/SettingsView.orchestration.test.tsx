@@ -234,6 +234,17 @@ describe("Settings › Orchestration — the switch and the caps (v62 D3)", () =
     setInputValue(children, "9");
     setInputValue(depth, "3");
     expect(save.disabled).toBe(false);
+    const discard = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Discard",
+    )!;
+    act(() => {
+      discard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(children.value).toBe("4");
+    expect(depth.value).toBe("4");
+    expect(save.disabled).toBe(true);
+    setInputValue(children, "9");
+    setInputValue(depth, "3");
     expect(saved).toEqual([]);
     act(() => {
       save.dispatchEvent(new MouseEvent("click", { bubbles: true }));
