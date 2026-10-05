@@ -1,18 +1,13 @@
 import { FOCUS_HALO, RING_ACCENT_SOLID } from '../shadowChrome'
 import {
-  AUTO_TERMINAL_PALETTE,
   CHROME_THEME_LABELS,
   CHROME_THEMES,
   TERMINAL_PALETTES,
-  THEME_LABELS,
-  THEMES,
   resolveTerminalPalette,
   type ChromeTheme,
-  type TerminalPalette,
   type TerminalPaletteChoice
 } from '../../theme'
 import { Segmented } from '../Segmented'
-import { Select } from '../Select'
 import { Group, Row, SectionHead } from './shared'
 import { Toggle } from '../settingsPrimitives'
 import {
@@ -32,17 +27,6 @@ const CHROME_THEME_TAGS: Record<ChromeTheme, string> = {
   paper: 'Light'
 }
 
-const PALETTE_CHIP_KEYS: readonly (keyof TerminalPalette)[] = [
-  'background',
-  'red',
-  'green',
-  'yellow',
-  'blue',
-  'magenta',
-  'cyan',
-  'foreground'
-]
-
 const ZOOM_STOPS: { pct: '90' | '100' | '110' | '125'; factor: number }[] = [
   { pct: '90', factor: 0.9 },
   { pct: '100', factor: 1 },
@@ -54,7 +38,6 @@ export interface AppearanceSectionProps {
   chromeTheme: ChromeTheme
   onChromeTheme: (t: ChromeTheme, origin: HTMLElement) => void
   theme: TerminalPaletteChoice
-  onTheme: (t: TerminalPaletteChoice) => void
   uiZoom: number
   onUiZoom: (z: number) => void
 }
@@ -100,7 +83,6 @@ export function AppearanceSection({
   chromeTheme,
   onChromeTheme,
   theme,
-  onTheme,
   uiZoom,
   onUiZoom
 }: AppearanceSectionProps): React.JSX.Element {
@@ -169,42 +151,6 @@ export function AppearanceSection({
       </Group>
 
       <WindowBackgroundGroup chromeTheme={chromeTheme} palette={palette} />
-
-      <Group heading="Terminal palette">
-        <Row
-          title="Palette"
-          desc="The canvas your agents print onto."
-        >
-          <div className="flex items-center gap-[var(--space-2)]">
-            <span
-              aria-hidden
-              data-testid="palette-chips"
-              className="flex gap-[3px]"
-            >
-              {PALETTE_CHIP_KEYS.map((k) => (
-                <i
-                  key={k}
-                  className="block h-[13px] w-[13px] rounded-[3px] border border-[var(--divider)]"
-                  style={{ background: TERMINAL_PALETTES[resolvedTheme][k] }}
-                />
-              ))}
-            </span>
-            <Select
-              aria-label="Terminal palette"
-              data-testid="palette-select"
-              value={theme}
-              options={[
-                {
-                  value: AUTO_TERMINAL_PALETTE,
-                  label: `Auto — ${THEME_LABELS[resolvedTheme]}`
-                },
-                ...THEMES.map((t) => ({ value: t, label: THEME_LABELS[t] }))
-              ]}
-              onChange={(v) => onTheme(v as TerminalPaletteChoice)}
-            />
-          </div>
-        </Row>
-      </Group>
 
       <Group heading="Sidebar">
         {}

@@ -1,7 +1,9 @@
 import { BTN_GHOST } from '../buttonChrome'
 import { TERMINAL_FONTS, terminalFontStack } from '../../pane/terminalFonts'
+import { TERMINAL_PALETTES, THEME_LABELS, resolveTerminalPalette, type ChromeTheme, type TerminalPaletteChoice } from '../../theme'
 import { Select } from '../Select'
 import { SettingsList, Toggle } from '../settingsPrimitives'
+import { TerminalPalettePicker } from '../ui/TerminalPalettePicker'
 import {
   TERMINAL_LINE_HEIGHT_MAX,
   TERMINAL_LINE_HEIGHT_MIN,
@@ -23,6 +25,9 @@ import {
 import { ClampedNumberSetting, Row, SubHead } from './shared'
 
 export interface TerminalSectionProps {
+  chromeTheme: ChromeTheme
+  theme: TerminalPaletteChoice
+  onTheme: (theme: TerminalPaletteChoice) => void
   fontSize: number
   onFontSize: (px: number) => void
   fontMin: number
@@ -49,6 +54,9 @@ export interface TerminalSectionProps {
 }
 
 export function TerminalSection({
+  chromeTheme,
+  theme,
+  onTheme,
   fontSize,
   onFontSize,
   fontMin,
@@ -75,6 +83,7 @@ export function TerminalSection({
 }: TerminalSectionProps): React.JSX.Element {
   const stackCap = useStackCapacity()
   const idleQuiet = useIdleQuietMsDefault()
+  const resolvedTheme = resolveTerminalPalette(theme, chromeTheme)
   return (
     <>
       <div className="mb-[var(--space-5)]">
@@ -84,6 +93,17 @@ export function TerminalSection({
           access apply to new terminals only.
         </div>
       </div>
+      <SubHead>Palette</SubHead>
+      <SettingsList>
+        <Row title="Palette" desc="The canvas your agents print onto.">
+          <TerminalPalettePicker
+            palette={TERMINAL_PALETTES[resolvedTheme]}
+            paletteName={THEME_LABELS[resolvedTheme]}
+            value={theme}
+            onChange={onTheme}
+          />
+        </Row>
+      </SettingsList>
       <SubHead>Type</SubHead>
       <SettingsList>
         <Row

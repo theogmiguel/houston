@@ -226,12 +226,12 @@ describe('commandRegistry — buildCommands', () => {
   it('D2: a "Section › Row" entry opens Settings on that section and stages a row jump', () => {
     setSettingsNavForTests({ open: false })
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] })
-    const cmd = commands.find((c) => c.id === 'go-to.settings-row.appearance.Palette')
+    const cmd = commands.find((c) => c.id === 'go-to.settings-row.terminal.Palette')
     expect(cmd).toBeDefined()
-    expect(cmd?.title).toBe('Appearance › Palette')
+    expect(cmd?.title).toBe('Terminal › Palette')
     cmd?.run()
     expect(isSettingsOpen()).toBe(true)
-    expect(consumeSettingsRowJump('appearance')).toBe('Palette')
+    expect(consumeSettingsRowJump('terminal')).toBe('Palette')
     expect(consumeSettingsRowJump('appearance')).toBeNull()
   })
 

@@ -249,7 +249,6 @@ function SectionDispatch({
             chromeTheme={chromeTheme}
             onChromeTheme={onChromeTheme}
             theme={theme}
-            onTheme={onTheme}
             uiZoom={uiZoom}
             onUiZoom={onUiZoom}
           />
@@ -257,6 +256,9 @@ function SectionDispatch({
 
         {section === 'terminal' && (
           <TerminalSection
+            chromeTheme={chromeTheme}
+            theme={theme}
+            onTheme={onTheme}
             fontSize={fontSize}
             onFontSize={onFontSize}
             fontMin={fontMin}

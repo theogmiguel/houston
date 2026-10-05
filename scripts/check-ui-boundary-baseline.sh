@@ -118,7 +118,7 @@ BASELINE=(
   "ui/src/renderer/src/components/selectChrome.ts 9"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 25"
   "ui/src/renderer/src/components/settings/AgentStatusSection.tsx 47"
-  "ui/src/renderer/src/components/settings/AppearanceSection.tsx 52"
+  "ui/src/renderer/src/components/settings/AppearanceSection.tsx 45"
   "ui/src/renderer/src/components/settings/BackgroundPreview.tsx 36"
   "ui/src/renderer/src/components/settings/DaemonSection.tsx 39"
   "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 72"
