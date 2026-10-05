@@ -467,7 +467,7 @@ describe('Settings › Voice (v55)', () => {
     act(() => {
       row.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.textContent).toContain('Click a key to rebind it')
+    expect(container.textContent).toContain('Enable shortcuts')
   })
 
   it('does not re-enumerate audio devices on every render', () => {

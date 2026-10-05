@@ -10,9 +10,7 @@ import type { TaskDetailData } from '../src/houston/useTasks'
 import { ChildrenRoster } from '../src/components/ChildrenRoster'
 import { TaskDetail } from '../src/components/tasks/TaskDetail'
 import { TasksList } from '../src/components/tasks/TasksList'
-import { SettingsView } from '../src/components/SettingsView'
-import { baseSettingsViewProps } from '../src/components/settingsViewTestFixtures'
-import { setSettingsNavForTests } from '../src/settingsNav'
+import { SettingsScreen } from './settingsStories'
 import '../src/components/tasks/tasks.css'
 import '../src/components/sidePanel.css'
 
@@ -286,17 +284,11 @@ function tasksAccessClient(initial: TasksAccess): HoustonClient {
 }
 
 export function TasksSettingsStory(): React.JSX.Element {
-  setSettingsNavForTests({ open: true, section: 'tasks' })
-  return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
-      <SettingsView
-        {...baseSettingsViewProps()}
-        daemonClient={tasksAccessClient('write')}
-        historyWorkspace="/home/dev/code/houston"
-        historyWorkspaceName="houston"
-      />
-    </div>
-  )
+  return <SettingsScreen section="tasks" props={{
+    daemonClient: tasksAccessClient('write'),
+    historyWorkspace: '/home/dev/code/houston',
+    historyWorkspaceName: 'houston'
+  }} />
 }
 
 const ROSTER_WORKSPACE = '/home/dev/code/houston'

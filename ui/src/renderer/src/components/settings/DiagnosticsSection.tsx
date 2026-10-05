@@ -130,24 +130,6 @@ export function DiagnosticsSection({
 }: DiagnosticsSectionProps): React.JSX.Element {
   return (
     <>
-      <div className="mb-[14px] flex items-center gap-[8px]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">
-          Diagnostics
-        </div>
-        {hostInfo?.channel === 'dev' && (
-          <span
-            data-testid="settings-diagnostics-dev-badge"
-            className="font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] py-[2px] px-[5px] rounded-[4px] bg-[color-mix(in_srgb,var(--warn)_18%,transparent)] text-[var(--warn)]"
-          >
-            DEV
-          </span>
-        )}
-      </div>
-      <div className="mb-[14px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
-        Eleven values the daemon has always known and never showed. Read-only by design —
-        these are facts about what is running, not preferences. When something is wrong,
-        this is the page you screenshot.
-      </div>
 
       {!hostInfo ? (
         <div className="">
@@ -155,9 +137,17 @@ export function DiagnosticsSection({
         </div>
       ) : (
         <>
-          <SubHead>
-            Daemon
-          </SubHead>
+          <div className="flex items-center gap-[var(--space-2)]">
+            <SubHead>Process</SubHead>
+            {hostInfo.channel === 'dev' && (
+              <span
+                data-testid="settings-diagnostics-dev-badge"
+                className="font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] py-[2px] px-[5px] rounded-[var(--tr-radius-input)] bg-[color-mix(in_srgb,var(--warn)_18%,transparent)] text-[var(--warn)]"
+              >
+                DEV
+              </span>
+            )}
+          </div>
           <div
             data-testid="settings-diagnostics-daemon"
             className="grid grid-cols-2 gap-[10px] mb-[18px]"

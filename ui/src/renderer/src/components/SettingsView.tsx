@@ -378,8 +378,6 @@ function SectionDispatch({
             onWorktreeCleanupSet={onWorktreeCleanupSet}
             openLinksInPane={openLinksInPane}
             onOpenLinksInPane={onOpenLinksInPane}
-            historyWorkspace={historyWorkspace}
-            historyWorkspaceName={historyWorkspaceName}
             hostInfo={hostInfo}
             sessionPolicy={sessionPolicy}
             onSessionPolicy={onSessionPolicy}

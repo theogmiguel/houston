@@ -292,11 +292,7 @@ export function AgentStatusSection({
 
   return (
     <>
-      <SectionHead
-        title="Agent setup"
-        lede="Show when agents are working or need input. Houston learns this from a small hook it installs in each CLI's own config — never by reading the terminal. Every switch here edits that CLI's own file, and turning one off removes exactly what Houston wrote."
-        actions={actions}
-      />
+      <SectionHead title={`Agent CLIs · ${items.length}`} actions={actions} />
       {providers === null ? (
         <NavDetailState
           testId="agent-status-loading"
@@ -315,12 +311,7 @@ export function AgentStatusSection({
       ) : (
         <ListDetail
           items={items}
-          backLabel="Agent setup"
-          listHead={
-            <span className="px-[2px] py-[4px] block [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
-              Agent CLIs · <span className="tabular-nums">{items.length}</span>
-            </span>
-          }
+          backLabel="Agent CLIs"
           renderDetail={(item) => {
             const state = providers.find((p) => p.provider === item?.id)
             if (!state) {

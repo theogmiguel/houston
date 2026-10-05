@@ -236,15 +236,6 @@ export function OrchestrationSection({
 }: OrchestrationSectionProps): React.JSX.Element {
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Orchestration</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          Agents spawning agents. Every limit here is one a running agent can actually hit,
-          so every one of them is visible — and when it trips, the refusal names the limit,
-          the value and what was asked for.
-        </div>
-      </div>
-
       <SubHead>Permission</SubHead>
       <PermissionGroup
         orchestrationState={orchestrationState}
@@ -264,11 +255,9 @@ export function OrchestrationSection({
       <SubHead>Workspace routing</SubHead>
       <RoutingSettings client={client} workspace={historyWorkspace} />
 
-      <div className="mt-[22px] mb-[14px]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">
-          ACP panes
-        </div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
+      <div className="mt-[var(--space-5)]">
+        <SubHead>ACP panes</SubHead>
+        <div className="mb-[var(--space-3)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
           CLIs that speak the Agent Client Protocol can run in a pane that reports its
           status over that protocol rather than through hooks. Opens in the workspace
           selected in the sidebar.

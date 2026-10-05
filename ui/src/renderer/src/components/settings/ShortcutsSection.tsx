@@ -157,13 +157,6 @@ export function ShortcutsSection({
 
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Shortcuts</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          Global keys work while no terminal is selected; click a terminal to type into it.
-          Click a key to rebind it — press the new combination, or Esc to cancel.
-        </div>
-      </div>
       <div className="">
         <Row
           title="Enable shortcuts"

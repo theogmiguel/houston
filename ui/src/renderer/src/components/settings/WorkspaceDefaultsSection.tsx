@@ -2,7 +2,7 @@ import { RESTORE_BUDGET_MAX, WORKTREE_CLEANUP_GRACE_HOURS_MAX } from '../../hous
 import { SettingsList, Toggle } from '../settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
-import { NumberSetting, Row, SectionHead, SubHead } from './shared'
+import { NumberSetting, Row, SubHead } from './shared'
 
 export interface WorkspaceDefaultsSectionProps {
   onRestoreBudgetSet: (n: number) => void
@@ -10,8 +10,6 @@ export interface WorkspaceDefaultsSectionProps {
   onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
   openLinksInPane: boolean
   onOpenLinksInPane: (on: boolean) => void
-  historyWorkspace: string | null
-  historyWorkspaceName: string | null
   hostInfo: HostInfo | null
   sessionPolicy: SessionPolicy | null
   onSessionPolicy: (next: SessionPolicy) => void
@@ -23,18 +21,12 @@ export function WorkspaceDefaultsSection({
   onWorktreeCleanupSet,
   openLinksInPane,
   onOpenLinksInPane,
-  historyWorkspace,
-  historyWorkspaceName,
   hostInfo,
   sessionPolicy,
   onSessionPolicy
 }: WorkspaceDefaultsSectionProps): React.JSX.Element {
   return (
     <>
-      <SectionHead
-        title="Workspaces"
-        lede="What happens to sessions in a workspace nobody is watching, and the one live setting the workspace you have selected can differ on."
-      />
       <SubHead>Restoring</SubHead>
       <SettingsList>
         <Row
@@ -133,20 +125,15 @@ export function WorkspaceDefaultsSection({
           />
         </Row>
       </SettingsList>
-      <SubHead>This workspace</SubHead>
+      <SubHead>Browser</SubHead>
       <SettingsList>
         <Row
           title="Open links in a browser pane"
-          desc={
-            historyWorkspace === null
-              ? 'Select a single workspace in the sidebar to change where its links open'
-              : `Links in ${historyWorkspaceName ?? historyWorkspace} open inside Houston, not your system browser.`
-          }
+          desc="Links printed in panes open inside Houston instead of your system browser."
         >
           <Toggle
             on={openLinksInPane}
             onChange={onOpenLinksInPane}
-            disabled={historyWorkspace === null}
           />
         </Row>
       </SettingsList>

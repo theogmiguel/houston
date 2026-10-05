@@ -8,7 +8,7 @@ import {
   type TerminalPaletteChoice
 } from '../../theme'
 import { Segmented } from '../Segmented'
-import { Group, Row, SectionHead } from './shared'
+import { Group, Row } from './shared'
 import { Toggle } from '../settingsPrimitives'
 import {
   RAIL_VIEWS,
@@ -91,10 +91,6 @@ export function AppearanceSection({
 
   return (
     <>
-      <SectionHead
-        title="Appearance"
-        lede="Two independent axes: the chrome theme paints the app, the palette paints what is inside your terminals."
-      />
 
       <Group heading="Chrome theme" plain>
         <div

@@ -33,7 +33,7 @@ BASELINE=(
   "ui/src/renderer/src/components/QuestionCard.tsx 1"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 1"
   "ui/src/renderer/src/components/settings/AppearanceSection.tsx 1"
-  "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 3"
+  "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 2"
   "ui/src/renderer/src/components/settings/OrchestrationSection.tsx 2"
   "ui/src/renderer/src/components/settings/PrivacySection.tsx 1"
   "ui/src/renderer/src/components/settings/shared.tsx 2"

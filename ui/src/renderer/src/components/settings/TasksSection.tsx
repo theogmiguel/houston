@@ -11,7 +11,7 @@ import { Select, type SelectOption } from '../Select'
 import { SettingsList } from '../settingsPrimitives'
 import { SettingsScope } from '../ui/SettingsScope'
 import { parseReworkRounds, TASK_AGENTS, taskAgentLabel } from '../tasks/format'
-import { SectionHead, Row, SubHead } from './shared'
+import { Row, SubHead } from './shared'
 
 const ACCESS_LABEL: Readonly<Record<TasksAccess, string>> = {
   off: 'Off',
@@ -43,10 +43,6 @@ export function TasksSection({
   return (
     <>
       <SettingsScope workspace={workspaceName} />
-      <SectionHead
-        title="Tasks"
-        lede="A global local backlog. Tasks never leave this machine; their text reaches a hosted agent CLI only when an agent you allowed reads it or you start a task."
-      />
       <SubHead>Agent access · {workspaceName ?? 'no workspace selected'}</SubHead>
       <SettingsList>
         <AgentAccessRow

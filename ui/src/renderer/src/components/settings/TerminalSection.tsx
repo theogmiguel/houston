@@ -86,13 +86,6 @@ export function TerminalSection({
   const resolvedTheme = resolveTerminalPalette(theme, chromeTheme)
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Terminal</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          Most changes reach open panes immediately. Shell integration and clipboard
-          access apply to new terminals only.
-        </div>
-      </div>
       <SubHead>Palette</SubHead>
       <SettingsList>
         <Row title="Palette" desc="The canvas your agents print onto.">

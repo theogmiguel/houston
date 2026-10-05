@@ -84,6 +84,7 @@ describe('Sidebar rail — Settings mode state matrix', () => {
   it('Filled — the flat section list renders in the approved order', () => {
     render()
     expect(SETTINGS_SECTIONS.map(({ id }) => id).every((id) => sectionRow(id) !== null)).toBe(true)
+    expect(container.querySelector('[data-testid="rail-nav-row"]')).toBeNull()
     expect(sectionRow('notifications')).not.toBeNull()
     expect(container.querySelectorAll('nav[aria-label="Settings sections"] > div > span')).toHaveLength(0)
 

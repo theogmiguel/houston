@@ -72,13 +72,6 @@ export function PrivacySection({
 
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Privacy &amp; data</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          What Houston keeps on this machine, and what it never sends anywhere. Command
-          history is captured via shell integration (Terminal → Shell integration).
-        </div>
-      </div>
       <SubHead>What Houston stores</SubHead>
       <SettingsList>
         <Row

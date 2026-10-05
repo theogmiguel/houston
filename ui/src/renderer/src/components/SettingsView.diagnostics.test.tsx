@@ -46,7 +46,7 @@ describe('Settings › Diagnostics (settings-03/-65..-69/-61)', () => {
       root.render(<SettingsView {...baseSettingsViewProps()} hostInfo={null} />)
     })
     openDiagnostics()
-    expect(container.textContent).toContain('Diagnostics')
+    expect(container.textContent).toContain('Loading…')
     expect(container.textContent).toContain('Asking the daemon')
   })
 

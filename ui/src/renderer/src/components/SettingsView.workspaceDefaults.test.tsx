@@ -30,7 +30,6 @@ describe('Settings › Workspaces (id `workspace-defaults`)', () => {
       root.render(<SettingsView {...baseSettingsViewProps()} />)
     })
     openWorkspaceDefaults()
-    expect(container.textContent).toContain('Workspaces')
     expect(container.textContent).toContain('Restore budget')
     expect(container.textContent).toContain('Open links in')
   })
@@ -148,14 +147,12 @@ describe('Settings › Workspaces (id `workspace-defaults`)', () => {
     expect(sw.disabled).toBe(true)
   })
 
-  it('the live "Open links in a browser pane" toggle sits here, under "This workspace"', () => {
+  it('the global "Open links in a browser pane" toggle sits in Browser', () => {
     const sent: boolean[] = []
     act(() => {
       root.render(
         <SettingsView
           {...baseSettingsViewProps()}
-          historyWorkspace="/proj"
-          historyWorkspaceName="proj"
           openLinksInPane={false}
           onOpenLinksInPane={(v) => sent.push(v)}
         />
@@ -163,7 +160,7 @@ describe('Settings › Workspaces (id `workspace-defaults`)', () => {
     })
     openWorkspaceDefaults()
     expect(container.textContent).toContain('Open links in a browser pane')
-    expect(container.textContent).toContain('This workspace')
+    expect(container.textContent).toContain('Browser')
     const toggles = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="switch"]'))
     const live = toggles[toggles.length - 1]
     expect(live.getAttribute('aria-checked')).toBe('false')
