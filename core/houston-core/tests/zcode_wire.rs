@@ -567,3 +567,66 @@ async fn a_restored_zcode_pane_resumes_its_session_by_id() {
         "the resumed session's own SessionStart settles it"
     );
 }
+
+#[tokio::test]
+async fn an_unprompted_zcode_pane_stays_starting_past_the_spawn_grace() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = tempfile::tempdir().unwrap();
+    let id = zcode_pane(&daemon, dir.path(), None).id;
+    assert_eq!(status(&daemon, id), Some(proto::AgentStatus::Spawning));
+    daemon.expire_spawn_grace_for_test(id);
+    assert_eq!(
+        status(&daemon, id),
+        Some(proto::AgentStatus::Spawning),
+        "ZCode reports its start only with its first turn; silence is not broken hooks"
+    );
+    drive(
+        env.state.path(),
+        &daemon,
+        "SessionStart",
+        id,
+        "zcode-src-01-SessionStart.json",
+    )
+    .await;
+    assert_eq!(status(&daemon, id), Some(proto::AgentStatus::Idle));
+}
+
+#[tokio::test]
+async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = tempfile::tempdir().unwrap();
+    let id = zcode_pane(&daemon, dir.path(), None).id;
+    let state = env.state.path();
+    drive(
+        state,
+        &daemon,
+        "UserPromptSubmit",
+        id,
+        "zcode-src-02-UserPromptSubmit.json",
+    )
+    .await;
+    drive(
+        state,
+        &daemon,
+        "PermissionRequest",
+        id,
+        "zcode-src-06-PermissionRequest-Bash.json",
+    )
+    .await;
+    assert_eq!(status(&daemon, id), Some(proto::AgentStatus::NeedsInput));
+    drive(
+        state,
+        &daemon,
+        "PostToolUse",
+        id,
+        "zcode-src-10-PostToolUse-Read.json",
+    )
+    .await;
+    assert_eq!(
+        status(&daemon, id),
+        Some(proto::AgentStatus::Working),
+        "a denial fires no hook; the turn going on with another tool closes the dialog"
+    );
+}

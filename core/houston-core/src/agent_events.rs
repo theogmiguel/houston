@@ -198,6 +198,12 @@ pub fn compaction_event(provider: proto::AgentKind) -> Option<&'static str> {
     }
 }
 
+/// ZCode's SessionStart comes with its first turn, so an unprompted pane reports
+/// nothing yet; its spawn grace must not read that silence as broken hooks.
+pub fn reports_start_at_launch(provider: proto::AgentKind) -> bool {
+    provider != proto::AgentKind::Zcode
+}
+
 pub fn has_event_mapping(provider: proto::AgentKind) -> bool {
     !events_for(provider).is_empty()
 }
