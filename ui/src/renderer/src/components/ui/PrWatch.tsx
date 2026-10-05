@@ -19,7 +19,7 @@ export function PrWatchRow({ number, onStop, onOpen }: {
   return (
     <section className="pr-watch-row" data-testid="pr-watch-row">
       <div className="pr-watch-top"><span className="pr-watch-label"><Icon glyph={IconEye} role="small" /><StatusLabel status="Watching" /></span><div className="pr-watch-actions"><Button variant="danger" size="sm" onClick={onStop}>Stop watching</Button>{onOpen && <Button variant="ghost" size="sm" onClick={onOpen}>Open on GitHub</Button>}</div></div>
-      <span className="pr-watch-description">Wakes on a failed check, passing checks, review activity, or a merge conflict.</span>
+      <span className="pr-watch-description">Wakes orchestrator on a failed check, all reported checks passing, a new review or comment, or a new conflict.</span>
       <span className="sr-only">Pull request #{number}</span>
     </section>
   )
