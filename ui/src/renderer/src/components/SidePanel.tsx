@@ -19,6 +19,8 @@ type SidePanelProps = SourceControlPanelProps & {
   workspaces?: { path: string; name: string }[]
   focused?: boolean
   closed?: boolean
+  onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
   sessions: ReadonlyMap<number, SessionInfo>
   activeSessionId?: number | null
   request: SideOpen | null
@@ -46,7 +48,7 @@ function InspectorContent({ props, tab, focused, isOrchestrator, filesRoot, open
     return <div className="side-card"><SourceControlPanel {...props} key={`${props.dir ?? 'none'}:${props.activeSessionId ?? 'none'}`} session={props.activeSessionId} tab={tab} hideHeader onSummaryChange={setSummary} embedded /></div>
   }
   if (tab === 'files') {
-    return <Suspense fallback={<div className="flex-1" />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'inspector-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} /></Suspense>
+    return <Suspense fallback={<div className="flex-1" />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'inspector-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} onSendToTerminal={props.onSendToTerminal} sendToTerminalLabel={props.sendToTerminalLabel} /></Suspense>
   }
   if (tab === 'overview' && isOrchestrator && props.client && focused) {
     return <Suspense fallback={<div className="flex-1" />}><OverviewTab parentId={focused.id} sessions={props.sessions} client={props.client} onClose={() => setTab('changes')} onReview={(child) => { props.onReviewChild(child); setTab('changes') }} /></Suspense>
@@ -132,6 +134,8 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: se
   workspaces?: { path: string; name: string }[]
   focused?: boolean
   closed?: boolean
+  onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
   activeId: number | null
   sessions: ReadonlyMap<number, SessionInfo>
   request: SideOpen | null

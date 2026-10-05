@@ -18,18 +18,17 @@ import {
   IconPlus,
   IconRespawn,
   IconSave,
-  IconSquareTerminal,
   IconTrash,
   IconZap
 } from './icons'
 import { RVIEW_CLS } from './panelChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { BTN_DANGER_SOLID, BTN_GHOST, BTN_PRIMARY } from './buttonChrome'
+import { BTN_DANGER_SOLID, BTN_GHOST } from './buttonChrome'
 import { SkillItemDistribution } from './SkillDistribution'
 import { SkillInstallDialog } from './SkillInstallDialog'
 import { useCopyFeedback } from './useCopyFeedback'
 import { Tooltip } from './Tooltip'
-import { SectionHead, SettingsList, SettingsRow as Row } from './settingsPrimitives'
+import { SectionHead, SettingsList, SettingsRow as Row, SubHead } from './settingsPrimitives'
 import { StatusIcon, STATUS_ICON_WORD, type StatusIconState } from './StatusIcon'
 import { ListDetail, type ListDetailItem } from './nav/ListDetail'
 import {
@@ -51,6 +50,9 @@ import {
   chipClass
 } from './nav/navChrome'
 import { ICON_ROLE_CLS, Icon } from './Icon'
+import { Button } from './ui/Button'
+import { Caption } from './ui/Caption'
+import { skillCliRelations, skillRelationLines, skillUsageLine } from '../houston/skillSurface'
 
 const AGENT_LABEL: Record<Skill['agent'], string> = {
   claude: 'Claude Code',
@@ -231,10 +233,105 @@ function SkillRow({
   )
 }
 
+function SkillInvocationActions({
+  skill,
+  onRun,
+  runLabel,
+  runDisabledReason,
+  labelledCopy,
+  includePath = false
+}: {
+  skill: Skill
+  onRun?: (invoke: string) => void
+  runLabel?: string
+  runDisabledReason?: string | null
+  labelledCopy: boolean
+  includePath?: boolean
+}): React.JSX.Element {
+  const { copyState, copy } = useCopyFeedback()
+  const runActionLabel = runLabel ? `Use in ${runLabel}` : 'Use in selected terminal'
+  return (
+    <div className={`${BLOCK} px-[14px] py-[12px] flex items-center gap-[10px]`}>
+      <code className="flex-1 min-w-0 truncate font-mono [font-size:var(--tr-text-ui-size)] text-[var(--text-primary)]">
+        {skill.invoke}
+      </code>
+      {(onRun || runDisabledReason) && (
+        <Tooltip label={runDisabledReason ?? runActionLabel}>
+          <Button
+            variant={labelledCopy ? 'primary' : 'secondary'}
+            disabled={!onRun || Boolean(runDisabledReason)}
+            aria-label={runDisabledReason ? runDisabledReason : `Use ${skill.name} in ${runLabel ?? 'the selected terminal'}`}
+            onClick={() => onRun?.(skill.invoke)}
+          >
+            <Icon glyph={IconPlay} role="small" />
+            {runDisabledReason ? 'Focus an agent pane' : runActionLabel}
+          </Button>
+        </Tooltip>
+      )}
+      {labelledCopy ? (
+        <Button variant="secondary" onClick={() => copy(skill.invoke)}>
+          <Icon glyph={copyState === 'success' ? IconCheck : IconCopy} role="small" />
+          {copyState === 'success' ? 'Copied' : 'Copy invocation'}
+        </Button>
+      ) : (
+        <Tooltip label="Copy invocation">
+          <button type="button" aria-label="Copy invocation" className={CHROME_BUTTON} onClick={() => copy(skill.invoke)}>
+            <Icon glyph={copyState === 'success' ? IconCheck : IconCopy} role="small" />
+          </button>
+        </Tooltip>
+      )}
+      {includePath && (
+        <span className="flex-none truncate max-w-[240px] font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+          {skill.path}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function SkillAgentRelations({
+  skill,
+  tools,
+  usageLine,
+  usageDigest,
+  hasHarnessReview
+}: {
+  skill: Skill
+  tools?: SkillToolState[] | null
+  usageLine?: string
+  usageDigest?: string | null
+  hasHarnessReview?: boolean
+}): React.JSX.Element {
+  return (
+    <section className="flex flex-col gap-[var(--space-2)]" data-testid="skill-agent-relations">
+      <SubHead>Where agents find it</SubHead>
+      <div className="grid gap-[var(--space-1)]">
+        {skillRelationLines(skillCliRelations(skill, tools ?? null)).map((line) => (
+          <Caption key={line}>{line}</Caption>
+        ))}
+      </div>
+      {(usageLine || hasHarnessReview !== undefined) && (
+        <p data-testid="skill-usage" className="m-0">
+          <Caption tone="faint">
+            {usageLine ?? skillUsageLine(skill.name, usageDigest ?? null, hasHarnessReview ?? false)}
+          </Caption>
+        </p>
+      )}
+    </section>
+  )
+}
+
 function SkillDetail({
   skill,
   dir,
   onRun,
+  runLabel,
+  runDisabledReason,
+  scopeLabel,
+  usageLine,
+  usageDigest,
+  hasHarnessReview,
+  showAgentRelations,
   tools,
   pushes,
   onPush,
@@ -246,6 +343,13 @@ function SkillDetail({
   skill: Skill
   dir: string | null
   onRun?: (invoke: string) => void
+  runLabel?: string
+  runDisabledReason?: string | null
+  scopeLabel?: string
+  usageLine?: string
+  usageDigest?: string | null
+  hasHarnessReview?: boolean
+  showAgentRelations?: boolean
   tools?: SkillToolState[] | null
   pushes?: SkillPushRecord[]
   onPush?: (tool: AgentKind, skill: string) => void
@@ -254,7 +358,6 @@ function SkillDetail({
   onEdit: (s: Skill) => void
   onDelete: (s: Skill) => void
 }): React.JSX.Element {
-  const { copyState, copy } = useCopyFeedback()
   const canDistribute = skill.agent === 'claude' && tools != null && onPush != null && onPushUndo != null
 
   return (
@@ -297,7 +400,7 @@ function SkillDetail({
               <span>{AGENT_LABEL[skill.agent]}</span>
               <span aria-hidden>·</span>
               <span>
-                {skill.source === 'project' && dir ? `Project scope (${dir})` : 'User scope'}
+                {scopeLabel ?? (skill.source === 'project' && dir ? `Project scope (${dir})` : 'User scope')}
               </span>
             </div>
           </div>
@@ -316,30 +419,22 @@ function SkillDetail({
           </span>
         </div>
 
-        <div className={`${BLOCK} px-[14px] py-[12px] flex items-center gap-[10px]`}>
-          <code className="flex-1 min-w-0 truncate font-mono [font-size:var(--tr-text-ui-size)] text-[var(--text-primary)]">
-            {skill.invoke}
-          </code>
-          <button
-            type="button"
-            className={SECONDARY_BUTTON}
-            onClick={() => copy(skill.invoke)}
-          >
-            <Icon glyph={copyState === 'success' ? IconCheck : IconCopy} role="small" />
-            {copyState === 'success' ? 'Copied' : 'Copy invocation'}
-          </button>
-          {onRun && (
-            <button
-              type="button"
-              aria-label={`Use ${skill.name} in the selected terminal`}
-              className={BTN_PRIMARY}
-              onClick={() => onRun(skill.invoke)}
-            >
-              <Icon glyph={IconSquareTerminal} role="small" />
-              Use in selected terminal
-            </button>
-          )}
-        </div>
+        <SkillInvocationActions
+          skill={skill}
+          onRun={onRun}
+          runLabel={runLabel}
+          runDisabledReason={runDisabledReason}
+          labelledCopy
+        />
+        {showAgentRelations && (
+          <SkillAgentRelations
+            skill={skill}
+            tools={tools}
+            usageLine={usageLine}
+            usageDigest={usageDigest}
+            hasHarnessReview={hasHarnessReview}
+          />
+        )}
 
         {canDistribute && tools && (
           <SkillItemDistribution
@@ -604,6 +699,13 @@ function SkillInstructionsBox({ path }: { path: string }): React.JSX.Element {
 function SkillEmbeddedDetail({
   skill,
   onRun,
+  runLabel,
+  runDisabledReason,
+  scopeLabel,
+  usageLine,
+  usageDigest,
+  hasHarnessReview,
+  showAgentRelations = false,
   tools,
   pushes,
   onPush,
@@ -613,6 +715,13 @@ function SkillEmbeddedDetail({
 }: {
   skill: Skill
   onRun?: (invoke: string) => void
+  runLabel?: string
+  runDisabledReason?: string | null
+  scopeLabel?: string
+  usageLine?: string
+  usageDigest?: string | null
+  hasHarnessReview?: boolean
+  showAgentRelations?: boolean
   tools?: SkillToolState[] | null
   pushes?: SkillPushRecord[]
   onPush?: (tool: AgentKind, skill: string) => void
@@ -620,7 +729,6 @@ function SkillEmbeddedDetail({
   onEdit: (s: Skill) => void
   onDelete: (s: Skill) => void
 }): React.JSX.Element {
-  const { copyState, copy } = useCopyFeedback()
   return (
     <>
       <div className="flex items-center justify-between gap-[10px]">
@@ -628,7 +736,7 @@ function SkillEmbeddedDetail({
           {skill.name}
         </h2>
         <div className="flex-none flex items-center gap-[6px]">
-          {onRun && (
+          {!showAgentRelations && onRun && (
             <button
               type="button"
               aria-label={`Use ${skill.name} in pane`}
@@ -664,25 +772,25 @@ function SkillEmbeddedDetail({
       <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
         {skill.description || 'No description provided.'}
       </p>
-      <div className={`${BLOCK} flex items-center gap-[10px] px-[14px] py-[12px]`}>
-        <code className="flex-1 min-w-0 truncate font-mono [font-size:var(--tr-text-ui-size)] text-[var(--text-primary)]">
-          {skill.invoke}
-        </code>
-        <Tooltip label="Copy invocation">
-          <button
-            type="button"
-            aria-label="Copy invocation"
-            className={CHROME_BUTTON}
-            onClick={() => copy(skill.invoke)}
-          >
-            <Icon glyph={copyState === 'success' ? IconCheck : IconCopy} role="small" />
-          </button>
-        </Tooltip>
-        <span className="flex-none truncate max-w-[240px] font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
-          {skill.path}
-        </span>
-      </div>
-      <SkillCopiesGroup skill={skill} tools={tools} pushes={pushes} onPush={onPush ?? (() => {})} onPushUndo={onPushUndo ?? (() => {})} />
+      {scopeLabel && <Caption tone="faint">{scopeLabel}</Caption>}
+      <SkillInvocationActions
+        skill={skill}
+        onRun={showAgentRelations ? onRun : undefined}
+        runLabel={runLabel}
+        runDisabledReason={showAgentRelations ? runDisabledReason : null}
+        labelledCopy={showAgentRelations}
+        includePath={!showAgentRelations}
+      />
+      {!showAgentRelations && <SkillCopiesGroup skill={skill} tools={tools} pushes={pushes} onPush={onPush ?? (() => {})} onPushUndo={onPushUndo ?? (() => {})} />}
+      {showAgentRelations && (
+        <SkillAgentRelations
+          skill={skill}
+          tools={tools}
+          usageLine={usageLine}
+          usageDigest={usageDigest}
+          hasHarnessReview={hasHarnessReview}
+        />
+      )}
       <div className="flex flex-col gap-[6px] flex-1 min-h-0">
         <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
           Instructions
@@ -926,6 +1034,13 @@ function SkillsLibraryBody({
 export function SkillsView({
   dir,
   onRun,
+  runLabel,
+  runDisabledReason,
+  scopeLabel,
+  usageLines,
+  usageDigest,
+  hasHarnessReview,
+  showAgentRelations = false,
   embedded = false,
   tools,
   pushes,
@@ -935,6 +1050,13 @@ export function SkillsView({
 }: {
   dir: string | null
   onRun?: (invoke: string) => void
+  runLabel?: string
+  runDisabledReason?: string | null
+  scopeLabel?: string
+  usageLines?: Record<string, string>
+  usageDigest?: string | null
+  hasHarnessReview?: boolean
+  showAgentRelations?: boolean
   embedded?: boolean
   onChanged?: () => void
   tools?: SkillToolState[] | null
@@ -1190,6 +1312,13 @@ export function SkillsView({
                 <SkillEmbeddedDetail
                   skill={skill}
                   onRun={onRun}
+                  runLabel={runLabel}
+                  runDisabledReason={runDisabledReason}
+                  scopeLabel={scopeLabel}
+                  usageLine={usageLines?.[skill.name]}
+                  usageDigest={usageDigest}
+                  hasHarnessReview={hasHarnessReview}
+                  showAgentRelations={showAgentRelations}
                   tools={tools}
                   pushes={pushes}
                   onPush={onPush}
@@ -1220,6 +1349,13 @@ export function SkillsView({
           skill={selected}
           dir={dir}
           onRun={onRun}
+          runLabel={runLabel}
+          runDisabledReason={runDisabledReason}
+          scopeLabel={scopeLabel}
+          usageLine={usageLines?.[selected.name]}
+          usageDigest={usageDigest}
+          hasHarnessReview={hasHarnessReview}
+          showAgentRelations={showAgentRelations}
           tools={tools}
           pushes={pushes}
           onPush={onPush}

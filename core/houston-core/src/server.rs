@@ -738,6 +738,8 @@ async fn dispatch(
             acp,
             profile,
             prompt,
+            model,
+            effort,
         } => {
             let frames_wanted =
                 frames_wanted.expect("an attach-family message runs on the connection task");
@@ -754,6 +756,8 @@ async fn dispatch(
                 acp,
                 profile,
                 prompt,
+                model,
+                effort,
             };
             tokio::task::spawn_blocking(move || daemon.create_session(params))
                 .await

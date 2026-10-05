@@ -105,6 +105,7 @@ import { Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { MATERIAL_CLS, materialAttrs } from "./components/material";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
+import { canUseSkillInFocusedPane } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
 import { setSettingsSection, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
@@ -127,8 +128,8 @@ import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
 import type { HandoffSource } from "./components/PaneHandoff";
-import { NewSessionComposer } from "./components/NewSessionComposer";
 import type { SessionSlot } from "./components/sessionPresets";
+import { LaunchComposerDock, visibleLaunchPreview, type LaunchPreview } from "./components/LaunchComposerDock";
 import { WorkspaceEmpty } from "./components/WorkspaceEmpty";
 import { WorkspacesEmpty } from "./components/WorkspacesEmpty";
 import { FirstRun } from "./components/FirstRun";
@@ -335,6 +336,9 @@ const SshConnectModal = lazy(() =>
 const PaneHandoff = lazy(() =>
   import("./components/PaneHandoff").then((m) => ({ default: m.PaneHandoff })),
 );
+const LaunchGridPreview = lazy(() =>
+  import("./components/ui/LaunchGridPreview").then((m) => ({ default: m.LaunchGridPreview })),
+);
 export { isTitlebarDragEligible, isBareTitlebarTarget };
 
 const SELECTED_WS_KEY = "tr-selected-workspace";
@@ -530,6 +534,11 @@ function matchZoomStep(e: KeyboardEvent, overrides: KeymapOverrides): { target: 
 function harnessAttentionFor(overview: readonly { workspace: string; attention: number }[], workspace: string): number {
   if (workspace === "all") return overview.reduce((total, row) => total + row.attention, 0);
   return overview.find((row) => row.workspace === workspace)?.attention ?? 0;
+}
+
+function sessionLabel(sessions: ReadonlyMap<number, { title?: string | null }>, id: number | null): string | undefined {
+  if (id === null) return undefined;
+  return sessions.get(id)?.title ?? `Session ${id}`;
 }
 
 function SessionEffects({ connection, workspaces, onFocusPane }: {
@@ -750,6 +759,7 @@ export function App(): React.JSX.Element {
   const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
     null,
   );
+  const [launchPreview, setLaunchPreview] = useState<LaunchPreview | null>(null);
   const [showLauncher, setShowLauncher] = useState(false);
   const [pickingWorkspace, setPickingWorkspace] = useState(false);
   const [workspaceRefusals, setWorkspaceRefusals] = useState<string[]>([]);
@@ -1944,22 +1954,31 @@ export function App(): React.JSX.Element {
     );
   }, []);
   const launchSessions = useCallback(
-    (slots: SessionSlot[]): void => {
+    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
       if (conn.kind !== "ready" || selectedWs === "all") return;
       setExpandedId(null);
-      if (composer === "new-grid") handleAddGrid(selectedWs);
+      if (target === "new-grid") handleAddGrid(selectedWs);
       for (const slot of slots) {
         conn.client.createSession({
           agent: slot.agent,
           project_dir: selectedWs,
           shell_integration: shellIntegration,
+          model: slot.model,
+          effort: slot.effort,
           prompt:
             slot.agent === "shell" || slot.prompt === "" ? null : slot.prompt,
         });
       }
       setComposer(null);
+      setLaunchPreview(null);
     },
-    [conn, selectedWs, shellIntegration, composer, handleAddGrid],
+    [conn, selectedWs, shellIntegration, handleAddGrid],
+  );
+  const handleLaunchPreview = useCallback(
+    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
+      setLaunchPreview({ slots, target });
+    },
+    [],
   );
 
   const handleRenameGrid = useCallback(
@@ -2268,6 +2287,7 @@ export function App(): React.JSX.Element {
     if (!cur.client.sendStdin(target, text)) pushError("connection lost — selected element was not delivered");
   }, [pushError]);
   const pickerAvailable = pickerTarget.current !== null && isLive(sessions.get(pickerTarget.current)?.state ?? "exited");
+  const pickerTargetLabel = sessionLabel(sessions, pickerTarget.current);
 
   const openFilesPaneAt = useCallback(
     (workspaceDir: string, root: string, anchor: PaneKey | null): void => {
@@ -3124,6 +3144,7 @@ export function App(): React.JSX.Element {
     );
   const client = conn.client;
   const connected = conn.kind === "ready";
+  const activeLaunchPreview = visibleLaunchPreview(composer, launchPreview);
 
   const renameWorkspaceSubmit = (path: string, name: string): void => {
     setWsRenaming(null);
@@ -3510,6 +3531,7 @@ export function App(): React.JSX.Element {
                     onOpenFile={openTerminalFile}
                     onOpenDir={openTerminalDir}
                     onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                    sendToTerminalLabel={pickerTargetLabel}
                     onNativeError={pushError}
                     onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3616,6 +3638,7 @@ export function App(): React.JSX.Element {
                               onOpenFile={openTerminalFile}
                               onOpenDir={openTerminalDir}
                               onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                              sendToTerminalLabel={pickerTargetLabel}
                               onNativeError={pushError}
                               onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3624,13 +3647,21 @@ export function App(): React.JSX.Element {
                               focusUrlRequest={
                                 gridSelected ? focusBrowserUrl : undefined
                               }
+                              launchPreview={gridSelected ? activeLaunchPreview : undefined}
                             />
                           ) : gridSelected ? (
-                            <WorkspaceEmpty
-                              onNewSession={() => setComposer("current-grid")}
-                              onTerminal={newTerminal}
-                              onBrowser={() => openBrowserPane(w.path, null)}
-                            />
+                            <div className="relative flex-1 min-w-0 min-h-0">
+                              <WorkspaceEmpty
+                                onNewSession={() => setComposer("current-grid")}
+                                onTerminal={newTerminal}
+                                onBrowser={() => openBrowserPane(w.path, null)}
+                              />
+                              {activeLaunchPreview && (
+                                <Suspense fallback={null}>
+                                  <LaunchGridPreview tree={null} slots={activeLaunchPreview.slots} target={activeLaunchPreview.target} sessions={sessions} />
+                                </Suspense>
+                              )}
+                            </div>
                           ) : null}
                         </div>
                       );
@@ -3639,10 +3670,25 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </div>
-              {scmOpen && (
+              <LaunchComposerDock
+                composer={composer}
+                workspace={selectedWs}
+                settingsOpen={Boolean(settings)}
+                railOpen={railView !== null}
+                workspaceName={basename(selectedWs)}
+                gridName={() => gridsFor(selectedWs).find((grid) => grid.id === activeGridId(selectedWs))?.name}
+                client={client}
+                connected={connected}
+                onPreviewChange={handleLaunchPreview}
+                onLaunch={launchSessions}
+                onClose={() => { setComposer(null); setLaunchPreview(null) }}
+              />
+              {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
                 <SidePanelIntegration
                   focused={activeSurface === "side"}
                   closed={!scmOpen}
+                  onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                  sendToTerminalLabel={pickerTargetLabel}
                   selectedWorkspace={sideWorkspace}
                   activeId={activeId}
                   sessions={sessions}
@@ -3702,6 +3748,16 @@ export function App(): React.JSX.Element {
                     </Suspense>
                   ) : railView === "skills" ? (
                     <SkillsSurface
+                      client={conn.kind === "ready" ? conn.client : null}
+                      workspace={selectedWs === "all" ? null : selectedWs}
+                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
+                      canRunSkillInFocusedPane={canUseSkillInFocusedPane(
+                        sessions,
+                        activeId,
+                        selectedWs,
+                        conn.kind
+                      )}
+                      onRunSkill={runSkill}
                       tools={skills}
                       pushes={skillPushes}
                       autoPushEnabled={skillAutoPush}
@@ -4030,15 +4086,6 @@ export function App(): React.JSX.Element {
                   </Suspense>
                   )}
                 </SurfaceBoundary>
-              </div>
-            ) : composer && selectedWs !== "all" ? (
-              <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
-                <NewSessionComposer
-                  workspaceName={basename(selectedWs)}
-                  workspacePath={selectedWs}
-                  onLaunch={launchSessions}
-                  onCancel={() => setComposer(null)}
-                />
               </div>
             ) : firstRunOpen || workspacesEmptyOpen ? (
               <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">

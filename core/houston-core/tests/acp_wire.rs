@@ -96,6 +96,8 @@ fn acp_session(daemon: &Arc<Daemon>, dir: &std::path::Path, slug: &str) -> proto
             acp: Some(slug.to_string()),
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("acp session spawns")
 }
@@ -164,6 +166,8 @@ async fn an_unknown_acp_slug_is_refused_by_name_with_the_roster_listed() {
             acp: Some("acp-nonesuch".into()),
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect_err("an unknown slug must be refused, not silently downgraded");
     let text = format!("{err:#}");
@@ -190,6 +194,8 @@ async fn acp_mode_and_an_explicit_cmd_cannot_both_be_given() {
             acp: Some("acp-opencode".into()),
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect_err("two argv authorities must be refused, not silently ranked");
     assert!(format!("{err:#}").contains("cannot both be given"));
@@ -231,6 +237,8 @@ async fn the_roster_the_daemon_offers_is_the_roster_it_accepts() {
                     acp: Some(row.slug.clone()),
                     profile: None,
                     prompt: None,
+                    model: None,
+                    effort: None,
                 })
                 .unwrap_or_else(|e| panic!("offered slug {:?} was refused: {e:#}", row.slug));
             daemon.close(info.id).ok();

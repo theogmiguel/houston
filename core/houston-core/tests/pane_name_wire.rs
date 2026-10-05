@@ -45,6 +45,8 @@ fn spawn(daemon: &Arc<Daemon>, ws: &Path) -> proto::SessionInfo {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("the pane spawns")
 }
@@ -161,6 +163,8 @@ async fn a_hook_marks_the_running_cli_in_a_shell_pane() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("the shell pane spawns");
     let detected = |d: &Arc<Daemon>| {

@@ -24,7 +24,7 @@ BASELINE=(
   "ui/src/renderer/src/components/nav/RoutineEditor.tsx 4"
   "ui/src/renderer/src/components/nav/RoutineRow.tsx 1"
   "ui/src/renderer/src/components/nav/SkillsSurface.tsx 1"
-  "ui/src/renderer/src/components/NewSessionComposer.tsx 7"
+  "ui/src/renderer/src/components/NewSessionComposer.tsx 0"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 1"
   "ui/src/renderer/src/components/settings/AppearanceSection.tsx 2"
   "ui/src/renderer/src/components/SettingsDetail.tsx 6"

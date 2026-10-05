@@ -166,6 +166,8 @@ async fn changed_profile_does_not_resume(recreate: bool) {
                 acp: None,
                 profile: Some(proto::ProfileChoice::Profile { id: profile }),
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap();
         let argv = fixture.argv(pane.id).await;

@@ -29,6 +29,8 @@ fn create_custom(d: &Arc<Daemon>, dir: &std::path::Path, cmd: Vec<&str>) -> u32 
         acp: None,
         profile: None,
         prompt: None,
+        model: None,
+        effort: None,
     })
     .unwrap()
     .id

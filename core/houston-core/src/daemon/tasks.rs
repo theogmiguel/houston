@@ -2249,6 +2249,8 @@ impl Daemon {
                 acp: None,
                 profile: None,
                 prompt,
+                model: None,
+                effort: None,
             },
             vec![("HOUSTON_TASK".to_string(), key.clone())],
             spawn_args,

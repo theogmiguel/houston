@@ -1,11 +1,15 @@
 import React from 'react'
 import { NewSessionComposer } from '../src/components/NewSessionComposer'
+import { LaunchGridPreview } from '../src/components/ui/LaunchGridPreview'
+import type { SessionSlot } from '../src/components/sessionPresets'
+import { leaf, type LayoutNode } from '../src/layout/tree'
 
 function NewSession(): React.JSX.Element {
   return (
     <NewSessionComposer
       workspaceName="acme"
       workspacePath="~/Desktop/acme"
+      gridName="Improve Orchestration"
       onLaunch={() => {}}
       onCancel={() => {}}
     />
@@ -23,6 +27,54 @@ function NewSessionClicked({ selector }: { selector: string }): React.JSX.Elemen
     </div>
   )
 }
+
+function DockedLaunchHoverStory(): React.JSX.Element {
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      ref.current?.querySelector<HTMLButtonElement>('[data-preset="swarm"]')?.dispatchEvent(
+        new MouseEvent('mouseover', { bubbles: true })
+      )
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+  return <DockedLaunchStory ref={ref} />
+}
+
+const launchStoryTree: LayoutNode = {
+  kind: 'split', dir: 'row', children: [leaf(1), leaf(2)], weights: [1, 1]
+}
+const launchStorySessions = new Map<number, SessionInfo>([
+  [1, { id: 1, agent: 'claude' } as SessionInfo],
+  [2, { id: 2, agent: 'codex' } as SessionInfo]
+])
+
+const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunchStory(_, ref): React.JSX.Element {
+  const [preview, setPreview] = React.useState<{ slots: SessionSlot[]; target: 'this-grid' | 'new-grid' } | null>(null)
+  const updatePreview = React.useCallback((slots: SessionSlot[], target: 'this-grid' | 'new-grid'): void => {
+    setPreview({ slots, target })
+  }, [])
+  return (
+    <div ref={ref} className="flex h-full min-w-0 bg-[var(--content-bg)]">
+      <div className="relative min-w-0 flex-1" aria-label="Current grid">
+        <div className="absolute inset-0 grid grid-cols-2 gap-[var(--pane-gutter)] p-[var(--pane-gutter)]">
+        {['Session · Claude Code', 'Session · Codex'].map((name) => (
+            <div key={name} className="flex items-center justify-center rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-muted)]">{name}</div>
+        ))}
+        </div>
+        {preview && <LaunchGridPreview tree={launchStoryTree} slots={preview.slots} target={preview.target} sessions={launchStorySessions} />}
+      </div>
+      <NewSessionComposer
+        workspaceName="acme"
+        workspacePath="~/Desktop/acme"
+        gridName="Improve Orchestration"
+        onPreviewChange={updatePreview}
+        onLaunch={() => {}}
+        onCancel={() => {}}
+      />
+    </div>
+  )
+})
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
 import { SettingsAgentSetup, SettingsAppearance, SettingsDiagnostics, SettingsTerminal } from './settingsStories'
@@ -125,6 +177,8 @@ function RailWorkspacesMulti(): React.JSX.Element {
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
   'new-session/default': () => <NewSession />,
+  'launch/docked': () => <DockedLaunchStory />,
+  'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,
   'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' />,
   'new-session/terminal': () => <NewSessionClicked selector='[data-agent="shell"]' />,
   'harness/smoke': () => (
@@ -164,6 +218,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/routines-empty': () => <NavRoutinesEmpty />,
   'nav/routine-editor': () => <NavRoutineEditor />,
   'nav/skills': () => <NavSkills />,
+  'nav/skills/graphite': () => <NavSkills />,
+  'nav/skills/paper': () => <NavSkills />,
   'nav/mcp': () => <NavMcp />,
   'nav/mcp-detail': () => <NavMcpDetail />,
   'nav/hooks': () => <NavHooks />,

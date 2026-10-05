@@ -17,7 +17,7 @@ BASELINE=(
   "ui/src/renderer/src/components/Chip.tsx 1"
   "ui/src/renderer/src/components/FilesPane.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 10"
-  "ui/src/renderer/src/components/NewSessionComposer.tsx 3"
+  "ui/src/renderer/src/components/NewSessionComposer.tsx 2"
   "ui/src/renderer/src/components/pickerChrome.ts 1"
   "ui/src/renderer/src/components/settingsPrimitives.tsx 1"
   "ui/src/renderer/src/components/SkillsView.tsx 1"

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from '../../houston/client'
 import { createSessionsStore, SessionsStoreContext } from '../../sessionsStore'
 import { GridRailRow } from './GridRailRow'
+import { GridRailRowFallback } from './GridRailRowFallback'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -79,5 +80,15 @@ describe('grid rail row interactions', () => {
     act(() => badge.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })))
     expect(external).toHaveBeenCalledWith(pr.url)
     expect(inspector).not.toHaveBeenCalled()
+  })
+})
+
+describe('GridRailRowFallback', () => {
+  it('claims no status while the row loads', () => {
+    root = createRoot(container)
+    act(() => root.render(<GridRailRowFallback name="Review" selected={false} jumpNumber={1} onSelect={() => {}} onContextMenu={() => {}} />))
+    const dot = container.querySelector<HTMLElement>('[data-testid="grid-state-dot"]')
+    expect(dot?.dataset.state).toBe('loading')
+    expect(dot?.getAttribute('aria-label')).toBe('Loading status')
   })
 })

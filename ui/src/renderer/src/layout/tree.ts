@@ -292,6 +292,16 @@ export function evenGrid(ids: number[], cols: number): LayoutNode | null {
   }
 }
 
+export function launchPreviewTree(
+  current: LayoutNode | null,
+  count: number,
+  target: 'this-grid' | 'new-grid'
+): LayoutNode | null {
+  const placeholders = Array.from({ length: count }, (_, index) => leaf(-index - 1))
+  if (target === 'new-grid') return evenGrid(placeholders.map((_, index) => -index - 1), 2)
+  return placeholders.reduce<LayoutNode | null>((tree, node) => appendToRoot(tree, node), current)
+}
+
 export function preorderNonSessionPanes(node: LayoutNode | null): PaneNode[] {
   if (!node) return []
   if (node.kind === 'split' || node.kind === 'stack')

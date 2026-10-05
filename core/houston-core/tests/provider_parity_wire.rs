@@ -148,6 +148,8 @@ fn pane(daemon: &Arc<Daemon>, agent: proto::AgentKind) -> (proto::SessionInfo, t
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("fixture pane spawns");
     (info, dir)

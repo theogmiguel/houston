@@ -18,6 +18,18 @@ Panes are not only terminals: a workspace can also hold a Files pane, an editor,
 browser pane, or a Skills pane (see `docs/user/files-editor-browser.md`). Git changes
 and pull requests open in Source control beside the grid (see `docs/user/changes.md`).
 
+## Launching sessions
+
+Open the launch composer from a grid action. It docks beside the current grid so you can
+preview the resulting panes before starting them. Choose **This grid** to add sessions to
+the current layout or **New grid** to start a separate layout. Hover a preset to preview
+its slots, choose an agent for each slot, and optionally enter one task shared by every
+agent. Press Ctrl+Enter in the task field or choose **Launch** to start the sessions.
+
+Each slot shows its model, effort and checkout, with the source of each value. Workspace
+routing applies to matching roles; a route that a selected provider cannot use is shown
+as skipped with its reason. A launch with an invalid slot is blocked until you correct it.
+
 New terminal sessions support 256-colour and true-colour output even when the
 launcher disables its own colours. Existing sessions retain their original
 environment; restart an affected session after updating Houston.

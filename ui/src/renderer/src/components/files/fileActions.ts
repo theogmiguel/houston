@@ -13,6 +13,24 @@ export function fileReference(path: string, directory: boolean): string {
   return `@${/[\s"'\\]/.test(value) ? JSON.stringify(value) : value} `
 }
 
+export function relativeFilePath(root: string, path: string): string {
+  const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '') || '/'
+  const normalizedPath = path.replace(/\\/g, '/')
+  if (normalizedPath === normalizedRoot) return '.'
+  const prefix = normalizedRoot === '/' ? '/' : `${normalizedRoot}/`
+  return normalizedPath.startsWith(prefix) ? normalizedPath.slice(prefix.length) : path
+}
+
+export function fileActionDirectory(path: string, isDirectory: boolean): string {
+  if (isDirectory) return path
+  const cut = path.lastIndexOf('/')
+  return cut <= 0 ? '/' : path.slice(0, cut)
+}
+
+export function copyFilePath(path: string, onError: (message: string) => void): void {
+  void navigator.clipboard?.writeText(path).catch((error: unknown) => onError(String((error as Error)?.message ?? error)))
+}
+
 const SEVERITY = { conflicted: 5, deleted: 4, modified: 3, renamed: 3, added: 2, untracked: 1 }
 export function gitTreeStatus(root: string, path: string, directory: boolean, files: readonly GitFileStatus[]): GitFileStatus['status'] | null {
   const relative = path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path
