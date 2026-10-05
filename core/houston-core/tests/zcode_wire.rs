@@ -409,7 +409,7 @@ async fn zcode_hooks_drive_status_through_a_turn_its_questions_and_permissions()
         &daemon,
         "SessionStart",
         id,
-        "zcode-src-01-SessionStart.json",
+        "zcode-3.14.3-src-01-SessionStart.json",
     )
     .await;
     assert_eq!(status(&daemon, id), Some(Idle));
@@ -418,7 +418,7 @@ async fn zcode_hooks_drive_status_through_a_turn_its_questions_and_permissions()
         &daemon,
         "UserPromptSubmit",
         id,
-        "zcode-src-02-UserPromptSubmit.json",
+        "zcode-3.14.3-src-02-UserPromptSubmit.json",
     )
     .await;
     assert_eq!(status(&daemon, id), Some(Working));
@@ -428,7 +428,7 @@ async fn zcode_hooks_drive_status_through_a_turn_its_questions_and_permissions()
         &daemon,
         "PreToolUse",
         id,
-        "zcode-src-04-PreToolUse-AskUserQuestion.json",
+        "zcode-3.14.3-src-04-PreToolUse-AskUserQuestion.json",
     )
     .await;
     assert_eq!(
@@ -441,7 +441,7 @@ async fn zcode_hooks_drive_status_through_a_turn_its_questions_and_permissions()
         &daemon,
         "PostToolUse",
         id,
-        "zcode-src-05-PostToolUse-AskUserQuestion.json",
+        "zcode-3.14.3-src-05-PostToolUse-AskUserQuestion.json",
     )
     .await;
     assert_eq!(
@@ -455,7 +455,7 @@ async fn zcode_hooks_drive_status_through_a_turn_its_questions_and_permissions()
         &daemon,
         "PermissionRequest",
         id,
-        "zcode-src-06-PermissionRequest-Bash.json",
+        "zcode-3.14.3-src-06-PermissionRequest-Bash.json",
     )
     .await;
     assert_eq!(status(&daemon, id), Some(NeedsInput));
@@ -464,12 +464,12 @@ async fn zcode_hooks_drive_status_through_a_turn_its_questions_and_permissions()
         &daemon,
         "PostToolUse",
         id,
-        "zcode-src-07-PostToolUse-Bash.json",
+        "zcode-3.14.3-src-07-PostToolUse-Bash.json",
     )
     .await;
     assert_eq!(status(&daemon, id), Some(Working), "the approved tool ran");
 
-    drive(state, &daemon, "Stop", id, "zcode-src-03-Stop.json").await;
+    drive(state, &daemon, "Stop", id, "zcode-3.14.3-src-03-Stop.json").await;
     assert_eq!(status(&daemon, id), Some(Idle));
     assert_eq!(
         daemon.agent_kind_of(id),
@@ -490,7 +490,7 @@ async fn an_interrupted_zcode_tool_ends_the_turn() {
         &daemon,
         "UserPromptSubmit",
         id,
-        "zcode-src-02-UserPromptSubmit.json",
+        "zcode-3.14.3-src-02-UserPromptSubmit.json",
     )
     .await;
     drive(
@@ -498,7 +498,7 @@ async fn an_interrupted_zcode_tool_ends_the_turn() {
         &daemon,
         "PermissionRequest",
         id,
-        "zcode-src-06-PermissionRequest-Bash.json",
+        "zcode-3.14.3-src-06-PermissionRequest-Bash.json",
     )
     .await;
     assert_eq!(status(&daemon, id), Some(proto::AgentStatus::NeedsInput));
@@ -507,7 +507,7 @@ async fn an_interrupted_zcode_tool_ends_the_turn() {
         &daemon,
         "PostToolUseFailure",
         id,
-        "zcode-src-08-PostToolUseFailure-interrupt.json",
+        "zcode-3.14.3-src-08-PostToolUseFailure-interrupt.json",
     )
     .await;
     assert_eq!(
@@ -531,7 +531,7 @@ async fn a_restored_zcode_pane_resumes_its_session_by_id() {
         &daemon,
         "SessionStart",
         info.id,
-        "zcode-src-01-SessionStart.json",
+        "zcode-3.14.3-src-01-SessionStart.json",
     )
     .await;
     drive(
@@ -539,10 +539,17 @@ async fn a_restored_zcode_pane_resumes_its_session_by_id() {
         &daemon,
         "UserPromptSubmit",
         info.id,
-        "zcode-src-02-UserPromptSubmit.json",
+        "zcode-3.14.3-src-02-UserPromptSubmit.json",
     )
     .await;
-    drive(state, &daemon, "Stop", info.id, "zcode-src-03-Stop.json").await;
+    drive(
+        state,
+        &daemon,
+        "Stop",
+        info.id,
+        "zcode-3.14.3-src-03-Stop.json",
+    )
+    .await;
 
     daemon.checkpoint_scrollback().unwrap();
     daemon.mark_clean_shutdown().unwrap();
@@ -564,7 +571,7 @@ async fn a_restored_zcode_pane_resumes_its_session_by_id() {
         &after,
         "SessionStart",
         restored.id,
-        "zcode-src-09-SessionStart-resume.json",
+        "zcode-3.14.3-src-09-SessionStart-resume.json",
     )
     .await;
     assert_eq!(
@@ -592,7 +599,7 @@ async fn an_unprompted_zcode_pane_stays_starting_past_the_spawn_grace() {
         &daemon,
         "SessionStart",
         id,
-        "zcode-src-01-SessionStart.json",
+        "zcode-3.14.3-src-01-SessionStart.json",
     )
     .await;
     assert_eq!(status(&daemon, id), Some(proto::AgentStatus::Idle));
@@ -610,7 +617,7 @@ async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
         &daemon,
         "UserPromptSubmit",
         id,
-        "zcode-src-02-UserPromptSubmit.json",
+        "zcode-3.14.3-src-02-UserPromptSubmit.json",
     )
     .await;
     drive(
@@ -618,7 +625,7 @@ async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
         &daemon,
         "PermissionRequest",
         id,
-        "zcode-src-06-PermissionRequest-Bash.json",
+        "zcode-3.14.3-src-06-PermissionRequest-Bash.json",
     )
     .await;
     assert_eq!(status(&daemon, id), Some(proto::AgentStatus::NeedsInput));
@@ -627,7 +634,7 @@ async fn a_denied_zcode_permission_clears_with_the_next_tool_result() {
         &daemon,
         "PostToolUse",
         id,
-        "zcode-src-10-PostToolUse-Read.json",
+        "zcode-3.14.3-src-10-PostToolUse-Read.json",
     )
     .await;
     assert_eq!(

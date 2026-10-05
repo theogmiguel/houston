@@ -1,8 +1,8 @@
 {
-  "_note": "reconstructed from zai-org/ZCode apps/zcode-cli packages/core/src/hooks/configured-runner-input.ts (createCompatibleHookStdin) and packages/contracts/src/hooks \u2014 not captured live. camelCase fields are ZCode's own; snake_case ones are its Claude-compatible aliases.",
+  "_note": "reconstructed from zai-org/ZCode (main after tag v3.14.3) apps/zcode-cli packages/core/src/hooks/configured-runner-input.ts (createCompatibleHookStdin) and packages/contracts/src/hooks \u2014 not captured live. camelCase fields are ZCode's own; snake_case ones are its Claude-compatible aliases.",
   "agentName": "zcode-agent",
   "cwd": "/tmp/example",
-  "hookEventName": "PostToolUse",
+  "hookEventName": "PostToolUseFailure",
   "mode": "build",
   "sessionId": "sess_01J9ZCDEMO0000000000000000",
   "timestamp": "2026-01-01T00:00:00.000Z",
@@ -13,13 +13,10 @@
   "toolInput": {
     "command": "cargo test"
   },
-  "toolResponse": {
-    "exitCode": 0,
-    "output": "test result: ok"
-  },
-  "toolResultPreview": "test result: ok",
+  "error": "Tool execution aborted by user",
+  "isInterrupt": true,
   "agent_type": "zcode-agent",
-  "hook_event_name": "PostToolUse",
+  "hook_event_name": "PostToolUseFailure",
   "permission_mode": "build",
   "session_id": "sess_01J9ZCDEMO0000000000000000",
   "transcript_path": "/tmp/zcode-hook-Ab12Cd/transcript.jsonl",
@@ -29,8 +26,9 @@
     "command": "cargo test"
   },
   "tool_use_id": "call_bash_01",
-  "tool_response": {
-    "exitCode": 0,
-    "output": "test result: ok"
-  }
+  "error_details": {
+    "message": "Tool execution aborted by user",
+    "type": "aborted"
+  },
+  "is_interrupt": true
 }
