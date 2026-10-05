@@ -89,9 +89,10 @@ describe('page and content primitives', () => {
   it('renders PR watch status, stop action and GitHub action', () => {
     const onStop = vi.fn()
     const onOpen = vi.fn()
-    render(<><PrWatchChip number={61} /><PrWatchStack><PrWatchRow number={61} onStop={onStop} onOpen={onOpen} /></PrWatchStack></>)
+    render(<><PrWatchChip number={61} /><PrWatchStack><PrWatchRow number={61} lastCheckedAtMs={Date.now() - 40_000} onStop={onStop} onOpen={onOpen} /></PrWatchStack></>)
     expect(screen.getByTestId('pr-watch-chip').textContent).toContain('#61')
     expect(screen.getByTestId('pr-watch-stack').className).toContain('flex-col')
+    expect(screen.getByTestId('pr-watch-row').textContent).toContain('checked 40s ago')
     screen.getByRole('button', { name: 'Stop watching' }).click()
     screen.getByRole('button', { name: 'Open on GitHub' }).click()
     expect(onStop).toHaveBeenCalledOnce()

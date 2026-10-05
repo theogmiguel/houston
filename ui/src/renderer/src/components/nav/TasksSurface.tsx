@@ -18,6 +18,9 @@ export function TasksSurface({
   now,
   openTaskId,
   onOpenTaskHandled,
+  compose,
+  createDraft,
+  onCreateHandled,
   onStartRequested,
   onOpenSession,
   onReview,
@@ -30,6 +33,9 @@ export function TasksSurface({
   now: number
   openTaskId?: number
   onOpenTaskHandled?: () => void
+  compose?: boolean
+  createDraft?: { title: string; description: string }
+  onCreateHandled?: () => void
   onStartRequested: (taskId: number, workspace: string) => void
   onOpenSession: (id: number) => void
   onReview: (session: SessionInfo) => void
@@ -58,6 +64,12 @@ export function TasksSurface({
     tasks.openTask(openTaskId)
     onOpenTaskHandled?.()
   }, [openTaskId, onOpenTaskHandled, tasks.openTask])
+  useEffect(() => {
+    if (!compose && !createDraft) return
+    setDetailId(null)
+    setCreate(true)
+    onCreateHandled?.()
+  }, [compose, createDraft, onCreateHandled])
 
   useEffect(() => {
     if (!client || inboxWorkspaces.length === 0) return
@@ -85,7 +97,7 @@ export function TasksSurface({
     <div data-testid="nav-surface" data-page="tasks" className="h-full min-h-0 overflow-y-auto">
       <PageFrame width="form">
         {create ? (
-          <TaskComposer parentOptions={parentOptions} onCancel={() => setCreate(false)} onCreate={(patch) => {
+          <TaskComposer parentOptions={parentOptions} initialTitle={createDraft?.title} initialDescription={createDraft?.description} onCancel={() => setCreate(false)} onCreate={(patch) => {
             tasks.saveTask(null, null, patch)
             setCreate(false)
           }} />

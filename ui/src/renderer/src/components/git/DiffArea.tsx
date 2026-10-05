@@ -5,6 +5,7 @@ import { IconLoaderCircle, IconShieldAlert } from '../icons'
 import { Icon } from '../Icon'
 import { BTN_SECONDARY } from '../buttonChrome'
 import { EmptyState } from '../EmptyState'
+import { Button } from '../ui/Button'
 
 const TAG_CLASS: Record<string, string> = {
   staged: 'bg-[color-mix(in_srgb,var(--success)_16%,transparent)] text-[var(--success)]',
@@ -19,11 +20,12 @@ const TAG_BASE =
 
 const SCROLL = 'min-h-0 overflow-y-auto [scrollbar-width:thin]'
 
-function DiffHeader({ row }: { row: ChangeRow }): React.JSX.Element {
+function DiffHeader({ row, onOpenInEditor }: { row: ChangeRow; onOpenInEditor?: () => void }): React.JSX.Element {
   return (
     <div className="flex-none flex items-center gap-2 px-2.5 py-1 border-b border-b-[var(--divider)] bg-[var(--card-bg)] font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
       <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{row.path}</span>
       <span className={`${TAG_BASE} ml-0 ${TAG_CLASS[row.tag]}`}>{row.tag}</span>
+      {onOpenInEditor && <Button variant="link" size="sm" data-testid="changes-open-editor" onClick={onOpenInEditor}>Open in editor</Button>}
       {!row.blocked && (row.added !== null || row.deleted !== null) && (
         <span className="ml-auto font-medium" data-testid="changes-diff-counts">
           {row.added !== null && <span className="text-[var(--success)]">+{row.added}</span>}{' '}
@@ -73,13 +75,15 @@ export function DiffArea({
   diff,
   emptySummary,
   onReview,
-  reviewDisabledReason
+  reviewDisabledReason,
+  onOpenInEditor
 }: {
   row: ChangeRow | null
   diff: DiffState | null
   emptySummary?: { headline: string; description: string }
   onReview?: () => void
   reviewDisabledReason?: string | null
+  onOpenInEditor?: () => void
 }): React.JSX.Element {
   if (row === null) {
     return (
@@ -105,7 +109,7 @@ export function DiffArea({
   }
   return (
     <div className="changes-diff flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)]">
-      <DiffHeader row={row} />
+      <DiffHeader row={row} onOpenInEditor={onOpenInEditor} />
       <div className={`${SCROLL} flex-1 bg-[var(--tool-code-bg)]`}>
         <DiffBodyArea row={row} diff={diff} />
       </div>

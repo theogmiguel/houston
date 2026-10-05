@@ -189,7 +189,7 @@ describe('source control panel — shell integration', () => {
     expect(panel()!.style.width).toBe('612px')
   })
 
-  it('migrates a saved git leaf before layouts load: the panel opens and no leaf is lost', async () => {
+  it('loads a saved grid with a legacy git leaf while the inspector stays closed by default', async () => {
     const saved: LayoutNode = {
       kind: 'split',
       dir: 'col',
@@ -205,6 +205,8 @@ describe('source control panel — shell integration', () => {
 
     await boot([1, 2])
 
+    expect(panel()).toBeNull()
+    press('g')
     expect(panel()).not.toBeNull()
     await settlePanel()
     const tree = storedTree()
@@ -213,7 +215,7 @@ describe('source control panel — shell integration', () => {
     expect(sessionsIn(loadLayout(GRID_KEY).tree).sort()).toEqual([1, 2])
   })
 
-  it('scopes to the selected workspace even when a stale pane in another workspace was focused', async () => {
+  it('keeps the selected workspace scoped when a stale pane is focused', async () => {
     harness = await renderReadyApp()
     deliverHelloOk({
       sessions: [
@@ -358,19 +360,18 @@ describe('source control panel — shell integration', () => {
     expect(JSON.stringify(storedTree('all'))).not.toContain('"editor"')
   })
 
-  it('expands the side panel without destroying the grid and restores it with Escape', async () => {
+  it('keeps inspector controls in the top bar and preserves panes while open', async () => {
     await boot([1])
     press('g')
     await settlePanel()
     const grid = harness!.container.querySelector<HTMLElement>('.grid-slot')!
     const before = engineCounts()
-    act(() => { panel()!.querySelector<HTMLButtonElement>('[aria-label="Expand side panel"]')!.click() })
-    expect(panel()!.classList.contains('expanded')).toBe(true)
-    expect(grid.getAttribute('aria-hidden')).toBe('true')
-    expect(engineCounts()).toEqual(before)
-    act(() => { panel()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
-    expect(panel()!.classList.contains('expanded')).toBe(false)
+    expect(panel()!.querySelector('[aria-label="Expand side panel"]')).toBeNull()
+    expect(panel()!.querySelector('[aria-label="Close side panel"]')).toBeNull()
     expect(grid.getAttribute('aria-hidden')).toBeNull()
+    expect(engineCounts()).toEqual(before)
+    press('g')
+    expect(panel()).toBeNull()
     expect(engineCounts()).toEqual(before)
   })
 

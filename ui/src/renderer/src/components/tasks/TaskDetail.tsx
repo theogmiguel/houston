@@ -237,6 +237,7 @@ function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTi
   const { task } = detail
   const latestRun = detail.runs[0] ?? null
   const archived = task.archived_at_ms != null
+  const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
   const review = taskReviewOutcome(detail.runs, detail.comments)
   const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
 
@@ -274,6 +275,7 @@ function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTi
       branchReuse={latestRun.branch ?? null}
       pullRequestUrl={task.ref_url ?? null}
     />}
+    {!latestRun && startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={false} onStart={props.onStart} />}
     <div className="grid gap-[var(--space-2)]">
       <SectionHeading heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
       <TaskDrawerCard><AcceptanceList

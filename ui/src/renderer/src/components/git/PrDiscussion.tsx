@@ -65,7 +65,7 @@ function CommentRow({
             onChange={(e) => setDraft(e.target.value)}
             className={TEXTAREA}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-[var(--space-2)]">
             <button
               type="button"
               data-testid={`pr-comment-save-${id}`}
@@ -105,6 +105,8 @@ function ThreadRow({
   busy,
   allowResolve,
   resolveReason,
+  number,
+  onSendToOrchestrator,
   onReply,
   onResolve,
   onReact
@@ -113,6 +115,8 @@ function ThreadRow({
   busy: boolean
   allowResolve: boolean
   resolveReason: string | null
+  number: number
+  onSendToOrchestrator?: (text: string) => void
   onReply: (body: string) => void
   onResolve: (resolved: boolean) => void
   onReact: ReactFn
@@ -147,10 +151,16 @@ function ThreadRow({
       </div>
       {thread.comments.map((comment) => (
         <div key={comment.id} className="flex flex-col gap-0.5" data-testid="pr-thread-comment">
-          <span className={`${SMALL} [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]`}>
-            {comment.author}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`${SMALL} [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]`}>
+              {comment.author}
+            </span>
+            <span className={`${META} ml-auto`} data-testid="pr-thread-comment-time">
+              {Math.max(0, Math.floor((Date.now() / 1000 - comment.created_at) / 60))}m
+            </span>
+          </div>
           <span className={BODY}>{comment.body}</span>
+          {onSendToOrchestrator && <button type="button" className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1 ${SMALL} text-[var(--text-muted)]`} onClick={() => onSendToOrchestrator(`PR #${number} · ${thread.path ?? 'review'}${thread.line ? `:${thread.line}` : ''}\n${comment.author}: ${comment.body}`)}>Send to orchestrator</button>}
           <PrReactions
             reactions={comment.reactions}
             busy={busy}
@@ -190,12 +200,16 @@ function ThreadRow({
 export function PrThreads({
   detail,
   busy,
+  number,
+  onSendToOrchestrator,
   onReply,
   onResolve,
   onReact
 }: {
   detail: PrDetail
   busy: boolean
+  number: number
+  onSendToOrchestrator?: (text: string) => void
   onReply: (threadId: string, body: string) => void
   onResolve: (threadId: string, resolved: boolean) => void
   onReact: ReactFn
@@ -209,6 +223,7 @@ export function PrThreads({
     <Disclosure
       summary="Discussions"
       count={detail.threads.length}
+      defaultOpen={detail.threads.length > 0}
       scrollBody={false}
       className="rounded-none border-0 bg-transparent"
     >
@@ -233,6 +248,8 @@ export function PrThreads({
             busy={busy}
             allowResolve={resolveReason === null}
             resolveReason={resolveReason}
+            number={number}
+            onSendToOrchestrator={onSendToOrchestrator}
             onReply={(body) => onReply(thread.id, body)}
             onResolve={(resolved) => onResolve(thread.id, resolved)}
             onReact={onReact}

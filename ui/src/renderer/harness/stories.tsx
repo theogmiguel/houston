@@ -102,6 +102,7 @@ import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { UiPrimitivesStory } from './uiStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
+import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
   LegacyBranchesStory,
   LegacyBrowserActStory,
@@ -282,5 +283,12 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'tasks/roster': () => <TasksRosterStory />,
   'tasks/queue': () => <TasksQueueStory />,
   'tasks/overview-roster': () => <TasksOverviewRosterStory />,
+  'shell-a/changes-graphite': () => <InspectorChangesGraphite />,
+  'shell-a/changes-paper': () => <InspectorChangesPaper />,
+  'shell-a/pr-graphite': () => <InspectorPrGraphite />,
+  'shell-a/pr-paper': () => <InspectorPrPaper />,
+  'shell-a/files-graphite': () => <InspectorFilesGraphite />,
+  'shell-a/children-graphite': () => <InspectorChildrenGraphite />,
+  'shell-a/children-paper': () => <InspectorChildrenPaper />,
   'settings/tasks': () => <TasksSettingsStory />
 }
