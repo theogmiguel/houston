@@ -87,4 +87,13 @@ describe('Connections matrix', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Add server' })[0])
     expect(screen.getByRole('dialog', { name: 'Add server' })).toBeTruthy()
   })
+
+  it('keeps the server and agent columns when empty, without a hint about cells that are not there', () => {
+    render(<McpManager {...props({ source: [], tools: [], loaded: true })} />)
+    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent)
+    expect(headers).toEqual(expect.arrayContaining(['Server', 'Claude Code', 'Codex', 'OpenCode', 'Cursor']))
+    expect(screen.getByRole('heading', { name: 'No MCP servers' })).toBeTruthy()
+    expect(document.body.textContent).toContain('Not managed here: Grok, Antigravity.')
+    expect(document.body.textContent).not.toContain('Click a cell')
+  })
 })

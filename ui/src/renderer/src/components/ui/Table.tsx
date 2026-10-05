@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from 'react'
-import { IconDatabase } from '../icons'
+import { IconDatabase, type IconComponent } from '../icons'
 import { Notice } from './Notice'
 import { EmptyState } from './EmptyState'
 
@@ -27,7 +27,7 @@ export interface TableProps<T, K extends keyof T = keyof T> {
   'aria-label': string
   rowAction?: (row: T) => ReactNode
   onRowClick?: (row: T) => void
-  empty?: { heading: string; description: string }
+  empty?: { heading: string; description: string; icon?: IconComponent }
   error?: TableError
   variant?: 'plain' | 'framed'
   className?: string
@@ -85,8 +85,9 @@ export function Table<T, K extends keyof T = keyof T>({
     return <Notice tone="danger" action={error.onRetry ? { label: 'Try again', onClick: error.onRetry } : undefined} className={className}>{error.message}</Notice>
   }
 
-  if (rows.length === 0) {
-    return <div className={`py-[var(--space-5)] ${className}`}><EmptyState icon={IconDatabase} {...empty} /></div>
+  const emptyState = <EmptyState icon={empty.icon ?? IconDatabase} heading={empty.heading} description={empty.description} />
+  if (rows.length === 0 && variant !== 'framed') {
+    return <div className={`py-[var(--space-5)] ${className}`}>{emptyState}</div>
   }
 
   return (
@@ -103,6 +104,7 @@ export function Table<T, K extends keyof T = keyof T>({
           </tr>
         </thead>
         <tbody>
+          {rows.length === 0 && <tr><td colSpan={columns.length + (rowAction ? 1 : 0)} className="py-[var(--space-5)]">{emptyState}</td></tr>}
           {rows.map((row) => (
             <tr
               key={getRowId(row)}

@@ -27,7 +27,7 @@ import type { McpToolState } from '../houston/generated/McpToolState'
 import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
 import { Icon } from './Icon'
-import { Button, Caption, Card, ConnectionCell, Drawer, EmptyState, PageFrame, PageHeader, Table, type TableColumn } from './ui'
+import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, type TableColumn } from './ui'
 import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
 
@@ -107,37 +107,33 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         description="MCP servers your agents can use. Houston writes them into each agent's own config."
         actions={<Button variant="primary" icon={IconPlus} onClick={() => setForm({ previousName: null })}>Add server</Button>}
       />
-      {listed.length === 0 ? (
-        <EmptyState icon={IconServer} heading="No MCP servers" description="Add an MCP server to connect it to your agents." />
-      ) : (
-        <Table
-          aria-label="MCP server connections"
-          variant="framed"
-          layout="fixed"
-          rows={displayRows}
-          getRowId={(row) => row.id}
-          columns={columns}
-          rowAction={(display) => {
-            const row = rows.find((item) => item.name === display.id)!
-            const failed = DESTINATIONS.some((tool) => cellFor(row, tool).kind !== 'absent' && checkFor(row.name, props.checks).state === 'failed') || DESTINATIONS.some((tool) => props.tools.find((item) => item.tool === tool)?.error)
-            const label = row.hasDrift ? 'Show diff' : failed ? 'Edit' : null
-            const items = [
-              ...(row.hasDrift ? [{ label: diffRow === row.name ? 'Hide diff' : 'Show diff', onSelect: () => setDiffRow(diffRow === row.name ? null : row.name) }] : []),
-              ...(!row.hasDrift ? [{ label: 'Edit', onSelect: () => setForm({ previousName: row.name }) }] : []),
-              { label: 'Remove', onSelect: () => setConfirmRemove(row.name), tone: 'danger' as const }
-            ]
-            return label
-              ? <Button variant="secondary" size="sm" onClick={() => row.hasDrift ? setDiffRow(diffRow === row.name ? null : row.name) : setForm({ previousName: row.name })}>{label}</Button>
-              : <ActionMenu label={`More actions for ${row.name}`} iconOnly items={items} />
-          }}
-          empty={{ heading: 'No MCP servers', description: 'Add an MCP server to connect it to your agents.' }}
-        />
-      )}
+      <Table
+        aria-label="MCP server connections"
+        variant="framed"
+        layout="fixed"
+        rows={displayRows}
+        getRowId={(row) => row.id}
+        columns={columns}
+        rowAction={(display) => {
+          const row = rows.find((item) => item.name === display.id)!
+          const failed = DESTINATIONS.some((tool) => cellFor(row, tool).kind !== 'absent' && checkFor(row.name, props.checks).state === 'failed') || DESTINATIONS.some((tool) => props.tools.find((item) => item.tool === tool)?.error)
+          const label = row.hasDrift ? 'Show diff' : failed ? 'Edit' : null
+          const items = [
+            ...(row.hasDrift ? [{ label: diffRow === row.name ? 'Hide diff' : 'Show diff', onSelect: () => setDiffRow(diffRow === row.name ? null : row.name) }] : []),
+            ...(!row.hasDrift ? [{ label: 'Edit', onSelect: () => setForm({ previousName: row.name }) }] : []),
+            { label: 'Remove', onSelect: () => setConfirmRemove(row.name), tone: 'danger' as const }
+          ]
+          return label
+            ? <Button variant="secondary" size="sm" onClick={() => row.hasDrift ? setDiffRow(diffRow === row.name ? null : row.name) : setForm({ previousName: row.name })}>{label}</Button>
+            : <ActionMenu label={`More actions for ${row.name}`} iconOnly items={items} />
+        }}
+        empty={{ icon: IconServer, heading: 'No MCP servers', description: 'Add an MCP server to connect it to your agents.' }}
+      />
       {selectedDiff?.source && <section aria-label={`${selectedDiff.name} configuration differences`}><Card className="grid gap-[var(--space-2)] p-[var(--space-2-5)]">
         <DetailCard title="Houston's list" server={selectedDiff.source} />
         {DESTINATIONS.filter((tool) => selectedDiff.byTool[tool] && selectedDiff.byTool[tool]!.fingerprint !== selectedDiff.source!.fingerprint).map((tool) => <DetailCard key={tool} title={label(tool)} server={selectedDiff.byTool[tool]!} />)}
       </Card></section>}
-      <Caption tone="faint">Not managed here: {unmanaged}. Click a cell to turn a server on or off for that agent.</Caption>
+      <Caption tone="faint">Not managed here: {unmanaged}.{listed.length > 0 ? ' Click a cell to turn a server on or off for that agent.' : ''}</Caption>
       <Drawer open={form !== null} heading={form?.previousName ? `Edit ${form.previousName}` : 'Add server'} onClose={() => setForm(null)}>
         {form && <McpServerForm
           previousName={form.previousName}
