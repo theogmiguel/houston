@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidePanel } from './SidePanel'
 import type { SourceControlPanelProps } from './SourceControlPanel'
@@ -36,6 +36,15 @@ function props(sessions: ReadonlyMap<number, SessionInfo>, activeSessionId: numb
 }
 
 describe('pane inspector focus', () => {
+  it('returns keyboard focus to the grid on Escape', () => {
+    const onFocusGrid = vi.fn()
+    const focused = props(new Map([[1, session(1, 'session')]]), 1)
+    render(<SidePanel {...focused} onFocusGrid={onFocusGrid} />)
+
+    fireEvent.keyDown(screen.getByTestId('side-panel'), { key: 'Escape' })
+    expect(onFocusGrid).toHaveBeenCalledOnce()
+  })
+
   it('follows focus changes and clears the subject when its pane closes', () => {
     const first = session(1, 'first pane')
     const second = session(2, 'second pane')
