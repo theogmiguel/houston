@@ -84,7 +84,10 @@ five attempts, and the status line names it.
    sends the requester no notification. A request whose task is canceled, finished or
    archived in Houston before it starts gets 🚫 too. Requests always start with Claude in
    a new worktree, as a Start does; the brief tells the agent to follow the repository's
-   own factory skill when there is one and to hand the task back when done.
+   own factory skill when there is one and to hand the task back when done. The accept
+   honours the readiness rule of [Tasks](tasks.md#starting-a-task), except that a Slack
+   request needs no acceptance item: a request whose task has an open `[?]` item or an
+   unfinished blocker is not started, and the owner's message says what is missing.
 3. At most two Slack runs work at once. A run waiting for an answer or for a confirmation
    in Houston does not count. A request accepted beyond the limit waits with
    **Slack · queued #n**, the owner's message shows its place, and it starts when a slot

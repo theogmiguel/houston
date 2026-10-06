@@ -39,6 +39,14 @@ these; changes save when a field loses focus. Only one revision is saved at a ti
 task changed elsewhere first, a **This task changed elsewhere** banner appears with **Reload**
 before you overwrite anything.
 
+**Blocked by** lists the tasks this one waits for: add one from the picker, remove one with
+its chip. A blocker that already waits for this task is refused, since the two could never
+start. A task with children shows how many are done beside its title (`2/3`); a canceled
+child leaves the count. Use a parent task to group the slices of one delivery.
+
+The detail lists the external items a task mirrors, such as the Slack request or the GitHub
+issue it came from; click a link to open its page.
+
 A task created from a Harness finding keeps its source finding key and review. Tasks made from
 Harness show that origin in their details and list rows. A finding can have several linked fix
 tasks over time; only one linked task may remain open at once.
@@ -48,6 +56,13 @@ as the recorded changes, with a composer below. The task menu in the detail head
 the task; an archived task shows the same menu with **Restore task**.
 
 ## Starting a task
+
+A task is **ready** when it has a workspace, at least one acceptance item, no open question
+and no unfinished blocker. An open question is an acceptance item that starts with `[?]`, for
+example `[?] Which endpoint does the form call?`; rewrite the item once it is answered. A task
+filed from Slack needs no acceptance item, because its triage writes its own. Start refuses a
+task that is not ready and names what it lacks; **Start anyway** on that message starts it
+regardless. Agents and the Slack owner's accept never start a task that is not ready.
 
 A task detail's **Start** button launches an agent for the task. Start requires a workspace;
 for an unassigned task, choose one beside the agent before starting. Houston creates a git
@@ -62,8 +77,10 @@ brief is delivered. **Send** (the default) submits the brief as the pane's first
 **Prefill** types it into the input box without sending it, so you can review and press
 Enter yourself.
 
-The brief is assembled from the task's key, title, description and acceptance list, and its
-text is wrapped in explicit data markers so the agent treats it as untrusted data. The whole
+The brief is assembled from the task's key, title, description, acceptance list and links,
+and its text is wrapped in explicit data markers so the agent treats it as untrusted data. For
+a task linked to a GitHub issue the brief also asks for `Closes <owner>/<repo>#<n>` in the
+pull request, so merging it closes the issue. The whole
 brief is capped; a task too large to fit is refused by name instead of truncated.
 
 A pane can also take a task with `hs-task claim` or the `task_claim` tool: that records the
@@ -83,7 +100,7 @@ on its own.
 A top-level agent pane that may spawn children can work the backlog through MCP:
 `task_execute` starts one task assigned to its own workspace as its child (the same worktree and brief as Start) and
 `task_review` opens an independent reviewer for a run. The Children roster's queue runs the
-next tasks in that orchestrator’s workspace: it picks the top ready tasks — todo with no unfinished blocker, priority order,
+next tasks in that orchestrator’s workspace: it picks the top ready tasks — todo and ready as described above, priority order,
 then oldest — and starts them as children of that pane. This is all or nothing: when the
 pane has fewer free child slots than asked, nothing starts and the refusal names the cap,
 the free count and the requested count. Nothing is queued silently.
@@ -130,7 +147,9 @@ it may spawn children — or, when its provider cannot use MCP, through the `hs-
 Every tool that takes an `id` accepts either the task key (`HOU-42`, case-insensitive) or the numeric id, resolved globally. Reading another workspace’s task does not grant permission to change it.
 `task_claim` moves a backlog or todo task to **In progress**
 and records which pane took it; `task_handback` writes the agent's summary as a comment and
-moves the task to **In review**. Neither closes a task: **Done** stays the user's decision.
+moves the task to **In review**. Neither closes a task: **Done** stays the user's decision,
+and an agent's `task_update` or `task_create` with status `done` is refused. `task_update`
+also sets `blocked_by` (task keys) and reads it back from `task_get`.
 Task text an agent reads is labelled untrusted data, and each text field is capped so one
 task cannot fill the agent's context. Child panes of an agent have no task tools at all:
 their scope is the brief they were spawned with.
@@ -145,15 +164,33 @@ their scope is the brief they were spawned with.
     hs-task comment [HOU-n] TEXT
     hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
     hs-task handback [HOU-n] --summary T
-    hs-task ask QUESTION                (a Slack-filed task: asks in its thread)
+    hs-task ask --question Q --option A --option B [--option …] --recommended N
+                [--why T] [--context T]  (a Slack-filed task: asks in its thread)
 
 The task key defaults to `$HOUSTON_TASK` when a task started the pane; otherwise pass
 `HOU-n`. Priorities are `1` urgent through `4` low.
 
+## GitHub Issues
+
+Settings ▸ Tasks ▸ GitHub Issues connects a workspace whose git remote is on github.com to its
+repository's issues. It is off by default and works through your own `gh` login; Houston keeps
+no GitHub token. The settings show the current state, the repository, the last sync and the
+last error.
+
+- **Import issues**: open issues carrying the **Label**, and open issues assigned to your
+  `gh` user, become **Backlog** tasks linked to their issue. The issue's unchecked task-list
+  items (`- [ ]`) become acceptance items. An issue is imported once; later edits on GitHub
+  do not overwrite the task. Importing never starts a task.
+- **Open an issue for every new task**: a task you create in that workspace opens an issue
+  with its title, description and acceptance list. Without it, choose **Open GitHub issue**
+  in a task's menu.
+- When a linked task is handed back, Houston comments on its issue once per run with the
+  branch and the pull request `gh` finds for it.
+
 ## What leaves the machine
 
 Tasks live in Houston's local database as a global backlog. Houston sends no task text to any
-service. A task's title, description and acceptance only reach a hosted agent CLI if an
+service unless a workspace's GitHub Issues connector is on, as described below. A task's title, description and acceptance only reach a hosted agent CLI if an
 agent you allowed reads it, and the brief a Start submits reaches the agent you started;
 a default or per-task reviewer sends the task text, the acceptance list and the
 implementation summary to the reviewer CLI as well. Access is per workspace and starts at
@@ -163,7 +200,15 @@ attribution survives the pane.
 Tasks filed from Slack mentions are described in [Slack requests](slack.md), including
 what that connection sends.
 
-The only network call Tasks makes on its own is the merge check: while a task is in review
-with a run branch, Houston runs the GitHub CLI (`gh pr view`) in that task's worktree every
-five minutes. The request goes to GitHub with your `gh` credentials; Houston itself sends
-nothing. With `gh` absent or signed out the task simply stays in review.
+Tasks makes these network calls on its own, all through the GitHub CLI with your `gh`
+credentials:
+
+- The merge check: while a task is in review with a run branch, Houston runs `gh pr view` in
+  that task's worktree every five minutes. With `gh` absent or signed out the task simply
+  stays in review.
+- With a workspace's GitHub Issues connector on, Houston lists that repository's open issues
+  with the label and assigned to your `gh` user (`gh api`), every minute while the app is
+  open and every five minutes otherwise; an unchanged list costs no GitHub rate limit. It
+  sends the title, description and acceptance list of a task it opens an issue for, and a
+  comment with the task key, the branch name and the pull request link when a linked task is
+  handed back. Nothing else from the backlog is sent.

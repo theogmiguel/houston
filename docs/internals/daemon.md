@@ -361,7 +361,7 @@ only on rare control-plane events — the PTY path never touches SQLite.
 |---|---|
 | workspaces and sessions | `workspaces`, `sessions` |
 | routines | `routines`, `routine_runs` |
-| tasks | `backlog_tasks`, `backlog_task_counters`, `backlog_task_acceptance`, `backlog_task_blocks`, `backlog_task_comments`, `backlog_task_history`, `backlog_task_runs` — one global backlog with optional workspace bindings; `workspace_remove` unassigns tasks and interrupts their open runs, preserving rows and history |
+| tasks | `backlog_tasks`, `backlog_task_counters`, `backlog_task_acceptance`, `backlog_task_blocks`, `backlog_task_comments`, `backlog_task_history`, `backlog_task_runs`, `backlog_task_links`, `backlog_task_link_outbox` — one global backlog with optional workspace bindings and links to external items; `workspace_remove` unassigns tasks and interrupts their open runs, preserving rows and history |
 | agent accounts | `agent_profiles` |
 | terminal history | `command_history` |
 | remote | `ssh_profiles` |
@@ -384,9 +384,13 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns six tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns nine tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
-`worktree_cleanup_loop` and `task_pr_watch_loop`. The task PR watch is not gated by
+`worktree_cleanup_loop`, `task_pr_watch_loop`, `pr_watch_loop`, `slack_loops` and
+`task_github_loop`. The GitHub Issues loop polls only workspaces whose connector is on,
+every `TASK_GITHUB_POLL_ACTIVE_MS` while a client is connected and
+`TASK_GITHUB_POLL_IDLE_MS` otherwise; it sends its outbox before it imports, so an issue it
+just opened is linked before the next list names it. The task PR watch is not gated by
 `worktree_cleanup_enabled`: every `TASK_PR_WATCH_INTERVAL_MS` it runs one `gh pr view` in
 the worktree of each in-review task that has a run branch. A merged PR records `done` with
 `houston:pr-merged` in history; a missing or unauthenticated `gh`, or a branch with no PR,
