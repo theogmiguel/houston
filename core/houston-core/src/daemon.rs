@@ -8408,9 +8408,7 @@ impl Daemon {
             if let Some(launcher) = self.cli_launcher() {
                 crate::session_isolation::resolve_program(&mut cmd)
                     .with_context(|| format!("resolving Codex for session {id}"))?;
-                let directory = tempfile::Builder::new()
-                    .prefix("houston-codex-")
-                    .tempdir_in("/tmp")
+                let directory = crate::codex_pane::private_socket_dir()
                     .context("creating a private Codex socket directory")?;
                 crate::codex_pane::wrap(
                     &mut cmd,

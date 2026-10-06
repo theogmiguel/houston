@@ -138,11 +138,71 @@ mod linux {
     };
 
     const RPC_TIMEOUT: Duration = Duration::from_secs(2);
+
+    /// Codex refuses an app-server socket whose parent directory other users can
+    /// write, and `tempfile` only applies the umask, so the mode is set explicitly.
+    pub fn private_socket_dir() -> std::io::Result<tempfile::TempDir> {
+        use std::os::unix::fs::PermissionsExt;
+        tempfile::Builder::new()
+            .prefix("houston-codex-")
+            .permissions(std::fs::Permissions::from_mode(0o700))
+            .tempdir_in("/tmp")
+    }
     const POLL_INTERVAL: Duration = Duration::from_millis(250);
     // Keep ownership checks responsive without a continuous 40 Hz process poll.
     const OWNER_POLL_INTERVAL: Duration = Duration::from_millis(250);
     // Summary-only responses stay small; never buffer the provider's transcript stream.
     const FRAME_CAP: usize = 64 * 1024;
+
+    // Codex prints its startup refusal in a few lines; older output is dropped so a
+    // long-lived server's stderr never grows memory.
+    const STDERR_TAIL_CAP: usize = 4 * 1024;
+
+    /// Drains a child's stderr for its whole life and keeps only the newest bytes.
+    struct StderrTail {
+        bytes: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+        reader: std::thread::JoinHandle<()>,
+    }
+
+    impl StderrTail {
+        fn capture(source: impl std::io::Read + Send + 'static) -> Self {
+            let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let sink = bytes.clone();
+            let reader = std::thread::spawn(move || {
+                let mut source = source;
+                let mut chunk = [0u8; 1024];
+                while let Ok(read) = source.read(&mut chunk) {
+                    if read == 0 {
+                        break;
+                    }
+                    let mut tail = sink.lock().unwrap_or_else(|poison| poison.into_inner());
+                    tail.extend_from_slice(&chunk[..read]);
+                    let excess = tail.len().saturating_sub(STDERR_TAIL_CAP);
+                    tail.drain(..excess);
+                }
+            });
+            Self { bytes, reader }
+        }
+
+        /// The captured tail after the writer exited; a descendant still holding the
+        /// pipe open only shortens the wait, never blocks it.
+        fn text(&self) -> String {
+            let deadline = std::time::Instant::now() + Duration::from_millis(200);
+            while !self.reader.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let tail = self
+                .bytes
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            let text = String::from_utf8_lossy(&tail).trim().to_string();
+            if text.is_empty() {
+                "no stderr output".into()
+            } else {
+                text
+            }
+        }
+    }
 
     struct SocketCleanup(PathBuf);
 
@@ -369,13 +429,20 @@ mod linux {
         server_command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         server_command.process_group(0);
         let mut server = OwnedChild::new(
             server_command
                 .spawn()
                 .context("starting pane-owned Codex app-server")?,
             true,
+        );
+        let server_stderr = StderrTail::capture(
+            server
+                .child
+                .stderr
+                .take()
+                .ok_or_else(|| anyhow!("Codex app-server stderr pipe is unavailable"))?,
         );
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -384,13 +451,19 @@ mod linux {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
             loop {
                 if server_has_exited(server.child.id())? {
-                    bail!("pane-owned Codex app-server exited during startup");
+                    bail!(
+                        "pane-owned Codex app-server exited during startup: {}",
+                        server_stderr.text()
+                    );
                 }
                 if Rpc::connect(&socket).await.is_ok() {
                     return Ok(());
                 }
                 if tokio::time::Instant::now() >= deadline {
-                    bail!("pane-owned Codex app-server did not become ready within 10 seconds");
+                    bail!(
+                        "pane-owned Codex app-server did not become ready within 10 seconds: {}",
+                        server_stderr.text()
+                    );
                 }
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }
@@ -404,7 +477,10 @@ mod linux {
                 break status;
             }
             if server_has_exited(server.child.id())? {
-                bail!("pane-owned Codex app-server exited before the TUI");
+                bail!(
+                    "pane-owned Codex app-server exited before the TUI: {}",
+                    server_stderr.text()
+                );
             }
             std::thread::sleep(Duration::from_millis(25));
         };
@@ -532,9 +608,7 @@ mod linux {
                 }
             }
         }
-        let directory = tempfile::Builder::new()
-            .prefix("houston-codex-")
-            .tempdir_in("/tmp")?;
+        let directory = private_socket_dir()?;
         let socket = directory.path().join("app.sock");
         let mut forwarded = vec![
             socket.into_os_string(),
@@ -828,6 +902,42 @@ mod linux {
         use super::*;
 
         #[test]
+        fn stderr_tail_keeps_the_newest_bytes_within_its_cap() {
+            let mut output = vec![b'x'; STDERR_TAIL_CAP * 3];
+            output.extend_from_slice(b"\nError: socket parent must be private\n");
+            let tail = StderrTail::capture(std::io::Cursor::new(output));
+            let text = tail.text();
+            assert!(
+                text.ends_with("Error: socket parent must be private"),
+                "tail was {text:?}"
+            );
+            assert!(
+                text.len() <= STDERR_TAIL_CAP,
+                "tail length {} exceeds cap {STDERR_TAIL_CAP}",
+                text.len()
+            );
+            assert_eq!(
+                StderrTail::capture(std::io::empty()).text(),
+                "no stderr output"
+            );
+        }
+
+        #[test]
+        fn socket_directory_is_private_regardless_of_umask() {
+            use std::os::unix::fs::PermissionsExt;
+            let directory = private_socket_dir().unwrap();
+            let mode = std::fs::metadata(directory.path())
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o777,
+                0o700,
+                "socket directory mode {mode:o}, expected 700"
+            );
+        }
+
+        #[test]
         fn startup_metadata_rejects_native_children_and_unresolved_directories() {
             let cwd = tempfile::tempdir().unwrap();
             let root = json!({"id":"root", "source":"cli", "cwd":cwd.path(), "agentRole":null});
@@ -844,7 +954,7 @@ mod linux {
 }
 
 #[cfg(target_os = "linux")]
-pub use linux::{observe, run, run_shell};
+pub use linux::{observe, private_socket_dir, run, run_shell};
 
 #[cfg(test)]
 mod tests {
