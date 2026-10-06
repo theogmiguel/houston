@@ -188,7 +188,6 @@ describe('every chrome theme cuts its own custom ground', () => {
       ['NewSessionComposer.tsx', 'components'],
       ['FirstRun.tsx', 'components'],
       ['nav/SkillsSurface.tsx', 'components'],
-      ['nav/McpSurface.tsx', 'components'],
       ['nav/HooksSurface.tsx', 'components'],
       ['nav/RoutinesSurface.tsx', 'components'],
       ['WorkspacesEmpty.tsx', 'components']
@@ -203,6 +202,12 @@ describe('every chrome theme cuts its own custom ground', () => {
       expect(rootCls, `${file}: the root must not paint an opaque ground over the picture`)
         .not.toContain('bg-background')
     }
+  })
+
+  it('MCP surfaces use the shared material role', () => {
+    const src = readFileSync(resolve(__dirname, 'nav/McpSurface.tsx'), 'utf8')
+    expect(src).toContain('<MaterialSurface')
+    expect(src).toContain('contentEdges')
   })
 
   it('every edge-to-edge screen cuts the same concave corner as the grid', () => {
@@ -229,7 +234,6 @@ describe('every chrome theme cuts its own custom ground', () => {
       'FirstRun.tsx',
       'WorkspacesEmpty.tsx',
       'nav/SkillsSurface.tsx',
-      'nav/McpSurface.tsx',
       'nav/HooksSurface.tsx',
       'nav/RoutinesSurface.tsx'
     ]

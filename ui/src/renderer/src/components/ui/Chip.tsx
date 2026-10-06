@@ -4,7 +4,7 @@ import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 
-export type ChipVariant = 'state' | 'provider' | 'count' | 'compound' | 'removable'
+export type ChipVariant = 'state' | 'provider' | 'count' | 'compound' | 'removable' | 'choice'
 export type ChipTone = 'default' | 'info' | 'success' | 'warning' | 'danger'
 
 export interface ChipProps {
@@ -21,6 +21,10 @@ export interface ChipProps {
   onClick?: () => void
   onRemove?: () => void
   className?: string
+}
+
+export function ChoiceGroup({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <div className="flex flex-wrap gap-[var(--space-2)]">{children}</div>
 }
 
 const TONE_CLASS: Record<ChipTone, string> = {
@@ -58,7 +62,7 @@ export function Chip({
   className = ''
 }: ChipProps): React.JSX.Element {
   const isPressable = variant === 'removable' || !!onClick
-  const shapeRadius = isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'
+  const shapeRadius = variant === 'choice' ? 'rounded-[var(--tr-radius-sm)]' : isPressable ? 'rounded-[var(--tr-radius-pill)]' : 'rounded-[var(--tr-radius-sm)]'
 
   let content: React.ReactNode
   // `undefined` is "not fetched yet", `0` is a fetched, known-zero tally — the two
@@ -89,9 +93,9 @@ export function Chip({
         aria-pressed={isPressable ? selected : undefined}
         disabled={isPressable ? disabled : undefined}
         onClick={isPressable && !disabled ? onClick : undefined}
-        className={`inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${TONE_CLASS[tone]} ${
-          isPressable ? 'cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96]' : ''
-        } ${selected ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--text-primary)]' : ''} ${
+        className={`${variant === 'choice' ? `btn min-h-[var(--h-ctl)] px-[var(--space-choice-x)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default disabled:opacity-60 ${selected ? 'bg-[var(--selected-fill)] font-semibold text-[var(--text-primary)]' : 'bg-[var(--hover-fill)] font-medium text-[var(--text-secondary)] hover:not-disabled:bg-[var(--selected-fill)] hover:not-disabled:text-[var(--text-primary)]'}` : `inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] ${shapeRadius} ${TONE_CLASS[tone]}`} ${
+          isPressable && variant !== 'choice' ? 'cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96]' : ''
+        } ${selected && variant !== 'choice' ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--text-primary)]' : ''} ${
           disabled ? 'opacity-50 cursor-not-allowed' : ''
         } focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] ${className}`}
       >

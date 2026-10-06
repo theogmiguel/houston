@@ -17,6 +17,7 @@ import type { HarnessFinding } from '../src/houston/generated/HarnessFinding'
 import type { HarnessReview } from '../src/houston/generated/HarnessReview'
 import type { HarnessState } from '../src/houston/useHarness'
 import type { McpServer } from '../src/houston/generated/McpServer'
+import type { McpSyncResult } from '../src/houston/generated/McpSyncResult'
 import type { McpToolState } from '../src/houston/generated/McpToolState'
 import type { Routine } from '../src/houston/routineTypes'
 import type { RoutineRun } from '../src/houston/generated/RoutineRun'
@@ -298,7 +299,7 @@ function mcpColumn(tool: McpToolState['tool'], servers: McpServer[], detected = 
   return { tool, path: `/home/dev/.${tool}/config.json`, detected, servers, error: null }
 }
 
-export function NavMcp({ slackClient = null }: { slackClient?: HoustonClient | null } = {}): React.JSX.Element {
+export function NavMcp({ slackClient = null, results = [] }: { slackClient?: HoustonClient | null; results?: McpSyncResult[] } = {}): React.JSX.Element {
   return (
     <Frame active="Connections">
       <McpSurface
@@ -309,7 +310,7 @@ export function NavMcp({ slackClient = null }: { slackClient?: HoustonClient | n
           mcpColumn('opencode', [mcpServer('linear', 'L'), mcpServer('postgres-local', 'OP')]),
           mcpColumn('cursor', [mcpServer('postgres-local', 'P')])
         ]}
-        results={[]}
+        results={results}
         checks={[["github", { state: 'failed', message: 'npx was not found on PATH' }]]}
         loaded
         onRefresh={noop}
@@ -336,6 +337,28 @@ export function NavMcpDetail(): React.JSX.Element {
       <NavMcp />
     </div>
   )
+}
+
+export function NavMcpForm(): React.JSX.Element {
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    const manager = ref.current
+    if (!manager) return
+    const openForm = (): boolean => {
+      const button = [...manager.querySelectorAll<HTMLButtonElement>('[data-testid="mcp-manager"] button')]
+        .find((item) => item.textContent?.includes('Add server'))
+      if (!button) return false
+      button.click()
+      return true
+    }
+    if (openForm()) return
+    const observer = new MutationObserver(() => {
+      if (openForm()) observer.disconnect()
+    })
+    observer.observe(manager, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+  return <div ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0, height: '100%' }}><NavMcp results={[{ tool: 'claude', written: 3, removed: 0, skipped: [], error: null }]} /></div>
 }
 
 function hook(o: Partial<AgentHookState>): AgentHookState {

@@ -10,7 +10,7 @@ const cardClasses = variants('border', {
     surface: 'border-[var(--border)] bg-[var(--surface)]'
   },
   shape: { button: 'rounded-[var(--tr-radius-button)]', card: 'rounded-[var(--tr-radius-card)]', inset: 'rounded-[var(--tr-radius-sm)]' },
-  padding: { none: '', md: 'p-[var(--space-3)]' },
+  padding: { none: '', md: 'p-[var(--space-3)]', sm: 'p-[var(--space-2-5)]' },
   disabled: { false: '', true: 'opacity-50' },
   clip: { false: 'overflow-visible', true: 'overflow-hidden' }
 }, { tone: 'default', shape: 'button', padding: 'none', disabled: 'false', clip: 'true' })
@@ -21,7 +21,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   disabled?: boolean
   clip?: boolean
   shape?: 'button' | 'card' | 'inset'
-  padding?: 'none' | 'md'
+  padding?: 'none' | 'md' | 'sm'
   className?: string
 }
 

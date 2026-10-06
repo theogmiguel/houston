@@ -21,7 +21,6 @@ BASELINE=(
   "ui/src/renderer/src/components/FirstRun.tsx 0"
   "ui/src/renderer/src/components/HandoffOverlay.tsx 0"
   "ui/src/renderer/src/components/HostKeyModal.tsx 0"
-  "ui/src/renderer/src/components/McpManager.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 1"
   "ui/src/renderer/src/components/ui/panelChrome.ts 1"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 1"
@@ -31,7 +30,6 @@ BASELINE=(
   "ui/src/renderer/src/components/Sidebar.tsx 10"
   "ui/src/renderer/src/components/SkillsView.tsx 8"
   "ui/src/renderer/src/components/SshConnectModal.tsx 0"
-  "ui/src/renderer/src/components/UsageSection.tsx 1"
   "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
   "ui/src/renderer/src/pane/TerminalPane.tsx 3"
 )

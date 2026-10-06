@@ -1,6 +1,6 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
 export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
 export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui'
@@ -24,7 +24,8 @@ const SIZE: Record<TextSize, string> = {
   fileStatus: '[font-size:var(--tr-text-file-status)]',
   'shortcut-label': '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-shortcut-group-tracking)] uppercase',
   rosterName: '[font-size:var(--tr-text-roster-name-size)]',
-  rosterDetail: '[font-size:var(--tr-text-roster-detail-size)]'
+  rosterDetail: '[font-size:var(--tr-text-roster-detail-size)]',
+  large: '[font-size:var(--tr-text-lg)]'
 }
 
 const WEIGHT: Record<TextWeight, string> = {

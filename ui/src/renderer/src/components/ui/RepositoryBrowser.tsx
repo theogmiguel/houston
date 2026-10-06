@@ -27,7 +27,7 @@ export function RepositorySearchForm({ children, ...props }: FormHTMLAttributes<
   return <form {...props} className={`flex items-center gap-[var(--space-2)] ${props.className ?? ''}`}>{children}</form>
 }
 
-export function RepositorySearchField(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'width'>): React.JSX.Element {
+export function RepositorySearchField(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'>): React.JSX.Element {
   return <TextInput {...props} font="small" padding="compact" className={`h-[var(--h-ctl)] flex-1 min-w-0 focus-visible:outline-none focus-visible:border-[var(--border-focus)] ${props.className ?? ''}`} />
 }
 

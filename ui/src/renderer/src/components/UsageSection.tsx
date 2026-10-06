@@ -28,7 +28,7 @@ import {
 import { Icon } from './ui/Icon'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
-import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar } from './ui'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageToolbar, UsageContentFrame, UsageStatCell, UsageHeroValue, UsageHeroCaption, UsageChartHeading, UsageBody, UsageError, UsageProviderList, UsageChartHeader, UsageTotalsStrip, UsageTotalsSection, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup, UsageHeroLayout, UsageHeroColumn, UsageHeroSummary, UsageToolbarActions } from './ui'
 import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
@@ -42,26 +42,6 @@ const PROVIDER_COLOR: Record<UsageProvider, string> = {
 const PROVIDER_MARK: Record<UsageProvider, string> = {
   claude: '✳',
   codex: '◎'
-}
-
-function StatCell({
-  label,
-  value,
-  note
-}: {
-  label: string
-  value: string
-  note: string
-}): React.JSX.Element {
-  return (
-    <div className="grid min-w-0 gap-[var(--space-1)]">
-      <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">{label}</div>
-      <div className="text-[length:var(--tr-text-lg)] font-medium tabular-nums text-[var(--text-primary)]">
-        {value}
-      </div>
-      <div className="sr-only">{note}</div>
-    </div>
-  )
 }
 
 function UsageHero({
@@ -84,20 +64,19 @@ function UsageHero({
   labelFor: (point: SeriesPoint) => string
 }): React.JSX.Element {
   return (
-    <div className="grid grid-cols-1 gap-[var(--space-5)] lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
-      <div className="min-w-0">
-        <div
-          data-testid="usage-headline"
-          className="mt-[var(--space-2)] text-[length:var(--tr-text-title-size)] font-[var(--tr-text-title-weight)] tracking-[var(--tr-text-title-tracking)] tabular-nums text-[var(--text-primary)]"
-        >
-          {heroValue}
-        </div>
-        <div className="mt-[var(--space-1)] flex items-center gap-[var(--space-1)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-muted)]">
-          {sessions.toLocaleString('en-US')} sessions · {metric === 'cost' ? 'API estimate' : 'processed tokens'}
-          {metric === 'cost' && <Tooltip label="Estimated at the published full API rate. Subscriptions are billed separately."><span aria-label="API estimate details" role="img"><Icon glyph={IconInfo} role="small" /></span></Tooltip>}
-        </div>
+    <UsageHeroLayout>
+      <UsageHeroColumn>
+        <UsageHeroSummary>
+          <UsageHeroValue data-testid="usage-headline">
+            {heroValue}
+          </UsageHeroValue>
+          <UsageHeroCaption>
+            {sessions.toLocaleString('en-US')} sessions · {metric === 'cost' ? 'API estimate' : 'processed tokens'}
+            {metric === 'cost' && <Tooltip label="Estimated at the published full API rate. Subscriptions are billed separately."><span aria-label="API estimate details" role="img"><Icon glyph={IconInfo} role="small" /></span></Tooltip>}
+          </UsageHeroCaption>
+        </UsageHeroSummary>
 
-        <div className="mt-[var(--space-3)] flex flex-col gap-[var(--space-3)]">
+        <UsageProviderList>
           {providers.map((p) => {
             return (
               <UsageProviderRow
@@ -111,25 +90,25 @@ function UsageHero({
               />
             )
           })}
-        </div>
-      </div>
+        </UsageProviderList>
+      </UsageHeroColumn>
 
-      <div className="min-w-0">
-        <div className="mb-[var(--space-3)] flex flex-wrap items-center justify-between gap-[var(--space-2)]">
-          <div className="text-[length:var(--tr-text-lg)] font-semibold tracking-[-0.006em] text-[var(--text-primary)]">
+      <UsageHeroColumn>
+        <UsageChartHeader>
+          <UsageChartHeading>
             {windowDef.hourly ? 'Hourly' : 'Daily'} {metric === 'cost' ? 'cost' : 'processed tokens'}
-          </div>
-        </div>
+          </UsageChartHeading>
+        </UsageChartHeader>
         <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />
-      </div>
-    </div>
+      </UsageHeroColumn>
+    </UsageHeroLayout>
   )
 }
 
 function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element {
   return (
-    <div className="mt-[var(--space-2)] grid grid-cols-2 py-[var(--space-2)] sm:grid-cols-5">
-      <StatCell
+    <UsageTotalsStrip>
+      <UsageStatCell
         label="Processed tokens"
         value={formatTokens(totals.tokens)}
         note={
@@ -138,19 +117,19 @@ function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element
             : 'no active days in this window'
         }
       />
-      <StatCell
+      <UsageStatCell
         label="Cached input"
         value={formatTokens(totals.cachedInput)}
         note={`${formatShare(
           totals.cachedInput / Math.max(1, totals.cachedInput + totals.uncachedInput + totals.cacheCreation)
         )} of observed input`}
       />
-      <StatCell
+      <UsageStatCell
         label="Uncached input"
         value={formatTokens(totals.uncachedInput)}
         note={`${formatTokens(totals.cacheCreation)} cache writes`}
       />
-      <StatCell
+      <UsageStatCell
         label="Output"
         value={formatTokens(totals.output)}
         note={
@@ -159,7 +138,7 @@ function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element
             : 'no reasoning tokens reported'
         }
       />
-      <StatCell
+      <UsageStatCell
         label="Cache savings"
         value={formatUsd(totals.cacheSavings)}
         note={
@@ -168,7 +147,7 @@ function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element
             : 'nothing priced in this window'
         }
       />
-    </div>
+    </UsageTotalsStrip>
   )
 }
 
@@ -184,8 +163,8 @@ function UsageBreakdown({
   loading: boolean
 }): React.JSX.Element {
   return (
-    <>
-      <div className="mt-[var(--space-5)] flex items-center justify-between gap-[var(--space-3)]">
+    <UsageBreakdownSection>
+      <UsageBreakdownHeading>
         <UsageSectionHeading>Breakdown</UsageSectionHeading>
         <Segmented
           aria-label="Breakdown grouping"
@@ -196,9 +175,9 @@ function UsageBreakdown({
           value={mode}
           onChange={onModeChange}
         />
-      </div>
+      </UsageBreakdownHeading>
 
-      <div data-testid="usage-breakdown" className="mt-[var(--space-2)]">
+      <UsageBreakdownFrame data-testid="usage-breakdown">
         <Table
           variant="plain"
           aria-label="Usage breakdown"
@@ -206,20 +185,20 @@ function UsageBreakdown({
           getRowId={(row) => row.id}
           empty={{ heading: loading ? 'Reading transcripts…' : 'No activity in this window.', description: '' }}
           columns={[
-            { key: 'rank', header: '#', width: '28px', tone: 'faint' },
+            { key: 'rank', header: '#', width: 'var(--w-usage-rank)', tone: 'faint' },
             { key: 'id', header: mode === 'model' ? 'Model' : 'Day', render: (id, row) => {
               const mark = row.provider ? PROVIDER_MARK[row.provider] : null
               return mode === 'model'
                 ? <UsageModelCell mark={mark} name={String(id)} share={row.share} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} />
                 : <span>{id}</span>
             } },
-            { key: 'cost', header: 'Cost', width: '100px', numeric: true, weight: 'regular', render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span>not priced</span></Tooltip> : formatUsd(Number(cost)) },
-            { key: 'share', header: 'Share', width: '76px', numeric: true, tone: 'muted', render: (share) => formatShare(Number(share)) },
-            { key: 'tokens', header: 'Tokens', width: '88px', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) }
+            { key: 'cost', header: 'Cost', width: 'var(--w-usage-cost)', numeric: true, weight: 'regular', render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span>not priced</span></Tooltip> : formatUsd(Number(cost)) },
+            { key: 'share', header: 'Share', width: 'var(--w-usage-share)', numeric: true, tone: 'muted', render: (share) => formatShare(Number(share)) },
+            { key: 'tokens', header: 'Tokens', width: 'var(--w-usage-tokens)', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) }
           ]}
         />
-      </div>
-    </>
+      </UsageBreakdownFrame>
+    </UsageBreakdownSection>
   )
 }
 
@@ -342,9 +321,9 @@ export function UsageSection({
 
   return (
     <main className="h-full min-h-0 w-full overflow-y-auto" data-testid="nav-surface" data-page="usage">
-      <div className="flex min-h-[48px] flex-wrap items-center gap-[var(--space-2)] border-b border-[var(--divider)] px-[var(--space-3)] py-[var(--space-2)]" data-testid="usage-toolbar">
-        <h1 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">Usage</h1>
-        <span className="text-[var(--text-faint)]">/</span>
+      <UsageToolbar>
+        <Text as="h1" size="ui" weight="semibold" tone="primary" flush>Usage</Text>
+        <Text tone="faint">/</Text>
         <Select
           aria-label="Usage workspace"
           data-testid="usage-workspace"
@@ -352,8 +331,8 @@ export function UsageSection({
           options={[{ value: 'all', label: 'All workspaces' }, ...workspaces.map((workspace) => ({ value: workspace.path, label: workspace.name }))]}
           onChange={setSelectedWorkspace}
         />
-        <span data-testid="usage-range" className="text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] tabular-nums">{rangeLabel}</span>
-        <span className="ml-auto flex items-center gap-[var(--space-2)]">
+        <Text data-testid="usage-range" size="small" tone="muted" tabular>{rangeLabel}</Text>
+        <UsageToolbarActions>
           <Segmented aria-label="Usage metric" options={[
             { value: 'cost', label: 'Cost' }, { value: 'tokens', label: 'Tokens' },
             { value: 'limits', label: 'Limits', disabled: true, disabledReason: 'A quota reader is not available yet' }
@@ -362,26 +341,18 @@ export function UsageSection({
           <Tooltip label="Re-scan usage">
             <Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} />
           </Tooltip>
-        </span>
-      </div>
+        </UsageToolbarActions>
+      </UsageToolbar>
 
-      <div className="mx-auto grid w-full max-w-[1040px] content-start px-[var(--space-5)] py-[var(--space-4)]">
+      <UsageContentFrame>
       {error && (
-        <div
-          role="alert"
-          data-testid="usage-error"
-          className="mb-[var(--space-4)] rounded-[10px] border border-[var(--danger)] bg-[var(--status-blocked-bg)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--tr-text-sm)] text-[var(--status-blocked-text)]"
-        >
+        <UsageError>
           {error}
-        </div>
+        </UsageError>
       )}
 
       {}
-      <div
-        data-testid="usage-body"
-        aria-busy={stale}
-        className={`grid ${stale ? 'opacity-40 transition-opacity duration-150' : ''}`}
-      >
+      <UsageBody stale={stale}>
         {noUsage ? (
           <EmptyState
             headline="No usage recorded yet"
@@ -404,22 +375,22 @@ export function UsageSection({
         />
 
         {}
-        <section className="mt-[var(--space-6)] grid gap-0" data-testid="usage-totals">
+        <UsageTotalsSection data-testid="usage-totals">
           <UsageSectionHeading>Totals</UsageSectionHeading>
           <UsageTokenStrip totals={totals} />
-        </section>
+        </UsageTotalsSection>
 
-        <section className="mt-[var(--space-4)] grid gap-[var(--space-2)]" data-testid="usage-calendar-section">
+        <UsageCalendarSectionFrame data-testid="usage-calendar-section">
           <div className="flex items-center justify-between gap-[var(--space-3)]">
             <UsageSectionHeading fullWidth aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
           </div>
           <UsageCalendar days={activity} metric={metric} selectedDay={selectedDay} caption="Houston keeps one total per day, so days older than the transcripts still count. Click a day to see its breakdown." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
-        </section>
+        </UsageCalendarSectionFrame>
 
-        {metric === 'cost' && totals.tokens > 0 && <div className="mt-[var(--space-6)] grid grid-cols-1 gap-[var(--space-4)] md:grid-cols-2">
+        {metric === 'cost' && totals.tokens > 0 && <UsageShareGroup>
           <UsageShareBar heading="Cost by type" segments={categoryTotals(buckets)} />
           <UsageShareBar heading="Cost by speed" aside={`Premium ${formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}`} segments={speedTotals(buckets)} />
-        </div>}
+        </UsageShareGroup>}
 
         {}
         <UsageBreakdown mode={mode} onModeChange={setMode} rows={dayBreakdown(rows, selectedDay, activity)} loading={loading} />
@@ -427,8 +398,8 @@ export function UsageSection({
         )}
 
         {}
-      </div>
-      </div>
+      </UsageBody>
+      </UsageContentFrame>
     </main>
   )
 }

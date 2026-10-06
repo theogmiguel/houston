@@ -4,7 +4,7 @@ import type { McpServer } from '../../houston/generated/McpServer'
 import type { McpSyncResult } from '../../houston/generated/McpSyncResult'
 import type { McpToolState } from '../../houston/generated/McpToolState'
 import { lazy, Suspense } from 'react'
-import { MATERIAL_CLS, materialAttrs } from '../ui/material'
+import { MaterialSurface } from '../ui/MaterialSurface'
 import type { HoustonClient } from '../../houston/client'
 
 const McpManager = lazy(() =>
@@ -48,7 +48,7 @@ export function McpSurface(props: {
     slackClient = null
   } = props
   return (
-    <div data-testid="nav-surface" {...materialAttrs('base')} className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
+    <MaterialSurface data-testid="nav-surface" contentEdges className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       <Suspense fallback={<div role="status">Loading…</div>}>
         <McpManager
             source={source}
@@ -69,6 +69,6 @@ export function McpSurface(props: {
             slackClient={slackClient}
         />
       </Suspense>
-    </div>
+    </MaterialSurface>
   )
 }

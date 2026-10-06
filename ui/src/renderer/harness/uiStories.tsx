@@ -172,6 +172,9 @@ import {
   TerminalPalettePicker,
   Tooltip,
   TextSpecimen,
+  UsageChromeSpecimen,
+  MaterialSurfaceSpecimen,
+  ConfigurationDetailSpecimen,
   UsageCalendar,
   Viewport,
   UsageChart,
@@ -552,6 +555,15 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Metadata section heading">
           <SectionHead density="row" tone="muted" title="Status" />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Usage and configuration roles">
+          <SpecimenRow>
+            <UsageChromeSpecimen />
+            <MaterialSurfaceSpecimen />
+            <ConfigurationDetailSpecimen />
+            <Text size="subhead" weight="semibold" tone="primary">Configuration heading</Text>
+          </SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Roster surfaces">
