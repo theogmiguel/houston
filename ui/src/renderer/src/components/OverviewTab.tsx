@@ -113,7 +113,7 @@ function OverviewChildCard({ child, parent, parentId, children, result, counts, 
         <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.worktree?.path ?? child.project_dir)} />
         <OrchestratorActionDock>{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</OrchestratorActionDock>
         {deliveryStatus != null && <StatusLabel status={deliveryStatus} />}
-        <OrchestratorResult>{needs && <Icon glyph={IconCornerDownRight} role="label" />}<Text tone="muted">{childResultExcerpt(child, result, needs)}</Text>{needs && <OverviewButton variant="compact-primary-action" onClick={() => selectOverviewChild(parentId, child.id)}>Answer</OverviewButton>}</OrchestratorResult>
+        <OrchestratorResult>{needs && <Icon glyph={IconCornerDownRight} role="label" />}<Text tone="muted">{childResultExcerpt(child, result, needs)}</Text>{needs && <OverviewButton onClick={() => selectOverviewChild(parentId, child.id)}>Answer</OverviewButton>}</OrchestratorResult>
       </OrchestratorChildCard>
 }
 

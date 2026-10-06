@@ -72,7 +72,7 @@ function FileSection({
                     className={HIT_TARGET_28}
                   >
                     <Icon glyph={IconPlus} role="small" />
-                  </Button>
+                  </ReviewButton>
                 )} />
               {isComposer && composer !== null && (
                 <DiffCommentComposer data-testid="pr-line-composer">

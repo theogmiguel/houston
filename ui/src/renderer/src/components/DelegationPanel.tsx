@@ -315,7 +315,6 @@ function FocusLever({
     <DelegationSection>
       <DelegationButton
         type="button"
-        variant="legacy-focus-lever"
         onClick={() => {
           onDone()
           onFocusPane(target)

@@ -63,7 +63,6 @@ import {
   GitCommitStagedCount,
   GitCompactToolsAnchor,
   GitCompactToolsSurface,
-  GitPrOpenAction,
   GitPrSummaryLabel
 } from './ui'
 import { Segmented } from './ui/SegmentedControl'
@@ -326,15 +325,16 @@ function PrLine({
         PR #{pr.pr.number} · {checks}
         {decision ? ` · ${decision}` : ''}
       </GitPrSummaryLabel>
-      <GitPrOpenAction
+      <LazyLegacyButton
         variant="legacy-secondary"
+        className="ml-auto"
         data-testid="changes-pr-open"
         disabled={!onOpenUrlInPane}
         onClick={() => onOpenUrlInPane?.(pr.pr!.url)}
       >
         <Icon glyph={IconExternal} role="small" />
         Open
-      </GitPrOpenAction>
+      </LazyLegacyButton>
     </GitPrSummaryLine>
   )
 }

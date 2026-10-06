@@ -296,6 +296,12 @@ import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, P
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
 import logoUrl from '../src/assets/logo-chrome.svg'
 import { WorktreeCleanupSection } from '../src/components/git/WorktreeCleanupSection'
+import { BrowserButton } from '../src/components/ui/BrowserButtonRoles'
+import { DelegationButton } from '../src/components/ui/DelegationButtonRoles'
+import { LazyLegacyButton } from '../src/components/ui/LazyLegacyButtonRoles'
+import { OverviewButton } from '../src/components/ui/OverviewButtonRoles'
+import { ReviewButton } from '../src/components/ui/ReviewButtonRoles'
+import { SettingsButton } from '../src/components/ui/SettingsButtonRoles'
 import type { ManagedWorktreeInfo } from '../src/houston/generated/ManagedWorktreeInfo'
 
 const noop = (): void => {}
@@ -621,9 +627,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="field">Field</Button>
             <Button variant="surface-large">Large surface</Button>
             <Button variant="action-primary" size="lg">Large primary</Button>
-            <Button variant="outline">Outline</Button>
+            <BrowserButton variant="outline">Outline</BrowserButton>
             <Button variant="ghost">Ghost</Button>
-            <Button variant="label">Label action</Button>
+            <BrowserButton variant="label">Label action</BrowserButton>
             <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
@@ -631,44 +637,44 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="icon" icon={IconClose} aria-label="Close" />
             <Button variant="icon-selected" icon={IconPanelRight} aria-label="Panel open" />
             <Button variant="icon-structure" icon={IconRefresh} aria-label="Refresh" />
-            <Button variant="compact-primary-action">Compact primary</Button>
+            <OverviewButton>Compact primary</OverviewButton>
             <Button variant="text">Task row title</Button>
             <Button variant="badge">Orchestrator</Button>
             <Button variant="ghost-icon"><IconClose /></Button>
             <Button variant="confirm-primary">Confirm</Button>
             <Button variant="compact-outline">Try again</Button>
             <Button variant="danger-confirmation">Remove</Button>
-            <Button variant="compact-ghost">Replace…</Button>
-            <Button variant="compact-danger">Remove file</Button>
-            <Button variant="picker-candidate">Reviewer candidate</Button>
-            <Button variant="repository-list-row">Pull request row</Button>
-            <Button variant="compact-control">Search action</Button>
-            <Button variant="compact-action">Back</Button>
+            <SettingsButton variant="compact-ghost">Replace…</SettingsButton>
+            <SettingsButton variant="compact-danger">Remove file</SettingsButton>
+            <ReviewButton variant="picker-candidate">Reviewer candidate</ReviewButton>
+            <ReviewButton variant="repository-list-row">Pull request row</ReviewButton>
+            <ReviewButton variant="compact-control">Search action</ReviewButton>
+            <ReviewButton variant="compact-action">Back</ReviewButton>
             <Button variant="mini-primary-action">Save</Button>
-            <Button variant="compact-self-start-action">Show more</Button>
-            <Button variant="compact-trailing-action" aria-label="Edit">Edit</Button>
-            <Button variant="pull-request-action">Close</Button>
-            <Button variant="pull-request-danger-action">Revert</Button>
-            <Button variant="pull-request-primary-action">Merge</Button>
-            <Button variant="pull-request-nav-action">Open request</Button>
-            <Button variant="pull-request-external-action">Open on GitHub</Button>
-            <Button variant="reaction" aria-pressed={false}>❤ 3</Button>
-            <Button variant="reaction" selected aria-pressed={true}>❤ 4</Button>
-            <Button variant="reaction-option">Add reaction</Button>
+            <ReviewButton variant="compact-self-start-action">Show more</ReviewButton>
+            <ReviewButton variant="compact-trailing-action" aria-label="Edit">Edit</ReviewButton>
+            <ReviewButton variant="pull-request-action">Close</ReviewButton>
+            <ReviewButton variant="pull-request-danger-action">Revert</ReviewButton>
+            <ReviewButton variant="pull-request-primary-action">Merge</ReviewButton>
+            <ReviewButton variant="pull-request-nav-action">Open request</ReviewButton>
+            <ReviewButton variant="pull-request-external-action">Open on GitHub</ReviewButton>
+            <ReviewButton variant="reaction" aria-pressed={false}>❤ 3</ReviewButton>
+            <ReviewButton variant="reaction" selected aria-pressed={true}>❤ 4</ReviewButton>
+            <ReviewButton variant="reaction-option">Add reaction</ReviewButton>
             <Button variant="legacy-primary">Legacy primary</Button>
-            <Button variant="legacy-secondary">Legacy secondary</Button>
+            <LazyLegacyButton variant="legacy-secondary">Legacy secondary</LazyLegacyButton>
             <Button variant="legacy-ghost">Legacy ghost</Button>
             <Button variant="legacy-icon-warning" icon={IconAlertTriangle} aria-label="Warning" />
             <Button variant="legacy-titlebar-icon" icon={IconClose} aria-label="Titlebar action" />
             <Button variant="legacy-ghost-compact"><IconEye />Show visual fingerprint</Button>
-            <Button variant="legacy-ghost-disclosure"><IconEye />Advanced</Button>
-            <Button variant="legacy-bare-ghost">Legacy bare ghost</Button>
+            <LazyLegacyButton variant="legacy-ghost-disclosure"><IconEye />Advanced</LazyLegacyButton>
+            <LazyLegacyButton variant="legacy-bare-ghost">Legacy bare ghost</LazyLegacyButton>
             <Button variant="legacy-danger-solid" contentAlign="start">Stop daemon</Button>
-            <Button variant="compact-action">Compact ghost action</Button>
-            <Button variant="label-action">Label action</Button>
-            <Button variant="legacy-focus-lever"><IconEye />Focus parent</Button>
+            <ReviewButton variant="compact-action">Compact ghost action</ReviewButton>
+            <SettingsButton variant="label-action">Label action</SettingsButton>
+            <DelegationButton><IconEye />Focus parent</DelegationButton>
             <Button variant="legacy-roster-footer">Roster footer action</Button>
-            <Button variant="accent-soft">Accent soft</Button>
+            <SettingsButton variant="accent-soft">Accent soft</SettingsButton>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
