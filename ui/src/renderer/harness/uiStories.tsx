@@ -688,10 +688,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow><NumberFieldSpecimen /></SpecimenRow>
         </SpecimenGroup>
 
-        <SpecimenGroup heading="Text">
-          <SpecimenRow><Text size="heading" weight="heading" tone="primary">Section heading</Text><Text size="body" tone="secondary">Supporting copy</Text><Text size="small" tone="muted">Quiet detail</Text><Text size="label" weight="label" tone="faint">LABEL</Text></SpecimenRow>
-        </SpecimenGroup>
-
         <SpecimenGroup heading="Settings detail">
           <SettingsDetailPanelSpecimen />
         </SpecimenGroup>
@@ -772,10 +768,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Resize handle">
           <SpecimenRow><ResizeHandleSpecimen /></SpecimenRow>
-        </SpecimenGroup>
-
-        <SpecimenGroup heading="Text">
-          <SpecimenRow><Text size="empty-title" weight="display" tone="primary" leading="display">A workspace with no sessions</Text><Text as="p" flush size="ui" weight="ui" tone="muted" leading="empty">Open a terminal or browser in this workspace.</Text></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Roster surfaces">
@@ -1141,14 +1133,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <TextInput variant="setting-number" aria-label="Compact setting number" type="number" value={4} readOnly />
           <TextInput variant="setting-number-rounded" aria-label="Rounded setting number" type="number" value={15} readOnly />
           <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
-        </SpecimenGroup>
-
-        <SpecimenGroup heading="Text">
-          <SpecimenRow>
-            <Text size="ui" weight="semibold" tight tone="primary">Source control heading</Text>
-            <Text size="small" tone="muted">Supporting detail</Text>
-            <Text size="small" mono tone="faint">origin/main</Text>
-          </SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">
