@@ -110,7 +110,7 @@ describe('every chrome theme cuts its own custom ground', () => {
     const read = (file: string): string => readFileSync(resolve(__dirname, file), 'utf8')
     const kindGround = (kind: PaneFrameKind): string =>
       renderToStaticMarkup(<PaneFrame kind={kind} focusTier="none" active={false}>{null}</PaneFrame>)
-    for (const [file, kind, use] of [['FilesPane.tsx', 'files', /kind=\{[^}\n]*'files'\}/], ['EditorLeaf.tsx', 'editor', /kind="editor"/]] as const) {
+    for (const [file, kind, use] of [['FilesPane.tsx', 'files', /kind=\{[^}\n]*'files'\}/], ['EditorLeaf.tsx', 'editor', /kind="editor"/], ['SkillsLeaf.tsx', 'skills', /kind="skills"/]] as const) {
       const src = read(file)
       expect(src, `${file} must frame itself with the pane frame role`).toContain('<PaneFrame')
       expect(src).toMatch(use)
@@ -120,10 +120,6 @@ describe('every chrome theme cuts its own custom ground', () => {
     expect(read('ChangesPane.tsx')).toContain('<GitChangesSurface')
     expect(read('ui/Changes.tsx')).toMatch(/function GitChangesSurface[^\n]*\n[^\n]*MATERIAL_CLS\.shell/)
     expect(MATERIAL_CLS.shell).toBe('bg-[var(--material-shell-bg)]')
-    expect(read('SkillsLeaf.tsx')).toContain('<LeafPane ')
-    const leaf = read('ui/LeafPane.tsx')
-    expect(leaf).toContain('bg-[var(--pane-bg)]')
-    expect(leaf).not.toContain('--terminal-frame-bg')
     expect(read('SessionPane.tsx')).toMatch(/<PaneFrame\n\s*kind="session"/)
     expect(kindGround('session')).toContain('bg-[var(--terminal-frame-bg)]')
     expect(kindGround('session')).not.toContain('bg-[var(--pane-bg)]')

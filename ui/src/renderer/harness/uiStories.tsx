@@ -242,7 +242,10 @@ import { FileExplorerSpecimen } from '../src/components/ui/FileExplorer'
 import { InspectorBody, InspectorCard, InspectorSurface } from '../src/components/ui/InspectorHeader'
 import { BlockBar, BlockBarList, BlockRow, BlockRowActions, BlockRowDetail, BlockRowMeta, BlockRowTile, BlockRowTitle, CodePane } from '../src/components/ui/Block'
 import { ConfirmDialog } from '../src/components/ui/ConfirmDialog'
-import { LeafPane, LeafPaneButton, LeafPaneHeader } from '../src/components/ui/LeafPane'
+import { PaneFrame } from '../src/components/ui/PaneFrame'
+import { PaneHeader } from '../src/components/ui/PaneHeader'
+import { PaneTitle } from '../src/components/ui/PaneTitle'
+import { PaneHeadActions, PaneHeadButton } from '../src/components/ui/PaneControls'
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
 import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelSwitch, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
@@ -299,10 +302,12 @@ function SkillsChromeSpecimen(): React.JSX.Element {
       <div className="h-48 overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)]">
         <NavSurfaceFrame><NavSurfaceContent><NavSurfaceSection><PanelFootnote>Distribution status</PanelFootnote></NavSurfaceSection></NavSurfaceContent></NavSurfaceFrame>
       </div>
-      <LeafPane>
-        <LeafPaneHeader icon={<Icon glyph={IconTerminal} role="ui" />} title="Skills">
-          <LeafPaneButton aria-label="Close"><IconClose /></LeafPaneButton>
-        </LeafPaneHeader>
+      <PaneFrame kind="skills" focusTier="none" active={false}>
+        <PaneHeader data-pane-focus-head="none" divider="borderMuted" transition="surface" inset="compact">
+          <Text tone="muted" className="flex-none"><Icon glyph={IconTerminal} role="ui" /></Text>
+          <PaneTitle>Skills</PaneTitle>
+          <PaneHeadActions><PaneHeadButton ladder={false} tone="danger" aria-label="Close"><IconClose /></PaneHeadButton></PaneHeadActions>
+        </PaneHeader>
         <PaneViewRoot>
           <PaneViewBar variant="title"><div className="flex items-center gap-2"><PaneViewBadge><Icon glyph={IconTerminal} role="ui" /></PaneViewBadge><Text as="h2" size="ui" weight="semibold" flush>Skills</Text><PaneViewCount>3</PaneViewCount></div></PaneViewBar>
           <PaneViewBar variant="toolbar"><PaneViewInput aria-label="Search skills" value="Deploy" readOnly /><PaneViewPill selected>Claude</PaneViewPill></PaneViewBar>
@@ -310,7 +315,7 @@ function SkillsChromeSpecimen(): React.JSX.Element {
           <PaneViewNotice>Unable to save the skill.</PaneViewNotice>
           <PaneViewBody variant="list"><PaneViewTextArea value="Instructions" readOnly /></PaneViewBody>
         </PaneViewRoot>
-      </LeafPane>
+      </PaneFrame>
       <div><PanelButton onClick={() => setConfirmOpen(true)}>Show confirmation</PanelButton></div>
       {confirmOpen && <ConfirmDialog title="Delete this skill?" confirmLabel="Delete" onConfirm={() => setConfirmOpen(false)} onCancel={() => setConfirmOpen(false)}>The skill will be removed.</ConfirmDialog>}
     </div>

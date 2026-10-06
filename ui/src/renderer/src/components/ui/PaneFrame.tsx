@@ -1,13 +1,15 @@
 import type { HTMLAttributes, ReactNode, Ref } from 'react'
 import type { PaneFocusTier } from '../../windowFocus'
 import { BORDER_HAIRLINE_INSET_TRANSPARENT } from './shadowChrome'
+import './paneFocus.css'
 
 /** Ground and the marker classes that tests and descendant selectors (inspector.css, editorHost.css) key on. */
 const KIND = {
   session: 'bg-[var(--terminal-frame-bg)]',
   editor: `editor-leaf bg-[var(--pane-bg)] after:content-[''] after:absolute after:inset-0 after:rounded-[inherit] after:pointer-events-none after:z-[var(--z-base)] after:shadow-[${BORDER_HAIRLINE_INSET_TRANSPARENT}]`,
   files: 'files-pane bg-[var(--pane-bg)]',
-  'files-panel': 'files-pane files-panel bg-[var(--pane-bg)]'
+  'files-panel': 'files-pane files-panel bg-[var(--pane-bg)]',
+  skills: 'skills-leaf @container/rpanel bg-[var(--pane-bg)]'
 } as const
 
 export type PaneFrameKind = keyof typeof KIND

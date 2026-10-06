@@ -1,5 +1,6 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
+import './paneFocus.css'
 
 const DIVIDER = {
   solid: 'border-b-[var(--divider)]',
