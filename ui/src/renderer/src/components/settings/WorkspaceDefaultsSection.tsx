@@ -17,7 +17,6 @@ export interface WorkspaceDefaultsSectionProps {
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
   onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
-  worktreeIdleRemovalDays?: number
   onWorktreeIdleRemovalDaysSet?: (days: number) => void
   openLinksInPane: boolean
   onOpenLinksInPane: (on: boolean) => void
@@ -30,7 +29,6 @@ export function WorkspaceDefaultsSection({
   onRestoreBudgetSet,
   onRestoreResumeSet,
   onWorktreeCleanupSet,
-  worktreeIdleRemovalDays,
   onWorktreeIdleRemovalDaysSet,
   openLinksInPane,
   onOpenLinksInPane,
@@ -39,7 +37,10 @@ export function WorkspaceDefaultsSection({
   onSessionPolicy
 }: WorkspaceDefaultsSectionProps): React.JSX.Element {
   const [localWorktreeIdleRemovalDays, setLocalWorktreeIdleRemovalDays] = useState(DEFAULT_WORKTREE_IDLE_REMOVAL_DAYS)
-  const idleRemovalDays = worktreeIdleRemovalDays ?? localWorktreeIdleRemovalDays
+  const daemonIdleRemovalDays = (hostInfo as (HostInfo & { worktree_idle_removal_days?: number }) | null)?.worktree_idle_removal_days
+  const idleRemovalDays = onWorktreeIdleRemovalDaysSet
+    ? daemonIdleRemovalDays ?? localWorktreeIdleRemovalDays
+    : localWorktreeIdleRemovalDays
   return (
     <>
       <SubHead>Restoring</SubHead>

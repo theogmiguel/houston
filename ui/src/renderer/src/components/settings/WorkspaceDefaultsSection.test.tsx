@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { WorkspaceDefaultsSection } from './WorkspaceDefaultsSection'
+import type { HostInfo } from '../SettingsView'
 import { hostInfoFixture, setInputValue } from '../settingsViewTestFixtures'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -30,11 +31,13 @@ describe('WorkspaceDefaultsSection', () => {
           onRestoreBudgetSet={() => {}}
           onRestoreResumeSet={() => {}}
           onWorktreeCleanupSet={onWorktreeCleanupSet}
-          worktreeIdleRemovalDays={30}
           onWorktreeIdleRemovalDaysSet={onStaleWorktreeDaysSet}
           openLinksInPane={false}
           onOpenLinksInPane={() => {}}
-          hostInfo={hostInfoFixture({ worktree_cleanup_enabled: false, worktree_cleanup_grace_hours: 24 })}
+          hostInfo={{
+            ...hostInfoFixture({ worktree_cleanup_enabled: false, worktree_cleanup_grace_hours: 24 }),
+            worktree_idle_removal_days: 30
+          } as HostInfo & { worktree_idle_removal_days: number }}
           sessionPolicy={null}
           onSessionPolicy={() => {}}
         />

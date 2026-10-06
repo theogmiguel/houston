@@ -15,7 +15,6 @@ import {
 import { ConfirmModal } from '../ConfirmModal'
 import { WorktreeCleanupSection } from './WorktreeCleanupSection'
 import type { WorktreeCleanupView } from './worktreeCleanup'
-import type { WorktreeCleanupRow } from './worktreeCleanupRows'
 import { Select } from '../Select'
 import { Button, Caption, Card, Chip, Notice, SectionHead, TextInput } from '../ui'
 import { IconFolderOpen, IconRefresh, IconTrash } from '../icons'
@@ -37,8 +36,7 @@ export interface WorktreesDialogProps {
   onPrune: () => void
   onCheckCleanup: () => void
   onCleanNow: (paths: string[]) => void
-  staleWorktreeRows?: WorktreeCleanupRow[]
-  onRemoveStale?: (path: string) => void
+  onRemoveStale: (path: string) => void
   onAddWorkspace: (path: string) => void
   nowMs?: number
 }
@@ -58,8 +56,7 @@ export function WorktreesDialog({
   onPrune,
   onCheckCleanup,
   onCleanNow,
-  staleWorktreeRows = [],
-  onRemoveStale = (path) => onRemove(path, false),
+  onRemoveStale,
   onAddWorkspace,
   nowMs
 }: WorktreesDialogProps): React.JSX.Element {
@@ -145,7 +142,6 @@ export function WorktreesDialog({
         {dir && (
           <WorktreeCleanupSection
             view={cleanup}
-            staleRows={staleWorktreeRows}
             busy={busy}
             nowMs={nowMs ?? Date.now()}
             onCheck={onCheckCleanup}

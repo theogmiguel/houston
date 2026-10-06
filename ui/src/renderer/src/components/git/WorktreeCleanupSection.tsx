@@ -2,13 +2,12 @@ import { useMemo, useState } from 'react'
 import { ConfirmModal } from '../ConfirmModal'
 import { Button, Caption, Card, SectionHead, StatusLabel, Table } from '../ui'
 import type { TableColumn } from '../ui'
-import { cleanNowConfirm, formatBytes, isRemovable, removablePaths, statusLine } from './worktreeCleanup'
+import { cleanNowConfirm, formatBytes } from './worktreeCleanup'
 import type { WorktreeCleanupView } from './worktreeCleanup'
-import { sortWorktreeCleanupRows, type WorktreeCleanupRow } from './worktreeCleanupRows'
+import { sortWorktreeCleanupRows, toWorktreeCleanupRow, type WorktreeCleanupRow } from './worktreeCleanupRows'
 
 export interface WorktreeCleanupSectionProps {
   view: WorktreeCleanupView
-  staleRows?: WorktreeCleanupRow[]
   busy: boolean
   nowMs: number
   onCheck: () => void
@@ -20,7 +19,6 @@ export interface WorktreeCleanupSectionProps {
 // cleanup pass cannot remove a row the operator did not see.
 export function WorktreeCleanupSection({
   view,
-  staleRows = [],
   busy,
   nowMs,
   onCheck,
@@ -29,19 +27,14 @@ export function WorktreeCleanupSection({
 }: WorktreeCleanupSectionProps): React.JSX.Element {
   const [confirmingClean, setConfirmingClean] = useState(false)
   const [confirmingStale, setConfirmingStale] = useState<WorktreeCleanupRow | null>(null)
-  const readyEntries = view.status === 'ready' ? view.entries : []
-  const rows = useMemo(() => sortWorktreeCleanupRows([
-    ...readyEntries.map((entry): WorktreeCleanupRow => ({
-      path: entry.path,
-      branch: entry.branch,
-      state: isRemovable(entry) ? 'ready' : 'kept',
-      reason: statusLine(entry, nowMs),
-      sizeBytes: entry.bytes,
-      pr: entry.pr
-    })),
-    ...staleRows
-  ]), [nowMs, readyEntries, staleRows])
-  const readyCount = rows.filter((row) => row.state === 'ready').length
+  const rows = useMemo(() => view.status === 'ready'
+    ? sortWorktreeCleanupRows(view.entries.map((entry) => toWorktreeCleanupRow(entry, nowMs)))
+    : [], [nowMs, view])
+  const readyRows = rows.filter((row) => row.state === 'ready')
+  const readyEntries = view.status === 'ready'
+    ? view.entries.filter((entry) => readyRows.some((row) => row.path === entry.path))
+    : []
+  const readyCount = readyRows.length
 
   const columns: TableColumn<WorktreeCleanupRow>[] = [
     {
@@ -112,7 +105,7 @@ export function WorktreeCleanupSection({
           confirmLabel="Remove"
           onConfirm={() => {
             setConfirmingClean(false)
-            onCleanNow(removablePaths(readyEntries))
+            onCleanNow(readyRows.map((row) => row.path))
           }}
           onCancel={() => setConfirmingClean(false)}
         />

@@ -17,7 +17,7 @@ let host: HTMLDivElement | null = null
 
 function mount(
   view: WorktreeCleanupView,
-  overrides: { onCheck?: () => void; onCleanNow?: (paths: string[]) => void; onRemove?: (p: string, f: boolean) => void; onRemoveStale?: (path: string) => void; staleRows?: import('./worktreeCleanupRows').WorktreeCleanupRow[] } = {}
+  overrides: { onCheck?: () => void; onCleanNow?: (paths: string[]) => void; onRemove?: (p: string, f: boolean) => void; onRemoveStale?: (path: string) => void } = {}
 ): void {
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -39,8 +39,7 @@ function mount(
         onPrune={() => {}}
         onCheckCleanup={overrides.onCheck ?? (() => {})}
         onCleanNow={overrides.onCleanNow ?? (() => {})}
-        staleWorktreeRows={overrides.staleRows}
-        onRemoveStale={overrides.onRemoveStale}
+        onRemoveStale={overrides.onRemoveStale ?? (() => {})}
         onAddWorkspace={() => {}}
         nowMs={NOW}
       />
@@ -67,6 +66,15 @@ function entry(p: Partial<ManagedWorktreeInfo> = {}): ManagedWorktreeInfo {
     checked_at_ms: NOW - 2 * HOUR,
     ...p
   }
+}
+
+function staleEntry(path: string): ManagedWorktreeInfo {
+  return {
+    ...entry({ path, keep: null }),
+    base_branch: 'main',
+    status: 'stale',
+    keep: { kind: 'stale', idle_days: 20, removal_in_days: 10 }
+  } as unknown as ManagedWorktreeInfo
 }
 
 function rows(): HTMLElement[] {
@@ -134,13 +142,14 @@ describe('WorktreesDialog cleanup section', () => {
         entries: [
           entry({ path: '/repo/.houston/worktrees/a', bytes: 1_500_000_000 }),
           entry({ path: '/repo/.houston/worktrees/b', bytes: 2_000_000_000 }),
+          staleEntry('/repo/stale'),
           entry({ path: '/repo/.houston/worktrees/kept', keep: { kind: 'dirty', files: 1 } }),
           entry({ path: '/repo/.houston/worktrees/unchecked', checked_at_ms: null })
         ]
       },
       {
         onCleanNow,
-        staleRows: [{ path: '/repo/stale', branch: 'houston/stale', state: 'stale', reason: 'Idle 20 days · removed in 10 days', sizeBytes: 1_000_000, pr: null }]
+        onRemoveStale: () => {}
       }
     )
     click(document.querySelector('[data-testid="worktree-cleanup-run"]'))
@@ -184,8 +193,8 @@ describe('WorktreesDialog cleanup section', () => {
   it('stale removal asks first, Escape cancels, and confirmation removes the worktree', () => {
     const onRemoveStale = vi.fn()
     mount(
-      { status: 'ready', entries: [] },
-      { onRemoveStale, staleRows: [{ path: '/stale', branch: 'houston/stale', state: 'stale', reason: 'Idle 20 days · removed in 10 days', sizeBytes: 2_000_000, pr: null }] }
+      { status: 'ready', entries: [staleEntry('/stale')] },
+      { onRemoveStale }
     )
     click(document.querySelector('[data-testid="worktree-cleanup-remove"]'))
     expect(document.body.textContent).toContain('no unpushed work is lost')
