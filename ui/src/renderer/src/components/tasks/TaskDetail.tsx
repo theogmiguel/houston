@@ -361,7 +361,7 @@ function BlockedBy({
         value=""
         options={[{ value: '', label: blockedBy.length > 0 ? 'Add blocker' : 'Blocked by: none' }, ...remaining]}
         disabled={disabled}
-        chrome="prop-select"
+        variant="property-chip"
         onChange={(value) => {
           if (value !== '') onChange([...blockedBy, Number(value)])
         }}

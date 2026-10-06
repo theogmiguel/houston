@@ -144,27 +144,12 @@ export function TasksSection({
       <SettingsList>
         <GithubRows state={github} workspace={workspace} workspaceName={workspaceName} onChange={setGithub} />
       </SettingsList>
-      {githubRefusal !== null && <SectionRefusal testId="settings-tasks-github-refusal" message={githubRefusal.message} />}
+      {githubRefusal !== null && (
+        <TaskReviewRefusal testId="settings-tasks-github-refusal">
+          {githubRefusal.message}
+        </TaskReviewRefusal>
+      )}
     </>
-  )
-}
-
-/// A daemon refusal under its settings group: it names the limit, the value
-/// and the operation.
-function SectionRefusal({ testId, message }: { testId: string; message: string }): React.JSX.Element {
-  return (
-    <div data-testid={testId} className="pt-[var(--space-2)] [font-size:var(--tr-text-small-size)] text-[var(--danger)]">
-      {message}
-    </div>
-  )
-}
-
-/// The "Currently <value>" line every stateful row shows beside its control.
-function CurrentValue({ testId, value }: { testId: string; value: string }): React.JSX.Element {
-  return (
-    <span data-testid={testId} className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
-      Currently <b className="font-semibold text-[var(--text-primary)]">{value}</b>
-    </span>
   )
 }
 
@@ -198,7 +183,7 @@ function GithubRows({
               Open issues with the label below, or assigned to your gh user, become backlog tasks
               linked to their issue. Houston reads and writes GitHub through your gh login.
             </span>
-            <CurrentValue testId="settings-tasks-github-current" value={status} />
+            <TaskAccessSummary testId="settings-tasks-github-current">{status}</TaskAccessSummary>
             {state?.error != null && <Notice tone="danger" data-testid="settings-tasks-github-error">{state.error}</Notice>}
             <SettingsScope workspace={workspaceName} row />
           </>
