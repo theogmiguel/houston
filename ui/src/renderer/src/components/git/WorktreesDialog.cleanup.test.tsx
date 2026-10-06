@@ -121,7 +121,7 @@ describe('WorktreesDialog cleanup section', () => {
       [{ kind: 'dirty', files: 3 }, 'Kept: 3 uncommitted files'],
       [{ kind: 'ignored_files', files: 1 }, 'Kept: 1 ignored file removal would delete'],
       [{ kind: 'commits_outside_pr', count: 2, pr: 36 }, 'Kept: 2 commits not in PR #36'],
-      [{ kind: 'not_integrated' }, 'Kept: not integrated into main'],
+      [{ kind: 'not_integrated', count: 2, base: 'ui/phase-4' }, 'Kept: 2 commits not in ui/phase-4'],
       [{ kind: 'pr_head_unavailable', pr: 36 }, 'Kept: the head of PR #36 could not be fetched'],
       [{ kind: 'in_use', session: 12 }, 'Kept: in use by pane 12'],
       [{ kind: 'grace', until_ms: NOW + 3 * HOUR }, 'Kept: merged, removable in 3 h'],

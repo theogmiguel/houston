@@ -493,39 +493,139 @@ async fn a_commit_outside_the_pr_keeps_the_tree() {
     assert!(removed.is_empty());
     assert_eq!(
         keep_of(&entries, &tree),
-        Some(proto::WorktreeKeep::NotIntegrated)
+        Some(proto::WorktreeKeep::CommitsOutsidePr { count: 1, pr: PR })
     );
     assert!(branch_exists(&ws.dir, "houston/extra"));
 }
 
 #[tokio::test]
-async fn commits_patch_equivalent_to_the_recorded_base_are_integrated() {
+async fn a_branch_without_a_pr_cherry_picked_into_its_base_is_removed_after_grace() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(true, 1);
+    let tree = r.tree(&ws, "picked", true);
+    let head = git(&tree, &["rev-parse", "HEAD"]);
+    git(&ws.dir, &["cherry-pick", &head]);
+
+    let (checked, removed) = pass(&r, &ws.dir, Vec::new()).await;
+    assert!(removed.is_empty());
+    assert_eq!(checked[0].base_branch.as_deref(), Some("main"));
+    assert!(
+        matches!(
+            keep_of(&checked, &tree),
+            Some(proto::WorktreeKeep::Grace { .. })
+        ),
+        "integration starts the grace: {checked:?}"
+    );
+
+    let (again, _) = pass(&r, &ws.dir, Vec::new()).await;
+    assert_eq!(
+        keep_of(&again, &tree),
+        keep_of(&checked, &tree),
+        "a later pass keeps the deadline the first one set"
+    );
+    r.daemon
+        .expire_worktree_grace_for_test(&tree.display().to_string());
+    let (entries, removed) = run(&r, &ws.dir).await;
+    assert_eq!(removed.len(), 1, "{removed:?}; {entries:?}");
+    assert!(!tree.exists());
+    assert!(!r.has_row(&tree));
+    assert!(!branch_exists(&ws.dir, "houston/picked"));
+}
+
+#[tokio::test]
+async fn a_branch_without_a_pr_keeps_its_unintegrated_commits() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(true, 1);
+    let tree = r.tree(&ws, "partial", true);
+    let head = git(&tree, &["rev-parse", "HEAD"]);
+    git(&ws.dir, &["cherry-pick", &head]);
+    std::fs::write(tree.join("later.txt"), "later\n").unwrap();
+    git(&tree, &["add", "-A"]);
+    git(&tree, &["commit", "-q", "-m", "not integrated"]);
+    git(&tree, &["push", "-q"]);
+
+    let (entries, removed) = run(&r, &ws.dir).await;
+    assert!(removed.is_empty());
+    assert_eq!(
+        keep_of(&entries, &tree),
+        Some(proto::WorktreeKeep::NotIntegrated {
+            count: 1,
+            base: "main".into()
+        })
+    );
+    assert!(tree.exists());
+}
+
+#[tokio::test]
+async fn an_integrated_branch_with_local_work_or_a_pane_inside_is_kept() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(true, 1);
+    let dirty = r.tree(&ws, "picked-dirty", true);
+    let busy = r.tree(&ws, "picked-busy", true);
+    for tree in [&dirty, &busy] {
+        let head = git(tree, &["rev-parse", "HEAD"]);
+        git(&ws.dir, &["cherry-pick", &head]);
+    }
+    std::fs::write(dirty.join("untracked.txt"), "x\n").unwrap();
+    let pane = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: busy.clone(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "exec cat".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+
+    let (entries, removed) = run(&r, &ws.dir).await;
+    assert!(removed.is_empty());
+    assert_eq!(
+        keep_of(&entries, &dirty),
+        Some(proto::WorktreeKeep::Dirty { files: 1 })
+    );
+    assert_eq!(
+        keep_of(&entries, &busy),
+        Some(proto::WorktreeKeep::InUse { session: pane.id })
+    );
+}
+
+#[tokio::test]
+async fn a_row_without_a_recorded_base_uses_the_default_branch() {
     let _guard = SERIAL.lock().await;
     let r = rig().await;
     let ws = r.workspace("ws");
     r.set_cleanup(false, 1);
-    let tree = r.tree(&ws, "equivalent", true);
-    let pr_head = git(&tree, &["rev-parse", "HEAD"]);
-    std::fs::write(tree.join("later.txt"), "later\n").unwrap();
-    git(&tree, &["add", "-A"]);
-    git(&tree, &["commit", "-q", "-m", "after the PR head"]);
-    let later = git(&tree, &["rev-parse", "HEAD"]);
-    git(&ws.dir, &["cherry-pick", &pr_head]);
-    git(&ws.dir, &["cherry-pick", &later]);
-    pr_json(
-        "equivalent",
-        "MERGED",
-        Some(now_ms() - 2 * HOUR_MS),
-        &pr_head,
-    );
+    let tree = r.tree(&ws, "legacy", true);
+    r.db()
+        .execute(
+            "UPDATE managed_worktrees SET base_branch = NULL WHERE path = ?1",
+            rusqlite::params![tree.display().to_string()],
+        )
+        .unwrap();
 
-    let (checked, check_removed) = pass(&r, &ws.dir, Vec::new()).await;
-    assert!(check_removed.is_empty());
-    assert_eq!(checked[0].base_branch.as_deref(), Some("main"));
-    let (entries, removed) = pass(&r, &ws.dir, removable(&checked)).await;
-    assert_eq!(removed.len(), 1, "{removed:?}; {entries:?}");
-    assert!(!tree.exists());
-    assert!(!branch_exists(&ws.dir, "houston/equivalent"));
+    let (entries, _) = run(&r, &ws.dir).await;
+    assert_eq!(
+        keep_of(&entries, &tree),
+        Some(proto::WorktreeKeep::NotIntegrated {
+            count: 1,
+            base: "main".into()
+        })
+    );
 }
 
 #[tokio::test]
@@ -559,13 +659,32 @@ async fn closing_the_worktree_owner_schedules_automatic_cleanup() {
             rusqlite::params![owner.id, tree.display().to_string()],
         )
         .unwrap();
+    tokio::spawn(Arc::clone(&r.daemon).worktree_cleanup_loop());
+    // Let the loop's first pass see the branch while it still holds unmerged work.
+    let dir = ws.dir.display().to_string();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(proto::ServerMsg::WorktreeCleanup { entries, .. }) =
+                r.daemon.worktree_cleanup_status(&dir)
+            {
+                if entries.iter().all(|e| e.checked_at_ms.is_some()) {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the loop's first pass");
+    assert!(tree.exists());
     let head = git(&tree, &["rev-parse", "HEAD"]);
     git(&ws.dir, &["cherry-pick", &head]);
     merged("owned", &tree, 2);
 
     r.daemon.close(owner.id).unwrap();
+    // The tree goes before its row; wait for both.
     tokio::time::timeout(Duration::from_secs(10), async {
-        while tree.exists() {
+        while tree.exists() || r.has_row(&tree) {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
@@ -666,7 +785,7 @@ async fn dirty_or_unpushed_worktrees_are_never_stale() {
     let ws = r.workspace("ws");
     let dirty = r.tree(&ws, "dirty", true);
     let unpushed = r.tree(&ws, "unpushed", true);
-    std::fs::write(dirty.join("dirty.txt"), "dirty\n").unwrap();
+    std::fs::write(dirty.join("uncommitted.txt"), "dirty\n").unwrap();
     std::fs::write(unpushed.join("later.txt"), "later\n").unwrap();
     git(&unpushed, &["add", "-A"]);
     git(&unpushed, &["commit", "-q", "-m", "unpushed"]);
@@ -678,9 +797,12 @@ async fn dirty_or_unpushed_worktrees_are_never_stale() {
     let (entries, removed) = pass(&r, &ws.dir, Vec::new()).await;
 
     assert!(removed.is_empty());
-    assert!(entries
-        .iter()
-        .all(|entry| entry.status != proto::WorktreeStatus::Stale));
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.status != proto::WorktreeStatus::Stale),
+        "{entries:?}"
+    );
 }
 
 #[tokio::test]
@@ -869,7 +991,13 @@ async fn an_open_closed_or_missing_pr_keeps_the_tree() {
             state: "CLOSED".into()
         })
     );
-    assert_eq!(keep_of(&entries, &none), Some(proto::WorktreeKeep::NoPr));
+    assert_eq!(
+        keep_of(&entries, &none),
+        Some(proto::WorktreeKeep::NotIntegrated {
+            count: 1,
+            base: "main".into()
+        })
+    );
 }
 
 #[tokio::test]
@@ -888,7 +1016,7 @@ async fn without_gh_a_gone_upstream_is_only_probably_integrated() {
     assert!(removed.is_empty());
     assert_eq!(
         keep_of(&entries, &tree),
-        Some(proto::WorktreeKeep::NotIntegrated)
+        Some(proto::WorktreeKeep::ProbablyIntegrated)
     );
     let d = Arc::clone(&r.daemon);
     tokio::task::spawn_blocking(move || d.worktree_cleanup_tick())

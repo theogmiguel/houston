@@ -2124,7 +2124,11 @@ pub enum WorktreeKeep {
         gh: GhState,
     },
     ProbablyIntegrated,
-    NotIntegrated,
+    /// `count` commits on the branch have no patch-equivalent in `base`.
+    NotIntegrated {
+        count: u32,
+        base: String,
+    },
     RemoveFailed {
         message: String,
     },

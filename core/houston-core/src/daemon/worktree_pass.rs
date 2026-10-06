@@ -24,7 +24,6 @@ const IDLE_REMOVAL_DAYS_KEY: &str = "worktree_idle_removal_days";
 pub(super) struct CleanupState {
     checked: HashMap<String, Checked>,
     running: HashSet<String>,
-    pending_sessions: HashSet<u32>,
 }
 
 #[derive(Clone)]
@@ -193,16 +192,10 @@ impl Daemon {
     /// setting off it does nothing at all: no `gh`, no fetch, no measuring. A workspace
     /// already mid-pass is skipped.
     pub fn worktree_cleanup_tick(&self) {
+        if !self.worktree_cleanup_enabled() {
+            return;
+        }
         let rows = self.db.managed_worktrees().unwrap_or_default();
-        let pending = {
-            let mut state = self.worktree_cleanup.lock().expect("worktree cleanup lock");
-            std::mem::take(&mut state.pending_sessions)
-        };
-        let scheduled_common: HashSet<String> = rows
-            .iter()
-            .filter(|r| r.created_by_session.is_some_and(|id| pending.contains(&id)))
-            .map(|r| r.repo_common_dir.clone())
-            .collect();
         for ws in self.cleanup_workspaces() {
             if !rows
                 .iter()
@@ -210,22 +203,10 @@ impl Daemon {
             {
                 continue;
             }
-            let scheduled = ws
-                .common_dir
-                .as_ref()
-                .is_some_and(|common| scheduled_common.contains(common));
-            if !scheduled && !self.worktree_cleanup_enabled() {
-                continue;
-            }
             let Ok(claim) = self.claim_pass(&ws) else {
                 continue;
             };
-            let removal = if self.worktree_cleanup_enabled() {
-                Removal::All
-            } else {
-                Removal::None
-            };
-            let removed = self.cleanup_pass(&ws, &removal);
+            let removed = self.cleanup_pass(&ws, &Removal::All);
             drop(claim);
             self.broadcast_control(&self.cleanup_message(&ws, removed));
         }
@@ -346,16 +327,31 @@ impl Daemon {
                 continue;
             }
             let now = now_ms() as i64;
-            let (pr, mut keep) = keep_reason(ws, &row, &path, gh, grace_ms, now, &live);
-            let idle_days = wc::idle_days(&path, now)
+            let integrated_until = self.integrated_until(&row.path);
+            let (pr, mut keep) = keep_reason(
+                ws,
+                &row,
+                &path,
+                gh,
+                Grace {
+                    ms: grace_ms,
+                    integrated_until,
+                },
+                now,
+                &live,
+            );
+            // Idle removal is for work with no evidence of being done; a reason that
+            // already protects local work (or a merge still in grace) wins.
+            let idle_days = keep
+                .as_ref()
+                .is_some_and(idle_may_apply)
+                .then(|| wc::idle_days(&path, now))
+                .flatten()
                 .filter(|_| !live.iter().any(|(_, cwd)| cwd.starts_with(&path)));
-            let bytes = wc::tree_bytes(&path);
-            let _ = self
-                .db
-                .managed_worktree_set_size(&row.path, bytes as i64, now);
             if let Some(idle_days) = idle_days {
                 let threshold = self.worktree_idle_removal_days();
                 if idle_days >= threshold && matches!(removal, Removal::All) {
+                    let bytes = wc::tree_bytes(&path);
                     match remove_idle_managed(ws, &row, &path, &self.db) {
                         Ok(()) => {
                             tracing::info!(
@@ -389,6 +385,16 @@ impl Daemon {
                 Some(WorktreeKeep::Stale { .. }) => proto::WorktreeStatus::Stale,
                 Some(_) => proto::WorktreeStatus::Kept,
                 None => proto::WorktreeStatus::Ready,
+            };
+            // Only a row the operator can act on is worth walking the tree for.
+            let bytes = if status == proto::WorktreeStatus::Kept {
+                row.bytes.unwrap_or(0) as u64
+            } else {
+                let bytes = wc::tree_bytes(&path);
+                let _ = self
+                    .db
+                    .managed_worktree_set_size(&row.path, bytes as i64, now);
+                bytes
             };
             let keep = match keep {
                 None if removal.covers(&row.path) => {
@@ -453,6 +459,34 @@ impl Daemon {
         removed
     }
 
+    /// The integrated-branch grace deadline a previous pass already started, so the
+    /// grace counts from the first time integration was observed. In memory only: a
+    /// daemon restart starts it again, which only delays removal.
+    fn integrated_until(&self, path: &str) -> Option<i64> {
+        let state = self.worktree_cleanup.lock().expect("worktree cleanup lock");
+        let checked = state.checked.get(path)?;
+        if checked.pr.is_some() {
+            return None;
+        }
+        match checked.keep {
+            Some(WorktreeKeep::Grace { until_ms }) => Some(until_ms),
+            None => Some(checked.at_ms),
+            _ => None,
+        }
+    }
+
+    /// Moves an integrated branch's grace deadline into the past, standing in for the
+    /// hours a test cannot wait.
+    #[doc(hidden)]
+    pub fn expire_worktree_grace_for_test(&self, path: &str) {
+        let mut state = self.worktree_cleanup.lock().expect("worktree cleanup lock");
+        if let Some(checked) = state.checked.get_mut(path) {
+            if let Some(WorktreeKeep::Grace { until_ms }) = &mut checked.keep {
+                *until_ms = 0;
+            }
+        }
+    }
+
     fn forget_checked(&self, path: &str) {
         self.worktree_cleanup
             .lock()
@@ -478,26 +512,36 @@ impl Daemon {
     }
 }
 
+/// Closing the pane that created a worktree wakes the loop instead of leaving that
+/// worktree for the next 6-hour pass. It never makes a disabled pass run.
 pub(super) fn queue_closed_session(daemon: &Daemon, session: u32) {
-    daemon
-        .worktree_cleanup
-        .lock()
-        .expect("worktree cleanup lock")
-        .pending_sessions
-        .insert(session);
-    daemon.worktree_cleanup_notify.notify_one();
+    let owns_worktree = daemon
+        .db
+        .managed_worktrees()
+        .unwrap_or_default()
+        .iter()
+        .any(|row| row.created_by_session == Some(session));
+    if owns_worktree {
+        daemon.worktree_cleanup_notify.notify_one();
+    }
+}
+
+struct Grace {
+    ms: i64,
+    /// For a branch with no PR: the deadline an earlier pass set when it first saw the
+    /// branch integrated.
+    integrated_until: Option<i64>,
 }
 
 /// The first thing keeping `path`, in the order a reader would ask: is it still on the
 /// recorded branch, can Houston see the PR, is it merged, would removing lose work, is
 /// someone in it, has the grace run.
-#[allow(clippy::too_many_arguments)]
 fn keep_reason(
     ws: &CleanupWorkspace,
     row: &ManagedWorktreeRow,
     path: &Path,
     gh: proto::GhState,
-    grace_ms: i64,
+    grace: Grace,
     now: i64,
     live: &[(u32, PathBuf)],
 ) -> (Option<u32>, Option<WorktreeKeep>) {
@@ -517,14 +561,7 @@ fn keep_reason(
     }
     if gh != proto::GhState::Ready {
         let keep = if wc::upstream_gone(&ws.dir, &row.branch) {
-            match row
-                .base_branch
-                .as_deref()
-                .and_then(|base| wc::cherry_unintegrated(&ws.dir, base, &row.branch, None))
-            {
-                Some(0) => WorktreeKeep::ProbablyIntegrated,
-                _ => WorktreeKeep::NotIntegrated,
-            }
+            WorktreeKeep::ProbablyIntegrated
         } else {
             WorktreeKeep::GhUnavailable { gh }
         };
@@ -532,7 +569,7 @@ fn keep_reason(
     }
     let facts = match crate::gh::pr_for_checkout(path) {
         PrLookup::Found(f) => f,
-        PrLookup::NoPr => return (None, Some(WorktreeKeep::NoPr)),
+        PrLookup::NoPr => return (None, integrated_keep(ws, row, path, &grace, now, live)),
         PrLookup::Failed(e) => {
             tracing::warn!("gh pr view in {}: {e}", row.path);
             return (None, Some(WorktreeKeep::GhUnavailable { gh }));
@@ -542,49 +579,32 @@ fn keep_reason(
     if facts.state != "MERGED" {
         return (pr, Some(WorktreeKeep::NotMerged { state: facts.state }));
     }
-    match wc::dirty_files(path) {
-        Some(0) => {}
-        Some(files) => return (pr, Some(WorktreeKeep::Dirty { files })),
-        None => {
-            return (
-                pr,
-                Some(WorktreeKeep::RemoveFailed {
-                    message: format!("git status failed in {}", row.path),
-                }),
-            )
-        }
-    }
-    match wc::ignored_files(path) {
-        Some(0) => {}
-        Some(files) => return (pr, Some(WorktreeKeep::IgnoredFiles { files })),
-        None => {
-            return (
-                pr,
-                Some(WorktreeKeep::RemoveFailed {
-                    message: format!("git status --ignored failed in {}", row.path),
-                }),
-            )
-        }
+    if let Some(keep) = local_work_keep(row, path) {
+        return (pr, Some(keep));
     }
     let head_here = wc::has_object(path, &facts.head_oid)
         || wc::pr_remote(path, &facts.url)
             .is_some_and(|remote| wc::fetch_pr_head(path, &remote, facts.number, &facts.head_oid));
-    if !head_here {
-        return (
-            pr,
-            Some(WorktreeKeep::PrHeadUnavailable { pr: facts.number }),
-        );
-    }
-    match row
-        .base_branch
-        .as_deref()
-        .and_then(|base| wc::cherry_unintegrated(path, base, "HEAD", Some(facts.head_oid.as_str())))
-    {
-        None => return (pr, Some(WorktreeKeep::NotIntegrated)),
-        Some(unintegrated) if unintegrated > 0 => {
-            return (pr, Some(WorktreeKeep::NotIntegrated));
+    let outside = head_here
+        .then(|| wc::commits_outside(path, &facts.head_oid))
+        .flatten();
+    match outside {
+        None => {
+            return (
+                pr,
+                Some(WorktreeKeep::PrHeadUnavailable { pr: facts.number }),
+            )
         }
-        Some(_) => {}
+        Some(0) => {}
+        Some(count) => {
+            return (
+                pr,
+                Some(WorktreeKeep::CommitsOutsidePr {
+                    count,
+                    pr: facts.number,
+                }),
+            )
+        }
     }
     if let Some((session, _)) = live.iter().find(|(_, cwd)| cwd.starts_with(path)) {
         return (pr, Some(WorktreeKeep::InUse { session: *session }));
@@ -595,11 +615,94 @@ fn keep_reason(
         .as_deref()
         .and_then(wc::parse_github_time)
         .unwrap_or(now);
-    let until_ms = merged_at + grace_ms;
+    let until_ms = merged_at + grace.ms;
     if now < until_ms {
         return (pr, Some(WorktreeKeep::Grace { until_ms }));
     }
     (pr, None)
+}
+
+/// A branch with no PR is done once every commit has a patch-equivalent in its recorded
+/// base (else the default branch) or in the default branch, so squash and cherry-pick
+/// integration count.
+fn integrated_keep(
+    ws: &CleanupWorkspace,
+    row: &ManagedWorktreeRow,
+    path: &Path,
+    grace: &Grace,
+    now: i64,
+    live: &[(u32, PathBuf)],
+) -> Option<WorktreeKeep> {
+    let default = crate::git::default_base(&ws.dir);
+    let Some(base) = row.base_branch.clone().or_else(|| default.clone()) else {
+        return Some(WorktreeKeep::NoPr);
+    };
+    // A worktree on the base itself has nothing to integrate, and removing it would
+    // delete the base branch.
+    if base == row.branch || default.as_deref() == Some(row.branch.as_str()) {
+        return Some(WorktreeKeep::NoPr);
+    }
+    if let Some(keep) = local_work_keep(row, path) {
+        return Some(keep);
+    }
+    let Some(mut pending) = wc::cherry_unintegrated(&ws.dir, &base, &row.branch) else {
+        return Some(WorktreeKeep::RemoveFailed {
+            message: format!("git cherry {base} {} failed in {}", row.branch, ws.key),
+        });
+    };
+    if !pending.is_empty() {
+        if let Some(default) = default.as_deref().filter(|d| *d != base) {
+            if let Some(in_default) = wc::cherry_unintegrated(&ws.dir, default, &row.branch) {
+                pending.retain(|commit| in_default.contains(commit));
+            }
+        }
+    }
+    if !pending.is_empty() {
+        return Some(WorktreeKeep::NotIntegrated {
+            count: pending.len() as u32,
+            base,
+        });
+    }
+    if let Some((session, _)) = live.iter().find(|(_, cwd)| cwd.starts_with(path)) {
+        return Some(WorktreeKeep::InUse { session: *session });
+    }
+    let until_ms = grace.integrated_until.unwrap_or(now + grace.ms);
+    (now < until_ms).then_some(WorktreeKeep::Grace { until_ms })
+}
+
+/// Removing the tree must not lose anything git does not already hold elsewhere.
+fn local_work_keep(row: &ManagedWorktreeRow, path: &Path) -> Option<WorktreeKeep> {
+    match wc::dirty_files(path) {
+        Some(0) => {}
+        Some(files) => return Some(WorktreeKeep::Dirty { files }),
+        None => {
+            return Some(WorktreeKeep::RemoveFailed {
+                message: format!("git status failed in {}", row.path),
+            })
+        }
+    }
+    match wc::ignored_files(path) {
+        Some(0) => None,
+        Some(files) => Some(WorktreeKeep::IgnoredFiles { files }),
+        None => Some(WorktreeKeep::RemoveFailed {
+            message: format!("git status --ignored failed in {}", row.path),
+        }),
+    }
+}
+
+/// Reasons that say "no evidence this work is done" rather than "this holds local work
+/// or is still in its grace": only these give way to the idle rule.
+fn idle_may_apply(keep: &WorktreeKeep) -> bool {
+    matches!(
+        keep,
+        WorktreeKeep::NoPr
+            | WorktreeKeep::NotIntegrated { .. }
+            | WorktreeKeep::NotMerged { .. }
+            | WorktreeKeep::GhUnavailable { .. }
+            | WorktreeKeep::ProbablyIntegrated
+            | WorktreeKeep::PrHeadUnavailable { .. }
+            | WorktreeKeep::CommitsOutsidePr { .. }
+    )
 }
 
 /// The worktree goes first; only then is its branch safe to drop, and a branch

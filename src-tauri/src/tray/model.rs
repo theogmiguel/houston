@@ -362,9 +362,14 @@ mod tests {
         assert_eq!(
             header_text(&ready(vec![
                 session(1, "claude", "a", TrayStatus::Idle),
-                session(2, "shell", "b", TrayStatus::Done),
+                session(2, "shell", "b", TrayStatus::Idle),
             ])),
             "Houston · 2 agents idle"
+        );
+        assert_eq!(
+            header_text(&ready(vec![session(1, "shell", "b", TrayStatus::Done)])),
+            "Houston · idle",
+            "a finished session is not an agent"
         );
     }
 
@@ -598,7 +603,8 @@ mod tests {
     }
 
     #[test]
-    fn each_group_sorts_needs_input_then_running_then_idle_then_done_ties_keeping_payload_order() {
+    fn each_group_sorts_needs_input_then_running_then_idle_ties_keeping_payload_order_and_drops_done(
+    ) {
         let items = menu_model(&ready(vec![
             session_in(1, "claude", "idle-a", TrayStatus::Idle, "ws"),
             session_in(2, "codex", "done", TrayStatus::Done, "ws"),
@@ -615,8 +621,8 @@ mod tests {
             .collect();
         assert_eq!(
             ids,
-            vec![4, 3, 1, 5, 2],
-            "needs-input, running, idle (payload order), then done/error"
+            vec![4, 3, 1, 5],
+            "needs-input, running, idle (payload order); a finished session is not listed"
         );
     }
 

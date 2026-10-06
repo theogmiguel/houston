@@ -36,22 +36,6 @@ fn git(dir: &Path, args: &[&str]) -> Option<String> {
     }
 }
 
-fn git_succeeded(dir: &Path, args: &[&str]) -> Option<bool> {
-    let mut cmd = crate::spawn::command("git");
-    cmd.arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0");
-    match crate::spawn::output_within(cmd, GIT_TIMEOUT) {
-        Ok(Some(out)) => Some(out.status.success()),
-        Ok(None) => None,
-        Err(e) => {
-            tracing::warn!("spawning git {args:?} in {}: {e}", dir.display());
-            None
-        }
-    }
-}
-
 /// The branch checked out in `tree`; `Some(None)` on a detached HEAD.
 pub fn current_branch(tree: &Path) -> Option<Option<String>> {
     let out = git(tree, &["branch", "--show-current"])?;
@@ -190,30 +174,16 @@ pub fn commits_outside(tree: &Path, pr_head: &str) -> Option<u32> {
         .ok()
 }
 
-/// Commits in `branch` not represented by its PR head or by a patch in `base_branch`.
-pub fn cherry_unintegrated(
-    tree: &Path,
-    base_branch: &str,
-    branch: &str,
-    pr_head: Option<&str>,
-) -> Option<u32> {
-    let out = git(tree, &["cherry", "-v", base_branch, branch])?;
-    let mut count = 0;
-    for line in out.lines() {
-        let mut fields = line.split_whitespace();
-        let marker = fields.next()?;
-        let commit = fields.next()?;
-        if marker != "+" {
-            continue;
-        }
-        if let Some(head) = pr_head {
-            if git_succeeded(tree, &["merge-base", "--is-ancestor", commit, head])? {
-                continue;
-            }
-        }
-        count += 1;
-    }
-    Some(count)
+/// The commits `git cherry <upstream> <branch>` marks `+`: on `branch` with no
+/// patch-equivalent in `upstream`. Squash and cherry-pick integration count as present.
+pub fn cherry_unintegrated(repo: &Path, upstream: &str, branch: &str) -> Option<Vec<String>> {
+    let out = git(repo, &["cherry", upstream, branch])?;
+    Some(
+        out.lines()
+            .filter_map(|line| line.strip_prefix("+ "))
+            .map(|commit| commit.trim().to_string())
+            .collect(),
+    )
 }
 
 /// Read from the remote-tracking refs as they stand: Houston does not fetch for this,

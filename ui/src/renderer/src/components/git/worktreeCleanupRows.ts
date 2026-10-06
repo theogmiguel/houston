@@ -15,9 +15,6 @@ export function toWorktreeCleanupRow(entry: ManagedWorktreeInfo, nowMs: number):
   const keep = entry.keep
   let reason = statusLine(entry, nowMs)
   if (keep?.kind === 'stale') reason = `Idle ${keep.idle_days} days · removed in ${keep.removal_in_days} days`
-  else if (keep?.kind === 'not_integrated') reason = entry.base_branch
-    ? `Kept: not integrated into ${entry.base_branch}`
-    : 'Kept: not integrated into its base branch'
   else if (keep) reason = keepLine(keep, nowMs)
 
   return {

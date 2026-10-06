@@ -48,17 +48,17 @@ describe('sortWorktreeCleanupRows', () => {
     })
   })
 
-  it('uses the base branch to explain commits that are not integrated', () => {
+  it('names the count and base of commits that are not integrated', () => {
     const entry = {
       path: '/kept',
       branch: 'feature/demo',
       base_branch: 'main',
       status: 'kept',
-      keep: { kind: 'not_integrated' },
+      keep: { kind: 'not_integrated', count: 1, base: 'main' },
       bytes: null,
       pr: null
     } as unknown as ManagedWorktreeInfo
 
-    expect(toWorktreeCleanupRow(entry, 0).reason).toBe('Kept: not integrated into main')
+    expect(toWorktreeCleanupRow(entry, 0).reason).toBe('Kept: 1 commit not in main')
   })
 })

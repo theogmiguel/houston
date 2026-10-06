@@ -48,7 +48,7 @@ export function keepLine(keep: WorktreeKeep, nowMs: number): string {
     case 'commits_outside_pr':
       return `Kept: ${plural(keep.count, 'commit', 'commits')} not in PR #${keep.pr}`
     case 'not_integrated':
-      return 'Kept: one or more commits are not integrated into the base branch'
+      return `Kept: ${plural(keep.count, 'commit', 'commits')} not in ${keep.base}`
     case 'pr_head_unavailable':
       return `Kept: the head of PR #${keep.pr} could not be fetched`
     case 'in_use':

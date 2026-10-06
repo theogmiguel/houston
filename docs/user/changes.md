@@ -79,14 +79,22 @@ Worktrees Houston created — from this dialog, or for an agent through `pane_sp
 `worktree` — are listed under **Created by Houston** with their size and what, if
 anything, keeps each one. A worktree you made yourself is never removed by Houston.
 
-One can go when it is still on the branch Houston created it with, its PR is merged or
-its commits are integrated into the branch it came from, it has no uncommitted or
-untracked files, it has no ignored file that a build would not recreate, no commit is
-missing from the remote, no pane is working inside it, and the grace period has passed.
-**Check** finds out
-which worktrees can go and measures them. **Clean now** lists only Ready worktrees and
-the space they free, and asks once; it then removes only the ones it listed, together
-with their branches.
+One can go when it is still on the branch Houston created it with, its work is done, it
+has no uncommitted or untracked files, it has no ignored file that a build would not
+recreate, no pane is working inside it, and the grace period has passed. Its work is done
+when its PR is merged with no commit outside the PR, or, for a branch with no PR, when
+every commit has a patch-equivalent in the branch it was created from (or in the default
+branch, for worktrees recorded before Houston kept that base). Squash and cherry-pick
+integration count. For a branch with no PR the grace runs from the first check that finds
+it integrated. **Check** finds out which worktrees can go and measures them. **Clean now**
+lists only Ready worktrees and the space they free, and asks once; it then removes only the
+ones it listed, together with their branches.
+
+A worktree with no evidence that its work is done — no PR, a PR still open, or commits not
+yet integrated — becomes **Stale** once it is clean, every commit is on a remote, no pane
+is inside it, and nobody has touched it for half of **Remove idle worktrees after**. A
+Stale row shows how long it has been idle and when it will be removed; **Remove…** removes
+it early. Removing a stale worktree keeps its branch.
 
 Removing a worktree deletes its ignored files too. A directory that is ignored as a whole,
 such as `target/` or `node_modules/`, is treated as build output and goes with it. A
@@ -94,9 +102,10 @@ single ignored file, such as `.env` or a local settings file, keeps the worktree
 you move or delete it.
 
 Otherwise the row says why it stays: the worktree was switched to another branch,
-uncommitted or ignored files, commits outside the PR, the PR's head could not be
-fetched, a pane inside it, the grace period, a PR that is open or was closed without
-merging, no PR, `gh` unavailable, or a removal that failed. Without `gh`, a branch whose
+uncommitted or ignored files, commits outside the PR, commits not yet in the branch it
+came from, the PR's head could not be fetched, a pane inside it, the grace period, a PR
+that is open or was closed without merging, no PR, `gh` unavailable, or a removal that
+failed. Without `gh`, a branch whose
 upstream was deleted, as of your own last `git fetch --prune`, reads "probably
 integrated": Houston cannot tell a merge from a closed PR, so it offers **Remove** and
 leaves the choice to you.
@@ -105,8 +114,8 @@ To remove merged or idle worktrees on its own, turn on **Remove worktrees automa
 under Settings ▸ Workspaces (off by default). Merged or integrated worktrees are removed
 after **Grace after merge** (1 to 720 hours, 24 by default); idle worktrees are removed
 after **Remove idle worktrees after** (1 to 365 days, 30 by default). Idle cleanup keeps
-the branch. The daemon then checks at start and every 6 hours; while the setting is off
-it checks only when you press **Check** or **Clean now**.
+the branch. The daemon then checks at start, every 6 hours, and when a pane that created a
+worktree closes; while the setting is off it removes nothing on its own.
 
 Each check runs `gh pr view` once per recorded worktree, which sends that branch's name
 to GitHub through your own `gh`. When the PR's head commit is not in your repository, it
