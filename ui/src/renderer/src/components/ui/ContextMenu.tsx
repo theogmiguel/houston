@@ -15,9 +15,9 @@ export function ContextMenuItems({ children }: { children: ReactNode }): React.J
   return <div className="flex flex-col gap-[var(--space-context-menu-gap)] p-[var(--space-context-menu-pad)]">{children}</div>
 }
 
-export function ContextMenuItem({ danger = false, variant = 'default', shortcut, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean; variant?: 'default' | 'editor'; shortcut?: string; ref?: Ref<HTMLButtonElement> }): React.JSX.Element {
-  if (variant === 'editor') return <button {...props} type={props.type} className={`${EDITOR_ITEM_CLASS} ${props.className ?? ''}`}>{shortcut ? <><Text as="span" size="small" weight="small">{children}</Text><Text as="span" size="small" weight="small" tone="faint">{shortcut}</Text></> : children}</button>
-  return <button {...props} type="button" className={`btn ctx-item ${danger ? 'danger' : ''} ${props.className ?? ''}`}>{children}</button>
+export function ContextMenuItem({ danger = false, variant = 'default', shortcut, children, ref, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean; variant?: 'default' | 'editor'; shortcut?: string; ref?: Ref<HTMLButtonElement> }): React.JSX.Element {
+  if (variant === 'editor') return <button {...props} ref={ref} type={props.type} className={`${EDITOR_ITEM_CLASS} ${props.className ?? ''}`}>{shortcut ? <><Text as="span" size="small" weight="small">{children}</Text><Text as="span" size="small" weight="small" tone="faint">{shortcut}</Text></> : children}</button>
+  return <button {...props} ref={ref} type="button" className={`btn ctx-item ${danger ? 'danger' : ''} ${props.className ?? ''}`}>{children}</button>
 }
 
 export function ContextMenuHeading({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
