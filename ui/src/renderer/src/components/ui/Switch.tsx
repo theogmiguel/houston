@@ -9,7 +9,7 @@ const TRACK = {
 
 const THUMB = {
   field: 'top-[var(--space-switch-thumb-inset)] left-[var(--space-switch-thumb-inset)] w-[var(--sz-switch-thumb)] h-[var(--sz-switch-thumb)] [transition:background-color_0.14s_ease-out,transform_0.14s_cubic-bezier(0.22,1,0.36,1)]',
-  status: 'top-[var(--tr-space-switch-thumb-inset)] left-[var(--tr-space-switch-thumb-inset)] w-[var(--tr-switch-compact-thumb)] h-[var(--tr-switch-compact-thumb)] [transition:background-color_var(--tr-motion-compact-switch)_ease-out,transform_var(--tr-motion-compact-switch)_cubic-bezier(0.22,1,0.36,1)]',
+  status: 'top-[var(--space-switch-thumb-inset)] left-[var(--space-switch-thumb-inset)] w-[var(--tr-switch-compact-thumb)] h-[var(--tr-switch-compact-thumb)] [transition:background-color_var(--tr-motion-compact-switch)_ease-out,transform_var(--tr-motion-compact-switch)_cubic-bezier(0.22,1,0.36,1)]',
   configuration: 'top-[var(--space-switch-inset)] left-[var(--space-switch-inset)] w-[var(--w-switch-knob)] h-[var(--w-switch-knob)] [transition:background-color_0.14s_ease-out,transform_0.14s_cubic-bezier(0.22,1,0.36,1)]',
   panel: 'top-[var(--space-panel-switch-inset)] left-[var(--space-panel-switch-inset)] w-[var(--h-panel-switch-thumb)] h-[var(--h-panel-switch-thumb)] [transition:background-color_var(--transition-panel-switch)_ease-out,transform_var(--transition-panel-switch)_var(--ease-panel-switch)]'
 } as const

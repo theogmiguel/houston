@@ -46,7 +46,7 @@ const NUMBER_FIELD_STATE: Record<NumberFieldVariant, string> = {
 function numberFieldClass(variant: NumberFieldVariant): string {
   const widthClass = WIDTH_CLS[variant === 'task-number' ? 'task-number' : variant === 'compact' ? 'full' : 'setting-number']
   const radiusClass = variant === 'task-number' ? 'rounded-[var(--tr-radius-input)]' : 'rounded-[var(--tr-radius-sm)]'
-  return `${widthClass} border border-[var(--border)] ${radiusClass} bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-space-compact-field-block)] px-[var(--space-2)] ${NUMBER_FIELD_STATE[variant]}`
+  return `${widthClass} border border-[var(--border)] ${radiusClass} bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--space-compact-field-block)] px-[var(--space-2)] ${NUMBER_FIELD_STATE[variant]}`
 }
 
 type FieldOptions = Required<Pick<TextInputProps, 'surface' | 'font' | 'padding' | 'width' | 'size' | 'density' | 'radius' | 'height'>>
