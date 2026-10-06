@@ -30,7 +30,9 @@ const FORM_SIZE_CLS = 'h-[var(--h-form-ctl)] rounded-[var(--tr-radius-sm)] borde
 /** A rename field that takes over a row's label in place. */
 const INLINE_EDIT_CLS = `flex-1 min-w-0 bg-[var(--content-bg)] border border-[var(--accent)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-family:inherit] [font-weight:inherit] [font-style:inherit] [line-height:inherit] text-[length:var(--tr-text-md)] px-[var(--space-1-5)] py-[var(--space-0-5)] outline-none focus-visible:shadow-[${FOCUS_HALO}]`
 const FORM_CLS = 'w-full min-w-0 h-[var(--h-ssh-input)] px-[var(--space-2-5)] bg-background border border-border rounded-[var(--tr-radius-sm)] text-text-primary text-[length:var(--tr-text-base)]'
-export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'> & { surface?: 'content' | 'card'; font?: 'ui' | 'small' | 'mono'; padding?: TextInputPadding; width?: TextInputWidth; size?: 'default' | 'form'; density?: 'default' | 'compact'; radius?: 'input' | 'small'; variant?: 'field' | 'form' | 'unstyled' | 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number' | 'inline-edit' }
+const PANEL_INPUT = 'w-full px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)] outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[var(--panel-disabled-opacity)]'
+const PANE_INPUT = 'w-full bg-[var(--panel-field-fill)] border border-[var(--panel-field-border)] text-text-primary outline-none focus:border-[var(--border-hover)] focus:bg-surface focus-visible:border-[var(--border-hover)] py-2 px-3 rounded-[var(--tr-radius-md)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]'
+export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'> & { surface?: 'content' | 'card'; font?: 'ui' | 'small' | 'mono'; padding?: TextInputPadding; width?: TextInputWidth; size?: 'default' | 'form'; density?: 'default' | 'compact'; radius?: 'input' | 'small'; height?: 'field' | 'control'; variant?: 'field' | 'form' | 'unstyled' | 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number' | 'inline-edit' | 'panel' | 'pane' }
 
 type NumberFieldVariant = 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number'
 const NUMBER_FIELD_VARIANTS: ReadonlySet<string> = new Set<NumberFieldVariant>(['compact', 'setting-number', 'setting-number-rounded', 'task-number'])
@@ -47,7 +49,7 @@ function numberFieldClass(variant: NumberFieldVariant): string {
   return `${widthClass} border border-[var(--border)] ${radiusClass} bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-space-compact-field-block)] px-[var(--space-2)] ${NUMBER_FIELD_STATE[variant]}`
 }
 
-type FieldOptions = Required<Pick<TextInputProps, 'surface' | 'font' | 'padding' | 'width' | 'size' | 'density' | 'radius'>>
+type FieldOptions = Required<Pick<TextInputProps, 'surface' | 'font' | 'padding' | 'width' | 'size' | 'density' | 'radius' | 'height'>>
 
 function fieldClass({ surface, font, padding, width, size, density, radius }: FieldOptions): string {
   const ground = surface === 'card' ? 'bg-[var(--card-bg)]' : 'bg-[var(--content-bg)]'
@@ -58,6 +60,8 @@ function fieldClass({ surface, font, padding, width, size, density, radius }: Fi
 }
 
 function variantClass(variant: NonNullable<TextInputProps['variant']>, options: FieldOptions): string {
+  if (variant === 'panel') return `${PANEL_INPUT} ${options.height === 'control' ? 'h-[var(--h-ctl)]' : 'h-[var(--h-panel-field)]'}`
+  if (variant === 'pane') return PANE_INPUT
   if (variant === 'form') return `${FORM_CLS} ${options.width === 'port' ? 'w-[var(--w-ssh-port)] tabular-nums' : ''}`
   if (variant === 'unstyled') return ''
   if (variant === 'inline-edit') return INLINE_EDIT_CLS
@@ -67,8 +71,8 @@ function variantClass(variant: NonNullable<TextInputProps['variant']>, options: 
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   function TextInput(props, ref): React.JSX.Element {
-    const { className = '', surface = 'content', font = 'ui', padding = 'default', width = 'full', size = 'default', density = 'default', radius = 'input', variant = 'field', ...inputProps } = props
-    const base = variantClass(variant, { surface, font, padding, width, size, density, radius })
+    const { className = '', surface = 'content', font = 'ui', padding = 'default', width = 'full', size = 'default', density = 'default', radius = 'input', height = 'field', variant = 'field', ...inputProps } = props
+    const base = variantClass(variant, { surface, font, padding, width, size, density, radius, height })
     return <input {...inputProps} ref={ref} className={variant === 'unstyled' ? className : `${base} ${className}`} />
   }
 )

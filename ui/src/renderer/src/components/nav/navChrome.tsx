@@ -2,18 +2,7 @@ import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { HIT_TARGET_28 } from '../hitTarget'
 
 export {
-  BackBar,
   ContentColumn,
-  DetailState,
-  EmptyPane,
-  FeedbackBanner,
-  SupportingNote,
-  BackBar as NavBack,
-  ContentColumn as NavColumn,
-  DetailState as NavDetailState,
-  EmptyPane as NavEmpty,
-  FeedbackBanner as NavFeedback,
-  SupportingNote as NavFootnote,
 } from '../ui/navPrimitives'
 
 export const BLOCK =

@@ -3,6 +3,7 @@ import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { RVIEW_CLS } from './panelChrome'
 import { Text } from './Text'
 import { TextArea } from './TextArea'
+import { TextInput } from './TextInput'
 
 const BAR_BASE = 'border-b border-[var(--panel-surface-border)] bg-surface flex-none'
 
@@ -79,10 +80,8 @@ export function PaneViewNotice({ children }: { children: ReactNode }): React.JSX
   )
 }
 
-const FIELD_BASE = 'w-full bg-[var(--panel-field-fill)] border border-[var(--panel-field-border)] text-text-primary outline-none focus:border-[var(--border-hover)] focus:bg-surface focus-visible:border-[var(--border-hover)]'
-
 export function PaneViewInput({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>): React.JSX.Element {
-  return <input {...props} className={`${FIELD_BASE} py-2 px-3 rounded-[var(--tr-radius-md)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] ${className}`} />
+  return <TextInput {...props} variant="pane" className={className} />
 }
 
 export function PaneViewTextArea({ className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>): React.JSX.Element {

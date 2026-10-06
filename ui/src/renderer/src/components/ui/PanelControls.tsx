@@ -3,6 +3,8 @@ import { IconChevronDown, IconChevronLeft } from '../icons'
 import { Icon } from './Icon'
 import { Text } from './Text'
 import { TextArea } from './TextArea'
+import { FieldLabel } from './Field'
+import { TextInput } from './TextInput'
 export { PanelFootnote, PanelIconButton, type PanelIconButtonProps } from './PanelInlineControls'
 
 const BUTTON_BASE = 'btn inline-flex items-center justify-center gap-[var(--space-panel-button-gap)] min-h-[var(--h-ctl)] px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
@@ -42,11 +44,9 @@ export function PanelChoice({ pressed, type = 'button', className = '', children
   )
 }
 
-export function PanelFieldLabel({ className = '', ...props }: LabelHTMLAttributes<HTMLLabelElement>): React.JSX.Element {
-  return <Text as="label" {...props} size="small" weight="semibold" tone="secondary" className={`block pb-[var(--space-panel-label-bottom)] ${className}`} />
+export function PanelFieldLabel({ className = '', children, ...props }: LabelHTMLAttributes<HTMLLabelElement>): React.JSX.Element {
+  return <FieldLabel as="label" size="form" {...props} className={`pb-[var(--space-panel-label-bottom)] ${className}`}>{children}</FieldLabel>
 }
-
-const INPUT_BASE = 'w-full px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)] outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[var(--panel-disabled-opacity)]'
 
 export interface PanelTextInputProps extends InputHTMLAttributes<HTMLInputElement> {
   /** `control` is the 28px toolbar height; `field` is the 36px form height. */
@@ -55,7 +55,7 @@ export interface PanelTextInputProps extends InputHTMLAttributes<HTMLInputElemen
 }
 
 export function PanelTextInput({ height = 'field', className = '', ...props }: PanelTextInputProps): React.JSX.Element {
-  return <input {...props} className={`${INPUT_BASE} ${height === 'control' ? 'h-[var(--h-ctl)]' : 'h-[var(--h-panel-field)]'} ${className}`} />
+  return <TextInput {...props} variant="panel" height={height} className={className} />
 }
 
 export interface PanelTextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
