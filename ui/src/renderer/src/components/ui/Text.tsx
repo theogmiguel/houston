@@ -1,9 +1,9 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large' | 'md' | 'empty-title'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold' | 'tag-title'
 export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
-export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint' | 'editor'
+export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint' | 'editor' | 'display' | 'empty'
 
 const SIZE: Record<TextSize, string> = {
   display: '[font-family:var(--tr-text-display-family)] [font-size:var(--tr-text-display-size)]',
@@ -25,7 +25,10 @@ const SIZE: Record<TextSize, string> = {
   'shortcut-label': '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-shortcut-group-tracking)] uppercase',
   rosterName: '[font-size:var(--tr-text-roster-name-size)]',
   rosterDetail: '[font-size:var(--tr-text-roster-detail-size)]',
-  large: '[font-size:var(--tr-text-lg)]'
+  large: '[font-size:var(--tr-text-lg)]',
+  md: '[font-size:var(--tr-text-md)]',
+  /** Display size in the sans face, for an empty screen's heading. */
+  'empty-title': '[font-family:var(--font-sans)] [font-size:var(--tr-text-display-size)] tracking-[var(--tr-text-title-tracking)]'
 }
 
 const WEIGHT: Record<TextWeight, string> = {
@@ -77,7 +80,9 @@ const LEADING: Record<TextLeading, string> = {
   chatMarkdown: 'leading-[var(--tr-leading-chat-markdown)]',
   ui: '[line-height:var(--tr-text-ui-leading)]',
   'tag-hint': 'leading-[var(--tr-text-tag-hint-leading)]',
-  editor: 'leading-[var(--tr-text-editor-leading)]'
+  editor: 'leading-[var(--tr-text-editor-leading)]',
+  display: 'leading-[var(--tr-text-display-leading)]',
+  empty: 'leading-[var(--tr-text-empty-leading)]'
 }
 
 export interface TextProps extends HTMLAttributes<HTMLElement> {

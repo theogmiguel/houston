@@ -155,6 +155,7 @@ import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRu
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
 import { PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagEditorStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
+import { RAIL_STORIES } from './railStories'
 
 const noop = (): void => {}
 
@@ -452,5 +453,6 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/empty': () => <FilesEmptyGraphite />,
   'files/root-error': () => <FilesRootErrorGraphite />,
   'settings/tasks': () => <TasksSettingsStory />,
-  'settings/tasks-review-refusal': () => <TasksSettingsReviewRefusalStory />
+  'settings/tasks-review-refusal': () => <TasksSettingsReviewRefusalStory />,
+  ...RAIL_STORIES
 }

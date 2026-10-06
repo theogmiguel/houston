@@ -1,9 +1,9 @@
 import { FOCUS_HALO } from './shadowChrome'
 
-export type IconTileSize = 'sm' | 'md' | 'lg'
-export type IconTileTone = 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'danger-outline' | 'muted'
+export type IconTileSize = 'sm' | 'md' | 'lg' | 'xl'
+export type IconTileTone = 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'danger-outline' | 'muted' | 'surface-muted'
 
-const SIZE_PX: Record<IconTileSize, number> = { sm: 24, md: 32, lg: 40 }
+const SIZE_PX: Record<IconTileSize, number | string> = { sm: 24, md: 32, lg: 40, xl: 'var(--sz-workspace-empty-icon)' }
 
 const TONE_CLASS: Record<IconTileTone, string> = {
   default: 'bg-[var(--surface)] text-[var(--text-secondary)] border-[var(--border)]',
@@ -12,12 +12,14 @@ const TONE_CLASS: Record<IconTileTone, string> = {
   warning: 'bg-[var(--status-todo-bg)] text-[var(--status-todo-text)] border-transparent',
   danger: 'bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)] border-transparent',
   'danger-outline': 'bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)] border-[color-mix(in_srgb,var(--status-blocked-text)_35%,transparent)]',
-  muted: 'bg-transparent text-[var(--text-muted)] border-[var(--border)]'
+  muted: 'bg-transparent text-[var(--text-muted)] border-[var(--border)]',
+  'surface-muted': 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border)]'
 }
 
 export interface IconTileProps {
   icon?: React.ReactNode
   size?: IconTileSize
+  radius?: 'button' | 'medium'
   tone?: IconTileTone
   selected?: boolean
   disabled?: boolean
@@ -29,7 +31,7 @@ export interface IconTileProps {
   className?: string
 }
 
-function Spinner({ size = 12 }: { size?: number }): React.JSX.Element {
+function Spinner({ size = 12 }: { size?: number | string }): React.JSX.Element {
   return (
     <span
       role="status"
@@ -43,6 +45,7 @@ function Spinner({ size = 12 }: { size?: number }): React.JSX.Element {
 export function IconTile({
   icon,
   size = 'md',
+  radius = 'button',
   tone = 'default',
   selected = false,
   disabled = false,
@@ -54,6 +57,7 @@ export function IconTile({
   className = ''
 }: IconTileProps): React.JSX.Element {
   const px = SIZE_PX[size]
+  const spinnerSize = size === 'xl' ? 'var(--sz-workspace-empty-spinner)' : Math.round((px as number) * 0.4)
   const Tag = interactive ? 'button' : 'div'
   const title = disabled ? disabledReason : undefined
 
@@ -68,7 +72,7 @@ export function IconTile({
       title={title}
       onClick={interactive && !disabled ? onClick : undefined}
       style={{ width: px, height: px }}
-      className={`inline-flex flex-none items-center justify-center border rounded-[var(--tr-radius-button)] ${TONE_CLASS[tone]} ${
+      className={`inline-flex flex-none items-center justify-center border ${radius === 'medium' ? 'rounded-[var(--tr-radius-md)]' : 'rounded-[var(--tr-radius-button)]'} ${TONE_CLASS[tone]} ${
         interactive
           ? `cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`
           : ''
@@ -76,7 +80,7 @@ export function IconTile({
         disabled ? 'opacity-50 cursor-not-allowed' : ''
       } ${!icon && !loading ? 'border-dashed' : ''} ${className}`}
     >
-      {loading ? <Spinner size={Math.round(px * 0.4)} /> : icon ? (
+      {loading ? <Spinner size={spinnerSize} /> : icon ? (
         <span aria-hidden data-testid="icon-tile-icon" className="flex-none">
           {icon}
         </span>

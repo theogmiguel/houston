@@ -24,8 +24,6 @@ BASELINE=(
   "ui/src/renderer/src/components/settings/PrivacySection.tsx 2"
   "ui/src/renderer/src/components/settings/VoiceSection.tsx 2"
   "ui/src/renderer/src/components/ShortcutSheet.tsx 0"
-  "ui/src/renderer/src/components/WorkspaceEmpty.tsx 1"
-  "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
   "ui/src/renderer/src/pane/TerminalPane.tsx 0"
 )
 

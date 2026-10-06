@@ -1,4 +1,5 @@
 import { forwardRef, type InputHTMLAttributes } from 'react'
+import { FOCUS_HALO } from './shadowChrome'
 
 export type TextInputWidth = 'md' | 'full' | 'port' | 'setting-number' | 'task-number'
 export type TextInputPadding = 'default' | 'compact'
@@ -21,8 +22,10 @@ const WIDTH_CLS: Record<TextInputWidth, string> = {
   'task-number': 'w-[var(--tr-width-task-number)]'
 }
 const FORM_SIZE_CLS = 'h-[var(--h-form-ctl)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] text-[var(--text-primary)] font-medium outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[0.72]'
+/** A rename field that takes over a row's label in place. */
+const INLINE_EDIT_CLS = `flex-1 min-w-0 bg-[var(--content-bg)] border border-[var(--accent)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-family:inherit] [font-weight:inherit] [font-style:inherit] [line-height:inherit] text-[length:var(--tr-text-md)] px-[var(--space-1-5)] py-[var(--space-0-5)] outline-none focus-visible:shadow-[${FOCUS_HALO}]`
 const FORM_CLS = 'w-full min-w-0 h-[var(--h-ssh-input)] px-[var(--space-2-5)] bg-background border border-border rounded-[var(--tr-radius-sm)] text-text-primary text-[length:var(--tr-text-base)]'
-export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'> & { surface?: 'content' | 'card'; font?: 'ui' | 'small' | 'mono'; padding?: TextInputPadding; width?: TextInputWidth; size?: 'default' | 'form'; variant?: 'field' | 'form' | 'unstyled' | 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number' }
+export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'> & { surface?: 'content' | 'card'; font?: 'ui' | 'small' | 'mono'; padding?: TextInputPadding; width?: TextInputWidth; size?: 'default' | 'form'; variant?: 'field' | 'form' | 'unstyled' | 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number' | 'inline-edit' }
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   function TextInput(props, ref): React.JSX.Element {
@@ -31,6 +34,7 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
       return <input {...inputProps} ref={ref} className={`${FORM_CLS} ${width === 'port' ? 'w-[var(--w-ssh-port)] tabular-nums' : ''} ${className}`} />
     }
     if (variant === 'unstyled') return <input {...inputProps} ref={ref} className={className} />
+    if (variant === 'inline-edit') return <input {...inputProps} ref={ref} className={`${INLINE_EDIT_CLS} ${className}`} />
     if (variant === 'compact' || variant === 'setting-number' || variant === 'setting-number-rounded' || variant === 'task-number') {
       const widthVariant = variant === 'task-number' ? 'task-number' : variant === 'compact' ? 'full' : 'setting-number'
       const widthClass = WIDTH_CLS[widthVariant]

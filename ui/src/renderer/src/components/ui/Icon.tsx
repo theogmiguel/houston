@@ -41,20 +41,40 @@ export interface IconRenderProps {
   role?: IconRole
   label?: string
   className?: string
+  opacity?: 'muted' | 'subtle'
+  rotated?: boolean
+  tone?: 'accent' | 'faint' | 'muted'
 }
 
 export function Icon({
   glyph: Glyph,
   role = 'ui',
   label,
-  className
+  className,
+  opacity,
+  rotated = false,
+  tone
 }: IconRenderProps): React.JSX.Element {
   const base = ICON_ROLE_CLS[role]
   const Resolved = resolveTightGlyph(Glyph, role)
-  return (
+  if (!opacity && !rotated && !tone && !className) {
+    return (
+      <Resolved
+        className={base}
+        {...(label != null ? { role: 'img', 'aria-label': label } : {})}
+      />
+    )
+  }
+  const icon = (
     <Resolved
-      className={className ? `${base} ${className}` : base}
+      className={`${base} ${tone === 'accent' ? 'text-[var(--accent)]' : tone === 'faint' ? 'text-[var(--text-faint)]' : tone === 'muted' ? 'text-[var(--text-muted)]' : ''} ${className ?? ''}`}
       {...(label != null ? { role: 'img', 'aria-label': label } : {})}
     />
+  )
+  const wrapperClass = `${opacity === 'muted' ? 'opacity-[var(--opacity-icon-muted)]' : opacity === 'subtle' ? 'opacity-[var(--opacity-icon-subtle)]' : ''} ${rotated ? 'rotate-90' : ''}`
+  return (
+    opacity || rotated
+      ? <span className={wrapperClass}>{icon}</span>
+      : icon
   )
 }

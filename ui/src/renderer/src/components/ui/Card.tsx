@@ -9,22 +9,24 @@ const cardClasses = variants('border', {
     'material-inset': 'border-[var(--material-inset-brd)] bg-[var(--material-inset-bg)]',
     danger: 'border-[var(--danger)] bg-[var(--status-blocked-bg)]',
     surface: 'border-[var(--border)] bg-[var(--surface)]',
-    block: 'border-[var(--border)] bg-[var(--card-bg)]'
+    block: 'border-[var(--border)] bg-[var(--card-bg)]',
+    plate: 'border-0 bg-[var(--field-plate-bg)]'
   },
   shape: { button: 'rounded-[var(--tr-radius-button)]', md: 'rounded-[var(--tr-radius-md)]', card: 'rounded-[var(--tr-radius-card)]', inset: 'rounded-[var(--tr-radius-sm)]' },
-  padding: { none: '', md: 'p-[var(--space-3)]', sm: 'p-[var(--space-2-5)]', invocation: 'px-[var(--space-card-invocation-x)] py-[var(--space-card-invocation-y)]', note: 'px-[var(--space-card-note-x)] py-[var(--space-card-note-y)]' },
+  padding: { none: '', md: 'p-[var(--space-3)]', sm: 'p-[var(--space-2-5)]', invocation: 'px-[var(--space-card-invocation-x)] py-[var(--space-card-invocation-y)]', note: 'px-[var(--space-card-note-x)] py-[var(--space-card-note-y)]', roomy: 'p-[var(--space-7)]' },
   disabled: { false: '', true: 'opacity-50' },
   clip: { false: 'overflow-visible', true: 'overflow-hidden' }
 }, { tone: 'default', shape: 'button', padding: 'none', disabled: 'false', clip: 'true' })
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode
-  tone?: 'default' | 'inset' | 'material-inset' | 'danger' | 'surface' | 'block'
+  tone?: 'default' | 'inset' | 'material-inset' | 'danger' | 'surface' | 'block' | 'plate'
   disabled?: boolean
   clip?: boolean
   shape?: 'button' | 'md' | 'card' | 'inset'
-  padding?: 'none' | 'md' | 'sm' | 'invocation' | 'note'
+  padding?: 'none' | 'md' | 'sm' | 'invocation' | 'note' | 'roomy'
   className?: string
+  layout?: 'default' | 'center-stack'
 }
 
 export interface CardContentProps {
@@ -67,8 +69,8 @@ function CardRow({ heading, meta, status, action, rail, compact = false, classNa
   )
 }
 
-function CardBase({ children, tone = 'default', shape = 'button', padding = 'none', disabled = false, clip = true, className = '', ...props }: CardProps): React.JSX.Element {
-  return <div {...props} className={`${cardClasses({ tone, shape, padding, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${className}`}>{children}</div>
+function CardBase({ children, tone = 'default', shape = 'button', padding = 'none', disabled = false, clip = true, className = '', layout = 'default', ...props }: CardProps): React.JSX.Element {
+  return <div {...props} className={`${cardClasses({ tone, shape, padding, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${layout === 'center-stack' ? 'flex flex-col items-center gap-[var(--space-4)]' : ''} ${className}`}>{children}</div>
 }
 
 function CardContent({ children }: CardContentProps): React.JSX.Element {

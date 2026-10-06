@@ -71,6 +71,10 @@ describe('OpenInMenu', () => {
     await act(async () => {
       container.querySelector('button')!.click()
     })
+    await vi.waitFor(
+      () => expect(container.querySelector('[data-testid="open-in-submenu"] button')).not.toBeNull(),
+      { timeout: 5000 }
+    )
   }
 
   it('lists every installed editor by its display name', async () => {

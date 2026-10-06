@@ -27,9 +27,7 @@ BASELINE=(
   "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 2"
   "ui/src/renderer/src/components/settings/PrivacySection.tsx 1"
   "ui/src/renderer/src/components/settings/VoiceSection.tsx 4"
-  "ui/src/renderer/src/components/Sidebar.tsx 10"
   "ui/src/renderer/src/components/SshConnectModal.tsx 0"
-  "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
 )
 
 mapped_steps="$(perl -e '

@@ -18,11 +18,14 @@ import {
   ChoiceCardSpecimen,
   ActionMenu,
   ActionEmptyState,
+  ActivityDotSpecimen,
   Button,
   AppTitlebarSpecimen,
   Card,
   Caption as UiCaption,
   ContentSection,
+  ScreenRegion,
+  ShortcutHintSpecimen,
   DataTable,
   DefinitionTable,
   Disclosure,
@@ -41,10 +44,16 @@ import {
   ComposerPillMenu,
   ComposerPillOption,
   ComposerSendButton,
+  ContextMenuSpecimen,
   DoneDisclosure,
   Drawer,
   DialogSpecimen,
   EmptyState,
+  EmptyStateActions,
+  EmptyStateDetails,
+  EmptyStateFrame,
+  EmptyStateHeading,
+  EmptyStateDescription,
   Field,
   FieldLabel,
   FloatingBannerSpecimen,
@@ -93,8 +102,18 @@ import {
   PaneMenuProfileGroup,
   PaneMenuProfileRow,
   PaneMenuSurface,
+  NavigationRailFooter,
+  NavigationRailHeader,
+  NavigationRailScroll,
+  NavigationRailSection,
+  NavigationRailSpecimen,
+  WorkspaceList,
+  WorkspaceGroupDivider,
+  SettingsNavigation,
   PageFrame,
   PageHeader,
+  ResizeHandleSpecimen,
+  WorkspaceTreeRowSpecimen,
   PaneHeaderButton,
   PaletteOptionsSpecimen,
   StackSpecimen,
@@ -136,11 +155,14 @@ import {
   ToolbarActionsSpecimen,
   WindowControlDockSpecimen,
   EmptyGridHintSpecimen,
+  TreeGroupHeaderSpecimen,
+  WorkspaceGroupLabelSpecimen,
   Segmented,
   SegmentedControl,
   Slider,
   StatusIcon,
   Toggle,
+  Text,
   CheckedStamp,
   STATUS_LABELS,
   StatusLabel,
@@ -161,7 +183,6 @@ import {
   MarkdownContentSpecimen,
   OptionButtonSpecimen,
   Table,
-  Text,
   SettingsDetailPanelSpecimen,
   TaskProgress,
   TaskAcceptanceRow,
@@ -249,6 +270,7 @@ import { PaneHeadActions, PaneHeadButton } from '../src/components/ui/PaneContro
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
 import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelSwitch, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
+import logoUrl from '../src/assets/logo-chrome.svg'
 
 const noop = (): void => {}
 
@@ -532,6 +554,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="primary" icon={IconPlus}>Primary</Button>
             <Button variant="secondary">Secondary</Button>
             <Button variant="field">Field</Button>
+            <Button variant="surface-large">Large surface</Button>
+            <Button variant="action-primary" size="lg">Large primary</Button>
             <Button variant="outline">Outline</Button>
             <Button variant="ghost">Ghost</Button>
             <Button variant="label">Label action</Button>
@@ -646,6 +670,45 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <ConfigurationDetailSpecimen />
             <Text size="subhead" weight="semibold" tone="primary">Configuration heading</Text>
           </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Sidebar context menu">
+          <SpecimenRow><ContextMenuSpecimen /></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Navigation rail roles">
+          <NavigationRailHeader logo={logoUrl} action={<Button variant="subtle-icon" aria-label="Rail action"><Icon glyph={IconSearch} role="ui" /></Button>}>Houston</NavigationRailHeader>
+          <NavigationRailSection><div>Workspace navigation section</div></NavigationRailSection>
+          <NavigationRailSpecimen />
+          <NavigationRailScroll><WorkspaceList><WorkspaceTreeRowSpecimen /></WorkspaceList></NavigationRailScroll>
+          <NavigationRailFooter><Button variant="subtle-icon" aria-label="Settings"><Icon glyph={IconSearch} role="ui" /></Button></NavigationRailFooter>
+          <TreeGroupHeaderSpecimen />
+          <WorkspaceGroupLabelSpecimen />
+          <SettingsNavigation><SettingsRailRow kind="section" icon={IconSearch} label="Appearance" sectionId="appearance" selected onClick={noop} /></SettingsNavigation>
+          <WorkspaceGroupDivider><div style={{ borderTop: '1px solid var(--border)' }} /></WorkspaceGroupDivider>
+          <SpecimenRow><ActivityDotSpecimen /></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Empty state frame roles">
+          <EmptyStateFrame style={{ minHeight: 180, flex: 'none' }}>
+            <EmptyStateHeading>Nothing running here yet</EmptyStateHeading>
+            <EmptyStateDescription>Open a terminal or browser in this workspace.</EmptyStateDescription>
+            <EmptyStateActions><Button variant="action-primary" size="lg">New session</Button><Button variant="surface-large">Terminal</Button></EmptyStateActions>
+          </EmptyStateFrame>
+          <EmptyStateDetails><Text as="p" flush size="small" weight="small" tone="danger">The selected folder cannot be opened.</Text></EmptyStateDetails>
+          <ScreenRegion style={{ minHeight: 180, flex: 'none' }}><EmptyStateHeading>No workspace selected</EmptyStateHeading></ScreenRegion>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Shortcut hints">
+          <SpecimenRow><ShortcutHintSpecimen /></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Resize handle">
+          <SpecimenRow><ResizeHandleSpecimen /></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Text">
+          <SpecimenRow><Text size="empty-title" weight="display" tone="primary" leading="display">A workspace with no sessions</Text><Text as="p" flush size="ui" weight="ui" tone="muted" leading="empty">Open a terminal or browser in this workspace.</Text></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Roster surfaces">
@@ -783,6 +846,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Card and Card.Row">
+          <Card tone="plate" shape="card" padding="roomy" layout="center-stack" clip={false}><Text size="empty-title" weight="display" tone="primary" leading="display">Nothing running here yet</Text><Button variant="action-primary" size="lg">New session</Button></Card>
           <Card tone="danger" shape="card" padding="md">Question card error state</Card>
           <Card disabled>Disabled card</Card>
           <Card>
@@ -1183,11 +1247,11 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="IconTile">
-          {(['sm', 'md', 'lg'] as const).map((size) => (
+          {(['sm', 'md', 'lg', 'xl'] as const).map((size) => (
             <div key={size} style={{ display: 'grid', gap: 'var(--space-2)' }}>
               <Caption>{size}</Caption>
               <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'danger-outline', 'muted'] as const).map((tone) => (
-                <IconTile key={`${size}-${tone}`} size={size} tone={tone} icon={<IconCheck role="ui" />} label={`${size} ${tone}`} />
+                <IconTile key={`${size}-${tone}`} size={size} tone={tone} radius={size === 'xl' ? 'medium' : 'button'} icon={<IconCheck role="ui" />} label={`${size} ${tone}`} />
               ))}</SpecimenRow>
             </div>
           ))}

@@ -190,22 +190,22 @@ describe('every chrome theme cuts its own custom ground', () => {
 
   it('every screen that fills a region wears the base rung, never a literal ground', () => {
     const ROOTS: Array<[string, string]> = [
-      ['SettingsView.tsx', 'components'],
-      ['NewSessionComposer.tsx', 'components'],
-      ['FirstRun.tsx', 'components'],
-      ['nav/SkillsSurface.tsx', 'components'],
-      ['nav/HooksSurface.tsx', 'components'],
-      ['nav/RoutinesSurface.tsx', 'components'],
-      ['WorkspacesEmpty.tsx', 'components']
+      ['SettingsView.tsx', 'SettingsView.tsx'],
+      ['NewSessionComposer.tsx', 'NewSessionComposer.tsx'],
+      ['FirstRun.tsx', 'FirstRun.tsx'],
+      ['nav/SkillsSurface.tsx', 'nav/SkillsSurface.tsx'],
+      ['nav/HooksSurface.tsx', 'nav/HooksSurface.tsx'],
+      ['nav/RoutinesSurface.tsx', 'nav/RoutinesSurface.tsx'],
+      ['WorkspacesEmpty.tsx', 'ui/ScreenRegion.tsx']
     ]
-    for (const [file] of ROOTS) {
-      const src = readFileSync(resolve(__dirname, file), 'utf8')
-      expect(src, `${file} must wear the rung's class`).toContain('MATERIAL_CLS.base')
-      expect(src, `${file} must carry data-material, or it gets the ground and no ink`).toContain(
+    for (const [screen, sourceFile] of ROOTS) {
+      const src = readFileSync(resolve(__dirname, sourceFile), 'utf8')
+      expect(src, `${screen} must wear the rung's class`).toContain('MATERIAL_CLS.base')
+      expect(src, `${screen} must carry data-material, or it gets the ground and no ink`).toContain(
         "materialAttrs('base')"
       )
       const rootCls = src.split('\n').find((l) => l.includes('MATERIAL_CLS.base')) ?? ''
-      expect(rootCls, `${file}: the root must not paint an opaque ground over the picture`)
+      expect(rootCls, `${screen}: the root must not paint an opaque ground over the picture`)
         .not.toContain('bg-background')
     }
   })
@@ -234,21 +234,21 @@ describe('every chrome theme cuts its own custom ground', () => {
     )
     expect(THEME_CSS).toContain('.grid-region:has(> .content-region)::before')
     expect(THEME_CSS).toContain('.grid-region:has(> .content-region)::after')
-    const ROOTS = [
-      'SettingsView.tsx',
-      'NewSessionComposer.tsx',
-      'FirstRun.tsx',
-      'WorkspacesEmpty.tsx',
-      'nav/SkillsSurface.tsx',
-      'nav/HooksSurface.tsx',
-      'nav/RoutinesSurface.tsx'
+    const ROOTS: Array<[string, string]> = [
+      ['SettingsView.tsx', 'SettingsView.tsx'],
+      ['NewSessionComposer.tsx', 'NewSessionComposer.tsx'],
+      ['FirstRun.tsx', 'FirstRun.tsx'],
+      ['WorkspacesEmpty.tsx', 'ui/ScreenRegion.tsx'],
+      ['nav/SkillsSurface.tsx', 'nav/SkillsSurface.tsx'],
+      ['nav/HooksSurface.tsx', 'nav/HooksSurface.tsx'],
+      ['nav/RoutinesSurface.tsx', 'nav/RoutinesSurface.tsx']
     ]
-    for (const file of ROOTS) {
-      const src = readFileSync(resolve(__dirname, file), 'utf8')
-      expect(src, `${file} must cut the region's top-left corner`).toContain(
+    for (const [screen, sourceFile] of ROOTS) {
+      const src = readFileSync(resolve(__dirname, sourceFile), 'utf8')
+      expect(src, `${screen} must cut the region's top-left corner`).toContain(
         'rounded-tl-[var(--r-content)]'
       )
-      expect(src, `${file} must cut the region's bottom-left corner`).toContain(
+      expect(src, `${screen} must cut the region's bottom-left corner`).toContain(
         'rounded-bl-[var(--r-content)]'
       )
     }

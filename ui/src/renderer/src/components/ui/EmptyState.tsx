@@ -2,9 +2,30 @@ import type { IconComponent } from '../icons'
 import { IconTile } from './IconTile'
 import { Button } from './Button'
 import { variants } from './variants'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
 
 export type EmptyStateVariant = 'panel' | 'window'
+
+export function EmptyStateFrame({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
+  return <div {...props} className={`flex flex-1 min-w-0 flex-col items-center justify-center p-[var(--space-7)] text-center ${className}`}>{children}</div>
+}
+
+export function EmptyStateActions({ children }: { children: ReactNode }): React.JSX.Element {
+  return <div className="pt-[var(--space-2)] flex flex-wrap items-center justify-center gap-[var(--space-empty-actions)]">{children}</div>
+}
+
+export function EmptyStateDetails({ children, role = 'alert', ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
+  return <div {...props} role={role} className="pt-[var(--space-4)] flex max-w-[var(--w-workspace-refusal)] flex-col gap-[var(--space-1-5)] text-center">{children}</div>
+}
+
+export function EmptyStateHeading({ children, ...props }: HTMLAttributes<HTMLHeadingElement> & { children: ReactNode }): React.JSX.Element {
+  return <Text {...props} as="h2" size="empty-title" weight="display" tone="primary" leading="display" flush className="max-w-[var(--w-empty-state-heading)]">{children}</Text>
+}
+
+export function EmptyStateDescription({ children, ...props }: HTMLAttributes<HTMLParagraphElement> & { children: ReactNode }): React.JSX.Element {
+  return <Text {...props} as="p" flush size="ui" weight="ui" tone="muted" leading="empty" className="max-w-[var(--w-empty-state-description)]">{children}</Text>
+}
 
 const stateClasses = variants('mx-auto flex w-full flex-col items-center text-center', {
   variant: {
