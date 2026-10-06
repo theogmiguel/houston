@@ -1,11 +1,11 @@
 import { TIGHT_ICON_MAP, type IconComponent } from '../icons'
-import type { TextRole } from '../Text'
+export type IconRole = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'ui' | 'small' | 'label'
 
-const TIGHT_ROLES: ReadonlySet<TextRole> = new Set(['label', 'small', 'ui'])
+const TIGHT_ROLES: ReadonlySet<IconRole> = new Set(['label', 'small', 'ui'])
 
 const ICON_STRUCTURE_CLS = 'block flex-none'
 
-export const ICON_ROLE_CLS: Readonly<Record<TextRole, string>> = Object.freeze({
+export const ICON_ROLE_CLS: Readonly<Record<IconRole, string>> = Object.freeze({
   display:
     `${ICON_STRUCTURE_CLS} [font-size:var(--tr-icon-display-size)] [width:1em] [height:1em] ` +
     '[stroke-width:var(--tr-icon-display-stroke)]',
@@ -32,13 +32,13 @@ export const ICON_ROLE_CLS: Readonly<Record<TextRole, string>> = Object.freeze({
     '[stroke-width:var(--tr-icon-label-stroke)]'
 })
 
-export function resolveTightGlyph(Glyph: IconComponent, role: TextRole): IconComponent {
+export function resolveTightGlyph(Glyph: IconComponent, role: IconRole): IconComponent {
   return (TIGHT_ROLES.has(role) && TIGHT_ICON_MAP.get(Glyph)) || Glyph
 }
 
 export interface IconRenderProps {
   glyph: IconComponent
-  role?: TextRole
+  role?: IconRole
   label?: string
   className?: string
 }

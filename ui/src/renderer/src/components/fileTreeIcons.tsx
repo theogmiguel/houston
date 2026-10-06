@@ -13,7 +13,7 @@ import {
   type IconComponent
 } from './icons'
 import { Icon } from './ui/Icon'
-import type { TextRole } from './Text'
+import type { IconRole } from './ui/Icon'
 
 export type FileTreeIconKind =
   | 'folder'
@@ -121,7 +121,7 @@ export function FileTreeIcon({
   role = 'ui'
 }: {
   kind: FileTreeIconKind
-  role?: TextRole
+  role?: IconRole
 }): React.JSX.Element {
   return <Icon glyph={FILE_TREE_ICON_COMPONENT[kind]} role={role} className={FILE_TREE_ICON_TONE_CLS[kind]} />
 }

@@ -77,7 +77,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { SettingsAbout, SettingsAgentSetup, SettingsAppearance, SettingsAppearanceCustom, SettingsDiagnostics, SettingsDictation, SettingsNotifications, SettingsOrchestration, SettingsPrivacy, SettingsSearchStory, SettingsShortcuts, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAgentSetup, SettingsAppearance, SettingsAppearanceCustom, SettingsDetailStory, SettingsDiagnostics, SettingsDictation, SettingsNotifications, SettingsOrchestration, SettingsPrivacy, SettingsSearchStory, SettingsShortcuts, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -273,6 +273,12 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/agents': () => <SettingsAgentSetup />,
   'settings/appearance': () => <SettingsAppearance />,
   'settings/appearance-custom': () => <SettingsAppearanceCustom />,
+  'settings/detail': () => <SettingsDetailStory />,
+  'settings/detail-error': () => <SettingsDetailStory state="error" />,
+  'settings/detail-loading': () => <SettingsDetailStory state="loading" />,
+  'settings/detail-empty': () => <SettingsDetailStory state="empty" />,
+  'settings/appearance-picker': () => <AppearancePickerStory />,
+  'settings/appearance-picker-empty': () => <AppearancePickerStory empty />,
   'settings/search': () => <SettingsSearchStory />,
   'settings/terminal': () => <SettingsTerminal />,
   'settings/notifications': () => <SettingsNotifications />,

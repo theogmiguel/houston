@@ -11,7 +11,6 @@ EXEMPT_COUNTS=(
   "ui/src/renderer/src/components/agents/SelectMenu.tsx 1"
   "ui/src/renderer/src/editor/editorChrome.ts 2"
   "ui/src/renderer/src/components/browserFullscreenChrome.ts 1"
-  "ui/src/renderer/src/components/settings/AppearanceSection.tsx 1"
 )
 
 mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \

@@ -32,9 +32,16 @@ import {
   LaunchPresetOutlineSpecimen,
   LaunchSlotCardSpecimen,
   Notice,
+  NumberFieldSpecimen,
   PageFrame,
   PageHeader,
   PaneHeaderButton,
+  PaletteOptionsSpecimen,
+  StackSpecimen,
+  FileAttachmentRowSpecimen,
+  DetailsDisclosureSpecimen,
+  FontSizeControlSpecimen,
+  BackgroundFieldSpecimen,
   PopoverViews,
   SectionHead,
   Select,
@@ -53,6 +60,8 @@ import {
   RoutineDetail,
   RosterSurfaceSpecimen,
   Table,
+  Text,
+  SettingsDetailPanelSpecimen,
   TaskProgress,
   TaskAcceptanceRow,
   TaskDetailFrame,
@@ -271,6 +280,11 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="text">Task row title</Button>
             <Button variant="badge">Orchestrator</Button>
             <Button variant="ghost-icon"><IconClose /></Button>
+            <Button variant="confirm-primary">Confirm</Button>
+            <Button variant="compact-outline">Try again</Button>
+            <Button variant="danger-confirmation">Remove</Button>
+            <Button variant="compact-ghost">Replace…</Button>
+            <Button variant="compact-danger">Remove file</Button>
             <Button variant="legacy-primary">Legacy primary</Button>
             <Button variant="legacy-secondary">Legacy secondary</Button>
             <Button variant="legacy-ghost">Legacy ghost</Button>
@@ -291,6 +305,30 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="danger" disabled>Disabled danger</Button>
             <Button variant="icon" icon={IconClose} aria-label="Disabled close" disabled />
           </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Number fields">
+          <SpecimenRow><NumberFieldSpecimen /></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Text">
+          <SpecimenRow><Text size="heading" weight="heading" tone="primary">Section heading</Text><Text size="body" tone="secondary">Supporting copy</Text><Text size="small" tone="muted">Quiet detail</Text><Text size="label" weight="label" tone="faint">LABEL</Text></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Settings detail">
+          <SettingsDetailPanelSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Palette options">
+      <PaletteOptionsSpecimen />
+      <StackSpecimen />
+      <FileAttachmentRowSpecimen />
+      <DetailsDisclosureSpecimen />
+      <FontSizeControlSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Background field preview">
+          <BackgroundFieldSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Roster surfaces">

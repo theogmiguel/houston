@@ -1,4 +1,3 @@
-import { FOCUS_HALO, RING_ACCENT_SOLID } from '../ui/shadowChrome'
 import {
   CHROME_THEME_LABELS,
   CHROME_THEMES,
@@ -8,6 +7,7 @@ import {
   type TerminalPaletteChoice
 } from '../../theme'
 import { Segmented } from '../ui/SegmentedControl'
+import { ChoiceGrid, RadioCard, RadioCardFooter, ThemePreviewSwatch } from '../ui/RadioCard'
 import { Group, Row } from './shared'
 import { Toggle } from '../ui/settingsPrimitives'
 import {
@@ -93,57 +93,28 @@ export function AppearanceSection({
     <>
 
       <Group heading="Chrome theme" plain>
-        <div
+        <ChoiceGrid
           role="radiogroup"
+          columns={2}
           aria-label="Chrome theme"
-          className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-[var(--space-3)] mt-[var(--space-2)] mb-[var(--space-4)]"
         >
           {CHROME_THEMES.map((t) => {
             const on = chromeTheme === t
             return (
-              <button
+              <RadioCard
                 key={t}
-                type="button"
-                role="radio"
-                aria-checked={on}
+                selected={on}
+                emphasis="raised"
                 data-testid="chrome-theme-tile"
                 data-chrome-theme={t}
                 onClick={(event) => onChromeTheme(t, event.currentTarget)}
-                className={`btn flex flex-col p-0 overflow-hidden rounded-[var(--tr-radius-card)] border text-left whitespace-normal [transition:border-color_.12s_ease,transform_.12s_ease] motion-safe:hover:-translate-y-px focus-visible:outline-none ${
-                  on
-                    ? `border-[var(--accent)] shadow-[${RING_ACCENT_SOLID}] bg-[var(--card-bg)] focus-visible:shadow-[${RING_ACCENT_SOLID},${FOCUS_HALO}]`
-                    : `border-[var(--border)] hover:border-[var(--border-hover)] bg-[var(--card-bg)] focus-visible:shadow-[${FOCUS_HALO}]`
-                }`}
               >
-                <span
-                  data-theme={t}
-                  data-testid="chrome-theme-swatch"
-                  className="flex h-[76px] w-full flex-col justify-between p-2 bg-[var(--content-bg)]"
-                >
-                  <span className="block h-[5px] w-3/5 rounded-[3px] bg-[var(--accent)]" />
-                  <span className="flex gap-[3px]">
-                    <i className="block h-[5px] w-[5px] rounded-full bg-[var(--text-primary)]" />
-                    <i className="block h-[5px] w-[5px] rounded-full bg-[var(--text-secondary)]" />
-                    <i className="block h-[5px] w-[5px] rounded-full bg-[var(--border)]" />
-                  </span>
-                </span>
-                <span className="flex w-full items-center justify-between gap-[var(--space-1-5)] border-t border-t-[var(--divider)] px-[var(--space-2-5)] py-[var(--space-2)]">
-                  <b className="min-w-0 truncate text-[length:var(--tr-text-small-size)] font-medium text-[var(--text-primary)]">
-                    {CHROME_THEME_LABELS[t]}
-                  </b>
-                  <span
-                    data-testid="chrome-theme-tag"
-                    className={`shrink-0 font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase ${
-                      on ? 'text-[var(--accent)]' : 'text-[var(--text-faint)]'
-                    }`}
-                  >
-                    {CHROME_THEME_TAGS[t]}
-                  </span>
-                </span>
-              </button>
+                <ThemePreviewSwatch theme={t} data-testid="chrome-theme-swatch" />
+                <RadioCardFooter label={CHROME_THEME_LABELS[t]} tag={CHROME_THEME_TAGS[t]} selected={on} testId="chrome-theme-tag" />
+              </RadioCard>
             )
           })}
-        </div>
+        </ChoiceGrid>
       </Group>
 
       <WindowBackgroundGroup chromeTheme={chromeTheme} palette={palette} />

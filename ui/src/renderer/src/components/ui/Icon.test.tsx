@@ -4,9 +4,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Icon, ICON_ROLE_CLS } from './Icon'
 import { IconFile, IconPlus } from '../icons'
-import type { TextRole } from '../Text'
+import type { IconRole } from './Icon'
 
-const ROLES: TextRole[] = [
+const ROLES: IconRole[] = [
   'display',
   'title',
   'heading',

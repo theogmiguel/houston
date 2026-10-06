@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { NumberField, NumberFieldMessage, NumberFieldUnit } from '../ui/NumberField'
 
 export { SectionHead, SubHead, Group, SettingsRow as Row } from '../ui/settingsPrimitives'
 
@@ -31,10 +32,9 @@ export function NumberSetting({
     if (n !== value) onCommit(n)
   }
   return (
-    <div className="flex items-center gap-2">
-      <input
-        type="number"
-        className="w-[64px] bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2 text-right"
+    <div className="flex items-center gap-[var(--space-2)]">
+      <NumberField
+        width="compact"
         min={min}
         max={max}
         step={1}
@@ -46,7 +46,7 @@ export function NumberSetting({
           if (e.key === 'Enter') e.currentTarget.blur()
         }}
       />
-      <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)] whitespace-nowrap">{unit}</span>
+      <NumberFieldUnit>{unit}</NumberFieldUnit>
     </div>
   )
 }
@@ -90,11 +90,10 @@ export function ClampedNumberSetting({
     if (n !== value) onCommit(n)
   }
   return (
-    <div className="flex flex-col items-end gap-[var(--space-1)]">
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          className="w-[72px] bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2 text-right"
+      <div className="grid justify-items-end gap-[var(--space-1)]">
+      <div className="flex items-center gap-[var(--space-2)]">
+        <NumberField
+          width="medium"
           min={min}
           max={max}
           step={step ?? 1}
@@ -109,15 +108,10 @@ export function ClampedNumberSetting({
             if (e.key === 'Enter') e.currentTarget.blur()
           }}
         />
-        {unit && <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)] whitespace-nowrap">{unit}</span>}
+        {unit && <NumberFieldUnit>{unit}</NumberFieldUnit>}
       </div>
       {rejected && (
-        <div
-          className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)] max-w-[220px] text-right"
-          data-testid={`${testId}-rejected`}
-        >
-          {rejected}
-        </div>
+        <NumberFieldMessage testId={`${testId}-rejected`}>{rejected}</NumberFieldMessage>
       )}
     </div>
   )

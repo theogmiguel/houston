@@ -15,6 +15,8 @@ import type { UpdateState } from '../src/houston/generated/UpdateState'
 import type { SessionPolicy } from '../src/houston/generated/SessionPolicy'
 import type { SettingsSectionId } from '../src/settingsSections'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
+import { SettingsDetail } from '../src/components/SettingsDetail'
+import { AppearancePicker } from '../src/components/AppearancePicker'
 
 const noop = (): void => {}
 
@@ -76,6 +78,46 @@ export function SettingsAppearance(): React.JSX.Element {
 export function SettingsAppearanceCustom(): React.JSX.Element {
   React.useEffect(() => setMode('custom'), [])
   return <SettingsScreen section="appearance" />
+}
+
+const detailGroups = [{
+  heading: 'Workspace',
+  rows: [{
+    id: 'name',
+    label: 'Workspace name',
+    description: 'The label shown in the sidebar.',
+    control: { kind: 'node' as const, node: <input value="Houston" readOnly className="w-36" /> }
+  }, {
+    id: 'remove',
+    label: 'Remove workspace',
+    description: 'This action needs a second confirmation.',
+    control: { kind: 'destructive' as const, label: 'Remove', armedLabel: 'Confirm remove', onConfirm: noop },
+    disable: { disabled: true as const, reason: 'A session is still running in this workspace.' }
+  }]
+}]
+
+export function SettingsDetailStory({ state = 'ready' }: { state?: 'ready' | 'error' | 'loading' | 'empty' }): React.JSX.Element {
+  return <div className="h-full bg-[var(--content-bg)] text-[var(--text-primary)]"><style>{'[data-testid="settings-detail"] [role="status"] { animation: none !important; }'}</style><SettingsDetail
+    title="Workspace settings"
+    description="Control how Houston uses this workspace."
+    groups={state === 'empty' ? undefined : detailGroups}
+    loading={state === 'loading'}
+    error={state === 'error' ? { message: 'Settings could not be loaded.', onRetry: noop } : undefined}
+    dirty
+    onSave={noop}
+  /></div>
+}
+
+export function AppearancePickerStory({ empty = false }: { empty?: boolean }): React.JSX.Element {
+  React.useEffect(() => {
+    if (!empty) return
+    const input = document.querySelector<HTMLInputElement>('[data-testid="appearance-picker-search"]')
+    if (!input) return
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, 'missing palette')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }, [empty])
+  return <div className="max-w-[700px] p-6 bg-[var(--content-bg)] text-[var(--text-primary)]"><AppearancePicker currentTheme="black" onPreview={noop} onCommit={noop} /></div>
 }
 
 export function SettingsTerminal(): React.JSX.Element {
