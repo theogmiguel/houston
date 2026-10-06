@@ -616,6 +616,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
             | proto::ClientMsg::WorktreeCleanupStatus { .. }
+            | proto::ClientMsg::WorktreeIdleRemovalDaysGet
             | proto::ClientMsg::GitCheckpoints { .. }
             | proto::ClientMsg::GitCheckpointDiff { .. }
             | proto::ClientMsg::SshProfileList
@@ -928,6 +929,25 @@ async fn dispatch(
             tokio::task::spawn_blocking(move || d.worktree_cleanup_run(&dir, paths))
                 .await
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("worktree cleanup pass panicked: {e}")))
+        }
+        proto::ClientMsg::WorktreeIdleRemovalDaysGet => {
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::WorktreeIdleRemovalDays {
+                    days: daemon.worktree_idle_removal_days(),
+                },
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::WorktreeIdleRemovalDaysSet { days } => daemon
+            .set_worktree_idle_removal_days(days)
+            .map(|()| daemon.broadcast_control(&daemon.host_info())),
+        proto::ClientMsg::WorktreeIdleRemove { dir, path } => {
+            let d = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || d.worktree_idle_remove(&dir, &path))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("stale worktree removal panicked: {e}")))
         }
         proto::ClientMsg::SettledRetentionSet { hours } => {
             daemon.set_settled_retention_hours(hours)?;

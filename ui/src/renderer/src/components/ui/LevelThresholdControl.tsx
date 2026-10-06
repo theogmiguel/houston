@@ -1,4 +1,4 @@
-import { Button } from './Button'
+import { SettingsButton } from './SettingsButtonRoles'
 
 export interface LevelThresholdControlProps {
   value: number
@@ -24,7 +24,7 @@ export function LevelThresholdControl({ value, level, defaultValue, maxValue, ma
         {value === defaultValue ? (
           <span>{level === null ? 'no signal' : level.toFixed(3)}</span>
         ) : (
-          <Button type="button" variant="label-action" onClick={() => onChange(defaultValue)}>Reset</Button>
+          <SettingsButton type="button" variant="label-action" onClick={() => onChange(defaultValue)}>Reset</SettingsButton>
         )}
       </div>
     </div>

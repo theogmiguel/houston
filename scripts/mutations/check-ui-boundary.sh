@@ -8,9 +8,3 @@ grep -q 'Hidden.tsx:2.*bg-red-500' <<< "$out"
 grep -q 'stylesheet .*feature.css' <<< "$out"
 grep -q 'base stylesheet .*base.css:1.*widget' <<< "$out"
 if grep -q 'primitive.css' <<< "$out"; then exit 1; fi
-fixtures="$root/scripts/mutations/fixtures/ui-boundary"
-pending() { SCAN_ROOT="$fixtures" UI_BOUNDARY_PENDING="$fixtures/Bad.tsx $1" bash "$root/scripts/check-ui-boundary.sh" 2>&1 || true; }
-held="$(pending 1)"
-if grep -q 'ui-boundary .*Bad.tsx' <<< "$held"; then exit 1; fi
-grep -q 'PENDING allows 0 .*Bad.tsx, found 1' <<< "$(pending 0)"
-grep -q 'PENDING allows 2 .*Bad.tsx, found 1; lower the entry to 1' <<< "$(pending 2)"

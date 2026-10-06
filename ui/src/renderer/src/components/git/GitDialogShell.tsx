@@ -1,6 +1,7 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { useRef } from 'react'
 import { useFocusRestore, useFocusTrap } from '../dialogFocus'
-import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle, Text } from '../ui'
+import { DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle, Text } from '../ui'
 import { IconClose } from '../icons'
 import { Icon } from '../ui/Icon'
 
@@ -51,13 +52,13 @@ export function GitDialogShell({
           <Text as="h2" size="ui" weight="semibold" tight tone="primary" flush className="flex-1">
             {heading}
           </Text>
-          <Button
+          <LazyLegacyButton
             ref={closeRef}
             variant="legacy-ghost-icon"
             aria-label="Close"
             data-testid={`${testid}-close`}
             onClick={onClose}
-          ><Icon glyph={IconClose} role="label" /></Button>
+          ><Icon glyph={IconClose} role="label" /></LazyLegacyButton>
         </DialogTitle>
         <DialogBody variant="scroll" data-testid={`${testid}-body`}>
           {children}

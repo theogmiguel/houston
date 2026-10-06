@@ -71,6 +71,7 @@ export function baseSettingsViewProps(): React.ComponentProps<typeof SettingsVie
     onRestoreBudgetSet: () => {},
     onRestoreResumeSet: () => {},
     onWorktreeCleanupSet: () => {},
+    onWorktreeIdleRemovalDaysSet: () => {},
     sessionPolicy: null,
     onSessionPolicy: () => {},
     orchestrationEnabled: true,
@@ -110,6 +111,7 @@ export function hostInfoFixture(overrides: Partial<HostInfo> = {}): HostInfo {
     settled_retention_hours: 24,
     worktree_cleanup_enabled: false,
     worktree_cleanup_grace_hours: 24,
+    worktree_idle_removal_days: 30,
     command_history_ignore_glob_count: 6,
     session_db_bytes: 3_984_588,
     ...overrides

@@ -10,7 +10,7 @@ export function ProtocolDescription({ children }: { children: ReactNode }): Reac
 }
 
 export function SettingsActionRow({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="flex items-center justify-between gap-[var(--space-4)] py-[var(--tr-space-orchestration-action-block)] px-[var(--tr-space-orchestration-action-inline)] border-t border-t-[var(--divider)]">{children}</div>
+  return <div className="flex items-center justify-between gap-[var(--space-4)] py-[var(--space-orchestration-action-block)] px-[var(--space-orchestration-action-inline)] border-t border-t-[var(--divider)]">{children}</div>
 }
 
 export function SettingsProtocolSpecimen(): React.JSX.Element {

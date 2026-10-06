@@ -35,6 +35,8 @@ function plural(n: number, one: string, many: string): string {
 
 export function keepLine(keep: WorktreeKeep, nowMs: number): string {
   switch (keep.kind) {
+    case 'stale':
+      return `Idle ${keep.idle_days} days · removed in ${keep.removal_in_days} days`
     case 'branch_changed':
       return keep.current === null
         ? 'Kept: its HEAD is detached from the branch Houston created'
@@ -45,6 +47,8 @@ export function keepLine(keep: WorktreeKeep, nowMs: number): string {
       return `Kept: ${plural(keep.files, 'ignored file', 'ignored files')} removal would delete`
     case 'commits_outside_pr':
       return `Kept: ${plural(keep.count, 'commit', 'commits')} not in PR #${keep.pr}`
+    case 'not_integrated':
+      return `Kept: ${plural(keep.count, 'commit', 'commits')} not in ${keep.base}`
     case 'pr_head_unavailable':
       return `Kept: the head of PR #${keep.pr} could not be fetched`
     case 'in_use':
@@ -69,7 +73,7 @@ export function keepLine(keep: WorktreeKeep, nowMs: number): string {
 }
 
 export function isRemovable(entry: ManagedWorktreeInfo): boolean {
-  return entry.checked_at_ms !== null && entry.keep === null
+  return entry.checked_at_ms !== null && entry.status === 'ready' && entry.keep === null
 }
 
 export function removablePaths(entries: ManagedWorktreeInfo[]): string[] {
@@ -96,6 +100,7 @@ export function sizeLine(entry: ManagedWorktreeInfo, nowMs: number): string {
 
 export function statusLine(entry: ManagedWorktreeInfo, nowMs: number): string {
   if (entry.checked_at_ms === null) return 'not checked yet'
+  if (entry.status === 'stale' && entry.keep !== null) return keepLine(entry.keep, nowMs)
   if (entry.keep === null) return 'can be removed'
   return keepLine(entry.keep, nowMs)
 }

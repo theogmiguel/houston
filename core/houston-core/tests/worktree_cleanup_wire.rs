@@ -96,6 +96,27 @@ fn branch_exists(repo: &Path, branch: &str) -> bool {
     !git(repo, &["branch", "--list", branch]).is_empty()
 }
 
+fn set_activity_age(tree: &Path, age_seconds: i64) {
+    let timestamp = now_ms() / 1000 - age_seconds;
+    for name in ["HEAD", "ORIG_HEAD", "COMMIT_EDITMSG", "logs/HEAD"] {
+        let git_path = git(tree, &["rev-parse", "--git-path", name]);
+        let path = Path::new(&git_path);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            tree.join(path)
+        };
+        if path.exists() {
+            assert!(Command::new("touch")
+                .args(["-d", &format!("@{timestamp}")])
+                .arg(path)
+                .status()
+                .unwrap()
+                .success());
+        }
+    }
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -240,8 +261,8 @@ impl Rig {
         self.db()
             .execute(
                 "INSERT INTO managed_worktrees
-                    (path, repo_common_dir, branch, provenance, created_by_session, created_at_ms)
-                 VALUES (?1, ?2, ?3, 'pane_spawn', NULL, ?4)",
+                    (path, repo_common_dir, branch, base_branch, provenance, created_by_session, created_at_ms)
+                 VALUES (?1, ?2, ?3, 'main', 'pane_spawn', NULL, ?4)",
                 rusqlite::params![path.display().to_string(), common, branch, now_ms()],
             )
             .unwrap();
@@ -462,6 +483,8 @@ async fn a_commit_outside_the_pr_keeps_the_tree() {
     r.set_cleanup(false, 1);
     let tree = r.tree(&ws, "extra", true);
     merged("extra", &tree, 2);
+    let pr_head = git(&tree, &["rev-parse", "HEAD"]);
+    git(&ws.dir, &["cherry-pick", &pr_head]);
     std::fs::write(tree.join("later.txt"), "x\n").unwrap();
     git(&tree, &["add", "-A"]);
     git(&tree, &["commit", "-q", "-m", "after the merge"]);
@@ -473,6 +496,337 @@ async fn a_commit_outside_the_pr_keeps_the_tree() {
         Some(proto::WorktreeKeep::CommitsOutsidePr { count: 1, pr: PR })
     );
     assert!(branch_exists(&ws.dir, "houston/extra"));
+}
+
+#[tokio::test]
+async fn a_branch_without_a_pr_cherry_picked_into_its_base_is_removed_after_grace() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(true, 1);
+    let tree = r.tree(&ws, "picked", true);
+    let head = git(&tree, &["rev-parse", "HEAD"]);
+    git(&ws.dir, &["cherry-pick", &head]);
+
+    let (checked, removed) = pass(&r, &ws.dir, Vec::new()).await;
+    assert!(removed.is_empty());
+    assert_eq!(checked[0].base_branch.as_deref(), Some("main"));
+    assert!(
+        matches!(
+            keep_of(&checked, &tree),
+            Some(proto::WorktreeKeep::Grace { .. })
+        ),
+        "integration starts the grace: {checked:?}"
+    );
+
+    let (again, _) = pass(&r, &ws.dir, Vec::new()).await;
+    assert_eq!(
+        keep_of(&again, &tree),
+        keep_of(&checked, &tree),
+        "a later pass keeps the deadline the first one set"
+    );
+    r.daemon
+        .expire_worktree_grace_for_test(&tree.display().to_string());
+    let (entries, removed) = run(&r, &ws.dir).await;
+    assert_eq!(removed.len(), 1, "{removed:?}; {entries:?}");
+    assert!(!tree.exists());
+    assert!(!r.has_row(&tree));
+    assert!(!branch_exists(&ws.dir, "houston/picked"));
+}
+
+#[tokio::test]
+async fn a_branch_without_a_pr_keeps_its_unintegrated_commits() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(true, 1);
+    let tree = r.tree(&ws, "partial", true);
+    let head = git(&tree, &["rev-parse", "HEAD"]);
+    git(&ws.dir, &["cherry-pick", &head]);
+    std::fs::write(tree.join("later.txt"), "later\n").unwrap();
+    git(&tree, &["add", "-A"]);
+    git(&tree, &["commit", "-q", "-m", "not integrated"]);
+    git(&tree, &["push", "-q"]);
+
+    let (entries, removed) = run(&r, &ws.dir).await;
+    assert!(removed.is_empty());
+    assert_eq!(
+        keep_of(&entries, &tree),
+        Some(proto::WorktreeKeep::NotIntegrated {
+            count: 1,
+            base: "main".into()
+        })
+    );
+    assert!(tree.exists());
+}
+
+#[tokio::test]
+async fn an_integrated_branch_with_local_work_or_a_pane_inside_is_kept() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(true, 1);
+    let dirty = r.tree(&ws, "picked-dirty", true);
+    let busy = r.tree(&ws, "picked-busy", true);
+    for tree in [&dirty, &busy] {
+        let head = git(tree, &["rev-parse", "HEAD"]);
+        git(&ws.dir, &["cherry-pick", &head]);
+    }
+    std::fs::write(dirty.join("untracked.txt"), "x\n").unwrap();
+    let pane = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: busy.clone(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "exec cat".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+
+    let (entries, removed) = run(&r, &ws.dir).await;
+    assert!(removed.is_empty());
+    assert_eq!(
+        keep_of(&entries, &dirty),
+        Some(proto::WorktreeKeep::Dirty { files: 1 })
+    );
+    assert_eq!(
+        keep_of(&entries, &busy),
+        Some(proto::WorktreeKeep::InUse { session: pane.id })
+    );
+}
+
+#[tokio::test]
+async fn a_row_without_a_recorded_base_uses_the_default_branch() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(false, 1);
+    let tree = r.tree(&ws, "legacy", true);
+    r.db()
+        .execute(
+            "UPDATE managed_worktrees SET base_branch = NULL WHERE path = ?1",
+            rusqlite::params![tree.display().to_string()],
+        )
+        .unwrap();
+
+    let (entries, _) = run(&r, &ws.dir).await;
+    assert_eq!(
+        keep_of(&entries, &tree),
+        Some(proto::WorktreeKeep::NotIntegrated {
+            count: 1,
+            base: "main".into()
+        })
+    );
+}
+
+#[tokio::test]
+async fn closing_the_worktree_owner_schedules_automatic_cleanup() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    r.set_cleanup(true, 1);
+    let owner = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: ws.dir.clone(),
+            cmd: Some(vec!["sh".into(), "-c".into(), "exec cat".into()]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    let tree = r.tree(&ws, "owned", true);
+    r.db()
+        .execute(
+            "UPDATE managed_worktrees SET created_by_session = ?1 WHERE path = ?2",
+            rusqlite::params![owner.id, tree.display().to_string()],
+        )
+        .unwrap();
+    tokio::spawn(Arc::clone(&r.daemon).worktree_cleanup_loop());
+    // Let the loop's first pass see the branch while it still holds unmerged work.
+    let dir = ws.dir.display().to_string();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(proto::ServerMsg::WorktreeCleanup { entries, .. }) =
+                r.daemon.worktree_cleanup_status(&dir)
+            {
+                if entries.iter().all(|e| e.checked_at_ms.is_some()) {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the loop's first pass");
+    assert!(tree.exists());
+    let head = git(&tree, &["rev-parse", "HEAD"]);
+    git(&ws.dir, &["cherry-pick", &head]);
+    merged("owned", &tree, 2);
+
+    r.daemon.close(owner.id).unwrap();
+    // The tree goes before its row; wait for both.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while tree.exists() || r.has_row(&tree) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("closing the owner schedules a cleanup pass");
+    assert!(!r.has_row(&tree));
+    assert!(!branch_exists(&ws.dir, "houston/owned"));
+}
+
+#[tokio::test]
+async fn idle_worktree_past_threshold_is_removed_and_keeps_its_branch() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    let tree = r.tree(&ws, "idle-auto", true);
+    set_activity_age(&tree, 3 * 86_400);
+    r.daemon.set_worktree_idle_removal_days(2).unwrap();
+    r.set_cleanup(true, 1);
+
+    r.daemon.worktree_cleanup_tick();
+
+    assert!(!tree.exists());
+    assert!(branch_exists(&ws.dir, "houston/idle-auto"));
+    assert!(!r.has_row(&tree));
+}
+
+#[tokio::test]
+async fn idle_worktree_past_threshold_is_kept_when_automatic_removal_is_off() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    let tree = r.tree(&ws, "idle-off", true);
+    set_activity_age(&tree, 3 * 86_400);
+    r.daemon.set_worktree_idle_removal_days(2).unwrap();
+    r.set_cleanup(false, 1);
+
+    r.daemon.worktree_cleanup_tick();
+    let (entries, removed) = pass(&r, &ws.dir, Vec::new()).await;
+
+    assert!(removed.is_empty());
+    assert!(tree.exists());
+    assert_eq!(entries[0].status, proto::WorktreeStatus::Stale);
+    assert!(matches!(
+        &entries[0].keep,
+        Some(proto::WorktreeKeep::Stale {
+            idle_days: 3,
+            removal_in_days: 0
+        })
+    ));
+}
+
+#[tokio::test]
+async fn idle_worktree_halfway_to_threshold_is_stale_but_not_removed() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    let tree = r.tree(&ws, "idle-half", true);
+    set_activity_age(&tree, 3 * 86_400);
+    r.daemon.set_worktree_idle_removal_days(4).unwrap();
+    r.set_cleanup(true, 1);
+
+    r.daemon.worktree_cleanup_tick();
+    let (entries, removed) = pass(&r, &ws.dir, Vec::new()).await;
+
+    assert!(removed.is_empty());
+    assert!(tree.exists());
+    assert_eq!(entries[0].status, proto::WorktreeStatus::Stale);
+    assert!(matches!(
+        &entries[0].keep,
+        Some(proto::WorktreeKeep::Stale {
+            idle_days: 3,
+            removal_in_days: 1
+        })
+    ));
+}
+
+#[tokio::test]
+async fn stale_worktree_can_be_removed_early_while_keeping_its_branch() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    let tree = r.tree(&ws, "idle-early", true);
+    set_activity_age(&tree, 3 * 86_400);
+    r.daemon.set_worktree_idle_removal_days(4).unwrap();
+
+    r.daemon
+        .worktree_idle_remove(&ws.dir.display().to_string(), &tree.display().to_string())
+        .unwrap();
+
+    assert!(!tree.exists());
+    assert!(branch_exists(&ws.dir, "houston/idle-early"));
+}
+
+#[tokio::test]
+async fn dirty_or_unpushed_worktrees_are_never_stale() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    let ws = r.workspace("ws");
+    let dirty = r.tree(&ws, "dirty", true);
+    let unpushed = r.tree(&ws, "unpushed", true);
+    std::fs::write(dirty.join("uncommitted.txt"), "dirty\n").unwrap();
+    std::fs::write(unpushed.join("later.txt"), "later\n").unwrap();
+    git(&unpushed, &["add", "-A"]);
+    git(&unpushed, &["commit", "-q", "-m", "unpushed"]);
+    set_activity_age(&dirty, 3 * 86_400);
+    set_activity_age(&unpushed, 3 * 86_400);
+    r.daemon.set_worktree_idle_removal_days(2).unwrap();
+    r.set_cleanup(false, 1);
+
+    let (entries, removed) = pass(&r, &ws.dir, Vec::new()).await;
+
+    assert!(removed.is_empty());
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.status != proto::WorktreeStatus::Stale),
+        "{entries:?}"
+    );
+}
+
+#[tokio::test]
+async fn idle_removal_days_reject_values_outside_the_documented_range() {
+    let _guard = SERIAL.lock().await;
+    let r = rig().await;
+    assert_eq!(
+        r.daemon.worktree_idle_removal_days(),
+        proto::WORKTREE_IDLE_REMOVAL_DAYS_DEFAULT
+    );
+    assert!(r
+        .daemon
+        .set_worktree_idle_removal_days(0)
+        .unwrap_err()
+        .to_string()
+        .contains("asked for 0"));
+    assert!(r
+        .daemon
+        .set_worktree_idle_removal_days(366)
+        .unwrap_err()
+        .to_string()
+        .contains("asked for 366"));
+    r.daemon.set_worktree_idle_removal_days(1).unwrap();
+    r.daemon.set_worktree_idle_removal_days(365).unwrap();
 }
 
 #[tokio::test]
@@ -637,7 +991,13 @@ async fn an_open_closed_or_missing_pr_keeps_the_tree() {
             state: "CLOSED".into()
         })
     );
-    assert_eq!(keep_of(&entries, &none), Some(proto::WorktreeKeep::NoPr));
+    assert_eq!(
+        keep_of(&entries, &none),
+        Some(proto::WorktreeKeep::NotIntegrated {
+            count: 1,
+            base: "main".into()
+        })
+    );
 }
 
 #[tokio::test]

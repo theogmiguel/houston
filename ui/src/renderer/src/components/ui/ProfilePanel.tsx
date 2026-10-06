@@ -7,11 +7,11 @@ export function ProfilePanel({ children }: { children: ReactNode }): React.JSX.E
 }
 
 export function ProfileHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="flex items-center justify-between gap-[var(--space-2)] border-b border-[var(--divider)] px-[var(--tr-space-profile-inline)] py-[var(--tr-space-profile-header-block)]">{children}</div>
+  return <div className="flex items-center justify-between gap-[var(--space-2)] border-b border-[var(--divider)] px-[var(--space-profile-inline)] py-[var(--space-profile-header-block)]">{children}</div>
 }
 
 export function ProfileActiveSection({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className="grid gap-[var(--space-1-5)] px-[var(--tr-space-profile-inline)] py-[var(--space-2)]">{children}</div>
+  return <div {...props} className="grid gap-[var(--space-1-5)] px-[var(--space-profile-inline)] py-[var(--space-2)]">{children}</div>
 }
 
 export function ProfileDescription({ children }: { children: ReactNode }): React.JSX.Element {
@@ -27,15 +27,15 @@ export function ProfileSavedList({ children }: { children: ReactNode }): React.J
 }
 
 export function ProfileSavedHeading({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className="border-t border-[var(--divider)] px-[var(--tr-space-profile-inline)] pt-[var(--tr-space-profile-saved-top)] pb-[var(--tr-space-profile-saved-bottom)]">{children}</div>
+  return <div {...props} className="border-t border-[var(--divider)] px-[var(--space-profile-inline)] pt-[var(--space-profile-saved-top)] pb-[var(--space-profile-saved-bottom)]">{children}</div>
 }
 
 export function ProfileSavedRow({ children }: { children: ReactNode }): React.JSX.Element {
-  return <li className="flex items-center justify-between gap-[var(--space-2)] border-b border-[var(--divider)] last:border-b-0 px-[var(--tr-space-profile-inline)] py-[var(--tr-space-profile-row-block)]">{children}</li>
+  return <li className="flex items-center justify-between gap-[var(--space-2)] border-b border-[var(--divider)] last:border-b-0 px-[var(--space-profile-inline)] py-[var(--space-profile-row-block)]">{children}</li>
 }
 
 export function ProfileFormRow({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
-  return <div {...props} className="flex items-end gap-[var(--space-2)] border-t border-[var(--divider)] px-[var(--tr-space-profile-inline)] py-[var(--tr-space-profile-header-block)]">{children}</div>
+  return <div {...props} className="flex items-end gap-[var(--space-2)] border-t border-[var(--divider)] px-[var(--space-profile-inline)] py-[var(--space-profile-header-block)]">{children}</div>
 }
 
 export function ProfileFormField({ children, grow = 'one' }: { children: ReactNode; grow?: 'one' | 'two' }): React.JSX.Element {

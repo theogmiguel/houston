@@ -20,6 +20,8 @@ export const STATUS_LABELS = [
   'Fixing',
   'Not seen',
   'Ready',
+  'Stale',
+  'Kept',
   'Watching',
   'Verified'
 ] as const
@@ -48,6 +50,8 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   Fixing: 'var(--info)',
   'Not seen': 'var(--text-faint)',
   Ready: 'var(--ok)',
+  Stale: 'var(--warn)',
+  Kept: 'var(--text-faint)',
   Watching: 'var(--info)',
   Verified: 'var(--ok)'
 }
@@ -69,7 +73,7 @@ const PILL_TONE: Record<PillTone, string> = {
 
 export function StatusLabel({ status, size = 'ui', variant = 'default', tone = 'unknown', children }: { status: StatusLabelValue; size?: 'ui' | 'small'; variant?: 'default' | 'pill' | 'dot'; tone?: PillTone; children?: React.ReactNode }): React.JSX.Element {
   if (variant === 'pill') return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{children ?? status}</span>
-  const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off'
+  const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off' || status === 'Kept'
   return (
     <span role={variant === 'dot' ? 'img' : undefined} aria-label={status} className={`inline-flex items-center gap-[var(--space-1-5)] text-[var(--text-secondary)] ${STATUS_TEXT[status] ?? ''} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span

@@ -1,6 +1,6 @@
+import { ReviewButton } from './ReviewButtonRoles'
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
-import { Button } from './Button'
 
 export interface DiscussionEntryProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode
@@ -71,10 +71,10 @@ export function DiscussionEntrySpecimen(): React.JSX.Element {
         <DiscussionMeta>2 minutes ago</DiscussionMeta>
       </DiscussionEntry>
       <DiscussionActionsRow>
-        <Button variant="discussion-edit-action">Edit</Button>
-        <Button variant="discussion-cancel-action">Cancel</Button>
-        <Button variant="discussion-reply-action">Reply</Button>
-        <Button variant="discussion-submit-action">Comment</Button>
+        <ReviewButton variant="discussion-edit-action">Edit</ReviewButton>
+        <ReviewButton variant="secondary-action">Cancel</ReviewButton>
+        <ReviewButton variant="discussion-reply-action">Reply</ReviewButton>
+        <ReviewButton variant="primary-action">Comment</ReviewButton>
       </DiscussionActionsRow>
     </div>
   )

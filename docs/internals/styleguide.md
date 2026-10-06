@@ -510,9 +510,8 @@ re-scopes them under `[data-*]`; `tailwind.css` binds Tailwind imports and theme
 attribute resets plus document-state classes on `html` or `body`. Other stylesheets and component
 class selectors in `base.css` fail the boundary guard.
 
-`scripts/check-ui-boundary.sh` rejects every non-layout token it recognizes in class strings.
-Its `PENDING` list names the feature files not yet composed from `components/ui/` roles, each with
-its violation count; an entry may only fall, and is deleted at zero. It reads literal JSX `className` values, every string literal in a
+`scripts/check-ui-boundary.sh` rejects every non-layout token it recognizes in class strings, in
+every feature file; it has no allowlist or pinned counts. It reads literal JSX `className` values, every string literal in a
 `className` expression up to its balanced closing brace, and same-file `*_CLS` declarations.
 Template literals contribute their text and the literals inside their `${…}` interpolations.
 Imported constants are covered where they are declared. Class-list-shaped strings hidden in helper
@@ -708,7 +707,7 @@ Use `StatusLabel` once per row. Its 6px dot carries the status colour and its wo
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
 Needs input, Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Result staged,
 Pending delivery, Paused, In sync, Differs, Off, Connected, Reconnecting, Missing, Open,
-Fixing, Not seen, Ready, Watching and Verified. The dot variant keeps an accessible status
+Fixing, Not seen, Ready, Stale, Kept, Watching and Verified. The dot variant keeps an accessible status
 name when a row already
 identifies its state in a tooltip. Do not rely on colour alone. Idle, Paused, Off, Missing
 and Not seen use a hollow ring. Connected uses the ok dot; Reconnecting uses the warn dot.

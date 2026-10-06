@@ -1,10 +1,10 @@
+import { DelegationButton } from './ui/DelegationButtonRoles'
 import { useEffect, useState } from 'react'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
 import { Icon } from './ui/Icon'
 import { IconEye, IconGitFork } from './icons'
-import { Button } from './ui'
 import {
   PopoverPanel,
   CrewList,
@@ -313,9 +313,8 @@ function FocusLever({
 }): React.JSX.Element {
   return (
     <DelegationSection>
-      <Button
+      <DelegationButton
         type="button"
-        variant="legacy-focus-lever"
         onClick={() => {
           onDone()
           onFocusPane(target)
@@ -323,7 +322,7 @@ function FocusLever({
       >
         <Icon glyph={IconEye} role="label" />
         Focus parent
-      </Button>
+      </DelegationButton>
     </DelegationSection>
   )
 }

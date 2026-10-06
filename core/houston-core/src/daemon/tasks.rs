@@ -2157,6 +2157,9 @@ impl Daemon {
             path: created.path.display().to_string(),
             repo_common_dir: common_dir,
             branch: created.branch.clone(),
+            base_branch: base
+                .map(str::to_string)
+                .or_else(|| crate::git::default_base(repo)),
             // The worktree table admits pane_spawn | changes_pane only; a task
             // tree is untracked by any pane, which `created_by_session: None`
             // already says.
@@ -3523,6 +3526,7 @@ impl Daemon {
             path: path.display().to_string(),
             repo_common_dir: common_dir,
             branch: branch.to_string(),
+            base_branch: crate::git::default_base(project_dir),
             provenance: crate::db::WorktreeProvenance::PaneSpawn,
             created_by_session: None,
             created_at_ms: now_unix_ms(),

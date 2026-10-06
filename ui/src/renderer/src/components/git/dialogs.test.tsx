@@ -219,6 +219,7 @@ describe('WorktreesDialog', () => {
         onPrune={noop}
         onCheckCleanup={noop}
         onCleanNow={noop}
+        onRemoveStale={noop}
         onAddWorkspace={onAddWorkspace}
       />
     )

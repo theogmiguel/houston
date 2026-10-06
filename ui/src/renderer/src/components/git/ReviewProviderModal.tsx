@@ -1,3 +1,4 @@
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { Button } from '../ui/Button'
 import { AgentOptionGrid, SelectionMark } from '../ui/AgentOptionGrid'
 import { Text } from '../ui/Text'
@@ -47,7 +48,7 @@ export function ReviewProviderModal({
           {REVIEW_PROVIDERS.map((a) => {
             const selected = pick === a
             return (
-              <Button variant="agent-option"
+              <ReviewButton variant="agent-option"
                 key={a}
                 type="button"
                 data-agent={a}
@@ -67,7 +68,7 @@ export function ReviewProviderModal({
                     <Icon glyph={IconCheck} role="label" />
                   </SelectionMark>
                 )}
-              </Button>
+              </ReviewButton>
             )
           })}
       </AgentOptionGrid>

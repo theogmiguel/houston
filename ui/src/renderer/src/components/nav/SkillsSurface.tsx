@@ -13,7 +13,8 @@ import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
 import { Row, SettingsList, SubHead } from '../ui/settingsPrimitives'
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../ui'
-import { PanelFootnote, PanelIconButton, PanelSwitch } from '../ui/PanelInlineControls'
+import { PanelFootnote, PanelIconButton } from '../ui/PanelInlineControls'
+import { Switch } from '../ui/Switch'
 
 const SkillsView = lazy(() =>
   import('../SkillsView').then((m) => ({ default: m.SkillsView }))
@@ -104,7 +105,7 @@ export function SkillsSurface(props: {
                       <Icon glyph={IconRefresh} role="small" />
                     </PanelIconButton>
                   </Tooltip>
-                  <PanelSwitch
+                  <Switch size="panel"
                     on={autoPushEnabled}
                     onChange={onAutoPushSet}
                     label="Auto-push drifted or missing copies to every tool"

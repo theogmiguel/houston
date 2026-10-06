@@ -138,7 +138,7 @@ import { AddPanePopover } from '../src/components/AddPanePopover'
 import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
-import { UiPrimitivesStory } from './uiStories'
+import { StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
 import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
@@ -321,6 +321,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'orchestration/question-states': () => <QuestionStatesStory />,
   'orchestration/delegation-panels': () => <DelegationPanelsStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
+  'git/worktree-stale': () => <StaleWorktreesStory />,
   'editor/markdown-preview': () => <MarkdownPreviewStory />,
   'editor/surface-menu': () => <EditorSurfaceMenuStory />,
   'editor/preview-states': () => <EditorPreviewStatesStory />,

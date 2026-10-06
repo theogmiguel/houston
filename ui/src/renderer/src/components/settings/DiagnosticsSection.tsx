@@ -1,3 +1,4 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { useEffect, useRef, useState } from 'react'
 import { Button, DevBadge, HookPanel, HookStatusList, Readout, ReadoutGrid, HookStatus, Stack, Text } from '../ui'
 import type { AgentKind } from '../../houston/generated/AgentKind'
@@ -226,14 +227,14 @@ export function DiagnosticsSection({
                           working, idle or waiting on you. Its panes show no state dot.
                         </Text>
                       )}
-                      <Button
+                      <LazyLegacyButton
                         type="button"
                         variant="legacy-bare-ghost"
                         data-testid="settings-diagnostics-open-hooks"
                         onClick={onOpenHooks}
                       >
                         Open agent setup
-                      </Button>
+                      </LazyLegacyButton>
                     </Stack>
                   </>
                 )

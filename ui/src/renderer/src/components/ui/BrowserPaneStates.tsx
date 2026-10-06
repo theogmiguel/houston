@@ -1,4 +1,4 @@
-import { Button } from './Button'
+import { BrowserButton } from './BrowserButtonRoles'
 import { Text } from './Text'
 import { variants } from './variants'
 import { IconGlobe, IconHistory, IconPlug, IconPlus, IconRefresh, IconServer } from '../icons'
@@ -46,7 +46,7 @@ export function BrowserBlankState({
           <h2 className="m-0 [font-size:var(--tr-text-ui-size)] font-semibold tracking-[-0.01em] text-[var(--text-primary)] leading-[1.2]">Browser</h2>
           <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-muted)]">Enter a URL, or open a server this workspace is running.</p>
         </div>
-        <Button variant="outline" size="sm" icon={IconPlus} onClick={onOpenPage} data-testid="browser-pane-open-cta">Open a page</Button>
+        <BrowserButton variant="outline" size="sm" icon={IconPlus} onClick={onOpenPage} data-testid="browser-pane-open-cta">Open a page</BrowserButton>
         {!unsupported && servers.length > 0 && (
           <div className="w-full flex flex-col gap-[var(--space-1)]" data-testid="browser-local-servers">
             <div className={groupTitle({ icon: 'server' })}><IconServer />Local servers</div>
@@ -67,7 +67,7 @@ export function BrowserBlankState({
         )}
         {recents.length > 0 && (
           <div className="w-full flex flex-col gap-[var(--space-1)]">
-            <div className={groupTitle({ icon: 'history' })}><IconHistory />Recently opened<Button variant="label" className="ml-auto" data-testid="browser-pane-clear-recents" onClick={onClear}>Clear</Button></div>
+            <div className={groupTitle({ icon: 'history' })}><IconHistory />Recently opened<BrowserButton variant="label" className="ml-auto" data-testid="browser-pane-clear-recents" onClick={onClear}>Clear</BrowserButton></div>
             <div className="flex flex-col gap-px">
               {recents.map(({ url, onOpen }) => (
                 <button key={url} type="button" className={serverRow} onClick={onOpen}>
@@ -116,8 +116,8 @@ export function BrowserUnreachableState({
           <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-muted)]">{message}</p>
         </div>
         <div className="flex items-center gap-[var(--space-1-5)]">
-          <Button variant="outline" size="sm" icon={IconRefresh} onClick={onRetry}>Retry</Button>
-          <Button variant="label" onClick={onToggleDetails}>{details ? 'Hide details' : 'Show details'}</Button>
+          <BrowserButton variant="outline" size="sm" icon={IconRefresh} onClick={onRetry}>Retry</BrowserButton>
+          <BrowserButton variant="label" onClick={onToggleDetails}>{details ? 'Hide details' : 'Show details'}</BrowserButton>
         </div>
         {details && <pre className="m-0 w-full box-border whitespace-pre-wrap rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-[var(--space-2-5)] py-[var(--space-2)] font-mono [font-size:var(--tr-text-label-size)] leading-[1.6] text-[var(--text-muted)]">{rawError}{'\n'}{url}{'\n'}{attempts} {attempts === 1 ? 'attempt' : 'attempts'} · last {lastFailureAt === null ? 'unknown time' : lastRunLabel(lastFailureAt, Date.now())}</pre>}
       </div>

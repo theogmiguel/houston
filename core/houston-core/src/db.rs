@@ -72,6 +72,7 @@ pub struct ManagedWorktreeRow {
     pub path: String,
     pub repo_common_dir: String,
     pub branch: String,
+    pub base_branch: Option<String>,
     pub provenance: WorktreeProvenance,
     pub created_by_session: Option<u32>,
     pub created_at_ms: i64,
@@ -1547,6 +1548,12 @@ impl Db {
                 measured_at_ms INTEGER
             );",
         )?;
+        add_column_if_missing(
+            &conn,
+            "managed_worktrees",
+            "base_branch",
+            "base_branch TEXT",
+        )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS skill_pushes (
                 tool TEXT NOT NULL,
@@ -1942,6 +1949,34 @@ impl Db {
             [],
         )?;
         Ok(n)
+    }
+
+    pub fn backfill_settled_retention(
+        &self,
+        now: u64,
+        retention_ms: u64,
+    ) -> Result<(usize, usize)> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let closed = tx.execute(
+            "UPDATE sessions SET state = 'closed'
+             WHERE state != 'closed' AND id IN (
+                 SELECT d.child_session FROM delegations d
+                 JOIN sessions parent ON parent.id = d.parent_session
+                 WHERE parent.state = 'closed'
+             )",
+            [],
+        )?;
+        let until = now.saturating_add(retention_ms);
+        let backfilled = tx.execute(
+            "UPDATE delegations SET retained_until = ?1
+             WHERE retained_until IS NULL AND settled_at IS NOT NULL
+               AND child_session IN (SELECT id FROM sessions WHERE state = 'exited')
+               AND parent_session IN (SELECT id FROM sessions WHERE state != 'closed')",
+            [until as i64],
+        )?;
+        tx.commit()?;
+        Ok((closed, backfilled))
     }
 
     pub fn list_interrupted(&self) -> Result<Vec<proto::SessionInfo>> {
@@ -2641,13 +2676,14 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT OR REPLACE INTO managed_worktrees
-                (path, repo_common_dir, branch, provenance, created_by_session, created_at_ms,
+                (path, repo_common_dir, branch, base_branch, provenance, created_by_session, created_at_ms,
                  bytes, measured_at_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 row.path,
                 row.repo_common_dir,
                 row.branch,
+                row.base_branch,
                 row.provenance.as_str(),
                 row.created_by_session,
                 row.created_at_ms,
@@ -2668,21 +2704,21 @@ impl Db {
     pub fn managed_worktrees(&self) -> Result<Vec<ManagedWorktreeRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
-            "SELECT path, repo_common_dir, branch, provenance, created_by_session, created_at_ms,
+            "SELECT path, repo_common_dir, branch, base_branch, provenance, created_by_session, created_at_ms,
                     bytes, measured_at_ms
              FROM managed_worktrees ORDER BY created_at_ms, path",
         )?;
         let rows = stmt.query_map([], |r| {
-            let provenance: String = r.get(3)?;
             Ok(ManagedWorktreeRow {
                 path: r.get(0)?,
                 repo_common_dir: r.get(1)?,
                 branch: r.get(2)?,
-                provenance: WorktreeProvenance::parse(&provenance),
-                created_by_session: r.get(4)?,
-                created_at_ms: r.get(5)?,
-                bytes: r.get(6)?,
-                measured_at_ms: r.get(7)?,
+                base_branch: r.get(3)?,
+                provenance: WorktreeProvenance::parse(&r.get::<_, String>(4)?),
+                created_by_session: r.get(5)?,
+                created_at_ms: r.get(6)?,
+                bytes: r.get(7)?,
+                measured_at_ms: r.get(8)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -8100,6 +8136,7 @@ mod tests {
             path: "/ws/.houston/worktrees/demo".into(),
             repo_common_dir: "/ws/.git".into(),
             branch: "houston/demo".into(),
+            base_branch: Some("main".into()),
             provenance: WorktreeProvenance::PaneSpawn,
             created_by_session: Some(3),
             created_at_ms: 1,

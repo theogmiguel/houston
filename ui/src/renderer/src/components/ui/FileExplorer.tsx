@@ -1,13 +1,12 @@
 import type { ButtonHTMLAttributes, FormHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from 'react'
 import type { IconComponent } from '../icons'
-import { HIT_TARGET_28 } from '../hitTarget'
-import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
 import { Icon } from './Icon'
 import { POP_ORIGIN_CLS } from './overlayChrome'
-import { BORDER_HAIRLINE_INSET, RING_ACCENT_ICON } from './shadowChrome'
+import { BORDER_HAIRLINE_INSET } from './shadowChrome'
 import { Text } from './Text'
 import { Tooltip } from './Tooltip'
+import { PaneHeadButton } from './PaneControls'
 import './fileExplorer.css'
 
 // Roles of a file explorer: tree, tab strip, breadcrumb,
@@ -23,29 +22,12 @@ const STRIP_FILL = 'bg-[color-mix(in_srgb,var(--card-bg)_45%,transparent)]'
 // still both fit; below it the tree collapses to a toggleable overlay instead.
 const TREE_VISIBLE = '[@container_(min-width:420px)]'
 
-const ICO_HEAD_BASE =
-  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
-const ICO_HEAD_TONE = {
-  neutral:
-    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] hover:text-[var(--text-primary)]',
-  danger:
-    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]',
-  info:
-    'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
-} as const
-
-const TAB_CLOSE =
-  `btn ${BTN_ICO_STRUCTURE} w-[16px] h-[16px] rounded-[var(--tr-radius-sm)] ${ICO_HEAD_TONE.danger} ${HIT_TARGET_28}`
-
 export function TabCloseButton({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
-  return <button {...rest} className={join(TAB_CLOSE, className)} />
+  return <PaneHeadButton {...rest} size="tabClose" tone="danger" ladder={false} className={className} />
 }
 
-const TAB_OVERFLOW =
-  `btn ${CONTROL_SIZE_SQUARE_CLS.small} ${ICO_HEAD_BASE} ${ICO_HEAD_TONE.neutral} ${HIT_TARGET_28} border-l ${HAIRLINE_BORDER}`
-
 export function TabOverflowButton({ className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
-  return <button {...rest} className={join(TAB_OVERFLOW, className)} />
+  return <PaneHeadButton {...rest} size="tabOverflow" tone="neutral" ladder={false} className={className} />
 }
 
 /** Text button on the legacy `btn` surface with its border removed. */

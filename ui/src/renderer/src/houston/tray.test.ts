@@ -120,6 +120,20 @@ describe('buildTrayPayload', () => {
     })
   })
 
+  it('omits sessions whose PTYs have exited from the tray roster', () => {
+    const payload = buildTrayPayload(
+      'ready',
+      [
+        session({ id: 1, state: 'running' }),
+        session({ id: 2, state: 'exited' }),
+        session({ id: 3, state: 'interrupted' })
+      ],
+      new Map(),
+      workspaceName
+    )
+    expect(payload.sessions.map((item) => item.id)).toEqual([1])
+  })
+
   it('names the agent the pane actually announced, not the one it launched as', () => {
     const payload = buildTrayPayload(
       'ready',
