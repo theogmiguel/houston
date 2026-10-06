@@ -126,6 +126,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("fixture pane spawns")
     }
@@ -936,8 +938,22 @@ async fn provider_worktree_trust(kind: &str, automatic_trust: bool, flag: &str) 
         r.daemon.expire_spawn_grace_for_test(id);
         assert_eq!(
             r.daemon.session_status(id).unwrap(),
-            Some(proto::AgentStatus::Spawning)
+            Some(proto::AgentStatus::Unavailable)
         );
+        r.daemon.expire_spawn_grace_for_test(id);
+        let notices = r.daemon.inbox_rows_for_test(parent.id);
+        let startup: Vec<_> = notices
+            .iter()
+            .filter(|row| row.reason.as_deref() == Some("startup_unconfirmed"))
+            .collect();
+        assert_eq!(
+            startup.len(),
+            1,
+            "startup uncertainty is reported only once"
+        );
+        assert_eq!(startup[0].kind, "operator_note");
+        assert_eq!(startup[0].from_session, Some(id));
+        assert!(startup[0].body.contains("hook or folder trust"));
         assert_eq!(
             response["structuredContent"]["warnings"][0]["code"],
             "worktree_trust"

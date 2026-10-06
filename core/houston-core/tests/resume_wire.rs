@@ -185,6 +185,8 @@ fn claude_pane(daemon: &Arc<Daemon>, dir: &Path, profile: Option<u32>) -> proto:
             acp: None,
             profile: profile.map(|id| proto::ProfileChoice::Profile { id }),
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
 }
@@ -353,6 +355,7 @@ fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str,
         ssh_host: None,
         restore_deferred: None,
         status: None,
+        status_since_ms: None,
         context: None,
         swarm_agent: None,
         spawned_by: None,
@@ -838,6 +841,8 @@ async fn a_codex_pane_restores_its_exact_thread_id() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     argv_of(&env, info.id).await;

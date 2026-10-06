@@ -56,6 +56,8 @@ pub async fn start_with_listener(
         .route("/orchestrate/wait", post(orch_wait))
         .route("/orchestrate/kill", post(orch_kill))
         .route("/orchestrate/submit", post(orch_submit))
+        .route("/orchestrate/pr-watch", post(orch_pr_watch))
+        .route("/orchestrate/pr-unwatch", post(orch_pr_unwatch))
         .route("/harness/publish", post(harness_publish))
         .route("/task/next", get(task_next))
         .route("/task/list", get(task_list))
@@ -66,6 +68,7 @@ pub async fn start_with_listener(
         .route("/task/check", post(task_check))
         .route("/task/claim", post(task_claim))
         .route("/task/handback", post(task_handback))
+        .route("/task/ask", post(task_ask))
         .route("/inbox/tool-boundary", post(inbox_tool_boundary))
         .route("/inbox/reserve", post(inbox_reserve))
         .route("/inbox/delivered", post(inbox_delivered))
@@ -588,6 +591,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::OrchestrationSettingsGet
             | proto::ClientMsg::HostInfoGet
             | proto::ClientMsg::UsageSummaryGet { .. }
+            | proto::ClientMsg::UsageActivitySummaryGet { .. }
             | proto::ClientMsg::CommandHistoryIgnoreGlobsGet
             | proto::ClientMsg::McpState
             | proto::ClientMsg::AgentProfileList
@@ -599,12 +603,15 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::SessionCwds { .. }
             | proto::ClientMsg::SessionRunningProcs { .. }
             | proto::ClientMsg::WorkspaceList
+            | proto::ClientMsg::WorkspaceLocalServers { .. }
             | proto::ClientMsg::GitStatus { .. }
             | proto::ClientMsg::GitDiff { .. }
             | proto::ClientMsg::HistoryCount
             | proto::ClientMsg::GitBranch { .. }
+            | proto::ClientMsg::GitBranchCommits { .. }
             | proto::ClientMsg::PrStatus { .. }
             | proto::ClientMsg::PrDetail { .. }
+            | proto::ClientMsg::PrWatchList
             | proto::ClientMsg::GitReviewDiffs { .. }
             | proto::ClientMsg::GitBranches { .. }
             | proto::ClientMsg::GitWorktrees { .. }
@@ -615,6 +622,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::SshConfigHosts
             | proto::ClientMsg::SessionPolicyGet
             | proto::ClientMsg::UpdateGet
+            | proto::ClientMsg::SlackGet
             | proto::ClientMsg::KeymapGet
             | proto::ClientMsg::WaitForIdle { .. }
             | proto::ClientMsg::BrowserToolResult { .. }
@@ -626,6 +634,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::TaskStartSettingsGet { .. }
             | proto::ClientMsg::TaskReviewSettingsGet { .. }
             | proto::ClientMsg::RemoteGet
+            | proto::ClientMsg::WorkspaceActionsGet { .. }
     )
 }
 
@@ -713,6 +722,15 @@ async fn dispatch(
     conn_id: u64,
 ) -> anyhow::Result<()> {
     match msg {
+        proto::ClientMsg::PrWatchList => match daemon.pr_watch_infos() {
+            Ok(watches) => send_msg(sink, &proto::ServerMsg::PrWatchList { watches })
+                .await
+                .map_err(|_| anyhow::anyhow!("sending PR watch list failed")),
+            Err(e) => Err(e),
+        },
+        proto::ClientMsg::PrWatchUnwatch { session, number } => {
+            daemon.pr_watch_stop(session, number).map(|_| ())
+        }
         proto::ClientMsg::Hello { .. } => Err(anyhow::anyhow!("already authenticated")),
         proto::ClientMsg::SessionCreate {
             agent,
@@ -726,6 +744,8 @@ async fn dispatch(
             acp,
             profile,
             prompt,
+            model,
+            effort,
         } => {
             let frames_wanted =
                 frames_wanted.expect("an attach-family message runs on the connection task");
@@ -742,6 +762,8 @@ async fn dispatch(
                 acp,
                 profile,
                 prompt,
+                model,
+                effort,
             };
             tokio::task::spawn_blocking(move || daemon.create_session(params))
                 .await
@@ -796,6 +818,12 @@ async fn dispatch(
             .await;
             Ok(())
         }
+        proto::ClientMsg::WorkspaceLocalServers { workspace } => {
+            let msg = daemon.workspace_local_servers(workspace);
+            send_msg(sink, &msg)
+                .await
+                .map_err(|_| anyhow::anyhow!("sending workspace local servers failed"))
+        }
         proto::ClientMsg::SkillSync => {
             let _ = send_msg(sink, &daemon.skill_sync_state()).await;
             Ok(())
@@ -832,13 +860,33 @@ async fn dispatch(
             since_ms,
             until_ms,
             refresh_pricing,
+            workspace,
         } => {
             let daemon = Arc::clone(daemon);
             match tokio::task::spawn_blocking(move || {
-                daemon.usage_summary(since_ms, until_ms, refresh_pricing)
+                daemon.usage_summary_filtered(since_ms, until_ms, refresh_pricing, workspace)
             })
             .await
             .unwrap_or_else(|e| Err(anyhow::anyhow!("usage scan panicked: {e}")))
+            {
+                Ok(msg) => {
+                    let _ = send_msg(sink, &msg).await;
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+        proto::ClientMsg::UsageActivitySummaryGet {
+            since_ms,
+            until_ms,
+            workspace,
+        } => {
+            let daemon = Arc::clone(daemon);
+            match tokio::task::spawn_blocking(move || {
+                daemon.usage_activity_summary(since_ms, until_ms, workspace)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("usage activity summary panicked: {e}")))
             {
                 Ok(msg) => {
                     let _ = send_msg(sink, &msg).await;
@@ -899,6 +947,30 @@ async fn dispatch(
         proto::ClientMsg::WorkspaceRoutingSet { workspace, routes } => {
             daemon.set_workspace_routing(&workspace, &routes)?;
             daemon.broadcast_control(&proto::ServerMsg::WorkspaceRouting { workspace, routes });
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionsGet { workspace } => {
+            let actions = daemon.workspace_actions(&workspace)?;
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::WorkspaceActions { workspace, actions },
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionSet { workspace, action } => {
+            let msg = daemon.set_workspace_action(&workspace, action)?;
+            match msg {
+                msg @ proto::ServerMsg::WorkspaceActionRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                msg => daemon.broadcast_control(&msg),
+            }
+            Ok(())
+        }
+        proto::ClientMsg::WorkspaceActionDelete { workspace, id } => {
+            let msg = daemon.delete_workspace_action(&workspace, &id)?;
+            daemon.broadcast_control(&msg);
             Ok(())
         }
         proto::ClientMsg::OrchestrationCapsSet {
@@ -1130,6 +1202,30 @@ async fn dispatch(
             key,
             state,
         } => daemon.harness_decide(&workspace, &key, state),
+        proto::ClientMsg::HarnessFixTask {
+            workspace,
+            key,
+            agent,
+            start,
+            prompt,
+        } => match daemon.harness_fix_task(&workspace, &key, agent, start, prompt.as_deref())? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::HarnessOverviewGet => {
+            let _ = send_msg(sink, &daemon.harness_overview()?).await;
+            Ok(())
+        }
+        proto::ClientMsg::HarnessSeen {
+            workspace,
+            review_id,
+        } => daemon.harness_seen(&workspace, review_id),
         proto::ClientMsg::TaskSnapshot { scope } => {
             let msg = daemon.task_snapshot(&scope)?;
             let _ = send_msg(sink, &msg).await;
@@ -1647,6 +1743,28 @@ async fn dispatch(
             )
             .await;
             Ok(())
+        }
+        proto::ClientMsg::GitBranchCommits { dir } => {
+            let d = PathBuf::from(&dir);
+            let result = tokio::task::spawn_blocking(move || crate::git::branch_commits(&d))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("git branch commits task panicked: {e}")));
+            match result {
+                Ok((commits, total, truncated)) => {
+                    let _ = send_msg(
+                        sink,
+                        &proto::ServerMsg::GitBranchCommits {
+                            dir,
+                            commits,
+                            total,
+                            truncated,
+                        },
+                    )
+                    .await;
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
         }
         proto::ClientMsg::GitStage { dir, paths } => {
             let d = PathBuf::from(&dir);
@@ -2684,6 +2802,43 @@ async fn dispatch(
         }
         proto::ClientMsg::UpdateCheckNow => {
             daemon.update_wake.notify_one();
+            Ok(())
+        }
+        proto::ClientMsg::SlackGet => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || d.slack_state_msg(None)).await?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::SlackConnect {
+            app_token,
+            bot_token,
+        } => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || {
+                d.slack_connect(app_token.as_deref(), bot_token.as_deref())
+            })
+            .await?;
+            slack_reply(daemon, sink, msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::SlackDisconnect => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || d.slack_disconnect()).await?;
+            slack_reply(daemon, sink, msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::SlackConfigure {
+            owner_user_id,
+            channels,
+            language,
+        } => {
+            let d = daemon.clone();
+            let msg = tokio::task::spawn_blocking(move || {
+                d.slack_configure(owner_user_id.as_deref(), &channels, language)
+            })
+            .await?;
+            slack_reply(daemon, sink, msg).await;
             Ok(())
         }
         proto::ClientMsg::KeymapGet => {
@@ -3757,6 +3912,23 @@ async fn remote_reply(sink: &mut (impl SinkExt<Message> + Unpin), result: anyhow
     }
 }
 
+/// A refused Slack change goes back to the asker only; an applied one
+/// reaches every client, so each Settings view shows the same state.
+async fn slack_reply(
+    daemon: &Arc<Daemon>,
+    sink: &mut (impl SinkExt<Message> + Unpin),
+    msg: proto::ServerMsg,
+) {
+    match &msg {
+        proto::ServerMsg::Slack {
+            refusal: Some(_), ..
+        } => {
+            let _ = send_msg(sink, &msg).await;
+        }
+        _ => daemon.broadcast_control(&msg),
+    }
+}
+
 async fn send_error(
     sink: &mut (impl SinkExt<Message> + Unpin),
     message: String,
@@ -4219,6 +4391,46 @@ async fn orch_kill(
 }
 
 #[derive(Deserialize)]
+struct PrWatchBody {
+    pr: String,
+}
+
+async fn orch_pr_watch(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<PrWatchBody>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let target = body.pr;
+    let start_target = target.clone();
+    let result =
+        tokio::task::spawn_blocking(move || daemon.pr_watch_start(scope.session_id, &start_target))
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("PR watch panicked: {e}")));
+    match result {
+        Ok(()) => (StatusCode::OK, axum::Json(json!({"watching": true, "pr": target, "note": "End your turn now; Houston wakes this pane on the next PR change."}))).into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
+async fn orch_pr_unwatch(State(daemon): State<Arc<Daemon>>, headers: HeaderMap) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(scope) => scope,
+        Err(response) => return *response,
+    };
+    let result = tokio::task::spawn_blocking(move || daemon.pr_watch_stop_all(scope.session_id))
+        .await
+        .unwrap_or_else(|e| Err(anyhow::anyhow!("PR unwatch panicked: {e}")));
+    match result {
+        Ok(stopped) => (StatusCode::OK, axum::Json(json!({"stopped": stopped}))).into_response(),
+        Err(e) => orch_err_response(e),
+    }
+}
+
+#[derive(Deserialize)]
 struct SubmitBody {
     body: String,
     #[serde(default)]
@@ -4344,7 +4556,11 @@ struct TaskCheckBody {
 struct TaskHandbackBody {
     key: Option<String>,
     id: Option<i64>,
-    summary: String,
+    #[serde(default)]
+    summary: Option<String>,
+    /// A Slack-filed task's fields for the thread and the owner.
+    #[serde(default)]
+    result: Option<crate::slack::form::ResultForm>,
 }
 
 /// Resolves global task references and checks the caller's agent scope.
@@ -4629,16 +4845,35 @@ async fn task_handback(
 ) -> Response {
     task_request(daemon, headers, move |d, scope, actor| {
         let id = task_id_from(d, &scope.workspace_id, body.key.as_deref(), body.id, "task")?;
-        d.task_handback(
+        d.task_handback_from(
             &scope.workspace_id,
             id,
-            &body.summary,
+            body.summary.as_deref(),
+            body.result,
             scope.session_id,
             actor,
             "task_handback",
         )
     })
     .await
+}
+
+/// Posts a Slack-filed task's question to its thread and returns at once; the
+/// answer reaches the pane later as a prompt, never as this call's result.
+async fn task_ask(
+    State(daemon): State<Arc<Daemon>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<crate::slack::form::QuestionForm>,
+) -> Response {
+    let scope = match orch_scope(&daemon, &headers) {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    match tokio::task::spawn_blocking(move || daemon.slack_task_ask(scope.session_id, body)).await {
+        Ok(Ok(text)) => (StatusCode::OK, axum::Json(json!({"text": text}))).into_response(),
+        Ok(Err(e)) => orch_error(StatusCode::CONFLICT, e),
+        Err(e) => orch_err_response(anyhow::anyhow!("task ask worker failed: {e}")),
+    }
 }
 
 async fn orch_submit(

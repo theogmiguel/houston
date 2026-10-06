@@ -1,22 +1,45 @@
-@layer base {
-  .btn {
-    /* An icon is display:block (Icon.tsx), so the button itself must be the
-       flex row or the label breaks onto its own line. */
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    border-radius: var(--tr-radius-button);
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    padding: 5px 12px;
-    font-size: var(--tr-text-sm);
-    font-weight: 500;
-  }
-  .btn:hover {
-    border-color: var(--border-hover);
-    background: var(--card-hover);
-  }
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--content-bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body {
+  font-size: var(--tr-text-base);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--border) 55%, transparent) transparent;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: calc(var(--tr-radius-sm) / 2);
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
 
+@layer base {
   button {
     font: inherit;
     cursor: pointer;
@@ -35,17 +58,6 @@
     outline-offset: 1px;
   }
 
-  /* Chrome is not copy material: drags across it must not paint a DOM selection.
-     Content regions (editor, markdown, logs, errors, inputs) are not listed. The
-     terminal engine owns its own selection model. */
-  .pane-head,
-  .side-tabs,
-  .term-host {
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  .pane-head input,
-  .side-tabs input,
   aside input {
     -webkit-user-select: text;
     user-select: text;
@@ -71,20 +83,5 @@
     appearance: none;
     -webkit-appearance: none;
     margin: 0;
-  }
-}
-
-/* Ghost buttons live below `utilities` so every utility a call site adds (its
-   own text colour, a danger hover tint, an armed fill) wins by layer rather
-   than by Tailwind's alphabetical tie-break. */
-@layer components {
-  .btn-ghost {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-  }
-  .btn-ghost:hover:not(:disabled) {
-    background: var(--hover-fill);
-    color: var(--text-primary);
   }
 }

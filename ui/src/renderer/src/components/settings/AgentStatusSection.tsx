@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { AgentKind } from '../../houston/generated/AgentKind'
-import { CheckedStamp } from '../CheckedStamp'
-import { Icon, ICON_ROLE_CLS } from '../Icon'
+import type { AgentProfileState } from '../SettingsView'
+import { AgentProfiles } from '../AgentProfiles'
+import { CheckedStamp } from '../ui/CheckedStamp'
+import { ICON_ROLE_CLS } from '../ui/Icon'
 import { IconAgent, IconLoaderCircle, IconRefresh, IconZap } from '../icons'
 import { ListDetail, type ListDetailItem } from '../nav/ListDetail'
-import { CHROME_BUTTON, NavDetailState, NavEmpty, NavSwitch } from '../nav/navChrome'
-import { Group, SectionHead, SettingsRow } from '../settingsPrimitives'
-import { StatusIcon, type StatusIconState } from '../StatusIcon'
-import { Tooltip } from '../Tooltip'
+import { Caption } from '../ui/Caption'
+import { Group, SectionHead, SettingsRow } from '../ui/settingsPrimitives'
+import { StatusIcon, type StatusIconState } from '../ui/StatusIcon'
+import { Tooltip } from '../ui/Tooltip'
+import { Text } from '../ui/Text'
+import { PaneHeaderButton } from '../ui/PaneHeaderButton'
+import { CenteredStatus, CompactSwitch, EmptyPanel, HookNotice, HookPath } from '../ui/SettingsStatus'
 
 export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
   claude: {
@@ -43,6 +48,10 @@ export interface AgentStatusSectionProps {
   onSet: (provider: AgentKind, enabled: boolean) => void
   onRefresh: () => void
   checkedAt?: number | null
+  agentProfiles?: AgentProfileState | null
+  onAgentProfileUpsert?: (id: number | null, agent: AgentKind, name: string, configDir: string) => void
+  onAgentProfileDelete?: (id: number) => void
+  onAgentProfileSetActive?: (agent: AgentKind, id: number | null) => void
 }
 
 function copyFor(state: AgentHookState): { label: string; writes: string } {
@@ -75,7 +84,7 @@ function switchFor(
   testId: string
 ): React.JSX.Element {
   return (
-    <NavSwitch
+    <CompactSwitch
       on={state.enabled}
       disabled={pending || !state.present}
       label={
@@ -90,21 +99,25 @@ function switchFor(
 }
 
 function VersionText({ version }: { version: string | null }): React.JSX.Element {
-  return (
-    <span className="font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)] tabular-nums">
-      {version ?? 'Unknown'}
-    </span>
-  )
+  return <Caption tone="faint" variant="code">{version ?? 'Unknown'}</Caption>
 }
 
 function AgentDetail({
   state,
   pending,
-  onSet
+  onSet,
+  agentProfiles,
+  onAgentProfileUpsert,
+  onAgentProfileDelete,
+  onAgentProfileSetActive
 }: {
   state: AgentHookState
   pending: boolean
   onSet: (provider: AgentKind, enabled: boolean) => void
+  agentProfiles: AgentProfileState | null
+  onAgentProfileUpsert?: AgentStatusSectionProps['onAgentProfileUpsert']
+  onAgentProfileDelete?: AgentStatusSectionProps['onAgentProfileDelete']
+  onAgentProfileSetActive?: AgentStatusSectionProps['onAgentProfileSetActive']
 }): React.JSX.Element {
   const copy = copyFor(state)
   const scope = state.scope === 'workspace' ? 'Every workspace Houston opens' : 'This machine'
@@ -114,7 +127,7 @@ function AgentDetail({
       data-testid="agent-status-detail"
       data-provider={state.provider}
       data-status={markFor(state)}
-      className="flex flex-col gap-[var(--space-4)]"
+      className="grid gap-[var(--space-4)]"
     >
       {}
       <header className="flex items-center gap-[var(--space-3)]">
@@ -122,9 +135,9 @@ function AgentDetail({
           <IconAgent agent={state.provider} className={ICON_ROLE_CLS.subhead} />
         </span>
         <div className="min-w-0 flex-1 flex items-baseline gap-[var(--space-2)]">
-          <strong className="truncate text-[length:var(--tr-text-subhead-size)] font-[var(--tr-text-subhead-weight)] text-[var(--text-primary)]">
+          <Text as="strong" className="truncate" size="subhead" weight="subhead" tone="primary">
             {copy.label}
-          </strong>
+          </Text>
           <VersionText version={state.version} />
         </div>
         {switchFor(state, copy.label, pending, onSet, 'agent-status-switch')}
@@ -132,41 +145,28 @@ function AgentDetail({
 
       <Group heading="Hooks">
         <SettingsRow title="Scope">
-          <span className="[font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]">{scope}</span>
+          <Text size="small" tone="secondary">{scope}</Text>
         </SettingsRow>
         <SettingsRow
           title="What Houston writes"
           desc={
-            <div className="whitespace-normal">
+            <div>
               <span>{copy.writes}</span>
-              <div className="pt-[var(--space-1)] font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+              <HookPath>
                 {state.path}
-              </div>
+              </HookPath>
               {state.error && (
-                <div
-                  data-testid="agent-status-error"
-                  className="pt-[var(--space-1-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)]"
-                >
-                  {state.error}
-                </div>
+                <HookNotice testId="agent-status-error" tone="danger">{state.error}</HookNotice>
               )}
               {!state.error && mismatch && (
-                <div
-                  data-testid="agent-status-mismatch"
-                  className="pt-[var(--space-1-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--warning)]"
-                >
-                  On, but nothing is installed right now — the file may have been edited outside
+                <HookNotice testId="agent-status-mismatch" tone="warning">On, but nothing is installed right now — the file may have been edited outside
                   Houston.
-                </div>
+                </HookNotice>
               )}
               {state.provider === 'codex' && state.trust === 'not_confirmed' && (
-                <div
-                  data-testid="agent-status-codex-trust"
-                  className="pt-[var(--space-1-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--warning)]"
-                >
-                  Hooks installed, not confirmed: Codex runs a hook only after you accept it once
+                <HookNotice testId="agent-status-codex-trust" tone="warning">Hooks installed, not confirmed: Codex runs a hook only after you accept it once
                   in its own review screen — open any Codex pane.
-                </div>
+                </HookNotice>
               )}
             </div>
           }
@@ -175,14 +175,26 @@ function AgentDetail({
 
       <Group heading="On this machine">
         <SettingsRow title="Binary">
-          <span className="[font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]">
+          <Text size="small" tone="secondary">
             {state.present ? 'Found on PATH' : 'Not found'}
-          </span>
+          </Text>
         </SettingsRow>
         <SettingsRow title="Version">
           <VersionText version={state.version} />
         </SettingsRow>
       </Group>
+      {(state.provider === 'claude' || state.provider === 'codex') && (
+        <Group heading="Accounts">
+          <AgentProfiles
+            agents={[state.provider]}
+            profiles={agentProfiles?.profiles ?? []}
+            active={agentProfiles?.active ?? []}
+            onUpsert={onAgentProfileUpsert ?? (() => {})}
+            onDelete={onAgentProfileDelete ?? (() => {})}
+            onSetActive={onAgentProfileSetActive ?? (() => {})}
+          />
+        </Group>
+      )}
     </div>
   )
 }
@@ -191,7 +203,11 @@ export function AgentStatusSection({
   providers,
   onSet,
   onRefresh,
-  checkedAt = null
+  checkedAt = null,
+  agentProfiles = null,
+  onAgentProfileUpsert,
+  onAgentProfileDelete,
+  onAgentProfileSetActive
 }: AgentStatusSectionProps): React.JSX.Element {
   const [pending, setPending] = useState<Partial<Record<AgentKind, boolean>>>({})
   const [checking, setChecking] = useState(false)
@@ -234,100 +250,80 @@ export function AgentStatusSection({
     <>
       <CheckedStamp at={checkedAt} />
       <Tooltip label="Look again for each CLI and re-read its hooks">
-      <button
-        type="button"
+      <PaneHeaderButton
         aria-label="Check again"
-        className={CHROME_BUTTON}
         onClick={handleRefresh}
         disabled={checking || providers === null}
         data-testid="agent-status-check-again"
-      >
-        <Icon
-          glyph={checking ? IconLoaderCircle : IconRefresh}
-          role="small"
-          className={checking ? 'animate-spin' : undefined}
-        />
-        </button>
+        icon={checking ? IconLoaderCircle : IconRefresh}
+        iconRole="small"
+        size="mini"
+        tone="secondary"
+        spinning={checking}
+      />
       </Tooltip>
     </>
   )
 
   const items: ListDetailItem[] = (providers ?? []).map((state) => {
     const copy = copyFor(state)
+    const accountCount = agentProfiles?.profiles.filter((profile) => profile.agent === state.provider).length ?? 0
+    const subtitle = [
+      state.version ?? 'Unknown',
+      !state.present ? 'Not found on PATH' : state.error || (state.enabled && !state.installed)
+        ? 'Hooks need attention' : state.installed ? 'Hooks on' : 'Hooks off',
+      accountCount > 0 ? `${accountCount} account${accountCount === 1 ? '' : 's'}` : null
+    ].filter(Boolean).join(' · ')
     return {
       id: state.provider,
       title: (
-        <span
+        <Text
+          as="div"
           data-testid="agent-status-row"
+          data-settings-row-name={copy.label}
           data-provider={state.provider}
           data-status={markFor(state)}
-          className={`flex items-baseline gap-[var(--space-2)] ${
-            state.present ? '' : 'text-[var(--text-secondary)]'
-          }`}
+          className="grid min-w-0 items-start"
+          tone={state.present ? undefined : 'secondary'}
         >
-          <span className="truncate">{copy.label}</span>
-          {state.version && (
-            <span className="flex-none font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)] tabular-nums">
-              {state.version}
-            </span>
-          )}
-        </span>
+          <Text className="truncate" size="ui" weight="medium">{copy.label}</Text>
+          <Text className="truncate" size="small" weight="small" tone="muted">{subtitle}</Text>
+        </Text>
       ),
-      sub: stateLine(state),
-      right: (
-        <span className="flex items-center gap-[var(--space-2)]">
-          <StatusIcon state={markFor(state)} />
-          {switchFor(
-            state,
-            copy.label,
-            pending[state.provider] !== undefined,
-            handleSet,
-            'agent-status-row-switch'
-          )}
-        </span>
-      )
+      right: <StatusIcon state={markFor(state)} />
     }
   })
 
   return (
     <>
-      <SectionHead
-        title="Agent setup"
-        lede="Show when agents are working or need input. Houston learns this from a small hook it installs in each CLI's own config — never by reading the terminal. Every switch here edits that CLI's own file, and turning one off removes exactly what Houston wrote."
-        actions={actions}
-      />
+      <SectionHead title="Agent CLIs" actions={actions} />
       {providers === null ? (
-        <NavDetailState
+        <CenteredStatus
           testId="agent-status-loading"
           title="Checking agent status…"
           detail="Asking the daemon what is installed."
         />
       ) : providers.length === 0 ? (
-        <NavEmpty
+        <EmptyPanel
           testId="agent-status-empty"
           title="No hookable CLIs"
-          icon={<Icon glyph={IconZap} role="display" />}
+          icon={IconZap}
         >
           The daemon reported no CLI it can wire. Panes will still run — they just show no
           Working / Idle / Needs input until a CLI that supports this is installed.
-        </NavEmpty>
+        </EmptyPanel>
       ) : (
         <ListDetail
           items={items}
-          backLabel="Agent setup"
-          listHead={
-            <span className="px-[2px] py-[4px] block [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
-              Agent CLIs · <span className="tabular-nums">{items.length}</span>
-            </span>
-          }
+          backLabel="Agent CLIs"
           renderDetail={(item) => {
             const state = providers.find((p) => p.provider === item?.id)
             if (!state) {
               return (
-                <div className="flex-1 flex items-center justify-center text-center [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+                <Text as="div" className="flex-1 flex items-center justify-center" center size="small" tone="faint">
                   Nothing selected. Each CLI here carries the file Houston writes into and what
                   is installed on this machine.
-                </div>
+                </Text>
               )
             }
             return (
@@ -335,6 +331,10 @@ export function AgentStatusSection({
                 state={state}
                 pending={pending[state.provider] !== undefined}
                 onSet={handleSet}
+                agentProfiles={agentProfiles}
+                onAgentProfileUpsert={onAgentProfileUpsert}
+                onAgentProfileDelete={onAgentProfileDelete}
+                onAgentProfileSetActive={onAgentProfileSetActive}
               />
             )
           }}

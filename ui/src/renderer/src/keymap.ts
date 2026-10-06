@@ -143,7 +143,7 @@ export const openFileShortcut: ShortcutEntry = {
 export const newBrowserPane: ShortcutEntry = {
   id: 'new-browser-pane',
   keyLabel: 'b',
-  description: 'new browser tab in the side panel',
+  description: 'new browser pane',
   category: 'global',
   layer: 'both',
   match: (e) => e.key === 'b'
@@ -282,6 +282,14 @@ export const settingsShortcut: ShortcutEntry = {
   match: (e) => e.ctrlKey && e.key === ','
 }
 
+export const usageShortcut: ShortcutEntry = {
+  id: 'usage',
+  keyLabel: 'Ctrl+U',
+  description: 'open usage',
+  category: 'global',
+  match: (e) => (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'u' || e.key === 'U')
+}
+
 export const commandPaletteShortcut: ShortcutEntry = {
   id: 'command-palette',
   keyLabel: 'Ctrl+K',
@@ -396,6 +404,7 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
   shortcutSheetShortcut,
   browserFocusUrl,
   settingsShortcut,
+  usageShortcut,
   commandPaletteShortcut,
   prefixShortcut,
   wsPrev,
@@ -409,7 +418,7 @@ export const GLOBAL_SHORTCUTS: ShortcutEntry[] = [
 export const dictationShortcut: ShortcutEntry = {
   id: 'voice-dictate',
   keyLabel: 'Ctrl+Shift+Space',
-  description: 'hold to dictate into this terminal (Settings → Voice)',
+  description: 'hold to dictate into this terminal (Settings → Dictation)',
   category: 'terminal',
   chord: { code: 'Space', ctrl: true, alt: false, shift: true, meta: false },
   remappable: true

@@ -55,6 +55,8 @@ jobs:
         run: bash scripts/check-kill-guard.sh
       - name: check-protocol-sync.sh (daemon/UI/doc wire version agree)
         run: bash scripts/check-protocol-sync.sh
+      - name: check-case-collisions.sh (paths unique on case-insensitive filesystems)
+        run: bash scripts/check-case-collisions.sh
       - name: check-loop-spawn-sync.sh (both daemon hosts call the loop-spawn helper)
         run: bash scripts/check-loop-spawn-sync.sh
       - name: check-title-tooltip-guard.sh (title= component-prop vs Tooltip conversion)
@@ -73,7 +75,7 @@ jobs:
         run: bash scripts/check-doc-hygiene.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
-      - name: check-type-scale.sh (semantic text tokens and a ratcheted 11px floor)
+      - name: check-type-scale.sh (semantic text tokens and an absolute 11px floor)
         run: bash scripts/check-type-scale.sh
       - name: check-label-tracking.sh (label step's uppercase tracking never leaks onto other text)
         run: bash scripts/check-label-tracking.sh
@@ -99,7 +101,7 @@ jobs:
         run: bash scripts/check-ui-boundary.sh
       - name: check-copy.sh (interface copy uses sentence case and status vocabulary)
         run: bash scripts/check-copy.sh
-      - name: check-ratchets-only-tighten.sh (a baseline pin may fall, never rise)
+      - name: check-ratchets-only-tighten.sh (the complexity ratchet only tightens)
         run: bash scripts/check-ratchets-only-tighten.sh
       - uses: oven-sh/setup-bun@v2
       # check-mutations.sh drives ui's complexity gate, which shells out to the

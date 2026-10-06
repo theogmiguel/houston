@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 125;
+pub const PROTOCOL_VERSION: u32 = 127;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -384,6 +384,49 @@ pub enum HarnessFindingState {
     Resolved,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessFindingPhase {
+    Open,
+    Fixing,
+    AwaitingVerification,
+    NotSeen,
+    Resolved,
+    Dismissed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessVerdict {
+    Gone,
+    StillPresent,
+    Inconclusive,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessFindingTask {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub task_id: i64,
+    pub key: String,
+    pub status: TaskStatus,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub landed_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessVerification {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub review_id: u32,
+    pub verdict: HarnessVerdict,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub sessions_after: u32,
+    pub quotes: Vec<String>,
+}
+
 /// A finding as its most recent review recorded it. `state` is the operator's
 /// decision, unless a later review raised the finding again after it
 /// (`recurred`), which reopens it.
@@ -408,6 +451,57 @@ pub struct HarnessFinding {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub decided_at_ms: Option<i64>,
     pub recurred: bool,
+    pub phase: HarnessFindingPhase,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub task: Option<HarnessFindingTask>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub verification: Option<HarnessVerification>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub last_seen_review_id: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessAttention {
+    pub workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub open: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub fixing: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub awaiting_verification: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub not_seen: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub resolved: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub dismissed: u32,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub latest_published_review_id: Option<u32>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub seen_review_id: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub attention: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessProviderCoverage {
+    pub agent: AgentKind,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub sessions: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaskOrigin {
+    HarnessFinding {
+        workspace: String,
+        key: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        review_id: u32,
+    },
 }
 
 /// A task's workflow state. Archiving is orthogonal: an archived task keeps
@@ -522,6 +616,98 @@ pub enum TaskRunState {
     Interrupted,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum IntakeState {
+    /// Waiting for the owner to accept it.
+    Pending,
+    /// Accepted while the working cap was full; starts when a slot frees.
+    Queued,
+    Started,
+    Refused,
+}
+
+/// The external request a task was created from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskIntake {
+    /// `slack`.
+    pub source: String,
+    /// The requester's Slack member ID.
+    pub author: String,
+    pub state: IntakeState,
+    /// 1-based place in the start queue while `queued`.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub queue_position: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub permalink: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SlackChannelMap {
+    /// A channel ID (`C…` or `G…`), not a name.
+    pub channel_id: String,
+    /// The workspace path a request from this channel is filed under.
+    pub workspace: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SlackConnection {
+    Off,
+    Connecting,
+    Connected,
+    /// Waiting to reconnect after `error`.
+    Retrying,
+}
+
+/// The language of everything the Slack intake writes: Houston's own phrases
+/// in the owner's direct messages and the thread, and the fields the agent is
+/// told to write for the requester.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SlackLanguage {
+    #[default]
+    En,
+    PtBr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SlackInfo {
+    pub enabled: bool,
+    /// Both tokens are in the system keychain.
+    pub has_tokens: bool,
+    pub connection: SlackConnection,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub team: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub bot_user_id: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub owner_user_id: Option<String>,
+    pub channels: Vec<SlackChannelMap>,
+    #[serde(default)]
+    pub language: SlackLanguage,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_event_at_ms: Option<i64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_catchup_at_ms: Option<i64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub error: Option<String>,
+}
+
 /// A task as the snapshot lists it: no description, so a 5 000-task list stays
 /// bounded; the detail message carries the text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -556,12 +742,19 @@ pub struct TaskSummary {
     pub acceptance_checked: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_total: u32,
+    /// Where the task came from when it was not typed into Houston.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub intake: Option<TaskIntake>,
     /// The newest run still in flight for this task, if any; the snapshot
     /// carries it so the list can show the execution card without a detail
     /// fetch. Handed-back and finished runs stay only in `task_detail.runs`.
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub open_run: Option<TaskRun>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub origin: Option<TaskOrigin>,
 }
 
 /// One task with its full text. Every mutation bumps `revision`, so a client
@@ -594,6 +787,9 @@ pub struct Task {
     pub updated_at_ms: i64,
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub archived_at_ms: Option<i64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub origin: Option<TaskOrigin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -682,6 +878,10 @@ pub struct TaskRun {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ended_at_ms: Option<i64>,
+    /// The pull request found for the run's branch when it was handed back.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub pr_url: Option<String>,
 }
 
 /// The task a session is bound to, as a pane chip shows it: the newest run
@@ -1678,6 +1878,9 @@ pub struct SessionInfo {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub status: Option<AgentStatus>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub status_since_ms: Option<u64>,
+    #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub context: Option<SessionContext>,
     #[serde(default)]
@@ -1728,6 +1931,24 @@ pub struct SessionInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PrWatchInfo {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    pub url: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_checked_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionPrWatches {
+    pub session: u32,
+    pub watches: Vec<PrWatchInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TagInfo {
     pub id: u32,
     pub name: String,
@@ -1748,6 +1969,24 @@ pub const MAX_TAGS_PER_SESSION: usize = 5;
 pub struct Workspace {
     pub path: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorkspaceAction {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub shortcut: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct LocalServer {
+    pub port: u16,
+    pub process: String,
+    pub session: u32,
+    pub pane_title: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1815,6 +2054,15 @@ pub struct GitBranchInfo {
     /// holds the branch, so it cannot be switched to or deleted here.
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub worktree_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct GitBranchCommit {
+    pub sha: String,
+    pub subject: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub author_time_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2631,6 +2879,12 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         prompt: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        model: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        effort: Option<ChatEffort>,
     },
     SessionKill {
         session: u32,
@@ -2663,6 +2917,7 @@ pub enum ClientMsg {
         rows: u16,
     },
     SessionList,
+    PrWatchList,
     SessionAttach {
         session: u32,
         #[serde(default)]
@@ -2704,6 +2959,9 @@ pub enum ClientMsg {
         name: String,
     },
     WorkspaceList,
+    WorkspaceLocalServers {
+        workspace: String,
+    },
     SessionClose {
         session: u32,
         #[serde(default)]
@@ -2750,6 +3008,9 @@ pub enum ClientMsg {
         base: Option<String>,
     },
     GitBranch {
+        dir: String,
+    },
+    GitBranchCommits {
         dir: String,
     },
     GitStage {
@@ -2964,6 +3225,10 @@ pub enum ClientMsg {
         merge_method: Option<PrMergeMethod>,
         request: u32,
     },
+    PrWatchUnwatch {
+        session: u32,
+        number: u32,
+    },
     GitReviewDiffs {
         dir: String,
     },
@@ -3151,6 +3416,31 @@ pub enum ClientMsg {
         policy: UpdatePolicy,
     },
     UpdateCheckNow,
+    /// The Slack intake's configuration and connection state.
+    SlackGet,
+    /// Stores the two tokens in the system keychain and turns the connector
+    /// on. Both omitted turns it on with tokens already in the keychain.
+    SlackConnect {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        app_token: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        bot_token: Option<String>,
+    },
+    /// Closes the connection, turns the connector off and deletes both tokens.
+    SlackDisconnect,
+    /// Replaces the owner and the channel map; the tokens are untouched.
+    /// `language` absent keeps the current one.
+    SlackConfigure {
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        owner_user_id: Option<String>,
+        channels: Vec<SlackChannelMap>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        language: Option<SlackLanguage>,
+    },
     KeymapGet,
     KeymapSet {
         overrides: KeymapOverrides,
@@ -3311,6 +3601,26 @@ pub enum ClientMsg {
         workspace: String,
         key: String,
         state: HarnessFindingState,
+    },
+    /// Creates and links a backlog task from a finding as one database write.
+    HarnessFixTask {
+        workspace: String,
+        key: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        agent: Option<AgentKind>,
+        #[serde(default)]
+        start: bool,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        prompt: Option<String>,
+    },
+    /// Gets Harness attention counts for all workspaces known to Harness.
+    HarnessOverviewGet,
+    /// Advances a workspace's seen review cursor. The value never moves back.
+    HarnessSeen {
+        workspace: String,
+        review_id: u32,
     },
     /// Global task summaries scoped to all, unassigned or a workspace path.
     TaskSnapshot {
@@ -3483,6 +3793,17 @@ pub enum ClientMsg {
         workspace: String,
         routes: Vec<RoleRoute>,
     },
+    WorkspaceActionsGet {
+        workspace: String,
+    },
+    WorkspaceActionSet {
+        workspace: String,
+        action: WorkspaceAction,
+    },
+    WorkspaceActionDelete {
+        workspace: String,
+        id: String,
+    },
     OrchestrationCapsSet {
         max_live_children: u32,
         max_spawn_depth: u32,
@@ -3498,6 +3819,20 @@ pub enum ClientMsg {
         until_ms: i64,
         #[serde(default)]
         refresh_pricing: bool,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
+    },
+    UsageActivitySummaryGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        since_ms: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
     },
     BrowserToolResult {
         request_id: u64,
@@ -3573,6 +3908,9 @@ pub enum ServerMsg {
     SessionList {
         sessions: Vec<SessionInfo>,
     },
+    PrWatchList {
+        watches: Vec<SessionPrWatches>,
+    },
     SessionRemoved {
         session: u32,
     },
@@ -3598,6 +3936,12 @@ pub enum ServerMsg {
     WorkspaceList {
         workspaces: Vec<Workspace>,
     },
+    WorkspaceLocalServers {
+        workspace: String,
+        servers: Vec<LocalServer>,
+        unsupported: Option<String>,
+        truncated: bool,
+    },
     SessionResized {
         session: u32,
         cols: u16,
@@ -3614,6 +3958,10 @@ pub enum ServerMsg {
     SessionResumable {
         session: u32,
         resumable: bool,
+    },
+    PrWatchChanged {
+        session: u32,
+        watches: Vec<PrWatchInfo>,
     },
     TagList {
         tags: Vec<TagInfo>,
@@ -3638,6 +3986,17 @@ pub enum ServerMsg {
     WorkspaceRouting {
         workspace: String,
         routes: Vec<RoleRoute>,
+    },
+    WorkspaceActions {
+        workspace: String,
+        actions: Vec<WorkspaceAction>,
+    },
+    WorkspaceActionRefused {
+        workspace: String,
+        reason: String,
+        limit: u32,
+        actual: u32,
+        requested: u32,
     },
     DelegationResults {
         parent: u32,
@@ -3689,6 +4048,13 @@ pub enum ServerMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         common_dir: Option<String>,
+    },
+    GitBranchCommits {
+        dir: String,
+        commits: Vec<GitBranchCommit>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        total: u64,
+        truncated: bool,
     },
     GitCommit {
         dir: String,
@@ -3963,6 +4329,14 @@ pub enum ServerMsg {
         policy: UpdatePolicy,
         state: UpdateState,
     },
+    /// After a read, a change, or any move of the connection. A refused
+    /// change keeps the old state and names why in `refusal`.
+    Slack {
+        info: SlackInfo,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        refusal: Option<String>,
+    },
     Keymap {
         overrides: KeymapOverrides,
     },
@@ -4020,6 +4394,10 @@ pub enum ServerMsg {
         reviews: Vec<HarnessReview>,
         findings: Vec<HarnessFinding>,
         models: Vec<HarnessModelOption>,
+        provider_coverage: Vec<HarnessProviderCoverage>,
+    },
+    HarnessOverview {
+        rows: Vec<HarnessAttention>,
     },
     HarnessReport {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -4183,6 +4561,13 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         scan_duration_ms: u64,
     },
+    UsageActivitySummary {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        since_ms: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+        days: Vec<UsageActivityDay>,
+    },
     Error {
         message: String,
         context: Option<String>,
@@ -4281,6 +4666,32 @@ pub struct UsageBucket {
     pub records: u32,
     pub unpriced_records: u32,
     pub sessions: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub workspace_path: Option<String>,
+    pub category_cost_usd: UsageCategoryCost,
+    pub fast_cost_usd: f64,
+    pub ultrafast_cost_usd: f64,
+    pub speed_premium_usd: f64,
+    pub speed_rate_available: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageCategoryCost {
+    pub input_usd: f64,
+    pub cache_read_usd: f64,
+    pub cache_write_usd: f64,
+    pub output_usd: f64,
+    pub other_usd: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageActivityDay {
+    pub day: String,
+    pub cost_usd: f64,
+    pub totals: UsageTokenTotals,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4336,6 +4747,9 @@ pub struct UsagePricing {
 
 pub const USAGE_MAX_WINDOW_DAYS: u32 = 90;
 
+/// The calendar is one row per day; bounding it here keeps an activity reply small.
+pub const USAGE_ACTIVITY_MAX_DAYS: u32 = 365;
+
 pub const USAGE_WINDOW_REFUSED: &str = "usage_window_refused:";
 
 pub const ROUTINES_TOTAL: u32 = 4_096;
@@ -4368,6 +4782,25 @@ pub const TASK_DESCRIPTION_MAX: usize = 65_536;
 pub const TASK_COMMENT_MAX: usize = 16_384;
 /// Tasks the global backlog may hold; snapshot sends summaries only.
 pub const TASKS_PER_WORKSPACE: u32 = 5_000;
+/// Far above a Slack token's length, low enough to refuse a paste of
+/// something else.
+pub const SLACK_TOKEN_LEN_MAX: u32 = 512;
+/// Slack intake runs working at once; a run waiting for an answer or for
+/// input does not count. Accepted requests beyond it wait in a queue.
+pub const SLACK_RUNS_WORKING_MAX: usize = 2;
+/// A request's text; longer ones are refused in the thread by this limit.
+pub const SLACK_REQUEST_TEXT_MAX: usize = 8_192;
+/// Images downloaded per request and bytes per image.
+pub const SLACK_IMAGES_MAX: usize = 4;
+pub const SLACK_IMAGE_BYTES_MAX: u64 = 10 * 1024 * 1024;
+/// How far back a reconnect replays a channel; older mentions are not
+/// turned into tasks after a long absence.
+pub const SLACK_CATCHUP_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
+/// Text a person types into one of Houston's Slack dialogs: a refusal reason
+/// or an answer in their own words.
+pub const SLACK_DIALOG_TEXT_MAX: usize = 2_000;
+/// Channels the intake listens to.
+pub const SLACK_CHANNELS_MAX: usize = 16;
 /// Comments one task may hold; keeps `task_get` bounded.
 pub const COMMENTS_PER_TASK: u32 = 500;
 /// Acceptance items one task may hold; keeps the brief readable.

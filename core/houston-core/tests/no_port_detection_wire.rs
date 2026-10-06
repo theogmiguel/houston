@@ -57,6 +57,8 @@ async fn no_port_broadcast_for_localhost_urls() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id;

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import { Button, Count, STATUS_LABELS, StatusLabel } from './index'
+import { describe, expect, it, vi } from 'vitest'
+import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel, TextInput } from './index'
+import { ThemeRevealSpecimen } from './ThemeRevealSpecimen'
+import { OrchestrationNoticeSpecimen } from './OrchestrationNotice'
 import { variants } from './variants'
 
 const textClass = variants('base', { tone: { quiet: 'muted', loud: 'strong' } }, { tone: 'quiet' })
@@ -22,6 +24,34 @@ void unlabeledButton
 void unknownStatus
 
 describe('components/ui primitives', () => {
+  it('shows the theme reveal with the corrected Paper terminal and all palette contrast rows', () => {
+    render(<ThemeRevealSpecimen />)
+
+    expect(screen.getByRole('table', { name: 'Terminal palette contrast ratios' }).querySelectorAll('tbody tr')).toHaveLength(24)
+    expect(screen.getByRole('button', { name: 'Switch to Paper' })).toBeTruthy()
+    expect(screen.getByTestId('theme-reveal-specimen').getAttribute('data-theme')).toBe('graphite')
+  })
+
+  it('specimens both orchestration notice states with working actions', () => {
+    render(<OrchestrationNoticeSpecimen />)
+    expect(screen.getAllByTestId('orchestration-notice')).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Open pane' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Dismiss api-refactor needs your input' })).toBeTruthy()
+  })
+
+  it('TextInput keeps its role, width and face, and passes layout and aria through', () => {
+    render(<TextInput aria-label="Bot token" type="password" font="mono" width="full" className="flex-1" defaultValue="x" />)
+    const input = screen.getByLabelText('Bot token') as HTMLInputElement
+    expect(input.type).toBe('password')
+    expect(input.className).toContain('font-mono')
+    expect(input.className).toContain('w-full')
+    expect(input.className).toContain('flex-1')
+    render(<TextInput aria-label="Owner" />)
+    const plain = screen.getByLabelText('Owner') as HTMLInputElement
+    expect(plain.type).toBe('text')
+    expect(plain.className).not.toContain('font-mono')
+  })
+
   it('variants applies defaults and chosen axis classes', () => {
     expect(textClass()).toBe('base muted')
     expect(textClass({ tone: 'loud' })).toBe('base strong')
@@ -69,8 +99,20 @@ describe('components/ui primitives', () => {
     rerender(<span>Tasks<Count value={12} /></span>)
     expect(container.textContent).toBe('Tasks12')
     expect(container.textContent).not.toMatch(/[().·]/)
-    expect(container.querySelector('span[aria-hidden="true"]')?.className).toBe('w-[var(--space-1-5)]')
+    expect(container.querySelector('span[aria-hidden="true"]')?.className).toBe('inline-block w-[var(--space-1-5)]')
+    expect(container.querySelector('span:not([aria-hidden])')?.className).not.toContain('inline-flex')
     expect(container.querySelector('span:not([aria-hidden])')?.className).not.toContain('gap-')
+  })
+
+  it('StatusLabel exposes a static verdict dot without hidden label text', () => {
+    const { container, rerender, unmount } = render(<StatusLabel status="Done" variant="dot" />)
+    const dot = screen.getByRole('img', { name: 'Done' })
+    expect(dot.textContent).toBe('')
+    expect(dot.querySelector('[aria-hidden="true"]')?.getAttribute('style')).toContain('var(--ok)')
+    rerender(<StatusLabel status="Stalled" variant="dot" />)
+    expect(screen.getByRole('img', { name: 'Stalled' })).toBeTruthy()
+    expect(container.innerHTML).not.toContain('animate')
+    unmount()
   })
 
   it('StatusLabel renders the fixed words and dot for every state', () => {
@@ -79,10 +121,22 @@ describe('components/ui primitives', () => {
       const label = screen.getByLabelText(status)
       expect(label.textContent).toBe(status)
       expect(label.querySelector('[aria-hidden="true"]')?.className).toContain('rounded-full')
-      if (status === 'Idle' || status === 'Paused' || status === 'Missing') {
+      if (status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen') {
         expect(label.querySelector('[aria-hidden="true"]')?.getAttribute('style')).toContain('transparent')
       }
       unmount()
     }
+    expect(STATUS_LABELS).toContain('Connected')
+    expect(STATUS_LABELS).toContain('Reconnecting')
+  })
+
+  it('shows connection state and a test failure inline, with a working cell action', () => {
+    const onClick = vi.fn()
+    render(<ConnectionCell status="Failed" reason="npx was not found on PATH" server="github" agent="Claude Code" onClick={onClick} />)
+    expect(screen.getByLabelText('Failed')).toBeTruthy()
+    expect(screen.getByText('npx').tagName).toBe('CODE')
+    expect(screen.getByText(/was not found on PATH/)).toBeTruthy()
+    screen.getByRole('button', { name: 'turn off github for Claude Code' }).click()
+    expect(onClick).toHaveBeenCalledOnce()
   })
 })

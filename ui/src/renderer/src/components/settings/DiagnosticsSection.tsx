@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { BTN_GHOST } from '../buttonChrome'
+import { Button, DevBadge, HookPanel, HookStatusList, Readout, ReadoutGrid, HookStatus, Stack, Text } from '../ui'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { HostInfo } from '../SettingsView'
-import { SettingsList } from '../settingsPrimitives'
+import { SettingsList } from '../ui/settingsPrimitives'
+import { useSessions } from '../../sessionsStore'
+import { Table } from '../ui/Table'
 import { Row, SubHead } from './shared'
 
 function formatUptime(ms: number): string {
@@ -29,26 +31,14 @@ function DiagRead({
   label,
   value,
   mono,
-  numeric
+  tabular
 }: {
   label: string
   value: string
   mono?: boolean
-  numeric?: boolean
+  tabular?: boolean
 }): React.JSX.Element {
-  return (
-    <div
-      data-testid="settings-diagnostics-read"
-      className="rounded-[8px] border border-[var(--border)] bg-[var(--content-bg)] px-[10px] py-[8px]"
-    >
-      <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">{label}</div>
-      <div
-        className={`mt-[2px] text-[var(--text-primary)] ${mono ? 'font-mono [font-size:var(--tr-text-small-size)] break-all' : '[font-size:var(--tr-text-ui-size)] font-medium'} ${numeric ? 'tabular-nums' : ''}`}
-      >
-        {value}
-      </div>
-    </div>
-  )
+  return <Readout data-testid="settings-diagnostics-read" label={label} value={value} mono={mono} tabular={tabular} />
 }
 
 function DiagnosticsCopyRow({
@@ -103,14 +93,13 @@ function DiagnosticsCopyRow({
 
   return (
     <Row title="Copy diagnostics" desc="This page as text, for a bug report. No file contents, no secrets.">
-      <button
-        type="button"
-        className={`btn ${BTN_GHOST}`}
+      <Button
+        variant="legacy-ghost"
         data-testid="settings-diagnostics-copy"
         onClick={copy}
       >
         {state === 'copied' ? 'Copied' : state === 'error' ? 'Copy failed' : 'Copy'}
-      </button>
+      </Button>
     </Row>
   )
 }
@@ -128,135 +117,129 @@ export function DiagnosticsSection({
   onOpenHooks,
   onOpenLogsFolder
 }: DiagnosticsSectionProps): React.JSX.Element {
+  const sessions = useSessions()
   return (
     <>
-      <div className="mb-[14px] flex items-center gap-[8px]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">
-          Diagnostics
-        </div>
-        {hostInfo?.channel === 'dev' && (
-          <span
-            data-testid="settings-diagnostics-dev-badge"
-            className="font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] py-[2px] px-[5px] rounded-[4px] bg-[color-mix(in_srgb,var(--warn)_18%,transparent)] text-[var(--warn)]"
-          >
-            DEV
-          </span>
-        )}
-      </div>
-      <div className="mb-[14px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
-        Eleven values the daemon has always known and never showed. Read-only by design —
-        these are facts about what is running, not preferences. When something is wrong,
-        this is the page you screenshot.
-      </div>
 
       {!hostInfo ? (
-        <div className="">
+        <div>
           <Row title="Loading…" desc="Asking the daemon for its own vitals." />
         </div>
       ) : (
         <>
-          <SubHead>
-            Daemon
-          </SubHead>
-          <div
-            data-testid="settings-diagnostics-daemon"
-            className="grid grid-cols-2 gap-[10px] mb-[18px]"
-          >
+          <div className="flex items-center gap-[var(--space-2)]">
+            <SubHead>Process</SubHead>
+            {hostInfo.channel === 'dev' && (
+              <DevBadge data-testid="settings-diagnostics-dev-badge">
+                DEV
+              </DevBadge>
+            )}
+          </div>
+          <ReadoutGrid data-testid="settings-diagnostics-daemon" spaceAfter>
             <DiagRead label="Channel" value={hostInfo.channel} />
             <DiagRead label="State directory" value={hostInfo.state_dir} mono />
             <DiagRead label="Process" value={`pid ${hostInfo.pid}`} />
             <DiagRead label="Port" value={String(hostInfo.port)} />
             <DiagRead label="Protocol version" value={String(hostInfo.protocol_version)} />
-            <DiagRead label="Uptime" value={formatUptime(hostInfo.uptime_ms)} numeric />
-          </div>
+            <DiagRead label="Uptime" value={formatUptime(hostInfo.uptime_ms)} tabular />
+          </ReadoutGrid>
 
-          <SubHead>
+            <SubHead>
             Sessions
           </SubHead>
-          <div
-            data-testid="settings-diagnostics-sessions"
-            className="grid grid-cols-2 gap-[10px] mb-[18px]"
-          >
-            <DiagRead label="Live sessions" value={String(hostInfo.live_sessions)} numeric />
+          <ReadoutGrid data-testid="settings-diagnostics-sessions" spaceAfter>
+            <DiagRead label="Live sessions" value={String(hostInfo.live_sessions)} tabular />
             <DiagRead
               label="Deferred by restore budget"
               value={`${hostInfo.restore_deferred} of ${hostInfo.restore_budget}`}
-              numeric
+              tabular
             />
             <DiagRead
               label="Orchestration depth in use"
               value={`${hostInfo.orchestration_depth_in_use} of ${hostInfo.orchestration_max_depth}`}
-              numeric
+              tabular
             />
             <DiagRead
               label="Mailbox files on disk"
               value={String(hostInfo.mailbox_files_on_disk)}
-              numeric
+              tabular
+            />
+          </ReadoutGrid>
+
+          <div data-testid="daemon-live-sessions">
+            <SubHead>Sessions {sessions.size} live</SubHead>
+            <Table
+              aria-label="Live sessions"
+              rows={[...sessions.values()].map((session) => ({
+                id: session.id,
+                title: session.title || session.codename,
+                workspace: session.project_dir.split(/[\\/]/).filter(Boolean).at(-1) ?? session.project_dir,
+                agent: session.agent,
+                status: session.status ?? (session.state === 'exited' ? 'done' : session.state)
+              }))}
+              getRowId={(session) => String(session.id)}
+              empty={{ heading: 'No live sessions', description: 'Sessions appear here while they are running.' }}
+              columns={[
+                { key: 'title', header: 'Session' },
+                { key: 'workspace', header: 'Workspace', tone: 'muted' },
+                { key: 'agent', header: 'Agent', tone: 'muted' },
+                { key: 'status', header: 'Status', tone: 'muted' }
+              ]}
             />
           </div>
 
           <SubHead>
             Hooks
           </SubHead>
-          <div
-            data-testid="settings-diagnostics-hooks"
-            className="border border-[var(--border)] rounded-[10px] bg-[var(--card-bg)] px-[14px] py-[11px] mb-[18px]"
-          >
+          <HookPanel data-testid="settings-diagnostics-hooks">
             {!agentHooks ? (
-              <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
-                Asking the daemon what is installed…
-              </div>
+                      <Text weight="medium" size="small" as="div" tone="muted">
+                        Asking the daemon what is installed…
+                      </Text>
             ) : (
               (() => {
                 const wired = agentHooks.filter((h) => h.enabled && h.installed)
                 const unwired = agentHooks.filter((h) => !(h.enabled && h.installed))
                 return (
                   <>
-                    <div className="[font-size:var(--tr-text-small-size)] font-medium text-[var(--text-primary)]">
-                      Status hooks wired{' '}
-                      <span className="font-normal text-[var(--text-muted)] tabular-nums">
+                    <Text size="small" as="div" tone="primary">
+                      <Text size="small" as="span" weight="medium">Status hooks wired </Text>
+                      <Text size="small" as="span" weight="body" tone="muted" tabular>
                         {wired.length} of {agentHooks.length} detected CLIs
-                      </span>
-                    </div>
-                    <div className="mt-[10px] flex flex-wrap gap-[14px]">
+                      </Text>
+                    </Text>
+                    <HookStatusList>
                       {agentHooks.map((h) => {
                         const isWired = h.enabled && h.installed
                         return (
-                          <span
-                            key={h.provider}
-                            className={`flex items-center gap-[6px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] ${
-                              isWired ? 'text-[var(--text-secondary)]' : 'text-[var(--warn)]'
-                            }`}
-                          >
-                            <span
-                              className="inline-block w-[6px] h-[6px] rounded-full flex-none"
-                              style={{ background: isWired ? 'var(--ok)' : 'var(--warn)' }}
-                            />
+                          <HookStatus key={h.provider} wired={isWired}>
                             {HOOK_LABELS[h.provider] ?? h.provider}
                             {!isWired && ' — not wired'}
-                          </span>
+                          </HookStatus>
                         )
                       })}
-                    </div>
-                    {unwired.length > 0 && (
-                      <div className="cap-warn mt-[10px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.4] text-[var(--warn)]">
-                        An unwired CLI still runs — Houston just cannot tell whether its agent is
-                        working, idle or waiting on you. Its panes show no state dot.
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className={`${BTN_GHOST} mt-[10px]`}
-                      data-testid="settings-diagnostics-open-hooks"
-                      onClick={onOpenHooks}
-                    >
-                      Open Agent setup
-                    </button>
+                    </HookStatusList>
+                    <Stack gap="medium" insetTop="medium" align="start">
+                      {unwired.length > 0 && (
+                        <Text as="div" size="small" weight="small" tone="warn" leading="tight">
+                          An unwired CLI still runs — Houston just cannot tell whether its agent is
+                          working, idle or waiting on you. Its panes show no state dot.
+                        </Text>
+                      )}
+                      <Button
+                        type="button"
+                        variant="legacy-bare-ghost"
+                        data-testid="settings-diagnostics-open-hooks"
+                        onClick={onOpenHooks}
+                      >
+                        Open agent setup
+                      </Button>
+                    </Stack>
                   </>
                 )
               })()
             )}
-          </div>
+          </HookPanel>
 
         </>
       )}
@@ -273,9 +256,9 @@ export function DiagnosticsSection({
               : 'Open this channel\'s log folder in your file manager'
           }
         >
-          <button className={`btn ${BTN_GHOST}`} onClick={onOpenLogsFolder}>
+          <Button variant="legacy-ghost" onClick={onOpenLogsFolder}>
             Open folder
-          </button>
+          </Button>
         </Row>
         {hostInfo && <DiagnosticsCopyRow hostInfo={hostInfo} agentHooks={agentHooks} />}
       </SettingsList>

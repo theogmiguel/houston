@@ -9,9 +9,11 @@ use houston_protocol as proto;
 use serde_json::json;
 
 use super::{now_unix_ms, Daemon};
+use crate::db::TaskWrite;
 
 /// The hand-back's one line, as `pane_submit` bounds its own summary.
 const SUMMARY_MAX_CHARS: usize = 200;
+const HARNESS_TASK_ACTOR: &str = "houston:harness";
 
 impl Daemon {
     pub fn harness_state(&self, workspace: &str) -> Result<proto::ServerMsg> {
@@ -48,6 +50,7 @@ impl Daemon {
             reviews,
             findings: self.harness_findings(workspace)?,
             models: self.model_catalog.model_options(),
+            provider_coverage: self.harness_provider_coverage(workspace)?,
         })
     }
 
@@ -55,12 +58,16 @@ impl Daemon {
     /// taken before that review published is a decision on older evidence, so
     /// the finding reopens as `recurred`.
     fn harness_findings(&self, workspace: &str) -> Result<Vec<proto::HarnessFinding>> {
-        let decisions: HashMap<String, (proto::HarnessFindingState, i64)> = self
+        let decisions: HashMap<String, (proto::HarnessFindingState, i64, String)> = self
             .db
             .harness_decisions(workspace)?
             .into_iter()
-            .map(|d| (d.key, (d.state, d.decided_at_ms)))
+            .map(|d| (d.key, (d.state, d.decided_at_ms, d.decided_by)))
             .collect();
+        let latest_review_id = self
+            .db
+            .latest_published_harness_review(workspace)?
+            .unwrap_or(0);
         let mut seen = HashSet::new();
         let mut out = Vec::new();
         for row in self.db.harness_findings(workspace)? {
@@ -68,11 +75,74 @@ impl Daemon {
                 continue;
             }
             let (state, decided_at_ms, recurred) = match decisions.get(&row.finding.key) {
-                Some(&(state, at)) if at >= row.review_ended_at_ms => (state, Some(at), false),
+                Some((state, at, _)) if *at >= row.review_ended_at_ms => (*state, Some(*at), false),
                 Some(_) => (proto::HarnessFindingState::Open, None, true),
                 None => (proto::HarnessFindingState::Open, None, false),
             };
+            let links = self.db.harness_finding_tasks(workspace, &row.finding.key)?;
+            let selected_task = links
+                .iter()
+                .find(|link| {
+                    !matches!(
+                        link.status,
+                        proto::TaskStatus::Done | proto::TaskStatus::Canceled
+                    )
+                })
+                .or_else(|| links.first());
+            let verification = self
+                .db
+                .latest_harness_verification(workspace, &row.finding.key)?;
+            let last_seen_review_id = latest_review_id.max(row.review_id);
+            let has_newer_open_task = selected_task.is_some_and(|task| {
+                !matches!(
+                    task.status,
+                    proto::TaskStatus::Done | proto::TaskStatus::Canceled
+                ) && verification
+                    .as_ref()
+                    .is_none_or(|v| task.created_at_ms > v.review_ended_at_ms)
+            });
+            let latest_review_did_not_raise = latest_review_id > row.review_id
+                && verification
+                    .as_ref()
+                    .is_none_or(|v| latest_review_id > v.review_id);
+            let phase = if state == proto::HarnessFindingState::Resolved {
+                proto::HarnessFindingPhase::Resolved
+            } else if state == proto::HarnessFindingState::Dismissed {
+                proto::HarnessFindingPhase::Dismissed
+            } else if has_newer_open_task {
+                proto::HarnessFindingPhase::Fixing
+            } else if latest_review_did_not_raise {
+                proto::HarnessFindingPhase::NotSeen
+            } else if let Some(v) = verification.as_ref() {
+                match v.verdict {
+                    proto::HarnessVerdict::Gone => proto::HarnessFindingPhase::Resolved,
+                    proto::HarnessVerdict::StillPresent => proto::HarnessFindingPhase::Open,
+                    proto::HarnessVerdict::Inconclusive => {
+                        proto::HarnessFindingPhase::AwaitingVerification
+                    }
+                }
+            } else if let Some(task) = selected_task {
+                if task.status == proto::TaskStatus::Done {
+                    proto::HarnessFindingPhase::AwaitingVerification
+                } else if task.status != proto::TaskStatus::Canceled {
+                    proto::HarnessFindingPhase::Fixing
+                } else if last_seen_review_id > row.review_id {
+                    proto::HarnessFindingPhase::NotSeen
+                } else {
+                    proto::HarnessFindingPhase::Open
+                }
+            } else if last_seen_review_id > row.review_id {
+                proto::HarnessFindingPhase::NotSeen
+            } else {
+                proto::HarnessFindingPhase::Open
+            };
             let f = row.finding;
+            let quotes = verification
+                .as_ref()
+                .filter(|v| v.verdict == proto::HarnessVerdict::StillPresent)
+                .map(|v| v.evidence.clone())
+                .filter(|quotes| !quotes.is_empty())
+                .unwrap_or(f.quotes);
             out.push(proto::HarnessFinding {
                 review_id: row.review_id,
                 key: f.key,
@@ -81,7 +151,7 @@ impl Daemon {
                 confidence: f.confidence,
                 sessions: f.sessions,
                 count: f.count,
-                quotes: f.quotes,
+                quotes,
                 recommendation_kind: f.recommendation_kind,
                 target: f.target,
                 recommendation: f.recommendation,
@@ -89,9 +159,230 @@ impl Daemon {
                 state,
                 decided_at_ms,
                 recurred,
+                phase,
+                task: selected_task.map(|task| proto::HarnessFindingTask {
+                    task_id: task.task_id,
+                    key: Self::task_key(task.task_number),
+                    status: task.status,
+                    landed_at_ms: task.landed_at_ms,
+                }),
+                verification: verification.map(|v| proto::HarnessVerification {
+                    review_id: v.review_id,
+                    verdict: v.verdict,
+                    sessions_after: v.sessions_after,
+                    quotes: v.evidence,
+                }),
+                last_seen_review_id,
             });
         }
         Ok(out)
+    }
+
+    fn harness_provider_coverage(
+        &self,
+        workspace: &str,
+    ) -> Result<Vec<proto::HarnessProviderCoverage>> {
+        let Some(review) = self
+            .db
+            .list_harness_reviews(workspace, proto::HARNESS_REVIEWS_PAGE)?
+            .into_iter()
+            .find(|r| r.status == proto::HarnessReviewStatus::Published)
+        else {
+            return Ok(Vec::new());
+        };
+        let Some((since, until)) = review.window else {
+            return Ok(Vec::new());
+        };
+        let since = crate::harness::window::parse_day(&since)?;
+        let until = crate::harness::window::parse_day(&until)? + crate::harness::window::DAY_MS;
+        Ok(self
+            .db
+            .harness_unread_session_counts(workspace, since, until)?
+            .into_iter()
+            .map(|(agent, sessions)| proto::HarnessProviderCoverage { agent, sessions })
+            .collect())
+    }
+
+    pub fn harness_overview(&self) -> Result<proto::ServerMsg> {
+        let mut rows = Vec::new();
+        for workspace in self.db.harness_workspaces()? {
+            let findings = self.harness_findings(&workspace)?;
+            let seen_review_id = self.db.harness_seen_review_id(&workspace)?;
+            let mut row = proto::HarnessAttention {
+                workspace: workspace.clone(),
+                open: 0,
+                fixing: 0,
+                awaiting_verification: 0,
+                not_seen: 0,
+                resolved: 0,
+                dismissed: 0,
+                latest_published_review_id: self.db.latest_published_harness_review(&workspace)?,
+                seen_review_id,
+                attention: 0,
+            };
+            for finding in findings {
+                match finding.phase {
+                    proto::HarnessFindingPhase::Open => row.open += 1,
+                    proto::HarnessFindingPhase::Fixing => row.fixing += 1,
+                    proto::HarnessFindingPhase::AwaitingVerification => {
+                        row.awaiting_verification += 1
+                    }
+                    proto::HarnessFindingPhase::NotSeen => row.not_seen += 1,
+                    proto::HarnessFindingPhase::Resolved => row.resolved += 1,
+                    proto::HarnessFindingPhase::Dismissed => row.dismissed += 1,
+                }
+                if finding.last_seen_review_id > seen_review_id
+                    && matches!(
+                        finding.phase,
+                        proto::HarnessFindingPhase::Open
+                            | proto::HarnessFindingPhase::NotSeen
+                            | proto::HarnessFindingPhase::AwaitingVerification
+                    )
+                {
+                    row.attention += 1;
+                }
+            }
+            rows.push(row);
+        }
+        Ok(proto::ServerMsg::HarnessOverview { rows })
+    }
+
+    pub fn harness_seen(&self, workspace: &str, review_id: u32) -> Result<()> {
+        let latest = self
+            .db
+            .latest_published_harness_review(workspace)?
+            .unwrap_or(0);
+        self.db
+            .advance_harness_seen_review_id(workspace, review_id.min(latest))?;
+        self.broadcast_harness_changed(workspace);
+        Ok(())
+    }
+
+    pub fn harness_fix_task(
+        self: &std::sync::Arc<Self>,
+        workspace: &str,
+        key: &str,
+        agent: Option<proto::AgentKind>,
+        start: bool,
+        prompt: Option<&str>,
+    ) -> Result<proto::ServerMsg> {
+        let refuse = |kind, message: String| proto::ServerMsg::TaskRefused {
+            id: None,
+            kind,
+            limit: None,
+            requested: None,
+            expected: None,
+            actual: None,
+            message,
+        };
+        if key.is_empty()
+            || key.len() > 80
+            || !key
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        {
+            return Ok(refuse(proto::TaskErrorKind::Invalid, format!("harness_fix_task refused: key {key:?} (expected lowercase kebab-case, at most 80 characters)")));
+        }
+        if !self.workspace_list()?.iter().any(|w| w.path == workspace) {
+            return Ok(refuse(proto::TaskErrorKind::Invalid, format!("harness_fix_task refused: workspace {workspace:?} is not registered (expected a registered workspace path)")));
+        }
+        let access = self.tasks_access(workspace);
+        if access != proto::TasksAccess::Write {
+            let (actual, kind) = match access {
+                proto::TasksAccess::Off => ("off", proto::TaskErrorKind::AccessOff),
+                proto::TasksAccess::Read => ("read", proto::TaskErrorKind::ReadOnly),
+                proto::TasksAccess::Write => unreachable!(),
+            };
+            return Ok(refuse(kind, format!("harness_fix_task refused: tasks access for workspace {workspace:?} is {actual} (actual: {actual}, expected write); change Settings ▸ Tasks")));
+        }
+        let Some(finding) = self
+            .db
+            .harness_findings(workspace)?
+            .into_iter()
+            .find(|f| f.finding.key == key)
+        else {
+            return Ok(refuse(proto::TaskErrorKind::Invalid, format!("harness_fix_task refused: key {key:?} is not a finding in workspace {workspace:?} (expected a published finding key)")));
+        };
+        let task_count = self.db.task_count("all")?;
+        if task_count >= proto::TASKS_PER_WORKSPACE {
+            return Ok(proto::ServerMsg::TaskRefused {
+                id: None,
+                kind: proto::TaskErrorKind::Limit,
+                limit: Some(proto::TASKS_PER_WORKSPACE),
+                requested: Some(u64::from(task_count) + 1),
+                expected: None,
+                actual: Some(i64::from(task_count)),
+                message: format!("harness_fix_task refused: backlog has {task_count} tasks; limit is {} for this operation", proto::TASKS_PER_WORKSPACE),
+            });
+        }
+        let apply_prompt = prompt.unwrap_or(&finding.finding.apply_prompt);
+        let title = format!("Harness: {}", finding.finding.title);
+        let previous_task = self
+            .db
+            .harness_finding_tasks(workspace, key)?
+            .first()
+            .map(|task| Self::task_key(task.task_number));
+        let previous = previous_task
+            .as_ref()
+            .map(|task| format!("Previous fix task: {task}\n"))
+            .unwrap_or_default();
+        let description = format!(
+            "Finding: {key}\nReview: #{}\n{previous}Recommendation: {}\nTarget: {}\nApply prompt: {}",
+            finding.review_id, finding.finding.recommendation, finding.finding.target, apply_prompt
+        );
+        let title_len = title.chars().count();
+        let description_len = description.chars().count();
+        if title_len > proto::TASK_TITLE_MAX || description_len > proto::TASK_DESCRIPTION_MAX {
+            return Ok(refuse(
+                proto::TaskErrorKind::Invalid,
+                format!(
+                    "harness_fix_task refused for key {key:?}: generated title has {title_len} characters (limit {}), and description has {description_len} characters (limit {})",
+                    proto::TASK_TITLE_MAX,
+                    proto::TASK_DESCRIPTION_MAX,
+                ),
+            ));
+        }
+        let acceptance = vec![format!(
+            "{} contains the recommended change for finding {key}.",
+            finding.finding.target
+        )];
+        let (created, existing) = self.db.create_harness_task(
+            &TaskWrite {
+                workspace: Some(workspace),
+                title: &title,
+                description: &description,
+                status: proto::TaskStatus::Todo,
+                priority: proto::TaskPriority::None,
+                parent_id: None,
+                ref_url: None,
+                created_by: HARNESS_TASK_ACTOR,
+                now_ms: now_unix_ms(),
+                acceptance: &acceptance,
+            },
+            key,
+            finding.review_id,
+        )?;
+        let Some(task) = created else {
+            let number = existing.expect("create_harness_task returns either a task or a conflict");
+            let task_key = Self::task_key(number);
+            return Ok(refuse(proto::TaskErrorKind::Busy, format!("harness_fix_task refused for finding {key:?}: open fix task {task_key} already exists (expected no open linked fix task)")));
+        };
+        let changed = proto::ServerMsg::TaskChanged {
+            workspace: Some(workspace.to_string()),
+            id: task.id,
+            revision: task.revision,
+        };
+        if start {
+            let agent = agent.unwrap_or_else(|| self.tasks_start_agent(workspace));
+            match self.task_start(task.id, agent, None)? {
+                msg @ proto::ServerMsg::TaskChanged { .. } => self.broadcast_control(&msg),
+                msg @ proto::ServerMsg::TaskRunChanged { .. } => self.broadcast_control(&msg),
+                refused @ proto::ServerMsg::TaskRefused { .. } => self.broadcast_control(&refused),
+                _ => {}
+            }
+        }
+        self.broadcast_harness_changed(workspace);
+        Ok(changed)
     }
 
     /// The preset routine, with the provider, model, cadence and switch the
@@ -251,7 +542,32 @@ impl Daemon {
         }
         let body = std::fs::read_to_string(&findings_path)
             .with_context(|| format!("reading {}", findings_path.display()))?;
-        let parsed = crate::harness::findings::parse(&body)?;
+        let linked_tasks: HashMap<String, Vec<(String, i64, u32)>> = self
+            .db
+            .harness_findings(&review.workspace)?
+            .into_iter()
+            .map(|row| {
+                let key = row.finding.key;
+                self.db
+                    .harness_finding_tasks(&review.workspace, &key)
+                    .map(|tasks| {
+                        (
+                            key,
+                            tasks
+                                .into_iter()
+                                .map(|task| {
+                                    (
+                                        Self::task_key(task.task_number),
+                                        task.task_id,
+                                        task.sessions_since_landed,
+                                    )
+                                })
+                                .collect(),
+                        )
+                    })
+            })
+            .collect::<Result<_>>()?;
+        let parsed = crate::harness::findings::parse_with_links(&body, &linked_tasks)?;
         let summary = summary
             .map(|s| crate::orchestrate::sanitize_handoff_text(s.trim()))
             .filter(|s| !s.is_empty())
@@ -269,9 +585,43 @@ impl Daemon {
                 cost_usd: parsed.cost_usd,
                 summary: &summary,
                 findings: &parsed.findings,
+                verifications: &parsed.verifications,
             },
             now_unix_ms(),
         )?;
+        for verification in &parsed.verifications {
+            let note = match verification.verdict {
+                proto::HarnessVerdict::Gone => Some(format!(
+                    "Harness review {} verified finding {} as gone.",
+                    review.id, verification.key
+                )),
+                proto::HarnessVerdict::StillPresent => Some(format!(
+                    "Harness review {} found finding {} still present; evidence is available in Harness.",
+                    review.id, verification.key
+                )),
+                proto::HarnessVerdict::Inconclusive => None,
+            };
+            if let Some(note) = note {
+                match self.task_comment_as(
+                    None,
+                    verification.task_id,
+                    &note,
+                    HARNESS_TASK_ACTOR,
+                    "harness_verification",
+                ) {
+                    Ok(msg @ proto::ServerMsg::TaskChanged { .. }) => self.broadcast_control(&msg),
+                    Ok(proto::ServerMsg::TaskRefused { message, .. }) => tracing::warn!(
+                        "Harness verification comment for task {} refused: {message}",
+                        verification.task_id
+                    ),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(
+                        "writing Harness verification comment for task {}: {e:#}",
+                        verification.task_id
+                    ),
+                }
+            }
+        }
         self.broadcast_harness_changed(&review.workspace);
         Ok(format!(
             "published {} findings from {}; the operator reads them in Houston's Harness view. \
@@ -320,27 +670,38 @@ impl Daemon {
 
     /// Creates the run directory and writes `decisions.json`: the findings
     /// earlier reviews raised and the operator's decision on each.
-    fn harness_prepare_run_dir(
+    pub fn harness_prepare_run_dir(
         &self,
         workspace: &str,
         pane_dir: &Path,
         run_id: u32,
     ) -> Result<std::path::PathBuf> {
         let dir = crate::harness::prepare_run_dir(pane_dir, &format!("r{run_id}"))?;
-        let findings: Vec<_> = self
+        let findings = self
             .harness_findings(workspace)?
             .into_iter()
             .map(|f| {
-                json!({
+                let linked_tasks = self.db.harness_finding_tasks(workspace, &f.key)?;
+                Ok(json!({
                     "key": f.key,
                     "title": f.title,
                     "state": f.state,
                     "decided_at": f.decided_at_ms.map(crate::harness::window::format_ms),
-                })
+                    "linked_tasks": linked_tasks.iter().map(|task| json!({
+                        "task": Self::task_key(task.task_number),
+                        "status": task.status,
+                        "landed_at_ms": task.landed_at_ms,
+                        "sessions_since_landed": task.sessions_since_landed,
+                    })).collect::<Vec<_>>(),
+                }))
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         let path = dir.join("decisions.json");
-        let body = serde_json::to_string_pretty(&json!({ "schema": 1, "findings": findings }))?;
+        let body = serde_json::to_string_pretty(&json!({
+            "schema": 2,
+            "minimum_sessions_after_landing": crate::harness::findings::MIN_SESSIONS_AFTER_LANDING,
+            "findings": findings
+        }))?;
         std::fs::write(&path, body + "\n")
             .with_context(|| format!("writing {}", path.display()))?;
         Ok(dir)

@@ -7,9 +7,16 @@ use std::path::Path;
 use std::sync::Mutex;
 
 mod harness;
+mod intake;
 pub use harness::{
-    HarnessDecisionRow, HarnessFindingRow, HarnessFindingWrite, HarnessPublication,
-    HarnessReviewRow,
+    HarnessDecisionDetailRow, HarnessDecisionRow, HarnessFindingRow, HarnessFindingTaskRow,
+    HarnessFindingWrite, HarnessPublication, HarnessReviewRow, HarnessTaskRow,
+    HarnessVerificationRow, HarnessVerificationWrite,
+};
+pub use intake::{
+    AdjustmentRow, IntakeRow, IntakeWrite, OutboxRow, OutboxTarget, Outgoing, Posted, QuestionRow,
+    STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
+    STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 mod remote;
 pub use remote::RemoteDeviceRow;
@@ -74,6 +81,13 @@ pub struct ManagedWorktreeRow {
     pub measured_at_ms: Option<i64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PrWatchRow {
+    pub session_id: u32,
+    pub link: proto::PullRequestLink,
+    pub state: crate::pull_requests::watch::State,
+}
+
 pub struct Db {
     conn: Mutex<Connection>,
 }
@@ -84,6 +98,13 @@ fn state_str(s: proto::SessionState) -> &'static str {
         proto::SessionState::Exited => "exited",
         proto::SessionState::Killed => "killed",
         proto::SessionState::Interrupted => "interrupted",
+    }
+}
+
+fn usage_provider_key(provider: proto::UsageProvider) -> &'static str {
+    match provider {
+        proto::UsageProvider::Claude => "claude",
+        proto::UsageProvider::Codex => "codex",
     }
 }
 
@@ -1342,6 +1363,22 @@ impl Db {
         );",
         )?;
         conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS usage_daily_rollup (
+                day TEXT NOT NULL,
+                workspace_path TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                uncached_input INTEGER NOT NULL,
+                cached_input INTEGER NOT NULL,
+                cache_creation INTEGER NOT NULL,
+                output INTEGER NOT NULL,
+                reasoning INTEGER NOT NULL,
+                cost_usd REAL NOT NULL,
+                PRIMARY KEY (day, workspace_path, provider, model)
+            );
+            CREATE INDEX IF NOT EXISTS usage_daily_rollup_day ON usage_daily_rollup(day);",
+        )?;
+        conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS workspaces (
                 path TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -1357,6 +1394,16 @@ impl Db {
                 created_at INTEGER NOT NULL,
                 ended_at INTEGER
             );",
+        )?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS pr_watches (
+                session_id INTEGER NOT NULL,
+                pr_number INTEGER NOT NULL,
+                link_json TEXT NOT NULL,
+                state_json TEXT NOT NULL,
+                PRIMARY KEY (session_id, pr_number)
+            );
+            CREATE INDEX IF NOT EXISTS pr_watches_session ON pr_watches(session_id);",
         )?;
         add_column_if_missing(&conn, "sessions", "title", "title TEXT")?;
         add_column_if_missing(&conn, "sessions", "codename", "codename TEXT")?;
@@ -1551,6 +1598,7 @@ impl Db {
         harness::migrate(&conn)?;
         tasks::migrate(&conn)?;
         remote::migrate(&conn)?;
+        intake::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",
@@ -1991,6 +2039,7 @@ impl Db {
                     ssh_host,
                     restore_deferred: None,
                     status: None,
+                    status_since_ms: None,
                     context: None,
                     swarm_agent,
                     spawned_by,
@@ -2900,9 +2949,88 @@ impl Db {
         Ok(())
     }
 
+    pub fn workspace_actions(&self, workspace: &str) -> Result<Vec<proto::WorkspaceAction>> {
+        let conn = self.conn.lock().expect("db lock");
+        let value = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                rusqlite::params![format!("workspace_actions:{workspace}")],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        value
+            .map(|json| serde_json::from_str(&json).context("decoding workspace actions"))
+            .transpose()
+            .map(|actions| actions.unwrap_or_default())
+    }
+
+    pub fn set_workspace_actions(
+        &self,
+        workspace: &str,
+        actions: &[proto::WorkspaceAction],
+    ) -> Result<()> {
+        let json = serde_json::to_string(actions)?;
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            rusqlite::params![format!("workspace_actions:{workspace}"), json],
+        )?;
+        Ok(())
+    }
+
     /// The one pull request manually associated with a project directory. The
     /// settings table is already the (key, payload) store, so the association
     /// needs no table of its own; the directory rides in the key.
+    pub fn pr_watch_list(&self, session_id: Option<u32>) -> Result<Vec<PrWatchRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT session_id, link_json, state_json FROM pr_watches
+             WHERE (?1 IS NULL OR session_id = ?1) ORDER BY session_id, pr_number",
+        )?;
+        let rows = stmt.query_map([session_id], |row| {
+            let session_id: i64 = row.get(0)?;
+            let link: String = row.get(1)?;
+            let state: String = row.get(2)?;
+            Ok((session_id, link, state))
+        })?;
+        rows.map(|row| {
+            let (session_id, link, state) = row?;
+            Ok(PrWatchRow {
+                session_id: u32::try_from(session_id)?,
+                link: serde_json::from_str(&link)?,
+                state: serde_json::from_str(&state)?,
+            })
+        })
+        .collect()
+    }
+
+    pub fn pr_watch_set(
+        &self,
+        session_id: u32,
+        link: &proto::PullRequestLink,
+        state: &crate::pull_requests::watch::State,
+    ) -> Result<()> {
+        let number = link.number;
+        let link = serde_json::to_string(link)?;
+        let state = serde_json::to_string(state)?;
+        self.conn.lock().expect("db lock").execute(
+            "INSERT INTO pr_watches(session_id, pr_number, link_json, state_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(session_id, pr_number) DO UPDATE SET
+               link_json = excluded.link_json, state_json = excluded.state_json",
+            rusqlite::params![session_id, number, link, state],
+        )?;
+        Ok(())
+    }
+
+    pub fn pr_watch_remove(&self, session_id: u32, number: u32) -> Result<bool> {
+        Ok(self.conn.lock().expect("db lock").execute(
+            "DELETE FROM pr_watches WHERE session_id = ?1 AND pr_number = ?2",
+            rusqlite::params![session_id, number],
+        )? > 0)
+    }
+
     fn pull_request_link_key(dir: &str) -> String {
         format!("pull_request_link:{dir}")
     }
@@ -4725,6 +4853,77 @@ impl Db {
         Ok(rows)
     }
 
+    pub fn usage_daily_rollup_upsert(
+        &self,
+        points: &[crate::usage::UsageRollupPoint],
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO usage_daily_rollup
+                    (day, workspace_path, provider, model, uncached_input, cached_input,
+                     cache_creation, output, reasoning, cost_usd)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(day, workspace_path, provider, model) DO UPDATE SET
+                    uncached_input = MAX(usage_daily_rollup.uncached_input, excluded.uncached_input),
+                    cached_input = MAX(usage_daily_rollup.cached_input, excluded.cached_input),
+                    cache_creation = MAX(usage_daily_rollup.cache_creation, excluded.cache_creation),
+                    output = MAX(usage_daily_rollup.output, excluded.output),
+                    reasoning = MAX(usage_daily_rollup.reasoning, excluded.reasoning),
+                    cost_usd = MAX(usage_daily_rollup.cost_usd, excluded.cost_usd)",
+            )?;
+            for point in points {
+                stmt.execute(rusqlite::params![
+                    point.day,
+                    point.workspace_path.as_deref().unwrap_or(""),
+                    usage_provider_key(point.provider),
+                    point.model,
+                    point.totals.uncached_input_tokens as i64,
+                    point.totals.cached_input_tokens as i64,
+                    point.totals.cache_creation_tokens as i64,
+                    point.totals.output_tokens as i64,
+                    point.totals.reasoning_tokens as i64,
+                    point.cost_usd,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn usage_activity_summary(
+        &self,
+        since_day: &str,
+        until_day: &str,
+        workspace: Option<&str>,
+    ) -> Result<Vec<proto::UsageActivityDay>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare_cached(
+            "SELECT day, SUM(cost_usd), SUM(uncached_input), SUM(cached_input),
+                    SUM(cache_creation), SUM(output), SUM(reasoning)
+               FROM usage_daily_rollup
+              WHERE day >= ?1 AND day <= ?2 AND (?3 IS NULL OR workspace_path = ?3)
+              GROUP BY day ORDER BY day",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![since_day, until_day, workspace], |row| {
+                Ok(proto::UsageActivityDay {
+                    day: row.get(0)?,
+                    cost_usd: row.get(1)?,
+                    totals: proto::UsageTokenTotals {
+                        uncached_input_tokens: row.get::<_, i64>(2)? as u64,
+                        cached_input_tokens: row.get::<_, i64>(3)? as u64,
+                        cache_creation_tokens: row.get::<_, i64>(4)? as u64,
+                        output_tokens: row.get::<_, i64>(5)? as u64,
+                        reasoning_tokens: row.get::<_, i64>(6)? as u64,
+                    },
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn swarm_create(
         &self,
         name: &str,
@@ -5468,6 +5667,7 @@ mod tests {
             ssh_host: None,
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             spawned_by: None,

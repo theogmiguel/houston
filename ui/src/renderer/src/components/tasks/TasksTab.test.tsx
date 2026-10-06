@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { screen } from '@testing-library/react'
 import type { Task } from '../../houston/generated/Task'
 import { TasksTab } from './TasksTab'
 import { TaskStartCard } from './TaskExecution'
@@ -63,14 +64,13 @@ describe('global Tasks viewer', () => {
     act(() => root.render(<TasksTab client={null} workspace="/project" workspaces={WORKSPACES} />))
     expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', 'all'])
     // The scope toggle replaces the workspace breadcrumb in the single header bar.
-    expect(container.querySelectorAll('.tk-head')).toHaveLength(1)
-    expect(container.querySelector('.tk-head .crumb2')).toBeNull()
-    expect(container.querySelector('.tk-head [role="radio"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-testid="tasks-new"]')).toHaveLength(1)
+    expect(container.querySelector('[data-testid="tasks-list"] > div:first-child [role="radio"]')).not.toBeNull()
     expect([...container.querySelectorAll('[data-testid="task-workspace-chip"]')].map((item) => item.textContent))
       .toEqual(['other', 'No workspace'])
-    // The chip is an extra grid cell; without the `ws` column the right slot wraps onto a second line.
+    // The chip is an extra grid cell; without the sixth column the right slot wraps onto a second line.
     expect([...container.querySelectorAll('[data-testid="task-workspace-chip"]')]
-      .every((chip) => chip.closest('.tk-row')?.classList.contains('ws'))).toBe(true)
+      .every((chip) => chip.closest('[data-task]')?.className.includes('_auto_auto]'))).toBe(true)
     act(() => [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
       .find((button) => button.textContent === 'This workspace')!.click())
     expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', '/project'])
@@ -153,10 +153,40 @@ describe('global Tasks viewer', () => {
     click('[data-testid="task-run-review"]')
     expect(onReview).toHaveBeenLastCalledWith(current)
     expect(onReview.mock.calls.at(-1)?.[0]).toBe(current)
-    expect(container.querySelector('[data-testid="tasks-now"] .tk-st')?.textContent).toBe('In progress')
+    expect(container.querySelector('[data-testid="tasks-now"] [data-run-state]')?.textContent).toBe('In progress')
     renderCards({ ...run, state: 'waiting_for_input' })
-    expect(container.querySelector('[data-testid="tasks-now"] .tk-st')?.textContent).toBe('Needs you')
-    expect(container.querySelector('[data-testid="task-execution"] .tk-st')?.textContent).toBe('Needs you')
+    expect(container.querySelector('[data-testid="tasks-now"] [data-run-state]')?.textContent).toBe('Needs you')
+    expect(container.querySelector('[data-testid="task-execution"] [data-run-state]')?.textContent).toBe('Needs you')
+  })
+
+  it('renders the drawer detail with the mock actions and toggleable acceptance rows', () => {
+    const onOpenSession = vi.fn()
+    const onRunControl = vi.fn()
+    const onCheck = vi.fn()
+    const session: SessionInfo = { id: 1, agent: 'claude', state: 'exited', title: 'HOU-7', codename: 'worker', project_dir: '/project', cwd: '/project', hidden: false, live_children: 0, children_waiting: 0, inbox_unread: 0, tags: [], resumable: true }
+    const run: TaskRun = { id: 3, task_id: 7, attempt: 1, kind: 'implementation', state: 'cancelled', provider: 'claude', session_id: 1, branch: 'houston/task/hou-7', initial_revision: 1, started_at_ms: 1, ended_at_ms: 1 }
+    act(() => root.render(<TaskDetail
+      detail={{ task: { ...TASK, workspace: '/project', origin: { kind: 'harness_finding', workspace: '/project', key: 'bun-test', review_id: 1 } }, acceptance: [{ id: 5, position: 0, text: 'Run bun run test', checked_at_ms: null, checked_by: null }], comments: [], history: [], runs: [run] }}
+      access="off" refusal={null} now={15 * 60_000} parentOptions={[]} sessions={new Map([[1, session]])} startSettings={null}
+      onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={onCheck} onComment={vi.fn()} onArchive={vi.fn()} onStart={vi.fn()} onRunControl={onRunControl} onOpenSession={onOpenSession} onReview={vi.fn()} presentation="drawer"
+    />))
+    expect(screen.getByRole('heading', { name: 'Global task' })).toBeTruthy()
+    expect(screen.getByText('HOU-7')).toBeTruthy()
+    expect(screen.getByRole('list', { name: 'Task progress' })).toBeTruthy()
+    expect(container.querySelector('[data-task-drawer-run-meta]')?.textContent).toBe('Stopped 14m ago · Attempt 1 · Claude Code')
+    expect(container.querySelector('[data-task-drawer-run-reuse]')?.textContent).toBe('Reuses houston/task/hou-7 · no pull request yet')
+    const startAgain = screen.getByRole('button', { name: 'Start again' })
+    const review = screen.getByRole('button', { name: 'Review changes' })
+    expect(startAgain.className).toContain('h-[var(--h-ctl)]')
+    expect(review.className).toContain('h-[var(--h-ctl)]')
+    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull()
+    click('[data-testid="task-detail-menu"]')
+    act(() => screen.getByRole('menuitem', { name: 'Open session' }).click())
+    expect(onOpenSession).toHaveBeenCalledWith(1)
+    const acceptance = screen.getByRole('checkbox', { name: 'Run bun run test' })
+    act(() => acceptance.click())
+    expect(onCheck).toHaveBeenCalledWith(7, 5, true)
+    expect(screen.getByText('From Harness finding · bun-test')).toBeTruthy()
   })
 
 })

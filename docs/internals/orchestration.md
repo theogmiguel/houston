@@ -115,9 +115,12 @@ episode, elapsed time and `approval_outcome_unobserved`. The threshold is a cons
 heuristic: hermetic fake-agent timing is only a latency lower bound, and does not measure
 real reviewers. Slow review, long tools and missing hooks can produce false positives.
 The marker leaves the agent Working, produces no desktop notification and reaches parents
-only through an explicit wait. Matching PostToolUse, Stop or Interrupt clears it. Without a
-call id, matching requires turn, tool and canonical input digest; incomplete evidence waits
-for authoritative end/interruption. A fresh prompt alone cannot clear such an episode.
+only through an explicit wait. Matching PostToolUse, Stop, Interrupt or a new root user
+prompt clears it. Without a call id, matching requires turn, tool and canonical input
+digest; incomplete evidence survives unrelated tools until an authoritative turn boundary.
+Internal inbox prompts never clear permission episodes. Ordinary root tool activity
+reports Working only when no human-input episode remains open, preserving concurrent
+questions. A SessionStart arriving during Working or Needs input cannot end that turn.
 
 ## Tools
 
@@ -490,7 +493,9 @@ busy, so unrelated terminal input does not wait for a spawn.
 
 `pane_prompt` defaults to `mode: "queue"`: it applies the same status and
 operator-composer hold as inbox pastes. A held prompt remains on the bounded wake
-lane and reports `held`. `steer` permits a paste while the provider is working;
+lane and reports `held`. The lane keeps up to sixteen prompts until their hold clears
+or the session ends; elapsed hold time cannot discard them. This queue is in memory,
+so daemon restart does not preserve it. `steer` permits a paste while the provider is working;
 `restart` sends the provider's interrupt key while working and queues delivery
 until authoritative idle. Both immediate modes refuse an operator draft,
 needs-input, or an occupied wake lane before writing. The composer and
@@ -949,12 +954,12 @@ block. The flag is readable per child in `pane_list`'s payload.
 (the record this pane is the child of, or absent for a pane the operator opened — it is
 `DelegationView` minus `brief`, which stays MCP-only because it is capped at 8 000
 characters and this rides every roster broadcast), `children_waiting` (how many of a
-pane's live children are blocked or stalled, derived in the daemon — never reduced
+pane's live children report needs-input, derived in the daemon — never reduced
 client-side), and `inbox_unread`. `ServerMsg::DelegationChanged { session, delegation }`
 carries one child's whole record and fires from every seam that writes it — the spawn that
 opens it, `advance_delegation` (hooks and ACP both reach the row through it), a submit, a
 round close, the stall flag on BOTH edges, the quiet-settle close, a cancel, and a child's
-exit. One `pane_inbox` row's own changes ride `ServerMsg::InboxChanged` instead, which
+exit. Stalled flags do not increase the human-input count. One `pane_inbox` row's own changes ride `ServerMsg::InboxChanged` instead, which
 carries the whole row for the same reason.
 `LiveChildrenChanged` gained `children_waiting` beside `live_children`, because the two
 numbers are one badge and a single transition can move either. The one write with no
@@ -972,9 +977,10 @@ worse than one that asks to be hovered — so the sentence moved into the card a
 `aria-label`, where a screen reader hears exactly what it heard before.
 
 One alarm, split by who can already see it. A child blocked on its own pane needs nothing
-extra: its `StatusDot` is already `--warn`. A STALLED child gets one modifier — its badge
-glyph turns `--warn` — because `stalled` is a flag on `working`, so the dot is green and pulsing
-while nothing is happening, and that is the one place the grid actively lies. On the
+extra: its `StatusDot` is already `--warn`. A stalled child remains ongoing work
+with a static warning dot; silence alone does not place it in Needs you. A live child’s
+Done or Failed verdict also controls its dot and label. Reported human input and
+waiting descendants take priority over that verdict. On the
 PARENT neither can wait: its children may be in another grid, scrolled off, or on a
 workspace nobody is looking at, so the count becomes `⑂ 1/3` with the numerator in
 `--warn`. The `/3` exists only while something is waiting, which makes the alarm
@@ -1092,8 +1098,7 @@ What changes per provider, beyond the shared inbox:
   the helper carries its `turn_id` and a SHA-256 digest of `tool_input.command`, and
   `PostToolUse` clears only the matching episode without storing the raw command.
   **Trust** is Codex's own, not Houston's to grant: an untrusted hook is
-  silently skipped, so a Codex pane's `SessionStart` drop never arrives and its status
-  reads `ProcessOnly` until the operator trusts Houston's hooks in Codex's own review
+  silently skipped, so a Codex pane's startup remains unconfirmed until the operator trusts Houston's hooks in Codex's own review
   screen. Houston never passes `--dangerously-bypass-hook-trust` — a spawn into a repo
   carrying its own `.codex/hooks.json` would run that hook untrusted too. A missing drop
   does not prove distrust (a slow helper, a broken file, a hook that errored all look the
@@ -1104,6 +1109,19 @@ check reads `[hooks.state]` to say whether the trust entry exists — the Codex 
 says "Hooks installed, not confirmed: Codex runs a hook only after you accept it once in
 its own review screen — open any Codex pane". Writing `trusted_hash`
 ourselves is deferred: the algorithm is source, not contract.
+  Reinstall preserves existing group positions and skips unchanged file writes because
+  Codex trust includes hook ordinals. Changed definitions still require Codex review.
+  Codex 0.160.0 queues SessionStart until turn creation. On Linux with user systemd, normal Codex
+  launches use a pane-owned app-server and the native TUI's `--remote` transport.
+  A startup-only observer confirms the loaded root's Idle status with documented
+  read-only requests and writes one guarded SessionStart drop. It never takes over
+  the conversation or bypasses hook review. A shell pane's managed PATH wrapper
+  gives interactive Codex the same ownership; CLI management subcommands pass through.
+  The server receives the pane's MCP environment and applicable CLI configuration
+  overrides, preventing a shared backend from retaining another pane's credentials.
+  Unsupported native options and hosts without user systemd retain hooks and, when available, `--no-daemon`.
+  Other platforms keep hooks only. See [the app-server contract](https://learn.chatgpt.com/docs/app-server)
+  and [agent lifecycle](agent-lifecycle.md).
 - **Grok.** Hooks already installed in `~/.grok/hooks/houston.json`. `SubagentStart`/
   `SubagentStop` are installed correlation-only; `PermissionRequest` was NOT added — the
   docs list `PermissionDenied`, the moment a permission has already been resolved, not the
@@ -1321,7 +1339,9 @@ A headless child has a real daemon-owned PTY but no separate grid cell. The rend
 roster selects it inside its orchestrator pane; moving it to the grid changes placement,
 not delegation ancestry. Roster and overview grouping use session liveness before
 mission state: an ended child is Settled, a live blocked child Needs you, and other live
-children Working. A resumed child must never be included in Close settled, including
+children Working. Stalled children remain in Working with a warning; the parent’s
+Inbox count and each child’s Pending delivery or Result staged badge expose delivery
+state independently of process liveness. A resumed child must never be included in Close settled, including
 when it resumes during the Undo interval.
 
 Each orchestrator can have one overview tab in the workspace's side panel. It exposes
@@ -1341,8 +1361,9 @@ Worktree spawning passes Codex a session-local inline `projects` trust table for
 child checkout and the repository's main checkout,
 passes Cursor its supported `--trust` flag, and appends a reversible managed-marker
 block to Grok's folder-trust TOML. Existing unmanaged trust decisions are preserved.
-Claude, Antigravity and OpenCode worktree spawns return a `worktree_trust` warning to the caller: the provider may ask to trust the new folder before starting. The parent inspects and answers with `pane_send_keys`, or escalates to the user. A child without CLI progress remains `spawning`; the ordinary
-stall notice still reaches its parent through `pane_wait`. Claude's parent-folder trust
+Claude, Antigravity and OpenCode worktree spawns return a `worktree_trust` warning to the caller: the provider may ask to trust the new folder before starting. The parent inspects and answers with `pane_send_keys`, or escalates to the user. When no lifecycle report arrives within the startup window, the child becomes
+Unavailable and a deduplicated `startup_unconfirmed` note reaches its parent. This
+notice names hook and folder trust as possible causes without inferring a human wait. Claude's parent-folder trust
 walk stops at the linked worktree's git root, so workspace trust does not carry over.
 Houston never rewrites Claude's global project state or uses undocumented environment
 variables to bypass folder trust. Trust flags do not change the requested tool approval mode.
@@ -1362,8 +1383,11 @@ retain their last byte count and measurement timestamp, or null for not measured
 
 Child `needs_input` writes an urgent row to the parent. The parent inspects the prompt
 and answers through `pane_send_keys`, or asks the user for a decision. Child status and
-roll-up badges do not trigger native desktop notifications. Only a top-level pane's
-own `needs-input` status triggers one.
+roll-up badges do not trigger renderer notifications. The renderer reports a top-level
+pane's own transition to `needs-input` or from `working` to `idle`, subject to the user's
+desktop and in-app notification settings; roster snapshots are silent. The renderer updates
+the taskbar count for visible top-level panes waiting on the user where the platform supports
+it, and clears a pane's count when it is opened.
 
 No supported API-failure hook carries a verified machine-readable reset time,
 so Houston does not schedule automatic resume.

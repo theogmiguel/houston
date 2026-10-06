@@ -15,6 +15,239 @@ use std::sync::{
 };
 use std::time::Duration;
 
+#[tokio::test]
+async fn issue67_shell_hooks_select_the_provider_for_waits_and_result_delivery() {
+    let _guard = serial().await;
+    let r = rig("shell-hook-provider").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r
+        .daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: r.ws_dir.clone(),
+            cmd: Some(vec![
+                "sh".into(),
+                "-c".into(),
+                "stty -echo; exec cat".into(),
+            ]),
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap();
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: parent.id,
+            agent: Some("claude".into()),
+            event: "UserPromptSubmit".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(
+        r.daemon.agent_kind_of(parent.id),
+        Some(proto::AgentKind::Claude)
+    );
+    assert_eq!(
+        r.daemon.orchestration_wait_cap(parent.id).0,
+        proto::AgentKind::Claude
+    );
+    assert_eq!(
+        r.daemon.orchestration_wait_cap(parent.id).1,
+        houston_core::orchestrate::provider_wait_cap(proto::AgentKind::Claude, None)
+    );
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex", "prompt":"work", "reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    r.daemon
+        .orchestrate_submit(child, "SHELL-HOOK-RESULT".to_string().into())
+        .unwrap();
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "Stop".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(r
+        .daemon
+        .inbox_rows_for_test(parent.id)
+        .iter()
+        .any(|row| row.kind == "result" && row.delivered_at.is_none()));
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: parent.id,
+            agent: Some("claude".into()),
+            event: "Stop".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    await_child_echo(&r.daemon, parent.id, "SHELL-HOOK-RESULT").await;
+}
+
+#[tokio::test]
+async fn issue67_queued_prompt_survives_a_turn_longer_than_thirty_seconds() {
+    let _guard = serial().await;
+    let r = rig("long-turn-queued-prompt").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r
+        .post_spawn(
+            &token,
+            serde_json::json!({"kind":"codex", "prompt":"work", "reusable":true}),
+        )
+        .await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "UserPromptSubmit".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    let queued = mcp_call(
+        r.addr,
+        &token,
+        "pane_prompt",
+        serde_json::json!({"session":child, "text":"LONG-TURN-FOLLOWUP", "mode":"queue"}),
+    )
+    .await;
+    assert_eq!(queued["isError"], false, "{queued}");
+    assert!(queued["structuredContent"]["held"].is_string());
+    // Keep the real pane working beyond the former queue expiry.
+    tokio::time::sleep(Duration::from_secs(31)).await;
+    assert!(
+        !String::from_utf8_lossy(&r.daemon.scrollback(child, None).unwrap().data)
+            .contains("LONG-TURN-FOLLOWUP")
+    );
+    apply_drop(
+        r._state.path(),
+        houston_core::hook_drop::HookDrop {
+            session: child,
+            agent: Some("codex".into()),
+            event: "Stop".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    await_child_echo(&r.daemon, child, "LONG-TURN-FOLLOWUP").await;
+    assert!(!r
+        .daemon
+        .inbox_rows_for_test(parent.id)
+        .iter()
+        .any(|row| row.reason.as_deref() == Some("prompt_held")));
+}
+
+#[tokio::test]
+async fn issue67_tool_activity_recovers_status_without_waiting_for_tool_completion() {
+    let _guard = serial().await;
+    let r = rig("reported-tool-activity").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    for provider in ["claude", "codex"] {
+        let pane = r.pane();
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: pane.id,
+                agent: Some(provider.into()),
+                event: "SessionStart".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            r.daemon.session_status(pane.id).unwrap(),
+            Some(proto::AgentStatus::Idle)
+        );
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: pane.id,
+                agent: Some(provider.into()),
+                event: "PreToolUse".into(),
+                tool_name: Some("Bash".into()),
+                tool_use_id: Some("long-command".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            r.daemon.session_status(pane.id).unwrap(),
+            Some(proto::AgentStatus::Working),
+            "{provider} reported starting a command, even if its prompt hook was missed"
+        );
+    }
+}
+
+#[tokio::test]
+async fn issue67_a_new_root_prompt_resolves_a_previous_permission_episode() {
+    let _guard = serial().await;
+    let r = rig("approval-tool-start").await;
+    let _cleanup = SessionCleanup(Arc::clone(&r.daemon));
+    let parent = r.pane();
+    r.daemon.orchestration_set(true).unwrap();
+    let token = r.token_for(parent.id);
+    let (_, spawned) = r.post_spawn(&token,
+        serde_json::json!({"kind":"codex", "prompt":"work", "reusable":true, "auto_approve":false})).await;
+    let child = spawned["session_id"].as_u64().unwrap() as u32;
+    for event in ["PermissionRequest", "UserPromptSubmit"] {
+        apply_drop(
+            r._state.path(),
+            houston_core::hook_drop::HookDrop {
+                session: child,
+                agent: Some("codex".into()),
+                event: event.into(),
+                tool_name: Some("Bash".into()),
+                tool_use_id: Some("approved-command".into()),
+                reason: Some("Bash".into()),
+                prompt_id: Some(
+                    if event == "PermissionRequest" {
+                        "old-turn"
+                    } else {
+                        "new-turn"
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            r.daemon.session_status(child).unwrap(),
+            Some(if event == "PermissionRequest" {
+                proto::AgentStatus::NeedsInput
+            } else {
+                proto::AgentStatus::Working
+            })
+        );
+    }
+    assert_eq!(r.daemon.delegation_of(child).unwrap().state, "working");
+}
+
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn serial() -> tokio::sync::MutexGuard<'static, ()> {
@@ -158,6 +391,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("fixture pane spawns")
     }
@@ -180,6 +415,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("fixture pane spawns")
     }
@@ -2344,6 +2581,8 @@ async fn an_operator_spawned_pane_can_find_hs_pane() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("probe pane spawns");
     let bin_dir = r.ws_dir.join(".houston/orchestration/bin");
@@ -4660,6 +4899,12 @@ async fn a_silent_child_is_flagged_stalled_once_and_the_flag_clears_itself() {
     assert!(
         r.daemon.delegation_of(kid).unwrap().stalled,
         "five silent minutes with nothing running is a stall"
+    );
+
+    assert_eq!(
+        info_of(&r.daemon, pane.id).children_waiting,
+        0,
+        "quiet output cannot tell the renderer that a child needs human input"
     );
 
     let acc = collect_broadcast_until(&mut rx, pane.id, "End Inbox").await;

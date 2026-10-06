@@ -53,11 +53,11 @@ When in doubt:
 | Tailwind `--color-*` bindings (what makes `bg-surface` compile at all) | `ui/src/renderer/src/tailwind.css`, `@theme { … }` block |
 | Keyframe catalog (`menu-in`, `panel-in`, `backdrop-*`, notice entrances…) | `ui/src/renderer/src/keyframes.css` |
 | Element-level base rules (focus ring, disabled, `.btn` box) | `ui/src/renderer/src/base.css` |
-| Button chrome | `ui/src/renderer/src/components/buttonChrome.ts` |
-| The material ladder (rungs and their recipes) | `ui/src/renderer/src/components/material.ts` |
-| Overlay/elevation chrome | `ui/src/renderer/src/components/overlayChrome.ts` |
-| Select trigger chrome | `ui/src/renderer/src/components/selectChrome.ts` |
-| The only import surfaces for icons, dropdowns and hover labels | `components/{icons,Select,Tooltip}.tsx` |
+| Button chrome | `ui/src/renderer/src/components/ui/buttonChrome.ts` |
+| The material ladder (rungs and their recipes) | `ui/src/renderer/src/components/ui/material.ts` |
+| Overlay/elevation chrome | `ui/src/renderer/src/components/ui/overlayChrome.ts` |
+| Select trigger chrome | `ui/src/renderer/src/components/ui/selectChrome.ts` |
+| The only import surfaces for icons, dropdowns and hover labels | `components/{icons,ui/Select,ui/Tooltip}.tsx` |
 | Terminal palettes (separate axis from chrome) | `ui/src/renderer/src/theme.ts` |
 | Enforcement | `bun run check:css`, `scripts/check-icon-imports.sh`, `scripts/check-icon-metrics.sh`, `scripts/check-title-tooltip-guard.sh`, `scripts/check-native-select.sh` |
 
@@ -245,10 +245,9 @@ Tokens are `--tr-text-<step>-{size,weight,tracking,leading,family,transform}`
 (`theme.css`). A parallel numeric scale `--tr-text-{xs…3xl}` exists for older
 sites; new work uses the semantic steps.
 
-`check-type-scale.sh` keeps the legacy `text-[Nunit]` and raw scale rules
-absolute, and scans CSS `font-size` declarations plus `[font-size:Nunit]`
-classes. Its widened and sub-11px per-file baselines only shrink; the semantic
-scale starts at the 11px label step.
+`check-type-scale.sh` rejects legacy `text-[Nunit]` and raw scale utilities, CSS
+`font-size` declarations and `[font-size:Nunit]` classes in `components/ui/` and
+the foundation stylesheets. The semantic scale starts at the 11px label step.
 
 **Label rule:** uppercase always pairs with tracking, and never appears below 11px.
 An uppercase run with default tracking is a bug. So is the reverse: the `label`
@@ -294,11 +293,11 @@ a `-0` is a reset of somebody else's margin, and a negative margin is a pull int
 overlap — those three stay legal. Every other directional margin is one element
 deciding a number its parent should own, which is how a row of badges drifts out of
 step with the row it sits in. `check-spacing-tokens.sh` holds the original
-directional-margin rule and tracks CSS padding, margin and gap literals plus
-arbitrary-property classes in a separate per-file ratchet. Token definition
-files are exempt; prose rhythm inside a `[&_…]:` variant is exempt because
-markdown output has no JSX parent to carry a gap and its steps are deliberately
-uneven.
+directional-margin rule and rejects CSS padding, margin and gap literals plus
+arbitrary-property classes in `components/ui/` and the foundation stylesheets.
+Token definition files are exempt; prose rhythm inside a `[&_…]:` variant is
+exempt because markdown output has no JSX parent to carry a gap and its steps
+are deliberately uneven.
 
 ## Radius
 
@@ -327,15 +326,15 @@ too, so changing one `--tr-radius-*` and rebuilding moves every surface wearing 
 meaning. `check-radius-tokens.sh` refuses a `rounded-[Npx]` literal, a
 `border-radius: Npx` in CSS, the framework's own `rounded-sm`/`md`/`lg`/`xl`
 (unmapped in `tailwind.css`'s `@theme`, so they are the framework's scale, not this
-one), and `[border-radius:Nunit]` classes. The old and widened rules have separate
-per-file ratchets that only shrink. `rounded-full` and `rounded-none`
-stay legal: a circle and a zero are shapes, not rungs.
+one), and `[border-radius:Nunit]` classes in `components/ui/` and the foundation
+stylesheets. `rounded-full` and `rounded-none` stay legal: a circle and a zero
+are shapes, not rungs.
 
 ## Materials
 
 Surfaces are materials, not colours. Materials come as a **ladder**, so "one step
 more separated" is a step on an axis rather than a new hex. Five rungs, in
-`ui/src/renderer/src/components/material.ts`:
+`ui/src/renderer/src/components/ui/material.ts`:
 
 | Rung | Ground | Border | Shadow | For |
 |---|---|---|---|---|
@@ -433,7 +432,7 @@ There is no status bar row — diagnostics live in Settings.
 | **Stack tabs** | 26px strip on `--card-bg` with a `--divider` bottom border. Each tab: status dot + truncated label (110px cap) + optional 6px `--warn` needs-input badge + a hover/focus-revealed close button. Active tab drops to `--content-bg`; inactive is muted with a neutral hover wash. A `n/cap` indicator appears at the stack's cap. |
 | **Source control** | A workspace panel beside the grid, with Changes and Pull request tabs. Preferred width 480px, compact minimum 340px; expansion is bounded by the main content width, reserving 360px for terminals when space permits. Smaller windows clamp the rendered width without replacing the remembered preference. Its divider uses the terminal splitter's hit area and neutral drag line. |
 | **Changes tab** | Responds to **container queries, not viewport breakpoints**. Wide (`@container (min-width: 720px)`): file list beside the diff. Narrow: stacked, tree capped at 45% height. It has no pane header, drag affordance or independent grid cell. |
-| **Settings** | One scrollable column; section nav lives **in the rail**, not inside the view. Column max-width **720px**, and **1040px** for the data-dense Usage section only. Rows are grouped into one bordered card per group with internal hairline dividers, so a group reads as a single object with internal divisions. |
+| **Settings** | One scrollable column; section nav lives **in the rail**, not inside the view. Column max-width **720px**. Rows are grouped into one bordered card per group with internal hairline dividers, so a group reads as a single object with internal divisions. Usage is a separate wide rail page. |
 | **Notices** | Two anchors. `workspace-top`: centred, `min(560px, 100% - 24px)`, **no enter or exit animation**. `pane-corner`: bottom-right, `max-w-[min(300px, 100% - 24px)]`, enters from its own corner and exits by unmounting. Rows are ≥30px with a kind glyph, title, optional mono body, and one action or a dismiss. |
 | **Command palette** | Mounted only while open. Full-viewport scrim, panel `min(560px, 86vw)` at `max-h-[70vh]`, overlay glass, `--tr-radius-md`. 46px search header; `role="listbox"` with 32px option rows grouped under uppercase 11px headers. |
 
@@ -458,6 +457,7 @@ differences as a variant in the registry.
 | `danger` | Ghost with the danger tint on hover; `armed` adds its standing danger cue |
 | `danger-solid` | `BTN_DANGER_SOLID`; always paired with a warning icon |
 | `icon` | `BTN_ICO`'s box and hover |
+| `text` | A title link inside an interactive content row; no control box or padding |
 
 Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
 `SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY` is flagged for removal:
@@ -489,6 +489,10 @@ signal through fill + text, never a border.
 and stay quiet: `BTN_GHOST`, no colour. Save the weight for the
 affirmative action.
 
+Use `ActionMenu` as the single trailing control when a row has secondary actions.
+Keep destructive removal in its menu; choose one contextual trigger label or the
+ellipsis trigger rather than placing every row action beside one another.
+
 ### Component boundary
 
 Renderer UI composes from `ui/src/renderer/src/components/ui/`. Outside that directory, class
@@ -500,14 +504,24 @@ state prefixes may qualify these utilities. Colour, borders, radius, typography,
 shadows, literal sizes, arbitrary properties and button recipes belong in `components/ui/` as a
 primitive or variant, with a specimen case in the `ui-primitives` story.
 
-`scripts/check-ui-boundary.sh` reads literal JSX `className` values, string literals in
-`className` expressions and string values in same-file `*_CLS` declarations, including template
-literals. Imported constants are covered where they are declared; computed strings without a
-statically visible literal are outside its scan. Each non-layout token reports its source line.
+Four stylesheet foundations are allowed outside `components/ui/`: `theme.css` defines tokens and
+re-scopes them under `[data-*]`; `tailwind.css` binds Tailwind imports and theme values;
+`keyframes.css` catalogs animation frames; `base.css` contains element, pseudo-element and
+attribute resets plus document-state classes on `html` or `body`. Other stylesheets and component
+class selectors in `base.css` fail the boundary guard.
+
+`scripts/check-ui-boundary.sh` rejects every non-layout token it recognizes in class strings.
+Its `PENDING` list names the feature files not yet composed from `components/ui/` roles, each with
+its violation count; an entry may only fall, and is deleted at zero. It reads literal JSX `className` values, every string literal in a
+`className` expression up to its balanced closing brace, and same-file `*_CLS` declarations.
+Template literals contribute their text and the literals inside their `${…}` interpolations.
+Imported constants are covered where they are declared. Class-list-shaped strings hidden in helper
+returns or constants without the `_CLS` suffix remain a documented scan gap; review them at the
+source. The scanner does not infer classes from computed values.
 
 ### Select
 
-Every dropdown is `components/Select.tsx`. **Native `<select>` is banned** — its
+Every dropdown is `components/ui/Select.tsx`. **Native `<select>` is banned** — its
 open popup is a separate OS window that the desktop toolkit draws with its own font
 and its own selection fill, so none of our tokens reach it.
 
@@ -520,7 +534,7 @@ all implemented — extend it rather than rolling a listbox.
 
 ### Tooltip vs `title`
 
-`components/Tooltip.tsx` is the only hover label. It portals to `document.body` so no
+`components/ui/Tooltip.tsx` is the only hover label. It portals to `document.body` so no
 `overflow: hidden` ancestor clips it; 300ms hover delay, bypassed by keyboard focus;
 6px offset, 8px viewport margin; flips vertically, clamps horizontally; dismisses on
 Escape, pointerdown, scroll, resize and blur.
@@ -561,7 +575,8 @@ an accent border.
 
 A 28px track at `--tr-radius-button` over a 4%-mixed background; 22px items, 54px
 minimum width, 12px label. Selection **cross-fades colour and background; it does not
-slide a thumb.**
+slide a thumb.** A count may follow the label in muted ink. The track sizes to its
+options unless its parent deliberately gives it a wider layout.
 
 ### Tables
 
@@ -667,7 +682,8 @@ Use `SectionHead` with `Count` immediately after its label on the same line, wit
 a 6px gap, tabular
 numerals, the label's size and one softer ink step. Do not use parentheses, a
 middle dot, monospace numerals or right alignment; the right end of a heading is
-for its action. Omit zero in tabs and headings; disable an action instead of
+for its action. Use its inset option when a group heading sits beside a colored rail.
+Omit zero in tabs and headings; disable an action instead of
 showing `(0)`. Put phrases such as “1 routine” in descriptions. Keep `Chip` counts
 for metrics.
 
@@ -690,8 +706,13 @@ chips only for multi-select filters.
 
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Idle, Done, Failed, Paused, In sync and Missing. Do not rely on colour
-alone. Idle, Paused and Missing use a hollow ring. “Ok” and
+Needs input, Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Result staged,
+Pending delivery, Paused, In sync, Differs, Off, Connected, Reconnecting, Missing, Open,
+Fixing, Not seen, Ready, Watching and Verified. The dot variant keeps an accessible status
+name when a row already
+identifies its state in a tooltip. Do not rely on colour alone. Idle, Paused, Off, Missing
+and Not seen use a hollow ring. Connected uses the ok dot; Reconnecting uses the warn dot.
+“Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
 
@@ -706,7 +727,16 @@ states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
 ### Grouped rows
 
 Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
-places its title and metadata on the left and status or action on the right.
+places its title and metadata on the left and status or action on the right. Its
+`compact` variant keeps history rows on one line. `Card.Group` spans its heading and
+rows with a New, Still there or Gone warn, stop or ok rule. Keep the rule to this
+primitive; feature files supply the group content. Use `Card.Content` for a
+padded, vertically grouped set of section rows.
+
+`BarSparkline` shows a short sequence of comparable values with an accessible text
+summary. `Caption` carries supporting information in the small, secondary text step.
+Use the `accent` Count source for attention totals in navigation. Use the `link` Button
+variant for inline actions that open related content, such as a linked task key.
 
 ### List and detail
 
@@ -716,6 +746,11 @@ one side at a time with a back button. Pass `selectedId` and `onSelect` when sel
 must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
 new selection.
 
+Use `RoutineDetail` for the selected routine's schedule, unattended provider and run history;
+Edit and Delete live in its trailing action menu beside Run now and the enabled switch.
+`ConnectionCell` keeps an MCP destination's state and any failure reason together inside its
+matrix cell; the cell action updates that server's destination and syncs the matching CLI.
+
 ### Drawer
 
 Use `Drawer` for a detail panel over the current page. It has a right-aligned 720px
@@ -723,10 +758,15 @@ maximum width, a labelled title row and a close button. It traps Tab focus, clos
 Escape or a backdrop press, and returns focus to the opener. Entry uses the panel and
 scrim motion tokens and is disabled by reduced-motion preferences.
 
+Task details keep a page gutter around the header, execution card, acceptance section
+and origin chip. Use `TaskProgress` for the four task lifecycle stages. Its current
+stage follows the task status; the component owns the line, ink and spacing.
+
 ### Inline notice
 
 Use `Notice` for a single inline info, warn or danger sentence, with an optional
-`Button` action. A concurrency limit names the limit, current value and settings path,
+`Button` action. Set `indicator="dot"` when it represents an event, such as a newly
+published Harness review. A concurrency limit names the limit, current value and settings path,
 for example: “3 of 3 running. Routines run 3 at a time (Settings › Routines)”.
 
 ### Pane header actions
@@ -768,6 +808,7 @@ should reach past them for a new site.
 | Menu | 160ms | `cubic-bezier(.16, 1, .3, 1)` | Menus, dropdowns, popovers |
 | Panel | 240ms | `cubic-bezier(.32, .72, 0, 1)` | Panels sliding from an edge |
 | Scrim | 90ms | `linear` | Backdrops — always the fastest thing on screen |
+| Reveal | 400ms | Panel easing | Chrome theme changes revealed from the clicked control with a View Transition snapshot and a WAAPI `clip-path` circle. This is the named exception to rule 1. Changes without a click, under reduced motion, or without runtime `startViewTransition` support are instant. The native browser pane is a separate webview and switches instantly. |
 
 The `--animate-*` names are back-compat aliases; each points at whichever curve its
 site's *purpose* is, not at whatever its old literal happened to compute to.
@@ -789,6 +830,13 @@ The rules:
 7. **No animation library.** Interruptible springs, layout tracking and gesture
    physics are exactly what rules 1–4 forbid; there is no Framer/Motion dependency.
 8. **Panes get no drop shadow, no per-pane accent hue, and no animated entry.**
+
+Popover anchors use the trigger's start edge and clamp only to the viewport; a trigger label
+changing width never recentres an open menu. Houston does not use RTL. A popover with multiple
+views keeps the largest view's bounds and crossfades the outgoing view in Fast (120ms) before
+the incoming view in Menu (160ms). Its container enters in Menu with `menu-in`; header and body
+rise 4px with opacity, 40ms apart. The complete popover exits once with `menu-out` in Fast.
+Reduced motion removes the stagger and view crossfade and shows each settled state immediately.
 
 Keyframes live in `keyframes.css` — global and unlayered by necessity, since Tailwind
 utilities name them directly.
@@ -838,10 +886,13 @@ never seams against its canvas:
 
 Any palette pairs with any chrome theme, so never assume the terminal background
 matches a chrome token — that is why the active-pane ring is achromatic.
+The shipped foreground and twelve chromatic ANSI colours in every palette keep at
+least 3:1 contrast against that palette's own background. This is a property of the
+definitions; terminal output is never repainted at runtime.
 
 ## Guards
 
-Thirteen checks enforce this guide mechanically. The idiom is hermetic, sub-second checks
+Checks enforce this guide mechanically. The idiom is hermetic, sub-second checks
 wired into CI; `check:complexity` is the one exception, and it earns it by measuring
 something no text search can count (see "A closure is not a fix").
 
@@ -850,15 +901,21 @@ something no text search can count (see "A closure is not a fix").
 | `bun run check:css` | Runs a headless browser against the **built** stylesheet (`@theme`/`@layer` only resolve after a build). Re-derives the theme list and the `--color-*` → `--X` mapping from source rather than hardcoding them, then asserts every `--color-*` re-resolves under each `[data-theme]` scope. Also asserts the contrast floors above. |
 | `scripts/check-icon-imports.sh` | Bans `lucide-react` imports outside `components/icons.tsx`. Its allowlist is currently empty — the rule holds with zero live exceptions. |
 | `scripts/check-title-tooltip-guard.sh` | Flags any capitalized JSX component receiving `title=` that isn't on the visible-heading allowlist. A `title` that means "tooltip" fails. |
-| `scripts/check-native-select.sh` | Bans `<select` anywhere under `ui/src` outside `components/Select.tsx`. Strips comments first, so prose mentions don't false-positive. |
-| `scripts/check-native-input.sh` | Bans `<input type="checkbox">`/`<input type="radio">` anywhere under `ui/src`. No exemptions — `Toggle` and `Segmented` (`components/settingsPrimitives.tsx`) cover both shapes. |
+| `scripts/check-native-select.sh` | Bans `<select` anywhere under `ui/src` outside `components/ui/Select.tsx`. Strips comments first, so prose mentions don't false-positive. |
+| `scripts/check-native-input.sh` | Bans `<input type="checkbox">`/`<input type="radio">` anywhere under `ui/src`. No exemptions — `Toggle` and `Segmented` (`components/ui/settingsPrimitives.tsx`) cover both shapes. |
 | `scripts/check-menu-descriptions.sh` | A menu item's description line (the `<span>`/`<small>`/`<p>` after its `<strong>` label inside a `role="menuitem"` block) must wrap or truncate on purpose — never `whitespace-nowrap`/`truncate` with no `max-w-*` bound, never no wrapping class at all. |
 | `scripts/check-icon-metrics.sh` | Bans a `size=` or `strokeWidth=` prop on any glyph under `ui/src`, and props objects that spell one. No baseline and no allowlist: `components/icons.tsx` (whose defaults define the drawn set) and `IconTile` (a container with a named tile scale, not a glyph) are the only exemptions. |
 | `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |
-| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`). Per-file exemption count, ratchets down only. |
+| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`). No exemptions. |
+| `scripts/check-type-scale.sh` | Rejects legacy text-size utilities, raw scale classes, CSS font-size literals and arbitrary font-size literals under `components/ui/` and the four foundations. Any hit fails. |
+| `scripts/check-control-metrics.sh` | Rejects hand-typed interactive/chrome heights and control-ladder values under `components/ui/` and the four foundations; rule A remains absolute. |
+| `scripts/check-radius-tokens.sh` | Rejects numeric radius classes, unmapped framework radius steps and CSS radius literals under `components/ui/` and the four foundations. Any hit fails. |
+| `scripts/check-spacing-tokens.sh` | Rejects directional child margins and raw spacing values under `components/ui/` and the four foundations, preserving alignment/reset and prose-rhythm exemptions. Any hit fails. |
+| `scripts/check-shadow-recipes.sh` | Rejects hand-typed shadow recipes under `components/ui/` and the four foundations. Any hit fails. |
+| `scripts/check-button-recipes.sh` | Requires shared button recipes and the `.btn` base for overlay constants. No allowlists. |
 | `scripts/check-empty-state-action.sh` | An empty state must contain the control its copy names. Copy pointing at a button that lives elsewhere fails; a bare statement of fact ("No results.") passes. Three reasoned testid exemptions. |
-| `scripts/check-ui-boundary.sh` | Outside `components/ui/`, literal `className` strings and same-file `*_CLS` constants may use layout utilities only. Per-file baseline, ratchets down only; computed strings with no visible literal are outside the scan. |
-| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Per-file baseline, ratchets down only. |
+| `scripts/check-ui-boundary.sh` | Outside `components/ui/`, class strings may use layout utilities only; only four named stylesheet foundations are allowed. Any hit fails. Computed class strings remain a documented gap. |
+| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Every hit fails. |
 | `bun run check:complexity` | Ratchets each component's cyclomatic complexity against `ui/complexity-baseline.json` (`worst` and `over`; `total` recorded beside them). Needs `bun install` — it shells out to a pinned `oxlint`, so it is not one of the hermetic scripts. See "A closure is not a fix" below. |
 
 `check:css` needs a `bun run build` first; the rest are standalone and instant.
@@ -915,37 +972,6 @@ larger offset means the site wants its own tier.
 | `--z-window` | 100 | window furniture: the resize grips |
 | `--z-toast` | 300 | a transient status banner over the whole window |
 | `--z-tooltip` | 1000 | the hover label, and the browser's fullscreen cover |
-
-## Known debt
-
-Real, measured, and not yet fixed. Don't extend these; do fix them opportunistically
-in files you're already touching.
-
-Every entry here is a per-file ratchet: the guard names the file and its count,
-and a count may only fall. The numbers move, so read them from the guard rather
-than from this list.
-
-- **Radius literals.** 49 files still spell a corner as a number or as the
-  framework's own `rounded-*` scale. Nothing that reaches a `<button>` does —
-  neither the tag nor any shared class constant it takes its chrome from,
-  which is checked by cross-referencing the two rather than by a list. What
-  remains is 8/10/6/4/12/999px on surfaces: each maps onto a rung by VALUE,
-  but a 10px card means `--tr-radius-card`, not `--tr-radius-md`, so closing
-  these is a reading of each site and not a substitution. Pinned by
-  `check-radius-tokens.sh`.
-- **Sibling margins.** 43 files set spacing on the child instead of `gap-*` on
-  the container, 162 in all. Close to a third sit in the settings section,
-  where no single parent owns the sequence — that one is a redesign, not a
-  sweep. Pinned by `check-spacing-tokens.sh`.
-- **Control-metric drift.** 19 files hold hand-typed heights, each already
-  classified in code as something the ladder does not govern — a resizable
-  editor, a growth cap on an auto-sizing composer, a content card, a
-  structural strip, the menu-item height that has no rung. Pinned by
-  `check-control-metrics.sh`.
-- **Two button recipes out of place.** `ChangesPane` declares a private `BTN_*`,
-  and a `BTN_GHOST` use in `settings/DiagnosticsSection.tsx` carries no `btn`.
-  Named in `check-button-recipes.sh`'s allowlist, which fails when an entry
-  goes stale.
 
 ## When this guide is silent
 

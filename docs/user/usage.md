@@ -1,8 +1,7 @@
 # Usage
 
-Settings ▸ Usage shows token and cost figures for agent work you've run through Houston.
-This page is narrower than the settings label might suggest — read the coverage section
-below before trusting a number here as your full spend.
+The Usage page shows token totals and estimated costs for transcripts Houston can read. Open it from the rail or press **Ctrl+U** (**⌘+U** on macOS).
+Use the workspace, metric and time range controls in the page header to change the totals. The activity calendar keeps daily totals for up to 365 days, including days whose source transcripts have since been removed. Selecting a day filters the breakdown when detailed records are available.
 
 ## What it covers
 
@@ -10,26 +9,34 @@ Usage reads transcript files that Claude Code and Codex already write to disk on
 own machine, counts tokens out of them, and folds those counts into hourly buckets by
 provider and model. Those two CLIs are the only ones it covers.
 
+The workspace filter attributes a transcript by its recorded working directory.
+A session in a workspace directory or one of its worktrees belongs to that
+workspace; sessions outside registered workspaces remain in **All workspaces**.
+
 ## What it does not cover
 
 Every other CLI Houston can spawn and that spends tokens — Antigravity, OpenCode,
-Cursor, Grok — is not read by this feature. Houston shows these explicitly as "not
-tracked" rather than as zero usage, because a `0` next to one of them would read as "you
-spent nothing," which the daemon has no way to actually confirm. Shell, SSH and custom
-sessions spend no tokens, so they're outside the feature by nature, not by omission;
-Droid, Copilot and Aider are absent because Houston cannot spawn them at all today, so
-there's nothing to have spent through Houston in the first place.
+Cursor and Grok — is not read by this feature and is not included in the totals. Shell,
+SSH and custom sessions spend no tokens, so they're outside the feature by nature, not
+by omission. Droid, Copilot and Aider are absent because Houston cannot spawn them.
 
 ## Where the numbers come from
 
 Token counts come only from files under each CLI's own transcript directory (Claude
 Code's and Codex's own on-disk session logs) — the same files those CLIs already write
-for their own purposes. Houston opens them only while the Usage section is actually open
+for their own purposes. Houston opens them only while the Usage page is actually open
 and you've asked to see it: no background timer, no watcher, no scan at startup. A line
 in a transcript becomes a token tally and is then dropped — prompt text, tool output,
 file contents and paths inside a transcript are never retained, logged, cached, or sent
 anywhere; only integer counts plus a model and session identifier are kept, in a local
 cache that exists to make re-opening a transcript file cheap on a later look.
+
+Each scan also adds daily totals to Houston's local SQLite database. The activity
+calendar can keep a day after Claude Code or Codex removes its transcript. History
+begins when a scan first records that day; older days cannot be reconstructed from
+transcripts that have already been deleted. The calendar request returns no more than
+365 local calendar days. The scan cache stores the workspace association and speed
+tier, but does not retain the transcript working directory.
 
 Dollar costs are computed from LiteLLM's public model catalog, fetched from GitHub and
 cached locally. The same cached catalog supplies model context limits to the context
@@ -46,9 +53,8 @@ bundled for first-run offline context limits contains no fallback prices.
 
 ## What it cannot tell you
 
-If a transcript's format has drifted from what Houston expects, the scan yields fewer
-records rather than failing outright or guessing a number — so an oddly low count can
-mean "you did less" or "we couldn't parse some of it," and there's no way from the
-screen alone to tell those apart beyond the per-source counts it reports. It also has no
-visibility into anything not covered above: work in an untracked CLI, or any usage of
-that CLI outside a Houston-hosted session.
+If a transcript's format has drifted from what Houston expects, the scan may yield fewer
+records rather than failing outright or guessing a number. The page does not show
+per-source scan diagnostics, so it cannot distinguish reduced usage from records that
+could not be parsed. It also has no visibility into work in an unsupported CLI or usage
+outside a Houston-hosted session.

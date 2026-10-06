@@ -1,52 +1,147 @@
 import { useState } from 'react'
-import { Tooltip } from './Tooltip'
 import {
-  IconAlertTriangle,
-  IconCheck,
-  IconFile,
-  IconLoaderCircle,
-  IconPencil,
   IconPlus,
-  IconRefresh,
   IconServer,
   IconTrash
 } from './icons'
-import {
-  BLOCK,
-  CHROME_BUTTON,
-  CHROME_BUTTON_DANGER,
-  FIELD_INPUT,
-  FIELD_LABEL,
-  NavDetailState,
-  NavEmpty,
-  NavFootnote,
-  NavSwitch,
-  PRIMARY_BUTTON,
-  ROW_TOP,
-  ROW_TITLE,
-  SECONDARY_BUTTON,
-  chipClass
-} from './nav/navChrome'
 import { ConfirmModal } from './ConfirmModal'
-import { Segmented } from './Segmented'
-import { SectionHead, SettingsList, SettingsRow as Row, SubHead } from './settingsPrimitives'
-import { StatusIcon, STATUS_ICON_WORD, type StatusIconState } from './StatusIcon'
-import { CheckedStamp } from './CheckedStamp'
-import { ListDetail, type ListDetailItem } from './nav/ListDetail'
+import { Segmented } from './ui/SegmentedControl'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { McpConnectionCheck } from '../houston/generated/McpConnectionCheck'
 import type { McpServer } from '../houston/generated/McpServer'
 import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import type { McpToolState } from '../houston/generated/McpToolState'
+import type { HoustonClient } from '../houston/client'
 import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
+import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
+import { CompactSwitch } from './ui/ConfigurationDetail'
+import { ActionMenu } from './ui/ActionMenu'
+import { TASK_AGENTS } from './tasks/format'
+import { ConnectionsIntegrations } from './ConnectionsIntegrations'
 
 const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
-  cursor: 'Cursor'
+  cursor: 'Cursor',
+  antigravity: 'Antigravity',
+  grok: 'Grok'
+}
+
+function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: MatrixRow[] }): React.JSX.Element {
+  const [form, setForm] = useState<{ previousName: string | null } | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+  const [diffRow, setDiffRow] = useState<string | null>(null)
+  const listed = rows.filter((row) => row.source !== null)
+
+  const toggleCell = (row: MatrixRow, tool: AgentKind): void => {
+    const source = row.source
+    if (!source) return
+    const allowed = source.destinations.length > 0 ? source.destinations : DESTINATIONS
+    const current = cellFor(row, tool)
+    const destinations = !source.enabled
+      ? allowed
+      : (current.kind === 'disabled' || current.kind === 'absent') && allowed.includes(tool)
+        ? allowed
+        : allowed.includes(tool)
+          ? allowed.filter((destination) => destination !== tool)
+          : [...allowed, tool]
+    props.onUpsertServer(row.name, { ...source, enabled: true, destinations })
+    props.onSync(tool)
+  }
+
+  const cell = (row: MatrixRow, tool: AgentKind): React.ReactNode => {
+    const toolState = props.tools.find((item) => item.tool === tool)
+    const syncResult = props.results.find((result) => result.tool === tool)
+    const check = checkFor(row.name, props.checks)
+    const current = cellFor(row, tool)
+    const reason = (current.kind !== 'absent' && check.state === 'failed' ? check.message : undefined) ?? toolState?.error ?? syncResult?.error ?? undefined
+    const status = reason
+      ? 'Failed'
+      : current.kind === 'drifted' && row.source && row.byTool[tool]?.fingerprint !== row.source.fingerprint
+        ? 'Differs'
+        : current.kind === 'in-sync' || (current.kind === 'drifted' && row.source && row.byTool[tool]?.fingerprint === row.source.fingerprint)
+          ? 'In sync'
+          : 'Off'
+    return <ConnectionCell status={status} reason={reason} server={row.name} agent={label(tool)} data-testid={`mcp-cell-${tool}-${row.name}`} onClick={() => toggleCell(row, tool)} />
+  }
+
+  const displayRows: ConnectionDisplayRow[] = listed.map((row) => ({
+    id: row.name,
+    name: row.name,
+    claude: cell(row, 'claude'),
+    codex: cell(row, 'codex'),
+    opencode: cell(row, 'opencode'),
+    cursor: cell(row, 'cursor')
+  }))
+  const columns: TableColumn<ConnectionDisplayRow>[] = [
+    { key: 'name', header: 'Server', width: '18%', render: (name) => <strong>{name}</strong> },
+    { key: 'claude', header: 'Claude Code', width: '16%', render: (value) => value },
+    { key: 'codex', header: 'Codex', width: '16%', render: (value) => value },
+    { key: 'opencode', header: 'OpenCode', width: '16%', render: (value) => value },
+    { key: 'cursor', header: 'Cursor', width: '16%', render: (value) => value }
+  ]
+  const selectedDiff = diffRow ? rows.find((row) => row.name === diffRow) : undefined
+  const unmanaged = TASK_AGENTS.filter((agent) => !DESTINATIONS.includes(agent)).reverse().map(label).join(', ')
+
+  if (!props.loaded) {
+    return <PageFrame width="wide" className="flex-1 min-w-0" data-testid="mcp-manager"><PageHeader heading="Connections" description="MCP servers your agents can use. Houston writes them into each agent's own config." /><p role="status">Opening servers…</p><ConnectionsIntegrations client={props.slackClient ?? null} /></PageFrame>
+  }
+
+  return (
+    <PageFrame width="wide" className="flex-1 min-w-0" data-testid="mcp-manager">
+      <PageHeader
+        heading="Connections"
+        description="MCP servers your agents can use. Houston writes them into each agent's own config."
+        actions={<Button variant="primary" icon={IconPlus} onClick={() => setForm({ previousName: null })}>Add server</Button>}
+      />
+      <Table
+        aria-label="MCP server connections"
+        variant="framed"
+        layout="fixed"
+        rows={displayRows}
+        getRowId={(row) => row.id}
+        columns={columns}
+        rowAction={(display) => {
+          const row = rows.find((item) => item.name === display.id)!
+          const failed = DESTINATIONS.some((tool) => cellFor(row, tool).kind !== 'absent' && checkFor(row.name, props.checks).state === 'failed') || DESTINATIONS.some((tool) => props.tools.find((item) => item.tool === tool)?.error)
+          const label = row.hasDrift ? 'Show diff' : failed ? 'Edit' : null
+          const items = [
+            ...(row.hasDrift ? [{ label: diffRow === row.name ? 'Hide diff' : 'Show diff', onSelect: () => setDiffRow(diffRow === row.name ? null : row.name) }] : []),
+            ...(!row.hasDrift ? [{ label: 'Edit', onSelect: () => setForm({ previousName: row.name }) }] : []),
+            { label: 'Remove', onSelect: () => setConfirmRemove(row.name), tone: 'danger' as const }
+          ]
+          return label
+            ? <Button variant="secondary" size="sm" onClick={() => row.hasDrift ? setDiffRow(diffRow === row.name ? null : row.name) : setForm({ previousName: row.name })}>{label}</Button>
+            : <ActionMenu label={`More actions for ${row.name}`} iconOnly items={items} />
+        }}
+        empty={{ icon: IconServer, heading: 'No MCP servers', description: 'Add an MCP server to connect it to your agents.' }}
+      />
+      {selectedDiff?.source && <section aria-label={`${selectedDiff.name} configuration differences`}><Card padding="sm" className="grid gap-[var(--space-2)]">
+        <DetailCard title="Houston's list" server={selectedDiff.source} />
+        {DESTINATIONS.filter((tool) => selectedDiff.byTool[tool] && selectedDiff.byTool[tool]!.fingerprint !== selectedDiff.source!.fingerprint).map((tool) => <DetailCard key={tool} title={label(tool)} server={selectedDiff.byTool[tool]!} />)}
+      </Card></section>}
+      <Caption tone="faint">Not managed here: {unmanaged}.{listed.length > 0 ? ' Click a cell to turn a server on or off for that agent.' : ''}</Caption>
+      <ConnectionsIntegrations client={props.slackClient ?? null} />
+      <Drawer open={form !== null} heading={form?.previousName ? `Edit ${form.previousName}` : 'Add server'} onClose={() => setForm(null)}>
+        {form && <McpServerForm
+          previousName={form.previousName}
+          initial={form.previousName ? formFromServer(props.source.find((server) => server.name === form.previousName) ?? emptyFormServer()) : emptyForm()}
+          existingNames={props.source.map((server) => server.name)}
+          results={props.results}
+          onCancel={() => setForm(null)}
+          onSubmit={(server) => { props.onUpsertServer(form.previousName, server); props.onSync(null); setForm(null) }}
+        />}
+      </Drawer>
+      {confirmRemove && <ConfirmModal title="REMOVE SERVER" message={`Remove ${confirmRemove} from your list and every tool it was applied to?`} confirmLabel="Remove" onCancel={() => setConfirmRemove(null)} onConfirm={() => { props.onRemoveServer(confirmRemove); props.onSync(null); setConfirmRemove(null) }} />}
+    </PageFrame>
+  )
+}
+
+function emptyFormServer(): McpServer {
+  return { name: '', transport: 'stdio', command: null, args: [], env: [], url: null, headers: [], cwd: null, enabled: true, fingerprint: '', destinations: [] }
 }
 
 function label(tool: AgentKind): string {
@@ -55,21 +150,13 @@ function label(tool: AgentKind): string {
 
 const DESTINATIONS: AgentKind[] = ['claude', 'codex', 'opencode', 'cursor']
 
-const SPIN_CLASS = 'inline-flex animate-spin'
-
-const CELL_STATE: Record<ReturnType<typeof cellFor>['kind'], StatusIconState> = {
-  'in-sync': 'ok',
-  drifted: 'differs',
-  disabled: 'off',
-  absent: 'absent'
-}
-
-function worstMcpState(row: MatrixRow, tools: McpToolState[]): StatusIconState {
-  const kinds = tools.map((t) => cellFor(row, t.tool).kind)
-  if (kinds.includes('drifted')) return 'differs'
-  if (kinds.includes('disabled')) return 'off'
-  if (kinds.includes('in-sync')) return 'ok'
-  return 'absent'
+interface ConnectionDisplayRow {
+  id: string
+  name: string
+  claude: React.ReactNode
+  codex: React.ReactNode
+  opencode: React.ReactNode
+  cursor: React.ReactNode
 }
 
 function destinationsLabel(destinations: AgentKind[]): string {
@@ -92,94 +179,7 @@ function DetailCard({ title, server }: { title: string; server: McpServer }): Re
   if (server.headers.length > 0) {
     rows.push(['headers', server.headers.map(([k, v]) => `${k}: ${maskSecret(v)}`).join('  ')])
   }
-  return (
-    <div className="rounded-[10px] border border-[var(--border)] bg-[var(--content-bg)] p-[14px]">
-      <div className="mb-[8px] flex items-center justify-between gap-[8px]">
-        <span className="[font-size:var(--tr-text-small-size)] font-semibold text-[var(--text-primary)]">{title}</span>
-        <span className="truncate font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
-          {server.fingerprint}
-        </span>
-      </div>
-      <dl className="flex flex-col gap-[4px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex gap-[8px]">
-            <dt className="w-[76px] shrink-0 text-[var(--text-faint)]">{k}</dt>
-            <dd className="min-w-0 break-all font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
-              {v}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  )
-}
-
-function CheckBadge({
-  name,
-  check,
-  onTest
-}: {
-  name: string
-  check: McpConnectionCheck
-  onTest: (name: string) => void
-}): React.JSX.Element {
-  switch (check.state) {
-    case 'checking':
-      return (
-        <span
-          data-testid="mcp-check"
-          data-check-state="checking"
-          className="inline-flex items-center gap-[4px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]"
-        >
-          <span className={SPIN_CLASS}>
-            <Icon glyph={IconLoaderCircle} role="small" />
-          </span>
-          Checking…
-        </span>
-      )
-    case 'verified':
-      return (
-        <Tooltip label="Test again">
-          <button
-            type="button"
-            data-testid="mcp-check"
-            data-check-state="verified"
-            className="inline-flex items-center gap-[4px] border-0 bg-transparent p-0 cursor-pointer [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--ok)]"
-            onClick={() => onTest(name)}
-          >
-            <Icon glyph={IconCheck} role="small" />
-            Verified · {check.tool_count} tool{check.tool_count === 1 ? '' : 's'}
-          </button>
-        </Tooltip>
-      )
-    case 'failed':
-      return (
-        <Tooltip label={check.message}>
-          <button
-            type="button"
-            data-testid="mcp-check"
-            data-check-state="failed"
-            className="inline-flex items-center gap-[4px] border-0 bg-transparent p-0 cursor-pointer [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)]"
-            onClick={() => onTest(name)}
-          >
-            <Icon glyph={IconAlertTriangle} role="small" />
-            Failed — retry
-          </button>
-        </Tooltip>
-      )
-    case 'not_checked':
-      return (
-        <button
-          type="button"
-          data-testid="mcp-check"
-          data-check-state="not_checked"
-          className={SECONDARY_BUTTON}
-          onClick={() => onTest(name)}
-        >
-          Test connection
-        </button>
-      )
-  }
+  return <ConfigurationDetail title={title} fingerprint={server.fingerprint} rows={rows.map(([label, value]) => ({ label, value }))} />
 }
 
 function PairListEditor({
@@ -194,13 +194,12 @@ function PairListEditor({
   keyPlaceholder: string
 }): React.JSX.Element {
   return (
-    <div>
-      <span className={FIELD_LABEL}>{legend}</span>
-      <div className="flex flex-col gap-[6px]">
+    <div className="grid gap-[var(--space-field-label-bottom)]">
+      <FieldLabel size="form">{legend}</FieldLabel>
+      <div className="grid gap-[var(--space-1-5)]">
         {pairs.map(([k, v], i) => (
-          <div key={i} className="flex items-center gap-[6px]">
-            <input
-              className={`${FIELD_INPUT} min-h-[var(--h-ctl)]`}
+          <div key={i} className="flex items-center gap-[var(--space-1-5)]">
+            <TextInput size="form" surface="card"
               placeholder={keyPlaceholder}
               value={k}
               onChange={(e) => {
@@ -209,8 +208,7 @@ function PairListEditor({
                 onChange(next)
               }}
             />
-            <input
-              className={`${FIELD_INPUT} min-h-[var(--h-ctl)]`}
+            <TextInput size="form" surface="card"
               placeholder="value"
               value={v}
               onChange={(e) => {
@@ -219,24 +217,23 @@ function PairListEditor({
                 onChange(next)
               }}
             />
-            <button
-              type="button"
+            <Button
+              variant="compact-icon-danger"
               aria-label={`remove ${legend.toLowerCase()} row ${i + 1}`}
-              className={CHROME_BUTTON_DANGER}
               onClick={() => onChange(pairs.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </button>
+            </Button>
           </div>
         ))}
-        <button
-          type="button"
-          className={`${SECONDARY_BUTTON} self-start`}
+        <Button
+          variant="compact-secondary"
+          className="justify-self-start"
           onClick={() => onChange([...pairs, ['', '']])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -250,13 +247,13 @@ function ArgListEditor({
   onChange: (args: string[]) => void
 }): React.JSX.Element {
   return (
-    <div className="flex flex-col gap-[4px]">
-      <span className={FIELD_LABEL}>Arguments</span>
-      <div className="flex flex-col gap-[6px]">
+    <div className="grid gap-[var(--space-1)]">
+      <div className="grid gap-[var(--space-form-label-control-gap)]">
+        <FieldLabel size="form">Arguments</FieldLabel>
+        <div className="grid gap-[var(--space-1-5)]">
         {args.map((a, i) => (
-          <div key={i} className="flex items-center gap-[6px]">
-            <input
-              className={`${FIELD_INPUT} min-h-[var(--h-ctl)]`}
+          <div key={i} className="flex items-center gap-[var(--space-1-5)]">
+            <TextInput size="form" surface="card"
               aria-label={`argument ${i + 1}`}
               placeholder="-y"
               value={a}
@@ -266,28 +263,28 @@ function ArgListEditor({
                 onChange(next)
               }}
             />
-            <button
-              type="button"
+            <Button
+              variant="compact-icon-danger"
               aria-label={`remove argument ${i + 1}`}
-              className={CHROME_BUTTON_DANGER}
               onClick={() => onChange(args.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </button>
+            </Button>
           </div>
         ))}
-        <button
-          type="button"
-          className={`${SECONDARY_BUTTON} self-start`}
+        <Button
+          variant="compact-secondary"
+          className="justify-self-start"
           onClick={() => onChange([...args, ''])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add argument
-        </button>
+        </Button>
+        </div>
       </div>
-      <p className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+      <Text as="p" size="small" tone="faint">
         One field per argument, in order — an embedded space is kept exactly as typed.
-      </p>
+      </Text>
     </div>
   )
 }
@@ -386,30 +383,31 @@ function McpServerForm({
 
   return (
     <>
-          <h2 className="m-0 [font-size:17px] font-semibold text-[var(--text-primary)]">
+          <Text as="h2" size="subhead" weight="semibold" tone="primary" flush>
             {previousName ? `Edit ${previousName}` : 'Add server'}
-          </h2>
-          <div className="flex flex-col gap-[4px]">
-            <label className={FIELD_LABEL} htmlFor="mcp-form-name">
-              Name
-            </label>
-            <input
-              id="mcp-form-name"
-              className={FIELD_INPUT}
-              value={value.name}
-              onChange={(e) => setValue({ ...value, name: e.target.value })}
-              placeholder="context7"
-              aria-invalid={nameTaken || undefined}
-            />
+          </Text>
+          <div className="grid gap-[var(--space-1)]">
+            <div className="grid gap-[var(--space-form-label-control-gap)]">
+              <FieldLabel as="label" size="form" htmlFor="mcp-form-name">
+                Name
+              </FieldLabel>
+              <TextInput size="form" surface="card"
+                id="mcp-form-name"
+                value={value.name}
+                onChange={(e) => setValue({ ...value, name: e.target.value })}
+                placeholder="context7"
+                aria-invalid={nameTaken || undefined}
+              />
+            </div>
             {nameTaken && (
-              <p className="[font-size:var(--tr-text-small-size)] text-[var(--danger)]">
+              <Text as="p" size="small" tone="danger">
                 {value.name.trim()} is already the name of another server in your list.
-              </p>
+              </Text>
             )}
           </div>
 
-          <div>
-            <span className={FIELD_LABEL}>Reached by</span>
+          <div className="grid justify-items-start gap-[var(--space-field-label-bottom)]">
+            <FieldLabel size="form">Reached by</FieldLabel>
             <Segmented
               aria-label="Transport"
               options={TRANSPORT_OPTIONS}
@@ -420,13 +418,12 @@ function McpServerForm({
 
           {value.transport === 'stdio' ? (
             <>
-              <div>
-                <label className={FIELD_LABEL} htmlFor="mcp-form-command">
+              <div className="grid gap-[var(--space-field-label-bottom)]">
+                <FieldLabel as="label" size="form" htmlFor="mcp-form-command">
                   Command
-                </label>
-                <input
+                </FieldLabel>
+                <TextInput size="form" surface="card"
                   id="mcp-form-command"
-                  className={FIELD_INPUT}
                   value={value.command}
                   onChange={(e) => setValue({ ...value, command: e.target.value })}
                   placeholder="npx"
@@ -436,13 +433,12 @@ function McpServerForm({
                 args={value.args}
                 onChange={(args) => setValue({ ...value, args })}
               />
-              <div>
-                <label className={FIELD_LABEL} htmlFor="mcp-form-cwd">
-                  Working directory <span className="text-[var(--text-faint)]">(optional)</span>
-                </label>
-                <input
+              <div className="grid gap-[var(--space-field-label-bottom)]">
+                <FieldLabel as="label" size="form" htmlFor="mcp-form-cwd">
+                  Working directory <Text tone="faint">(optional)</Text>
+                </FieldLabel>
+                <TextInput size="form" surface="card"
                   id="mcp-form-cwd"
-                  className={FIELD_INPUT}
                   value={value.cwd}
                   onChange={(e) => setValue({ ...value, cwd: e.target.value })}
                   placeholder="/home/you/project"
@@ -450,13 +446,12 @@ function McpServerForm({
               </div>
             </>
           ) : (
-            <div>
-              <label className={FIELD_LABEL} htmlFor="mcp-form-url">
+            <div className="grid gap-[var(--space-field-label-bottom)]">
+              <FieldLabel as="label" size="form" htmlFor="mcp-form-url">
                 URL
-              </label>
-              <input
+              </FieldLabel>
+              <TextInput size="form" surface="card"
                 id="mcp-form-url"
-                className={FIELD_INPUT}
                 value={value.url}
                 onChange={(e) => setValue({ ...value, url: e.target.value })}
                 placeholder="https://example.com/mcp"
@@ -478,23 +473,24 @@ function McpServerForm({
               keyPlaceholder="Authorization"
             />
           )}
-          <p className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+          <Text as="p" size="small" tone="faint">
             A value starting with <code>$</code> or <code>${'{'}NAME{'}'}</code> is kept as a
             reference to an environment variable, never stored as the secret itself; the detail
             view masks anything else.
-          </p>
+          </Text>
 
-          <div className="flex flex-col gap-[6px]">
-            <span className={FIELD_LABEL}>Destinations</span>
-            <div className="flex flex-wrap gap-[8px]">
+          <div className="grid gap-[var(--space-1-5)]">
+            <div className="grid gap-[var(--space-form-choice-label-gap)]">
+              <FieldLabel size="form">Destinations</FieldLabel>
+              <ChoiceGroup>
               {DESTINATIONS.map((tool) => {
                 const on = value.destinations.includes(tool)
                 return (
-                  <button
+                  <Chip
                     key={tool}
-                    type="button"
-                    aria-pressed={on}
-                    className={chipClass(on)}
+                    variant="choice"
+                    label={label(tool)}
+                    selected={on}
                     onClick={() =>
                       setValue({
                         ...value,
@@ -503,75 +499,73 @@ function McpServerForm({
                           : [...value.destinations, tool]
                       })
                     }
-                  >
-                    {label(tool)}
-                  </button>
+                  />
                 )
               })}
+              </ChoiceGroup>
             </div>
-            <p className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+            <Text as="p" size="small" tone="faint">
               {value.destinations.length === 0
                 ? 'Nothing selected — this server goes to every tool.'
                 : `Saving applies it to exactly these: ${destinationsLabel(value.destinations)}.`}
-            </p>
+            </Text>
           </div>
 
-          <label className="flex items-center gap-[8px] [font-size:var(--tr-text-ui-size)] text-[var(--text-primary)]">
-            <NavSwitch
+          <label className="flex items-center gap-[var(--space-2)]">
+            <CompactSwitch
               on={value.enabled}
               label={value.enabled ? 'Turn this server off' : 'Turn this server on'}
               onChange={(enabled) => setValue({ ...value, enabled })}
             />
-            Enabled
+            <Text size="ui" tone="primary">Enabled</Text>
           </label>
 
           {results.length > 0 && (
-            <div>
-              <span className={FIELD_LABEL}>Applied to</span>
-              <div className={BLOCK}>
+              <div className="grid gap-[var(--space-field-label-bottom)]">
+              <FieldLabel size="form">Applied to</FieldLabel>
+              <ResultList>
                 {results.map((r) => (
-                  <div key={r.tool} className={ROW_TOP}>
-                    <div className="min-w-0 flex-1 flex flex-col gap-[3px]">
-                      <strong className={ROW_TITLE}>{label(r.tool)}</strong>
+                  <ResultRow key={r.tool}>
+                    <div className="min-w-0 flex-1 grid gap-[var(--space-result-copy-gap)]">
+                      <Text as="strong" size="ui" weight="semibold" leading="snug" tone="primary">{label(r.tool)}</Text>
                       {r.error ? (
-                        <div className="[font-size:var(--tr-text-small-size)] text-[var(--danger)]">
+                        <Text size="small" tone="danger">
                           {r.error}
-                        </div>
+                        </Text>
                       ) : r.skipped.length > 0 ? (
                         r.skipped.map((s) => (
-                          <div key={s} className="[font-size:var(--tr-text-small-size)] text-[var(--warn)]">
+                          <Text as="div" key={s} size="small" tone="warn">
                             {s}
-                          </div>
+                          </Text>
                         ))
                       ) : (
-                        <div className="[font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]">
+                        <Text as="div" size="small" tone="secondary">
                           Wrote {r.written}, removed {r.removed}
-                        </div>
+                        </Text>
                       )}
                     </div>
-                  </div>
+                  </ResultRow>
                 ))}
-              </div>
+              </ResultList>
             </div>
           )}
 
-          <div className="flex items-center gap-[8px]">
-            <button type="button" className={SECONDARY_BUTTON} onClick={onCancel}>
+          <div className="flex items-center gap-[var(--space-2)]">
+            <Button variant="compact-secondary" onClick={onCancel}>
               Cancel
-            </button>
-            <button
-              type="button"
-              className={PRIMARY_BUTTON}
+            </Button>
+            <Button
+              variant="compact-primary"
               disabled={!valid}
               onClick={() => onSubmit(serverFromForm(value))}
             >
               Save &amp; apply
-            </button>
+            </Button>
           </div>
-          <NavFootnote>
+          <Footnote>
             Saving writes this server into your list, then applies it to the destinations above —
             each one reports what actually happened, above, once the daemon answers.
-          </NavFootnote>
+          </Footnote>
     </>
   )
 }
@@ -592,338 +586,10 @@ export interface McpManagerProps {
   onOpenSource: () => void
   sourcePath?: string | null
   checkedAt?: number | null
+  slackClient?: HoustonClient | null
 }
 
 export function McpManager(props: McpManagerProps): React.JSX.Element {
-  const { source, tools, results, checks, loaded } = props
-  const [form, setForm] = useState<{ previousName: string | null } | null>(null)
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
-  const [diffState, setDiffState] = useState<{ row: string; tool: AgentKind } | null>(null)
-  const rows: MatrixRow[] = buildRows(source, tools)
-
-  if (!loaded) {
-    return (
-      <NavDetailState
-        testId="mcp-loading"
-        title="Opening servers…"
-        detail="Asking the daemon what each tool has."
-      />
-    )
-  }
-
-  const setEnabledAndApply = (name: string, enabled: boolean): void => {
-    props.onSetEnabled(name, enabled)
-    props.onSync(null)
-  }
-
-  const inList = rows.filter((r) => r.source !== null)
-  const foundOnly = rows.filter((r) => r.source === null)
-
-  const listItems: ListDetailItem[] = inList.map((row) => {
-    const server = row.source!
-    return {
-      id: row.name,
-      title: row.name,
-      sub: `${server.transport} · ${destinationsLabel(server.destinations)}`,
-      right: (
-        <div className="flex items-center gap-[8px]">
-          <StatusIcon state={worstMcpState(row, tools)} />
-          <NavSwitch
-            on={server.enabled}
-            label={server.enabled ? `Turn off ${row.name} and apply` : `Turn on ${row.name} and apply`}
-            onChange={(on) => setEnabledAndApply(row.name, on)}
-            testId="mcp-enabled-switch"
-          />
-        </div>
-      )
-    }
-  })
-
-  const emptyListRow = (
-    <div data-testid="mcp-list-empty" className="flex flex-col gap-[4px] px-[10px] py-[12px]">
-      <strong className="[font-size:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">
-        No servers yet
-      </strong>
-      <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-secondary)] text-pretty">
-        Add one, or import a server one of your tools already has from the list below.
-      </p>
-    </div>
-  )
-
-  const actions = (
-    <>
-      <CheckedStamp at={props.checkedAt ?? null} />
-      <Tooltip label={props.sourcePath ?? 'Open the server list file'}>
-        <button
-          type="button"
-          aria-label="Open file"
-          className={CHROME_BUTTON}
-          onClick={props.onOpenSource}
-        >
-          <Icon glyph={IconFile} role="small" />
-        </button>
-      </Tooltip>
-      <Tooltip label="Re-read every tool's own config">
-        <button type="button" aria-label="Refresh" className={CHROME_BUTTON} onClick={props.onRefresh}>
-          <Icon glyph={IconRefresh} role="small" />
-        </button>
-      </Tooltip>
-      <button type="button" className={SECONDARY_BUTTON} onClick={() => props.onSync(null)}>
-        Sync all
-      </button>
-      <button
-        type="button"
-        className={PRIMARY_BUTTON}
-        onClick={() => setForm({ previousName: null })}
-      >
-        <Icon glyph={IconPlus} role="small" />
-        Add server
-      </button>
-    </>
-  )
-
-  return (
-    <div data-testid="mcp-manager" className="flex flex-col gap-[var(--space-5)]">
-      <SectionHead
-        title="Connections"
-        lede="One MCP server list, written into every CLI's own config."
-        actions={actions}
-      />
-      {rows.length === 0 ? (
-        <NavEmpty
-          testId="mcp-empty"
-          title="No MCP servers anywhere yet"
-          icon={<Icon glyph={IconServer} role="display" />}
-          action={
-            <button
-              type="button"
-              className={`${PRIMARY_BUTTON} w-[160px]`}
-              onClick={() => setForm({ previousName: null })}
-            >
-              Add server
-            </button>
-          }
-        >
-          Nothing in your list, and nothing in any tool&apos;s own config. Add one, or import what
-          a tool already has, from the list below.
-        </NavEmpty>
-      ) : (
-        <ListDetail
-          items={listItems}
-          backLabel="Connections"
-          forceDetailOpen={form !== null}
-          onCloseForced={() => setForm(null)}
-          listHead={
-            <span className="px-[2px] py-[4px] block [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
-              Your list · <span className="tabular-nums">{inList.length}</span>
-            </span>
-          }
-          listEmpty={emptyListRow}
-          renderDetail={(item) => {
-            if (form) {
-              const editingSource = form.previousName
-                ? (rows.find((r) => r.name === form.previousName)?.source ?? null)
-                : null
-              return (
-                <McpServerForm
-                  previousName={form.previousName}
-                  initial={editingSource ? formFromServer(editingSource) : emptyForm()}
-                  existingNames={source.map((s) => s.name)}
-                  results={results}
-                  onCancel={() => setForm(null)}
-                  onSubmit={(server) => {
-                    props.onUpsertServer(form.previousName, server)
-                    props.onSync(null)
-                    setForm(null)
-                  }}
-                />
-              )
-            }
-            if (!item) {
-              return (
-                <div className="flex-1 flex items-center justify-center text-center [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
-                  Pick a server from the list to see its details.
-                </div>
-              )
-            }
-            const row = rows.find((r) => r.name === item.id)
-            if (!row || !row.source) return null
-            const server = row.source
-            const diffTool = diffState?.row === row.name ? diffState.tool : null
-            return (
-              <>
-                <div className="flex items-center justify-between gap-[10px]">
-                  <h2 className="m-0 min-w-0 truncate [font-size:17px] font-semibold text-[var(--text-primary)]">
-                    {row.name}
-                  </h2>
-                  <div className="flex-none flex items-center gap-[6px]">
-                    <CheckBadge name={row.name} check={checkFor(row.name, checks)} onTest={props.onTest} />
-                    <Tooltip label="Edit server">
-                      <button
-                        type="button"
-                        aria-label={`Edit ${row.name}`}
-                        className={CHROME_BUTTON}
-                        onClick={() => setForm({ previousName: row.name })}
-                      >
-                        <Icon glyph={IconPencil} role="small" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip label="Remove server">
-                      <button
-                        type="button"
-                        aria-label={`remove ${row.name}`}
-                        className={CHROME_BUTTON_DANGER}
-                        onClick={() => setConfirmRemove(row.name)}
-                      >
-                        <Icon glyph={IconTrash} role="small" />
-                      </button>
-                    </Tooltip>
-                  </div>
-                </div>
-                <SettingsList>
-                  <Row title="Command">
-                    <span className="font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-primary)] break-all">
-                      {server.command ? [server.command, ...server.args].join(' ') : (server.url ?? '—')}
-                    </span>
-                  </Row>
-                  <Row title="Transport">
-                    <span className="[font-size:var(--tr-text-small-size)] text-[var(--text-primary)]">
-                      {server.transport}
-                    </span>
-                  </Row>
-                  <Row title="Environment">
-                    <span className="font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-primary)] break-all">
-                      {server.env.length > 0
-                        ? server.env.map(([k, v]) => `${k}=${maskSecret(v)}`).join(' ')
-                        : '—'}
-                    </span>
-                  </Row>
-                </SettingsList>
-                <div className="flex flex-col gap-[6px]">
-                  <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
-                    In each tool
-                  </span>
-                  <SettingsList>
-                    {tools.map((t) => {
-                      const cell = cellFor(row, t.tool)
-                      const state = CELL_STATE[cell.kind]
-                      const toolServer = row.byTool[t.tool]
-                      const commandDiffers =
-                        cell.kind === 'drifted' &&
-                        toolServer !== undefined &&
-                        server.command !== null &&
-                        toolServer.command !== server.command
-                      const result = results.find((r) => r.tool === t.tool)
-                      return (
-                        <Row
-                          key={t.tool}
-                          title={
-                            <span className={t.detected ? '' : 'text-[var(--text-secondary)]'}>
-                              {label(t.tool)}
-                            </span>
-                          }
-                          desc={
-                            <>
-                              <span className="font-mono">
-                                {t.path}
-                                {commandDiffers ? ' · its copy has a different command' : ''}
-                              </span>
-                              {t.error && <span className="block text-[var(--danger)]">{t.error}</span>}
-                              {result?.error && (
-                                <span className="block text-[var(--danger)]">{result.error}</span>
-                              )}
-                              {result?.skipped.map((s) => (
-                                <span key={s} className="block text-[var(--warn)]">
-                                  {s}
-                                </span>
-                              ))}
-                            </>
-                          }
-                        >
-                          <div className="flex items-center gap-[8px]">
-                            <StatusIcon
-                              state={state}
-                              label={t.detected ? STATUS_ICON_WORD[state] : 'Not installed'}
-                            />
-                            {cell.kind === 'drifted' && (
-                              <>
-                                <button
-                                  type="button"
-                                  className={SECONDARY_BUTTON}
-                                  aria-pressed={diffTool === t.tool}
-                                  onClick={() =>
-                                    setDiffState(
-                                      diffTool === t.tool ? null : { row: row.name, tool: t.tool }
-                                    )
-                                  }
-                                >
-                                  {diffTool === t.tool ? 'Hide diff' : 'Show diff'}
-                                </button>
-                                <button
-                                  type="button"
-                                  className={SECONDARY_BUTTON}
-                                  onClick={() => props.onSync(t.tool)}
-                                >
-                                  Sync
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </Row>
-                      )
-                    })}
-                  </SettingsList>
-                  {diffTool && row.byTool[diffTool] && (
-                    <div className="grid grid-cols-1 gap-[8px] @[520px]:grid-cols-2">
-                      <DetailCard title="Your list" server={server} />
-                      <DetailCard title={label(diffTool)} server={row.byTool[diffTool]!} />
-                    </div>
-                  )}
-                </div>
-              </>
-            )
-          }}
-        />
-      )}
-      {foundOnly.length > 0 && (
-        <div className="flex flex-col gap-[6px]">
-          <SubHead>Found in tools</SubHead>
-          <SettingsList>
-            {foundOnly.map((row) => {
-              const foundIn = tools.filter((t) => row.byTool[t.tool]).map((t) => label(t.tool))
-              const importTool = tools.find((t) => row.byTool[t.tool])?.tool
-              return (
-                <Row key={row.name} title={row.name} desc={`${foundIn.join(', ')} · not in your list`}>
-                  <Tooltip label={`Adopts every one of ${foundIn[0]}'s own servers, not only this one.`}>
-                    <button
-                      type="button"
-                      className={SECONDARY_BUTTON}
-                      onClick={() => importTool && props.onImport(importTool)}
-                    >
-                      Import
-                    </button>
-                  </Tooltip>
-                </Row>
-              )
-            })}
-          </SettingsList>
-        </div>
-      )}
-      {confirmRemove && (
-        <ConfirmModal
-          title="REMOVE SERVER"
-          message={`Remove ${confirmRemove} from your list and every tool it was applied to?`}
-          confirmLabel="Remove"
-          onCancel={() => setConfirmRemove(null)}
-          onConfirm={() => {
-            props.onRemoveServer(confirmRemove)
-            props.onSync(null)
-            setConfirmRemove(null)
-          }}
-        />
-      )}
-    </div>
-  )
+  const rows = buildRows(props.source, props.tools)
+  return <McpConnectionsView props={props} rows={rows} />
 }
-
-export { SkillMatrix } from './SkillDistribution'

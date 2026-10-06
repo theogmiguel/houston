@@ -6,11 +6,15 @@ import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import { TASKS_REWORK_ROUNDS_MAX } from '../../houston/generated/DEFAULTS'
 import { useTaskReviewSettings, useTaskStartSettings, useTasksAccess } from '../../houston/useTasks'
 import { IconAgent } from '../icons'
-import { Segmented } from '../Segmented'
-import { Select, type SelectOption } from '../Select'
-import { SettingsList } from '../settingsPrimitives'
+import { Segmented } from '../ui/SegmentedControl'
+import { Select, type SelectOption } from '../ui/Select'
+import { SettingsList } from '../ui/settingsPrimitives'
+import { SettingsScope } from '../ui/SettingsScope'
 import { parseReworkRounds, TASK_AGENTS, taskAgentLabel } from '../tasks/format'
-import { SectionHead, Row, SubHead } from './shared'
+import { Row, SubHead } from './shared'
+import { Text } from '../ui/Text'
+import { TextInput } from '../ui/TextInput'
+import { TaskAccessSummary, TaskInputError, TaskKeyPrefix, TaskReworkRoundsLayout, TaskReviewRefusal, TaskSettingDescription } from '../ui/TaskSettingDetails'
 
 const ACCESS_LABEL: Readonly<Record<TasksAccess, string>> = {
   off: 'Off',
@@ -41,10 +45,7 @@ export function TasksSection({
 
   return (
     <>
-      <SectionHead
-        title="Tasks"
-        lede="A global local backlog. Tasks never leave this machine; their text reaches a hosted agent CLI only when an agent you allowed reads it or you start a task."
-      />
+      <SettingsScope workspace={workspaceName} />
       <SubHead>Agent access · {workspaceName ?? 'no workspace selected'}</SubHead>
       <SettingsList>
         <AgentAccessRow
@@ -56,19 +57,17 @@ export function TasksSection({
         <Row
           title="Task key prefix"
           desc={
-            <span className="block">
+            <TaskSettingDescription>
               The fixed HOU prefix and globally unique number identify a task across workspaces.
-            </span>
+            </TaskSettingDescription>
           }
         >
-          <span className="inline-flex items-center h-[var(--h-ctl)] px-[var(--space-2)] border border-[var(--border)] rounded-[var(--tr-radius-button)] bg-[var(--content-bg)] font-mono text-[length:var(--tr-text-ui-size)] text-[var(--text-primary)]">
-            HOU
-          </span>
+          <TaskKeyPrefix />
         </Row>
       </SettingsList>
       <SubHead>Starting a task</SubHead>
       <SettingsList>
-        <Row title="Default agent" desc="Used by Start. Pick another one from the Start menu.">
+        <Row title="Default agent" desc={<><span>Used by Start. Pick another one from the Start menu.</span><SettingsScope workspace={workspaceName} row /></>}>
           <Select
             aria-label="Default agent"
             data-testid="settings-tasks-agent"
@@ -76,13 +75,13 @@ export function TasksSection({
             options={AGENT_OPTIONS}
             disabled={workspace === null || settings === null}
             prefix={<IconAgent agent={settings?.agent ?? 'claude'} brand className="w-3.5 h-3.5 flex-none" />}
-            className="min-w-[120px]"
+          width="task-setting"
             onChange={(value) => setStartSettings(value as AgentKind, settings?.delivery ?? 'send')}
           />
         </Row>
         <Row
           title="Prompt delivery"
-          desc="Send the brief when you press Start, or only place it in the input box."
+          desc={<><span>Send the brief when you press Start, or only place it in the input box.</span><SettingsScope workspace={workspaceName} row /></>}
         >
           <Segmented
             aria-label="Prompt delivery"
@@ -102,7 +101,7 @@ export function TasksSection({
       <SettingsList>
         <Row
           title="Independent reviewer"
-          desc="Runs read-only in the same worktree when a task is handed back. Reports evidence; it does not mark a task done."
+          desc={<><span>Runs read-only in the same worktree when a task is handed back. Reports evidence; it does not mark a task done.</span><SettingsScope workspace={workspaceName} row /></>}
         >
           <Select
             aria-label="Independent reviewer"
@@ -115,7 +114,7 @@ export function TasksSection({
                 <IconAgent agent={review.reviewer} brand className="w-3.5 h-3.5 flex-none" />
               ) : undefined
             }
-            className="min-w-[120px]"
+            width="task-setting"
             onChange={(value) =>
               setReviewSettings(value === 'none' ? null : (value as AgentKind), review?.reworkRounds ?? 0)
             }
@@ -123,7 +122,7 @@ export function TasksSection({
         </Row>
         <Row
           title="Automatic rework rounds"
-          desc="How many times a failed review restarts the implementer on its own. 0 asks you first."
+          desc={<><span>How many times a failed review restarts the implementer on its own. 0 asks you first.</span><SettingsScope workspace={workspaceName} row /></>}
         >
           <ReworkRoundsInput
             value={review?.reworkRounds ?? null}
@@ -133,12 +132,9 @@ export function TasksSection({
         </Row>
       </SettingsList>
       {reviewRefusal !== null && (
-        <div
-          data-testid="settings-tasks-review-refusal"
-          className="pt-[var(--space-2)] [font-size:var(--tr-text-small-size)] text-[var(--danger)]"
-        >
+        <TaskReviewRefusal testId="settings-tasks-review-refusal">
           {reviewRefusal.message}
-        </div>
+        </TaskReviewRefusal>
       )}
     </>
   )
@@ -160,20 +156,15 @@ function AgentAccessRow({
       <Row
         title="Agent access"
         desc={
-          <span className="block">
+          <TaskSettingDescription>
             Agents can read the global backlog and write tasks assigned to this workspace or no
             workspace. Tasks of another workspace are read-only to agents. Children of an
             orchestrator never see the backlog; they get their brief.
-            <span
-              data-testid="settings-tasks-current"
-              className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]"
-            >
-              Currently{' '}
-              <b className="font-semibold text-[var(--text-primary)]">
-                {access === null ? 'loading…' : ACCESS_LABEL[access]}
-              </b>
-            </span>
-          </span>
+            <TaskAccessSummary testId="settings-tasks-current">
+              {access === null ? 'loading…' : ACCESS_LABEL[access]}
+            </TaskAccessSummary>
+            <SettingsScope workspace={workspace} row />
+          </TaskSettingDescription>
         }
       >
         <Segmented
@@ -222,9 +213,10 @@ function ReworkRoundsInput({
     if (parsed.value !== current) onCommit(parsed.value)
   }
   return (
-    <div className="flex flex-col items-end gap-[var(--space-1)]">
-      <div className="flex items-center gap-2">
-        <input
+    <TaskReworkRoundsLayout>
+      <div className="flex items-center gap-[var(--space-2)]">
+        <TextInput
+          variant="task-number"
           type="number"
           aria-label="Automatic rework rounds"
           data-testid="settings-tasks-rework-rounds"
@@ -241,21 +233,15 @@ function ReworkRoundsInput({
           onKeyDown={(event) => {
             if (event.key === 'Enter') event.currentTarget.blur()
           }}
-          className="w-[72px] bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-input)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2 text-right"
         />
-        <span className="[font-size:var(--tr-text-label-size)] text-[var(--text-faint)] whitespace-nowrap">
+        <Text size="caption" tone="faint">
           0–{TASKS_REWORK_ROUNDS_MAX}
-        </span>
+        </Text>
       </div>
       {error !== null && (
-        <div
-          data-testid="settings-tasks-rework-rejected"
-          className="[font-size:var(--tr-text-small-size)] text-[var(--danger)] max-w-[240px] text-right"
-        >
-          {error}
-        </div>
+        <div data-testid="settings-tasks-rework-rejected"><TaskInputError>{error}</TaskInputError></div>
       )}
-    </div>
+    </TaskReworkRoundsLayout>
   )
 }
 

@@ -4,8 +4,8 @@ import { REMOTE_NOTIFY_DELAY_MAX_SECS } from '../../houston/generated/DEFAULTS'
 import type { RemoteDevice } from '../../houston/generated/RemoteDevice'
 import type { RemoteNotifyDetail } from '../../houston/generated/RemoteNotifyDetail'
 import { plainHttpOffLoopback, useRemote } from '../../houston/useRemote'
-import { Select, type SelectOption } from '../Select'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { Select, type SelectOption } from '../ui/Select'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { Button, Notice, QrImage, TextInput } from '../ui'
 import { NumberSetting, Row, SectionHead, SubHead } from './shared'
 
@@ -30,7 +30,7 @@ function TextSetting({
   label,
   placeholder,
   type = 'text',
-  width = 'lg',
+  width = 'wide',
   mono = false,
   testId,
   onCommit
@@ -39,7 +39,7 @@ function TextSetting({
   label: string
   placeholder?: string
   type?: 'text' | 'password' | 'url'
-  width?: 'md' | 'lg'
+  width?: 'md' | 'wide'
   mono?: boolean
   testId: string
   onCommit: (value: string) => void
@@ -55,7 +55,7 @@ function TextSetting({
       data-testid={testId}
       type={type}
       width={width}
-      mono={mono}
+      font={mono ? 'mono' : 'ui'}
       value={draft}
       placeholder={placeholder}
       onChange={(event) => setDraft(event.target.value)}
@@ -198,8 +198,8 @@ export function RemoteSection({ client }: { client: HoustonClient | null }): Rea
                 <TextInput
                   aria-label="Pairing link"
                   data-testid="settings-remote-pair-url"
-                  width="lg"
-                  mono
+                  width="wide"
+                  font="mono"
                   readOnly
                   value={pairing.url}
                   onFocus={(event) => event.currentTarget.select()}

@@ -2,27 +2,43 @@ import { useState } from 'react'
 import type { TaskPatch } from '../../houston/generated/TaskPatch'
 import type { TaskPriority } from '../../houston/generated/TaskPriority'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
-import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
-import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import { IconClose, IconPlus } from '../icons'
-import { Select, type SelectOption } from '../Select'
+import { Select, type SelectOption } from '../ui/Select'
+import {
+  TaskButton,
+  TaskForm,
+  TaskFormActions,
+  TaskFormField,
+  TaskFormRow,
+  TaskFormSection,
+  TaskIconButton,
+  TaskFieldInput,
+  TaskPanel,
+  TaskTextarea,
+  TaskToolbar,
+  TaskToolbarTitle
+} from '../ui'
 import { PRIORITY_LABEL, STATUS_LABEL, STATUS_ORDER } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 
 export function TaskComposer({
   defaultStatus = 'backlog',
+  initialTitle = '',
+  initialDescription = '',
   parentOptions,
   onCancel,
   onCreate
 }: {
   defaultStatus?: TaskStatus
+  initialTitle?: string
+  initialDescription?: string
   parentOptions: SelectOption[]
   onCancel: () => void
   onCreate: (patch: TaskPatch) => void
 }): React.JSX.Element {
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(initialTitle)
+  const [description, setDescription] = useState(initialDescription)
   const [status, setStatus] = useState<TaskStatus>(defaultStatus)
   const [priority, setPriority] = useState<TaskPriority>('none')
   const [parent, setParent] = useState('')
@@ -42,18 +58,14 @@ export function TaskComposer({
   }
 
   return (
-    <div className="tasks-root" data-testid="task-composer">
-      <div className="tk-head">
-        <span className="crumb2">
-          <b>New task</b>
-        </span>
-      </div>
-      <div className="tk-form">
-        <label className="flex flex-col gap-1">
-          <span className="lab">Title</span>
-          <input
+    <TaskPanel data-testid="task-composer">
+      <TaskToolbar>
+        <TaskToolbarTitle>New task</TaskToolbarTitle>
+      </TaskToolbar>
+      <TaskForm>
+        <TaskFormField label="Title">
+          <TaskFieldInput
             autoFocus
-            className="tk-input"
             aria-label="Task title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
@@ -61,24 +73,22 @@ export function TaskComposer({
               if (event.key === 'Enter') submit()
             }}
           />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="lab">Description</span>
-          <textarea
-            className="tk-textarea"
+        </TaskFormField>
+        <TaskFormField label="Description">
+          <TaskTextarea
             aria-label="Task description"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
-        </label>
-        <div className="tk-form-row">
+        </TaskFormField>
+        <TaskFormRow>
           <Select
             aria-label="Status"
             data-testid="task-composer-status"
             value={status}
             options={STATUS_OPTIONS}
             prefix={<TaskStatusGlyph status={status} />}
-            chrome="prop-select"
+            variant="property-field"
             onChange={(value) => setStatus(value as TaskStatus)}
           />
           <Select
@@ -87,7 +97,7 @@ export function TaskComposer({
             value={priority}
             options={PRIORITY_OPTIONS}
             prefix={<TaskPriorityGlyph priority={priority} />}
-            chrome="prop-select"
+            variant="property-field"
             onChange={(value) => setPriority(value as TaskPriority)}
           />
           <Select
@@ -95,59 +105,54 @@ export function TaskComposer({
             data-testid="task-composer-parent"
             value={parent}
             options={[{ value: '', label: 'No parent' }, ...parentOptions]}
-            prefix={<span className="k">Parent</span>}
-            chrome="prop-select"
+            prefix={<span>Parent</span>}
+            variant="property-field"
             onChange={setParent}
           />
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="lab">Acceptance</span>
+        </TaskFormRow>
+        <TaskFormSection label="Acceptance">
           {acceptance.map((item, index) => (
-            <div key={index} className="tk-accept-row">
-              <input
-                className="tk-input"
+            <div key={index} className="flex items-center gap-[var(--space-2)]">
+              <TaskFieldInput
+                className="flex-1"
                 aria-label={`Acceptance item ${index + 1}`}
                 value={item}
                 onChange={(event) =>
                   setAcceptance((current) => current.map((value, i) => (i === index ? event.target.value : value)))
                 }
               />
-              <button
-                type="button"
+              <TaskIconButton
+                glyph={IconClose}
                 aria-label={`Remove acceptance item ${index + 1}`}
-                className={`tk-ibtn ${HIT_TARGET_28}`}
                 onClick={() => setAcceptance((current) => current.filter((_, i) => i !== index))}
-              >
-                <Icon glyph={IconClose} role="small" />
-              </button>
+              />
             </div>
           ))}
-          <button
-            type="button"
-            className={`btn ${BTN_GHOST} ${HIT_TARGET_28}`}
+          <TaskButton
+            tone="ghost"
             data-testid="task-composer-add-item"
             onClick={() => setAcceptance((current) => [...current, ''])}
           >
             <Icon glyph={IconPlus} role="small" />
             Add item
-          </button>
-        </div>
-        <div className="tk-form-actions">
-          <button type="button" className={`btn ${BTN_GHOST} ${HIT_TARGET_28}`} onClick={onCancel}>
+          </TaskButton>
+        </TaskFormSection>
+        <TaskFormActions>
+          <TaskButton tone="ghost" density="form" onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            type="button"
-            className={`btn ${BTN_PRIMARY} ${HIT_TARGET_28}`}
+          </TaskButton>
+          <TaskButton
+            tone="primary"
+            density="form"
             data-testid="task-composer-create"
             disabled={title.trim() === ''}
             onClick={submit}
           >
             Create task
-          </button>
-        </div>
-      </div>
-    </div>
+          </TaskButton>
+        </TaskFormActions>
+      </TaskForm>
+    </TaskPanel>
   )
 }
 

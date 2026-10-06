@@ -20,7 +20,6 @@ function renderSection(): void {
       chromeTheme="graphite"
       onChromeTheme={() => {}}
       theme={AUTO_TERMINAL_PALETTE}
-      onTheme={() => {}}
       uiZoom={1}
       onUiZoom={() => {}}
     />

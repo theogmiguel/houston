@@ -22,20 +22,22 @@ describe('NoticeStack placement', () => {
   it('anchors the workspace stack top-centre at the reference geometry', () => {
     render(<NoticeStack anchor="workspace-top" label="Workspace notices" store={store([rec({ code: 'a', title: 'hello' })])} />)
     const section = screen.getByLabelText('Workspace notices')
-    expect(section.className).toContain('top-[8px]')
+    expect(section.className).toContain('top-[var(--space-2)]')
     expect(section.className).toContain('left-1/2')
-    expect(section.className).toContain('w-[min(560px,100%-24px)]')
+    expect(section.className).toContain('w-[min(var(--w-notice-top-stack),calc(100%-var(--space-5)))]')
     expect(section.className).toContain('pointer-events-none')
     expect(screen.getByText('hello').closest('[data-notice]')?.className).toContain('pointer-events-auto')
   })
 
-  it('anchors the pane stack in the corner it lives in, growing upward', () => {
+  it('anchors pane notices below the pane header and grows downward', () => {
     render(<NoticeStack anchor="pane-corner" label="Pane notices" store={store([rec({ code: 'a', title: 'hi' })])} />)
     const section = screen.getByLabelText('Pane notices')
-    expect(section.className).toContain('bottom-[12px]')
-    expect(section.className).toContain('right-[12px]')
-    expect(section.className).toContain('flex-col-reverse')
+    expect(section.className).toContain('top-[var(--space-3)]')
+    expect(section.className).toContain('right-[var(--space-3)]')
+    expect(section.className).toContain('max-w-[min(var(--w-notice-pane-stack),calc(100%-var(--space-5)))]')
+    expect(section.className).toContain('flex-col items-end')
     expect(section.className).toContain('items-end')
+    expect(section.className).not.toContain('bottom-[12px]')
   })
 
   it('renders the newest row last in DOM order', () => {
@@ -59,6 +61,21 @@ describe('NoticeStack placement', () => {
 })
 
 describe('NoticeStack rows', () => {
+  it('renders orchestration Open pane as a filled secondary action', () => {
+    render(
+      <NoticeStack
+        anchor="pane-corner"
+        label="Pane notices"
+        store={store([
+          rec({ code: 'agent', title: 'agent needs your input', presentation: 'orchestration', kind: 'warning' })
+        ])}
+      />
+    )
+    const open = screen.getByRole('button', { name: 'Open pane' })
+    expect(open.className).toContain('bg-[var(--hover-fill)]')
+    expect(open.className).toContain('border-[var(--border)]')
+  })
+
   it('gives an error row role=alert and every other kind role=status', () => {
     render(
       <NoticeStack
@@ -114,14 +131,14 @@ describe('NoticeStack rows', () => {
   it('drops the top stack in from its own edge, behind motion-safe', () => {
     render(<NoticeStack anchor="workspace-top" label="L" store={store([rec({ code: 'a', title: 'a' })])} />)
     const row = screen.getByRole('status')
-    expect(row.className).toContain('motion-safe:[animation:notice-in-top_200ms')
+    expect(row.className).toContain('motion-safe:[animation:var(--motion-notice-entry-top)]')
     expect(row.className).not.toMatch(/(^|\s)\[animation:/)
   })
 
   it('slides a corner row in from its own edge, behind motion-safe', () => {
     render(<NoticeStack anchor="pane-corner" label="L" store={store([rec({ code: 'a', title: 'a' })])} />)
     const row = screen.getByRole('status')
-    expect(row.className).toContain('motion-safe:[animation:notice-in-corner_200ms')
+    expect(row.className).toContain('motion-safe:[animation:var(--motion-notice-entry-corner)]')
     expect(row.className).not.toMatch(/(^|\s)\[animation:/)
   })
 })

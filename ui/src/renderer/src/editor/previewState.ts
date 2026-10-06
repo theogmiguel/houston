@@ -44,3 +44,8 @@ export function formatMB(bytes: number): string {
 export function formatMBWhole(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`
 }
+
+export function formatLargeFileNotice(sizeBytes: number, maxBytes: number, operation: 'edit' | 'preview'): string {
+  const request = operation === 'edit' ? 'open for editing' : 'preview'
+  return `File size ${formatMB(sizeBytes)} exceeds the ${formatMBWhole(maxBytes)} ${operation} limit. Requested: ${request}.`
+}

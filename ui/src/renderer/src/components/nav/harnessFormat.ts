@@ -81,6 +81,20 @@ export function formatDay(ms: number): string {
   })
 }
 
+export function formatHarnessDate(ms: number, includeTime = false, now = Date.now()): string {
+  const date = new Date(ms)
+  if (includeTime) {
+    return `${date.toLocaleDateString('en-US', { weekday: 'short' })} ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`
+  }
+  const today = new Date(now)
+  const dateDay = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+  const todayDay = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  const daysAgo = (todayDay - dateDay) / 86_400_000
+  return daysAgo >= 0 && daysAgo < 6
+    ? date.toLocaleDateString('en-US', { weekday: 'short' })
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export function formatWindow(window: [string, string] | null | undefined): string {
   return window ? `${window[0]} to ${window[1]}` : 'Window not reported'
 }

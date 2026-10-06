@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SettingsView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
 import type { KeymapOverrides } from '../houston/client'
+import type { AgentHookState } from '../houston/generated/AgentHookState'
 
 ;(globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = '0.0.0-test'
 
@@ -93,7 +94,7 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
   }
 }
 
-describe('SettingsView section id reconciliation (step 09, onto settingsSections.ts)', () => {
+describe('SettingsView destinations match the rebuilt Settings frame', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -108,17 +109,30 @@ describe('SettingsView section id reconciliation (step 09, onto settingsSections
     container.remove()
   })
 
-  it('renders Agent profiles content under the new `accounts` id', () => {
+  it('resolves the accounts destination to Agents and shows profiles in the selected CLI detail', () => {
     act(() => setSettingsNavForTests({ section: 'accounts' }))
-    act(() => root.render(<SettingsView {...baseProps()} />))
+    const agentHooks: AgentHookState[] = ['claude', 'codex'].map((provider) => ({
+      provider: provider as AgentHookState['provider'],
+      path: `~/.${provider}/settings.json`,
+      scope: 'workspace' as const,
+      enabled: false,
+      installed: false,
+      error: null,
+      present: true,
+      version: '1.0.0',
+      trust: null
+    }))
+    act(() => root.render(<SettingsView {...baseProps()} agentHooks={agentHooks} />))
+    const claude = container.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+    act(() => claude?.click())
     expect(container.textContent).toContain('Accounts')
     expect(container.textContent).toContain('CLAUDE_CONFIG_DIR')
   })
 
-  it('renders History content under the renamed `privacy` id, with the new label', () => {
+  it('renders the Privacy & data destination content', () => {
     act(() => setSettingsNavForTests({ section: 'privacy' }))
     act(() => root.render(<SettingsView {...baseProps()} />))
-    expect(container.textContent).toContain('Privacy & data')
+    expect(container.textContent).toContain('What Houston keeps on this machine')
     expect(container.textContent).toContain('Command history')
   })
 })

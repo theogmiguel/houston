@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
 import { EditorView as CmView } from '@codemirror/view'
-import { ensureBuffer, getBuffer, dirtyBufferPaths, dropWorkspaceBuffers } from './buffers'
+import { ensureBuffer, getBuffer, dirtyBufferPaths, dropWorkspaceBuffers, setBufferWrap } from './buffers'
 
 describe('dirtyBufferPaths', () => {
   beforeEach(() => {
@@ -48,5 +48,15 @@ describe('dirtyBufferPaths', () => {
     expect(dirtyBufferPaths('/tmp/proj')).toEqual(['x.ts'])
     expect(dirtyBufferPaths('/tmp/pro')).toEqual([])
     dropWorkspaceBuffers('/tmp/proj')
+  })
+
+  it('persists the word-wrap choice for the user across file buffers', async () => {
+    localStorage.clear()
+    await ensureBuffer('/tmp/ws-a', '/tmp/ws-a/readme.md', () => {})
+    setBufferWrap('/tmp/ws-a', '/tmp/ws-a/readme.md', false)
+    dropWorkspaceBuffers('/tmp/ws-a')
+    await ensureBuffer('/tmp/ws-b', '/tmp/ws-b/source.ts', () => {})
+    expect(getBuffer('/tmp/ws-b', '/tmp/ws-b/source.ts')?.wrap).toBe(false)
+    dropWorkspaceBuffers('/tmp/ws-b')
   })
 })

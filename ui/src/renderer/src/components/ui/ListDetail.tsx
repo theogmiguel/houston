@@ -75,6 +75,16 @@ export function ListDetail<T extends ListDetailItem>({
     }
   }
 
+  if (items.length === 0 && listEmpty && !listHead) {
+    return (
+      <div ref={containerRef} data-testid="list-detail-container" className={`@container w-full ${className}`}>
+        <div data-testid="list-detail-empty" className="rounded-[var(--tr-radius-button)] border border-[var(--divider)] bg-[var(--card-bg)] px-[var(--space-3)] py-[var(--space-5)]">
+          {listEmpty}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div ref={containerRef} data-testid="list-detail-container" className={`@container w-full ${className}`}>
       <div data-testid="list-detail" className="grid min-h-[var(--h-row)] grid-cols-1 overflow-hidden rounded-[var(--tr-radius-button)] border border-[var(--divider)] bg-[var(--card-bg)] [@container_(min-width:720px)]:grid-cols-[280px_minmax(0,1fr)]">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Row } from '../settingsPrimitives'
-import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from '../buttonChrome'
+import { Row } from '../ui/settingsPrimitives'
+import { Button, LevelThresholdControl, Text, Stack } from '../ui'
 import { useVoiceLevel } from '../../voice/store'
 import { DEFAULT_RMS_FLOOR } from '../../houston/generated/DEFAULTS'
 import type { VoiceModelState } from '../../houston/generated/VoiceModelState'
@@ -55,16 +55,17 @@ function VoiceModelRow({
   if (status.kind === 'downloading') {
     desc = `Downloading — ${Math.round(status.progress * 100)}% of ${formatBytes(model.size_bytes)}. The file is verified against its SHA-256 before it is installed.`
     action = (
-      <button type="button" className={`btn ${BTN_GHOST}`} disabled>
+      <Button type="button" variant="legacy-ghost" disabled>
         Downloading…
-      </button>
+      </Button>
     )
   } else if (status.kind === 'downloaded') {
     desc = `Installed — ${formatBytes(status.size_bytes)} on disk.${selected ? ' This is the model dictation uses.' : ''}`
     action = (
-      <button
+      <Button
         type="button"
-        className={`btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER} ${confirmDelete ? BTN_GHOST_DANGER_ARM : ''}`}
+        variant="legacy-danger"
+        armed={confirmDelete}
         data-testid="settings-voice-model-delete"
         onClick={() => {
           if (confirmDelete) {
@@ -77,46 +78,46 @@ function VoiceModelRow({
         onBlur={() => setConfirmDelete(false)}
       >
         {confirmDelete ? 'Click again to delete' : `Delete (frees ${formatBytes(status.size_bytes)})`}
-      </button>
+      </Button>
     )
   } else if (status.kind === 'failed') {
     danger = true
     desc = `${status.reason}${coolingCopy}`
     action = (
-      <button
+      <Button
         type="button"
-        className={`btn ${BTN_GHOST}`}
+        variant="legacy-ghost"
         disabled={cooldown !== null}
         data-testid="settings-voice-model-download"
         onClick={onDownload}
       >
         Download again
-      </button>
+      </Button>
     )
   } else {
     desc = `Not downloaded — ${formatBytes(model.size_bytes)} to fetch. Dictation refuses to start without it and says so.${coolingCopy}`
     action = (
-      <button
+      <Button
         type="button"
-        className={`btn ${BTN_GHOST}`}
+        variant="legacy-ghost"
         disabled={cooldown !== null}
         data-testid="settings-voice-model-download"
         onClick={onDownload}
       >
         Download
-      </button>
+      </Button>
     )
   }
   return (
     <Row title={model.display_name} desc={danger ? undefined : desc} indent>
-      <div className="flex flex-col items-end gap-1">
+      <Stack align="end" gap={1}>
         {action}
         {danger && (
-          <div className="max-w-[280px] text-right [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.4] text-[var(--danger)]">
+          <Text weight="medium" size="small" as="div" tone="danger" leading="tight" style={{ maxWidth: 'var(--tr-voice-error-copy-width)', textAlign: 'right' }}>
             {desc}
-          </div>
+          </Text>
         )}
-      </div>
+      </Stack>
     </Row>
   )
 }
@@ -177,57 +178,16 @@ export function VoiceLevelMeter({
             : 'Turn dictation on to see the live level. Audio quieter than the marker is treated as room noise and never transcribed.'
         }
       >
-        <div className="w-[200px] flex flex-col gap-1.5">
-          <div
-            className="relative h-2 rounded-full overflow-hidden bg-[color-mix(in_srgb,var(--text-muted)_22%,transparent)]"
-            data-testid="settings-voice-meter"
-            aria-hidden
-          >
-            <div
-              className="h-full w-full origin-left [transition:transform_60ms_linear]"
-              style={{
-                transform: `scaleX(${Math.min(1, (voiceLevel ?? 0) / 0.5)})`,
-                background:
-                  (voiceLevel ?? 0) >= voiceSettings.rms_floor
-                    ? 'var(--success, #4ade80)'
-                    : 'var(--text-muted)'
-              }}
-            />
-            <div
-              className="absolute top-[-2px] bottom-[-2px] w-[2px] bg-[var(--text-primary)]"
-              style={{
-                left: `${Math.min(100, (voiceSettings.rms_floor / 0.5) * 100)}%`
-              }}
-            />
-          </div>
-          <input
-            type="range"
-            className="w-full"
-            data-testid="settings-voice-rms-floor"
-            min={0}
-            max={0.25}
-            step={0.001}
-            value={voiceSettings.rms_floor}
-            onChange={(e) => onRmsFloorSet(Number(e.target.value))}
-          />
-          <div className="flex items-center justify-between [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-[var(--text-faint)] tabular-nums">
-            <span>
-              threshold {voiceSettings.rms_floor.toFixed(3)}
-              {voiceSettings.rms_floor === DEFAULT_RMS_FLOOR ? ' (default)' : ''}
-            </span>
-            {voiceSettings.rms_floor === DEFAULT_RMS_FLOOR ? (
-              <span>{voiceLevel === null ? 'no signal' : voiceLevel.toFixed(3)}</span>
-            ) : (
-              <button
-                type="button"
-                className={`btn ${BTN_GHOST} px-1.5 py-0 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]`}
-                onClick={() => onRmsFloorSet(DEFAULT_RMS_FLOOR)}
-              >
-                Reset
-              </button>
-            )}
-          </div>
-        </div>
+        <LevelThresholdControl
+          value={voiceSettings.rms_floor}
+          level={voiceLevel}
+          defaultValue={DEFAULT_RMS_FLOOR}
+          maxValue={0.25}
+          maxLevel={0.5}
+          meterTestId="settings-voice-meter"
+          testId="settings-voice-rms-floor"
+          onChange={onRmsFloorSet}
+        />
       </Row>
     </>
   )

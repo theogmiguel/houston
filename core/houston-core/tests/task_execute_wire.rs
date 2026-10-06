@@ -116,6 +116,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("fixture pane spawns")
             .id

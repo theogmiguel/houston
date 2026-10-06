@@ -1,3 +1,11 @@
+import { Button } from '../ui/Button'
+import { PullRequestRole, PullRequestNumberField } from '../ui/PullRequestRoles'
+import { TextArea } from '../ui/TextArea'
+import { MetadataRow } from '../ui/MetadataRow'
+import { Card } from '../ui/Card'
+import { SectionHead } from '../ui/SectionHead'
+import { PullRequestState, PullRequestDescription, PullRequestReviewBody, CheckStateDot, CheckSummary } from '../ui/PullRequestState'
+import { materialAttrs } from '../ui/material'
 import { useEffect, useRef, useState } from 'react'
 import type {
   GhState,
@@ -8,19 +16,15 @@ import type {
   PrMergeMethod,
   PrReviewDraft,
   PrReviewVerdict,
-  PullRequestLink,
-  PullRequestState
+  PullRequestLink
 } from '../../houston/client'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { Segmented } from '../Segmented'
-import { META_ROW_CLS, SCM_CARD_ATTRS, SCM_CARD_CLS, SECTION_HEAD_CLS } from './scmChrome'
+import { Segmented } from '../ui/SegmentedControl'
 import { ScmNotice } from './ScmNotice'
-import { Disclosure } from '../Disclosure'
-import { Icon } from '../Icon'
-import { IconLoaderCircle, IconPencil, IconCheck, IconEllipsis } from '../icons'
-import { Tooltip } from '../Tooltip'
+import { Disclosure } from '../ui/Disclosure'
+import { Icon } from '../ui/Icon'
+import { IconLoaderCircle, IconPencil, IconExternal, IconGitPullRequest } from '../icons'
+import { Tooltip } from '../ui/Tooltip'
 import { prDecisionLabel } from './changes'
-import { SPIN_CLASS } from './DiffBody'
 import { PrBrowse } from './PrBrowse'
 import { PrComments, PrThreads } from './PrDiscussion'
 import { PrFiles } from './PrFiles'
@@ -30,6 +34,9 @@ import { PrReviewBar } from './PrReviewBar'
 import { PrSummary } from './PrSummary'
 import { PrStackSection } from './PrStack'
 import { PrFooterBar } from './PrFooterBar'
+import { PrWatchRow, PrWatchStack } from '../ui/PrWatch'
+import { PrInspectorSections } from '../ui/PrInspectorSections'
+import { usePrWatch } from './usePrWatch'
 import {
   usePrDetail,
   usePrList,
@@ -40,7 +47,9 @@ import {
 export interface PullRequestTabProps {
   client: HoustonClient | null
   dir: string | null
+  session?: number | null
   onOpenUrlInPane?: (url: string) => void
+  onSendToOrchestrator?: (text: string) => void
   onShowChanges?: () => void
   active?: boolean
   onPrPresenceChange?: (exists: boolean, tone?: PrPresenceTone) => void
@@ -53,41 +62,6 @@ export type PrPresenceTone = 'ok' | 'warn' | 'stop'
 
 /** A PR number is a positive u32; the wire refuses anything wider. */
 export const PR_NUMBER_MAX = 4_294_967_295
-
-const EMPTY = 'flex-1 min-h-0 flex flex-col items-center justify-center gap-2 p-6 text-center'
-const TITLE =
-  'text-[length:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]'
-const HINT = 'text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] max-w-[46ch]'
-const ERROR_LINE =
-  'text-[length:var(--tr-text-small-size)] text-[var(--danger)] break-words [overflow-wrap:anywhere]'
-const SECTION_HEAD = 'flex flex-col gap-1.5 p-3'
-const ACTION = 'inline-flex items-center gap-1.5'
-const SMALL = 'text-[length:var(--tr-text-small-size)]'
-const ROW = 'flex flex-col gap-0.5 px-3 py-1.5 border-t border-t-[var(--divider)] first:border-t-0'
-const META_DANGER_GROUND = 'bg-[color-mix(in_srgb,var(--danger)_7%,transparent)]'
-const META_DANGER_INK = 'text-[color-mix(in_srgb,var(--danger)_88%,var(--text-primary))]'
-const INPUT =
-  'h-[var(--h-ctl)] px-2 rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] ' +
-  `${SMALL} text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:border-[var(--border-focus)]`
-const TEXTAREA =
-  'w-full resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-2 py-1.5 ' +
-  `${SMALL} text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:outline-none focus-visible:border-[var(--border-focus)]`
-
-const STATE_PILL: Record<PullRequestState, string> = {
-  open: 'bg-[color-mix(in_srgb,var(--ok)_16%,transparent)] text-[var(--ok)]',
-  merged: 'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)]',
-  closed: 'bg-[color-mix(in_srgb,var(--text-muted)_18%,transparent)] text-[var(--text-muted)]'
-}
-const DRAFT_PILL = 'bg-[color-mix(in_srgb,var(--warn)_18%,transparent)] text-[var(--warn)]'
-
-const CHECK_DOT: Record<PrCheckState, string> = {
-  passing: 'bg-[var(--ok)]',
-  running: 'bg-[var(--info)]',
-  queued: 'bg-[var(--warn)]',
-  failing: 'bg-[var(--danger)]',
-  skipped: 'bg-[var(--text-faint)]',
-  unknown: 'bg-[var(--warn)]'
-}
 
 const CHECK_LABEL: Record<PrCheckState, string> = {
   passing: 'passed',
@@ -127,10 +101,6 @@ export function parsePrNumber(raw: string): number | null {
 export function stateLabel(link: PullRequestLink): string {
   if (link.is_draft && link.state === 'open') return 'Draft'
   return link.state.charAt(0).toUpperCase() + link.state.slice(1)
-}
-
-export function stateTone(link: PullRequestLink): string {
-  return link.is_draft && link.state === 'open' ? DRAFT_PILL : STATE_PILL[link.state]
 }
 
 function prPresenceTone(view: PrDetailView | null): PrPresenceTone {
@@ -192,20 +162,20 @@ function PrBlocked({
     hint ??
     (gh === 'missing' ? (
       <>
-        <span className="font-mono">gh</span> is not on PATH, so Houston cannot read pull requests. Install it and press
+        <PullRequestRole as="span" role="pull-request-command">gh</PullRequestRole> is not on PATH, so Houston cannot read pull requests. Install it and press
         Retry — nothing else in source control depends on it.
       </>
     ) : (
       'gh is not authenticated, so Houston cannot read pull requests.'
     ))
   return (
-    <div className={EMPTY} data-testid="pr-detail-blocked">
-      <div className={TITLE}>{headline}</div>
-      <p className={HINT}>{body}</p>
-      <button className={`btn ${ACTION} ${BTN_SECONDARY}`} data-testid="pr-retry" onClick={onRetry}>
+    <PullRequestRole data-testid="pr-detail-blocked" as="div" role="empty-panel">
+      <PullRequestRole as="div" role="empty-heading">{headline}</PullRequestRole>
+      <PullRequestRole as="p" role="empty-description">{body}</PullRequestRole>
+      <Button type="button" variant="legacy-secondary" data-testid="pr-retry" onClick={onRetry}>
         Retry
-      </button>
-    </div>
+      </Button>
+    </PullRequestRole>
   )
 }
 
@@ -214,38 +184,35 @@ function PrLinkForm({ pr }: { pr: PrDetailController }): React.JSX.Element {
   const parsed = parsePrNumber(draft)
   const invalid = draft.trim() !== '' && parsed === null
   return (
-    <div className="flex flex-col gap-1">
-      <form
-        className="flex items-center gap-2"
+    <PullRequestRole as="div" role="link-form">
+      <PullRequestRole as="form" role="action-row"
         onSubmit={(e) => {
           e.preventDefault()
           if (parsed !== null) pr.link(parsed)
-        }}
+        } }
       >
-        <input
+        <PullRequestNumberField
           data-testid="pr-link-number"
           aria-label="Pull request number"
           inputMode="numeric"
           placeholder="Number"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          className={`${INPUT} w-[96px]`}
         />
-        <button
+        <Button variant="legacy-secondary"
           type="submit"
-          className={`btn ${ACTION} ${BTN_SECONDARY}`}
           data-testid="pr-link"
           disabled={parsed === null || pr.linkBusy}
         >
           Link pull request
-        </button>
-      </form>
+        </Button>
+      </PullRequestRole>
       {invalid && (
-        <div className={ERROR_LINE} data-testid="pr-link-invalid">
+        <PullRequestRole data-testid="pr-link-invalid" as="div" role="error-message">
           A pull request number is 1-{PR_NUMBER_MAX}.
-        </div>
+        </PullRequestRole>
       )}
-    </div>
+    </PullRequestRole>
   )
 }
 
@@ -257,25 +224,23 @@ function PrRetryRow({
   view: PrDetailView
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-2">
-      <button
-        className={`btn ${ACTION} ${BTN_SECONDARY}`}
+    <PullRequestRole as="div" role="action-row">
+      <Button type="button" variant="legacy-secondary"
         data-testid="pr-retry"
         onClick={pr.refresh}
       >
         Retry
-      </button>
+      </Button>
       {view.linked && (
-        <button
-          className={`btn ${ACTION} ${BTN_SECONDARY}`}
+        <Button type="button" variant="legacy-secondary"
           data-testid="pr-unlink"
           disabled={pr.linkBusy}
           onClick={pr.unlink}
         >
           Unlink
-        </button>
+        </Button>
       )}
-    </div>
+    </PullRequestRole>
   )
 }
 
@@ -284,17 +249,14 @@ function PrDescription({ body }: { body: string | null | undefined }): React.JSX
   if (body === null || body === undefined || body.length === 0) return null
   return (
     <>
-      <p className={`text-[length:var(--tr-text-body-size)] text-[var(--text-secondary)] whitespace-pre-wrap break-words ${expanded ? '' : 'line-clamp-4'}`}>
-        {body}
-      </p>
+      <PullRequestDescription clamped={!expanded}>{body}</PullRequestDescription>
       {body.length > 240 && (
-        <button
+        <Button variant="compact-self-start-action"
           type="button"
-          className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] self-start px-[var(--space-1)] text-[var(--text-muted)]`}
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? 'Show less' : 'Show more'}
-        </button>
+        </Button>
       )}
     </>
   )
@@ -314,78 +276,74 @@ function PrEmpty({
   linkMessage: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className={SECTION_HEAD} data-testid="pr-detail-empty">
+    <PullRequestRole data-testid="pr-detail-empty" as="div" role="detail-error-panel">
       {view.message !== null ? (
         <>
-          <div className={ERROR_LINE} data-testid="pr-message">
+          <PullRequestRole data-testid="pr-message" as="div" role="error-message">
             {view.message}
-          </div>
+          </PullRequestRole>
           <PrRetryRow pr={pr} view={view} />
         </>
       ) : (
         <>
-          <div className={TITLE}>No pull request</div>
-          <p className={HINT}>
+          <PullRequestRole as="div" role="empty-heading">No pull request</PullRequestRole>
+          <PullRequestRole as="p" role="empty-description">
             {view.hasUpstream
               ? 'This branch has no pull request yet.'
               : 'This branch has no upstream, so it cannot have a pull request yet.'}
-          </p>
-          <div className="flex items-center gap-2">
+          </PullRequestRole>
+          <PullRequestRole as="div" role="action-row">
             <Tooltip
+              inline
               label={view.hasUpstream ? undefined : 'This branch has no upstream, so it cannot have a pull request yet.'}
-              className="inline-flex"
             >
-              <button
-                className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-45 disabled:cursor-not-allowed`}
+              <Button type="button" variant="pull-request-primary-action"
                 data-testid="pr-create"
                 disabled={!view.hasUpstream || pr.createBusy}
                 onClick={pr.create}
               >
                 {pr.createBusy ? 'Creating…' : 'Create pull request'}
-              </button>
+              </Button>
             </Tooltip>
-          </div>
+          </PullRequestRole>
           {!view.hasUpstream && onShowChanges && (
             <div>
-              <button
-                className={`btn ${ACTION} ${BTN_SECONDARY}`}
+              <Button type="button" variant="legacy-secondary"
                 data-testid="pr-show-changes"
                 onClick={onShowChanges}
               >
                 Changes
-              </button>
+              </Button>
             </div>
           )}
         </>
       )}
       {view.message === null ? (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`${SMALL} text-[var(--text-muted)]`}>or link an existing one</span>
+        <PullRequestRole as="div" role="header-actions">
+          <PullRequestRole as="span" role="viewed-label">or link an existing one</PullRequestRole>
           <PrLinkForm pr={pr} />
-          <button
-            className={`btn ${ACTION} ${BTN_GHOST}`}
+          <Button type="button" variant="legacy-ghost"
             data-testid="pr-browse-open"
             onClick={onBrowse}
           >
             Browse…
-          </button>
-        </div>
+          </Button>
+        </PullRequestRole>
       ) : (
-        <button
-          className={`btn ${ACTION} ${BTN_GHOST}`}
+        <Button type="button" variant="legacy-ghost"
           data-testid="pr-browse-open"
           onClick={onBrowse}
         >
           Browse…
-        </button>
+        </Button>
       )}
       {linkMessage}
       {pr.createMessage !== null && (
-        <div className={ERROR_LINE} data-testid="pr-create-message">
+        <PullRequestRole data-testid="pr-create-message" as="div" role="error-message">
           {pr.createMessage}
-        </div>
+        </PullRequestRole>
       )}
-    </div>
+    </PullRequestRole>
   )
 }
 
@@ -401,25 +359,44 @@ function PrReadError({
   linkMessage: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className={SECTION_HEAD} data-testid="pr-detail-error">
-      <div className={ERROR_LINE} data-testid="pr-message">
+    <PullRequestRole data-testid="pr-detail-error" as="div" role="detail-error-panel">
+      <PullRequestRole data-testid="pr-message" as="div" role="error-message">
         {view.message ?? `Pull request #${link.number} could not be read; refresh to try again.`}
-      </div>
+      </PullRequestRole>
       <PrRetryRow pr={pr} view={view} />
       {linkMessage}
-    </div>
+    </PullRequestRole>
   )
 }
 
 /** Title, branch pair, and the edit form that rewrites them. */
-function PrHeader({
-  link,
-  detail,
-  busy,
-  editBusy,
-  onEdit,
-  onReact
-}: {
+function PrHeaderMetadata({ link, detail, onOpenUrlInPane }: {
+  link: PullRequestLink
+  detail: PrDetail
+  onOpenUrlInPane?: (url: string) => void
+}): React.JSX.Element {
+  const head = detail.head_ref ?? null
+  const base = detail.base_ref ?? null
+  const branchPair = head !== null && base !== null ? `${head} → ${base}` : null
+  return <>
+    <div data-testid="pr-header-top">
+      <PullRequestState data-testid="pr-state" state={link.state} isDraft={link.is_draft}>
+        <Icon glyph={IconGitPullRequest} role="small" />{stateLabel(link)}
+      </PullRequestState>
+      <span data-testid="pr-number">#{link.number}</span>
+      {onOpenUrlInPane && <Button variant="pull-request-external-action" type="button" onClick={() => onOpenUrlInPane(link.url)}><Icon glyph={IconExternal} role="small" />Open on GitHub</Button>}
+    </div>
+    <PullRequestRole data-testid="pr-title" as="div" role="pull-request-title">{link.title ?? `Pull request #${link.number}`}</PullRequestRole>
+    <PullRequestRole data-testid="pr-sub" as="div" role="branch-summary">
+      {branchPair ? `${branchPair} · ` : ''}{detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
+      {' · '}<span data-testid="pr-additions">+{link.additions}</span>{' '}<span data-testid="pr-deletions">−{link.deletions}</span>
+      {detail.behind_by !== null && detail.behind_by !== undefined ? (detail.behind_by === 0 ? ' · up to date' : ` · ${detail.behind_by} behind`) : ''}
+      {detail.auto_merge_enabled === true ? ` · auto-merge ${detail.auto_merge_method ?? 'merge'}` : ''}
+    </PullRequestRole>
+  </>
+}
+
+function PrHeaderEditor({ link, detail, busy, editBusy, onEdit, onReact }: {
   link: PullRequestLink
   detail: PrDetail
   busy: boolean
@@ -430,124 +407,90 @@ function PrHeader({
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(link.title ?? `Pull request #${link.number}`)
   const [body, setBody] = useState(detail.body ?? '')
-  const head = detail.head_ref ?? null
-  const base = detail.base_ref ?? null
-  const branchPair = head !== null && base !== null ? `${head} → ${base}` : null
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-start gap-2">
-        <span
-          data-testid="pr-state"
-          className={`flex-none px-1.5 rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] leading-4 ${stateTone(link)}`}
-        >
-          {stateLabel(link)}
-        </span>
-        <div className="min-w-0 flex flex-col gap-0.5">
-          <div
-            data-testid="pr-title"
-            className="text-[length:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)] break-words"
-          >
-            {link.title ?? `Pull request #${link.number}`}
-          </div>
-          <div
-            data-testid="pr-sub"
-            className={`font-mono ${SMALL} text-[var(--text-faint)] break-words`}
-          >
-            #{link.number}
-            {branchPair ? ` · ${branchPair}` : ''} ·{' '}
-            {detail.commit_count === 1 ? '1 commit' : `${detail.commit_count} commits`}
-            {detail.behind_by !== null && detail.behind_by !== undefined
-              ? detail.behind_by === 0
-                ? ' · up to date'
-                : ` · ${detail.behind_by} behind`
-              : ''}
-            {detail.auto_merge_enabled === true
-              ? ` · auto-merge ${detail.auto_merge_method ?? 'merge'}`
-              : ''}
-          </div>
-        </div>
-        <Tooltip label="Edit title and description">
-          <button
-            type="button"
-            data-testid="pr-edit-open"
-            disabled={busy}
-            onClick={() => {
-              setTitle(link.title ?? '')
-              setBody(detail.body ?? '')
-              setEditing((v) => !v)
-            }}
-            className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ml-auto text-[var(--text-muted)] disabled:opacity-55`}
-          >
-            <Icon glyph={IconPencil} role="small" />
-          </button>
-        </Tooltip>
-      </div>
-      {editing ? (
-        <div className="flex flex-col gap-1.5" data-testid="pr-edit-form">
-          <input
-            data-testid="pr-edit-title"
-            aria-label="Pull request title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className={`${INPUT} w-full`}
-          />
-          <textarea
-            data-testid="pr-edit-body"
-            aria-label="Pull request description"
-            rows={5}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            className={TEXTAREA}
-          />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-testid="pr-edit-save"
-              disabled={editBusy || title.trim().length === 0}
-              onClick={() => {
-                setEditing(false)
-                onEdit(title, body)
-              }}
-              className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-55`}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              data-testid="pr-edit-cancel"
-              onClick={() => setEditing(false)}
-              className={`btn ${ACTION} ${BTN_SECONDARY}`}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <PrDescription body={detail.body} />
-      )}
-      {!editing && (
-        <PrReactions reactions={detail.reactions} busy={busy} onToggle={onReact} />
-      )}
-    </div>
-  )
+  return <>
+    <Tooltip label="Edit title and description">
+      <Button variant="compact-trailing-action" type="button" data-testid="pr-edit-open" disabled={busy} onClick={() => {
+        setTitle(link.title ?? '')
+        setBody(detail.body ?? '')
+        setEditing((value) => !value)
+      }}>
+        <Icon glyph={IconPencil} role="small" />
+      </Button>
+    </Tooltip>
+    {editing ? <PullRequestRole data-testid="pr-edit-form" as="div" role="edit-form">
+      <PullRequestNumberField variant="full" data-testid="pr-edit-title" aria-label="Pull request title" value={title} onChange={(event) => setTitle(event.target.value)} />
+      <TextArea surface="content" data-testid="pr-edit-body" aria-label="Pull request description" rows={5} value={body} onChange={(event) => setBody(event.target.value)}  />
+      <PullRequestRole as="div" role="action-row">
+        <Button variant="legacy-primary" type="button" data-testid="pr-edit-save" disabled={editBusy || title.trim().length === 0} onClick={() => { setEditing(false); onEdit(title, body) }}>Save</Button>
+        <Button variant="legacy-secondary" type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)}>Cancel</Button>
+      </PullRequestRole>
+    </PullRequestRole> : <PrDescription body={detail.body} />}
+    {!editing && <PrReactions reactions={detail.reactions} busy={busy} onToggle={onReact} />}
+  </>
+}
+
+function PrHeader({ link, detail, busy, editBusy, onEdit, onReact, onOpenUrlInPane, compact = false }: {
+  link: PullRequestLink
+  detail: PrDetail
+  busy: boolean
+  editBusy: boolean
+  onEdit: (title: string, body: string) => void
+  onReact: (content: PrDetail['reactions'][number]['content'], reacted: boolean) => void
+  onOpenUrlInPane?: (url: string) => void
+  compact?: boolean
+}): React.JSX.Element {
+  return <PullRequestRole as="div" role="checks-panel">
+    <PullRequestRole as="div" role="edit-form">
+      <PrHeaderMetadata link={link} detail={detail} onOpenUrlInPane={onOpenUrlInPane} />
+      {!compact && <PrHeaderEditor link={link} detail={detail} busy={busy} editBusy={editBusy} onEdit={onEdit} onReact={onReact} />}
+    </PullRequestRole>
+  </PullRequestRole>
 }
 
 function PrCheckRow({ check }: { check: PrCheck }): React.JSX.Element {
   return (
-    <div
-      data-testid="pr-check-row"
-      className={`flex items-center gap-2 h-[var(--h-row)] px-2.5 ${SMALL} border-t border-t-[var(--divider)] first:border-t-0`}
+    <PullRequestRole
+      data-testid="pr-check-row" as="div" role="check-row"
     >
-      <span className={`flex-none w-[7px] h-[7px] rounded-full ${CHECK_DOT[check.state]}`} />
-      <span className="flex-1 min-w-0 truncate text-[var(--text-primary)]">{check.name}</span>
-      <span className={`flex-none font-mono ${SMALL} text-[var(--text-faint)]`}>
+      <CheckStateDot state={check.state} size="check" />
+      <PullRequestRole as="span" role="check-name">{check.name}</PullRequestRole>
+      <PullRequestRole as="span" role="check-meta">
         {checkMeta(check)}
-      </span>
-    </div>
+      </PullRequestRole>
+    </PullRequestRole>
   )
 }
 
-function checkSummary(checks: PrCheck[]): { text: string; tone: string } {
+function PrEditDetails({ link, detail, busy, editBusy, onEdit }: {
+  link: PullRequestLink
+  detail: PrDetail
+  busy: boolean
+  editBusy: boolean
+  onEdit: (title: string, body: string) => void
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(link.title ?? '')
+  const [body, setBody] = useState(detail.body ?? '')
+  return <PullRequestRole as="div" role="checks-panel">
+    <Button variant="legacy-ghost" type="button" data-testid="pr-edit-open" disabled={busy} onClick={() => {
+      setTitle(link.title ?? '')
+      setBody(detail.body ?? '')
+      setEditing((value) => !value)
+    }}>
+      <Icon glyph={IconPencil} role="small" />Edit title and description
+    </Button>
+    {editing && <PullRequestRole data-testid="pr-edit-form" as="div" role="edit-form">
+      <PullRequestNumberField variant="full" data-testid="pr-edit-title" aria-label="Pull request title" value={title} onChange={(event) => setTitle(event.target.value)} />
+      <TextArea surface="content" data-testid="pr-edit-body" aria-label="Pull request description" rows={5} value={body} onChange={(event) => setBody(event.target.value)}  />
+      <PullRequestRole as="div" role="action-row">
+        <Button variant="legacy-primary" type="button" data-testid="pr-edit-save" disabled={editBusy || title.trim().length === 0} onClick={() => { setEditing(false); onEdit(title, body) }}>Save</Button>
+        <Button variant="legacy-secondary" type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)}>Cancel</Button>
+      </PullRequestRole>
+    </PullRequestRole>}
+  </PullRequestRole>
+}
+
+function checkSummary(checks: PrCheck[]): { text: string; failed: number; running: number } {
   const running = checks.filter((check) => check.state === 'running' || check.state === 'queued' || check.state === 'unknown').length
   const passed = checks.filter((check) => check.state === 'passing').length
   const failed = checks.filter((check) => check.state === 'failing').length
@@ -556,28 +499,29 @@ function checkSummary(checks: PrCheck[]): { text: string; tone: string } {
     running > 0 ? `${running} running` : '',
     passed > 0 ? `${passed} passed` : ''
   ].filter(Boolean)
-  const tone = failed > 0 ? 'bg-[var(--stop)]' : running > 0 ? 'bg-[var(--warn)]' : checks.length > 0 ? 'bg-[var(--ok)]' : 'bg-[var(--text-faint)]'
-  return { text: parts.length > 0 ? parts.join(', ') : 'No checks reported', tone }
+  return { text: parts.length > 0 ? parts.join(', ') : 'No checks reported', failed, running }
 }
 
 function PrChecks({ checks }: { checks: PrCheck[] }): React.JSX.Element {
   const summary = checkSummary(checks)
+  const passed = checks.filter((check) => check.state === 'passing').length
   const ordered = [...checks].sort((left, right) => CHECK_PRIORITY[left.state] - CHECK_PRIORITY[right.state])
   return (
     <div data-testid="pr-checks">
       <Disclosure
-        className="rounded-none border-0 bg-transparent"
+        defaultOpen
         scrollBody={false}
+        variant="flush"
         summary={
-          <span className="flex items-center gap-[var(--space-2)]">
-            <span className={`h-[7px] w-[7px] rounded-full ${summary.tone}`} />
-            <span>{summary.text}</span>
-            <span className="text-[var(--text-muted)]">· Details</span>
-          </span>
+          <PullRequestRole as="span" role="check-details">
+            <CheckSummary failed={summary.failed} running={summary.running} count={checks.length} size="check" />
+            <span data-testid="pr-check-summary">CHECKS · {passed} OF {checks.length} PASSED</span>
+          <PullRequestRole as="span" role="right-meta-label">Details</PullRequestRole>
+          </PullRequestRole>
         }
       >
         {checks.length === 0 ? (
-          <div className={`${SMALL} text-[var(--text-muted)]`}>No checks reported.</div>
+          <PullRequestRole as="div" role="viewed-label">No checks reported.</PullRequestRole>
         ) : (
           ordered.map((check, index) => <PrCheckRow key={`${check.name}-${index}`} check={check} />)
         )}
@@ -597,23 +541,23 @@ function PrMeta({
 }): React.JSX.Element {
   return (
     <div>
-      <div className={META_ROW_CLS}>
-        <span className="w-[92px] flex-none text-[var(--text-muted)]">Review</span>
-        <span className="min-w-0 flex-1 text-[var(--text-primary)]">{reviewLabel(link.review_decision)}</span>
-      </div>
-      <div className={`${META_ROW_CLS} ${mergeReason !== null ? META_DANGER_GROUND : ''}`}>
-        <span className="w-[92px] flex-none text-[var(--text-muted)]">Mergeable</span>
-        <span className={`min-w-0 flex-1 ${mergeReason !== null ? META_DANGER_INK : 'text-[var(--text-primary)]'}`} data-testid="pr-merge-reason">
+      <MetadataRow>
+        <PullRequestRole as="span" role="metadata-label">Review</PullRequestRole>
+        <PullRequestRole as="span" role="metadata-value">{reviewLabel(link.review_decision)}</PullRequestRole>
+      </MetadataRow>
+      <MetadataRow tone={mergeReason !== null ? 'danger' : 'default'}>
+        <PullRequestRole as="span" role="metadata-label">Mergeable</PullRequestRole>
+        <PullRequestRole data-testid="pr-merge-reason" as="span" role="metadata-value">
           {mergeReason ?? 'Ready to merge'}
-        </span>
-      </div>
+        </PullRequestRole>
+      </MetadataRow>
       {detail.viewer_message !== null && detail.viewer_message !== undefined && (
-        <div className={`${META_ROW_CLS} ${META_DANGER_GROUND}`}>
-          <span className="w-[92px] flex-none text-[var(--text-muted)]">Permissions</span>
-          <span className={`${ERROR_LINE} ${META_DANGER_INK} min-w-0 flex-1`} data-testid="pr-viewer-message">
+        <MetadataRow tone="danger">
+          <PullRequestRole as="span" role="metadata-label">Permissions</PullRequestRole>
+          <PullRequestRole data-testid="pr-viewer-message" as="span" role="danger-metadata-value">
             {detail.viewer_message}
-          </span>
-        </div>
+          </PullRequestRole>
+        </MetadataRow>
       )}
     </div>
   )
@@ -624,25 +568,24 @@ function PrReviews({ detail }: { detail: PrDetail }): React.JSX.Element {
     <Disclosure
       summary="Reviews"
       count={detail.reviews_total}
+      defaultOpen
       scrollBody={false}
-      className="rounded-none border-0 bg-transparent"
+      variant="flush"
     >
-      <div className="flex flex-col" data-testid="pr-reviews">
+      <PullRequestRole data-testid="pr-reviews" as="div" role="review-list">
         {detail.reviews.map((review, index) => (
-          <div key={`${review.id ?? review.author}-${index}`} data-testid="pr-review-row" className={ROW}>
-            <span className={`${SMALL} text-[var(--text-primary)]`}>
+          <PullRequestRole key={`${review.id ?? review.author}-${index}`} data-testid="pr-review-row" as="div" role="review-row">
+            <PullRequestRole as="span" role="review-author">
               {review.author} · {REVIEW_LABEL[review.state] ?? review.state.toLowerCase()}
-            </span>
+            </PullRequestRole>
             {review.body.length > 0 && (
-              <span
-                className={`${SMALL} text-[var(--text-muted)] whitespace-pre-wrap break-words line-clamp-3`}
-              >
+              <PullRequestReviewBody>
                 {review.body}
-              </span>
+              </PullRequestReviewBody>
             )}
-          </div>
+          </PullRequestRole>
         ))}
-      </div>
+      </PullRequestRole>
     </Disclosure>
   )
 }
@@ -690,31 +633,45 @@ export function pendingMergeReason(detail: PrDetail): string | null {
   return reason
 }
 
-function PrCompactSummary({ link, detail, pr, method, onOpenUrlInPane, onDetails, linkMessage, actionBar }: {
+function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approvalsRequired, approvalsReceived, onOpenUrlInPane, onSendToOrchestrator, reviewBar, watchRows, openPicker, setOpenPicker }: {
   link: PullRequestLink
   detail: PrDetail
   pr: PrDetailController
-  method: PrMergeMethod
+  number: number
+  busy: boolean
+  mergeReason: string | null
+  approvalsRequired: number
+  approvalsReceived: number
   onOpenUrlInPane?: (url: string) => void
-  onDetails: () => void
-  linkMessage: React.ReactNode
-  actionBar: React.ReactNode
+  onSendToOrchestrator?: (text: string) => void
+  reviewBar: React.ReactNode
+  watchRows: React.ReactNode
+  openPicker: 'reviewers' | 'labels' | 'stack' | null
+  setOpenPicker: (value: 'reviewers' | 'labels' | 'stack' | null) => void
 }): React.JSX.Element {
-  const number = link.number
-  const busy = pr.write.busy !== null
-  const mergeReason = pendingMergeReason(detail)
-  return <div className="pr-compact" data-testid="pr-tab">
-    <PrNotices pr={pr} linkMessage={linkMessage} />
-    <div className="pr-compact-content">
-      <div className="pr-compact-title"><strong data-testid="pr-title">{link.title ?? `Pull request #${number}`}</strong><Tooltip label="Pull request details and actions"><button className="pr-compact-details" aria-label="Pull request details and actions" onClick={() => onDetails()}><Icon glyph={IconEllipsis} role="ui" /></button></Tooltip></div>
-      <div className="pr-compact-sub" data-testid="pr-sub"><span className={`pr-compact-state ${STATE_PILL[link.state]}`}>{stateLabel(link)}</span><span>#{number}</span><span>{detail.head_ref} → {detail.base_ref}</span><span>· {detail.commit_count} {detail.commit_count === 1 ? 'commit' : 'commits'}</span></div>
-      <h3 className="pr-compact-group">Checks <span className={detail.checks.some((check) => check.state !== 'passing') ? 'text-[var(--warn)]' : undefined}>{detail.checks.filter((check) => check.state === 'passing').length}/{detail.checks.length}</span></h3>
-      {detail.checks.map((check, index) => <div className="pr-compact-check" data-testid="pr-check-row" key={`${check.name}-${index}`}><span className={check.state === 'passing' ? 'text-[var(--ok)]' : `pr-compact-check-dot ${CHECK_DOT[check.state]}`}>{check.state === 'passing' && <Icon glyph={IconCheck} role="label" />}</span><span className="truncate">{check.name}</span><span className="pr-compact-duration">{checkMeta(check)}</span></div>)}
-      <h3 className="pr-compact-group">Reviews <span className={link.review_decision !== 'APPROVED' ? 'text-[var(--warn)]' : undefined}>{detail.reviews_total}</span></h3>
-      {detail.reviews_total > 0 ? <PrReviews detail={detail} /> : <div className="pr-compact-check text-[var(--text-muted)]">No reviews yet</div>}
-    </div>
-    {link.state === 'open' && !link.is_draft ? <footer className="pr-compact-footer"><span className="truncate" data-testid="pr-merge-reason">{mergeReason}</span><button className={`btn ${BTN_GHOST}`} disabled={!onOpenUrlInPane} onClick={() => onOpenUrlInPane?.(link.url)}>Open on GitHub</button><Tooltip label={mergeReason ?? undefined}><button className={`btn ${BTN_PRIMARY}`} data-testid="pr-merge" disabled={mergeReason !== null || busy || pr.mergeBusy} onClick={() => pr.merge(number, method, detail.head_sha)}>Merge</button></Tooltip></footer> : actionBar}
-  </div>
+  return <PrSummary>
+    <PullRequestRole as="div" role="inspector-header"><PrHeader link={link} detail={detail} busy={busy} editBusy={false} onEdit={() => {}} onReact={() => {}} onOpenUrlInPane={onOpenUrlInPane} compact /></PullRequestRole>
+    {watchRows}
+    <PrInspectorSections checks={detail.checks} detail={detail} approvalsRequired={approvalsRequired} approvalsReceived={approvalsReceived} number={number} busy={busy} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onSendToOrchestrator={onSendToOrchestrator} onOpenChecks={onOpenUrlInPane ? () => onOpenUrlInPane(`${link.url}/checks`) : undefined} />
+    <Card tone="material-inset" shape="inset" data-testid="pr-details"  {...materialAttrs('inset')}>
+      <Disclosure summary="Details" scrollBody={false}
+      variant="flush">
+        <PullRequestRole as="div" role="detail-content">
+          <PrEditDetails link={link} detail={detail} busy={busy} editBusy={pr.write.busy === `edit:${number}`} onEdit={(title, body) => pr.edit(number, title, body)} />
+          <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
+          {detail.reviews_total > 0 && <PrReviews detail={detail} />}
+          {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && <PrThreads detail={detail} busy={busy} number={number} onSendToOrchestrator={onSendToOrchestrator} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />}
+          <PrComments detail={detail} busy={busy} onComment={(body) => pr.comment(number, body)} onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />
+          {reviewBar}
+          <div><SectionHead density="row" tone="muted" title="People & labels" />
+            <PrReviewerPicker detail={detail} busy={busy} candidates={pr.reviewers} loading={pr.reviewersBusy} message={pr.reviewersMessage} onLoad={() => pr.loadReviewers(number)} onApply={(added, removed) => pr.reviewerApply(number, added, removed)} open={openPicker === 'reviewers'} onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)} />
+            <PrLabelPicker detail={detail} busy={busy} candidates={pr.labels} loading={pr.labelsBusy} message={pr.labelsMessage} onLoad={() => pr.loadLabels(number)} onToggle={(name, applied) => pr.labelSet(number, [name], applied)} open={openPicker === 'labels'} onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)} />
+            <PrStackSection number={number} busy={busy} stack={pr.stack} checked={pr.stackChecked} loading={pr.stackBusy} message={pr.stackMessage} onLoad={() => pr.loadStack(number)} open={openPicker === 'stack'} onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)} />
+          </div>
+        </PullRequestRole>
+      </Disclosure>
+    </Card>
+  </PrSummary>
 }
 
 function PrDetailView({
@@ -725,9 +682,11 @@ function PrDetailView({
   method,
   setMethod,
   onOpenUrlInPane,
+  onSendToOrchestrator,
   onBrowse,
   linkMessage,
-  compact
+  compact,
+  watchRows
 }: {
   compact: boolean
   view: PrDetailView
@@ -737,10 +696,11 @@ function PrDetailView({
   method: PrMergeMethod
   setMethod: (method: PrMergeMethod) => void
   onOpenUrlInPane?: (url: string) => void
+  onSendToOrchestrator?: (text: string) => void
   onBrowse: () => void
   linkMessage: React.ReactNode
+  watchRows: React.ReactNode
 }): React.JSX.Element {
-  const [showDetails, setShowDetails] = useState(false)
   const [pane, setPane] = useState<'summary' | 'files'>('summary')
   const [drafts, setDrafts] = useState<PrReviewDraft[]>([])
   const [reviewVerdict, setReviewVerdict] = useState<PrReviewVerdict>('comment')
@@ -750,6 +710,8 @@ function PrDetailView({
   const mergeReason = pendingMergeReason(detail)
   const busy = pr.write.busy !== null
   const number = link.number
+  const approvalsRequired = detail.reviewers.length
+  const approvalsReceived = detail.reviews.filter((review) => review.state === 'APPROVED').length
 
   // A different pull request is a different review: drafts never travel with a
   // subject change.
@@ -819,11 +781,10 @@ function PrDetailView({
     />
   )
 
-  if (compact && !showDetails) return <PrCompactSummary link={link} detail={detail} pr={pr} method={method} onOpenUrlInPane={onOpenUrlInPane} onDetails={() => setShowDetails(true)} linkMessage={linkMessage} actionBar={actionBar} />
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col" data-testid="pr-tab">
-      <div className="flex-none flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)]">
+    <PullRequestRole data-testid="pr-tab" as="div" role="tab-frame">
+      {!compact && <PullRequestRole as="div" role="tab-toolbar">
         <Segmented
           aria-label="Pull request view"
           value={pane}
@@ -836,38 +797,50 @@ function PrDetailView({
             { value: 'files', label: 'Files', testId: 'pr-pane-files' }
           ]}
         />
-        <button
+        <Button variant="compact-action"
           type="button"
           data-testid="pr-browse-open"
           onClick={onBrowse}
-          className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ${SMALL} text-[var(--text-muted)]`}
         >
           Browse…
-        </button>
+        </Button>
         {pr.viewed !== null && (
-          <span className={`${SMALL} text-[var(--text-muted)]`} data-testid="pr-browsed">
+          <PullRequestRole data-testid="pr-browsed" as="span" role="viewed-label">
             Viewing #{pr.viewed}, not this branch's pull request
-          </span>
+          </PullRequestRole>
         )}
         {pr.viewed !== null && (
-          <button
+          <Button variant="legacy-secondary"
             type="button"
             data-testid="pr-back-to-branch"
             onClick={pr.showBranch}
-            className={`btn ${BTN_SECONDARY}`}
           >
             Back
-          </button>
+          </Button>
         )}
-        <span className={`ml-auto font-mono ${SMALL} text-[var(--text-faint)]`}>
+        <PullRequestRole as="span" role="merge-status">
           {detail.mergeable === 'conflicting' ? 'conflicts' : ''}
-        </span>
-      </div>
-      {compact && <button className={`btn ${BTN_GHOST}`} onClick={() => setShowDetails(false)}>Back to summary</button>}
+        </PullRequestRole>
+      </PullRequestRole>}
       <PrNotices pr={pr} linkMessage={linkMessage} />
-      <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
-        {pane === 'files' ? (
-          <div className="flex flex-col gap-2.5 p-3">
+      <PullRequestRole data-testid="pr-scroll-area" as="div" role="scroll-area">
+        {compact ? <PrInspectorBoard
+          link={link}
+          detail={detail}
+          pr={pr}
+          number={number}
+          busy={busy}
+          mergeReason={mergeReason}
+          approvalsRequired={approvalsRequired}
+          approvalsReceived={approvalsReceived}
+          onOpenUrlInPane={onOpenUrlInPane}
+          onSendToOrchestrator={onSendToOrchestrator}
+          reviewBar={reviewBar}
+          watchRows={watchRows}
+          openPicker={openPicker}
+          setOpenPicker={setOpenPicker}
+        /> : pane === 'files' ? (
+          <PullRequestRole as="div" role="file-pane">
             <PrFiles
               diff={pr.diff}
               loading={pr.diffBusy}
@@ -876,10 +849,10 @@ function PrDetailView({
               onAddDraft={addDraft}
               onReload={() => pr.loadDiff(number)}
             />
-          </div>
+          </PullRequestRole>
         ) : (
           <PrSummary>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
               <PrHeader
                 link={link}
                 detail={detail}
@@ -887,15 +860,16 @@ function PrDetailView({
                 editBusy={pr.write.busy === `edit:${number}`}
                 onEdit={(title, body) => pr.edit(number, title, body)}
                 onReact={(content, reacted) => pr.react(number, null, content, reacted)}
+                onOpenUrlInPane={onOpenUrlInPane}
               />
-            </div>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
-              <div className={SECTION_HEAD_CLS}>Status</div>
+            </Card>
+            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
+              <SectionHead density="row" tone="muted" title="Status" />
               <PrChecks checks={detail.checks} />
               <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
-            </div>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
-              <div className={SECTION_HEAD_CLS}>People &amp; labels</div>
+            </Card>
+            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
+              <SectionHead density="row" tone="muted" title="People & labels" />
               <PrReviewerPicker
                 detail={detail}
                 busy={busy}
@@ -929,8 +903,14 @@ function PrDetailView({
                 open={openPicker === 'stack'}
                 onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)}
               />
-            </div>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+            </Card>
+            <Card tone="material-inset" shape="inset"  {...materialAttrs('inset')}>
+              {link.review_decision === 'REVIEW_REQUIRED' && approvalsRequired > 0 && (
+                <PullRequestRole data-testid="pr-review-requirement" as="div" role="approval-requirement">
+                  <span>Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span>
+                  <span data-review-count>{Math.min(approvalsReceived, approvalsRequired)} / {approvalsRequired}</span>
+                </PullRequestRole>
+              )}
               {detail.reviews_total > 0 && <PrReviews detail={detail} />}
               {(detail.threads.length > 0 ||
                 detail.threads_message !== null ||
@@ -938,6 +918,8 @@ function PrDetailView({
                 <PrThreads
                   detail={detail}
                   busy={busy}
+                  number={number}
+                  onSendToOrchestrator={onSendToOrchestrator}
                   onReply={(threadId, body) => pr.threadReply(number, threadId, body)}
                   onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)}
                   onReact={(subjectId, content, reacted) =>
@@ -957,20 +939,22 @@ function PrDetailView({
                 }
               />
               {reviewBar}
-            </div>
+            </Card>
           </PrSummary>
         )}
-      </div>
-      {pane === 'files' && reviewBar}
-      {pane === 'summary' && actionBar}
-    </div>
+      </PullRequestRole>
+      {!compact && pane === 'files' && reviewBar}
+      {((compact && pane === 'summary') || (!compact && pane === 'summary')) && actionBar}
+    </PullRequestRole>
   )
 }
 
 export function PullRequestTab({
   client,
   dir,
+  session = null,
   onOpenUrlInPane,
+  onSendToOrchestrator,
   onShowChanges,
   active = true,
   onPrPresenceChange,
@@ -978,6 +962,24 @@ export function PullRequestTab({
   compact = false
 }: PullRequestTabProps): React.JSX.Element {
   const pr = usePrDetail(client, dir, active, refreshSignal)
+  const watches = usePrWatch(client, session)
+  const watchRows = watches.map((watch) => (
+    <PrWatchRow
+      key={`${watch.number}:${watch.url}`}
+      number={watch.number}
+      lastCheckedAtMs={watch.last_checked_at_ms}
+      compact={compact}
+      onStop={() => {
+        if (client && session != null) client.send({ type: 'pr_watch_unwatch', session, number: watch.number })
+      }}
+    />
+  ))
+  const withWatchRows = (content: React.ReactNode, showWatchRows = true): React.JSX.Element => (
+    <PrWatchStack>
+      {showWatchRows && watchRows}
+      {content}
+    </PrWatchStack>
+  )
   const [browsing, setBrowsing] = useState(false)
   const list = usePrList(client, dir, active && browsing)
   const [method, setMethod] = useState<PrMergeMethod>('squash')
@@ -993,29 +995,31 @@ export function PullRequestTab({
   }, [dir])
 
   if (!dir || !client) return <PrIdle />
-  if (!active) return <div className="flex-1" data-testid="pr-idle" />
+  if (!active) return <PullRequestRole data-testid="pr-idle" as="div" role="fill" />
 
   if (browsing) {
     return (
-      <PrBrowse
-        list={list}
-        active
-        onBack={() => setBrowsing(false)}
-        onSelect={(number) => {
-          setBrowsing(false)
-          pr.show(number)
-        }}
-      />
+      withWatchRows(
+        <PrBrowse
+          list={list}
+          active
+          onBack={() => setBrowsing(false)}
+          onSelect={(number) => {
+            setBrowsing(false)
+            pr.show(number)
+          }}
+        />
+      )
     )
   }
 
   if (pr.view === null) {
-    return (
-      <div className={EMPTY} data-testid="pr-loading">
-        <span className={SPIN_CLASS}>
+    return withWatchRows(
+      <PullRequestRole data-testid="pr-loading" as="div" role="empty-panel">
+        <PullRequestRole as="span" role="loading-indicator">
           <Icon glyph={IconLoaderCircle} role="subhead" />
-        </span>
-      </div>
+        </PullRequestRole>
+      </PullRequestRole>
     )
   }
 
@@ -1027,9 +1031,9 @@ export function PullRequestTab({
       </ScmNotice>
     ) : null
 
-  if (view.gh !== 'ready') return <PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} />
+  if (view.gh !== 'ready') return withWatchRows(<PrBlocked gh={view.gh} hint={view.hint} onRetry={pr.refresh} />)
   if (view.message !== null || view.link === null) {
-    return (
+    return withWatchRows(
       <PrEmpty
         view={view}
         pr={pr}
@@ -1040,9 +1044,9 @@ export function PullRequestTab({
     )
   }
   if (view.detail === null) {
-    return <PrReadError view={view} link={view.link} pr={pr} linkMessage={linkMessage} />
+    return withWatchRows(<PrReadError view={view} link={view.link} pr={pr} linkMessage={linkMessage} />)
   }
-  return (
+  return withWatchRows(
     <PrDetailView
       compact={compact}
       view={view}
@@ -1052,8 +1056,11 @@ export function PullRequestTab({
       method={method}
       setMethod={setMethod}
       onOpenUrlInPane={onOpenUrlInPane}
+      onSendToOrchestrator={onSendToOrchestrator}
       onBrowse={() => setBrowsing(true)}
       linkMessage={linkMessage}
-    />
+      watchRows={compact ? watchRows : null}
+    />,
+    !compact
   )
 }

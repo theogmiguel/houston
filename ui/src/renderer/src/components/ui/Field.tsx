@@ -1,13 +1,25 @@
-import { cloneElement, useId, type ReactElement } from 'react'
+import { cloneElement, useId, type ElementType, type ReactElement } from 'react'
+import type { ReactNode } from 'react'
+
+export function FieldLabel({ children, size = 'default', id, as: Tag = 'span', htmlFor }: { children: ReactNode; size?: 'default' | 'compact' | 'form'; id?: string; as?: ElementType; htmlFor?: string }): React.JSX.Element {
+  const classes = size === 'compact'
+    ? 'text-[length:var(--tr-text-label-size)] font-medium leading-[var(--tr-text-small-leading)] [text-transform:var(--tr-text-label-transform)] tracking-[var(--tr-text-label-tracking)] text-[var(--text-faint)]'
+    : size === 'form'
+      ? 'block [font-size:var(--tr-text-small-size)] font-semibold text-[var(--text-secondary)]'
+      : 'text-[length:var(--tr-text-small-size)] font-semibold leading-[var(--tr-text-small-leading)] text-[var(--text-secondary)]'
+  return <Tag id={id} htmlFor={htmlFor} className={classes}>{children}</Tag>
+}
 
 export interface FieldProps {
   label: string
   hint?: string
   error?: string
+  size?: 'default' | 'compact'
+  align?: 'start' | 'center'
   children: ReactElement
 }
 
-export function Field({ label, hint, error, children }: FieldProps): React.JSX.Element {
+export function Field({ label, hint, error, size = 'default', align, children }: FieldProps): React.JSX.Element {
   const generatedId = useId()
   const childProps = children.props as { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }
   const controlId = childProps.id ?? generatedId
@@ -24,8 +36,8 @@ export function Field({ label, hint, error, children }: FieldProps): React.JSX.E
   })
 
   return (
-    <div className="grid gap-[var(--space-1-5)]">
-      <span id={labelId} className="text-[length:var(--tr-text-small-size)] font-semibold leading-[var(--tr-text-small-leading)] text-[var(--text-secondary)]">{label}</span>
+    <div className={`grid ${size === 'compact' ? 'gap-[var(--space-1)]' : 'gap-[var(--space-1-5)]'} ${align === 'start' ? 'text-left' : align === 'center' ? 'text-center' : ''}`}>
+      <FieldLabel id={labelId}>{label}</FieldLabel>
       {nativeControl ? control : <div role="group" aria-labelledby={labelId} aria-describedby={describedBy} aria-invalid={error ? true : undefined}>{control}</div>}
       {message && <p id={messageId} className={`m-0 text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] ${error ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>{message}</p>}
     </div>

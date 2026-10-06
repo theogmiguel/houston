@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatCadence,
   formatRoutineError,
+  formatRunTime,
   lastRunLabel,
   nextRunLabel,
   nextUpBucket,
@@ -54,6 +55,15 @@ describe('next/last run labels', () => {
   it('counts back to a past last run', () => {
     const now = 1_000_000
     expect(lastRunLabel(now - 3 * 3600 * 1000, now)).toBe('3h ago')
+  })
+})
+
+describe('formatRunTime', () => {
+  it('uses calendar dates instead of relative elapsed labels', () => {
+    const now = new Date(2026, 9, 3, 12, 0).getTime()
+    expect(formatRunTime(new Date(2026, 9, 3, 2, 0).getTime(), now)).toBe('Today 02:00')
+    expect(formatRunTime(new Date(2026, 9, 2, 2, 0).getTime(), now)).toBe('Yesterday 02:00')
+    expect(formatRunTime(new Date(2026, 9, 1, 2, 0).getTime(), now)).toBe('Oct 1 02:00')
   })
 })
 

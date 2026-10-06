@@ -639,7 +639,6 @@ export class GhosttyTerminalSurface {
     canvas.style.cssText = 'display:block;width:100%;height:100%;cursor:text;'
 
     const input = document.createElement('textarea')
-    input.className = 'tr-ghostty-input'
     input.setAttribute('aria-label', 'Terminal input')
     input.autocapitalize = 'off'
     input.autocomplete = 'off'

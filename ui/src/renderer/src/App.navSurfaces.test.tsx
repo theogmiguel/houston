@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { waitFor } from '@testing-library/react'
 import { renderReadyApp, resetHarness, type AppHarness } from './test/appTestHarness'
 import { setSettingsNavForTests } from './settingsNav'
 import { RAIL_VIEWS } from './railView'
@@ -25,6 +26,47 @@ function navRow(container: HTMLElement, view: string): HTMLButtonElement {
 const surface = (c: HTMLElement): Element | null => c.querySelector('[data-testid="nav-surface"]')
 
 describe('the rail nav rows drive the content area', () => {
+  it.each(RAIL_VIEWS)('the %s page fills the content region, so its column centres', async (view) => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    act(() => navRow(container, view).click())
+    await waitFor(() => expect(surface(container)).not.toBeNull())
+    expect(surface(container)!.className).toMatch(/(^|\s)(flex-1|w-full)(\s|$)/)
+  })
+
+  it('Ctrl+, closes Settings even while its search input is focused', async () => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    const gear = container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement
+    act(() => gear.click())
+    const search = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
+    search.focus()
+    act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true, bubbles: true, cancelable: true })))
+    expect(gear.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('Escape clears and leaves search first, then closes Settings on the next press', async () => {
+    harness = await renderReadyApp()
+    const { container } = harness
+    const { act } = await import('react')
+    const gear = container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement
+    act(() => gear.click())
+    const search = container.querySelector('[aria-label="Search settings"]') as HTMLInputElement
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(search, 'font size')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    search.focus()
+    act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(gear.getAttribute('aria-pressed')).toBe('true')
+    expect(search.value).toBe('')
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(gear.getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('each destination opens a surface — none of them opens onto nothing', async () => {
     harness = await renderReadyApp()
     const { container } = harness
@@ -34,9 +76,11 @@ describe('the rail nav rows drive the content area', () => {
 
     for (const view of RAIL_VIEWS) {
       act(() => navRow(container, view).click())
-      const el = surface(container)
-      expect(el, `${view} opened no surface`).not.toBeNull()
-      expect(el?.textContent?.trim().length ?? 0, `${view} surface is blank`).toBeGreaterThan(0)
+      await waitFor(() => {
+        const el = surface(container)
+        expect(el, `${view} opened no surface`).not.toBeNull()
+        expect(el?.textContent?.trim().length ?? 0, `${view} surface is blank`).toBeGreaterThan(0)
+      })
       expect(navRow(container, view).getAttribute('aria-current')).toBe('page')
     }
   })
@@ -53,7 +97,7 @@ describe('the rail nav rows drive the content area', () => {
     expect(navRow(container, 'skills').getAttribute('aria-current')).toBeNull()
   })
 
-  it('the rows stay reachable while Settings is open — they are destinations, not sections', async () => {
+  it('the rows leave the rail while Settings is open and drive the content area once it closes', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
@@ -61,10 +105,12 @@ describe('the rail nav rows drive the content area', () => {
     const settingsBtn = container.querySelector('.railfoot button[aria-label="Settings"]')
     act(() => (settingsBtn as HTMLButtonElement).click())
     expect(container.querySelector('[aria-label="Settings sections"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(0)
+
+    act(() => (container.querySelector('.railfoot button[aria-label="Settings"]') as HTMLButtonElement).click())
     expect(container.querySelectorAll('[data-testid="rail-nav-row"]').length).toBe(
       RAIL_VIEWS.length
     )
-
     act(() => navRow(container, 'mcp').click())
     expect(container.querySelector('[aria-label="Settings sections"]')).toBeNull()
     expect(surface(container)).not.toBeNull()

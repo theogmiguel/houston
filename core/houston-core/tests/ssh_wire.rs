@@ -450,6 +450,7 @@ async fn ssh_husks_are_deferred_never_auto_reconnected() {
             ssh_host: Some("tester@example.com".into()),
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             spawned_by: None,

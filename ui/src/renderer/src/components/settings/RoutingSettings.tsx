@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import type { RoleRoute } from '../../houston/generated/RoleRoute'
-import { BTN_GHOST } from '../buttonChrome'
-import { Select } from '../Select'
+import { Button } from '../ui/Button'
+import { TextInput } from '../ui/TextInput'
+import { Select } from '../ui/Select'
+import { Table } from '../ui/Table'
+
+type RouteRow = RoleRoute & { rowId: string }
 
 export function RoutingSettings({ client, workspace }: { client: HoustonClient | null; workspace: string | null }): React.JSX.Element {
   const [routes, setRoutes] = useState<RoleRoute[]>([])
@@ -22,14 +26,26 @@ export function RoutingSettings({ client, workspace }: { client: HoustonClient |
   }, [client, workspace])
   if (!workspace) return <p>Select a workspace to edit its routing table.</p>
   if (!loaded) return <p>Asking the daemon…</p>
-  return <div className="flex flex-col gap-2" aria-label="Workspace routing">
-    {routes.map((route, index) => <div key={index} className="flex flex-wrap gap-2"><input aria-label={`Role pattern ${index + 1}`} className="min-w-0 flex-1 bg-[var(--content-bg)]" value={route.pattern} onChange={(event) => setRoutes(routes.map((value, i) => i === index ? { ...value, pattern: event.target.value } : value))} /><input aria-label={`Model ${index + 1}`} className="min-w-0 flex-1 bg-[var(--content-bg)]" value={route.model} onChange={(event) => setRoutes(routes.map((value, i) => i === index ? { ...value, model: event.target.value } : value))} /><Select value={route.effort ?? ''} options={[{ value: '', label: 'Default effort' }, ...['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))]} onChange={(effort) => setRoutes(routes.map((value, i) => i === index ? { ...value, effort: effort === '' ? null : effort as RoleRoute['effort'] } : value))} /><button className={`btn ${BTN_GHOST}`} aria-label={`Remove route ${index + 1}`} onClick={() => setRoutes(routes.filter((_, i) => i !== index))}>Remove</button></div>)}
+
+  const rows: RouteRow[] = routes.map((route, index) => ({ ...route, rowId: String(index) }))
+  return <div className="grid gap-[var(--space-2)]" aria-label="Workspace routing">
+    {routes.length > 0 && <Table<RouteRow>
+      aria-label="Workspace routes"
+      rows={rows}
+      getRowId={(route) => route.rowId}
+      columns={[
+        { key: 'pattern', header: 'Role pattern', render: (_, route) => <TextInput variant="unstyled" aria-label={`Role pattern ${Number(route.rowId) + 1}`} className="min-w-0 w-full" value={route.pattern} onChange={(event) => setRoutes(routes.map((value, i) => i === Number(route.rowId) ? { ...value, pattern: event.target.value } : value))} /> },
+        { key: 'model', header: 'Model', render: (_, route) => <TextInput variant="unstyled" aria-label={`Model ${Number(route.rowId) + 1}`} className="min-w-0 w-full" value={route.model} onChange={(event) => setRoutes(routes.map((value, i) => i === Number(route.rowId) ? { ...value, model: event.target.value } : value))} /> },
+        { key: 'effort', header: 'Effort', render: (_, route) => <Select aria-label={`Effort ${Number(route.rowId) + 1}`} value={route.effort ?? ''} options={[{ value: '', label: 'Default effort' }, ...['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value }))]} onChange={(effort) => setRoutes(routes.map((value, i) => i === Number(route.rowId) ? { ...value, effort: effort === '' ? null : effort as RoleRoute['effort'] } : value))} /> },
+        { key: 'rowId', header: '', render: (_, route) => <Button variant="legacy-ghost" aria-label={`Remove route ${Number(route.rowId) + 1}`} onClick={() => setRoutes(routes.filter((_, i) => i !== Number(route.rowId)))}>Remove</Button> }
+      ]}
+    />}
     {!routes.length && <p>No routes. Agents use their default model.</p>}
-    <div className="flex gap-2"><button className={`btn ${BTN_GHOST}`} onClick={() => setRoutes([...routes, { pattern: '', model: '', effort: null }])}>Add route</button><button className={`btn ${BTN_GHOST}`} onClick={() => {
+    <div className="flex gap-[var(--space-2)]"><Button variant="legacy-ghost" onClick={() => setRoutes([...routes, { pattern: '', model: '', effort: null }])}>Add route</Button><Button variant="legacy-ghost" onClick={() => {
       const invalid = routes.find((route) => !route.pattern.trim() || !route.model.trim())
       if (invalid) { setError(`Cannot save route ${JSON.stringify(invalid)}: expected a non-empty role pattern and model`); return }
       setError(null)
       client?.workspaceRoutingSet(workspace, routes)
-    }}>Save routing</button></div>{error && <p role="alert">{error}</p>}
+    }}>Save routing</Button></div>{error && <p role="alert">{error}</p>}
   </div>
 }

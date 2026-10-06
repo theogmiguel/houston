@@ -6,6 +6,7 @@ import {
   RAIL_MIN,
   clampRailWidth,
 } from "../railWidth";
+import { ResizeHandle } from "./ui/ResizeHandle";
 
 export function RailResizeHandle({
   width,
@@ -64,16 +65,11 @@ export function RailResizeHandle({
   if (collapsed) return null;
 
   return (
-    <div
-      data-testid="rail-resize-handle"
-      data-dragging={dragging ? "true" : undefined}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize sidebar"
-      aria-valuemin={RAIL_MIN}
-      aria-valuemax={RAIL_MAX}
-      aria-valuenow={width}
-      className="absolute inset-y-0 left-[var(--w-rail)] z-[var(--z-sticky)] w-2 -translate-x-1 cursor-col-resize touch-none bg-transparent after:content-[''] after:absolute after:inset-0 after:w-px after:mx-auto after:bg-transparent motion-safe:after:[transition:background-color_0.1s_ease-out] data-[dragging]:after:bg-[var(--text-faint)]"
+    <ResizeHandle
+      width={width}
+      min={RAIL_MIN}
+      max={RAIL_MAX}
+      dragging={dragging}
       onPointerDown={(e) => {
         e.preventDefault();
         pointerId.current = e.pointerId;

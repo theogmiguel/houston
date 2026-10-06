@@ -155,15 +155,20 @@ after.
 
 ## Status
 
-### Agent status is hooks-driven; PTY content is not a status machine
+### Agent status is provider-reported; PTY content is not a status machine
 
 `Daemon::set_status` is the single mutation point. Its inputs are hook drop files (mapped
-through `agent_events.rs`) and ACP streams. Three exceptions are named; anything beyond them
-must be named and recorded here, not blended in.
+through `agent_events.rs`) and ACP streams. Codex's pane-owned app-server also supplies
+startup readiness: a bounded observer reads the loaded root thread's native status and
+writes one SessionStart drop through the same guarded path. It never reads terminal
+content or changes the thread. See [agent lifecycle](agent-lifecycle.md). Three
+exceptions are named; anything beyond them must be named and recorded here, not blended in.
 
 1. **OS process liveness** (`has_child_procs` / `has_running_procs` in `daemon.rs`) is a
    kernel fact read from procfs on demand — never on a timer, never from terminal content.
    It gates the idle reaper and the pane-close confirmation. It does not set `AgentStatus`.
+   Codex's lifetime guardian separately polls its helper and PTY owner's process
+   identities for scope cleanup only; their disappearance is never evidence of Idle.
 2. **Content→text somebody reads.** Two paths under one rule: what they produce is text for
    a reader, never an `AgentStatus`.
    - **The activity mirror.** `Daemon::extract_activity` runs per chunk (throttled
@@ -267,7 +272,7 @@ decides an encoding, never a status.
 
 **Why it is not the rule above.** What it produces is a screen and the bytes the terminal owes
 the program — never an `AgentStatus`. Nothing samples it on a timer; nothing derives a
-lifecycle transition from a cell. A pane's status still comes from hooks and ACP, and an
+lifecycle transition from a cell. A pane's status still comes from provider reports, and an
 emulator that started setting one would be the pixel-reading machine the whole invariant
 forbids.
 
@@ -340,7 +345,7 @@ on the session row and metadata validation never drives status.
   `eval_script_with_callback` takes a blocking path and the watchdog supervisor can block
   on the event loop it is watching; the suspend classifier is defined on `boot − mono`, so
   wall-clock reads anywhere else corrupt it.
-- **No native `<select>`** outside `components/Select.tsx` — its open popup is an unstyled
+- **No native `<select>`** outside `components/ui/Select.tsx` — its open popup is an unstyled
   GTK window under WebKitGTK. **Enforced by** `check-native-select.sh`.
 - **No raw `lucide-react` imports** outside `components/icons.tsx`. **Enforced by**
   `check-icon-imports.sh`.

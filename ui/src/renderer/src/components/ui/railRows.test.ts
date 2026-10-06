@@ -1,0 +1,73 @@
+import { describe, expect, it } from 'vitest'
+import type { SessionInfo } from '../../houston/client'
+import { formatRailDuration, gridStatus } from './railRows'
+import { line2DetailsForWidth, orderGridPanes, railHoverCardModel } from './railRowModel'
+
+function pane(overrides: Partial<SessionInfo> & { id: number }): SessionInfo {
+  const { id, ...rest } = overrides
+  return {
+    id,
+    agent: rest.agent ?? 'claude',
+    project_dir: '/work',
+    cwd: '/work',
+    state: rest.state ?? 'running',
+    title: rest.title ?? `pane-${id}`,
+    codename: `pane-${id}`,
+    hidden: false,
+    live_children: 0,
+    children_waiting: 0,
+    inbox_unread: 0,
+    tags: [],
+    resumable: false,
+    ...rest,
+  } as SessionInfo
+}
+
+describe('rail row models', () => {
+  it('chooses the highest grid status and the earliest duration for a tie', () => {
+    expect(gridStatus([
+      pane({ id: 1, status: 'working', status_since_ms: 10_000 }),
+      pane({ id: 2, status: 'needs-input', status_since_ms: 12_000 }),
+      pane({ id: 3, status: 'needs-input', status_since_ms: 8_000 }),
+    ])).toEqual({ kind: 'needs-input', label: 'Input', since: 8_000 })
+  })
+
+  it('promotes panes waiting on children to the needs-input aggregate', () => {
+    expect(gridStatus([pane({ id: 4, status: 'working', children_waiting: 1, status_since_ms: 9_000 })])).toEqual({ kind: 'needs-input', label: 'Input', since: null })
+  })
+
+  it('degrades line two by rail width while keeping checkout and PR identity', () => {
+    expect(line2DetailsForWidth(200)).toEqual({ branch: true, worktree: true, pullRequest: true, otherBranches: false, diff: false })
+    expect(line2DetailsForWidth(260).otherBranches).toBe(true)
+    expect(line2DetailsForWidth(280).diff).toBe(true)
+    expect(line2DetailsForWidth(420)).toEqual({ branch: true, worktree: true, pullRequest: true, otherBranches: true, diff: true })
+  })
+
+  it('orders child panes below their parent and preserves unrelated pane order', () => {
+    const rows = orderGridPanes([
+      pane({ id: 4, spawned_by: 2 }),
+      pane({ id: 2 }),
+      pane({ id: 3 }),
+    ], [4, 2, 3])
+    expect(rows.map(({ session, depth }) => [session.id, depth])).toEqual([[2, 0], [4, 1], [3, 0]])
+  })
+
+  it('formats durations like the rail labels', () => {
+    expect(formatRailDuration(0, 60_000 * 22)).toBe('22m')
+    expect(formatRailDuration(0, 60_000 * 60 * 24 * 12)).toBe('12d')
+    expect(formatRailDuration(null)).toBeNull()
+  })
+
+  it('models parent panes, shared checkouts, branch facts, diff and cached PR state', () => {
+    const parent = pane({ id: 1, checkout_root: '/work/shared' })
+    const child = pane({ id: 2, checkout_root: '/work/shared', spawned_by: 1 })
+    const model = railHoverCardModel(
+      [child, parent], [1, 2], new Map([[1, 'main']]),
+      new Map([['/work/shared', { added: 8, deleted: 2 }]]),
+      new Map([['/work/shared', { gh: 'ready', pr: { number: 7, url: '/pull/7', state: 'OPEN', review_decision: null, checks: 'running' } }]]),
+    )
+    expect(model.panes.map(({ session, depth }) => [session.id, depth])).toEqual([[1, 0], [2, 1]])
+    expect(model.checkouts).toHaveLength(1)
+    expect(model.checkouts[0]).toMatchObject({ path: '/work/shared', branch: 'main', diff: { added: 8, deleted: 2 }, pr: { gh: 'ready', pr: { number: 7 } } })
+  })
+})

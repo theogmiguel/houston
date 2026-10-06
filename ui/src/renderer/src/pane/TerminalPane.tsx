@@ -42,12 +42,14 @@ import {
   IconImage,
   IconLoaderCircle
 } from '../components/icons'
-import { BTN_ICO } from '../components/buttonChrome'
+import { TerminalSurface, TerminalHost } from '../components/ui/TerminalHost'
+import { TerminalFindButton, TerminalFindInput, TerminalFindStrip } from '../components/ui/TerminalFind'
+import { SkeletonCursor, SkeletonLine, TerminalSkeleton } from '../components/ui/TerminalSkeleton'
+import { DropzoneIcon, DropzoneLabel, TerminalDropzone } from '../components/ui/TerminalDropzone'
 
 const DROPZONE_FILE_ICON = resolveTightGlyph(IconFileDown, 'ui')
 import { registerVoiceInsert, registerVoiceNotice } from '../voice/store'
 import { abandonDictation, dictationActiveFor, voiceChordDown, voiceChordUp } from '../voice/dictation'
-import { SPIN_CLASS } from '../components/git/DiffBody'
 import { outputText, stripBoxGlyphs as stripBox } from './copyOutput'
 import {
   extractDragRangeText,
@@ -63,8 +65,8 @@ import { NoticeStack } from '../components/NoticeStack'
 import { findUrls, rangesOverlap, joinWrappedLine, mapJoinedOffset } from './webLinks'
 import { matchTaskKeys, taskIdForKey } from '../houston/taskLinks'
 import { passKeysToTerminal } from '../paneCaps'
-import { ICON_ROLE_CLS, Icon, resolveTightGlyph } from '../components/Icon'
-import { Tooltip } from '../components/Tooltip'
+import { Icon, resolveTightGlyph } from '../components/ui/Icon'
+import { Tooltip } from '../components/ui/Tooltip'
 
 export interface TerminalTuning {
   readonly lineHeight: number
@@ -1220,6 +1222,7 @@ export function TerminalPane({
 
   const warmRef = useRef(warm)
   warmRef.current = warm
+  const prevHiddenRef = useRef(hiddenByExpand)
   const attachedRef = useRef(false)
   const hibernateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hibernatedRef = useRef(false)
@@ -1236,23 +1239,25 @@ export function TerminalPane({
     state.timers = []
   }
 
-  const runWakeRepaint = (): void => {
+  const runWakeRepaint = (singleFrame = false): void => {
     cancelWakeRepaint()
-    const paint = (): void => {
+    const paint = (refit = true): void => {
       const term = termRef.current
       const host = hostRef.current
       if (!term || !host) return
       if (!host.offsetWidth || !host.offsetHeight) return
+      if (refit) syncSizeRef.current()
       try {
         term.refresh(0, Math.max(0, term.rows - 1))
       } catch {
       }
     }
-    paint()
     wakeRepaintRef.current.raf = requestAnimationFrame(() => {
       wakeRepaintRef.current.raf = null
       paint()
     })
+    if (singleFrame) return
+    paint(false)
     wakeRepaintRef.current.timers = WAKE_REPAINT_DELAYS_MS.map((ms) => setTimeout(paint, ms))
   }
 
@@ -1299,7 +1304,7 @@ export function TerminalPane({
       }
       if (hibernatedRef.current) {
         hibernatedRef.current = false
-        runWakeRepaint()
+        if (!prevHiddenRef.current) runWakeRepaint()
       }
       return
     }
@@ -1321,14 +1326,13 @@ export function TerminalPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warm, documentHidden])
 
-  const prevHiddenRef = useRef(hiddenByExpand)
   useEffect(() => {
     const wasHidden = prevHiddenRef.current
     prevHiddenRef.current = hiddenByExpand
     termRef.current?.setPaused(hiddenByExpand)
     if (wasHidden && !hiddenByExpand) {
       syncSizeRef.current()
-      runWakeRepaint()
+      runWakeRepaint(true)
     }
   }, [hiddenByExpand])
 
@@ -1406,14 +1410,10 @@ export function TerminalPane({
   const typeable = live && surfaceAttached && active && connected
 
   return (
-    <div
-      className="flex-1 min-h-0 relative flex flex-col"
-      data-typeable={typeable || undefined}
-    >
+    <TerminalSurface data-typeable={typeable || undefined}>
       {find && (
-        <div className="absolute top-1.5 right-2.5 z-[calc(var(--z-pane)+3)] flex items-center gap-0.5 py-[3px] px-1 bg-[var(--card-bg)] border border-border rounded-md shadow-[var(--shadow-md)]">
-          <input
-            className="find-input w-[150px] bg-[var(--content-bg)] border border-border rounded-md text-text-primary [font-style:inherit] [font-variant:inherit] [font-weight:inherit] [font-stretch:inherit] [line-height:inherit] [font-family:inherit]! text-[length:var(--tr-text-sm)] py-[3px] px-2 focus:outline-none focus:[border-color:var(--accent)] focus-visible:[border-color:var(--accent)]"
+        <TerminalFindStrip>
+          <TerminalFindInput
             autoFocus
             placeholder="find…"
             value={findTerm}
@@ -1430,68 +1430,43 @@ export function TerminalPane({
             spellCheck={false}
           />
           <Tooltip label="Previous (Shift+Enter)">
-            <button
-              className={`btn ${BTN_ICO}`}
-              onClick={() => searchRef.current?.findPrevious(findTerm)}
-            >
+            <TerminalFindButton onClick={() => searchRef.current?.findPrevious(findTerm)}>
               <Icon glyph={IconArrowUp} role="ui" />
-            </button>
+            </TerminalFindButton>
           </Tooltip>
           <Tooltip label="Next (Enter)">
-            <button className={`btn ${BTN_ICO}`} onClick={() => searchRef.current?.findNext(findTerm)}>
+            <TerminalFindButton onClick={() => searchRef.current?.findNext(findTerm)}>
               <Icon glyph={IconArrowDown} role="ui" />
-            </button>
+            </TerminalFindButton>
           </Tooltip>
           <Tooltip label="Close (Esc)">
-            <button className={`btn ${BTN_ICO}`} onClick={closeFind}>
+            <TerminalFindButton onClick={closeFind}>
               <Icon glyph={IconClose} role="ui" />
-            </button>
+            </TerminalFindButton>
           </Tooltip>
-        </div>
+        </TerminalFindStrip>
       )}
-      <div
-        className="term-host flex-1 min-h-0 pt-1.5 pr-1.5 pb-1 pl-2 overscroll-contain [.layout.dragging_&]:pointer-events-none [.layout.resizing_&]:pointer-events-none"
-        ref={hostRef}
-      />
+      <TerminalHost hostRef={hostRef} />
       {!skeletonGone && (
-        <div
-          className="absolute inset-0 z-[calc(var(--z-pane)+1)] flex flex-col justify-center gap-[11px] pt-1.5 pr-1.5 pb-1 pl-3 bg-[var(--terminal-skeleton-bg)] pointer-events-none"
-          aria-hidden="true"
-        >
-          <div
-            className={`loop-anim w-2 h-4 mb-[3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_steps(2,end)_infinite] ${
-              synced
-                ? 'transition-opacity duration-[var(--animate-t-fast)] ease-linear opacity-0'
-                : 'motion-reduce:opacity-70'
-            }`}
-          />
+        <TerminalSkeleton>
+          <SkeletonCursor synced={synced} />
           {SKELETON_WIDTHS.map((w, i) => (
-            <div
-              key={i}
-              className={`loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] transition-opacity duration-[var(--animate-t-fast)] ease-linear motion-safe:[animation:skeleton-shimmer_1.4s_steps(4,end)_infinite] ${
-                synced ? 'opacity-0' : 'opacity-100 motion-reduce:opacity-70'
-              }`}
-              style={{ width: `${w}%`, transitionDelay: `${i * 60}ms` }}
-            />
+            <SkeletonLine key={i} synced={synced} widthPercent={w} delayMs={i * 60} />
           ))}
-        </div>
+        </TerminalSkeleton>
       )}
       {(dragOver || dropBusy) && (
-        <div
-          className="term-dropzone absolute inset-1.5 z-[calc(var(--z-pane)+2)] flex items-center justify-center gap-2 border-2 border-dashed [border-color:var(--accent)] rounded-[var(--tr-radius-md)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent)] text-[length:var(--tr-text-sm)] font-semibold pointer-events-none motion-safe:[animation:term-enter_var(--animate-t-fast)_var(--animate-ease-panel)]"
-          aria-hidden="true"
-        >
+        <TerminalDropzone>
           {dropBusy ? (
-            <IconLoaderCircle className={`${ICON_ROLE_CLS.ui} text-primary ${SPIN_CLASS}`}
+            <DropzoneIcon glyph={IconLoaderCircle} tone="busy"
               aria-hidden
               data-testid="dropzone-icon-busy" />
           ) : dragHasImages ? (
-            <IconImage className={`${ICON_ROLE_CLS.ui} text-info`} data-testid="dropzone-icon-image" />
+            <DropzoneIcon glyph={IconImage} tone="image" data-testid="dropzone-icon-image" />
           ) : (
-            <DROPZONE_FILE_ICON className={`${ICON_ROLE_CLS.ui} text-primary`} data-testid="dropzone-icon-file" />
+            <DropzoneIcon glyph={DROPZONE_FILE_ICON} tone="file" data-testid="dropzone-icon-file" />
           )}
-          <span className="tabular-nums">
-            {}
+          <DropzoneLabel>
             {dropBusy
               ? 'Copying…'
               : info.ssh_host != null
@@ -1501,10 +1476,10 @@ export function TerminalPane({
                 : dragFileCount <= 1
                   ? 'Drop to paste path'
                   : `Drop to paste ${dragFileCount} paths`}
-          </span>
-        </div>
+          </DropzoneLabel>
+        </TerminalDropzone>
       )}
       <NoticeStack anchor="pane-corner" label="Pane notices" store={notices} />
-    </div>
+    </TerminalSurface>
   )
 }

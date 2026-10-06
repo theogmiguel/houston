@@ -1,14 +1,27 @@
 import type { HoustonClient } from '../../houston/client'
 import { useTaskQueue, type TaskQueueResult } from '../../houston/useTasks'
 import { openSideTasks } from '../../sidePanel'
-import { BTN_PRIMARY } from '../buttonChrome'
-import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import { IconPlay } from '../icons'
-import { Tooltip } from '../Tooltip'
+import { Tooltip } from '../ui/Tooltip'
+import {
+  Button,
+  RosterQueueEmpty,
+  RosterQueueFoot,
+  RosterQueueGroup,
+  RosterQueueMeter,
+  RosterQueueMeterFill,
+  RosterQueueNote,
+  RosterQueuePanel,
+  RosterQueueResult,
+  RosterQueueResultLine,
+  RosterQueueRow,
+  RosterQueueRowSub,
+  RosterQueueRowTop,
+  TaskKey
+} from '../ui'
 import { queuePreview, runNextCount, runNextDisabledReason } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
-import './tasks.css'
 
 /// The roster's Queue view: the ready pool, the live-children meter against the
 /// real cap, and "Run next N" with started keys and refusals inline. Loaded on
@@ -34,69 +47,61 @@ export function RosterQueue({
   const runCount = runNextCount(ready, live, cap)
   const disabledReason = runNextDisabledReason(ready, live, cap)
   return (
-    <div className="queue-panel" data-testid="roster-queue">
-      <div className="queue-group"><span>Ready</span><span className="n">{ready}</span></div>
+    <RosterQueuePanel data-testid="roster-queue">
+      <RosterQueueGroup label="Ready" count={ready} />
       {pool.length === 0 ? (
-        <div className="queue-empty">No ready tasks.</div>
+        <RosterQueueEmpty>No ready tasks.</RosterQueueEmpty>
       ) : (
         pool.map((task) => (
-          <button
-            key={task.id}
-            type="button"
-            className="queue-row"
-            data-testid="queue-row"
-            onClick={() => openSideTasks(false, task.id)}
-          >
-            <span className="l1">
+          <RosterQueueRow key={task.id} data-testid="queue-row" onClick={() => openSideTasks(false, task.id)}>
+            <RosterQueueRowTop>
               <TaskStatusGlyph status={task.status} />
-              <span className="tk-key">{task.key}</span>
+              <TaskKey>{task.key}</TaskKey>
               <span className="flex-1" />
               <TaskPriorityGlyph priority={task.priority} />
-            </span>
-            <span className="l2"><span className="truncate">{task.title}</span></span>
-          </button>
+            </RosterQueueRowTop>
+            <RosterQueueRowSub><span className="truncate">{task.title}</span></RosterQueueRowSub>
+          </RosterQueueRow>
         ))
       )}
-      <div className="queue-foot">
-        <div className="queue-meter">
-          <span>Live children</span>
-          <span className="queue-meter-bar">
-            <i style={{ flex: live, background: 'var(--info)' }} />
-            <i style={{ flex: cap === null ? 1 : Math.max(0, cap - live), background: 'transparent' }} />
-          </span>
-          <span className="font-mono">{cap === null ? `${live} / ?` : `${live} / ${cap}`}</span>
-        </div>
-        <div className="queue-note">Settled children ({settled}) do not count against the cap</div>
-        <div className="queue-actions">
+      <RosterQueueFoot>
+        <RosterQueueMeter label="Live children" value={cap === null ? `${live} / ?` : `${live} / ${cap}`}>
+          <RosterQueueMeterFill weight={live} live />
+          <RosterQueueMeterFill weight={cap === null ? 1 : Math.max(0, cap - live)} live={false} />
+        </RosterQueueMeter>
+        <RosterQueueNote>Settled children ({settled}) do not count against the cap</RosterQueueNote>
+        <div className="flex items-center gap-[var(--space-2)]">
           <Tooltip label={disabledReason ?? undefined} className="inline-flex">
-            <button
+            <Button
               type="button"
-              className={`btn ${BTN_PRIMARY} ${HIT_TARGET_28}`}
+              variant="legacy-primary"
               data-testid="queue-run-next"
               disabled={runCount === 0}
               onClick={() => queue.run(parentId, runCount)}
             >
               <Icon glyph={IconPlay} role="small" />
               Run next {runCount}
-            </button>
+            </Button>
           </Tooltip>
         </div>
         {queue.refusal !== null && (
-          <div className="queue-result" data-testid="queue-refusal"><div className="bad">{queue.refusal}</div></div>
+          <RosterQueueResult data-testid="queue-refusal">
+            <RosterQueueResultLine tone="bad">{queue.refusal}</RosterQueueResultLine>
+          </RosterQueueResult>
         )}
         {queue.result !== null && <QueueResult result={queue.result} />}
-      </div>
-    </div>
+      </RosterQueueFoot>
+    </RosterQueuePanel>
   )
 }
 
 function QueueResult({ result }: { result: TaskQueueResult }): React.JSX.Element {
   return (
-    <div className="queue-result" data-testid="queue-result">
-      {result.started.length > 0 && <div className="ok">Started {result.started.join(', ')}</div>}
+    <RosterQueueResult data-testid="queue-result">
+      {result.started.length > 0 && <RosterQueueResultLine tone="ok">Started {result.started.join(', ')}</RosterQueueResultLine>}
       {result.refused.map((refusal) => (
-        <div key={refusal.key} className="bad">{refusal.key} — {refusal.message}</div>
+        <RosterQueueResultLine key={refusal.key} tone="bad">{refusal.key} — {refusal.message}</RosterQueueResultLine>
       ))}
-    </div>
+    </RosterQueueResult>
   )
 }

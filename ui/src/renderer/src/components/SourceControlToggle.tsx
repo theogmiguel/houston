@@ -1,7 +1,6 @@
-import { BTN_ICO } from './buttonChrome'
-import { Icon } from './Icon'
+import { Button } from './ui/Button'
 import { IconPanelRight } from './icons'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 
 export interface SourceControlToggleProps {
   open: boolean
@@ -18,19 +17,17 @@ export function SourceControlToggle({
 }: SourceControlToggleProps): React.JSX.Element {
   return (
     <Tooltip label={open ? 'Hide side panel' : `Show side panel (${chord})`}>
-      <button
-        type="button"
+      <Button
+        variant={open ? 'icon-selected' : 'icon'}
+        icon={IconPanelRight}
+        className="relative"
+        noDrag
         data-testid="scm-toggle"
         data-open={open ? 'true' : undefined}
         aria-label={open ? 'Hide side panel' : 'Show side panel'}
         aria-pressed={open}
-        className={`relative ${BTN_ICO} [-webkit-app-region:no-drag] ${
-          open ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : ''
-        }`}
         onClick={onToggle}
-      >
-        <Icon glyph={IconPanelRight} role="ui" />
-      </button>
+      />
     </Tooltip>
   )
 }

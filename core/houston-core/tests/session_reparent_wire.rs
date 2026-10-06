@@ -24,6 +24,8 @@ async fn reparenting_a_live_session_updates_every_in_memory_reader() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 
@@ -85,6 +87,7 @@ fn reparenting_a_restored_husk_persists_and_survives_a_reopen() {
             ssh_host: None,
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             spawned_by: None,
@@ -159,6 +162,7 @@ fn reparent_refuses_a_swarm_tied_session() {
             ssh_host: None,
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             spawned_by: None,
@@ -235,6 +239,8 @@ async fn reparent_refuses_a_target_that_is_not_a_directory() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 

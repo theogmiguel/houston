@@ -22,12 +22,97 @@ fn create_shell_session(daemon: &Arc<Daemon>, dir: &std::path::Path, integration
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id
 }
 
 static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[test]
+fn managed_codex_launcher_survives_user_rc_path_and_alias_overrides() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = tempfile::tempdir().unwrap();
+    let home = fixture.path().join("home");
+    let bin = fixture.path().join("user bin");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::create_dir(&bin).unwrap();
+    let launcher = fixture.path().join("managed launcher");
+    let cli = bin.join("codex");
+    let capture = fixture.path().join("capture");
+    let drop_dir = fixture.path().join("hook drops");
+    std::fs::write(
+        &launcher,
+        "#!/bin/sh\nprintf '%s\\0' \"$HOUSTON_SESSION\" \"$HOUSTON_CODEX_LAUNCHER\" \"$HOUSTON_CODEX_CLI\" \"$HOUSTON_CODEX_HOOK_DROP_DIR\" \"$@\" > \"$HOUSTON_TEST_CAPTURE\"\n",
+    )
+    .unwrap();
+    std::fs::write(&cli, "#!/bin/sh\nexit 91\n").unwrap();
+    for executable in [&launcher, &cli] {
+        std::fs::set_permissions(executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let startup = format!(
+        "export PATH='{}:/usr/bin:/bin'\nalias codex='printf user-alias'\n",
+        bin.display()
+    );
+    for rc in [".bashrc", ".zshrc"] {
+        std::fs::write(home.join(rc), &startup).unwrap();
+    }
+    let integration_dir = houston_core::shellint::materialize(fixture.path()).unwrap();
+    for shell in ["/bin/bash", "/bin/zsh"] {
+        let token = houston_core::shellint::create_token_file(&integration_dir, 2, "fixture-token")
+            .unwrap();
+        let injection =
+            houston_core::shellint::injection(&integration_dir, shell, token.path()).unwrap();
+        let mut command = houston_core::spawn::command(shell);
+        if shell.ends_with("zsh") {
+            command.arg("-d");
+        }
+        command
+            .args(injection.args)
+            .args(["-i", "-c", "codex first 'two words' 'a\"quote' ''"])
+            .env_clear()
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOUSTON_SESSION", "2")
+            .env("HOUSTON_CODEX_LAUNCHER", &launcher)
+            .env("HOUSTON_CODEX_CLI", &cli)
+            .env("HOUSTON_CODEX_HOOK_DROP_DIR", &drop_dir)
+            .env("HOUSTON_TEST_CAPTURE", &capture);
+        for (key, value) in injection.env {
+            if key != "HOUSTON_USER_ZDOTDIR" {
+                command.env(key, value);
+            }
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{shell}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let captured = std::fs::read(&capture).unwrap();
+        let expected = [
+            "2",
+            launcher.to_str().unwrap(),
+            cli.to_str().unwrap(),
+            drop_dir.to_str().unwrap(),
+            "codex-shell",
+            drop_dir.to_str().unwrap(),
+            "--",
+            cli.to_str().unwrap(),
+            "first",
+            "two words",
+            "a\"quote",
+            "",
+        ]
+        .join("\0")
+            + "\0";
+        assert_eq!(captured, expected.as_bytes(), "{shell}");
+        std::fs::remove_file(&capture).unwrap();
+    }
+}
 
 async fn pin_env(home: &std::path::Path) -> tokio::sync::MutexGuard<'static, ()> {
     let guard = ENV_LOCK.lock().await;

@@ -1,26 +1,74 @@
-import type { InputHTMLAttributes } from 'react'
-import { variants } from './variants'
+import { forwardRef, type InputHTMLAttributes } from 'react'
+import { FOCUS_HALO } from './shadowChrome'
 
-export type TextInputWidth = 'md' | 'lg' | 'full'
+export type TextInputWidth = 'md' | 'full' | 'port' | 'setting-number' | 'task-number' | 'compact' | 'number' | 'medium' | 'long' | 'wide'
+export type TextInputPadding = 'default' | 'compact'
 
-export interface TextInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'type'> {
-  type?: 'text' | 'password' | 'url'
-  width?: TextInputWidth
-  mono?: boolean
-  /** Layout classes only; visual styles belong in TextInput variants. */
-  className?: string
+const INPUT_CLS = 'min-h-[var(--h-ctl)] rounded-[var(--tr-radius-input)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]'
+const FONT_CLS = {
+  ui: '[font-size:var(--tr-text-ui-size)]',
+  small: '[font-size:var(--tr-text-small-size)]',
+  mono: 'font-mono [font-size:var(--tr-text-ui-size)]'
+} as const
+const PADDING_CLS: Record<TextInputPadding, string> = {
+  default: 'px-[var(--space-3)]',
+  compact: 'px-[var(--space-2)]'
+}
+const WIDTH_CLS: Record<TextInputWidth, string> = {
+  md: 'w-[var(--w-text-input-medium)]',
+  full: 'w-full',
+  port: 'w-[var(--w-ssh-port)] tabular-nums',
+  'setting-number': 'w-[var(--tr-width-setting-number)]',
+  'task-number': 'w-[var(--tr-width-task-number)]',
+  compact: 'w-[var(--tr-control-width-compact)]',
+  number: 'w-[var(--tr-control-width-number)]',
+  medium: 'w-[var(--tr-control-width-medium)]',
+  long: 'w-[var(--tr-control-width-long)]',
+  wide: 'w-[var(--tr-control-width-wide)]'
+}
+const FORM_SIZE_CLS = 'h-[var(--h-form-ctl)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] text-[var(--text-primary)] font-medium outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[0.72]'
+/** A rename field that takes over a row's label in place. */
+const INLINE_EDIT_CLS = `flex-1 min-w-0 bg-[var(--content-bg)] border border-[var(--accent)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-family:inherit] [font-weight:inherit] [font-style:inherit] [line-height:inherit] text-[length:var(--tr-text-md)] px-[var(--space-1-5)] py-[var(--space-0-5)] outline-none focus-visible:shadow-[${FOCUS_HALO}]`
+const FORM_CLS = 'w-full min-w-0 h-[var(--h-ssh-input)] px-[var(--space-2-5)] bg-background border border-border rounded-[var(--tr-radius-sm)] text-text-primary text-[length:var(--tr-text-base)]'
+export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'> & { surface?: 'content' | 'card'; font?: 'ui' | 'small' | 'mono'; padding?: TextInputPadding; width?: TextInputWidth; size?: 'default' | 'form'; density?: 'default' | 'compact'; radius?: 'input' | 'small'; variant?: 'field' | 'form' | 'unstyled' | 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number' | 'inline-edit' }
+
+type NumberFieldVariant = 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number'
+const NUMBER_FIELD_VARIANTS: ReadonlySet<string> = new Set<NumberFieldVariant>(['compact', 'setting-number', 'setting-number-rounded', 'task-number'])
+const NUMBER_FIELD_STATE: Record<NumberFieldVariant, string> = {
+  compact: 'disabled:opacity-50',
+  'setting-number': 'text-right',
+  'setting-number-rounded': 'text-right disabled:opacity-50',
+  'task-number': 'text-right'
 }
 
-const inputClasses = variants(
-  'h-[var(--h-ctl)] min-w-0 rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-[var(--danger)]',
-  {
-    width: { md: 'w-[200px]', lg: 'w-[280px]', full: 'w-full' },
-    mono: { true: 'font-mono', false: '' }
-  },
-  { width: 'md', mono: 'false' }
+function numberFieldClass(variant: NumberFieldVariant): string {
+  const widthClass = WIDTH_CLS[variant === 'task-number' ? 'task-number' : variant === 'compact' ? 'full' : 'setting-number']
+  const radiusClass = variant === 'task-number' ? 'rounded-[var(--tr-radius-input)]' : 'rounded-[var(--tr-radius-sm)]'
+  return `${widthClass} border border-[var(--border)] ${radiusClass} bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-space-compact-field-block)] px-[var(--space-2)] ${NUMBER_FIELD_STATE[variant]}`
+}
+
+type FieldOptions = Required<Pick<TextInputProps, 'surface' | 'font' | 'padding' | 'width' | 'size' | 'density' | 'radius'>>
+
+function fieldClass({ surface, font, padding, width, size, density, radius }: FieldOptions): string {
+  const ground = surface === 'card' ? 'bg-[var(--card-bg)]' : 'bg-[var(--content-bg)]'
+  if (density === 'compact') {
+    return `[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-input-compact-inset-y)] px-[var(--space-2)] ${WIDTH_CLS[width]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : 'rounded-[var(--tr-radius-input)]'} border border-[var(--border)] ${ground} text-[var(--text-primary)] ${font === 'mono' ? 'font-mono' : ''}`
+  }
+  return `${size === 'form' ? FORM_SIZE_CLS : INPUT_CLS} ${PADDING_CLS[padding]} ${WIDTH_CLS[width]} ${ground} ${FONT_CLS[font]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : ''}`
+}
+
+function variantClass(variant: NonNullable<TextInputProps['variant']>, options: FieldOptions): string {
+  if (variant === 'form') return `${FORM_CLS} ${options.width === 'port' ? 'w-[var(--w-ssh-port)] tabular-nums' : ''}`
+  if (variant === 'unstyled') return ''
+  if (variant === 'inline-edit') return INLINE_EDIT_CLS
+  if (NUMBER_FIELD_VARIANTS.has(variant)) return numberFieldClass(variant as NumberFieldVariant)
+  return fieldClass(options)
+}
+
+export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
+  function TextInput(props, ref): React.JSX.Element {
+    const { className = '', surface = 'content', font = 'ui', padding = 'default', width = 'full', size = 'default', density = 'default', radius = 'input', variant = 'field', ...inputProps } = props
+    const base = variantClass(variant, { surface, font, padding, width, size, density, radius })
+    return <input {...inputProps} ref={ref} className={variant === 'unstyled' ? className : `${base} ${className}`} />
+  }
 )
-
-/// A single-line text field with the settings chrome.
-export function TextInput({ type = 'text', width = 'md', mono = false, className = '', ...rest }: TextInputProps): React.JSX.Element {
-  return <input type={type} spellCheck={false} autoComplete="off" className={`${inputClasses({ width, mono: mono ? 'true' : 'false' })} ${className}`} {...rest} />
-}

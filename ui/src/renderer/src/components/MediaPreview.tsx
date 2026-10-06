@@ -3,18 +3,9 @@ import { basename } from '../editor/bufferStore'
 import { readMediaFile, openMediaFile } from '../houston/bridge'
 import { classifyReadError, type EditorPreviewState } from '../editor/previewState'
 import { mimeForPath } from '../editor/mediaKind'
-import {
-  EMEDIA_AUDIO_CLS,
-  EMEDIA_AUDIO_WRAP_CLS,
-  EMEDIA_IMG_CLS,
-  EMEDIA_VIDEO_CLS,
-  EMEDIA_WRAP_CLS,
-  EPREVIEW_DETAIL_CLS,
-  EPREVIEW_NAME_CLS,
-  EPREVIEW_TITLE_CLS
-} from '../editor/editorChrome'
+import { MediaPreviewAudio, MediaPreviewAudioGroup, MediaPreviewImage, MediaPreviewSurface, MediaPreviewVideo, PreviewDetail, PreviewName, PreviewTitle } from './ui/EditorPreview'
+import { Button } from './ui/Button'
 import { EditorPreviewBlock } from './EditorPreviewBlock'
-import { BTN_GHOST } from './buttonChrome'
 
 type LoadState =
   | { status: 'loading' }
@@ -68,8 +59,8 @@ function OpenExternallyAction({ filePath }: { filePath: string }): React.JSX.Ele
   const [openError, setOpenError] = useState<string | null>(null)
   return (
     <>
-      <button
-        className={`btn ${BTN_GHOST}`}
+      <Button
+        variant="legacy-ghost"
         data-testid="editor-preview-open-externally"
         onClick={() => {
           setOpenError(null)
@@ -84,11 +75,11 @@ function OpenExternallyAction({ filePath }: { filePath: string }): React.JSX.Ele
         }}
       >
         Open externally
-      </button>
+      </Button>
       {openError && (
-        <span className={EPREVIEW_DETAIL_CLS} data-testid="editor-preview-open-failed">
+        <PreviewDetail data-testid="editor-preview-open-failed">
           Couldn&apos;t open {basename(filePath)} externally: {openError}
-        </span>
+        </PreviewDetail>
       )}
     </>
   )
@@ -109,9 +100,9 @@ function MediaPreviewShell({
 
   if (state.status === 'loading') {
     return (
-      <div className={EMEDIA_WRAP_CLS} data-testid={`editor-preview-media-loading`}>
-        <span className={EPREVIEW_TITLE_CLS}>Loading {kindLabel}…</span>
-      </div>
+      <MediaPreviewSurface data-testid="editor-preview-media-loading">
+        <PreviewTitle>Loading {kindLabel}…</PreviewTitle>
+      </MediaPreviewSurface>
     )
   }
   if (state.status === 'error') {
@@ -125,9 +116,9 @@ function MediaPreviewShell({
     )
   }
   return (
-    <div className={EMEDIA_WRAP_CLS} data-testid={`editor-preview-${testId}`}>
+    <MediaPreviewSurface data-testid={`editor-preview-${testId}`}>
       {children(state.url, () => fail(decodeFailureState(kindLabel)))}
-    </div>
+    </MediaPreviewSurface>
   )
 }
 
@@ -135,7 +126,7 @@ export function ImagePreview({ filePath }: { filePath: string }): React.JSX.Elem
   return (
     <MediaPreviewShell filePath={filePath} kindLabel="image" testId="image">
       {(url, onError) => (
-        <img src={url} alt={basename(filePath)} className={EMEDIA_IMG_CLS} onError={onError} />
+        <MediaPreviewImage src={url} alt={basename(filePath)} onError={onError} />
       )}
     </MediaPreviewShell>
   )
@@ -145,11 +136,10 @@ export function VideoPreview({ filePath }: { filePath: string }): React.JSX.Elem
   return (
     <MediaPreviewShell filePath={filePath} kindLabel="video" testId="video">
       {(url, onError) => (
-        <video
+        <MediaPreviewVideo
           key={filePath}
           src={url}
           controls
-          className={EMEDIA_VIDEO_CLS}
           onError={onError}
         />
       )}
@@ -161,16 +151,15 @@ export function AudioPreview({ filePath }: { filePath: string }): React.JSX.Elem
   return (
     <MediaPreviewShell filePath={filePath} kindLabel="audio" testId="audio">
       {(url, onError) => (
-        <div className={EMEDIA_AUDIO_WRAP_CLS}>
-          <span className={EPREVIEW_NAME_CLS}>{basename(filePath)}</span>
-          <audio
+        <MediaPreviewAudioGroup>
+          <PreviewName>{basename(filePath)}</PreviewName>
+          <MediaPreviewAudio
             key={filePath}
             src={url}
             controls
-            className={EMEDIA_AUDIO_CLS}
             onError={onError}
           />
-        </div>
+        </MediaPreviewAudioGroup>
       )}
     </MediaPreviewShell>
   )

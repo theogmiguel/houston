@@ -11,7 +11,7 @@ import type {
   PrThread,
   PullRequestLink
 } from '../../houston/client'
-import { BTN_PRIMARY } from '../buttonChrome'
+import { BTN_PRIMARY } from '../ui/buttonChrome'
 import {
   checkMeta,
   pendingMergeReason,
@@ -181,6 +181,7 @@ class FakeClient {
       set!.delete(handler)
     }
   }
+  send(_msg: { type: string }): void {}
   emit(msg: { type: string; [k: string]: unknown }): void {
     for (const h of Array.from(this.subs.get(msg.type) ?? [])) {
       ;(h as (msg: unknown) => void)(msg)
@@ -292,12 +293,14 @@ function render(client: FakeClient | null, opts: Record<string, unknown> = {}): 
       <PullRequestTab
         client={client as unknown as HoustonClient | null}
         dir={(opts.dir as string | null | undefined) ?? '/repo'}
+        session={(opts.session as number | null | undefined) ?? null}
         active={(opts.active as boolean | undefined) ?? true}
         compact={opts.compact as boolean | undefined}
         refreshSignal={(opts.refreshSignal as number | undefined) ?? 0}
         onOpenUrlInPane={opts.onOpenUrlInPane as ((url: string) => void) | undefined}
         onShowChanges={opts.onShowChanges as (() => void) | undefined}
         onPrPresenceChange={opts.onPrPresenceChange as ((exists: boolean) => void) | undefined}
+        onSendToOrchestrator={opts.onSendToOrchestrator as ((text: string) => void) | undefined}
       />
     )
   })
@@ -307,12 +310,14 @@ function mount(
   opts: {
     client?: FakeClient | null
     dir?: string | null
+    session?: number | null
     active?: boolean
     compact?: boolean
     refreshSignal?: number
     onOpenUrlInPane?: (url: string) => void
     onShowChanges?: () => void
     onPrPresenceChange?: (exists: boolean) => void
+    onSendToOrchestrator?: (text: string) => void
   } = {}
 ): FakeClient {
   container = document.createElement('div')
@@ -379,7 +384,8 @@ describe('PullRequestTab — reading a pull request', () => {
     expect(client.prDetailCalls).toEqual([{ dir: '/repo', request: 1 }])
     emit(client, detailMsg())
     expect(q('[data-testid="pr-title"]')!.textContent).toContain('a change')
-    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('#61 · feat/x → main · 2 commits')
+    expect(q('[data-testid="pr-number"]')!.textContent).toBe('#61')
+    expect(q('[data-testid="pr-sub"]')!.textContent).toContain('feat/x → main · 2 commits')
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
     expect(qa('[data-testid="pr-check-row"]').some((row) => row.textContent?.includes('1m 12s'))).toBe(true)
     expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
@@ -843,6 +849,20 @@ describe('PullRequestTab — editing, comments and reviews', () => {
     ])
   })
 
+  it('shows the required approval count and forwards an anchored review to the orchestrator', () => {
+    const sendToOrchestrator = vi.fn()
+    const client = mount({ onSendToOrchestrator: sendToOrchestrator })
+    emit(client, detailMsg({
+      link: link({ review_decision: 'REVIEW_REQUIRED' }),
+      detail: detail({ reviewers: [{ id: 'reviewer', kind: 'user' }], threads: [thread()] })
+    }))
+
+    expect(q('[data-review-count]')?.textContent).toBe('0 / 1')
+    expect(q('[data-testid="pr-thread-comment-time"]')).not.toBeNull()
+    click(qa('button').find((button) => button.textContent === 'Send to orchestrator') ?? null)
+    expect(sendToOrchestrator).toHaveBeenCalledWith('PR #61 · src/a.rs:12\nrev: rename this')
+  })
+
   it('reacts to the pull request through the picker', () => {
     const client = mount()
     emit(
@@ -1142,17 +1162,59 @@ describe('PullRequestTab — stacks', () => {
 
 
 describe('compact side panel pull request', () => {
-  it('shows checks and the merge gate, with the complete workflow available through details', () => {
-    const client = mount({ compact: true })
-    emit(client, detailMsg())
+  it('matches the board and keeps full review controls inside collapsed Details', () => {
+    const onOpenUrl = vi.fn()
+    const client = mount({ compact: true, session: 1, onOpenUrlInPane: onOpenUrl })
+    emit(client, { type: 'pr_watch_list', watches: [{ session: 1, watches: [{ number: 61, url: 'https://github.com/o/r/pull/61', last_checked_at_ms: Date.now() - 40_000 }] }] })
+    emit(client, detailMsg({ detail: detail({
+      reviewers: [{ id: 'reviewer', kind: 'user' }],
+      reviews: [{ id: 'review-1', author: 'reviewer', state: 'COMMENTED', body: 'Please review this change.', submitted_at: 2, reactions: [] }],
+      reviews_total: 1,
+      checks: [
+        { name: 'renderer-checks', state: 'running', url: null, duration_ms: 360_000 },
+        { name: 'safety-checks', state: 'passing', url: null, duration_ms: 72_000 }
+      ],
+      threads: [
+        thread(),
+        { ...thread(), id: 'closed-thread', resolved: true, comments: [{ ...thread().comments[0], id: 'closed-comment' }] }
+      ]
+    }) }))
     expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
+    expect(q('[data-testid="pr-check-summary"]')?.textContent).toBe('Checks · 1 of 2 passed')
+    expect(q('[data-testid="pr-check-details"]')?.textContent).toBe('Details')
+    click(q('[data-testid="pr-check-details"]'))
+    expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/o/r/pull/61/checks')
+    expect(q('[data-testid="pr-check-row"]')?.textContent).toContain('running 6m')
+    expect(q('[data-testid="pr-header-top"]')!.compareDocumentPosition(q('[data-testid="pr-watch-row"]')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(q('[data-testid="pr-merge"]')!.getAttribute('disabled')).not.toBeNull()
     expect(q('[data-testid="pr-pane-files"]')).toBeNull()
-    click(q('[aria-label="Pull request details and actions"]'))
-    expect(q('[data-testid="pr-pane-files"]')).not.toBeNull()
+    expect(q('[data-testid="pr-browse-open"]')).toBeNull()
+    expect(q('[data-testid="pr-details"] [data-testid="disclosure"]')?.getAttribute('data-state')).toBe('closed')
+    expect(q('[data-testid="pr-inspector-review"] [data-testid="disclosure"]')).toBeNull()
+    expect(qa('[data-testid="pr-inspector-comment"]')).toHaveLength(1)
+    expect(q('[data-testid="pr-inspector-review"] [data-testid="pr-thread-resolve-thread-1"]')).toBeNull()
+    expect(q('[data-testid="pr-inspector-review"] [data-testid="pr-thread-reply-PRT_1"]')).toBeNull()
+    expect(q('[data-review-count]')?.textContent).toBe('0 / 1')
+    expect(q('[data-review-count]')?.className).toContain('pr-inspector-review-count')
+    click(q('[data-testid="pr-thread-reply-open-PRRC_1"]'))
+    const reply = q<HTMLTextAreaElement>('[data-testid="pr-inspector-review"] [data-testid="pr-thread-reply-PRT_1"]')
+    expect(reply).not.toBeNull()
+    typeIntoTextarea(reply!, 'Looks good after the update.')
+    click(q('[data-testid="pr-inspector-review"] [data-testid="pr-thread-reply-send-PRT_1"]'))
+    expect(client.prThreadReplyCalls).toEqual([
+      { number: 61, threadId: 'PRT_1', body: 'Looks good after the update.', request: 2 }
+    ])
+    expect(q('[data-testid="pr-details"] button')?.getAttribute('aria-expanded')).toBe('false')
+    click(q('[data-testid="pr-details"] button'))
+    expect(q('[data-testid="pr-details"] button')?.getAttribute('aria-expanded')).toBe('true')
+    expect(q('[data-testid="pr-edit-open"]')).not.toBeNull()
+    expect(q('[data-testid="pr-details"] [data-testid="pr-thread-resolve-PRT_1"]')).not.toBeNull()
+    expect(q('[data-testid="pr-details"] [data-testid="pr-thread-state-closed-thread"]')?.textContent).toBe('resolved')
+    expect(q('[data-testid="pr-details"] [data-testid="pr-reviews"]')).not.toBeNull()
+    expect(q('[data-testid="pr-details"] [data-testid="pr-review-bar"]')).not.toBeNull()
+    expect(q('[data-testid="pr-details"] [data-testid="pr-comment-composer"]')).not.toBeNull()
+    expect(q('[data-testid="pr-merge-method"]')).toBeNull()
     expect(q('[data-testid="pr-actions-menu"]')).not.toBeNull()
-    click(qa('button').find((button) => button.textContent === 'Back to summary')!)
-    expect(q('[data-testid="pr-pane-files"]')).toBeNull()
   })
 })
 
@@ -1171,13 +1233,11 @@ describe('pending merge check names', () => {
   })
 })
 
-it('uses emphasis for incomplete counters and clears it for approved reviews', () => {
+it('uses emphasis for the review counter and shows running checks in the inspector board', () => {
   const client = mount({ compact: true })
   emit(client, detailMsg())
-  const counters = (): Element[] => qa('.pr-compact-group span')
-  expect(counters()[0].className).toContain('text-[var(--warn)]')
-  expect(counters()[1].className).toContain('text-[var(--warn)]')
-  expect(q('.pr-compact-check-dot')!.className).toContain('bg-[var(--info)]')
-  emit(client, detailMsg({ link: link({ review_decision: 'APPROVED' }) }))
-  expect(counters()[1].className).not.toContain('text-[var(--warn)]')
+  expect(q('[data-review-count]')!.className).toContain('pr-inspector-review-count')
+  expect(qa('[data-testid="pr-check-row"]')).toHaveLength(2)
+  expect(qa('[data-testid="pr-pane-summary"]')).toHaveLength(0)
+  expect(qa('[data-testid="pr-pane-files"]')).toHaveLength(0)
 })

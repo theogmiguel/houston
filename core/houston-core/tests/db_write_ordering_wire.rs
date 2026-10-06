@@ -31,6 +31,8 @@ async fn a_failed_rename_write_leaves_the_in_memory_title_alone() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     let original = daemon
@@ -81,6 +83,8 @@ async fn a_failed_reparent_write_leaves_the_in_memory_project_dir_alone() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
 

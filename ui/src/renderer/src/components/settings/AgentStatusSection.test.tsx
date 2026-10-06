@@ -94,7 +94,7 @@ describe('AgentStatusSection', () => {
 
     const claude = rowFor('claude')
     expect(claude.textContent).toContain('Claude Code')
-    expect(claude.textContent).toContain('2.1.263')
+    expect(claude.closest('[data-testid="list-detail-item"]')?.textContent).toContain('2.1.263')
     expect(claude.getAttribute('data-status')).toBe('ok')
 
     const codex = rowFor('codex')
@@ -117,10 +117,10 @@ describe('AgentStatusSection', () => {
     })
     const sub = (provider: AgentKind): string =>
       rowFor(provider).parentElement!.parentElement!.textContent ?? ''
-    expect(sub('claude')).toContain('Installed · hooks on')
-    expect(sub('codex')).toContain('Installed · hooks off')
+    expect(sub('claude')).toContain('Hooks on')
+    expect(sub('codex')).toContain('Hooks off')
     expect(sub('cursor')).toContain('Not found on PATH')
-    expect(sub('grok')).toContain('Installed · hooks need attention')
+    expect(sub('grok')).toContain('Hooks need attention')
   })
 
   it('carries a StatusIcon per row, matching the row state', () => {
@@ -129,14 +129,15 @@ describe('AgentStatusSection', () => {
     expect(mark.getAttribute('data-state')).toBe('absent')
   })
 
-  it('flips a provider straight from its list row, naming that provider', () => {
+  it('flips a provider from its detail, naming that provider', () => {
     const flips: [AgentKind, boolean][] = []
     render({
       providers: [state({ provider: 'codex', scope: 'global' })],
       onSet: (p, on) => flips.push([p, on])
     })
+    select('codex')
     const sw = container.querySelector<HTMLButtonElement>(
-      '[data-testid="agent-status-row-switch"]'
+      '[data-testid="agent-status-switch"]'
     )!
     expect(sw.getAttribute('role')).toBe('switch')
     expect(sw.getAttribute('aria-checked')).toBe('false')
@@ -146,8 +147,9 @@ describe('AgentStatusSection', () => {
 
   it('refuses the switch for a CLI that is not on the machine, rather than hiding it', () => {
     render({ providers: [state({ provider: 'grok', present: false, version: null })] })
+    select('grok')
     const sw = container.querySelector<HTMLButtonElement>(
-      '[data-testid="agent-status-row-switch"]'
+      '[data-testid="agent-status-switch"]'
     )!
     expect(sw.disabled).toBe(true)
   })
@@ -240,8 +242,9 @@ describe('AgentStatusSection', () => {
       providers: [state({ provider: 'grok', scope: 'global' })],
       onSet: (p, on) => calls.push([p, on])
     })
+    select('grok')
     const sw = (): HTMLButtonElement =>
-      container.querySelector<HTMLButtonElement>('[data-testid="agent-status-row-switch"]')!
+      container.querySelector<HTMLButtonElement>('[data-testid="agent-status-switch"]')!
     act(() => sw().dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(calls).toEqual([['grok', true]])
     expect(sw().disabled).toBe(true)
@@ -256,8 +259,9 @@ describe('AgentStatusSection', () => {
 
   it('clears a pending flip when the retry fails, without claiming success', () => {
     render({ providers: [state({ provider: 'cursor', scope: 'global', enabled: true, installed: false })] })
+    select('cursor')
     const sw = (): HTMLButtonElement =>
-      container.querySelector<HTMLButtonElement>('[data-testid="agent-status-row-switch"]')!
+      container.querySelector<HTMLButtonElement>('[data-testid="agent-status-switch"]')!
     act(() => sw().dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(sw().disabled).toBe(true)
 

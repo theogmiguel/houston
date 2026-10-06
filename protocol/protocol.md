@@ -1,4 +1,4 @@
-# Wire protocol v125
+# Wire protocol v127
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -91,7 +91,7 @@ failure not given a typed refusal comes back as `error`.
 | Message | Fields | Reply |
 |---|---|---|
 | `hello` | `token`, `protocol` | `hello_ok` (direct), or `error` + close |
-| `session_create` | `agent: AgentKind`, `project_dir`, `cmd?: string[]` (required for `custom`), `cols?`/`rows?` (default 80×24), `cwd_from?: u32` (start in that session's live cwd), `shell_integration?` (default true), `auto_approve?` (default false; refused for a kind with no bypass flag), `acp?` (slug from the ACP roster; refused with `cmd`), `profile?: ProfileChoice`, `prompt?` (initial task, delivered as argv, or as a `.houston/prompts/` file the child is told to read once it is over the argv-safe threshold) | `session_created` (bcast); this socket starts receiving that session's frames |
+| `session_create` | `agent: AgentKind`, `project_dir`, `cmd?: string[]` (required for `custom`), `cols?`/`rows?` (default 80×24), `cwd_from?: u32` (start in that session's live cwd), `shell_integration?` (default true), `auto_approve?` (default false; refused for a kind with no bypass flag), `acp?` (slug from the ACP roster; refused with `cmd`), `profile?: ProfileChoice`, `prompt?` (initial task, delivered as argv, or as a `.houston/prompts/` file the child is told to read once it is over the argv-safe threshold), `model?` (provider model id), `effort?` (provider reasoning effort; refused when unsupported) | `session_created` (bcast); this socket starts receiving that session's frames |
 | `session_kill` | `session`, `confirm_children?` | `session_state` (bcast); refused `live_children_confirmation_required:` when the pane has live children and `confirm_children` is not set |
 | `session_close` | `session`, `confirm_children?` | `session_removed` (bcast); same children refusal |
 | `session_respawn` | `session`, `shell_integration?`, `cwd?` (must exist), `shell?` (absolute shell binary, shell panes only), `force?` (restart a still-live session: kill, reap, respawn — without it a live session is refused by name), `fresh?` (v119: start a fresh CLI and forget the conversation; absent, a Claude session with a valid resume handle is relaunched with `--resume <id>`, and one whose handle fails validation starts fresh with `resume_notice` set) | broadcasts; a failed spawn leaves the husk intact |
@@ -106,6 +106,8 @@ failure not given a typed refusal comes back as `error`.
 | `session_reparent` | `session`, `project_dir` | `session_reparented` (bcast) |
 | `session_cwd` | `session` | `session_cwd` (direct) — live cwd, resolved |
 | `session_cwds` | `sessions: u32[]` | `session_cwds` (direct); unknown ids degrade to `cwd: null` |
+| `pr_watch_list` | — | `pr_watch_list` (direct), grouped by session |
+| `pr_watch_unwatch` | `session`, `number` | removes that pane's watch and broadcasts `pr_watch_changed` |
 | `session_running_procs` | `sessions: u32[]` | `session_running_procs` (direct) |
 | `session_visibility` | `session`, `visible` | none; changes this socket's frame filter |
 | `wait_for_idle` | `request`, `session`, `timeout_ms?` (default 10000, cap 120000), `idle_quiet_ms?` (default 500, cap 30000) | `idle` (bcast), keyed by `request` |
@@ -114,6 +116,10 @@ failure not given a typed refusal comes back as `error`.
 | `update_get` | — | `update` (direct) |
 | `update_policy_set` | `policy: UpdatePolicy` | `update` (bcast) |
 | `update_check_now` | — | no direct reply; the daemon's check loop is woken and broadcasts `update` as the state moves |
+| `slack_get` | — | `slack` (direct) |
+| `slack_connect` | `app_token?`, `bot_token?` (both, or neither to use the tokens already in the keychain; each ≤ `SLACK_TOKEN_LEN_MAX`, prefixed `xapp-` / `xoxb-`) | `slack` (bcast); a refusal is `slack` (direct) with `refusal` set and nothing changed. Stores the tokens in the system keychain and turns the intake on |
+| `slack_disconnect` | — | `slack` (bcast). Turns the intake off, closes the connection and deletes both tokens |
+| `slack_configure` | `owner_user_id?` (a Slack member ID), `channels: SlackChannelMap[]` (≤ `SLACK_CHANNELS_MAX`, one workspace per channel, registered workspaces only), `language?: SlackLanguage` (absent keeps the current one) | `slack` (bcast); refusal as for `slack_connect` |
 
 ### Workspace
 
@@ -123,6 +129,7 @@ failure not given a typed refusal comes back as `error`.
 | `workspace_remove` | `path` | kills and removes every session rooted there; `workspace_list` + `orchestration_state` (bcast) |
 | `workspace_rename` | `path`, `name` | `workspace_list` (bcast) |
 | `workspace_list` | — | `workspace_list` (direct) |
+| `workspace_local_servers` | `workspace` | `workspace_local_servers` with loopback listeners owned by live workspace session processes (direct) |
 
 ### Orchestration
 
@@ -133,6 +140,9 @@ failure not given a typed refusal comes back as `error`.
 | `settled_retention_set` | `hours` (1..=8760, default 24) | `host_info` (bcast); named `SETTLED_RETENTION` refusal outside the range |
 | `workspace_routing_get` | `workspace` | `workspace_routing` with current `routes` |
 | `workspace_routing_set` | registered `workspace`, `routes: RoleRoute[]` (max 64) | `workspace_routing` (bcast) |
+| `workspace_actions_get` | `workspace` | `workspace_actions` with the saved actions |
+| `workspace_action_set` | `workspace`, `action: WorkspaceAction` | `workspace_actions` (bcast), or `workspace_action_refused` |
+| `workspace_action_delete` | `workspace`, `id` | `workspace_actions` (bcast) |
 | `orchestration_caps_set` | `max_live_children`, `max_spawn_depth` (both `1..=ORCHESTRATION_CAP_MAX`) | `orchestration_state` (bcast); out of range is an `error` naming cap and value |
 | `delegation_results_list` | `parent: u32` (nonzero) | `delegation_results` (direct); latest durable result per child for this parent, including delivered, staged and operator-routed rows; authenticated `/ws` clients only |
 | `inbox_list` | `workspace` | `inbox_rows` (direct) — every row addressed to the operator for that workspace |
@@ -147,6 +157,7 @@ failure not given a typed refusal comes back as `error`.
 | `git_status` | `dir`, `base?` (branch name = branch-vs-base scope; unresolvable base is an `error`) | `git_status` (direct); a plain existing directory with no Git metadata replies `not_a_repo: true` with empty Git fields; a missing directory or any Git probe failure is an `error` |
 | `git_diff` | `dir`, `path?` (absent = full patch), `base?` | `git_diff` (direct) |
 | `git_branch` | `dir` | `git_branch` (direct); a non-repo yields all three fields null, a detached HEAD keeps `toplevel`/`common_dir` and yields `branch: null` |
+| `git_branch_commits` | `dir` | `git_branch_commits` (direct), newest first for `@{upstream}..HEAD`; capped at `GIT_BRANCH_COMMITS_CAP`, with `total` and `truncated`; a missing upstream or non-repo is an `error` |
 | `git_stage` | `dir`, `paths` (empty = all) | fresh `git_status` (direct) |
 | `git_unstage` | `dir`, `paths` (empty = all) | fresh `git_status` (direct) |
 | `git_commit` | `dir`, `message` | `git_commit` then `git_status` (direct) |
@@ -266,6 +277,9 @@ failure not given a typed refusal comes back as `error`.
 | `harness_routine_create` | `workspace`, `engine`, `model?`, `effort?`, `cadence`, `enabled` | the preset review routine for that workspace, with these fields; `routines` (bcast) and `harness_changed` (bcast) on success, `routine_refused` (direct) for a cap or name; `error` when the workspace is not a directory or already has its review routine. It is changed, run and deleted with the `routine_*` messages |
 | `harness_report` | `review_id` | `harness_report` (direct); `error` when the review has no `report.md` |
 | `harness_decide` | `workspace`, `key`, `state: HarnessFindingState` (`open` withdraws the decision) | `harness_changed` (bcast); `error` when no review of that workspace raised `key` |
+| `harness_fix_task` | `workspace`, `key`, `agent?`, `start` (default false), `prompt?` (edited apply prompt) | `task_changed` and `harness_changed` (bcast); `task_refused` for access off, the task cap, invalid key or an existing open linked task (names its `HOU-n`) |
+| `harness_overview_get` | — | `harness_overview` (direct), one row per workspace with Harness reviews |
+| `harness_seen` | `workspace`, `review_id` | `harness_changed` (bcast); the stored cursor advances monotonically and is capped at the latest published review |
 
 ### Tasks
 
@@ -340,7 +354,8 @@ every refusal names the setting.
 | `restore_resume_set` | `enabled` (v119: whether boot restore resumes each pane's conversation; on by default) | `host_info` (bcast) |
 | `mailbox_retention_set` | `hours` (`1..=MAILBOX_RETENTION_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
 | `worktree_cleanup_set` | `enabled`, `grace_hours` (`1..=WORKTREE_CLEANUP_GRACE_HOURS_MAX`) | `host_info` (bcast); same refusal shape |
-| `usage_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `refresh_pricing?` | `usage_summary` (direct), never a broadcast. A half-open instant range: the daemon has no time zone, so the client converts local days to instants and back. Refused when `until_ms <= since_ms` or the span exceeds `USAGE_MAX_WINDOW_DAYS` |
+| `usage_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `refresh_pricing?`, `workspace?` (registered path) | `usage_summary` (direct), never a broadcast. A half-open instant range. Refused when `until_ms <= since_ms` or the span exceeds `USAGE_MAX_WINDOW_DAYS` |
+| `usage_activity_summary_get` | `since_ms` (inclusive), `until_ms` (exclusive), `workspace?` | `usage_activity_summary` (direct) with at most `USAGE_ACTIVITY_MAX_DAYS` local-day rows; reads the durable daily rollup and does not scan transcripts |
 | `browser_tool_result` | `request_id`, `ok`, `output?: JSON`, `error?` | reply to a `browser_tool_call` this connection received — the browser-tool relay's app-to-daemon half (v93, Detach). Ignored if the daemon is no longer waiting on `request_id` |
 
 ## Server → client
@@ -365,7 +380,7 @@ every refusal names the setting.
 | `session_cwd` | `session`, `cwd` | direct reply to `session_cwd` |
 | `session_cwds` | `entries: SessionCwdEntry[]` | direct reply to `session_cwds` |
 | `session_running_procs` | `entries: SessionProcsEntry[]` | direct reply to `session_running_procs` |
-| `live_children_changed` | `session`, `live_children`, `children_waiting` | bcast after any transition that can change either of a parent's child counts — a child spawning, dying or respawning moves the first; a child blocking, stalling or being released moves the second |
+| `live_children_changed` | `session`, `live_children`, `children_waiting` | bcast after any transition that can change either of a parent's child counts — a child spawning, dying or respawning moves the first; a child reporting needs-input or being released moves the second; a stall warning alone does not raise this count |
 | `delegation_changed` | `session` (the CHILD), `delegation: DelegationInfo` | bcast after every write to a delegation record — spawn, state transition, stall flag, staging, flush, close. The whole record, so a client replaces rather than patches |
 | `delegation_results` | `parent`, `results: DelegationResult[]`, `truncated: bool` | direct; newest first (timestamp then inbox id), at most 256 children; `truncated` reports omitted older children |
 | `inbox_rows` | `workspace`, `rows: InboxRow[]` | v96: direct reply to `inbox_list` — every row addressed to the operator for that workspace, oldest first |
@@ -374,7 +389,11 @@ every refusal names the setting.
 | `session_policy` | `policy: SessionPolicy` | direct reply to `session_policy_get`; bcast after a set |
 | `update` | `policy: UpdatePolicy`, `state: UpdateState` | direct reply to `update_get`; bcast on every state change. Policy and state travel together, so a client can never render one against a stale copy of the other |
 | `keymap` | `overrides: KeymapOverrides` | direct reply to `keymap_get`; bcast after a set |
+| `slack` | `info: SlackInfo`, `refusal?` | direct reply to `slack_get` or a refused change; bcast after an applied change and on every move of the connection |
 | `workspace_list` | `workspaces: Workspace[]` | direct reply; bcast after add/remove/rename |
+| `workspace_actions` | `workspace`, `actions: WorkspaceAction[]` | direct reply to `workspace_actions_get`; bcast after a saved action is changed |
+| `workspace_action_refused` | `workspace`, `reason`, `limit`, `actual`, `requested` | direct refusal when command length or per-workspace action count exceeds its limit |
+| `workspace_local_servers` | `workspace: string`, `servers: LocalServer[]`, `unsupported: string | null`, `truncated: boolean` | direct reply; Linux reads local TCP listeners owned by live workspace session process trees; other platforms name their refusal |
 | `orchestration_state` | `enabled`, `caps: OrchestrationCaps`, `acp_agents: AcpAgentInfo[]` | direct reply to `orchestration_settings_get`; bcast after any switch or cap change |
 | `swarm_message` | `message: SwarmMessage` | bcast — the mailbox layer recorded a message, status, escalation or completion |
 | `swarm_agent` | `agent: SwarmAgentInfo` | bcast — an orchestrated agent's status or activity changed |
@@ -385,6 +404,7 @@ every refusal names the setting.
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
 | `git_diff` | `dir`, `path?`, `patch`, `truncated`, `base?` | direct reply to `git_diff` |
 | `git_branch` | `dir`, `branch?`, `toplevel?`, `common_dir?` | direct reply to `git_branch`; the branch comes from the checkout's HEAD and one `rev-parse --show-toplevel --path-format=absolute --git-common-dir` answers the identity. `toplevel` names the work tree (equal means one checkout), `common_dir` the repository (equal means main checkout plus worktree); both null outside a work tree |
+| `git_branch_commits` | `dir`, `commits: GitBranchCommit[]`, `total`, `truncated` | direct reply to `git_branch_commits`; each `GitBranchCommit` carries a short `sha`, `subject` and `author_time_ms` |
 | `git_commit` | `dir`, `sha`, `summary` | direct reply to `git_commit`, followed by a fresh `git_status` |
 | `git_review_diffs` | `dir`, `branch?`, `upstream?`, `ahead`, `behind`, `head?`, `files: GitFileStatus[]`, `sections: GitReviewSection[]`, `blocked_paths`, `warnings`, `truncated`, `redacted` | direct reply to `git_review_diffs`; one entry per non-empty scope |
 | `git_branches` | `dir`, `branches: GitBranchInfo[]`, `remotes: GitBranchInfo[]`, `default_branch?`, `truncated` | direct reply to `git_branches` and every branch mutation |
@@ -397,6 +417,8 @@ every refusal names the setting.
 | `pr_status` | `dir`, `gh: GhState`, `has_upstream`, `pr?: PrInfo`, `hint?` | direct reply — a `gh` problem is reported in `gh` + `hint`, never as `error` |
 | `pr_create` | `dir`, `gh: GhState`, `pr?: PrInfo`, `message?` | direct reply — `message` carries `gh`'s own first stderr line on a genuine failure |
 | `pr_detail` | `dir`, `request`, `gh: GhState`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate |
+| `pr_watch_list` | `watches: SessionPrWatches[]` | direct reply; contains the watches currently owned by each session |
+| `pr_watch_changed` | `session`, `watches: PrWatchInfo[]` | bcast after a session starts or stops a watch, a watch ends, or a read completes; `PrWatchInfo.last_checked_at_ms?` is the time of the last completed read, including failed reads |
 | `pr_linked` | `dir`, `request`, `ok`, `message?` | direct reply to `pr_link`; success is followed by a fresh `pr_detail` with the same `request` |
 | `pr_unlinked` | `dir`, `request`, `number?`, `ok`, `message?` | direct reply to `pr_unlink`; `number` names what was removed |
 | `pr_merged` | `dir`, `request`, `number`, `ok`, `message?` | direct reply to `pr_merge`; `message` carries the refusal (moved head, merge gate, or gh's own stderr line). Success is followed by a fresh `pr_detail` |
@@ -424,9 +446,10 @@ every refusal names the setting.
 | `routine_refused` | `id?` (`null` for a refused create), `kind: RoutineErrorKind`, `limit?`, `requested?` | direct reply only; nothing changed |
 | `routine_runs` | `runs: RoutineRun[]` | direct reply to `routine_runs` |
 | `routine_run_event` | `run: RoutineRun` | bcast — one run changed state: opened, refused before it spawned, or ended with an outcome |
-| `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability) | direct reply to `harness_state` |
+| `harness_state` | `workspace`, `routine?: Routine`, `reviews: HarnessReview[]` (newest first, at most `HARNESS_REVIEWS_PAGE`), `findings: HarnessFinding[]` (one per key, from the newest review that raised it), `models: HarnessModelOption[]` (native Anthropic chat and OpenAI chat/Responses models in the local model catalog; not account availability), `provider_coverage: HarnessProviderCoverage[]` | direct reply to `harness_state` |
+| `harness_overview` | `rows: HarnessAttention[]` | direct reply to `harness_overview_get` |
 | `harness_report` | `review_id`, `markdown`, `truncated` (the file passed `HARNESS_REPORT_MAX_BYTES`) | direct reply to `harness_report`; a read failure replies with `error.context = "harness_report:<review_id>"` so the client can offer a retry for that report |
-| `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, or a decision changed; a client showing it asks for `harness_state` again |
+| `harness_changed` | `workspace` | bcast — a review of that workspace started, published or failed, a finding decision or task link changed, or the seen cursor advanced; clients refresh Harness state and overview |
 | `task_snapshot` | `scope`, `tasks: TaskSummary[]` (newest number first, at most `TASKS_PER_WORKSPACE`; archived tasks stay in the list with `archived_at_ms` set), `counts: TaskCounts` (non-archived only) | direct reply to `task_snapshot` |
 | `task_detail` | `task: Task`, `acceptance: TaskAcceptanceItem[]` (by position), `comments: TaskComment[]` (newest first, at most `COMMENTS_PER_TASK`), `history: TaskHistoryEntry[]` (newest first, at most `TASK_HISTORY_PAGE`), `runs: TaskRun[]` (newest first, at most `RUNS_PER_TASK`) | direct reply to `task_get` |
 | `task_changed` | `workspace?` (null = unassigned), `id`, `revision` | bcast after any task write — a client refreshes its scoped snapshot and open detail |
@@ -446,6 +469,7 @@ every refusal names the setting.
 | `remote_pairing` | `url` (`<RemoteInfo.url>/#pair=<code>`; the 128-bit code is single-use and lives in the fragment, so it never reaches a proxy log), `qr_svg` (SVG markup of `url`), `expires_at` (epoch ms, 10 minutes) | direct reply to `remote_pair_start` |
 | `host_info` | see `HostInfo` below | direct reply to `host_info_get`; bcast after a knob change |
 | `usage_summary` | `since_ms`, `until_ms`, `read_at_ms`, `buckets: UsageBucket[]`, `sources: UsageSource[]`, `pricing: UsagePricing`, `untracked_agents: AgentKind[]`, `scan_duration_ms` | direct reply to `usage_summary_get` |
+| `usage_activity_summary` | `since_ms`, `until_ms`, `days: UsageActivityDay[]` | direct reply to `usage_activity_summary_get` |
 | `error` | `message`, `context?` | direct, to the offending connection only |
 | `browser_tool_call` | `request_id`, `tool`, `args: JSON`, `session_id`, `workspace_id` | daemon-initiated, to the one connection owning the current window — the browser-tool relay (v93, Detach) |
 
@@ -480,6 +504,8 @@ SessionInfo        checkout_root?: string | null (Git root, including ordinary s
                    `title`; parent-facing labels read this. Empty from an older daemon —
                    read `title` instead),
                    detected_agent?, hidden, ssh_host?, restore_deferred?: RestoreReason, status?: AgentStatus,
+                   status_since_ms?: number | null (runtime-only epoch time for the current agent
+                   status; absent until a provider status is known and reset on status changes),
                    context?: SessionContext (v111: runtime-only occupancy; absent or `unknown` hides
                    the indicator; never persisted, so it resets on respawn),
                    swarm_agent?, spawned_by?, acp? (slug), live_children, children_waiting, profile_label?,
@@ -565,6 +591,8 @@ PrCheck            name, state (queued | running | passing | failing | skipped |
                    url?, duration_ms?
 PrComment          author, body, created_at, url?
 PrReview           author, state, body, submitted_at
+PrWatchInfo        number, url
+SessionPrWatches   session, watches: PrWatchInfo[]
 PrMergeMethod      merge | squash | rebase
 
 SshAuth            tag "kind": agent | identity_file{path, passphrase_profile?} | password{profile} | ssh_config
@@ -619,8 +647,16 @@ HarnessModelOption provider: AgentKind (Claude or Codex), id (native model id)
 HarnessFinding     review_id, key, title, category, confidence, sessions, count, quotes,
                    recommendation_kind, target, recommendation, apply_prompt,
                    state: HarnessFindingState, decided_at_ms?,
-                   recurred (a review published after the decision raised it again, so it is open)
+                   recurred (a review published after the decision raised it again, so it is open),
+                   phase: HarnessFindingPhase, task?, verification?, last_seen_review_id
 HarnessFindingState open | dismissed | resolved
+HarnessFindingPhase open | fixing | awaiting_verification | not_seen | resolved | dismissed
+HarnessFindingTask task_id, key (`HOU-<number>`), status: TaskStatus, landed_at_ms?
+HarnessVerification review_id, verdict: HarnessVerdict, sessions_after, quotes
+HarnessVerdict gone | still_present | inconclusive
+HarnessAttention workspace, counts for each finding phase, latest_published_review_id?,
+                 seen_review_id, attention
+HarnessProviderCoverage agent: AgentKind (OpenCode, Cursor, Grok or Antigravity), sessions
 
 TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number>`), title,
                    status: TaskStatus, priority: TaskPriority,
@@ -628,8 +664,11 @@ TaskSummary        id, workspace? (null = unassigned), number, key (`HOU-<number
                    created_by ('user' or an agent's provenance), created_at_ms, updated_at_ms,
                    archived_at_ms?, acceptance_checked, acceptance_total,
                    open_run? (the newest run still in preparing/running/waiting_for_input/
-                   validating, so the list can draw the execution card without a detail fetch)
+                   validating, so the list can draw the execution card without a detail fetch),
+                   origin?: TaskOrigin
+                   intake?: TaskIntake (set when the task was filed from Slack)
 Task               as TaskSummary plus description (≤ `TASK_DESCRIPTION_MAX`)
+TaskOrigin         harness_finding: workspace, key, review_id
 TaskStatus         backlog | todo | in_progress | in_review | done | canceled
 TaskPriority       none | urgent | high | medium | low (stored 0..4)
 TaskAcceptanceItem id, position, text, checked_at_ms?, checked_by?
@@ -640,13 +679,23 @@ TaskRun            id, task_id, attempt, kind: TaskRunKind, state: TaskRunState,
                    worktree_path?, branch?, base_commit?, initial_revision, summary?,
                    reason? (why the run is not running: an interrupted pane, a missing or
                    unauthenticated `gh` during the PR watch, or a refused resume),
-                   started_at_ms, ended_at_ms?
+                   started_at_ms, ended_at_ms?, pr_url? (the pull request `gh` found for the
+                   branch when a Slack-filed run was handed back)
 TaskRunKind        implementation | review
 TaskRunState       preparing | running | waiting_for_input | validating | handed_back |
                    needs_review | failed | cancelled | interrupted
 TaskRunAction      stop | resume | retry (retry reopens the same worktree with the newest
                    failed review's findings appended to the brief)
 TaskPromptDelivery send | prefill — how a Start hands the brief over, per workspace
+TaskIntake         source ('slack'), author (Slack member ID), state: IntakeState,
+                   queue_position? (1-based, while queued), permalink?
+IntakeState        pending | queued | started | refused
+SlackChannelMap    channel_id (C… or G…), workspace (a registered workspace path)
+SlackConnection    off | connecting | connected | retrying
+SlackLanguage      en | pt_br — what Houston writes in Slack and asks the agent to write
+SlackInfo          enabled, has_tokens, connection: SlackConnection, team?, bot_user_id?,
+                   owner_user_id?, channels: SlackChannelMap[], language: SlackLanguage,
+                   last_event_at_ms?, last_catchup_at_ms?, error?
 TaskCounts         ready (todo with no unfinished blocker; the queue's pool), backlog, todo,
                    in_progress, in_review, done, canceled
 TaskQueueRefusal   id, key, message — one ready task a task_queue_run could not start
@@ -721,16 +770,21 @@ RemoteInfo         enabled, bind ("IP:PORT"), public_url?, url (public_url, else
 UsageProvider      claude | codex
 UsageTokenTotals   uncached_input_tokens, cached_input_tokens, cache_creation_tokens, output_tokens, reasoning_tokens
 UsageBucket        hour_start_ms, provider, model, totals, cost_usd, cache_savings_usd, records,
-                   cost_source (provider_reported | model_priced | unpriced), unpriced_records, sessions
+                   cost_source (provider_reported | model_priced | unpriced), unpriced_records, sessions,
+                   workspace_path?, category_cost_usd, fast_cost_usd, ultrafast_cost_usd,
+                   speed_premium_usd, speed_rate_available
+UsageCategoryCost  input_usd, cache_read_usd, cache_write_usd, output_usd, other_usd
+UsageActivityDay   day (local YYYY-MM-DD), cost_usd, totals
 UsageSource        provider, path, profile_name?, status (ok | missing | partial | failed), scanned_files,
                    skipped_files, failed_files, distinct_sessions, message?
 UsagePricing       status (fresh | cached | unavailable), source, fetched_at_ms?, known_models, message?
 ```
 
-Every cap and default named above is a constant in `lib.rs`, mirrored into the
-UI as `DEFAULTS.ts` by `scripts/gen-protocol-types.sh` so a client can refuse an
-out-of-range value before the daemon has to. One definition, two consumers —
-never a number typed twice.
+Every client-input cap and default named above is a constant in `lib.rs`, mirrored
+into the UI as `DEFAULTS.ts` by `scripts/gen-protocol-types.sh` so a client can
+refuse an out-of-range value before the daemon has to. Server-side response bounds
+remain daemon constants because clients do not submit them. One definition per
+bound — never a number typed twice.
 
 ## Attach sequencing
 
@@ -1087,7 +1141,9 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
-| 125 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
+| 127 | **Remote access from a phone or another computer.** New `remote_get`, `remote_configure`, `remote_pair_start` and `remote_device_revoke` client messages and `remote_state` and `remote_pairing` replies, with `RemoteInfo`, `RemoteDevice` and `RemoteNotifyDetail`. The daemon can run an opt-in second listener for paired devices (see Remote access HTTP API) and send ntfy notifications; refusals are `error` with `context: "remote"`. No existing message changes |
+| 126 | **Usage buckets and durable activity gain detail.** Usage buckets gain category and speed costs plus workspace attribution; `usage_summary_get.workspace?`; `usage_activity_summary_get` → `usage_activity_summary` reads up to 365 local calendar days persisted in `usage_daily_rollup`. **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. **Pull-request watches** add `pr_watch_list` / `pr_watch_unwatch` and the `pr_watch_list` / `pr_watch_changed` replies with `PrWatchInfo` and `SessionPrWatches`; the watch remains local daemon state. The same batch adds `git_branch_commits` and optional `PrWatchInfo.last_checked_at_ms` without changing this protocol version |
+| 125 | **A Slack mention becomes a pending task; the owner's ✅ starts it.** New `slack_get`, `slack_connect`, `slack_disconnect` and `slack_configure` client messages and the `slack` reply, with `SlackInfo`, `SlackConnection`, `SlackChannelMap`, `SlackLanguage`, `TaskIntake` and `IntakeState`; `TaskSummary.intake?` and `TaskRun.pr_url?`. The daemon holds an opt-in Socket Mode connection, files mentions in mapped channels as tasks, starts them on the owner's reaction or direct-message button within `SLACK_RUNS_WORKING_MAX`, shows each request's state as a reaction, and posts the agent's questions (one button per option) and hand-back to the request's thread. Agents get `hs-task ask` / MCP `task_ask` (HTTP `/task/ask`, fields `context?`, `question`, `options`, `recommended`, `why?`). Existing messages are unchanged |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |
 | 123 | **A local task backlog per workspace.** New `task_snapshot`, `task_get`, `task_save`, `task_comment`, `task_check`, `task_archive`, `tasks_access_get` and `tasks_access_set` client messages and `task_snapshot`, `task_detail`, `task_changed`, `task_refused` and `tasks_access` replies, with `Task`, `TaskSummary`, `TaskPatch`, `TaskStatus`, `TaskPriority`, `TaskAcceptanceItem`, `TaskComment`, `TaskHistoryEntry`, `TaskRun`, `TaskCounts`, `TaskErrorKind` and `TasksAccess`. Tasks live in per-workspace `backlog_*` SQLite tables, get a monotonic `HOU-<n>` number and an integer `revision`, and are gated by a per-workspace Tasks access (`off`/`read`/`write`, default `write`) in Settings ▸ Tasks; the orphan `tasks`/`task_events` tables are unrelated and untouched. Removing a workspace deletes its tasks. No existing message changes |
 | 122 | **An orchestrator is offered a handoff after repeated compactions.** `SessionInfo.compactions?` and the `compactions_changed` broadcast carry the count from each provider's compaction hook (Claude, Codex and Grok `PreCompact`, Cursor `preCompact`, OpenCode `session.compacted`; Antigravity reports none). The offer is an `operator_note` inbox row with reason `handoff_offer` |
@@ -1136,3 +1192,7 @@ Only the current window; older bumps live in git history.
 | 93 | **Detach.** `hello_ok` gains `safe_mode: SafeModeSummary` (`disable_auto_restore`, `disable_swarm_autolaunch`) — under Detach the app is a separate process from the daemon and can no longer read the daemon's own `HOUSTON_SAFE_MODE` env var, so this rides the connect-time message the same way `recovery` already does. New `ServerMsg::BrowserToolCall{request_id, tool, args}` / `ClientMsg::BrowserToolResult{request_id, ok, output?, error?}`: the browser-tool relay's wire half, for the `ToolProvider` that moved from the app's own process into the daemon and now must ask whichever `/ws` connection owns the window to actually run the tool |
 | 92 | **Frames leave the broadcast; a drop is a gap.** Each `/ws` connection takes PTY frames from its own bounded queue per attached session (144 frames / 4 MiB); a client that falls behind drops only its own frames and receives a `FRAME_GAP` anchored where loss began. Control lag closes the socket with `error{context:"control_lag"}` instead of dropping lifecycle events silently. `scrollback` gains `attempt`, the attachment generation, so a late reply cannot re-sync a pane to an older boundary, and nothing a replay covers follows its reply |
 | 91 | Connections adds `McpServer.destinations` (empty = all supported tools), `mcp_server_upsert`, `mcp_server_remove`, and `mcp_test`. Upsert/remove change Houston's list; `mcp_sync` applies it. `mcp_state.checks` reports ephemeral `McpConnectionCheck` results from explicit connection tests. |
+`WorkspaceAction` contains an `id`, `name`, `command` and optional `shortcut` chord. Actions are
+saved per workspace in the daemon database. A workspace can store up to 24 actions, and each
+command is limited to 4096 UTF-8 bytes. Refusals report the limit, actual value, requested value
+and reason.

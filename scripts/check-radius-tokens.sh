@@ -5,53 +5,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-ui_src="${SCAN_ROOT:-ui/src}"
+if [ -n "${SCAN_ROOT:-}" ]; then
+  scan_roots=("$SCAN_ROOT")
+else
+  scan_roots=(ui/src/renderer/src/components/ui ui/src/renderer/src/theme.css ui/src/renderer/src/tailwind.css ui/src/renderer/src/keyframes.css ui/src/renderer/src/base.css)
+fi
 tailwind_css="ui/src/renderer/src/tailwind.css"
 fail=0
-source scripts/check-radius-tokens-widened-baseline.sh
 
-BASELINE=(
-  "ui/src/renderer/src/App.tsx 1"
-  "ui/src/renderer/src/components/AgentProfiles.tsx 3"
-  "ui/src/renderer/src/components/AppearancePicker.tsx 1"
-  "ui/src/renderer/src/components/AttachmentChip.tsx 2"
-  "ui/src/renderer/src/components/BrowserActConfirm.tsx 7"
-  "ui/src/renderer/src/components/browserFullscreenChrome.ts 3"
-  "ui/src/renderer/src/components/BrowserPane.tsx 4"
-  "ui/src/renderer/src/components/browserPickerChrome.ts 3"
-  "ui/src/renderer/src/components/BrowserPicker.tsx 1"
-  "ui/src/renderer/src/components/browserTabs.tsx 3"
-  "ui/src/renderer/src/components/CommandPalette.tsx 1"
-  "ui/src/renderer/src/components/FirstRun.tsx 1"
-  "ui/src/renderer/src/components/HandoffOverlay.tsx 1"
-  "ui/src/renderer/src/components/HostKeyModal.tsx 2"
-  "ui/src/renderer/src/components/LayoutView.tsx 1"
-  "ui/src/renderer/src/components/markdownPipeline.tsx 1"
-  "ui/src/renderer/src/components/McpManager.tsx 1"
-  "ui/src/renderer/src/components/nav/navChrome.tsx 2"
-  "ui/src/renderer/src/components/NewSessionComposer.tsx 1"
-  "ui/src/renderer/src/components/panelChrome.ts 1"
-  "ui/src/renderer/src/components/QuestionCard.tsx 1"
-  "ui/src/renderer/src/components/settings/AboutSection.tsx 1"
-  "ui/src/renderer/src/components/settings/AppearanceSection.tsx 2"
-  "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 3"
-  "ui/src/renderer/src/components/settings/OrchestrationSection.tsx 2"
-  "ui/src/renderer/src/components/settings/PrivacySection.tsx 1"
-  "ui/src/renderer/src/components/settings/shared.tsx 2"
-  "ui/src/renderer/src/components/settings/ShortcutsSection.tsx 1"
-  "ui/src/renderer/src/components/settings/TerminalSection.tsx 2"
-  "ui/src/renderer/src/components/settings/VoiceSection.tsx 4"
-  "ui/src/renderer/src/components/Sidebar.tsx 12"
-  "ui/src/renderer/src/components/SkillsView.tsx 8"
-  "ui/src/renderer/src/components/SshConnectModal.tsx 2"
-  "ui/src/renderer/src/components/UsageSection.tsx 2"
-  "ui/src/renderer/src/components/WindowControls.tsx 1"
-  "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
-  "ui/src/renderer/src/editor/editorChrome.ts 1"
-  "ui/src/renderer/src/global.css 1"
-  "ui/src/renderer/src/pane/TerminalPane.tsx 3"
-  "ui/src/renderer/src/voice/DictationIndicator.tsx 1"
-)
 
 mapped_steps="$(perl -e '
   my $f = shift;
@@ -77,7 +38,7 @@ for step in xs sm md lg xl 2xl 3xl 4xl; do
 done
 banned_alt="$(IFS='|'; echo "${banned_steps[*]}")"
 
-mapfile -t sources < <(git ls-files --cached --others --exclude-standard "$ui_src" \
+mapfile -t sources < <(find "${scan_roots[@]}" -type f \
   | grep -E '\.(ts|tsx|css)$' \
   | grep -v '\.test\.tsx\?$' \
   | sort -u)
@@ -145,92 +106,16 @@ widened_report="$(perl -e '
   }
 ' "${sources[@]}")"
 
-if [ "${1:-}" = "--baseline" ]; then
-  echo "WIDENED_BASELINE=("
-  awk -F '\t' 'NF { count[$1]++ } END { for (f in count) printf "  \"%s %d\"\n", f, count[f] }' <<< "$widened_report" | sort
-  echo ")"
-  exit 0
-fi
-
-declare -A widened_actual=() widened_locations=()
-while IFS=$'\t' read -r f line value; do
-  [ -n "$f" ] || continue
-  widened_actual["$f"]=$(( ${widened_actual[$f]:-0} + 1 ))
-  widened_locations["$f"]+="${f}:$line '$value'; "
+fail=0
+while IFS=$'\t' read -r file line value; do
+  [ -n "$file" ] || continue
+  echo "FAIL: radius-token $file:$line '$value'; expected rounded-[var(--tr-radius-<rung>)] or border-radius: var(--tr-radius-<rung>)" >&2
+  fail=1
 done <<< "$widened_report"
-declare -A widened_pinned=()
-for entry in "${WIDENED_BASELINE[@]}"; do widened_pinned["${entry% *}"]="${entry##* }"; done
-for f in "${!widened_actual[@]}"; do
-  if [ "${widened_actual[$f]}" -gt "${widened_pinned[$f]:-0}" ]; then
-    echo "FAIL: radius-token-widened ${widened_locations[$f]} expected rounded-[var(--tr-radius-<rung>)] or border-radius: var(--tr-radius-<rung>) (found ${widened_actual[$f]}, pin ${widened_pinned[$f]:-0})" >&2
-    fail=1
-  fi
-done
-for f in "${!widened_pinned[@]}"; do
-  if [ "${widened_actual[$f]:-0}" -lt "${widened_pinned[$f]}" ]; then
-    echo "FAIL: WIDENED_BASELINE pins ${widened_pinned[$f]} in $f, but only ${widened_actual[$f]:-0} remain; lower or delete the pin" >&2
-    fail=1
-  fi
-done
-
-declare -A actual=() offending=() locations=()
-while IFS=$'\t' read -r n f v where; do
-  [ -n "$f" ] && actual["$f"]="$n" && offending["$f"]="$v" && locations["$f"]="$where"
+while IFS=$'\t' read -r n file values locations; do
+  [ -n "$file" ] || continue
+  echo "FAIL: radius-token $file:$locations '$values'; expected rounded-[var(--tr-radius-<rung>)] or border-radius: var(--tr-radius-<rung>)" >&2
+  fail=1
 done <<< "$counts"
-
-declare -A pinned=()
-for entry in "${BASELINE[@]}"; do
-  pinned["${entry% *}"]="${entry##* }"
-done
-
-regressions=()
-for f in "${!actual[@]}"; do
-  have="${actual[$f]}"
-  want="${pinned[$f]:-0}"
-  [ "$have" -gt "$want" ] && regressions+=("$f")
-done
-if [ "${#regressions[@]}" -gt 0 ]; then
-  echo "FAIL: radius literals above the pinned baseline:" >&2
-  while read -r f; do
-    echo "  radius-token $f:${locations[$f]} found ${offending[$f]}; expected rounded-[var(--tr-radius-<rung>)] or border-radius: var(--tr-radius-<rung>)" >&2
-    echo "      ${actual[$f]} literal(s), baseline pins ${pinned[$f]:-0}" >&2
-  done < <(printf '%s\n' "${regressions[@]}" | sort)
-  echo "      Expected shape: rounded-[var(--tr-radius-<rung>)] in a class" >&2
-  echo "      string, border-radius: var(--tr-radius-<rung>) in CSS. The rungs" >&2
-  echo "      are input 4, sm 6, button 8, md 10, card 12, panel 16, pill 9999" >&2
-  echo "      (theme.css; STYLEGUIDE 'Radius'). A framework rounded-sm/md/lg/xl" >&2
-  echo "      is the FRAMEWORK's scale, not this app's, while tailwind.css's" >&2
-  echo "      @theme leaves --radius-* unmapped." >&2
-  echo "      The baseline only shrinks; it is not somewhere to add a line." >&2
-  fail=1
-else
-  echo "ok: no radius literal above the baseline (${#pinned[@]} files pinned)"
-fi
-
-stale=()
-for f in "${!pinned[@]}"; do
-  have="${actual[$f]:-0}"
-  [ "$have" -lt "${pinned[$f]}" ] && stale+=("$f $have ${pinned[$f]}")
-done
-if [ "${#stale[@]}" -gt 0 ]; then
-  echo "FAIL: baseline entry pins more than the file has -- lower or delete it:" >&2
-  while read -r f have want; do
-    if [ "$have" -eq 0 ]; then
-      echo "  $f -- now clean, delete the entry" >&2
-    else
-      echo "  $f -- now $have, pin says $want" >&2
-    fi
-  done < <(printf '%s\n' "${stale[@]}" | sort)
-  echo "      ./scripts/check-radius-tokens.sh --baseline prints the new block." >&2
-  fail=1
-else
-  echo "ok: every baseline entry still pins a real literal count"
-fi
-
-if [ -z "$banned_alt" ]; then
-  echo "ok: tailwind.css @theme maps every --radius-* step onto --tr-radius-*"
-else
-  echo "ok: rounded-{${banned_alt//|/,}} banned — tailwind.css @theme leaves those unmapped"
-fi
-
+[ "$fail" -eq 0 ] && echo "ok: radius-token passes (unmapped Tailwind steps: ${banned_alt//|/,})"
 exit "$fail"

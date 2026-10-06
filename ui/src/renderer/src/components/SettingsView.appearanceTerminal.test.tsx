@@ -312,7 +312,7 @@ describe('Settings › Terminal — font size and family (rows 9, 8)', () => {
   })
 })
 
-describe('Settings › Workspaces — "Open links in a browser pane" disables outside a single workspace (settings-51)', () => {
+describe('Settings › Workspaces — browser pane preference is global', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -337,12 +337,12 @@ describe('Settings › Workspaces — "Open links in a browser pane" disables ou
     return row.querySelector('[role="switch"]') as HTMLButtonElement
   }
 
-  it('is disabled in the All-workspaces view, where the description already said it would be', () => {
+  it('stays enabled without a selected workspace because the preference is global', () => {
     act(() => {
       root.render(<SettingsView {...baseProps()} historyWorkspace={null} />)
     })
     openWorkspaces()
-    expect(linksToggle().disabled).toBe(true)
+    expect(linksToggle().disabled).toBe(false)
   })
 
   it('stays enabled once a single workspace is selected', () => {
@@ -353,7 +353,7 @@ describe('Settings › Workspaces — "Open links in a browser pane" disables ou
     expect(linksToggle().disabled).toBe(false)
   })
 
-  it('does not fire onOpenLinksInPane while disabled', () => {
+  it('fires onOpenLinksInPane without a selected workspace', () => {
     const sent: boolean[] = []
     act(() => {
       root.render(
@@ -366,7 +366,7 @@ describe('Settings › Workspaces — "Open links in a browser pane" disables ou
     })
     openWorkspaces()
     act(() => linksToggle().click())
-    expect(sent).toEqual([])
+    expect(sent).toEqual([true])
   })
 })
 

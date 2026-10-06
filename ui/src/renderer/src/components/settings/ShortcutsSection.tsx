@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { BTN_GHOST } from '../buttonChrome'
 import {
   chordFromEvent,
   effectiveLabel,
@@ -8,12 +7,19 @@ import {
   isSwitchGoverned,
   KEYMAP
 } from '../../keymap'
-import type { ShortcutCategory, ShortcutEntry } from '../../keymap'
+import type { Chord, ShortcutCategory, ShortcutEntry } from '../../keymap'
 import type { KeymapOverrides } from '../../houston/client'
 import { setPassKeysToTerminal, usePassKeysToTerminal } from '../../paneCaps'
-import { Tooltip } from '../Tooltip'
-import { Toggle } from '../settingsPrimitives'
+import { Tooltip } from '../ui/Tooltip'
+import { Toggle } from '../ui/settingsPrimitives'
+import { Button } from '../ui/Button'
+import { Notice } from '../ui/Notice'
+import { TextInput } from '../ui/TextInput'
 import { Row } from './shared'
+import { KeyChip } from '../ui/KeyCap'
+import { ShortcutGroupLabel } from '../ui/ShortcutGroupLabel'
+import { Text } from '../ui/Text'
+import { ShortcutBindingRow, ShortcutConflictActions, ShortcutResetSlot, ShortcutToolbar } from '../ui/ShortcutControls'
 
 const SHORTCUT_GROUPS: { category: ShortcutCategory; label: string }[] = [
   { category: 'global', label: 'Global' },
@@ -24,7 +30,34 @@ const SHORTCUT_GROUPS: { category: ShortcutCategory; label: string }[] = [
 
 interface Conflict {
   forId: string
+  ownerId: string | null
+  previousChord: Chord | null
+  chord: Chord
   message: string
+}
+
+function defaultChord(entry: ShortcutEntry): Chord | null {
+  if (entry.chord) return entry.chord
+  const known: Partial<Record<ShortcutEntry['id'], Chord>> = {
+    'zoom-in': { code: 'Equal', ctrl: true, alt: false, shift: false, meta: false },
+    'zoom-out': { code: 'Minus', ctrl: true, alt: false, shift: false, meta: false },
+    'font-zoom-in': { code: 'Equal', ctrl: true, alt: true, shift: false, meta: false },
+    'font-zoom-out': { code: 'Minus', ctrl: true, alt: true, shift: false, meta: false }
+  }
+  if (known[entry.id]) return known[entry.id]!
+  const tokens = entry.keyLabel.split(' / ')[0].replaceAll('−', '-').split('+')
+  const key = tokens.pop() || (entry.keyLabel.startsWith('Ctrl+') ? '=' : '')
+  const code = key === 'Space' ? 'Space' : key === 'Tab' ? 'Tab' : /^F\d+$/.test(key) ? key
+    : /^[A-Z]$/.test(key) ? `Key${key}` : /^\d$/.test(key) ? `Digit${key}`
+      : ({ '=': 'Equal', '-': 'Minus', '[': 'BracketLeft', ']': 'BracketRight', ',': 'Comma', '.': 'Period', '/': 'Slash', '?': 'Slash' } as Record<string, string>)[key] ?? null
+  if (!code) return null
+  return {
+    code,
+    ctrl: tokens.includes('Ctrl'),
+    alt: tokens.includes('Alt'),
+    shift: tokens.includes('Shift') || key === '?',
+    meta: tokens.includes('Meta')
+  }
 }
 
 function ShortcutRow({
@@ -33,7 +66,9 @@ function ShortcutRow({
   armedId,
   conflict,
   onArm,
-  onReset
+  onReset,
+  onReplace,
+  onCancelConflict
 }: {
   s: ShortcutEntry
   keymapOverrides: KeymapOverrides
@@ -41,57 +76,65 @@ function ShortcutRow({
   conflict: Conflict | null
   onArm: (id: string) => void
   onReset: (id: string) => void
+  onReplace: (id: string) => void
+  onCancelConflict: () => void
 }): React.JSX.Element {
   const remappable = s.remappable ?? s.category === 'global'
   const overridden = remappable && s.id in keymapOverrides.bindings
   const inertNow = isSwitchGoverned(s.category) && !keymapOverrides.shortcuts_enabled
   return (
-    <div
+    <ShortcutBindingRow
       data-testid="settings-shortcut-row"
-      data-inert={inertNow || undefined}
-      className={`flex items-center gap-[10px] py-[8px] px-[14px] [&+&]:border-t [&+&]:border-t-[var(--divider)] ${inertNow ? '[&_.key-chip]:opacity-45' : ''}`}
+      inert={inertNow}
     >
       {remappable ? (
-        <button
+        <KeyChip
+          as="button"
           type="button"
-          className={`btn key-chip key-chip--capture flex-none min-w-[118px] font-semibold bg-[var(--content-bg)] border rounded-[var(--tr-radius-input)] py-px px-[7px] justify-center text-center [font-size:var(--tr-text-small-size)] font-mono ${
-            armedId === s.id
-              ? 'armed border-[var(--accent,var(--text-primary))] text-[var(--text-primary)]'
-              : 'border-transparent hover:border-[var(--border)] text-[var(--text-muted)]'
-          }`}
+          state={armedId === s.id ? 'armed' : 'idle'}
+          size="shortcut"
           onClick={() => onArm(s.id)}
         >
           {armedId === s.id ? 'Press a key… (Esc cancels)' : effectiveLabel(s, keymapOverrides)}
-        </button>
+        </KeyChip>
       ) : (
         <Tooltip label="Not remappable">
-          <span
-            className="key-chip key-chip--fixed flex-none min-w-[118px] font-semibold bg-[var(--content-bg)] border border-[var(--border)] rounded-sm py-px px-[7px] text-center [font-size:var(--tr-text-small-size)] font-mono text-[var(--text-muted)] opacity-60"
-          >
+          <KeyChip size="shortcut">
             {s.keyLabel}
-          </span>
+          </KeyChip>
         </Tooltip>
       )}
-      <span className="mt-0 flex-1 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.45] text-[var(--text-muted)]">
+      <Text className="min-w-0 flex-1" leading="shortcut" size="small" weight="small" tone="muted">
         {s.description}
         {inertNow && (
-          <span className="text-[var(--text-muted)] italic"> — off (shortcuts disabled)</span>
+          <em><Text tone="muted"> — off (shortcuts disabled)</Text></em>
         )}
         {conflict && conflict.forId === s.id && (
-          <span className="text-[var(--danger,#d14343)]"> — {conflict.message}</span>
+          <ShortcutConflictActions>
+            <Notice
+              tone="warn"
+              indicator="dot"
+              className="flex-1"
+              action={conflict.ownerId && conflict.previousChord ? { label: 'Replace', onClick: () => onReplace(s.id) } : undefined}
+            >
+              {conflict.message}
+            </Notice>
+          <Button variant="ghost" size="sm" onClick={onCancelConflict}>Cancel</Button>
+          </ShortcutConflictActions>
         )}
-      </span>
+      </Text>
       {overridden && (
-        <button
-          type="button"
+        <Button
+          variant="legacy-ghost"
+          size="sm"
           data-testid="settings-row-reset"
-          className={`btn ${BTN_GHOST} flex-none`}
+          className="flex-none"
           onClick={() => onReset(s.id)}
         >
           Reset
-        </button>
+        </Button>
       )}
-    </div>
+    </ShortcutBindingRow>
   )
 }
 
@@ -113,6 +156,7 @@ export function ShortcutsSection({
   const passThrough = usePassKeysToTerminal()
   const [armedId, setArmedId] = useState<string | null>(null)
   const [conflict, setConflict] = useState<Conflict | null>(null)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     if (armedId === null) return
@@ -127,6 +171,9 @@ export function ShortcutsSection({
       if (armedId === 'select-pane' && !(e.key >= '1' && e.key <= '9')) {
         setConflict({
           forId: armedId,
+          ownerId: null,
+          previousChord: null,
+          chord: chordFromEvent(e),
           message: 'select-pane only binds modifiers + a digit 1-9 — press a modifier with 1-9'
         })
         setArmedId(null)
@@ -134,7 +181,16 @@ export function ShortcutsSection({
       }
       const found = findConflict(armedId, e, keymapOverrides)
       if (found) {
-        setConflict({ forId: armedId, message: `Already bound to "${conflictLabel(found)}"` })
+        const target = KEYMAP.find((entry) => entry.id === armedId)
+        const previousChord = target ? keymapOverrides.bindings[armedId] ?? defaultChord(target) : null
+        const ownerChord = keymapOverrides.bindings[found.entry.id] ?? defaultChord(found.entry)
+        setConflict({
+          forId: armedId,
+          ownerId: ownerChord && previousChord ? found.entry.id : null,
+          previousChord,
+          chord: chordFromEvent(e),
+          message: `Conflicts with ${conflictLabel(found)}.`
+        })
         setArmedId(null)
         return
       }
@@ -155,15 +211,16 @@ export function ShortcutsSection({
     return bindings
   }
 
+  const replaceBinding = (id: string): void => {
+    if (!conflict || conflict.forId !== id || !conflict.ownerId) return
+    const bindings = { ...keymapOverrides.bindings, [id]: conflict.chord }
+    if (conflict.previousChord) bindings[conflict.ownerId] = conflict.previousChord
+    setConflict(null)
+    onKeymapOverrides({ ...keymapOverrides, bindings })
+  }
+
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Shortcuts</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          Global keys work while no terminal is selected; click a terminal to type into it.
-          Click a key to rebind it — press the new combination, or Esc to cancel.
-        </div>
-      </div>
       <div className="">
         <Row
           title="Enable shortcuts"
@@ -185,10 +242,19 @@ export function ShortcutsSection({
           />
         </Row>
       </div>
-      <div className="pt-2 mb-[var(--space-5)]">
-        <button
-          type="button"
-          className={`btn ${BTN_GHOST}`}
+      <ShortcutToolbar>
+        <TextInput
+          type="search"
+          aria-label="Search shortcuts"
+          placeholder="Search shortcuts…"
+          data-testid="settings-shortcuts-search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="min-w-0 flex-1"
+        />
+        <ShortcutResetSlot>
+        <Button
+          variant="legacy-ghost"
           disabled={Object.keys(keymapOverrides.bindings).length === 0}
           onClick={() => {
             setArmedId(null)
@@ -197,20 +263,17 @@ export function ShortcutsSection({
           }}
         >
           Reset all to defaults
-        </button>
-      </div>
+        </Button>
+        </ShortcutResetSlot>
+      </ShortcutToolbar>
       <div className="">
         {SHORTCUT_GROUPS.map(({ category, label }) => {
-          const rows = KEYMAP.filter((s) => s.category === category)
+          const needle = query.trim().toLocaleLowerCase()
+          const rows = KEYMAP.filter((s) => s.category === category && (!needle || `${s.description} ${s.keyLabel} ${s.id}`.toLocaleLowerCase().includes(needle)))
           if (rows.length === 0) return null
           return (
             <div key={category} data-testid="settings-shortcut-group">
-              <div
-                className="px-3 py-[6px] [font-size:var(--tr-text-label-size)] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)] bg-[var(--content-bg)] border-b border-[var(--divider)]"
-                data-testid="settings-shortcut-group-label"
-              >
-                {label}
-              </div>
+              <ShortcutGroupLabel testId="settings-shortcut-group-label">{label}</ShortcutGroupLabel>
               {rows.map((s) => (
                 <ShortcutRow
                   key={s.id}
@@ -218,6 +281,8 @@ export function ShortcutsSection({
                   keymapOverrides={keymapOverrides}
                   armedId={armedId}
                   conflict={conflict}
+                  onReplace={replaceBinding}
+                  onCancelConflict={() => setConflict(null)}
                   onArm={(id) => {
                     setConflict(null)
                     setArmedId((cur) => (cur === id ? null : id))

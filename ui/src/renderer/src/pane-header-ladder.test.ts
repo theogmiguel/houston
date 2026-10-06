@@ -4,8 +4,17 @@ import { join } from 'node:path'
 
 const SESSION_PANE_PATH = join(__dirname, 'components', 'SessionPane.tsx')
 const sessionPaneSrc = readFileSync(SESSION_PANE_PATH, 'utf8')
-const RENAME_TITLE_PATH = join(__dirname, 'components', 'RenameTitle.tsx')
-const renameTitleSrc = readFileSync(RENAME_TITLE_PATH, 'utf8')
+const PANE_TITLE_PATH = join(__dirname, 'components', 'ui', 'PaneTitle.tsx')
+const paneTitleSrc = readFileSync(PANE_TITLE_PATH, 'utf8')
+const THEME_CSS = readFileSync(join(__dirname, 'theme.css'), 'utf8')
+
+/** Resolves `var(--token)` to the token's first declared value in theme.css. */
+function resolveTokens(cls: string): string {
+  return cls.replace(/var\((--[\w-]+)\)/g, (whole, name: string) => {
+    const m = THEME_CSS.match(new RegExp(`${name}:\\s*([^;]+);`))
+    return m ? m[1].trim() : whole
+  })
+}
 
 function shedStepForTestid(testid: string): number | undefined {
   const anchor = `data-testid="${testid}"`
@@ -19,16 +28,16 @@ function shedStepForTestid(testid: string): number | undefined {
 }
 
 function extractPaneTitleCls(): string {
-  const idx = renameTitleSrc.indexOf('const PANE_TITLE_CLS =')
-  expect(idx, 'could not find `const PANE_TITLE_CLS =` in RenameTitle.tsx').toBeGreaterThan(-1)
-  const quoteStart = renameTitleSrc.indexOf('"', idx)
-  const quoteEnd = renameTitleSrc.indexOf('"', quoteStart + 1)
-  expect(quoteStart, 'could not find the opening quote of PANE_TITLE_CLS').toBeGreaterThan(-1)
-  expect(quoteEnd, 'could not find the closing quote of PANE_TITLE_CLS').toBeGreaterThan(quoteStart)
-  return renameTitleSrc.slice(quoteStart + 1, quoteEnd)
+  const fnIdx = paneTitleSrc.indexOf('export function PaneTitle(')
+  expect(fnIdx, 'could not find `export function PaneTitle(` in ui/PaneTitle.tsx').toBeGreaterThan(-1)
+  const start = paneTitleSrc.indexOf('className={`', fnIdx)
+  const end = paneTitleSrc.indexOf('${', start)
+  expect(start, 'could not find the PaneTitle class template').toBeGreaterThan(-1)
+  expect(end, 'could not find the end of the static PaneTitle classes').toBeGreaterThan(start)
+  return resolveTokens(paneTitleSrc.slice(start + 'className={`'.length, end))
 }
 
-describe('pane header container-query ladder (SessionPane.tsx / RenameTitle.tsx)', () => {
+describe('pane header container-query ladder (SessionPane.tsx / ui/PaneTitle.tsx)', () => {
   it('parsed a non-trivial number of container bands out of PANE_TITLE_CLS (sanity check the extraction itself works)', () => {
     const cls = extractPaneTitleCls()
     const bandCount = (cls.match(/\[@container_\((?:min|max)-width:\d+px\)\]:/g) ?? []).length
@@ -120,7 +129,7 @@ describe('pane header container-query ladder (SessionPane.tsx / RenameTitle.tsx)
     const m = cls.match(/(?:^|\s)min-w-\[(\d+)px\]/)
     expect(
       m,
-      'PANE_TITLE_CLS has no bare `min-w-[Npx]` utility — without one the flexbox shrink ' +
+      'PaneTitle has no bare `min-w-[Npx]` utility — without one the flexbox shrink ' +
         'algorithm starves the title to zero width whenever fixed-size siblings (chips, action ' +
         'icons) outgrow the header'
     ).not.toBeNull()
@@ -131,9 +140,9 @@ describe('pane header container-query ladder (SessionPane.tsx / RenameTitle.tsx)
     expect(shedStepForTestid('pane-state')).toBe(490)
     expect(shedStepForTestid('pane-sub')).toBe(400)
     expect(shedStepForTestid('engine-glyph')).toBe(360)
-    const headerEnd = sessionPaneSrc.indexOf('</header>', sessionPaneSrc.indexOf('function SessionPaneImpl'))
-    expect(sessionPaneSrc.indexOf('className={`children-split')).toBeGreaterThan(headerEnd)
-    const header = sessionPaneSrc.slice(sessionPaneSrc.indexOf('<header', sessionPaneSrc.indexOf('function SessionPaneImpl')), headerEnd)
+    const headerEnd = sessionPaneSrc.indexOf('</PaneHeader>', sessionPaneSrc.indexOf('function SessionPaneImpl'))
+    expect(sessionPaneSrc.indexOf('<RosterSplit')).toBeGreaterThan(headerEnd)
+    const header = sessionPaneSrc.slice(sessionPaneSrc.indexOf('<PaneHeader', sessionPaneSrc.indexOf('function SessionPaneImpl')), headerEnd)
     expect(header).not.toContain('<OriginBadge')
     expect(header).not.toContain('<OrchestratorBadge')
   })

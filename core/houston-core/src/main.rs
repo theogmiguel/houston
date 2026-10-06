@@ -269,6 +269,8 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
         reconstructed,
     )
     .context("constructing the adopting daemon")?;
+    #[cfg(target_os = "linux")]
+    daemon.set_session_launcher(houston_core::session_isolation::launcher());
 
     for m in &manifest.sessions {
         if let Some(cred) = &m.mcp_cred {
@@ -356,6 +358,38 @@ async fn run_adopt(socket_path: String, supervisor: Option<SupervisorSocket>) ->
 }
 
 fn main() -> Result<()> {
+    if let Some(command) = std::env::args_os().nth(1).filter(|command| {
+        command == houston_core::codex_pane::SUBCOMMAND
+            || command == houston_core::codex_pane::OBSERVER_SUBCOMMAND
+            || command == houston_core::codex_pane::SHELL_SUBCOMMAND
+    }) {
+        #[cfg(target_os = "linux")]
+        {
+            let args = std::env::args_os().skip(2).collect();
+            let code = if command == houston_core::codex_pane::SUBCOMMAND {
+                houston_core::codex_pane::run(args)?
+            } else if command == houston_core::codex_pane::OBSERVER_SUBCOMMAND {
+                houston_core::codex_pane::observe(args)?
+            } else {
+                houston_core::codex_pane::run_shell(args)?
+            };
+            std::process::exit(code);
+        }
+        #[cfg(not(target_os = "linux"))]
+        anyhow::bail!(
+            "{} is Linux-only; use the lifecycle-hook CLI launch",
+            command.to_string_lossy()
+        );
+    }
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "session-exec")
+    {
+        #[cfg(target_os = "linux")]
+        return houston_core::session_isolation::run(std::env::args_os().skip(2).collect());
+        #[cfg(not(target_os = "linux"))]
+        anyhow::bail!("session-exec: session cgroup isolation is Linux-only");
+    }
     let args = std::env::args().collect::<Vec<_>>();
     let helper = matches!(
         args.get(1).map(String::as_str),
@@ -431,13 +465,18 @@ async fn run(supervisor: Option<SupervisorSocket>) -> Result<()> {
 
     let token = uuid::Uuid::new_v4().to_string();
     let listener = server::bind("127.0.0.1:0".parse()?).await?;
-    let daemon = Daemon::new_bound(
-        DaemonConfig {
-            token: token.clone(),
-            db_path: dir.join("houston.db"),
-        },
+    let cfg = DaemonConfig {
+        token: token.clone(),
+        db_path: dir.join("houston.db"),
+    };
+    #[cfg(target_os = "linux")]
+    let daemon = Daemon::new_bound_with_session_launcher(
+        cfg,
         listener.local_addr()?.port(),
+        houston_core::session_isolation::launcher(),
     )?;
+    #[cfg(not(target_os = "linux"))]
+    let daemon = Daemon::new_bound(cfg, listener.local_addr()?.port())?;
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;

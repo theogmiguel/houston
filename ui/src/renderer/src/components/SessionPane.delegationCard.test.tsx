@@ -239,7 +239,7 @@ describe("the delegation card, opened from a parent's badge", () => {
   })
 
   it('sorts the crew waiting-first, then by id', async () => {
-    const parent = pane({ id: 41, title: 'crimson-harbor', spawned_by: null, live_children: 3, children_waiting: 2 })
+    const parent = pane({ id: 41, title: 'crimson-harbor', spawned_by: null, live_children: 3, children_waiting: 1 })
     const crew = [
       pane({ id: 47, title: 'amber-signal', delegation: delegation({ role: 'test-writer' }) }),
       pane({ id: 52, title: 'quiet-meridian', delegation: delegation({ role: 'reviewer', state: 'needs_input' }) }),
@@ -251,8 +251,9 @@ describe("the delegation card, opened from a parent's badge", () => {
     const card = await openCard('orchestrator-badge')
     const rows = [...card.querySelectorAll('button')].map((b) => b.textContent ?? '')
     expect(rows[0]).toContain('reviewer')
-    expect(rows[1]).toContain('docs-sweep')
-    expect(rows[2]).toContain('test-writer')
+    expect(rows[1]).toContain('test-writer')
+    expect(rows[2]).toContain('docs-sweep')
+    expect(rows[2]).toContain('stalled')
   })
 
   it('names the limit, the actual value and what it means when the crew is at the cap', async () => {
@@ -411,4 +412,12 @@ describe('the delegation card names its parent by codename and reports the inbox
     )
     expect(onDeliverNow).toHaveBeenCalledWith(41)
   })
+})
+
+
+it.each([{ status: 'needs-input' as const }, { children_waiting: 1 }])('shows the current request ahead of a completed turn in the child card (%o)', async (signal) => {
+  mount(<HeaderDelegationBadge kind="origin" info={pane({ ...signal, delegation: delegation({ state: 'done' }) })} />)
+  const card = await openCard('origin-badge')
+  expect(card.textContent).toContain('needs input')
+  expect(card.textContent).not.toContain('done')
 })

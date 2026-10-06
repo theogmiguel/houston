@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '../../houston/generated/McpServer'
 import { McpSurface } from './McpSurface'
@@ -43,11 +45,28 @@ function server(name: string): McpServer {
   }
 }
 
-describe('the ListDetail surfaces sit in a column wide enough to be two columns', () => {
+describe('wide surfaces have room for their main content', () => {
   let container: HTMLDivElement
   let root: Root
 
   beforeEach(() => {
+    document.documentElement.style.setProperty('--w-list-detail-breakpoint', '720px')
+    document.documentElement.style.setProperty('--w-list-detail-column', '280px')
+    vi.stubGlobal('ResizeObserver', class {
+      private readonly callback: ResizeObserverCallback
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback
+      }
+
+      observe(target: Element): void {
+        Object.defineProperty(target, 'clientWidth', { configurable: true, value: 1280 })
+        this.callback([], this)
+      }
+
+      unobserve(): void {}
+      disconnect(): void {}
+    })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -56,9 +75,13 @@ describe('the ListDetail surfaces sit in a column wide enough to be two columns'
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    vi.unstubAllGlobals()
+    document.documentElement.style.removeProperty('--w-list-detail-breakpoint')
+    document.documentElement.style.removeProperty('--w-list-detail-column')
   })
 
   async function settleCard(): Promise<void> {
+    await act(async () => { await import('../SkillsView') })
     for (let i = 0; i < 80; i++) {
       if (container.querySelector('[data-testid="list-detail"]')) return
       await act(async () => {
@@ -69,19 +92,22 @@ describe('the ListDetail surfaces sit in a column wide enough to be two columns'
   }
 
   function expectBothColumnsAtTheWideRung(): void {
-    const column = container.querySelector('[data-testid="nav-column"]')!
     const shell = container.querySelector('[data-testid="list-detail"]')!
+    const column = shell.closest('main')!
     const list = container.querySelector('[data-testid="list-detail-list"]')!
     const detail = container.querySelector('[data-testid="list-detail-detail"]')!
 
     const maxWidth = Number(/max-w-\[(\d+)px\]/.exec(column.className)![1])
-    const padding = 2 * Number(/px-\[(\d+)px\]/.exec(column.className)![1])
-    const rung = Number(
-      /\[@container_\(min-width:(\d+)px\)\]:grid-cols-\[280px/.exec(shell.className)![1]
-    )
+    // PageFrame pads with a spacing token; theme.css defines --space-4-5 as 20px.
+    expect(column.className).toContain('px-[var(--space-4-5)]')
+    const padding = 2 * 20
+    expect(shell.className).toContain('grid-cols-[var(--w-list-detail-column)_minmax(0,1fr)]')
+    const theme = readFileSync(resolve(process.cwd(), 'src/renderer/src/theme.css'), 'utf8')
+    const rung = Number(/--w-list-detail-breakpoint:\s*(\d+)px/.exec(theme)![1])
+    expect(Number(/--w-list-detail-column:\s*(\d+)px/.exec(theme)![1])).toBe(280)
     expect(maxWidth - padding).toBeGreaterThanOrEqual(rung)
     expect(list.className).not.toContain('hidden')
-    expect(detail.className).toContain(`[@container_(min-width:${rung}px)]:flex`)
+    expect(detail.className).not.toContain('hidden')
   }
 
   it('Skills', async () => {
@@ -122,7 +148,14 @@ describe('the ListDetail surfaces sit in a column wide enough to be two columns'
         />
       )
     })
-    await settleCard()
-    expectBothColumnsAtTheWideRung()
+    await act(async () => { await import('../McpManager') })
+    for (let i = 0; i < 100 && !container.querySelector('[data-testid="table-frame"]'); i++) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)) })
+    }
+    const table = container.querySelector('[data-testid="table-frame"]')
+    expect(table).not.toBeNull()
+    expect(table!.className).toContain('overflow-x-auto')
+    expect(container.textContent).toContain('Claude Code')
+    expect(container.textContent).toContain('Cursor')
   })
 })

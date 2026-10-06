@@ -1,12 +1,35 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Toggle } from './settingsPrimitives'
+import { Toggle } from './ui/settingsPrimitives'
 import {
   type ActKind,
   fetchActScreenshot,
   respondToAct,
   type ConfirmRequest
 } from '../houston/browserConfirm'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
+import {
+  ConfirmationBadge,
+  ConfirmationCard,
+  ConfirmationCountdown,
+  ConfirmationDialogBackdrop,
+  ConfirmationDialogPanel,
+  ConfirmationFootnote,
+  ConfirmationOverlay,
+  ConfirmationScreenshot,
+  ConfirmationTitle,
+  DecisionButton,
+  ElementReference,
+  ElementSummary,
+  OriginBadge,
+  OriginStatus,
+  PayloadDetails,
+  PayloadLabel,
+  PayloadValue,
+  TrustOption,
+  WarningCallout,
+  BrowserActSpotlight
+} from './ui/BrowserActSurface'
+import { Text } from './ui/Text'
 
 function originOf(url: string | null): string {
   if (!url) return 'unknown page'
@@ -91,46 +114,43 @@ function ConfirmBody({
   const copy = ACT_COPY[request.kind] ?? ACT_COPY.click
   return (
     <>
-      <div className="flex items-center gap-2 min-w-0">
-        <span
-          aria-hidden
-          className="w-5 h-5 rounded-md flex-none grid place-items-center [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-[var(--content-bg)] bg-[var(--accent)]"
-        >
+      <div className="flex items-center gap-[var(--space-2)] min-w-0">
+        <ConfirmationBadge aria-hidden>
           A
-        </span>
-        <span className="[font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] truncate">
+        </ConfirmationBadge>
+        <ConfirmationTitle>
           An agent wants to {copy.title} your browser
-        </span>
+        </ConfirmationTitle>
       </div>
 
       <Tooltip label={request.url ?? undefined}>
-        <div className="inline-flex items-center gap-1.5 self-start max-w-full px-2 py-1 rounded-md border border-[var(--border-hover)] bg-[var(--content-bg)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] truncate">
-          <span className="text-[var(--success)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]" aria-hidden>
+        <OriginBadge>
+          <OriginStatus aria-hidden>
             ●
-          </span>
+          </OriginStatus>
           {originOf(request.url)}
-        </div>
+        </OriginBadge>
       </Tooltip>
 
-      <div className="flex items-center gap-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] min-w-0">
-        <span className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] px-1.5 py-0.5 rounded bg-[var(--accent-muted)] text-[var(--accent-hover)] flex-none">
+      <ElementSummary>
+        <ElementReference>
           {request.element.ref}
-        </span>
-        <span className="truncate">{describeTarget(request)}</span>
-      </div>
+        </ElementReference>
+        <Text className="truncate">{describeTarget(request)}</Text>
+      </ElementSummary>
 
       {copy.payloadLabel != null && (
-        <div>
-          <div className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)] mb-1">
+        <PayloadDetails>
+          <PayloadLabel>
             {copy.payloadLabel(request)}
-          </div>
-          <div className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] rounded-md border border-[var(--border)] bg-[var(--content-bg)] px-2.5 py-2 max-h-24 overflow-auto whitespace-pre-wrap break-words">
+          </PayloadLabel>
+          <PayloadValue>
             {request.text}
-          </div>
-        </div>
+          </PayloadValue>
+        </PayloadDetails>
       )}
 
-      <div className="flex gap-2 items-start [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] rounded-md px-2.5 py-2 border border-[color-mix(in_srgb,var(--warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] text-[color-mix(in_srgb,var(--warning)_55%,var(--text-primary))]">
+      <WarningCallout>
         <span aria-hidden className="flex-none">
           ⚠
         </span>
@@ -139,34 +159,34 @@ function ConfirmBody({
             ? 'Read this before approving. If it contains anything you did not expect — a key, a token, text from another page — deny it.'
             : 'This page is signed in as you. An action here can submit, purchase or delete.'}
         </span>
-      </div>
+      </WarningCallout>
 
-      <div className="flex items-center gap-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+      <TrustOption>
         <Toggle on={trust} onChange={setTrust} data-testid="browser-act-trust" />
         <span>Don&apos;t ask again for this workspace this session</span>
-      </div>
+      </TrustOption>
 
-      <div className="flex items-center gap-2">
-        <span className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)] mr-auto">
-          denies in <span className="tabular-nums">{mmss(left)}</span>
-        </span>
-        <button
+      <div className="flex items-center gap-[var(--space-2)]">
+        <ConfirmationCountdown>
+          denies in <Text as="span" tabular>{mmss(left)}</Text>
+        </ConfirmationCountdown>
+        <DecisionButton
+          decision="deny"
           ref={denyButtonRef}
           type="button"
           onClick={() => onRespond(false)}
           disabled={busy}
-          className="btn h-[var(--h-ctl)] px-3 rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-small-size)] font-semibold border border-[var(--border-hover)] bg-[var(--card-bg)] text-[var(--text-primary)] hover:bg-[var(--card-hover)] disabled:opacity-[0.45] disabled:cursor-default"
         >
           Deny
-        </button>
-        <button
+        </DecisionButton>
+        <DecisionButton
+          decision="approve"
           type="button"
           onClick={() => onRespond(true)}
           disabled={busy}
-          className="btn h-[var(--h-ctl)] px-3 rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-small-size)] font-semibold border-0 text-[var(--content-bg)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-[0.45] disabled:cursor-default"
         >
           Approve {copy.approve}
-        </button>
+        </DecisionButton>
       </div>
     </>
   )
@@ -271,42 +291,21 @@ export function BrowserActConfirm({
 
   const box = request.element.rect
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 z-[var(--z-sticky)] bg-[color-mix(in_srgb,var(--content-bg)_55%,transparent)] motion-safe:animate-[backdrop-in_var(--animate-t-scrim)_var(--animate-ease-scrim)]"
-    >
+    <ConfirmationOverlay ref={containerRef}>
       <div className="absolute inset-0 overflow-hidden">
-        <img
+        <ConfirmationScreenshot
           src={shot}
           alt=""
           aria-hidden
-          className="absolute inset-0 w-full h-full object-cover object-left-top"
         />
-        <div
-          className="absolute rounded-md pointer-events-none"
-          style={{
-            left: box.x,
-            top: box.y,
-            width: box.width,
-            height: box.height,
-            outline: '2px solid var(--warning)',
-            outlineOffset: 2,
-            background: 'color-mix(in srgb, var(--warning) 13%, transparent)',
-            boxShadow: '0 0 0 9999px color-mix(in srgb, var(--content-bg) 62%, transparent)'
-          }}
-        >
-          <span className="absolute -top-3 -left-0.5 font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] px-1.5 rounded bg-[var(--warning)] text-[var(--content-bg)]">
-            {request.element.ref}
-          </span>
-        </div>
+        <BrowserActSpotlight rect={box} label={request.element.ref} />
       </div>
 
-      <div
+      <ConfirmationCard
         ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label="Confirm browser action"
-        className="absolute w-[300px] max-w-[calc(100%-24px)] flex flex-col gap-2 rounded-xl border border-[var(--warning)] bg-[var(--card-bg)] p-3 shadow-[var(--shadow-lg)] motion-safe:animate-[menu-in_var(--animate-t-fast)_var(--animate-ease-menu)]"
         style={cardPos ?? { top: box.y + box.height + 14, left: Math.max(12, box.x - 8) }}
       >
         <ConfirmBody
@@ -318,8 +317,8 @@ export function BrowserActConfirm({
           onRespond={respond}
           denyButtonRef={denyButtonRef}
         />
-      </div>
-    </div>
+      </ConfirmationCard>
+    </ConfirmationOverlay>
   )
 }
 
@@ -365,12 +364,14 @@ export function BrowserActConfirmModal({
   }, [])
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] grid place-items-center bg-[var(--overlay)] motion-safe:animate-[backdrop-in_var(--animate-t-scrim)_var(--animate-ease-scrim)]">
-      <div
+    <ConfirmationDialogBackdrop>
+      <ConfirmationDialogPanel
+        size="browser"
+        surface="browser"
+        animated={false}
         role="dialog"
         aria-modal="true"
         aria-label="Confirm browser action"
-        className="w-[428px] max-w-[calc(100vw-32px)] flex flex-col gap-3 rounded-xl border border-[var(--border-hover)] bg-[var(--card-bg)] p-4 shadow-[var(--shadow-lg)] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)]"
       >
         <ConfirmBody
           request={request}
@@ -381,11 +382,11 @@ export function BrowserActConfirmModal({
           onRespond={respond}
           denyButtonRef={denyButtonRef}
         />
-        <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
+        <ConfirmationFootnote>
           The browser pane is not on screen, so this cannot show you the element in place — only
           describe it. Open the pane and retry if that matters for this action.
-        </p>
-      </div>
-    </div>
+        </ConfirmationFootnote>
+      </ConfirmationDialogPanel>
+    </ConfirmationDialogBackdrop>
   )
 }

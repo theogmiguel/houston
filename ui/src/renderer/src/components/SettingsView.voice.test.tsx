@@ -163,8 +163,8 @@ describe('Settings › Voice (v55)', () => {
   })
 
   it('is reachable by searching for what a user would actually type', () => {
-    const voice = NAVIGABLE_SETTINGS_SECTIONS.find((s) => s.id === 'voice')
-    expect(voice, 'Voice must still be a navigable section').toBeTruthy()
+    const voice = NAVIGABLE_SETTINGS_SECTIONS.find((s) => s.id === 'dictation')
+    expect(voice, 'Dictation must remain a navigable section').toBeTruthy()
     for (const term of ['microphone', 'dictation', 'whisper', 'stt']) {
       expect(
         voice!.keywords.some((k) => k.includes(term)),
@@ -467,7 +467,7 @@ describe('Settings › Voice (v55)', () => {
     act(() => {
       row.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.textContent).toContain('Click a key to rebind it')
+    expect(container.textContent).toContain('Enable shortcuts')
   })
 
   it('does not re-enumerate audio devices on every render', () => {

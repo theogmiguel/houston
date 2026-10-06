@@ -11,6 +11,7 @@ export type SideTab =
 
 export interface SideState { tabs: SideTab[]; active: number }
 export const SIDE_OPEN_EVENT = 'houston:side-open'
+export const TASKS_OPEN_EVENT = 'houston:tasks-open'
 export const TERMINAL_FOCUS_EVENT = 'houston:terminal-focus'
 export const SIDE_BROWSER_MOVE_EVENT = 'houston:side-browser-move'
 export const SIDE_SELECT_EVENT = 'houston:side-select'
@@ -24,7 +25,7 @@ export function openSideBrowser(id: string, url: string, workspace: string, reve
 // one task's detail (a terminal `HOU-n` link); `create` is a draft from the
 // terminal selection that TasksTab creates and then opens.
 export function openSideTasks(compose = false, openId?: number, create?: TaskDraft): void {
-  window.dispatchEvent(new CustomEvent<SideOpen>(SIDE_OPEN_EVENT, { detail: { kind: 'tasks', ...(compose ? { compose: true } : {}), ...(openId !== undefined ? { openId } : {}), ...(create !== undefined ? { create } : {}) } }))
+  window.dispatchEvent(new CustomEvent(TASKS_OPEN_EVENT, { detail: { compose, ...(openId !== undefined ? { openId } : {}), ...(create !== undefined ? { create } : {}) } }))
 }
 
 export function moveBrowserToGrid(id: string, url: string, workspace: string): void {

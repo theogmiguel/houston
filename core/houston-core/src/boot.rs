@@ -18,6 +18,9 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     tokio::spawn(daemon.clone().task_pr_watch_loop());
     // Idle until Settings > Remote access turns the listener on.
     tokio::spawn(daemon.clone().remote_loops());
+    tokio::spawn(daemon.clone().pr_watch_loop());
+    // Idle until Settings ▸ Slack turns the intake on.
+    tokio::spawn(daemon.clone().slack_loops());
 }
 
 /// Runs off the async runtime via `spawn_blocking` so the window can paint

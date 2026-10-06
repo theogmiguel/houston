@@ -59,6 +59,8 @@ fn params(dir: &std::path::Path, agent: proto::AgentKind, prompt: Option<&str>) 
         acp: None,
         profile: None,
         prompt: prompt.map(str::to_string),
+        model: None,
+        effort: None,
     }
 }
 
@@ -125,6 +127,42 @@ async fn no_prompt_means_no_positional_at_all_not_an_empty_one() {
 }
 
 #[tokio::test]
+async fn launch_model_and_effort_reach_the_cli_argv() {
+    let _serial = SERIAL.lock().await;
+    shim_dir();
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let mut params = params(state.path(), proto::AgentKind::Claude, None);
+    params.model = Some("claude-opus-4-1".into());
+    params.effort = Some(proto::ChatEffort::High);
+
+    let pane = daemon
+        .create_session(params)
+        .expect("the configured model and effort are supported");
+    let argv = argv_of(&daemon, pane.id).await;
+    assert!(
+        argv.contains("--model|claude-opus-4-1|--effort|high|"),
+        "launch-time choices must reach the provider argv; got {argv:?}"
+    );
+}
+
+#[tokio::test]
+async fn unsupported_effort_is_refused_with_the_provider_name() {
+    let _serial = SERIAL.lock().await;
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let mut params = params(state.path(), proto::AgentKind::Cursor, None);
+    params.effort = Some(proto::ChatEffort::High);
+
+    let err = daemon
+        .create_session(params)
+        .expect_err("Cursor does not expose per-run reasoning effort");
+    let message = err.to_string();
+    assert!(
+        message.contains("Cursor") && message.contains("per-run reasoning-effort"),
+        "the refusal must name the unsupported provider; got {message:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_blank_prompt_is_treated_as_absent() {
     let _serial = SERIAL.lock().await;
     shim_dir();
@@ -159,4 +197,15 @@ async fn a_prompt_on_a_shell_is_refused_by_name_never_silently_dropped() {
         msg.contains("Shell") && msg.contains("not spawnable"),
         "the refusal must name the offending kind and the expected ones; got {msg:?}"
     );
+}
+
+#[tokio::test]
+async fn a_shell_without_a_prompt_spawns_with_no_launch_arguments() {
+    let _serial = SERIAL.lock().await;
+    shim_dir();
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+
+    daemon
+        .create_session(params(state.path(), proto::AgentKind::Shell, None))
+        .expect("a bare shell takes no launch arguments and must spawn");
 }

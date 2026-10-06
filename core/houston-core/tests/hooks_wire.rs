@@ -81,6 +81,8 @@ fn a_pane(daemon: &std::sync::Arc<Daemon>) -> (proto::SessionInfo, tempfile::Tem
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     (info, dir)
@@ -103,6 +105,8 @@ async fn a_correlation_hook_cannot_leave_a_pane_spawning_forever() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     assert_eq!(
@@ -138,6 +142,212 @@ async fn a_correlation_hook_cannot_leave_a_pane_spawning_forever() {
         "late lifecycle evidence recovers an unavailable status",
     );
     daemon.kill(info.id).ok();
+}
+
+#[tokio::test]
+async fn a_late_session_start_cannot_end_an_active_turn() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let dir = tempfile::tempdir().unwrap();
+    let create = || {
+        daemon
+            .create_session(CreateParams {
+                agent: proto::AgentKind::Codex,
+                project_dir: dir.path().to_path_buf(),
+                cmd: Some(vec!["sh".into(), "-c".into(), "exec sleep 30".into()]),
+                cols: 80,
+                rows: 24,
+                cwd_from: None,
+                shell_integration: false,
+                auto_approve: false,
+                acp: None,
+                profile: None,
+                prompt: None,
+                model: None,
+                effort: None,
+            })
+            .unwrap()
+    };
+    let info = create();
+    assert_eq!(info.status, Some(proto::AgentStatus::Spawning));
+    let startup = drop_from("codex", "SessionStart", info.id);
+    drop_and_await_apply(state.path(), &startup).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::Idle)
+    );
+    drop_and_await_apply(
+        state.path(),
+        &drop_from("codex", "UserPromptSubmit", info.id),
+    )
+    .await;
+    drop_and_await_apply(state.path(), &startup).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::Working)
+    );
+    drop_and_await_apply(
+        state.path(),
+        &drop_from("codex", "PermissionRequest", info.id),
+    )
+    .await;
+    drop_and_await_apply(state.path(), &startup).await;
+    assert_eq!(
+        daemon.session_status(info.id).unwrap(),
+        Some(proto::AgentStatus::NeedsInput)
+    );
+
+    let late = create();
+    daemon.expire_spawn_grace_for_test(late.id);
+    assert_eq!(
+        daemon.session_status(late.id).unwrap(),
+        Some(proto::AgentStatus::Unavailable)
+    );
+    drop_and_await_apply(state.path(), &drop_from("codex", "SessionStart", late.id)).await;
+    assert_eq!(
+        daemon.session_status(late.id).unwrap(),
+        Some(proto::AgentStatus::Idle)
+    );
+    daemon.close(info.id).unwrap();
+    daemon.close(late.id).unwrap();
+}
+
+#[tokio::test]
+async fn a_live_hook_refreshes_its_panes_mcp_credential() {
+    let (_addr, _state, daemon) = start_daemon_with_handle().await;
+    let (info, dir) = a_pane(&daemon);
+    let token = daemon.mcp_creds.issue(houston_core::mcp_creds::McpScope {
+        session_id: info.id,
+        workspace_id: dir.path().display().to_string(),
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let (_, _, before) = daemon.mcp_creds.export_for_session(info.id).unwrap();
+    assert_eq!(
+        daemon.handle_hook_from(info.id, proto::AgentKind::Codex, "UserPromptSubmit", None),
+        hook_drop::DropVerdict::Applied,
+    );
+    let (_, _, after) = daemon.mcp_creds.export_for_session(info.id).unwrap();
+    assert!(
+        after > before,
+        "reported activity must renew the credential's liveness window"
+    );
+    assert_eq!(
+        daemon.mcp_creds.resolve(&token).unwrap().session_id,
+        info.id
+    );
+    daemon.close(info.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn close_terminates_a_hup_ignoring_foreground_tree_and_revokes_its_token() {
+    let (_addr, state, daemon) = start_daemon_with_handle().await;
+    let dir = tempfile::tempdir().unwrap();
+    let info = daemon.create_session(CreateParams {
+        agent: proto::AgentKind::Custom,
+        project_dir: dir.path().to_path_buf(),
+        cmd: Some(vec!["sh".into(), "-m".into(), "-c".into(),
+            r#"trap '' HUP TERM; echo $$ > root.pid; sh -c 'trap "" HUP TERM; echo $$ > child.pid; while :; do sleep 1; done'"#.into()]),
+        cols: 80,
+        rows: 24,
+        cwd_from: None,
+        shell_integration: false,
+        auto_approve: false,
+        acp: None,
+        profile: None,
+        prompt: None,
+        model: None,
+        effort: None,
+    }).unwrap();
+    let token = daemon.mcp_creds.issue(houston_core::mcp_creds::McpScope {
+        session_id: info.id,
+        workspace_id: info.project_dir.clone(),
+    });
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let pids = loop {
+        let root = std::fs::read_to_string(dir.path().join("root.pid"))
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok());
+        let child = std::fs::read_to_string(dir.path().join("child.pid"))
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok());
+        if let (Some(root), Some(child)) = (root, child) {
+            break [root, child];
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "PTY fixture did not start"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    struct Cleanup(Vec<(u32, Option<u64>)>);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            for (pid, creation) in &self.0 {
+                let _ = houston_core::pid::signal_process_checked_identity(
+                    *pid,
+                    houston_core::pid::Signal::Kill,
+                    *creation,
+                );
+            }
+        }
+    }
+    let _cleanup = Cleanup(
+        pids.iter()
+            .map(|pid| (*pid, houston_core::pid::process_creation_token(*pid)))
+            .collect(),
+    );
+    let root_stat = std::fs::read_to_string(format!("/proc/{}/stat", pids[0])).unwrap();
+    let child_stat = std::fs::read_to_string(format!("/proc/{}/stat", pids[1])).unwrap();
+    let group = |stat: &str| {
+        stat[stat.rfind(')').unwrap() + 2..]
+            .split_whitespace()
+            .nth(2)
+            .unwrap()
+            .parse::<u32>()
+            .unwrap()
+    };
+    assert_ne!(
+        group(&root_stat),
+        group(&child_stat),
+        "foreground child needs its own job group"
+    );
+    daemon.close(info.id).unwrap();
+    assert!(
+        daemon.mcp_creds.resolve(&token).is_none(),
+        "closed ownership revokes the token immediately"
+    );
+    let connection = rusqlite::Connection::open_with_flags(
+        state.path().join("test.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let closed: String = connection
+        .query_row(
+            "SELECT state FROM sessions WHERE id = ?1",
+            [info.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(closed, "closed");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let alive = pids.iter().any(|pid| {
+            std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+                stat[stat.rfind(')').unwrap() + 2..]
+                    .split_whitespace()
+                    .next()
+                    != Some("Z")
+            })
+        });
+        if !alive {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "closed pane left an owned process alive: {pids:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 #[tokio::test]

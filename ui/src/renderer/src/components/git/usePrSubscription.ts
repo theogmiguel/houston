@@ -1,5 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import type { GhState, HoustonClient, PrInfo } from '../../houston/client'
+import { rememberRailPr } from './railPrCache'
 
 export interface PrState {
   gh: GhState
@@ -32,6 +33,7 @@ export function usePrSubscription({
     if (!client || !repoDir) return
     const unsubPrStatus = client.subscribe('pr_status', (msg) => {
       if (msg.dir !== repoDir) return
+      rememberRailPr(msg.dir, { gh: msg.gh, pr: msg.pr ?? null })
       setPr({
         gh: msg.gh,
         hasUpstream: msg.has_upstream,
@@ -44,6 +46,7 @@ export function usePrSubscription({
       setPrBusy(false)
       setPrMessage(msg.message ?? null)
       if (msg.pr) {
+        rememberRailPr(msg.dir, { gh: msg.gh, pr: msg.pr })
         setPr((p) => ({
           ...(p ?? { hasUpstream: true, hint: null }),
           gh: msg.gh,

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type AppHarness,
@@ -29,6 +30,13 @@ async function flush(): Promise<void> {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+async function waitForComposer(container: Element): Promise<void> {
+  await waitFor(
+    () => expect(container.querySelector('[data-testid="new-session-composer"]')).not.toBeNull(),
+    { timeout: 5_000 }
+  )
 }
 
 function addButton(harness: AppHarness): HTMLButtonElement {
@@ -104,6 +112,7 @@ describe('Add workspace — Local folder opens the folder picker', () => {
       })
     })
     await flush()
+    await waitForComposer(harness.container)
 
     const composer = harness.container.querySelector('[data-testid="new-session-composer"]')
     expect(composer, 'the folder picker’s success opens the composer').not.toBeNull()
@@ -122,6 +131,7 @@ describe('Add workspace — Local folder opens the folder picker', () => {
       })
     })
     await flush()
+    await waitForComposer(harness.container)
     act(() => {
       harness!.container
         .querySelector<HTMLButtonElement>('[data-testid="new-session-close"]')!

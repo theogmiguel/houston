@@ -8,13 +8,16 @@ import type { TaskSummary } from '../src/houston/generated/TaskSummary'
 import type { TasksAccess } from '../src/houston/generated/TasksAccess'
 import type { TaskDetailData } from '../src/houston/useTasks'
 import { ChildrenRoster } from '../src/components/ChildrenRoster'
+import { OverviewTab } from '../src/components/OverviewTab'
+import { SessionPane } from '../src/components/SessionPane'
+import type { OutputSink } from '../src/pane/TerminalPane'
+import { TaskChip } from '../src/components/tasks/TaskChip'
+import { TaskComposer } from '../src/components/tasks/TaskComposer'
 import { TaskDetail } from '../src/components/tasks/TaskDetail'
+import { TaskNowCard } from '../src/components/tasks/TaskNowCard'
 import { TasksList } from '../src/components/tasks/TasksList'
-import { SettingsView } from '../src/components/SettingsView'
-import { baseSettingsViewProps } from '../src/components/settingsViewTestFixtures'
-import { setSettingsNavForTests } from '../src/settingsNav'
-import '../src/components/tasks/tasks.css'
-import '../src/components/sidePanel.css'
+import { RosterColumn } from '../src/components/ui'
+import { SettingsScreen } from './settingsStories'
 
 const NOW = 1_700_000_000_000
 const MINUTE = 60_000
@@ -22,6 +25,11 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 const noop = (): void => {}
+const STATIC_MOTION = <style>{`.tasks-static *, .tasks-static *::before, .tasks-static *::after { animation: none !important; transition: none !important; }`}</style>
+
+function useFrozenStoryClock(): void {
+  Date.now = () => NOW
+}
 
 function summary(
   id: number,
@@ -190,12 +198,22 @@ const SESSIONS: ReadonlyMap<number, SessionInfo> = new Map([
   ]
 ])
 
+// The side panel column and its card, as the inspector frames a tab's content.
+const SIDE_PANEL_STYLE: React.CSSProperties = { width: 460, height: '100%', containerType: 'inline-size', position: 'relative', flex: 'none', display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, background: 'var(--rail-bg)' }
+const SIDE_CARD_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, minWidth: 0, margin: '0 8px 8px 0', border: '1px solid var(--border)', borderRadius: 'var(--tr-radius-md)', background: 'var(--card-bg)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }
+
+function SidePanelFrame({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <aside style={SIDE_PANEL_STYLE}>
+      <div style={SIDE_CARD_STYLE}>{children}</div>
+    </aside>
+  )
+}
+
 function PanelShell({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--rail-bg)', paddingTop: 8 }}>
-      <aside className="side-panel" style={{ width: 460, height: '100%' }}>
-        <div className="side-card">{children}</div>
-      </aside>
+      <SidePanelFrame>{children}</SidePanelFrame>
     </div>
   )
 }
@@ -243,18 +261,47 @@ export function TasksDetailStory(): React.JSX.Element {
   )
 }
 
-function tasksAccessClient(initial: TasksAccess): HoustonClient {
+export function TasksStartStory(): React.JSX.Element {
+  return (
+    <PanelShell>
+      <TaskDetail
+        detail={{ ...DETAIL, task: { ...DETAIL.task, status: 'todo', archived_at_ms: null }, runs: [] }}
+        access="write"
+        refusal={null}
+        now={NOW}
+        parentOptions={[{ value: '46', label: 'HOU-46 — A renamed pane keeps its name across respawn' }]}
+        sessions={SESSIONS}
+        startSettings={{ agent: 'claude', delivery: 'send' }}
+        onBack={noop}
+        onReload={noop}
+        onSave={noop}
+        onCheck={noop}
+        onComment={noop}
+        onArchive={noop}
+        onStart={noop}
+        onRunControl={noop}
+        onOpenSession={noop}
+        onReview={noop}
+      />
+    </PanelShell>
+  )
+}
+
+function tasksAccessClient(initial: TasksAccess, refuseReview = false): HoustonClient {
   let access = initial
   let review: { reviewer: AgentKind | null; reworkRounds: number } = { reviewer: null, reworkRounds: 0 }
   const accessHandlers = new Set<(msg: ServerMsg) => void>()
   const reviewHandlers = new Set<(msg: ServerMsg) => void>()
+  const refusalHandlers = new Set<(msg: ServerMsg) => void>()
   const client = {
     subscribe: (kind: string, handler: (msg: ServerMsg) => void) => {
       if (kind === 'tasks_access') accessHandlers.add(handler)
       if (kind === 'task_review_settings') reviewHandlers.add(handler)
+      if (kind === 'task_refused') refusalHandlers.add(handler)
       return () => {
         accessHandlers.delete(handler)
         reviewHandlers.delete(handler)
+        refusalHandlers.delete(handler)
       }
     },
     tasksAccessGet: (workspace: string) => {
@@ -268,8 +315,15 @@ function tasksAccessClient(initial: TasksAccess): HoustonClient {
       for (const handler of reviewHandlers) {
         handler({ type: 'task_review_settings', workspace, reviewer: review.reviewer, rework_rounds: review.reworkRounds })
       }
+      if (refuseReview) {
+        for (const handler of refusalHandlers) handler({ type: 'task_refused', kind: 'limit', limit: 5, requested: 6, expected: null, actual: null, message: 'Automatic rework rounds is limited to 5; requested 6.' })
+      }
     },
     taskReviewSettingsSet: (workspace: string, reviewer: AgentKind | null, reworkRounds: number) => {
+      if (refuseReview) {
+        for (const handler of refusalHandlers) handler({ type: 'task_refused', kind: 'limit', limit: 5, requested: 6, expected: null, actual: null, message: 'Automatic rework rounds is limited to 5; requested 6.' })
+        return
+      }
       review = { reviewer, reworkRounds }
       for (const handler of reviewHandlers) {
         handler({ type: 'task_review_settings', workspace, reviewer, rework_rounds: reworkRounds })
@@ -286,17 +340,15 @@ function tasksAccessClient(initial: TasksAccess): HoustonClient {
 }
 
 export function TasksSettingsStory(): React.JSX.Element {
-  setSettingsNavForTests({ open: true, section: 'tasks' })
-  return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
-      <SettingsView
-        {...baseSettingsViewProps()}
-        daemonClient={tasksAccessClient('write')}
-        historyWorkspace="/home/dev/code/houston"
-        historyWorkspaceName="houston"
-      />
-    </div>
-  )
+  return <SettingsScreen section="tasks" props={{
+    daemonClient: tasksAccessClient('write'),
+    historyWorkspace: '/home/dev/code/houston',
+    historyWorkspaceName: 'houston'
+  }} />
+}
+
+export function TasksSettingsReviewRefusalStory(): React.JSX.Element {
+  return <SettingsScreen section="tasks" props={{ daemonClient: tasksAccessClient('write', true), historyWorkspace: '/home/dev/code/houston', historyWorkspaceName: 'houston' }} />
 }
 
 const ROSTER_WORKSPACE = '/home/dev/code/houston'
@@ -376,26 +428,70 @@ const ROSTER_SESSIONS: ReadonlyMap<number, SessionInfo> = new Map(
   ].map((child) => [child.id, child])
 )
 
-function rosterClient(): HoustonClient {
-  const handlers = new Set<(msg: ServerMsg) => void>()
+function OverviewRosterStory(): React.JSX.Element {
+  useFrozenStoryClock()
+  const client = React.useMemo(() => new Proxy({
+    subscribe: () => () => {},
+    delegationResultsList: noop,
+    inboxList: noop,
+    gitStatus: noop
+  }, {
+    get(target, prop, receiver) {
+      if (prop in target) return Reflect.get(target, prop, receiver)
+      if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined
+      return noop
+    }
+  }) as unknown as HoustonClient, [])
+  const sessions = new Map([[ROSTER_PARENT.id, ROSTER_PARENT], ...ROSTER_SESSIONS])
+  return <div className="tasks-static" style={{ height: '100%', overflow: 'auto', background: 'var(--content-bg)' }}>{STATIC_MOTION}<OverviewTab parentId={ROSTER_PARENT.id} sessions={sessions} client={client} onClose={noop} onReview={noop} /></div>
+}
+
+export function TasksOverviewRosterStory(): React.JSX.Element {
+  return <OverviewRosterStory />
+}
+
+function rosterClient({ empty = false, result = false }: { empty?: boolean; result?: boolean } = {}): HoustonClient {
+  const handlers = new Map<string, Set<(msg: ServerMsg) => void>>()
+  const emit = (msg: ServerMsg): void => {
+    for (const handler of handlers.get(msg.type) ?? []) handler(msg)
+  }
+  const snapshot = (workspace: string): ServerMsg => ({
+    type: 'task_snapshot',
+    scope: workspace,
+    tasks: empty ? [] : ROSTER_READY,
+    counts: { ready: empty ? 0 : 2, backlog: 2, todo: 2, in_progress: 2, in_review: 2, done: 2, canceled: 0 }
+  })
   const client = {
     subscribe: (kind: string, handler: (msg: ServerMsg) => void) => {
-      if (kind === 'task_snapshot') handlers.add(handler)
-      return () => handlers.delete(handler)
-    },
-    taskSnapshot: (workspace: string) => {
-      for (const handler of handlers) {
-        handler({
-          type: 'task_snapshot',
-          scope: workspace,
-          tasks: ROSTER_READY,
-          counts: { ready: 2, backlog: 2, todo: 2, in_progress: 2, in_review: 2, done: 2, canceled: 0 }
+      const subscribers = handlers.get(kind) ?? new Set<(msg: ServerMsg) => void>()
+      subscribers.add(handler)
+      handlers.set(kind, subscribers)
+      if (kind === 'task_snapshot') {
+        queueMicrotask(() => {
+          if (subscribers.has(handler)) handler(snapshot(ROSTER_WORKSPACE))
         })
       }
+      return () => subscribers.delete(handler)
+    },
+    taskSnapshot: (workspace: string) => {
+      emit(snapshot(workspace))
     },
     closeSession: noop,
     inboxDeliverNow: noop,
-    taskQueueRun: noop
+    taskQueueRun: (session: number, count: number) => {
+      if (result) {
+        window.setTimeout(() => emit({
+          type: 'task_queue_result',
+          workspace: '/home/dev/code/houston',
+          started: ['HOU-113'],
+          refused: [{ id: 114, key: 'HOU-114', message: 'No available child slot' }],
+          ready_count: 1,
+          free_children: 0
+        }), 0)
+      }
+      void session
+      void count
+    }
   }
   return new Proxy(client, {
     get(target, prop, receiver) {
@@ -406,10 +502,12 @@ function rosterClient(): HoustonClient {
   }) as unknown as HoustonClient
 }
 
-function RosterStory({ view }: { view: 'children' | 'queue' }): React.JSX.Element {
-  const client = React.useMemo(() => rosterClient(), [])
+function RosterStory({ view, empty = false, result = false }: { view: 'children' | 'queue'; empty?: boolean; result?: boolean }): React.JSX.Element {
+  useFrozenStoryClock()
+  const client = React.useMemo(() => rosterClient({ empty, result }), [empty, result])
   return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--card-bg)' }}>
+    <div className="tasks-static" style={{ display: 'flex', height: '100%', background: 'var(--card-bg)' }}>
+      {STATIC_MOTION}
       <ChildrenRoster
         parent={ROSTER_PARENT}
         children={[...ROSTER_SESSIONS.values()]}
@@ -432,4 +530,201 @@ export function TasksRosterStory(): React.JSX.Element {
 
 export function TasksQueueStory(): React.JSX.Element {
   return <RosterStory view="queue" />
+}
+
+export function TasksQueueEmptyStory(): React.JSX.Element {
+  return <RosterStory view="queue" empty />
+}
+
+export function TasksQueueResultStory(): React.JSX.Element {
+  React.useEffect(() => clickAfterMount(['[data-testid="queue-run-next"]']), [])
+  return <RosterStory view="queue" result />
+}
+
+
+export function PaneLifecycleStory(): React.JSX.Element {
+  const children = React.useMemo(() => [
+    { ...rosterChild(431, 'reviewer', 'needs-input', null), task: null, title: 'Confirm the target branch' },
+    { ...rosterChild(432, 'validator', 'working', null), task: null, title: 'Waiting after validation', delegation: { ...rosterChild(432, 'validator', 'working', null).delegation!, stalled: true } },
+    { ...rosterChild(433, 'backend', 'working', null), task: null, title: 'Completed the requested change', delegation: { ...rosterChild(433, 'backend', 'working', null).delegation!, state: 'done' as const, result_staged: true, settled_at: NOW - MINUTE } },
+    { ...rosterChild(434, 'tests', 'working', null), task: null, title: 'Regression tests passed', delegation: { ...rosterChild(434, 'tests', 'working', null).delegation!, state: 'done' as const, inbox_owed: 1, settled_at: NOW - MINUTE } },
+  ], [])
+  const parent = { ...ROSTER_PARENT, title: 'Pane lifecycle', live_children: 4, children_waiting: 1, inbox_unread: 2 }
+  const sinks = React.useRef(new Map<number, OutputSink>())
+  const client = React.useMemo(() => new Proxy({
+    subscribe: () => noop,
+    attachSession: (id: number) => queueMicrotask(() => {
+      const text = id === 398 ? 'Orchestrator terminal ready.\r\nSelect a child to inspect its terminal.\r\n' : `Child ${id} terminal ready.\r\nRecorded output remains visible after switching children.\r\n`
+      const bytes = new TextEncoder().encode(text)
+      sinks.current.get(id)?.replay(bytes, bytes.length)
+    }),
+  }, {
+    get(target, prop, receiver) {
+      if (prop in target) return Reflect.get(target, prop, receiver)
+      if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined
+      return noop
+    },
+  }) as unknown as HoustonClient, [])
+  return <><style>{'.loop-anim{animation:none!important}'}</style><div style={{ height: '100%', padding: 12, display: 'flex' }}><SessionPane
+    info={parent} client={client} roster={{ sessions: new Map([parent, ...children].map((pane) => [pane.id, pane])), maxLiveChildren: 8 }}
+    gridSessionIds={new Set([parent.id])} theme="black" active connected fontSize={14} copyOnSelect={false} stripBoxGlyphs={false} showProject={false} shellIntegration={false}
+    registerOutput={(id, sink) => { sinks.current.set(id, sink); return () => { sinks.current.delete(id) } }}
+    onReconnectSsh={noop} onActivate={noop} onExpand={noop} onZoom={noop} onShellZoom={noop} onSplit={noop} onHeaderPointerDown={noop} onHandoff={noop} onOpenFile={noop} onOpenDir={noop}
+  /></div></>
+}
+
+
+const STATE_REFUSAL = {
+  id: null,
+  kind: 'limit',
+  message: 'Task limit reached: 500 tasks exist, 501 requested.',
+  expected: null,
+  actual: null,
+  limit: 500,
+  requested: 501
+} as const
+
+// StrictMode runs mount effects twice; the cleanup cancels the first timer so
+// each selector is clicked once.
+function clickAfterMount(selectors: string[], delay = 60): () => void {
+  const timer = window.setTimeout(() => {
+    for (const selector of selectors) document.querySelector<HTMLElement>(selector)?.click()
+  }, delay)
+  return () => window.clearTimeout(timer)
+}
+
+function PanelRow({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', gap: 12, height: '100%', background: 'var(--rail-bg)', paddingTop: 8 }}>
+      {React.Children.map(children, (child) => <SidePanelFrame>{child}</SidePanelFrame>)}
+    </div>
+  )
+}
+
+export function TasksListStatesStory(): React.JSX.Element {
+  const session = SESSIONS.get(431)!
+  return (
+    <PanelRow>
+      <TasksList
+        scope="all"
+        showWorkspace
+        tasks={TASKS}
+        selectedId={43}
+        now={NOW}
+        access="write"
+        refusal={STATE_REFUSAL}
+        nowCard={
+          <TaskNowCard session={session} summary={TASKS[0]} detail={DETAIL} onOpenSession={noop} onStop={noop} />
+        }
+        onOpen={noop}
+        onNew={noop}
+        onAccess={noop}
+      />
+      <TasksList
+        tasks={[]}
+        selectedId={null}
+        now={NOW}
+        access="off"
+        refusal={{ ...STATE_REFUSAL, kind: 'access_off', message: 'Tasks are off for this workspace.' }}
+        onOpen={noop}
+        onNew={noop}
+        onAccess={noop}
+      />
+    </PanelRow>
+  )
+}
+
+export function TasksComposerStory(): React.JSX.Element {
+  React.useEffect(() => clickAfterMount(['[data-testid="task-composer-add-item"]', '[data-testid="task-composer-add-item"]']), [])
+  return (
+    <PanelShell>
+      <TaskComposer
+        initialTitle="Refuse unsafe worktree slugs"
+        initialDescription="The error names the slug, the limit and the actual length."
+        parentOptions={[{ value: '46', label: 'HOU-46 — A renamed pane keeps its name across respawn' }]}
+        onCancel={noop}
+        onCreate={noop}
+      />
+    </PanelShell>
+  )
+}
+
+const REVIEW_RUN = {
+  ...RUN_41,
+  id: 9,
+  kind: 'review',
+  state: 'failed',
+  provider: 'codex',
+  session_id: null,
+  reason: null,
+  summary: 'The slug validator accepts a trailing newline.\nAdd a regression test.',
+  ended_at_ms: NOW - 4 * MINUTE
+} as const
+
+const IMPL_RUN = {
+  ...RUN_41,
+  state: 'needs_review',
+  reason: 'Waiting for the reviewer verdict before handing back.',
+  ended_at_ms: NOW - 5 * MINUTE
+} as const
+
+export function TasksDetailStatesStory(): React.JSX.Element {
+  const common = {
+    access: 'write' as const,
+    now: NOW,
+    parentOptions: [{ value: '46', label: 'HOU-46 — A renamed pane keeps its name across respawn' }],
+    workspaceOptions: [{ value: '/home/dev/code/houston', label: 'houston' }],
+    sessions: SESSIONS,
+    startSettings: { agent: 'claude', delivery: 'send' } as const,
+    onBack: noop,
+    onReload: noop,
+    onSave: noop,
+    onCheck: noop,
+    onComment: noop,
+    onArchive: noop,
+    onStart: noop,
+    onRunControl: noop,
+    onOpenSession: noop,
+    onReview: noop
+  }
+  const conflict = {
+    id: 41,
+    kind: 'conflict',
+    message: 'Revision 9 expected, 10 found.',
+    expected: 9,
+    actual: 10,
+    limit: null,
+    requested: null
+  } as const
+  return (
+    <PanelRow>
+      <TaskDetail
+        {...common}
+        refusal={conflict}
+        detail={{ ...DETAIL, runs: [REVIEW_RUN, IMPL_RUN], comments: [], history: [] }}
+      />
+      <TaskDetail
+        {...common}
+        refusal={{ ...conflict, kind: 'limit', message: 'Description limit: 20000 bytes, 20001 requested.' }}
+        detail={{
+          ...DETAIL,
+          task: { ...DETAIL.task, status: 'todo', workspace: null, archived_at_ms: NOW - MINUTE },
+          acceptance: [],
+          runs: [],
+          comments: [],
+          history: []
+        }}
+      />
+    </PanelRow>
+  )
+}
+
+export function TasksChipsStory(): React.JSX.Element {
+  const task = SESSIONS.get(431)!.task!
+  return (
+    <div style={{ display: 'grid', gap: 16, padding: 24, background: 'var(--card-bg)', width: 520 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><TaskChip task={task} /></div>
+      <RosterColumn style={{ gap: 12, alignItems: 'center' }}><TaskChip task={task} compact /></RosterColumn>
+    </div>
+  )
 }

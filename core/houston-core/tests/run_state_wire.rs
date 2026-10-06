@@ -30,6 +30,8 @@ fn create_session(daemon: &Arc<Daemon>, dir: &std::path::Path) -> u32 {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id
@@ -50,6 +52,7 @@ fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
         ssh_host: None,
         restore_deferred: None,
         status: None,
+        status_since_ms: None,
         context: None,
         swarm_agent: None,
         spawned_by: None,

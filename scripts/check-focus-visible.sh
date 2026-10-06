@@ -5,14 +5,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-ui_src="ui/src"
-
-EXEMPT_COUNTS=(
-  "ui/src/renderer/src/components/agents/SelectMenu.tsx 1"
-  "ui/src/renderer/src/editor/editorChrome.ts 2"
-  "ui/src/renderer/src/components/browserFullscreenChrome.ts 1"
-  "ui/src/renderer/src/components/settings/AppearanceSection.tsx 1"
-)
+ui_src="${SCAN_ROOT:-ui/src}"
 
 mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \
   -not -name '*.test.ts' -not -name '*.test.tsx' \
@@ -45,18 +38,8 @@ counts="$(perl -e '
 fail=0
 while IFS=$'\t' read -r n f; do
   [ -z "$f" ] && continue
-  exempt=0
-  for entry in "${EXEMPT_COUNTS[@]}"; do
-    path="${entry% *}"
-    if [ "$path" = "$f" ]; then
-      exempt="${entry##* }"
-      break
-    fi
-  done
-  if [ "$n" -gt "$exempt" ]; then
-    echo "FAIL: $f -- $n outline-none site(s) with no focus-visible paint (exempt: $exempt)" >&2
-    fail=1
-  fi
+  echo "FAIL: focus-visible $f has $n outline-none site(s) with no focus-visible paint; expected a visible focus-visible state" >&2
+  fail=1
 done <<< "$counts"
 
 if [ "$fail" -ne 0 ]; then
@@ -64,7 +47,7 @@ if [ "$fail" -ne 0 ]; then
   echo "      variant) with no focus-visible: declaration that paints" >&2
   echo "      something (shadow-, ring-, border, bg-, or a real outline)." >&2
   echo "      Give the control a visible focus state -- FOCUS_HALO in" >&2
-  echo "      components/shadowChrome.ts for a rounded or capsule control." >&2
+  echo "      components/ui/shadowChrome.ts for a rounded or capsule control." >&2
   exit 1
 fi
 

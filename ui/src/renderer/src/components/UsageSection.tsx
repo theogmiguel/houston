@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { IconAgentClaude, IconAgentCodex, IconChartArea, IconRefresh, type IconComponent } from './icons'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { EmptyState } from './EmptyState'
-import { Segmented } from './Segmented'
-import { UsageChart, type UsageSeries } from './UsageChart'
-import type { AgentKind } from '../houston/generated/AgentKind'
+import { IconChartArea, IconInfo, IconRefresh } from './icons'
+import { EmptyState } from './ui/ActionEmptyState'
+import { Segmented } from './ui/SegmentedControl'
+import { UsageChart, type UsageSeries } from './ui/UsageChart'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { UsageProvider } from '../houston/generated/UsageProvider'
-import type { UsageSource } from '../houston/generated/UsageSource'
 import {
   breakdownRows,
   foldSeries,
@@ -28,236 +25,90 @@ import {
   type UsageWindowDef,
   type UsageWindowId
 } from '../usage'
-import { ICON_ROLE_CLS, Icon } from './Icon'
-import { Tooltip } from './Tooltip'
+import { Icon } from './ui/Icon'
+import { Tooltip } from './ui/Tooltip'
+import { Select } from './ui/Select'
+import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar, Text, UsageToolbar, UsageContentFrame, UsageStatCell, UsageHeroValue, UsageHeroCaption, UsageChartHeading, UsageBody, UsageError, UsageProviderList, UsageChartHeader, UsageTotalsStrip, UsageTotalsSection, UsageCalendarSectionFrame, UsageBreakdownHeading, UsageBreakdownSection, UsageBreakdownFrame, UsageShareGroup, UsageHeroLayout, UsageHeroColumn, UsageHeroSummary, UsageToolbarActions } from './ui'
+import { calendarStartMs } from './ui/UsageCalendar'
+import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'
 
 export type UsageSummaryMsg = Extract<ServerMsg, { type: 'usage_summary' }>
 
 const PROVIDER_COLOR: Record<UsageProvider, string> = {
-  claude: 'var(--accent)',
-  codex: 'var(--warn)'
+  claude: 'var(--claude)',
+  codex: 'var(--text-primary)'
 }
 
-const PROVIDER_ICON: Record<UsageProvider, IconComponent> = {
-  claude: IconAgentClaude,
-  codex: IconAgentCodex
-}
-
-const AGENT_LABEL: Partial<Record<AgentKind, string>> = {
-  antigravity: 'Antigravity',
-  opencode: 'opencode',
-  cursor: 'Cursor',
-  grok: 'Grok',
-  droid: 'Droid',
-  copilot: 'Copilot',
-  aider: 'Aider'
-}
-
-function CapsLabel({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="text-[length:var(--tr-text-label-size)] font-[var(--tr-text-label-weight)] tracking-[var(--tr-text-label-tracking)] uppercase text-[var(--text-muted)]">
-      {children}
-    </div>
-  )
-}
-
-function StatCell({
-  label,
-  value,
-  note
-}: {
-  label: string
-  value: string
-  note: string
-}): React.JSX.Element {
-  return (
-    <div className="min-w-0 px-[var(--space-4)] py-[var(--space-3)] first:pl-0 last:pr-0 border-l border-[var(--border)] first:border-l-0">
-      <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">{label}</div>
-      <div className="mt-[3px] text-[length:var(--tr-text-2xl)] font-semibold tracking-[-0.01em] tabular-nums text-[var(--text-primary)]">
-        {value}
-      </div>
-      <div className="mt-[3px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.45] text-[var(--text-faint)]">{note}</div>
-    </div>
-  )
-}
-
-function SourceRow({ source }: { source: UsageSource }): React.JSX.Element {
-  const tone =
-    source.status === 'ok'
-      ? 'var(--ok)'
-      : source.status === 'missing'
-        ? 'var(--text-faint)'
-        : 'var(--warn)'
-  const detail =
-    source.status === 'missing'
-      ? (source.message ?? 'never used')
-      : `${source.scanned_files.toLocaleString('en-US')} files · ${source.distinct_sessions.toLocaleString('en-US')} sessions${
-          source.failed_files > 0 ? ` · ${source.failed_files} unreadable` : ''
-        }`
-  return (
-    <div
-      data-testid="usage-source"
-      className="flex items-center gap-[var(--space-2)] border-t border-[var(--border)] py-[9px] first:border-t-0 text-[length:var(--tr-text-sm)]"
-    >
-      <span
-        aria-hidden="true"
-        className="h-[6px] w-[6px] shrink-0 rounded-full"
-        style={{ background: tone }}
-      />
-      <Tooltip label={source.message ?? source.path}>
-        <code className="truncate font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
-          {source.path}
-        </code>
-      </Tooltip>
-      <span className="ml-auto shrink-0 pl-[var(--space-3)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
-        {source.profile_name ? `profile “${source.profile_name}” · ` : ''}
-        {detail}
-      </span>
-    </div>
-  )
+const PROVIDER_MARK: Record<UsageProvider, string> = {
+  claude: '✳',
+  codex: '◎'
 }
 
 function UsageHero({
   metric,
-  onMetricChange,
   heroValue,
   sessions,
   providers,
-  hidden,
-  onToggleProvider,
   windowDef,
   points,
   series,
   labelFor
 }: {
   metric: 'cost' | 'tokens'
-  onMetricChange: (metric: 'cost' | 'tokens') => void
   heroValue: string
   sessions: number
-  providers: ProviderSummary[]
-  hidden: UsageProvider[]
-  onToggleProvider: (provider: UsageProvider) => void
+  providers: (ProviderSummary & { sessions: number })[]
   windowDef: UsageWindowDef
   points: SeriesPoint[]
   series: UsageSeries[]
   labelFor: (point: SeriesPoint) => string
 }): React.JSX.Element {
   return (
-    <div className="grid grid-cols-1 gap-[var(--space-6)] lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
-      <div className="min-w-0">
-        <CapsLabel>{metric === 'cost' ? 'Raw token cost' : 'Processed tokens'}</CapsLabel>
-        <div
-          data-testid="usage-headline"
-          className="mt-[var(--space-2)] text-[length:var(--tr-text-title-size)] font-[var(--tr-text-title-weight)] tracking-[var(--tr-text-title-tracking)] tabular-nums text-[var(--text-primary)]"
-        >
-          {heroValue}
-          {metric === 'cost' && <span className="text-[var(--text-muted)]">*</span>}
-        </div>
-        <div className="mt-[var(--space-1)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-muted)]">
-          {metric === 'cost' ? (
-            <>
-              * if billed at full API rate. A subscription bills a flat fee whatever this says.
-            </>
-          ) : (
-            <>
-              Input, cache reads and output across {sessions.toLocaleString('en-US')} sessions.
-            </>
-          )}
-        </div>
+    <UsageHeroLayout>
+      <UsageHeroColumn>
+        <UsageHeroSummary>
+          <UsageHeroValue data-testid="usage-headline">
+            {heroValue}
+          </UsageHeroValue>
+          <UsageHeroCaption>
+            {sessions.toLocaleString('en-US')} sessions · {metric === 'cost' ? 'API estimate' : 'processed tokens'}
+            {metric === 'cost' && <Tooltip label="Estimated at the published full API rate. Subscriptions are billed separately."><span aria-label="API estimate details" role="img"><Icon glyph={IconInfo} role="small" /></span></Tooltip>}
+          </UsageHeroCaption>
+        </UsageHeroSummary>
 
-        <div className="mt-[var(--space-5)] flex flex-col gap-[var(--space-4)]">
+        <UsageProviderList>
           {providers.map((p) => {
-            const Icon = PROVIDER_ICON[p.provider]
-            const share = metric === 'cost' ? p.costShare : p.tokenShare
             return (
-              <div key={p.provider} data-testid={`usage-provider-${p.provider}`} className="min-w-0">
-                <div className="flex items-baseline gap-[var(--space-2)]">
-                  <span
-                    className="shrink-0 translate-y-[2px]"
-                    style={{ color: PROVIDER_COLOR[p.provider] }}
-                  >
-                    <Icon className={ICON_ROLE_CLS.body} />
-                  </span>
-                  <span className="truncate text-[length:var(--tr-text-md)] text-[var(--text-primary)]">
-                    {p.label}
-                  </span>
-                  <span className="ml-auto shrink-0 tabular-nums text-[length:var(--tr-text-md)] font-medium text-[var(--text-primary)]">
-                    {metric === 'cost' ? formatUsd(p.cost) : formatTokens(p.tokens)}
-                  </span>
-                </div>
-                <div className="mt-[var(--space-2)] h-[3px] w-full overflow-hidden rounded-full bg-[var(--card-hover)]">
-                  <span
-                    className="block h-full rounded-full"
-                    style={{
-                      width: `${Math.max(share * 100, share > 0 ? 1.5 : 0)}%`,
-                      background: PROVIDER_COLOR[p.provider]
-                    }}
-                  />
-                </div>
-                <div className="mt-[var(--space-2)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
-                  {metric === 'cost'
-                    ? `${formatShare(p.costShare)} of cost · ${formatTokens(p.tokens)} tokens`
-                    : `${formatShare(p.tokenShare)} of tokens · ${formatUsd(p.cost)}`}
-                </div>
-              </div>
+              <UsageProviderRow
+                key={p.provider}
+                mark={PROVIDER_MARK[p.provider]}
+                label={p.label}
+                sessions={p.sessions}
+                amount={metric === 'cost' ? formatUsd(p.cost) : formatTokens(p.tokens)}
+                note={metric === 'cost' ? `${formatShare(p.costShare)} of cost · ${formatTokens(p.tokens)} tokens` : `${formatShare(p.tokenShare)} of tokens · ${formatUsd(p.cost)}`}
+                color={PROVIDER_COLOR[p.provider]}
+              />
             )
           })}
-        </div>
-      </div>
+        </UsageProviderList>
+      </UsageHeroColumn>
 
-      <div className="min-w-0">
-        <div className="mb-[var(--space-3)] flex flex-wrap items-center justify-between gap-[var(--space-2)]">
-          <div className="text-[length:var(--tr-text-lg)] font-semibold tracking-[-0.006em] text-[var(--text-primary)]">
+      <UsageHeroColumn>
+        <UsageChartHeader>
+          <UsageChartHeading>
             {windowDef.hourly ? 'Hourly' : 'Daily'} {metric === 'cost' ? 'cost' : 'processed tokens'}
-          </div>
-          <div className="flex items-center gap-[var(--space-3)]">
-            <Segmented
-              aria-label="Chart metric"
-              options={[
-                { value: 'cost', label: 'Cost' },
-                { value: 'tokens', label: 'Tokens' }
-              ]}
-              value={metric}
-              onChange={onMetricChange}
-            />
-            {}
-            <div className="flex items-center gap-[var(--space-2-5)]">
-              {providers.map((p) => {
-                const Icon = PROVIDER_ICON[p.provider]
-                const on = !hidden.includes(p.provider)
-                return (
-                  <button
-                    key={p.provider}
-                    type="button"
-                    data-testid={`usage-legend-${p.provider}`}
-                    aria-pressed={on}
-                    onClick={() => onToggleProvider(p.provider)}
-                    className="btn border-0 flex items-center gap-[var(--space-1-5)] rounded-[var(--tr-radius-button)] px-[var(--space-1-5)] py-[2px] text-[length:var(--tr-text-sm)]"
-                    style={{
-                      color: on ? 'var(--text-primary)' : 'var(--text-faint)',
-                      opacity: on ? 1 : 0.6
-                    }}
-                  >
-                    <span style={{ color: on ? PROVIDER_COLOR[p.provider] : 'inherit' }}>
-                      <Icon className={ICON_ROLE_CLS.ui} />
-                    </span>
-                    {p.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
+          </UsageChartHeading>
+        </UsageChartHeader>
         <UsageChart points={points} series={series} metric={metric} labelFor={labelFor} />
-      </div>
-    </div>
+      </UsageHeroColumn>
+    </UsageHeroLayout>
   )
 }
 
 function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element {
   return (
-    <div className="mt-[var(--space-6)] grid grid-cols-2 border-y border-[var(--border)] py-[var(--space-3)] sm:grid-cols-3 lg:grid-cols-5">
-      <StatCell
+    <UsageTotalsStrip>
+      <UsageStatCell
         label="Processed tokens"
         value={formatTokens(totals.tokens)}
         note={
@@ -266,19 +117,19 @@ function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element
             : 'no active days in this window'
         }
       />
-      <StatCell
+      <UsageStatCell
         label="Cached input"
         value={formatTokens(totals.cachedInput)}
         note={`${formatShare(
           totals.cachedInput / Math.max(1, totals.cachedInput + totals.uncachedInput + totals.cacheCreation)
         )} of observed input`}
       />
-      <StatCell
+      <UsageStatCell
         label="Uncached input"
         value={formatTokens(totals.uncachedInput)}
         note={`${formatTokens(totals.cacheCreation)} cache writes`}
       />
-      <StatCell
+      <UsageStatCell
         label="Output"
         value={formatTokens(totals.output)}
         note={
@@ -287,7 +138,7 @@ function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element
             : 'no reasoning tokens reported'
         }
       />
-      <StatCell
+      <UsageStatCell
         label="Cache savings"
         value={formatUsd(totals.cacheSavings)}
         note={
@@ -296,7 +147,7 @@ function UsageTokenStrip({ totals }: { totals: UsageTotals }): React.JSX.Element
             : 'nothing priced in this window'
         }
       />
-    </div>
+    </UsageTotalsStrip>
   )
 }
 
@@ -312,11 +163,9 @@ function UsageBreakdown({
   loading: boolean
 }): React.JSX.Element {
   return (
-    <>
-      <div className="mt-[var(--space-5)] flex items-center justify-between gap-[var(--space-3)]">
-        <div className="text-[length:var(--tr-text-lg)] font-semibold tracking-[-0.006em] text-[var(--text-primary)]">
-          Breakdown
-        </div>
+    <UsageBreakdownSection>
+      <UsageBreakdownHeading>
+        <UsageSectionHeading>Breakdown</UsageSectionHeading>
         <Segmented
           aria-label="Breakdown grouping"
           options={[
@@ -326,105 +175,30 @@ function UsageBreakdown({
           value={mode}
           onChange={onModeChange}
         />
-      </div>
+      </UsageBreakdownHeading>
 
-      <table data-testid="usage-breakdown" className="mt-[var(--space-3)] w-full border-collapse">
-        <thead>
-          <tr className="text-[length:var(--tr-text-sm)] text-[var(--text-muted)]">
-            <th className="py-[var(--space-2)] text-left font-normal">
-              {mode === 'model' ? 'Model' : 'Day'}
-            </th>
-            <th className="py-[var(--space-2)] text-right font-normal">Cost</th>
-            <th className="py-[var(--space-2)] text-right font-normal">Share</th>
-            <th className="py-[var(--space-2)] text-right font-normal">Tokens</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && (
-            <tr>
-              <td
-                colSpan={4}
-                className="border-t border-[var(--border)] py-[var(--space-5)] text-center text-[length:var(--tr-text-sm)] text-[var(--text-muted)]"
-              >
-                {loading ? 'Reading transcripts…' : 'Nothing was recorded in this window.'}
-              </td>
-            </tr>
-          )}
-          {rows.map((row) => {
-            const Icon = row.provider ? PROVIDER_ICON[row.provider] : null
-            return (
-              <tr key={row.id} className="border-t border-[var(--border)]">
-                <td className="py-[10px] pr-[var(--space-3)]">
-                  <div className="flex min-w-0 items-center gap-[var(--space-2)]">
-                    {Icon && (
-                      <span
-                        className="shrink-0"
-                        style={{ color: PROVIDER_COLOR[row.provider as UsageProvider] }}
-                      >
-                        <Icon className={ICON_ROLE_CLS.ui} />
-                      </span>
-                    )}
-                    <span className="truncate font-mono text-[length:var(--tr-text-sm)] text-[var(--text-primary)]">
-                      {row.id}
-                    </span>
-                  </div>
-                </td>
-                <td className="py-[10px] text-right tabular-nums text-[length:var(--tr-text-sm)] text-[var(--text-primary)]">
-                  {}
-                  {row.unpriced ? (
-                    <Tooltip label="No published rate for this model">
-                      <span className="text-[var(--text-faint)]">not priced</span>
-                    </Tooltip>
-                  ) : (
-                    formatUsd(row.cost)
-                  )}
-                </td>
-                <td className="py-[10px] text-right tabular-nums text-[length:var(--tr-text-sm)] text-[var(--text-muted)]">
-                  {formatShare(row.share)}
-                </td>
-                <td className="py-[10px] text-right tabular-nums text-[length:var(--tr-text-sm)] text-[var(--text-muted)]">
-                  {formatTokens(row.tokens)}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </>
-  )
-}
-
-function UsageProvenance({
-  summary,
-  untracked
-}: {
-  summary: UsageSummaryMsg
-  untracked: string[]
-}): React.JSX.Element {
-  return (
-    <>
-      <div className="mt-[var(--space-6)] mb-[var(--space-2)] ml-[2px] text-[length:var(--tr-text-label-size)] font-[var(--tr-text-label-weight)] tracking-[var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
-        Where these numbers came from
-      </div>
-      <div className="rounded-[10px] border border-[var(--border)] bg-[var(--card-bg)] px-[var(--space-4)] py-[2px]">
-        {summary.sources.map((s) => (
-          <SourceRow key={`${s.provider}:${s.path}`} source={s} />
-        ))}
-      </div>
-      <p className="mx-[2px] mt-[var(--space-2-5)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.7] text-[var(--text-faint)]">
-        {untracked.length > 0 && (
-          <>
-            Not tracked: {untracked.join(', ')} — Houston can run them but does not read their
-            transcripts.{' '}
-          </>
-        )}
-        {summary.pricing.status === 'unavailable'
-          ? 'No model rate table is available, so every model is reported unpriced.'
-          : `Rates from ${summary.pricing.known_models.toLocaleString('en-US')} models in LiteLLM's published table.`}
-        {summary.pricing.message ? ` ${summary.pricing.message}` : ''} Scanned in{' '}
-        {(summary.scan_duration_ms / 1000).toFixed(1)} s.
-      </p>
-    </>
+      <UsageBreakdownFrame data-testid="usage-breakdown">
+        <Table
+          variant="plain"
+          aria-label="Usage breakdown"
+          rows={rows.map((row, index) => ({ ...row, rank: index + 1 }))}
+          getRowId={(row) => row.id}
+          empty={{ heading: loading ? 'Reading transcripts…' : 'No activity in this window.', description: '' }}
+          columns={[
+            { key: 'rank', header: '#', width: 'var(--w-usage-rank)', tone: 'faint' },
+            { key: 'id', header: mode === 'model' ? 'Model' : 'Day', render: (id, row) => {
+              const mark = row.provider ? PROVIDER_MARK[row.provider] : null
+              return mode === 'model'
+                ? <UsageModelCell mark={mark} name={String(id)} share={row.share} color={row.provider ? PROVIDER_COLOR[row.provider] : 'var(--text-muted)'} />
+                : <span>{id}</span>
+            } },
+            { key: 'cost', header: 'Cost', width: 'var(--w-usage-cost)', numeric: true, weight: 'regular', render: (cost, row) => row.unpriced ? <Tooltip label="No published rate for this model"><span>not priced</span></Tooltip> : formatUsd(Number(cost)) },
+            { key: 'share', header: 'Share', width: 'var(--w-usage-share)', numeric: true, tone: 'muted', render: (share) => formatShare(Number(share)) },
+            { key: 'tokens', header: 'Tokens', width: 'var(--w-usage-tokens)', numeric: true, tone: 'muted', render: (tokens) => formatTokens(Number(tokens)) }
+          ]}
+        />
+      </UsageBreakdownFrame>
+    </UsageBreakdownSection>
   )
 }
 
@@ -442,31 +216,38 @@ function usageRangeLabel(
   return formatRange(summary.since_ms, summary.until_ms, timeZone)
 }
 
-function refreshButtonChrome(loading: boolean): {
-  tooltipCls: string | undefined
-  iconCls: string | undefined
-} {
-  return loading
-    ? { tooltipCls: 'inline-flex', iconCls: 'animate-spin' }
-    : { tooltipCls: undefined, iconCls: undefined }
+function activitySummary(metric: 'cost' | 'tokens', activity: UsageActivityDay[]): string {
+  const total = metric === 'cost'
+    ? `$${Math.round(activity.reduce((sum, day) => sum + day.cost_usd, 0)).toLocaleString('en-US')}`
+    : formatTokens(activity.reduce((sum, day) => sum + day.totals.uncached_input_tokens + day.totals.cached_input_tokens + day.totals.cache_creation_tokens + day.totals.output_tokens, 0))
+  return `${total} in the last year`
 }
 
 export function UsageSection({
   summary,
   loading,
   error,
-  onRequest
+  onRequest,
+  activity = [],
+  workspaces = [],
+  initialWorkspace = 'all',
+  onActivityRequest = () => {}
 }: {
   summary: UsageSummaryMsg | null
   loading: boolean
   error: string | null
-  onRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
+  activity?: UsageActivityDay[]
+  workspaces?: { path: string; name: string }[]
+  initialWorkspace?: string
+  onActivityRequest?: (sinceMs: number, untilMs: number, workspace: string | null) => void
+  onRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean, workspace: string | null) => void
 }): React.JSX.Element {
   const [windowId, setWindowId] = useState<UsageWindowId>('7d')
+  const [selectedWorkspace, setSelectedWorkspace] = useState(initialWorkspace)
   const [metric, setMetric] = useState<'cost' | 'tokens'>('cost')
   const [mode, setMode] = useState<BreakdownMode>('model')
-  const [hidden, setHidden] = useState<UsageProvider[]>([])
   const [asked, setAsked] = useState<{ sinceMs: number; untilMs: number } | null>(null)
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
   const windowDef = USAGE_WINDOWS.find((w) => w.id === windowId) ?? USAGE_WINDOWS[1]
   const timeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', [])
@@ -474,9 +255,16 @@ export function UsageSection({
   useEffect(() => {
     const { sinceMs, untilMs } = windowRange(windowDef, Date.now())
     setAsked({ sinceMs, untilMs })
-    onRequest(sinceMs, untilMs, false)
+    setSelectedDay(null)
+    onRequest(sinceMs, untilMs, false, selectedWorkspace === 'all' ? null : selectedWorkspace)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [windowId])
+  }, [windowId, selectedWorkspace])
+
+  useEffect(() => {
+    const now = Date.now()
+    onActivityRequest(calendarStartMs(now), now, selectedWorkspace === 'all' ? null : selectedWorkspace)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkspace])
 
   const buckets = summary?.buckets ?? []
   const points = useMemo<SeriesPoint[]>(
@@ -493,10 +281,17 @@ export function UsageSection({
   )
   const totals = useMemo(() => usageTotals(buckets, timeZone), [buckets, timeZone])
   const providers = useMemo(() => providerSummaries(buckets), [buckets])
+  const sessionsByProvider = useMemo(() => {
+    const counts = new Map<UsageProvider, number>()
+    for (const source of summary?.sources ?? []) counts.set(source.provider, (counts.get(source.provider) ?? 0) + source.distinct_sessions)
+    return counts
+  }, [summary])
+  const displayProviders = providers
+    .map((provider) => ({ ...provider, sessions: sessionsByProvider.get(provider.provider) ?? 0 }))
+    .sort((a, b) => a.provider === 'codex' ? -1 : b.provider === 'codex' ? 1 : 0)
   const rows = useMemo(() => breakdownRows(buckets, mode, timeZone), [buckets, mode, timeZone])
 
   const series: UsageSeries[] = providers
-    .filter((p) => !hidden.includes(p.provider))
     .map((p) => ({ provider: p.provider, label: p.label, color: PROVIDER_COLOR[p.provider] }))
 
   const labelFor = (point: SeriesPoint): string => {
@@ -504,7 +299,7 @@ export function UsageSection({
       ? { timeZone, hour: 'numeric' }
       : { timeZone, month: 'short', day: 'numeric' }
     try {
-      return new Intl.DateTimeFormat('en-US', opts).format(new Date(point.startMs))
+      return new Intl.DateTimeFormat('en-US', opts).format(new Date(windowDef.hourly ? point.startMs : `${point.key}T12:00:00`))
     } catch {
       return ''
     }
@@ -513,69 +308,51 @@ export function UsageSection({
   const refresh = (): void => {
     const { sinceMs, untilMs } = windowRange(windowDef, Date.now())
     setAsked({ sinceMs, untilMs })
-    onRequest(sinceMs, untilMs, true)
+    onRequest(sinceMs, untilMs, true, selectedWorkspace === 'all' ? null : selectedWorkspace)
   }
 
   const stale =
     loading && summary !== null && asked !== null && summary.until_ms - summary.since_ms !== asked.untilMs - asked.sinceMs
 
   const heroValue = metric === 'cost' ? formatUsd(totals.cost) : formatTokens(totals.tokens)
-  const sessions = (summary?.sources ?? []).reduce((a, s) => a + s.distinct_sessions, 0)
-  const untracked = (summary?.untracked_agents ?? []).map((k) => AGENT_LABEL[k] ?? k)
+  const sessions = [...sessionsByProvider.values()].reduce((sum, count) => sum + count, 0)
   const noUsage = !stale && summary !== null && sessions === 0
   const rangeLabel = usageRangeLabel(stale, summary, asked, timeZone)
-  const refreshChrome = refreshButtonChrome(loading)
 
   return (
-    <div data-testid="settings-usage">
-      <div className="mb-[var(--space-4)] flex flex-wrap items-center justify-between gap-[var(--space-3)]">
-        <div
-          data-testid="usage-range"
-          className="text-[length:var(--tr-text-md)] text-[var(--text-muted)] tabular-nums"
-        >
-          {rangeLabel}
-        </div>
-        <div className="flex items-center gap-[var(--space-2)]">
-          <Segmented
-            aria-label="Usage window"
-            options={USAGE_WINDOWS.map((w) => ({ value: w.id, label: w.label }))}
-            value={windowId}
-            onChange={(v) => setWindowId(v)}
-          />
-          <Tooltip
-            label="Re-scan the transcripts and re-fetch the model rate table"
-            className={refreshChrome.tooltipCls}
-          >
-            <button
-              type="button"
-              data-testid="usage-refresh"
-              onClick={refresh}
-              disabled={loading}
-              aria-label="Refresh usage"
-              className={`btn grid ${CONTROL_SIZE_SQUARE_CLS.regular} place-items-center rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-50`}
-            >
-              <Icon glyph={IconRefresh} role="ui" className={refreshChrome.iconCls} />
-            </button>
+    <main className="h-full min-h-0 w-full overflow-y-auto" data-testid="nav-surface" data-page="usage">
+      <UsageToolbar>
+        <Text as="h1" size="ui" weight="semibold" tone="primary" flush>Usage</Text>
+        <Text tone="faint">/</Text>
+        <Select
+          aria-label="Usage workspace"
+          data-testid="usage-workspace"
+          value={selectedWorkspace}
+          options={[{ value: 'all', label: 'All workspaces' }, ...workspaces.map((workspace) => ({ value: workspace.path, label: workspace.name }))]}
+          onChange={setSelectedWorkspace}
+        />
+        <Text data-testid="usage-range" size="small" tone="muted" tabular>{rangeLabel}</Text>
+        <UsageToolbarActions>
+          <Segmented aria-label="Usage metric" options={[
+            { value: 'cost', label: 'Cost' }, { value: 'tokens', label: 'Tokens' },
+            { value: 'limits', label: 'Limits', disabled: true, disabledReason: 'A quota reader is not available yet' }
+          ]} value={metric} onChange={(value) => { if (value !== 'limits') setMetric(value) }} />
+          <Segmented aria-label="Usage window" options={USAGE_WINDOWS.map((w) => ({ value: w.id, label: w.label }))} value={windowId} onChange={setWindowId} />
+          <Tooltip label="Re-scan usage">
+            <Button variant="icon" aria-label="Refresh usage" data-testid="usage-refresh" onClick={refresh} disabled={loading} icon={IconRefresh} />
           </Tooltip>
-        </div>
-      </div>
+        </UsageToolbarActions>
+      </UsageToolbar>
 
+      <UsageContentFrame>
       {error && (
-        <div
-          role="alert"
-          data-testid="usage-error"
-          className="mb-[var(--space-4)] rounded-[10px] border border-[var(--danger)] bg-[var(--status-blocked-bg)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--tr-text-sm)] text-[var(--status-blocked-text)]"
-        >
+        <UsageError>
           {error}
-        </div>
+        </UsageError>
       )}
 
       {}
-      <div
-        data-testid="usage-body"
-        aria-busy={stale}
-        className={stale ? 'opacity-40 transition-opacity duration-150' : undefined}
-      >
+      <UsageBody stale={stale}>
         {noUsage ? (
           <EmptyState
             headline="No usage recorded yet"
@@ -588,16 +365,9 @@ export function UsageSection({
         {}
         <UsageHero
           metric={metric}
-          onMetricChange={setMetric}
           heroValue={heroValue}
           sessions={sessions}
-          providers={providers}
-          hidden={hidden}
-          onToggleProvider={(provider) =>
-            setHidden((prev) =>
-              prev.includes(provider) ? prev.filter((x) => x !== provider) : [...prev, provider]
-            )
-          }
+          providers={displayProviders}
           windowDef={windowDef}
           points={points}
           series={series}
@@ -605,16 +375,68 @@ export function UsageSection({
         />
 
         {}
-        <UsageTokenStrip totals={totals} />
+        <UsageTotalsSection data-testid="usage-totals">
+          <UsageSectionHeading>Totals</UsageSectionHeading>
+          <UsageTokenStrip totals={totals} />
+        </UsageTotalsSection>
+
+        <UsageCalendarSectionFrame data-testid="usage-calendar-section">
+          <div className="flex items-center justify-between gap-[var(--space-3)]">
+            <UsageSectionHeading fullWidth aside="Follows Cost | Tokens">{activitySummary(metric, activity)}</UsageSectionHeading>
+          </div>
+          <UsageCalendar days={activity} metric={metric} selectedDay={selectedDay} caption="Houston keeps one total per day, so days older than the transcripts still count. Click a day to see its breakdown." onSelect={(day) => { setSelectedDay((current) => current === day ? null : day); setMode('day') }} />
+        </UsageCalendarSectionFrame>
+
+        {metric === 'cost' && totals.tokens > 0 && <UsageShareGroup>
+          <UsageShareBar heading="Cost by type" segments={categoryTotals(buckets)} />
+          <UsageShareBar heading="Cost by speed" aside={`Premium ${formatUsd(buckets.reduce((sum, bucket) => sum + bucket.speed_premium_usd, 0))}`} segments={speedTotals(buckets)} />
+        </UsageShareGroup>}
 
         {}
-        <UsageBreakdown mode={mode} onModeChange={setMode} rows={rows} loading={loading} />
+        <UsageBreakdown mode={mode} onModeChange={setMode} rows={dayBreakdown(rows, selectedDay, activity)} loading={loading} />
           </>
         )}
 
         {}
-        {summary && <UsageProvenance summary={summary} untracked={untracked} />}
-      </div>
-    </div>
+      </UsageBody>
+      </UsageContentFrame>
+    </main>
   )
+}
+
+function dayBreakdown(rows: BreakdownRow[], selectedDay: string | null, activity: UsageActivityDay[]): BreakdownRow[] {
+  if (!selectedDay) return rows
+  const detailed = rows.filter((row) => row.id === selectedDay)
+  if (detailed.length > 0) return detailed
+  const day = activity.find((entry) => entry.day === selectedDay)
+  if (!day) return []
+  return [{
+    id: selectedDay,
+    provider: null,
+    cost: day.cost_usd,
+    tokens: day.totals.uncached_input_tokens + day.totals.cached_input_tokens + day.totals.cache_creation_tokens + day.totals.output_tokens,
+    share: 1,
+    unpriced: false
+  }]
+}
+
+export function categoryTotals(buckets: UsageSummaryMsg['buckets']): { id: string; label: string; value: number }[] {
+  return [
+    { id: 'input', label: 'Input', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.input_usd, 0) },
+    { id: 'cache-read', label: 'Cache read', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.cache_read_usd, 0) },
+    { id: 'cache-write', label: 'Cache write', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.cache_write_usd, 0) },
+    { id: 'output', label: 'Output', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.output_usd, 0) },
+    { id: 'other', label: 'Other', value: buckets.reduce((sum, bucket) => sum + bucket.category_cost_usd.other_usd, 0) }
+  ].filter((segment) => segment.value > 0)
+}
+
+export function speedTotals(buckets: UsageSummaryMsg['buckets']): { id: string; label: string; value: number }[] {
+  const fast = buckets.reduce((sum, bucket) => sum + bucket.fast_cost_usd, 0)
+  const ultrafast = buckets.reduce((sum, bucket) => sum + bucket.ultrafast_cost_usd, 0)
+  const total = buckets.reduce((sum, bucket) => sum + bucket.cost_usd, 0)
+  return [
+    { id: 'standard', label: 'Standard', value: Math.max(0, total - fast - ultrafast) },
+    { id: 'fast', label: 'Fast', value: fast },
+    { id: 'ultrafast', label: 'Ultrafast', value: ultrafast }
+  ]
 }

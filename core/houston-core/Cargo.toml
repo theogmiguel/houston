@@ -59,6 +59,10 @@ hound = "3.5"
 # keyring/russh already pull aws-lc-rs transitively, so no new crypto backend.
 # "blocking" is for the Groq cloud engine, which callers run via spawn_blocking.
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart", "stream", "blocking"] }
+# Outbound wss:// for the opt-in Slack Socket Mode connector. Native roots
+# match what reqwest's platform verifier trusts; rustls-native-certs is
+# already in the graph through it.
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 
 [target.'cfg(unix)'.dependencies]
 # Default features only: a CPU (ggml) build, no CUDA/OpenBLAS/CoreML -- GPU is
@@ -66,13 +70,15 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 # that runtime choice cannot drift apart silently.
 whisper-rs = "0.16"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5"
+
 [build-dependencies]
 sha2 = "0.10"
 
 [dev-dependencies]
 keyring-core = "1"
 axum = { version = "0.8", features = ["ws", "multipart"] }
-tokio-tungstenite = "0.26"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Storage_FileSystem"] }

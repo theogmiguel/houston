@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import {
   BACKGROUND_OVERRIDE_MESSAGE,
   bumpImageVersion,
@@ -18,11 +18,12 @@ import {
 } from '../../backgroundMode'
 import { PRESETS, USER_IMAGE } from '../../backdrop/source'
 import { isTauri } from '../../houston/host'
-import { FOCUS_HALO } from '../shadowChrome'
-import { BTN_GHOST, BTN_GHOST_DANGER_HOVER } from '../buttonChrome'
-import { Segmented } from '../Segmented'
-import { Slider } from '../Slider'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { Button } from '../ui/Button'
+import { DetailsDisclosure, FileAttachmentRow, Inset, LimitTag, Stack } from '../ui'
+import { ChoiceGrid, RadioCard, RadioCardFooter } from '../ui/RadioCard'
+import { Segmented } from '../ui/SegmentedControl'
+import { Slider } from '../ui/Slider'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { Group, Row } from './shared'
 import { BackgroundPreview, PresetThumb } from './BackgroundPreview'
 import { CHROME_THEME_LABELS, type ChromeTheme, type TerminalPalette } from '../../theme'
@@ -193,149 +194,28 @@ function PresetTiles({
     { id: USER_IMAGE, label: 'Your image', tag: 'Yours' }
   ]
   return (
-    <div
+    <ChoiceGrid
       role="radiogroup"
+      columns={3}
+      spacing="inset"
       aria-label="Background image"
-      className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-[var(--space-2)] px-[var(--space-4)] pt-[var(--space-3)] pb-[var(--space-4)]"
     >
       {tiles.map((t) => {
         const on = value === t.id
         return (
-          <button
+          <RadioCard
             key={t.id}
-            type="button"
-            role="radio"
-            aria-checked={on}
+            selected={on}
             data-testid="background-preset-tile"
             data-preset={t.id}
             onClick={() => onSelect(t.id)}
-            className={`btn flex flex-col p-0 overflow-hidden rounded-[var(--tr-radius-card)] border text-left whitespace-normal focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] [transition:border-color_.12s_ease] ${
-              on
-                ? 'border-[var(--accent)] bg-[var(--card-bg)]'
-                : 'border-[var(--border)] hover:border-[var(--border-hover)] bg-[var(--card-bg)]'
-            }`}
           >
             <PresetThumb preset={t.id} dark={dark} />
-            <span className="flex w-full items-center justify-between gap-[var(--space-1-5)] border-t border-t-[var(--divider)] px-[var(--space-2-5)] py-[var(--space-2)]">
-              <b className="min-w-0 truncate text-[length:var(--tr-text-small-size)] font-medium text-[var(--text-primary)]">
-                {t.label}
-              </b>
-              <span
-                className={`shrink-0 font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase ${
-                  on ? 'text-[var(--accent)]' : 'text-[var(--text-faint)]'
-                }`}
-              >
-                {t.tag}
-              </span>
-            </span>
-          </button>
+            <RadioCardFooter label={t.label} tag={t.tag} selected={on} />
+          </RadioCard>
         )
       })}
-    </div>
-  )
-}
-
-function ImageFileRow({
-  info,
-  thumbUrl,
-  error,
-  onChoose,
-  onRemove
-}: {
-  info: WindowBackgroundInfo | null | undefined
-  thumbUrl: string | null
-  error: string | null
-  onChoose: () => void
-  onRemove: () => void
-}): JSX.Element {
-  return (
-    <div className="border-t border-t-[var(--divider)] px-[var(--space-4)] py-[var(--space-3)]">
-    <div data-testid="background-image-row" className="flex items-center gap-[var(--space-3)]">
-      {info ? (
-        <>
-          {thumbUrl ? (
-            <img
-              data-testid="background-image-thumb"
-              src={thumbUrl}
-              alt={info.filename}
-              className="h-[30px] w-[44px] flex-none rounded-[var(--tr-radius-sm)] border border-[var(--divider)] object-cover"
-            />
-          ) : (
-            <span className="h-[30px] w-[44px] flex-none rounded-[var(--tr-radius-sm)] border border-[var(--divider)]" />
-          )}
-          <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span
-              data-testid="background-image-filename"
-              className="block truncate font-mono text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)]"
-            >
-              {info.filename}
-            </span>
-            <span className="block text-[length:var(--tr-text-small-size)] tabular-nums text-[var(--text-faint)]">
-              {formatBytes(info.size)} · kept in this channel&rsquo;s state directory
-            </span>
-          </span>
-          <button
-            type="button"
-            data-testid="background-image-choose"
-            className={`btn ${BTN_GHOST} flex-none px-[var(--space-2)]`}
-            onClick={onChoose}
-          >
-            Replace&hellip;
-          </button>
-          <button
-            type="button"
-            data-testid="background-image-remove"
-            className={`btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER} flex-none px-[var(--space-2)]`}
-            onClick={onRemove}
-          >
-            Remove
-          </button>
-        </>
-      ) : (
-        <>
-          <span className="min-w-0 flex-1 text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]">
-            No image of your own yet.
-          </span>
-          <button
-            type="button"
-            data-testid="background-image-choose"
-            className={`btn ${BTN_GHOST} flex-none px-[var(--space-2)]`}
-            onClick={onChoose}
-          >
-            Choose&hellip;
-          </button>
-        </>
-      )}
-    </div>
-      {}
-      {error && (
-        <p
-          data-testid="background-image-error"
-          className="m-0 pt-[var(--space-2)] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--danger)]"
-        >
-          {error}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function Advanced({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <details
-      data-testid="background-advanced"
-      className="border border-[var(--border)] rounded-[var(--tr-radius-md)] bg-[var(--card-bg)] overflow-hidden [&[open]>summary]:border-b [&[open]>summary]:border-b-[var(--divider)]"
-    >
-      <summary
-        className={`flex cursor-pointer list-none items-center gap-[var(--space-2)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--tr-text-ui-size)] font-medium text-[var(--text-secondary)] marker:content-none [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] hover:text-[var(--text-primary)]`}
-      >
-        <span aria-hidden className="text-[var(--text-faint)] [font-size:var(--tr-text-label-size)]">
-          &#9656;
-        </span>
-        Fade and reset
-      </summary>
-      {children}
-    </details>
+    </ChoiceGrid>
   )
 }
 
@@ -437,11 +317,11 @@ export function WindowBackgroundGroup({
       <Group heading="Window background">
         <SettingsList>
           {custom && (
-            <div className="px-[var(--space-4)] pt-[var(--space-4)] pb-[var(--space-3)]">
+            <Inset space="preview">
               <BackgroundPreview chromeTheme={chromeTheme} palette={palette} />
-            </div>
+            </Inset>
           )}
-          <Row title="Background">
+          <Row title="Background" desc="Solid paints the theme colour. Custom puts a picture behind the rail and panes.">
             <Segmented<'solid' | 'custom'>
               aria-label="Background"
               options={[
@@ -465,9 +345,11 @@ export function WindowBackgroundGroup({
           <Group heading="Image" plain>
             <SettingsList>
               <PresetTiles value={bg.preset} dark={dark} onSelect={setPreset} />
-              <ImageFileRow
-                info={imageInfo}
-                thumbUrl={imageThumbUrl}
+              <FileAttachmentRow
+                filename={imageInfo?.filename}
+                metadata={imageInfo ? `${formatBytes(imageInfo.size)} · kept in this channel’s state directory` : undefined}
+                thumbnail={imageThumbUrl}
+                emptyLabel="No image of your own yet."
                 error={imageError}
                 onChoose={onChoose}
                 onRemove={onRemove}
@@ -500,7 +382,7 @@ export function WindowBackgroundGroup({
               title={
                 <>
                   Brightness
-                  <CapTag>max 44%</CapTag>
+                  <LimitTag>max 44%</LimitTag>
                 </>
               }
               desc="The cap keeps the rail's smallest text readable over any picture."
@@ -523,7 +405,7 @@ export function WindowBackgroundGroup({
               title={
                 <>
                   Chrome
-                  <CapTag>min 60%</CapTag>
+                  <LimitTag>min 60%</LimitTag>
                 </>
               }
               desc="Rail and titlebar. Lower shows more picture."
@@ -555,8 +437,9 @@ export function WindowBackgroundGroup({
           </Group>
 
           <Group heading="Advanced" plain>
-            <div className="flex flex-col gap-[var(--space-2)] pt-[var(--space-2)]">
-              <Advanced>
+            <Inset space="compact-top">
+              <Stack gap={2}>
+              <DetailsDisclosure summary="Fade and reset">
                 <Row title="Fade the bottom edge" desc="Blends the last tenth of the window into the theme.">
                   <Toggle
                     on={bg.fadeStop < FADE_OFF}
@@ -566,28 +449,16 @@ export function WindowBackgroundGroup({
                 </Row>
 
                 <Row title="Reset window background" desc="Back to Solid, defaults restored, your image removed.">
-                  <button
-                    type="button"
-                    data-testid="background-reset"
-                    className={`btn ${BTN_GHOST}`}
-                    onClick={onReset}
-                  >
+                  <Button variant="legacy-ghost" data-testid="background-reset" onClick={onReset}>
                     Reset
-                  </button>
+                  </Button>
                 </Row>
-              </Advanced>
-            </div>
+              </DetailsDisclosure>
+              </Stack>
+            </Inset>
           </Group>
         </>
       )}
     </>
-  )
-}
-
-function CapTag({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <span className="flex-none rounded-[var(--tr-radius-input)] border border-[var(--divider)] px-[var(--space-1)] font-mono [font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
-      {children}
-    </span>
   )
 }

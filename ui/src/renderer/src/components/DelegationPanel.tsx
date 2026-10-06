@@ -2,15 +2,35 @@ import { useEffect, useState } from 'react'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { IconEye, IconGitFork } from './icons'
-import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS, popOriginStyle } from './overlayChrome'
-import { BTN_GHOST } from './buttonChrome'
-import { Tooltip } from './Tooltip'
-import { ProvisionalMarker, sessionCodename, sessionIdentity, sessionTaskLabel, stateWord, type BadgeKind, type PaneRoster } from './DelegationCard'
+import { Button } from './ui'
+import {
+  PopoverPanel,
+  CrewList,
+  CrewButton,
+  Emphasis,
+  DefinitionEntry,
+  DefinitionList,
+  MutedText,
+  StatusGlyph,
+  PopoverHeader,
+  IdentityLine,
+  TabularNumber,
+  DelegationSection,
+  Eyebrow,
+  InlineSeparator,
+  PopoverDescription,
+  PopoverTitle,
+  PopoverActionButton,
+  type DelegationTone
+} from './ui/PopoverPanel'
+import { StatusLabel } from './ui'
+import { Tooltip } from './ui/Tooltip'
+import { ProvisionalMarker, sessionCodename, sessionIdentity, sessionTaskLabel, needsHumanInput, stateWord, type BadgeKind, type PaneRoster } from './DelegationCard'
 
 function isWaiting(d: DelegationInfo | null | undefined): boolean {
-  return d != null && (d.stalled || d.state === 'needs_input')
+  return d != null && d.state === 'needs_input'
 }
 
 function workspaceLabel(path: string): string {
@@ -18,28 +38,23 @@ function workspaceLabel(path: string): string {
   return clean.split(/[\\/]/).pop() || path
 }
 
-function stateTone(d: DelegationInfo): string {
-  if (isWaiting(d)) return 'text-[var(--warn)]'
-  if (d.state === 'failed') return 'text-[var(--status-blocked-text)]'
-  if (d.state === 'working' || d.state === 'spawning') return 'text-[var(--ok)]'
-  return 'text-[var(--text-muted)]'
+function stateTone(d: DelegationInfo): DelegationTone {
+  if (isWaiting(d) || (d.stalled && d.state === 'working')) return 'warn'
+  if (d.state === 'failed') return 'blocked'
+  if (d.state === 'working' || d.state === 'spawning') return 'info'
+  return 'muted'
 }
 
-const PILL_CLS =
-  'inline-flex items-center h-[17px] px-2 rounded-[var(--tr-radius-sm)] flex-none ' +
-  '[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] ' +
-  '[letter-spacing:var(--tr-text-label-tracking)] uppercase'
+function recordStateTone(d: DelegationInfo): 'warn' | undefined {
+  return isWaiting(d) || (d.stalled && d.state === 'working') ? 'warn' : undefined
+}
 
-function pillCls(d: DelegationInfo): string {
-  if (isWaiting(d))
-    return `${PILL_CLS} bg-[var(--status-todo-bg)] text-[var(--status-todo-text)]`
-  if (d.state === 'failed')
-    return `${PILL_CLS} bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)]`
-  if (d.state === 'done')
-    return `${PILL_CLS} bg-[var(--status-done-bg)] text-[var(--status-done-text)]`
-  if (d.state === 'working' || d.state === 'spawning')
-    return `${PILL_CLS} bg-[var(--status-doing-bg)] text-[var(--status-doing-text)]`
-  return `${PILL_CLS} bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] text-[var(--text-muted)]`
+function pillTone(d: DelegationInfo): 'waiting' | 'failed' | 'done' | 'working' | 'unknown' {
+  if (isWaiting(d) || (d.stalled && d.state === 'working')) return 'waiting'
+  if (d.state === 'failed') return 'failed'
+  if (d.state === 'done') return 'done'
+  if (d.state === 'working' || d.state === 'spawning') return 'working'
+  return 'unknown'
 }
 
 function agoLabel(endedAt: number): string {
@@ -49,32 +64,6 @@ function agoLabel(endedAt: number): string {
   const hours = Math.round(mins / 60)
   return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`
 }
-
-const ROW_LABEL_CLS = 'text-[var(--text-muted)] [font-size:var(--tr-text-xs)]'
-const ROW_VALUE_CLS =
-  'm-0 text-[var(--text-secondary)] [font-size:var(--tr-text-xs)] [overflow-wrap:anywhere]'
-
-function CardRow({
-  label,
-  children,
-  tone
-}: {
-  label: string
-  children: React.ReactNode
-  tone?: string
-}): React.JSX.Element {
-  return (
-    <>
-      <dt className={ROW_LABEL_CLS}>{label}</dt>
-      <dd className={`${ROW_VALUE_CLS} ${tone ?? ''}`}>{children}</dd>
-    </>
-  )
-}
-
-const SECTION_CLS = 'border-t border-t-[var(--divider)] px-3 py-2.5 flex flex-col gap-2'
-const SECTION_LABEL_CLS =
-  '[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] ' +
-  '[letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)] m-0'
 
 function ChildIdentityLine({
   info,
@@ -87,18 +76,18 @@ function ChildIdentityLine({
   const parentName = parent != null ? sessionCodename(parent) : null
   const parentShort = parentName ?? (parentId != null ? `#${parentId}` : null)
   return (
-    <div className="px-3 pb-2.5 text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
+    <IdentityLine>
       {info.detected_agent ?? info.agent}
       {parentShort != null && (
         <>
-          <span className="mx-[5px] text-[var(--text-faint)]">·</span>
+          <InlineSeparator />
           child of{' '}
           <Tooltip label={parentId != null ? `child of ${parentShort} · pane ${parentId}` : undefined}>
-            <b className="text-[var(--text-secondary)]">{parentShort}</b>
+            <Emphasis>{parentShort}</Emphasis>
           </Tooltip>
         </>
       )}
-    </div>
+    </IdentityLine>
   )
 }
 
@@ -108,21 +97,21 @@ function OwedRows({ d }: { d: DelegationInfo }): React.JSX.Element | null {
   return (
     <>
       {d.inbox_owed > 0 && (
-        <CardRow label="owed" tone="text-[var(--text-primary)] font-semibold">
+        <DefinitionEntry label="owed" bold>
           {d.inbox_owed} owed to parent
           {d.inbox_provisional > 0 && ` · ${d.inbox_provisional} provisional`}
-        </CardRow>
+        </DefinitionEntry>
       )}
       {(d.last_result_corrected_by != null || d.inbox_provisional > 0) && (
-        <CardRow label="last result">
+        <DefinitionEntry label="last result">
           {d.last_result_corrected_by != null ? (
             <span>
-              corrected by <span className="tabular-nums">#{d.last_result_corrected_by}</span>
+              corrected by <TabularNumber>#{d.last_result_corrected_by}</TabularNumber>
             </span>
           ) : (
             <ProvisionalMarker />
           )}
-        </CardRow>
+        </DefinitionEntry>
       )}
     </>
   )
@@ -137,85 +126,71 @@ function RecordBody({
   parent: SessionInfo | undefined
   onDeliverNow?: (session: number) => void
 }): React.JSX.Element {
-  const d = info.delegation
+  const d = info.delegation && needsHumanInput(info) ? { ...info.delegation, state: 'needs_input' as const } : info.delegation
   const parentId = d?.parent ?? info.spawned_by
   return (
     <>
       <ChildIdentityLine info={info} parent={parent} />
       {d && (
-        <div className={SECTION_CLS}>
-          <dl className="m-0 grid grid-cols-[86px_minmax(0,1fr)] gap-x-2 gap-y-[5px] items-baseline">
-            <CardRow label="workspace">
+        <DelegationSection>
+          <DefinitionList>
+            <DefinitionEntry label="workspace">
               <Tooltip label={info.project_dir}>{workspaceLabel(info.project_dir)}</Tooltip>
-            </CardRow>
+            </DefinitionEntry>
             {d.role != null && (
-              <CardRow label="role" tone="text-[var(--text-primary)] font-semibold">
+        <DefinitionEntry label="role" bold>
                 {d.role}
-              </CardRow>
+              </DefinitionEntry>
             )}
-            <CardRow label="state" tone={`font-semibold ${stateTone(d)}`}>
+            <DefinitionEntry label="state" tone={recordStateTone(d)} bold>
               {stateWord(d)}
-            </CardRow>
+            </DefinitionEntry>
             {d.stalled && (
-              <CardRow label="stalled" tone="text-[var(--warn)] font-semibold">
+              <DefinitionEntry label="stalled" tone="warn" bold>
                 no output, and nothing running under the pane
-              </CardRow>
+              </DefinitionEntry>
             )}
             {d.result_staged && (
-              <CardRow label="result" tone="text-[var(--text-primary)] font-semibold">
+              <DefinitionEntry label="result" bold>
                 staged, not yet handed back
-              </CardRow>
+              </DefinitionEntry>
             )}
             {d.superseded > 0 && (
-              <CardRow label="superseded">{d.superseded} earlier partial result(s)</CardRow>
+              <DefinitionEntry label="superseded">{d.superseded} earlier partial result(s)</DefinitionEntry>
             )}
             <OwedRows d={d} />
             {d.hold_reason != null && (
-              <CardRow label="waiting">
-                <span className="flex flex-col gap-1">
+              <DefinitionEntry label="waiting">
+                <span className="grid gap-[var(--space-1)]">
                   <span>{d.hold_reason}</span>
                   {parentId != null && onDeliverNow != null && (
-                    <button
-                      type="button"
-                      className={`btn ${BTN_GHOST} self-start px-1.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]`}
-                      onClick={() => onDeliverNow(parentId)}
-                    >
-                      Deliver now
-                    </button>
+                    <PopoverActionButton onClick={() => onDeliverNow(parentId)} />
                   )}
                 </span>
-              </CardRow>
+              </DefinitionEntry>
             )}
             {d.ended_at != null && (
-              <CardRow label="ended">
+              <DefinitionEntry label="ended">
                 {new Date(d.ended_at).toLocaleTimeString()}{' '}
-                <span className="text-[var(--text-faint)] font-normal">
-                  · {agoLabel(d.ended_at)}
-                </span>
-              </CardRow>
+                <MutedText plain>· {agoLabel(d.ended_at)}</MutedText>
+              </DefinitionEntry>
             )}
-            {d.stop_reason != null && <CardRow label="stop reason">{d.stop_reason}</CardRow>}
+            {d.stop_reason != null && <DefinitionEntry label="stop reason">{d.stop_reason}</DefinitionEntry>}
             {d.capability_note != null && (
-              <CardRow label="capability">{d.capability_note}</CardRow>
+              <DefinitionEntry label="capability">{d.capability_note}</DefinitionEntry>
             )}
-            <CardRow label="turn ends on">
+            <DefinitionEntry label="turn ends on">
               {d.turn_end_source}
               {d.turn_end_source === 'quiet-settle' && (
-                <span className="text-[var(--text-faint)]"> (Houston's judgement, not a report)</span>
+                <MutedText>{" (Houston's judgement, not a report)"}</MutedText>
               )}
-            </CardRow>
-          </dl>
-        </div>
+            </DefinitionEntry>
+          </DefinitionList>
+        </DelegationSection>
       )}
     </>
   )
 }
-
-const CREW_ROW_CLS =
-  'flex items-center gap-2 min-h-[var(--h-pill)] px-3 w-full text-left border-0 bg-transparent ' +
-  'font-[inherit] [font-size:var(--tr-text-xs)] text-[var(--text-secondary)] cursor-pointer ' +
-  'transition-[background] hover:bg-[var(--hover-fill)] ' +
-  'focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:-2px]'
 
 function RosterBody({
   info,
@@ -231,71 +206,45 @@ function RosterBody({
   const atCap = cap != null && crew.length >= cap
   return (
     <>
-      <div className="px-3 pb-2.5 text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
+      <IdentityLine>
         this pane{' '}
-        <b className="text-[var(--text-secondary)]">
+        <Emphasis>
           {sessionIdentity(info)}
           {sessionTaskLabel(info) != null && ` · ${sessionTaskLabel(info)}`}
-        </b>
+        </Emphasis>
         {atCap && (
           <>
-            <span className="mx-[5px] text-[var(--text-faint)]">·</span>
-            <b className="text-[var(--warn)]">
+            <InlineSeparator />
+            <Emphasis tone="warn">
               {crew.length} of {cap} live children — at the cap
-            </b>
+            </Emphasis>
           </>
         )}
-      </div>
-      <div className={SECTION_CLS}>
-        <p className={SECTION_LABEL_CLS}>Children · waiting first</p>
-        <div className="flex flex-col -mx-3 -mb-2.5">
+      </IdentityLine>
+      <DelegationSection>
+        <Eyebrow>Children · waiting first</Eyebrow>
+        <CrewList>
           {crew.map((c) => {
-            const d = c.delegation
+            const d = c.delegation && needsHumanInput(c) ? { ...c.delegation, state: 'needs_input' as const } : c.delegation
             const secondary = [d?.role, sessionTaskLabel(c)].filter(
               (value): value is string => value != null
             )
             return (
-              <button
+              <CrewButton
                 key={c.id}
-                type="button"
-                className={CREW_ROW_CLS}
+                identity={sessionIdentity(c)}
+                secondary={secondary.join(' · ')}
+                tone={d ? stateTone(d) : 'muted'}
+                state={d ? stateWord(d) : 'no record'}
                 onClick={() => onFocusPane?.(c.id)}
-              >
-                <span
-                  data-testid="roster-identity"
-                  className="flex-none font-semibold text-[var(--text-primary)] whitespace-nowrap overflow-hidden text-ellipsis max-w-[16ch]"
-                >
-                  {sessionIdentity(c)}
-                </span>
-                <span
-                  data-testid="roster-secondary"
-                  className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-faint)]"
-                >
-                  {secondary.join(' · ')}
-                </span>
-                <span
-                  className={`ml-auto flex-none [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase ${
-                    d ? stateTone(d) : 'text-[var(--text-muted)]'
-                  }`}
-                >
-                  {d ? stateWord(d) : 'no record'}
-                </span>
-              </button>
+              />
             )
           })}
-        </div>
-      </div>
+        </CrewList>
+      </DelegationSection>
     </>
   )
 }
-
-const LEVER_CLS =
-  'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] ' +
-  'rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] ' +
-  'font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer ' +
-  'transition-[background,border-color] hover:bg-[var(--hover-fill)] ' +
-  'hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] ' +
-  'focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]'
 
 const OFFSET_PX = 6
 const VIEWPORT_MARGIN_PX = 8
@@ -309,51 +258,44 @@ function crewOf(
   return [...sessions.values()]
     .filter((s) => s.spawned_by === parentId && isLive(s.state))
     .sort(
-      (a, b) => Number(isWaiting(b.delegation)) - Number(isWaiting(a.delegation)) || a.id - b.id
+      (a, b) => Number(needsHumanInput(b)) - Number(needsHumanInput(a)) || a.id - b.id
     )
 }
 
-const CARD_TITLE_CLS =
-  'min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-primary)] ' +
-  '[font-size:var(--tr-text-base)] font-semibold'
-
 function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React.JSX.Element {
+  const d = info.delegation && needsHumanInput(info) ? { ...info.delegation, state: 'needs_input' as const } : info.delegation
   const waiting = info.children_waiting
   const identity = sessionIdentity(info)
   if (kind === 'orchestrator') {
     return (
-      <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
-        <Icon
-          glyph={IconGitFork}
-          role="small"
-          className={waiting > 0 ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}
-        />
-        <span className={`${CARD_TITLE_CLS} flex-none`}>{identity}</span>
-        <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
-          · {info.live_children} live
-        </span>
-        <span className="ml-auto" />
-        {waiting > 0 && (
-          <span className={`${PILL_CLS} bg-[var(--status-todo-bg)] text-[var(--status-todo-text)]`}>
-            {waiting} waiting
-          </span>
-        )}
-      </div>
+      <PopoverHeader
+        trailing={
+          waiting > 0 && (
+            <StatusLabel status="Needs input" variant="pill" tone="waiting">
+              {waiting} waiting
+            </StatusLabel>
+          )
+        }
+      >
+        <StatusGlyph glyph={IconGitFork} role="small" tone={waiting > 0 ? "warn" : "muted"} />
+        <PopoverTitle>{identity}</PopoverTitle>
+        <PopoverDescription>· {info.live_children} live</PopoverDescription>
+      </PopoverHeader>
     )
   }
   return (
-    <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
-      <span className={`${CARD_TITLE_CLS} flex-none`}>{identity}</span>
-      {sessionTaskLabel(info) != null && (
-        <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-[var(--text-muted)] [font-size:var(--tr-text-xs)]">
-          {sessionTaskLabel(info)}
-        </span>
-      )}
-      <span className="ml-auto" />
-      {info.delegation && (
-        <span className={pillCls(info.delegation)}>{stateWord(info.delegation)}</span>
-      )}
-    </div>
+    <PopoverHeader
+      trailing={
+        d && (
+          <StatusLabel status="Working" variant="pill" tone={pillTone(d)}>
+            {stateWord(d)}
+          </StatusLabel>
+        )
+      }
+    >
+      <PopoverTitle>{identity}</PopoverTitle>
+      {sessionTaskLabel(info) != null && <PopoverDescription>{sessionTaskLabel(info)}</PopoverDescription>}
+    </PopoverHeader>
   )
 }
 
@@ -370,10 +312,10 @@ function FocusLever({
   onDone: () => void
 }): React.JSX.Element {
   return (
-    <div className={SECTION_CLS}>
-      <button
+    <DelegationSection>
+      <Button
         type="button"
-        className={LEVER_CLS}
+        variant="legacy-focus-lever"
         onClick={() => {
           onDone()
           onFocusPane(target)
@@ -381,8 +323,8 @@ function FocusLever({
       >
         <Icon glyph={IconEye} role="label" />
         Focus parent
-      </button>
-    </div>
+      </Button>
+    </DelegationSection>
   )
 }
 
@@ -443,19 +385,13 @@ export default function DelegationPanel({
   const parentId = kind === 'origin' ? info.spawned_by : null
   const sessions = roster?.sessions
   return (
-    <div
+    <PopoverPanel
       ref={cardRef}
       id={id}
-      role="dialog"
       aria-label={label}
-      {...OVERLAY_RAISED_ATTRS}
-      className={`${OVERLAY_RAISED_CLS} fixed z-[var(--z-overlay)] w-[304px] overflow-hidden`}
-      style={{
-        top: place?.top ?? 0,
-        left: place?.left ?? 0,
-        visibility: place ? 'visible' : 'hidden',
-        ...popOriginStyle('left', 'top')
-      }}
+      top={place?.top ?? 0}
+      left={place?.left ?? 0}
+      visible={place != null}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
     >
@@ -477,7 +413,6 @@ export default function DelegationPanel({
       {parentId != null && onFocusPane != null && (
         <FocusLever target={parentId} onFocusPane={onFocusPane} onDone={onClose} />
       )}
-    </div>
+    </PopoverPanel>
   )
 }
-

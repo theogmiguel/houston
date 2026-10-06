@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { GitCheckpointInfo } from '../../houston/generated/GitCheckpointInfo'
 import { GitDialogShell } from './GitDialogShell'
-import { DiffBody, DIFF_EMPTY_CLASS, SPIN_CLASS } from './DiffBody'
+import { DiffBody } from './DiffBody'
+import { DiffEmptyState, DiffLoadingMark, GitCheckpointCreateRow, GitCheckpointDiffPanel, GitCheckpointEmptyText, GitCheckpointIconRow, GitCheckpointIconSlot, GitCheckpointLabel, GitCheckpointLabelColumn, GitCheckpointList, GitCheckpointRedactionNotice, GitCheckpointRow, GitRefInput } from '../ui'
+import { Text } from '../ui/Text'
 import {
   checkpointDeleteConfirm,
   checkpointRestoreConfirm,
@@ -9,10 +11,7 @@ import {
   defaultCheckpointLabel
 } from './checkpoints'
 import { ConfirmModal } from '../ConfirmModal'
-import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
-import { FIELD_INPUT } from '../nav/navChrome'
 import {
-  IconAlertTriangle,
   IconEye,
   IconHistory,
   IconLoaderCircle,
@@ -20,8 +19,9 @@ import {
   IconTrash,
   IconUndo
 } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
+import { Button, Notice } from '../ui'
 
 export interface CheckpointInspect {
   ref: string
@@ -76,34 +76,25 @@ export function CheckpointsDialog({
         onClose={onClose}
         footer={
           <>
-            <button className={`btn ${BTN_GHOST}`} data-testid="checkpoints-refresh" disabled={busy} onClick={onRefresh}>
+            <Button variant="legacy-ghost" data-testid="checkpoints-refresh" disabled={busy} onClick={onRefresh}>
               <Icon glyph={IconRefresh} role="small" />
               Refresh
-            </button>
-            <button className={`btn ${BTN_GHOST}`} onClick={onClose}>
+            </Button>
+            <Button variant="legacy-ghost" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </>
         }
       >
         {error && (
-          <div
-            role="alert"
-            data-testid="checkpoints-error"
-            className="flex items-start gap-1.5 py-2 px-3 rounded-[var(--tr-radius-sm)] border border-[color-mix(in_srgb,var(--danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--danger)_11%,transparent)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)]"
-          >
-            <span className="flex-none text-[var(--danger)] pt-0.5">
-              <Icon glyph={IconAlertTriangle} role="small" />
-            </span>
-            <span>{error}</span>
-          </div>
+          <Notice tone="danger" variant="callout" data-testid="checkpoints-error">{error}</Notice>
         )}
 
-        <div className="flex items-center gap-2">
-          <input
+        <GitCheckpointCreateRow>
+          <GitRefInput
             data-testid="checkpoint-new-label"
             aria-label="Checkpoint label"
-            className={`${FIELD_INPUT} flex-1 min-w-0`}
+            className="flex-1 min-w-0"
             placeholder="Checkpoint label (optional)"
             value={label}
             spellCheck={false}
@@ -113,114 +104,112 @@ export function CheckpointsDialog({
               if (e.key === 'Enter') submit()
             }}
           />
-          <button className={`btn ${BTN_PRIMARY}`} data-testid="checkpoint-create" disabled={busy} onClick={submit}>
+          <Button variant="legacy-primary" data-testid="checkpoint-create" disabled={busy} onClick={submit}>
             Capture
-          </button>
-        </div>
-        <p className="m-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+          </Button>
+        </GitCheckpointCreateRow>
+        <Text as="p" size="small" tone="muted" flush>
           A checkpoint is a hidden git ref holding the whole working copy — tracked edits, staged
           work and untracked files. Capturing one never touches the working tree; restoring
           replaces it. Inspect diffs tracked changes only; untracked captures restore but do not
           appear there.
-        </p>
+        </Text>
 
-        <div role="list" data-testid="checkpoints-list" className="flex flex-col gap-1">
+        <GitCheckpointList>
           {checkpoints.length === 0 ? (
-            <p className="m-0 px-2 py-3 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+            <GitCheckpointEmptyText>
               No checkpoints yet.
-            </p>
+            </GitCheckpointEmptyText>
           ) : (
             checkpoints.map((c) => (
-              <div
+              <GitCheckpointRow
                 key={c.ref}
                 data-testid="checkpoint-row"
                 data-ref={c.ref}
-                className="group/row flex flex-col gap-1 px-2 py-1.5 rounded-[var(--tr-radius-sm)] hover:bg-[var(--card-hover)]"
               >
-                <div className="flex items-center gap-2">
-                  <span className="flex-none text-[var(--text-faint)]" aria-hidden>
+                <GitCheckpointIconRow>
+                  <GitCheckpointIconSlot>
                     <Icon glyph={IconHistory} role="label" />
-                  </span>
-                  <div className="flex-1 min-w-0 flex flex-col">
-                    <span className="text-[length:var(--tr-text-sm)] text-[var(--text-primary)] overflow-hidden text-ellipsis whitespace-nowrap">
+                  </GitCheckpointIconSlot>
+                  <GitCheckpointLabelColumn>
+                    <GitCheckpointLabel>
                       {c.label}
-                    </span>
-                    <span
+                    </GitCheckpointLabel>
+                    <Text
+                      size="xs" tone="faint"
                       data-testid="checkpoint-subtitle"
-                      className="text-[length:var(--tr-text-xs)] text-[var(--text-faint)]"
                     >
                       {checkpointSubtitle(c, now)}
-                    </span>
-                  </div>
+                    </Text>
+                  </GitCheckpointLabelColumn>
                   <Tooltip label="Inspect changes" className="inline-flex">
-                    <button
+                    <Button
                       type="button"
+                      variant="legacy-ghost-icon"
                       data-testid="checkpoint-inspect"
                       aria-label={`Inspect ${c.label}`}
                       disabled={busy}
                       onClick={() => onInspect(c.ref)}
-                      className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`}
                     >
                       <Icon glyph={IconEye} role="label" />
-                    </button>
+                    </Button>
                   </Tooltip>
                   <Tooltip label="Restore this snapshot" className="inline-flex">
-                    <button
+                    <Button
                       type="button"
+                      variant="legacy-ghost-icon"
                       data-testid="checkpoint-restore"
                       aria-label={`Restore ${c.label}`}
                       disabled={busy}
                       onClick={() => setRestoring(c)}
-                      className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`}
                     >
                       <Icon glyph={IconUndo} role="label" />
-                    </button>
+                    </Button>
                   </Tooltip>
                   <Tooltip label="Delete" className="inline-flex">
-                    <button
+                    <Button
                       type="button"
+                      variant="legacy-ghost-icon-danger"
                       data-testid="checkpoint-delete"
                       aria-label={`Delete ${c.label}`}
                       disabled={busy}
                       onClick={() => setDeleting(c)}
-                      className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`}
                     >
                       <Icon glyph={IconTrash} role="label" />
-                    </button>
+                    </Button>
                   </Tooltip>
-                </div>
+                </GitCheckpointIconRow>
                 {inspect && inspect.ref === c.ref && (
-                  <div
+                  <GitCheckpointDiffPanel
                     data-testid="checkpoint-diff"
-                    className="rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--content-bg)] max-h-[300px] overflow-y-auto [scrollbar-width:thin]"
                   >
                     {inspect.loading ? (
-                      <div className={DIFF_EMPTY_CLASS}>
-                        <span className={SPIN_CLASS}>
+                      <DiffEmptyState>
+                        <DiffLoadingMark>
                           <Icon glyph={IconLoaderCircle} role="subhead" />
-                        </span>
+                        </DiffLoadingMark>
                         Loading the checkpoint diff…
-                      </div>
+                      </DiffEmptyState>
                     ) : inspect.patch.trim().length === 0 ? (
-                      <div className={DIFF_EMPTY_CLASS} data-testid="checkpoint-diff-empty">
+                      <DiffEmptyState data-testid="checkpoint-diff-empty">
                         The working tree matches this checkpoint.
-                      </div>
+                      </DiffEmptyState>
                     ) : (
                       <>
                         {inspect.redacted && (
-                          <div className="px-2 py-1 text-[length:var(--tr-text-xs)] text-[var(--warning)] border-b border-[var(--divider)]">
+                          <GitCheckpointRedactionNotice>
                             Secret-shaped values were redacted; sensitive files are withheld.
-                          </div>
+                          </GitCheckpointRedactionNotice>
                         )}
                         <DiffBody patch={inspect.patch} truncated={inspect.truncated} />
                       </>
                     )}
-                  </div>
+                  </GitCheckpointDiffPanel>
                 )}
-              </div>
+              </GitCheckpointRow>
             ))
           )}
-        </div>
+        </GitCheckpointList>
       </GitDialogShell>
       {restoring && (
         <ConfirmModal

@@ -196,6 +196,34 @@ describe('Files pane — state matrix (§14)', () => {
     expect(strip.textContent).toContain('UTF-8')
   })
 
+  it('shows the large-file limit, measured size and requested edit in a notice', async () => {
+    readDir.mockResolvedValue([entry('large.ts')])
+    readFile.mockRejectedValue(new Error('file too large to edit: /ws/large.ts is 3000000 bytes (max 2097152)'))
+    await mount()
+    await act(async () => qa('[data-testid="files-tree-row"]')[0].click())
+    await flush()
+    const preview = q('[data-testid="editor-preview-too-large"]')
+    expect(preview?.textContent).toContain('File too large to edit')
+    expect(preview?.textContent).toContain('large.ts')
+    const notice = preview?.querySelector('[role="note"]')
+    expect(notice?.textContent).toContain('2.9 MB')
+    expect(notice?.textContent).toContain('2 MB edit limit')
+    expect(notice?.textContent).toContain('Requested: open for editing')
+  })
+
+  it('exposes a persistent word-wrap control for the active file', async () => {
+    readDir.mockResolvedValue([entry('main.ts')])
+    await mount()
+    await act(async () => qa('[data-testid="files-tree-row"]')[0].click())
+    await flush()
+    const wrap = q('[data-testid="files-word-wrap"]') as HTMLButtonElement
+    expect(wrap.getAttribute('aria-pressed')).toBe('false')
+    await act(async () => wrap.click())
+    await flush()
+    expect(wrap.getAttribute('aria-pressed')).toBe('true')
+    expect(localStorage.getItem('tr-files-word-wrap')).toBe('true')
+  })
+
   it('the editor column carries the gutter CSS hook, so line numbers sit on the code surface', async () => {
     readDir.mockResolvedValue([entry('main.rs')])
     await mount()
@@ -449,14 +477,14 @@ describe('Files pane — state matrix (§14)', () => {
 })
 
 describe('Files pane — tab strip scrollbar (dead band regression)', () => {
-  it('global.css hides the WebKit scrollbar pseudo-element on the scrolling element itself', () => {
-    const css = readFileSync(join(__dirname, '../global.css'), 'utf8')
+  it('fileExplorer.css hides the WebKit scrollbar pseudo-element on the scrolling element itself', () => {
+    const css = readFileSync(join(__dirname, 'ui/fileExplorer.css'), 'utf8')
     const stripHidesWebkitScrollbar = /\.files-tab-scroll::-webkit-scrollbar\s*\{[^}]*display:\s*none/.test(
       css
     )
     expect(
       stripHidesWebkitScrollbar,
-      'global.css must carry a `.files-tab-scroll::-webkit-scrollbar { display: none }` rule ' +
+      'fileExplorer.css must carry a `.files-tab-scroll::-webkit-scrollbar { display: none }` rule ' +
         '(the class the SCROLLING element inside the strip carries, per `FilesPane.tsx`) — ' +
         'without it, `scrollbar-width: none` does nothing on WebKit, which ignores that ' +
         'property, and the global `::-webkit-scrollbar { width: 6px }` rule still paints a 6px ' +

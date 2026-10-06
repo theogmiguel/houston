@@ -15,6 +15,12 @@ hs-task — a Houston pane's view of its workspace's task backlog
   hs-task comment [HOU-n] TEXT
   hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
   hs-task handback [HOU-n] --summary T
+  hs-task handback [HOU-n] --subject T --changes T --step T [--step …] [--caveats T]
+             --live-note T --dropped-note T [--size small|medium|large]
+             [--note T …] [--warning T …] [--blocker T …] [--refused]
+             (a Slack-filed task)
+  hs-task ask --question Q --option A --option B [--option …] --recommended N
+             [--why T] [--context T]           (a Slack-filed task: asks in its thread)
 
 The task key defaults to $HOUSTON_TASK when set; otherwise pass HOU-n.
 Statuses: backlog, todo, in_progress, in_review, done, canceled.
@@ -146,20 +152,72 @@ fn cli(args: &[String]) -> Result<()> {
         }
         "handback" => {
             let key = key_arg(rest.first())?;
-            let summary = flag("summary").ok_or_else(|| {
-                anyhow::anyhow!(
+            let structured = ["subject", "changes", "refused"]
+                .iter()
+                .any(|k| flags.contains_key(*k));
+            let mut body = json!({ "key": key, "summary": flag("summary") });
+            if structured {
+                body["result"] = json!({
+                    "outcome": if flags.contains_key("refused") { "refused" } else { "ready" },
+                    "subject": flag("subject").unwrap_or_default(),
+                    "changes": flag("changes").unwrap_or_default(),
+                    "steps": repeated(&args, "--step"),
+                    "caveats": flag("caveats"),
+                    "live_note": flag("live-note"),
+                    "dropped_note": flag("dropped-note"),
+                    "size": flag("size"),
+                    "notes": repeated(&args, "--note"),
+                    "warnings": repeated(&args, "--warning"),
+                    "blockers": repeated(&args, "--blocker"),
+                });
+            } else if flag("summary").is_none() {
+                bail!(
                     "handback needs --summary \"…\" — one line on what was done; expected \
-                     `hs-task handback [HOU-n] --summary T`"
-                )
-            })?;
-            print(call(
-                "POST",
-                "/task/handback",
-                Some(json!({ "key": key, "summary": summary })),
-            )?)
+                     `hs-task handback [HOU-n] --summary T` (a Slack-filed task hands back \
+                     --subject, --changes, --step, --live-note and --dropped-note instead)"
+                );
+            }
+            print(call("POST", "/task/handback", Some(body))?)
+        }
+        "ask" => {
+            let options = repeated(&args, "--option");
+            let recommended = match flag("recommended") {
+                Some(raw) => Some(raw.parse::<usize>().map_err(|e| {
+                    anyhow::anyhow!("--recommended {raw:?} is not an option number: {e}")
+                })?),
+                None => None,
+            };
+            let question = flag("question")
+                .map(str::to_string)
+                .unwrap_or_else(|| rest.join(" "));
+            let body = json!({
+                "context": flag("context"),
+                "question": question,
+                "options": options,
+                "recommended": recommended,
+                "why": flag("why"),
+            });
+            let reply = call("POST", "/task/ask", Some(body))?;
+            println!(
+                "{}",
+                reply
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+            );
+            Ok(())
         }
         other => bail!("unknown hs-task command {other:?}\n\n{USAGE}"),
     }
+}
+
+/// Every value of a flag that may repeat, in order; the shared parser keeps
+/// only the last.
+fn repeated(args: &[String], name: &str) -> Vec<String> {
+    args.windows(2)
+        .filter(|w| w[0] == name)
+        .map(|w| w[1].clone())
+        .collect()
 }
 
 /// `-p` is the short spelling of `--priority`; the shared flag parser only
@@ -257,4 +315,27 @@ fn query_escape(text: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repeated;
+
+    #[test]
+    fn a_repeated_flag_keeps_every_value_in_order() {
+        let args: Vec<String> = [
+            "ask",
+            "--option",
+            "Save",
+            "--question",
+            "Which?",
+            "--option",
+            "Submit",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(repeated(&args, "--option"), ["Save", "Submit"]);
+        assert!(repeated(&args, "--step").is_empty());
+    }
 }

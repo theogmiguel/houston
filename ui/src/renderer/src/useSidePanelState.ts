@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { isLive, type SessionInfo } from './houston/client'
 import { SIDE_OPEN_EVENT, SIDE_SELECT_EVENT, type SideOpen } from './sidePanel'
 
-export function useSidePanelState(selectedWorkspace: string, activeId: number | null, sessions: ReadonlyMap<number, SessionInfo>, scmOpen: boolean, setScmOpen: Dispatch<SetStateAction<boolean>>, revealWorkspace: (workspace: string) => void) {
-  const [sideExpanded, setSideExpanded] = useState(false);
+export function useSidePanelState(selectedWorkspace: string, activeId: number | null, sessions: ReadonlyMap<number, SessionInfo>, scmOpen: boolean, setScmOpen: Dispatch<SetStateAction<boolean>>, _revealWorkspace: (workspace: string) => void) {
   const [sideRequest, setSideRequest] = useState<SideOpen | null>(null);
   const [activeSurface, setActiveSurface] = useState<"grid" | "side">("grid");
   const sideWorkspaceRef = useRef<string>("all");
@@ -15,8 +14,8 @@ export function useSidePanelState(selectedWorkspace: string, activeId: number | 
   useEffect(() => {
     const open = (event: Event): void => {
       const request = (event as CustomEvent<SideOpen>).detail;
+      if (request.kind === 'tasks' || request.kind === 'browser') return;
       setSideRequest(request);
-      if (request.kind === "browser") { sideWorkspaceRef.current = request.workspace; revealWorkspace(request.workspace); }
       setScmOpen(true);
       setActiveSurface("side");
     };
@@ -25,13 +24,10 @@ export function useSidePanelState(selectedWorkspace: string, activeId: number | 
     window.addEventListener(SIDE_SELECT_EVENT, select);
     return () => { window.removeEventListener(SIDE_OPEN_EVENT, open); window.removeEventListener(SIDE_SELECT_EVENT, select); };
   }, []);
-  useEffect(() => { if (!scmOpen) { setActiveSurface("grid"); setSideExpanded(false); } }, [scmOpen]);
-  return { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspaceRef, sideWorkspace, pickerTarget, sideReview, setSideReview, sideExpanded, setSideExpanded };
+  useEffect(() => { if (!scmOpen) setActiveSurface("grid"); }, [scmOpen]);
+  return { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspaceRef, sideWorkspace, pickerTarget, sideReview, setSideReview };
 }
 
-export function focusSideBrowserUrl(surface: 'grid' | 'side', event: KeyboardEvent): boolean {
-  if (surface !== 'side') return false
-  const input = document.querySelector<HTMLInputElement>('.side-browser.flex input[aria-label="Address and search bar"]')
-  if (input) { event.preventDefault(); input.focus(); input.select() }
-  return true
+export function focusSideBrowserUrl(surface: 'grid' | 'side', _event: KeyboardEvent): boolean {
+  return surface === 'side' && Boolean(document.querySelector('.side-browser.flex'))
 }

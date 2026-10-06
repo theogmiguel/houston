@@ -25,6 +25,8 @@ fn a_pane(daemon: &std::sync::Arc<Daemon>) -> (proto::SessionInfo, tempfile::Tem
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     (info, dir)
@@ -462,6 +464,8 @@ mod context_indicator {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap();
         let mut rx = daemon.observe();

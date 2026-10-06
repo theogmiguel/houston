@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { gridStorageKey, preorderSessions } from './layout/tree'
 import {
@@ -23,6 +24,13 @@ function openComposer(container: Element): void {
   click(container.querySelector('[aria-label^="New session in "]'), 'the workspace row’s "New session" button')
 }
 
+async function waitForComposer(container: Element): Promise<void> {
+  await waitFor(
+    () => expect(container.querySelector('[data-testid="new-session-composer"]')).not.toBeNull(),
+    { timeout: 5_000 }
+  )
+}
+
 let harness: AppHarness | null = null
 
 beforeEach(() => {
@@ -44,6 +52,7 @@ describe('step 3 — the "New session" composer launches into the open workspace
     createSession.mockClear()
 
     openComposer(container)
+    await waitForComposer(container)
     expect(container.querySelector('[data-testid="new-session-composer"]')).not.toBeNull()
 
     click(container.querySelector('[data-preset="workbench"]'), 'the Workbench preset')
@@ -73,6 +82,8 @@ describe('step 3 — the "New session" composer launches into the open workspace
     createSession.mockClear()
 
     openComposer(container)
+    await waitForComposer(container)
+    click(container.querySelector('[data-preset="solo"]'), 'the Solo preset')
     click(container.querySelector('[data-testid="new-session-launch"]'), 'Launch')
 
     expect(createSession).toHaveBeenCalledTimes(1)
@@ -101,6 +112,7 @@ describe('where the composer lands its launch', () => {
     expect(gridsOf()).toHaveLength(1)
 
     clickWsPlus(container)
+    await waitForComposer(container)
     expect(container.querySelector('[data-testid="new-session-composer"]')).not.toBeNull()
     expect(gridsOf()).toHaveLength(1)
 
@@ -132,7 +144,8 @@ describe('where the composer lands its launch', () => {
     const { container } = harness
 
     clickWsPlus(container)
-    click(container.querySelector('[data-testid="new-session-cancel"]'), 'Cancel')
+    await waitForComposer(container)
+    click(container.querySelector('[data-testid="new-session-close"]'), 'Close')
 
     expect(container.querySelector('[data-testid="new-session-composer"]')).toBeNull()
     expect(gridsOf()).toHaveLength(1)
@@ -146,6 +159,7 @@ describe('where the composer lands its launch', () => {
       container.querySelector('[data-testid="workspace-empty-new-session"]'),
       'the empty workspace’s "New session" button'
     )
+    await waitForComposer(container)
     click(container.querySelector('[data-testid="new-session-launch"]'), 'Launch')
 
     expect(gridsOf()).toHaveLength(1)

@@ -6,12 +6,29 @@ import type { Task } from '../../houston/generated/Task'
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStartSettings } from '../../houston/useTasks'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
-import { IconAgent, IconGitBranch, IconInfo, IconPlay } from '../icons'
-import { Select, type SelectOption } from '../Select'
-import { Tooltip } from '../Tooltip'
+import {
+  Button,
+  TaskAgentIcon,
+  TaskAgentTag,
+  TaskButton,
+  TaskCardActions,
+  TaskDot,
+  TaskDrawerExecutionPanel,
+  TaskExecCard,
+  TaskExecDetails,
+  TaskExecHeader,
+  TaskExecTitle,
+  TaskMono,
+  TaskRunNote,
+  TaskReviewVerdict,
+  TaskStartSelect,
+  TaskStateText,
+  TaskTagChip
+} from '../ui'
+import { Icon } from '../ui/Icon'
+import { IconGitBranch, IconPlay } from '../icons'
+import { Select, type SelectOption } from '../ui/Select'
+import { Tooltip } from '../ui/Tooltip'
 import {
   READ_ONLY_REASON,
   TASK_AGENTS,
@@ -39,14 +56,10 @@ const REVIEW_VERDICT_TONE: Readonly<Record<ReviewVerdict, 'done' | 'failed' | 'n
 function ReviewMeta({ outcome }: { outcome: TaskReviewOutcome }): React.JSX.Element {
   return (
     <>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="k text-[var(--text-faint)]">Reviewer</span>
-        <IconAgent agent={outcome.reviewer} brand className="w-3.5 h-3.5 flex-none" />
-        {taskAgentLabel(outcome.reviewer)}
-      </span>
-      <span className={`tk-st ${REVIEW_VERDICT_TONE[outcome.verdict]}`} data-testid="task-review-verdict">
+      <TaskAgentTag agent={outcome.reviewer} label={taskAgentLabel(outcome.reviewer)} prefix="Reviewer" size="compact" tone="secondary" />
+      <TaskReviewVerdict tone={REVIEW_VERDICT_TONE[outcome.verdict]} data-testid="task-review-verdict">
         {REVIEW_VERDICT_LABEL[outcome.verdict]}
-      </span>
+      </TaskReviewVerdict>
     </>
   )
 }
@@ -54,19 +67,15 @@ function ReviewMeta({ outcome }: { outcome: TaskReviewOutcome }): React.JSX.Elem
 function ReviewFindings({ outcome }: { outcome: TaskReviewOutcome }): React.JSX.Element | null {
   if (outcome.findings === null || outcome.verdict === 'pass') return null
   return (
-    <div className="findings" data-testid="task-review-findings">
-      <Icon glyph={IconInfo} role="small" />
-      <span className="min-w-0 flex-1 whitespace-pre-wrap">{outcome.findings}</span>
-    </div>
+    <TaskRunNote kind="findings" data-testid="task-review-findings">
+      {outcome.findings}
+    </TaskRunNote>
   )
 }
 
 function RunReason({ reason }: { reason: string }): React.JSX.Element {
   return (
-    <div className="ask2">
-      <Icon glyph={IconInfo} role="small" />
-      <span className="min-w-0 flex-1">{reason}</span>
-    </div>
+    <TaskRunNote kind="reason">{reason}</TaskRunNote>
   )
 }
 
@@ -74,26 +83,32 @@ function RunControlButton({
   testId,
   label,
   primary,
+  presentation,
   readOnly,
   onClick
 }: {
   testId: string
   label: string
   primary: boolean
+  presentation: 'default' | 'drawer'
   readOnly: boolean
   onClick: () => void
 }): React.JSX.Element {
   return (
     <Tooltip label={readOnly ? READ_ONLY_REASON : undefined} className="inline-flex">
-      <button
-        type="button"
-        className={`btn ${primary ? BTN_PRIMARY : BTN_GHOST} ${HIT_TARGET_28}`}
+      {presentation === 'drawer' ? <Button
+        variant="secondary"
+        data-testid={testId}
+        disabled={readOnly}
+        onClick={onClick}
+      >{label}</Button> : <TaskButton
+        tone={primary ? 'primary' : 'ghost'}
         data-testid={testId}
         disabled={readOnly}
         onClick={onClick}
       >
         {label}
-      </button>
+      </TaskButton>}
     </Tooltip>
   )
 }
@@ -105,7 +120,8 @@ function ExecutionActions({
   readOnly,
   onOpenSession,
   onReview,
-  onRunControl
+  onRunControl,
+  presentation
 }: {
   run: TaskRun
   session: SessionInfo | undefined
@@ -114,28 +130,33 @@ function ExecutionActions({
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
   onRunControl: (runId: number, action: TaskRunAction) => void
+  presentation: 'default' | 'drawer'
 }): React.JSX.Element {
   return (
-    <div className="f">
-      {session && (
-        <button
-          type="button"
-          className={`btn ${BTN_PRIMARY} ${HIT_TARGET_28}`}
-          data-testid="task-run-open-session"
-          onClick={() => onOpenSession(session.id)}
-        >
+    <TaskCardActions>
+      {presentation === 'drawer' && run.state === 'cancelled' && (
+        <RunControlButton
+          testId="task-run-start-again"
+          label="Start again"
+          primary
+          presentation={presentation}
+          readOnly={readOnly}
+          onClick={() => onRunControl(run.id, 'resume')}
+        />
+      )}
+      {session && presentation !== 'drawer' && (
+        <TaskButton tone="primary" data-testid="task-run-open-session" onClick={() => onOpenSession(session.id)}>
           Open session
-        </button>
+        </TaskButton>
       )}
       {session && (
-        <button
-          type="button"
-          className={`btn ${BTN_SECONDARY} ${HIT_TARGET_28}`}
+        presentation === 'drawer' ? <Button
+          variant="secondary"
           data-testid="task-run-review"
           onClick={() => onReview(session)}
-        >
+        >Review changes</Button> : <TaskButton tone="secondary" data-testid="task-run-review" onClick={() => onReview(session)}>
           Review changes
-        </button>
+        </TaskButton>
       )}
       <span className="flex-1" />
       {retryRunId !== null && (
@@ -143,6 +164,7 @@ function ExecutionActions({
           testId="task-run-retry"
           label="Retry with findings"
           primary
+          presentation={presentation}
           readOnly={readOnly}
           onClick={() => onRunControl(retryRunId, 'retry')}
         />
@@ -152,6 +174,7 @@ function ExecutionActions({
           testId="task-run-stop"
           label="Stop"
           primary={false}
+          presentation={presentation}
           readOnly={readOnly}
           onClick={() => onRunControl(run.id, 'stop')}
         />
@@ -161,11 +184,22 @@ function ExecutionActions({
           testId="task-run-resume"
           label="Resume"
           primary
+          presentation={presentation}
           readOnly={readOnly}
           onClick={() => onRunControl(run.id, 'resume')}
         />
       )}
-    </div>
+      {run.state === 'cancelled' && presentation !== 'drawer' && (
+        <RunControlButton
+          testId="task-run-start-again"
+          label="Start again"
+          primary
+          presentation={presentation}
+          readOnly={readOnly}
+          onClick={() => onRunControl(run.id, 'resume')}
+        />
+      )}
+    </TaskCardActions>
   )
 }
 
@@ -180,7 +214,10 @@ export function TaskExecutionCard({
   review,
   onOpenSession,
   onReview,
-  onRunControl
+  onRunControl,
+  presentation = 'default',
+  branchReuse,
+  pullRequestUrl
 }: {
   run: TaskRun
   sessions: ReadonlyMap<number, SessionInfo>
@@ -190,6 +227,9 @@ export function TaskExecutionCard({
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
   onRunControl: (runId: number, action: TaskRunAction) => void
+  presentation?: 'default' | 'drawer'
+  branchReuse?: string | null
+  pullRequestUrl?: string | null
 }): React.JSX.Element {
   const tone = runStateTone(run.state)
   const session = useSession(run.session_id ?? -1, run.session_id != null ? sessions.get(run.session_id) : undefined)
@@ -197,34 +237,40 @@ export function TaskExecutionCard({
   const outcome = review ?? null
   const retryRunId = outcome?.retryRunId ?? null
 
+  if (presentation === 'drawer') return <TaskDrawerExecution
+    run={run}
+    session={session}
+    now={now}
+    readOnly={readOnly}
+    outcome={outcome}
+    reason={reason}
+    retryRunId={retryRunId}
+    branchReuse={branchReuse}
+    pullRequestUrl={pullRequestUrl}
+    onOpenSession={onOpenSession}
+    onReview={onReview}
+    onRunControl={onRunControl}
+  />
+
   return (
-    <div
-      className={`exec ${run.state === 'waiting_for_input' ? 'needs' : ''}`}
-      data-testid="task-execution"
-      style={{ marginTop: 10 }}
-    >
-      <div className="h">
-        <span className={`tk-dot ${tone}`} />
-        <b>Execution · Attempt {run.attempt}</b>
-        <span className={`tk-st ${tone}`}>{runStateLabel(run.state, run.kind)}</span>
+    <TaskExecCard run needs={run.state === 'waiting_for_input'} data-testid="task-execution">
+      <TaskExecHeader>
+        <TaskDot tone={tone} />
+        <TaskExecTitle>Execution · Attempt {run.attempt}</TaskExecTitle>
+        <TaskStateText tone={tone}>{runStateLabel(run.state, run.kind)}</TaskStateText>
         <span className="flex-1" />
-        <span className="font-mono text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">
-          {formatAge(run.started_at_ms, now)}
-        </span>
-      </div>
-      <div className="r">
+        <TaskMono faint label>{formatAge(run.started_at_ms, now)}</TaskMono>
+      </TaskExecHeader>
+      <TaskExecDetails>
         {run.branch != null && run.branch !== '' && (
-          <span className="chip-branch">
+          <TaskTagChip>
             <Icon glyph={IconGitBranch} role="small" />
             <span className="truncate">{run.branch}</span>
-          </span>
+          </TaskTagChip>
         )}
-        <span className="inline-flex items-center gap-1.5">
-          <IconAgent agent={run.provider} brand className="w-3.5 h-3.5 flex-none" />
-          {taskAgentLabel(run.provider)}
-        </span>
+        <TaskAgentTag agent={run.provider} label={taskAgentLabel(run.provider)} size="compact" tone="secondary" />
         {outcome && <ReviewMeta outcome={outcome} />}
-      </div>
+      </TaskExecDetails>
       {outcome !== null && <ReviewFindings outcome={outcome} />}
       {reason !== null && reason !== '' && <RunReason reason={reason} />}
       <ExecutionActions
@@ -235,9 +281,67 @@ export function TaskExecutionCard({
         onOpenSession={onOpenSession}
         onReview={onReview}
         onRunControl={onRunControl}
+        presentation="default"
       />
-    </div>
+    </TaskExecCard>
   )
+}
+
+function TaskDrawerExecution({
+  run,
+  session,
+  now,
+  readOnly,
+  outcome,
+  reason,
+  retryRunId,
+  branchReuse,
+  pullRequestUrl,
+  onOpenSession,
+  onReview,
+  onRunControl
+}: {
+  run: TaskRun
+  session: SessionInfo | undefined
+  now: number
+  readOnly: boolean
+  outcome: TaskReviewOutcome | null
+  reason: string | null
+  retryRunId: number | null
+  branchReuse?: string | null
+  pullRequestUrl?: string | null
+  onOpenSession: (sessionId: number) => void
+  onReview: (session: SessionInfo) => void
+  onRunControl: (runId: number, action: TaskRunAction) => void
+}): React.JSX.Element {
+  const branch = branchReuse ? `Reuses ${branchReuse}` : run.branch ? `Reuses ${run.branch}` : 'Reuses task worktree'
+  const pullRequest = pullRequestUrl ? pullRequestNumber(pullRequestUrl) : null
+  const age = runIsOpen(run.state) ? formatAge(run.started_at_ms, now) : `Stopped ${formatAge(run.ended_at_ms ?? run.started_at_ms, now)} ago`
+  const status = runIsOpen(run.state) ? runStateLabel(run.state, run.kind) : 'Idle'
+
+  return <TaskDrawerExecutionPanel
+    tone={run.state === 'waiting_for_input' ? 'needs' : runStateTone(run.state)}
+    status={status}
+    metadata={`${age} · Attempt ${run.attempt} · ${run.provider === 'claude' ? 'Claude Code' : taskAgentLabel(run.provider)}`}
+    reuse={`${branch} · ${pullRequest ? `pull request #${pullRequest}` : 'no pull request yet'}`}
+  >
+    {outcome !== null && <ReviewFindings outcome={outcome} />}
+    {reason !== null && reason !== '' && <RunReason reason={reason} />}
+    <ExecutionActions
+      run={run}
+      session={session}
+      retryRunId={retryRunId}
+      readOnly={readOnly}
+      onOpenSession={onOpenSession}
+      onReview={onReview}
+      onRunControl={onRunControl}
+      presentation="drawer"
+    />
+  </TaskDrawerExecutionPanel>
+}
+
+function pullRequestNumber(url: string): string | null {
+  return url.match(/\/pull\/(\d+)(?:\/|[?#]|$)/)?.[1] ?? null
 }
 
 // The execution card's slot for a task no run has opened. The mock has no
@@ -263,41 +367,39 @@ export function TaskStartCard({
   const startDisabled = disabled || (task.workspace == null && workspace === '')
 
   return (
-    <div className="exec" data-testid="task-start-card" style={{ marginTop: 10 }}>
-      <div className="h">
-        <span className="tk-dot idle" />
-        <b>Execution</b>
-        <span className="tk-st idle">Not started</span>
-      </div>
-      <div className="f">
+    <TaskExecCard start data-testid="task-start-card">
+      <TaskExecHeader>
+        <TaskDot tone="idle" />
+        <TaskExecTitle>Execution</TaskExecTitle>
+        <TaskStateText tone="idle">Not started</TaskStateText>
+      </TaskExecHeader>
+      <TaskCardActions>
         {task.workspace == null && <Select aria-label="Start in workspace" data-testid="task-start-workspace" value={workspace} options={[{ value: '', label: 'Choose workspace' }, ...workspaceOptions]} disabled={readOnly} onChange={setWorkspace} />}
         <Tooltip label={readOnly ? READ_ONLY_REASON : undefined} className="inline-flex">
-          <Select
+          <TaskStartSelect
             aria-label="Start with an agent"
             data-testid="task-start-agent"
             value={agent}
             options={TASK_AGENT_OPTIONS}
             disabled={disabled}
-            prefix={<IconAgent agent={agent} brand className="w-3.5 h-3.5 flex-none" />}
-            className="min-w-[132px]"
+            prefix={<TaskAgentIcon agent={agent} />}
             onChange={(value) => setChosen(value as AgentKind)}
           />
         </Tooltip>
         <span className="flex-1" />
         <Tooltip label={readOnly ? READ_ONLY_REASON : undefined} className="inline-flex">
-          <button
-            type="button"
-            className={`btn ${BTN_PRIMARY} ${HIT_TARGET_28}`}
+          <TaskButton
+            tone="primary"
             data-testid="task-start"
             disabled={startDisabled}
             onClick={() => onStart(task.id, agent, task.workspace == null ? workspace : null)}
           >
             <Icon glyph={IconPlay} role="small" />
             Start
-          </button>
+          </TaskButton>
         </Tooltip>
-      </div>
-    </div>
+      </TaskCardActions>
+    </TaskExecCard>
   )
 }
 

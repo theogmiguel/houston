@@ -61,7 +61,7 @@ describe('Changes pane — keyboard', () => {
       act(() => list.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })))
     }
     key('ArrowDown')
-    expect(q('[data-testid="changes-file"]')!.getAttribute('aria-selected')).toBe('true')
+    expect(qa('[data-testid="changes-file"]')[1].getAttribute('aria-selected')).toBe('true')
     key('ArrowDown')
     expect(qa('[data-testid="changes-file"]')[1].getAttribute('aria-selected')).toBe('true')
     key('ArrowUp')
@@ -130,9 +130,10 @@ describe('Changes pane — open in editor (carried from GitPanel.openInEditor.te
     const onOpen = vi.fn()
     const h = mount({ onOpenFileInEditor: onOpen })
     h.status([file({ path: 'src/app.ts' })])
+    const diffCallsBeforeOpen = h.client.gitDiffCalls.length
     click(q('[data-testid="changes-row-menu"]'))
     click(menu()[2])
-    expect(h.client.gitDiffCalls).toHaveLength(0)
+    expect(h.client.gitDiffCalls).toHaveLength(diffCallsBeforeOpen)
   })
 
   it('with no callback wired, the control is disabled rather than silently inert', () => {

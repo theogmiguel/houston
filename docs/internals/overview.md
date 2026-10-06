@@ -58,7 +58,7 @@ keeps running; the next launch of the app reconnects to it via `daemon.json`.
 
 `houston-core` has exactly one `main`: `core/houston-core/src/main.rs`. Its boot order:
 create the state dir → mint a UUIDv4 token → `server::bind("127.0.0.1:0")` →
-`Daemon::new_bound` (restores sessions; needs the port to exist so each restored pane can
+the bound daemon constructor (restores sessions; needs the port to exist so each restored pane can
 mint an MCP credential) → `server::start_with_listener` → write `daemon.json` → startup
 refresh (hook installers, MCP self-registration, off the paint path) →
 `boot::spawn_background_loops`. `check-loop-spawn-sync.sh` fails if anything besides this
@@ -70,15 +70,20 @@ crash, and writes `supervisor.json` beside `daemon.json`), on Windows by spawnin
 `houston-core.exe` directly (no supervisor there).
 
 On Linux, the app asks the systemd user manager through D-Bus `StartTransientUnit` to
-start the supervisor in a unique `houston-daemon-<channel>-<id>.service`. The supervisor,
-daemon and PTYs share that unit's cgroup, independently of the app's desktop scope.
-Stopping or OOM-killing the app scope therefore leaves the daemon's unit running. The
-unit is collected when inactive or failed; daemon discovery and adoption still use the
-channel's existing files and authenticated endpoints.
+start the supervisor in a unique `houston-daemon-<channel>-<id>.service`. The supervisor
+and daemon share that service, independently of the app's desktop scope. Each new PTY
+enters a separate `houston-session-<channel>-<session>-<id>.scope` before executing the
+CLI, so descendants inherit its scope without a migration race. The daemon remains
+the PTY owner; PID, session leadership and terminal input are preserved. Killing one
+session scope leaves the daemon and sibling scopes running. Units are collected when
+inactive or failed; discovery and adoption retain the channel's existing files and
+authenticated endpoints.
 
 Without a systemd user manager, launch falls back to `setsid` and prints the reason.
 That separates the Unix session but preserves the caller's cgroup, so group termination
-can still end the daemon. On Windows, detached creation separates the console but does
+can still end the daemon and its panes. Session scope creation also reports an explicit
+fallback when isolation is unavailable. An ambiguous scope request timeout refuses the
+CLI launch, preventing delayed migration from missing descendants. On Windows, detached creation separates the console but does
 not escape a containing job object. An externally imposed job with kill-on-close can
 still terminate the daemon; Houston does not require permission to break away from it.
 
@@ -205,7 +210,7 @@ draws with, built natively from one pinned source (`vt.rs`, `core/houston-core/g
 It is fed on the PTY read path, after the token redactor and beside the scrollback ring,
 under one hold of the scrollback lock so the ring offset and the emulator state always agree.
 It is the fourth lawful reader of PTY content and it is never a status source: status stays
-hooks- and ACP-driven.
+provider-reported through hooks, ACP and Codex's native startup status.
 
 Two things fall out of owning one. A terminal is not only a screen; it answers questions. A
 CLI asks what its terminal is (`ESC [ c`) and whether it does synchronized output

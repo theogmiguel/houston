@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Sidebar } from './Sidebar'
-import { MATERIAL_CLS } from './material'
+import { MATERIAL_CLS } from './ui/material'
+import { PaneFrame, type PaneFrameKind } from './ui/PaneFrame'
 import { setSettingsNavForTests } from '../settingsNav'
 import { setBackgroundStateForTests } from '../backgroundMode'
 
@@ -105,18 +107,22 @@ describe('every chrome theme cuts its own custom ground', () => {
   })
 
   it('the leaves that hold Houston ink read --pane-bg; only the terminal opts out', () => {
-    const LEAVES = ['ChangesPane.tsx', 'FilesPane.tsx', 'EditorLeaf.tsx', 'SkillsLeaf.tsx']
-    for (const file of LEAVES) {
-      const src = readFileSync(resolve(__dirname, file), 'utf8')
-      const ground = file === 'ChangesPane.tsx' ? 'bg-[var(--material-shell-bg)]' : 'bg-[var(--pane-bg)]'
-      expect(src, `${file} must ground its frame on its panel ground`).toContain(ground)
-      expect(src, `${file} is not a terminal and must not read the frame token`).not.toContain(
-        '--terminal-frame-bg'
-      )
+    const read = (file: string): string => readFileSync(resolve(__dirname, file), 'utf8')
+    const kindGround = (kind: PaneFrameKind): string =>
+      renderToStaticMarkup(<PaneFrame kind={kind} focusTier="none" active={false}>{null}</PaneFrame>)
+    for (const [file, kind, use] of [['FilesPane.tsx', 'files', /kind=\{[^}\n]*'files'\}/], ['EditorLeaf.tsx', 'editor', /kind="editor"/], ['SkillsLeaf.tsx', 'skills', /kind="skills"/]] as const) {
+      const src = read(file)
+      expect(src, `${file} must frame itself with the pane frame role`).toContain('<PaneFrame')
+      expect(src).toMatch(use)
+      expect(kindGround(kind), `the ${kind} frame must ground on its panel ground`).toContain('bg-[var(--pane-bg)]')
+      expect(kindGround(kind), `the ${kind} frame is not a terminal`).not.toContain('--terminal-frame-bg')
     }
-    const terminal = readFileSync(resolve(__dirname, 'SessionPane.tsx'), 'utf8')
-    expect(terminal).toContain('bg-[var(--terminal-frame-bg)]')
-    expect(terminal).not.toContain('bg-[var(--pane-bg)]')
+    expect(read('ChangesPane.tsx')).toContain('<GitChangesSurface')
+    expect(read('ui/Changes.tsx')).toMatch(/function GitChangesSurface[^\n]*\n[^\n]*MATERIAL_CLS\.shell/)
+    expect(MATERIAL_CLS.shell).toBe('bg-[var(--material-shell-bg)]')
+    expect(read('SessionPane.tsx')).toMatch(/<PaneFrame\s+kind="session"/)
+    expect(kindGround('session')).toContain('bg-[var(--terminal-frame-bg)]')
+    expect(kindGround('session')).not.toContain('bg-[var(--pane-bg)]')
   })
 
   it('the skeleton ground is declared in BOTH blocks, never composed from the coat once', () => {
@@ -182,36 +188,52 @@ describe('every chrome theme cuts its own custom ground', () => {
     }
   })
 
+  // Each full-region screen renders its root through one components/ui role; the role owns the
+  // material rung and the corner cut against the rail.
+  const SCREEN_ROOTS: Array<[screen: string, role: string, roleFile: string]> = [
+    ['SettingsView.tsx', 'SettingsPageSurface', 'ui/SettingsPageSurface.tsx'],
+    ['NewSessionComposer.tsx', 'DockedFormPanel', 'ui/LaunchComposerParts.tsx'],
+    ['FirstRun.tsx', 'OnboardingStage', 'ui/OnboardingStage.tsx'],
+    ['WorkspacesEmpty.tsx', 'ScreenRegion', 'ui/ScreenRegion.tsx'],
+    ['nav/SkillsSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['nav/HooksSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['nav/RoutinesSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['nav/TasksSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx']
+  ]
+
+  /** The role's own source, after checking the screen renders it. */
+  function screenRootRole(screen: string, role: string, roleFile: string): string {
+    const src = readFileSync(resolve(__dirname, screen), 'utf8')
+    expect(src, `${screen} must render its root through <${role}>`).toMatch(new RegExp(`<${role}[\\s>]`))
+    return readFileSync(resolve(__dirname, roleFile), 'utf8')
+  }
+
   it('every screen that fills a region wears the base rung, never a literal ground', () => {
-    const ROOTS: Array<[string, string]> = [
-      ['SettingsView.tsx', 'components'],
-      ['NewSessionComposer.tsx', 'components'],
-      ['FirstRun.tsx', 'components'],
-      ['nav/SkillsSurface.tsx', 'components'],
-      ['nav/McpSurface.tsx', 'components'],
-      ['nav/HooksSurface.tsx', 'components'],
-      ['nav/RoutinesSurface.tsx', 'components'],
-      ['WorkspacesEmpty.tsx', 'components']
-    ]
-    for (const [file] of ROOTS) {
-      const src = readFileSync(resolve(__dirname, file), 'utf8')
-      expect(src, `${file} must wear the rung's class`).toContain('MATERIAL_CLS.base')
-      expect(src, `${file} must carry data-material, or it gets the ground and no ink`).toContain(
+    for (const [screen, role, roleFile] of SCREEN_ROOTS) {
+      const src = screenRootRole(screen, role, roleFile)
+      expect(src, `${role} must wear the rung's class`).toContain('MATERIAL_CLS.base')
+      expect(src, `${role} must carry data-material, or it gets the ground and no ink`).toContain(
         "materialAttrs('base')"
       )
       const rootCls = src.split('\n').find((l) => l.includes('MATERIAL_CLS.base')) ?? ''
-      expect(rootCls, `${file}: the root must not paint an opaque ground over the picture`)
+      expect(rootCls, `${role}: the root must not paint an opaque ground over the picture`)
         .not.toContain('bg-background')
     }
+  })
+
+  it('MCP surfaces use the shared material role', () => {
+    const src = readFileSync(resolve(__dirname, 'nav/McpSurface.tsx'), 'utf8')
+    expect(src).toContain('<MaterialSurface')
+    expect(src).toContain('contentEdges')
   })
 
   it('every edge-to-edge screen cuts the same concave corner as the grid', () => {
     expect(THEME_CSS).toContain('.content-region::before')
     expect(THEME_CSS).not.toContain('.agents-region')
     const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8')
-    const wrappers = app.match(/className="(?:content-region )?absolute inset-0 flex z-\[var\(--z-leaf\)\]"/g) ?? []
-    expect(wrappers.length).toBeGreaterThanOrEqual(3)
-    for (const w of wrappers) expect(w).toContain('content-region')
+    expect((app.match(/<ContentRegion>/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    const region = readFileSync(resolve(__dirname, 'ui/ContentRegion.tsx'), 'utf8')
+    expect(region).toContain('className="content-region absolute inset-0 flex z-[var(--z-leaf)]"')
   })
 
   it("a screen's corner is CUT out of the screen, never coated over it", () => {
@@ -223,24 +245,10 @@ describe('every chrome theme cuts its own custom ground', () => {
     )
     expect(THEME_CSS).toContain('.grid-region:has(> .content-region)::before')
     expect(THEME_CSS).toContain('.grid-region:has(> .content-region)::after')
-    const ROOTS = [
-      'SettingsView.tsx',
-      'NewSessionComposer.tsx',
-      'FirstRun.tsx',
-      'WorkspacesEmpty.tsx',
-      'nav/SkillsSurface.tsx',
-      'nav/McpSurface.tsx',
-      'nav/HooksSurface.tsx',
-      'nav/RoutinesSurface.tsx'
-    ]
-    for (const file of ROOTS) {
-      const src = readFileSync(resolve(__dirname, file), 'utf8')
-      expect(src, `${file} must cut the region's top-left corner`).toContain(
-        'rounded-tl-[var(--r-content)]'
-      )
-      expect(src, `${file} must cut the region's bottom-left corner`).toContain(
-        'rounded-bl-[var(--r-content)]'
-      )
+    for (const [screen, role, roleFile] of SCREEN_ROOTS) {
+      const src = screenRootRole(screen, role, roleFile)
+      expect(src, `${role} must cut the region's top-left corner`).toContain('rounded-tl-[var(--r-content)]')
+      expect(src, `${role} must cut the region's bottom-left corner`).toContain('rounded-bl-[var(--r-content)]')
     }
   })
 

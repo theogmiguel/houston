@@ -15,6 +15,8 @@ import {
   nowRunLabel,
   parseReworkRounds,
   queuePreview,
+  queueActionOf,
+  queueGroups,
   runIsOpen,
   runNextCount,
   runNextDisabledReason,
@@ -66,6 +68,30 @@ describe('compareTasks / groupTasks', () => {
     expect(groups.map((g) => g.key)).toEqual(['in_progress', 'done', 'archived'])
     expect(groups[2].tasks.map((t) => t.id)).toEqual([3])
     expect(groupTasks([])).toEqual([])
+  })
+})
+
+describe('Tasks page queue', () => {
+  it('groups each queue state and folds done and archived below the queue', () => {
+    const waiting = task({ id: 1, status: 'in_progress', open_run: run({ id: 1, state: 'waiting_for_input' }) })
+    const review = task({ id: 2, status: 'in_review' })
+    const working = task({ id: 3, status: 'in_progress', open_run: run({ id: 3, state: 'running' }) })
+    const stopped = task({ id: 4, status: 'in_progress' })
+    const next = task({ id: 5, status: 'todo' })
+    const done = task({ id: 6, status: 'done' })
+    const archived = task({ id: 7, archived_at_ms: 7 })
+    expect(queueGroups([waiting, review, working, stopped, next, done, archived]).map((group) => [group.key, group.tasks.map((item) => item.id)])).toEqual([
+      ['your-turn', [2, 1]], ['working', [3]], ['stopped', [4]], ['up-next', [5]], ['done', [6, 7]]
+    ])
+  })
+
+  it('maps each supported state to the matching action', () => {
+    expect(queueActionOf(task({ id: 1, status: 'in_progress', open_run: run({ id: 1, state: 'waiting_for_input' }) }))).toBe('Answer')
+    expect(queueActionOf(task({ id: 2, status: 'in_review', ref_url: 'https://github.com/org/repo/pull/61' }))).toBe('Open PR')
+    expect(queueActionOf(task({ id: 3, status: 'in_progress', open_run: run({ id: 3, state: 'running', session_id: 23 }) }))).toBe('Open pane')
+    expect(queueActionOf(task({ id: 4, status: 'in_progress' }))).toBe('Start again')
+    expect(queueActionOf(task({ id: 5, status: 'todo' }))).toBe('Start')
+    expect(queueActionOf(task({ id: 6, status: 'in_review' }))).toBe('Review changes')
   })
 })
 

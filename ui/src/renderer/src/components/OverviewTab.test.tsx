@@ -109,3 +109,15 @@ it('emphasizes the child count when attention is needed and groups using a segme
   fireEvent.click(screen.getByRole('radio', { name: 'Worktree' }))
   expect(screen.getByRole('radio', { name: 'Worktree' }).getAttribute('aria-checked')).toBe('true')
 })
+
+
+it('shows held completed results without requesting human input', () => {
+  const child = { ...session(2, 1), delegation: { ...session(2, 1).delegation!, state: 'done' as const, inbox_owed: 1, hold_reason: 'parent is working' } }
+  const client = { subscribe: () => () => {}, delegationResultsList: vi.fn(), inboxList: vi.fn(), gitStatus: vi.fn() } as unknown as HoustonClient
+  const { container } = render(<OverviewTab parentId={1} sessions={new Map([[1, session(1, null)], [2, child]])} client={client} onClose={vi.fn()} onReview={vi.fn()} />)
+  expect(screen.getByText('Pending delivery')).toBeTruthy()
+  expect(screen.getByText('parent is working')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull()
+  expect(container.querySelector('.overview-child-head [aria-label="Done"]')).not.toBeNull()
+  expect(container.querySelector('.overview-state')?.textContent).toBe('Done')
+})

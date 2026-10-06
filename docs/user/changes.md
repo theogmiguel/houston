@@ -3,7 +3,9 @@
 ## Opening source control
 
 Open Source control from the top bar or use the `g` shortcut outside terminal typing
-mode. It opens beside your grid, with Changes and Pull request tabs. Drag its left
+mode. It opens beside your grid as the inspector of the focused pane, with Changes, PR
+and Files tabs; a pane that has started child panes also offers their Overview. The
+header names the pane, its checkout and how many commits it is ahead. Drag its left
 edge to resize it; double-click the edge to reset the width. Closing the panel
 leaves your terminal sessions running.
 
@@ -17,7 +19,8 @@ deleted, renamed and untracked files, and shows how far your branch is ahead of 
 behind its upstream. A scope toggle switches between "Working tree" (your uncommitted
 changes) and "Branch vs `<base>`" (everything your branch has that the base branch
 doesn't). A repository with no upstream, or a detached HEAD, is shown as such rather
-than left blank.
+than left blank. Below the files, On this branch lists the commits your upstream does
+not have yet, newest first; View all expands the list.
 
 ## Reviewing a diff
 
@@ -116,9 +119,13 @@ rather than creating a merge commit behind your back.
 
 ## Pull requests
 
-The Pull request tab shows the branch's GitHub PR, its checks, reviews and comments.
+The PR tab shows the branch's GitHub PR, its checks and its open review comments.
 It requires the GitHub CLI (`gh`) to be installed and signed in. If no PR exists,
-you can create one for the branch or link an existing PR by number.
+you can create one for the branch or link an existing PR by number. Reply to a comment
+in place or send it to the orchestrator pane. Details holds the title and description
+editor, reviewers and labels, resolving discussions and submitting a review. Choose the
+merge method from the merge button's menu. Merge when green turns on GitHub auto-merge,
+which merges once the repository's required checks and reviews pass.
 
 Refresh before reviewing the latest state. Merge is available only when the PR is
 ready; an unavailable action explains what blocks it. If new commits arrive after

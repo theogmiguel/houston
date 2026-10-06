@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BTN_DANGER_SOLID, BTN_GHOST, BTN_PRIMARY } from './buttonChrome'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
-import { IconAlertTriangle, IconCheck, IconRefresh } from './icons'
-import { Icon } from './Icon'
+import { Button, Callout, ChoiceCard, DetailsNote, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, InsetList, InsetRow, MonoBlock, NotesItem, NotesPanel, ProgressBar, ProgressSteps, Text, VersionTag } from './ui'
+import { IconAlertTriangle, IconRefresh } from './icons'
+import { Icon } from './ui/Icon'
 import { useFocusRestore, useFocusTrap } from './dialogFocus'
 import { daemonStatus, type ManageHandoff } from '../houston/manage'
 import type { SessionInfo } from '../houston/generated/SessionInfo'
@@ -89,14 +88,6 @@ function sessionName(s: SessionInfo | undefined, id: number): string {
   return s.title || s.codename || `Session ${id}`
 }
 
-const CALLOUT_CLS =
-  'grid grid-cols-[16px_minmax(0,1fr)] gap-[var(--space-2-5)] rounded-[var(--tr-radius-sm)] border p-[var(--space-3)] [font-size:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-secondary)]'
-const CALLOUT_WARN_CLS = `${CALLOUT_CLS} border-[color-mix(in_srgb,var(--warn)_45%,var(--border))] bg-[color-mix(in_srgb,var(--warn)_9%,var(--card-bg))]`
-const CALLOUT_STOP_CLS = `${CALLOUT_CLS} border-[color-mix(in_srgb,var(--stop)_45%,var(--border))] bg-[color-mix(in_srgb,var(--stop)_8%,var(--card-bg))]`
-
-const NOTES_CLS =
-  'm-0 rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--card-bg)] py-[var(--space-2-5)] px-[var(--space-3)] [font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]'
-
 const BULLET = /^\s*[-*•]\s+/
 
 // Bullet lines become list items; any other summary keeps its own line breaks.
@@ -104,107 +95,14 @@ function ReleaseSummary({ summary }: { summary: string }): React.JSX.Element {
   const lines = summary.split('\n').filter((l) => l.trim() !== '')
   if (lines.length > 0 && lines.every((l) => BULLET.test(l))) {
     return (
-      <ul
-        data-testid="update-release-summary"
-        className={`${NOTES_CLS} grid list-disc gap-[2px] pl-[var(--space-6)]`}
-      >
+      <NotesPanel list data-testid="update-release-summary">
         {lines.map((l, i) => (
-          <li key={i} className="break-words">
-            {l.replace(BULLET, '')}
-          </li>
+          <NotesItem key={i}>{l.replace(BULLET, '')}</NotesItem>
         ))}
-      </ul>
+      </NotesPanel>
     )
   }
-  return (
-    <div data-testid="update-release-summary" className={`${NOTES_CLS} whitespace-pre-wrap break-words`}>
-      {summary}
-    </div>
-  )
-}
-
-const OPTION_CLS =
-  'grid grid-cols-[18px_minmax(0,1fr)] gap-[var(--space-2-5)] rounded-[var(--tr-radius-md)] border p-[var(--space-3)] cursor-pointer bg-[var(--card-bg)] hover:border-[var(--border-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]'
-
-// Literal class strings: Tailwind only generates classes it can read verbatim.
-const RADIO_INK = {
-  accent: {
-    card: 'border-[color-mix(in_srgb,var(--accent)_55%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_6%,var(--card-bg))]',
-    ring: 'border-[var(--accent)]',
-    dot: 'bg-[var(--accent)]'
-  },
-  stop: {
-    card: 'border-[color-mix(in_srgb,var(--stop)_55%,var(--border))] bg-[color-mix(in_srgb,var(--stop)_6%,var(--card-bg))]',
-    ring: 'border-[var(--stop)]',
-    dot: 'bg-[var(--stop)]'
-  }
-} as const
-
-// A drawn radio: a native one takes its box from the OS theme, never ours.
-function RadioCard({
-  choice,
-  checked,
-  tone,
-  onSelect,
-  title,
-  desc
-}: {
-  choice: SessionChoice
-  checked: boolean
-  tone: 'accent' | 'stop'
-  onSelect: () => void
-  title: React.ReactNode
-  desc: string
-}): React.JSX.Element {
-  const ink = RADIO_INK[tone]
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      data-choice={choice}
-      tabIndex={checked ? 0 : -1}
-      onClick={onSelect}
-      className={`${OPTION_CLS} w-full whitespace-normal text-left ${checked ? ink.card : 'border-[var(--border)]'}`}
-    >
-      <span
-        aria-hidden="true"
-        className={`relative top-[2px] grid h-[16px] w-[16px] place-items-center rounded-full border-[1.5px] ${
-          checked ? ink.ring : 'border-[var(--border-hover)]'
-        }`}
-      >
-        {checked && <span className={`h-[8px] w-[8px] rounded-full ${ink.dot}`} />}
-      </span>
-      <span className="grid min-w-0 gap-[2px]">
-        <span className="flex flex-wrap items-center gap-[var(--space-2)] font-semibold text-[var(--text-primary)]">
-          {title}
-        </span>
-        <span className="text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)]">
-          {desc}
-        </span>
-      </span>
-    </button>
-  )
-}
-
-function Callout({
-  tone,
-  children
-}: {
-  tone: 'warn' | 'stop'
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <div
-      role={tone === 'stop' ? 'alert' : 'status'}
-      className={tone === 'stop' ? CALLOUT_STOP_CLS : CALLOUT_WARN_CLS}
-    >
-      <span className={tone === 'stop' ? 'text-[var(--stop)]' : 'text-[var(--warn)]'}>
-        <Icon glyph={IconAlertTriangle} role="ui" />
-      </span>
-      <div>{children}</div>
-    </div>
-  )
+  return <NotesPanel data-testid="update-release-summary">{summary}</NotesPanel>
 }
 
 function SessionList({
@@ -216,26 +114,23 @@ function SessionList({
 }): React.JSX.Element {
   const byId = new Map(sessions.map((s) => [s.id, s]))
   return (
-    <ul
-      data-testid="update-session-list"
-      className="m-0 list-none overflow-hidden rounded-[var(--tr-radius-sm)] border border-[var(--divider)] bg-[var(--card-bg)] p-0"
-    >
+    <InsetList data-testid="update-session-list">
       {ids.map((id) => {
         const s = byId.get(id)
         return (
-          <li
+          <InsetRow
             key={id}
-            className="grid h-[32px] grid-cols-[minmax(0,1fr)_auto] items-center gap-[var(--space-2-5)] px-[var(--space-2-5)] [font-size:var(--tr-text-small-size)] [&:not(:first-child)]:border-t [&:not(:first-child)]:border-t-[var(--divider)]"
-          >
-            <span className="truncate text-[var(--text-primary)]">
-              {sessionName(s, id)}
-              {s && <span className="text-[var(--text-muted)]"> · {s.agent}</span>}
-            </span>
-            <span className="font-mono tabular-nums text-[var(--text-muted)]">#{id}</span>
-          </li>
+            primary={
+              <>
+                {sessionName(s, id)}
+                {s && <Text tone="muted"> · {s.agent}</Text>}
+              </>
+            }
+            trailing={`#${id}`}
+          />
         )
       })}
-    </ul>
+    </InsetList>
   )
 }
 
@@ -250,61 +145,19 @@ function StepList({
 }): React.JSX.Element {
   return (
     <>
-      <ol data-testid="update-steps" className="m-0 grid list-none gap-[var(--space-2-5)] p-0">
-        {steps.map((step, i) => {
-          const done = i < active
-          const now = i === active
-          return (
-            <li
-              key={step.key}
-              data-state={done ? 'done' : now ? 'now' : 'todo'}
-              aria-current={now ? 'step' : undefined}
-              className={`grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[var(--space-2-5)] ${
-                now
-                  ? 'font-semibold text-[var(--text-primary)]'
-                  : done
-                    ? 'text-[var(--text-secondary)]'
-                    : 'text-[var(--text-muted)]'
-              }`}
-            >
-              <span
-                aria-hidden
-                className={`grid h-[16px] w-[16px] place-items-center rounded-full border-[1.5px] ${
-                  done
-                    ? 'border-[var(--ok)] bg-[var(--ok)] text-white'
-                    : now
-                      ? 'border-[var(--accent)]'
-                      : 'border-[var(--border-hover)]'
-                }`}
-              >
-                {done && <Icon glyph={IconCheck} role="small" />}
-              </span>
-              <span>{step.label}</span>
-              <span className="font-mono tabular-nums text-[var(--text-muted)] [font-size:var(--tr-text-small-size)]">
-                {step.key === 'download' && now && percent !== null ? `${percent}%` : ''}
-              </span>
-            </li>
-          )
-        })}
-      </ol>
-      {active === 0 && (
-        <div
-          role="progressbar"
-          aria-label="Download progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={percent ?? undefined}
-          className="h-[4px] overflow-hidden rounded-[var(--tr-radius-input)] bg-[var(--divider)]"
-        >
-          <div
-            className="h-full bg-[var(--accent)] motion-safe:transition-[width]"
-            style={{ width: `${percent ?? 0}%` }}
-          />
-        </div>
-      )}
-      <p className="m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)]">
+      <ProgressSteps
+        data-testid="update-steps"
+        steps={steps.map((step, i) => ({
+          key: step.key,
+          label: step.label,
+          state: i < active ? 'done' : i === active ? 'now' : 'todo',
+          trailing: step.key === 'download' && i === active && percent !== null ? `${percent}%` : ''
+        }))}
+      />
+      {active === 0 && <ProgressBar percent={percent} label="Download progress" />}
+      <Text as="p" size="small" tone="secondary" flush>
         The signature is checked against Houston&apos;s signing key before anything is installed.
-      </p>
+      </Text>
     </>
   )
 }
@@ -413,27 +266,24 @@ export function UpdateInstallModal({
   }
 
   return (
-    <div className={MODAL_SCRIM_CLS} onMouseDown={onClose}>
-      <div
+    <DialogBackdrop onMouseDown={onClose}>
+      <DialogPanel
+        size="update"
         ref={dialogRef}
         data-testid="update-install-modal"
-        className="pop flex max-h-[92vh] w-[460px] max-w-[92vw] flex-col bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
         role={stopMode ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby="update-install-h"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <div
-          id="update-install-h"
-          className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-[11px] [font-size:var(--tr-text-subhead-size)] [font-weight:var(--tr-text-subhead-weight)] [letter-spacing:var(--tr-text-subhead-tracking)] text-text-primary"
-        >
-          <span>{header}</span>
-          <span className="rounded-[var(--tr-radius-sm)] border border-[var(--border)] px-[6px] py-[2px] font-mono text-[var(--text-muted)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">
+        <DialogTitle id="update-install-h" layout="between">
+          <Text size="subhead" weight="semibold" tone="primary" className="flex-1">{header}</Text>
+          <VersionTag>
             {currentVersion} → {version}
-          </span>
-        </div>
-        <div className="grid gap-[var(--space-3)] overflow-auto px-5 py-[18px]">
+          </VersionTag>
+        </DialogTitle>
+        <DialogBody variant="stacked">
           {running ? (
             <StepList steps={steps} active={currentStepIndex(install, steps)} percent={downloadPercent(install)} />
           ) : (
@@ -448,42 +298,43 @@ export function UpdateInstallModal({
               onChoose={setChoice}
             />
           )}
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 px-5 pb-5">
+        </DialogBody>
+        <DialogActions variant="wrap">
           {running ? (
             <>
-              <span className="mr-auto text-[var(--text-muted)] [font-size:var(--tr-text-small-size)]">
+              <Text size="small" tone="muted" className="flex-1">
                 Houston reopens by itself when this finishes.
-              </span>
-              <button
+              </Text>
+              <Button
                 ref={laterRef}
                 type="button"
                 data-testid="update-hide"
-                className={`btn ${BTN_GHOST}`}
+                variant="legacy-ghost"
                 onClick={onClose}
               >
                 Hide
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <button
+              <Button
                 type="button"
                 data-testid="update-modal-notes"
-                className={`btn ${BTN_GHOST} mr-auto`}
+                variant="legacy-ghost"
                 onClick={() => onOpenExternal(release.notes_url)}
               >
                 Release notes
-              </button>
-              <button
+              </Button>
+              <span className="flex-1" />
+              <Button
                 ref={laterRef}
                 type="button"
                 data-testid="update-modal-later"
-                className={`btn ${BTN_GHOST}`}
+                variant="legacy-ghost"
                 onClick={onLater}
               >
                 Later
-              </button>
+              </Button>
               <OfferAction
                 status={status.kind}
                 stopMode={stopMode}
@@ -495,9 +346,9 @@ export function UpdateInstallModal({
               />
             </>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogActions>
+      </DialogPanel>
+    </DialogBackdrop>
   )
 }
 
@@ -527,14 +378,14 @@ function OfferBody({
     <>
       {failed && (
         <Callout tone="stop">
-          <b className="font-semibold text-[var(--text-primary)]">The last attempt did not install.</b>{' '}
+          <Text as="b" weight="semibold" tone="primary">The last attempt did not install.</Text>{' '}
           <span data-testid="update-failure">{failed.error}</span>
         </Callout>
       )}
       {summary !== null && <ReleaseSummary summary={summary} />}
       {notice !== null && <Callout tone="warn">{notice}</Callout>}
       {status.kind === 'loading' && (
-        <p className="m-0 text-[var(--text-secondary)]">Checking which sessions are running…</p>
+        <Text as="p" tone="secondary" flush>Checking which sessions are running…</Text>
       )}
       {status.kind === 'error' && (
         <Callout tone="warn">
@@ -564,31 +415,25 @@ function SessionsChoice({
   const live = status.ids.length
   if (live === 0) {
     return (
-      <p className="m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-body-size)] leading-relaxed">
+      <DialogDescription as="p">
         Houston closes, installs {version} and reopens. No sessions are running, so nothing is
         interrupted.
-      </p>
+      </DialogDescription>
     )
   }
   if (!status.handoff.supported) {
     return (
       <>
         <Callout tone="warn">
-          <b className="font-semibold text-[var(--text-primary)]">This update has to stop every session.</b>{' '}
+          <Text as="b" weight="semibold" tone="primary">This update has to stop every session.</Text>{' '}
           The daemon cannot move sessions to the new build this time, so they cannot be kept running.
         </Callout>
         <SessionList ids={status.ids} sessions={sessions} />
-        <details className="text-[var(--text-muted)] [font-size:var(--tr-text-small-size)]">
-          <summary className="cursor-pointer">Why sessions cannot be kept</summary>
-          <div className="pt-[var(--space-1)]">
-            <code
-              data-testid="update-handoff-reason"
-              className="block whitespace-pre-wrap break-words rounded-[var(--tr-radius-sm)] bg-[var(--content-bg)] p-[var(--space-2)] font-mono text-[var(--text-secondary)]"
-            >
-              {status.handoff.reason}
-            </code>
-          </div>
-        </details>
+        <DetailsNote summary="Why sessions cannot be kept">
+          <MonoBlock variant="reason" data-testid="update-handoff-reason">
+            {status.handoff.reason}
+          </MonoBlock>
+        </DetailsNote>
       </>
     )
   }
@@ -601,26 +446,20 @@ function SessionsChoice({
   }
   return (
     <>
-      <p className="m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-body-size)] leading-relaxed">
+      <DialogDescription as="p">
         Houston closes and reopens on {version}. Choose what happens to your {plural(live, 'live session')}.
-      </p>
+      </DialogDescription>
       <div role="radiogroup" aria-label="Sessions during the update" className="grid gap-[var(--space-2)]" onKeyDown={onArrow}>
-        <RadioCard
+        <ChoiceCard
           choice="keep"
           checked={mode === 'keep'}
           tone="accent"
           onSelect={() => onChoose('keep')}
-          title={
-            <>
-              Keep sessions running
-              <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] text-[var(--accent)]">
-                Recommended
-              </span>
-            </>
-          }
+          title="Keep sessions running"
+          badge="Recommended"
           desc="Agents keep working while Houston restarts. Sessions move to the new daemon; if that fails, they stay where they are."
         />
-        <RadioCard
+        <ChoiceCard
           choice="stop"
           checked={mode === 'stop'}
           tone="stop"
@@ -653,36 +492,34 @@ function OfferAction({
 }): React.JSX.Element | null {
   if (status === 'error') {
     return (
-      <button type="button" className={`btn ${BTN_PRIMARY}`} onClick={onRetry}>
+      <Button type="button" variant="legacy-primary" onClick={onRetry}>
         Check again
-      </button>
+      </Button>
     )
   }
   if (status !== 'ready') return null
   if (stopMode) {
     return (
-      <button
+      <Button
         type="button"
         data-testid="update-confirm-stop"
-        className={`btn ${BTN_DANGER_SOLID} inline-flex items-center gap-[var(--space-1-5)]`}
+        variant="legacy-danger-solid"
         disabled={busy}
         onClick={onConfirm}
       >
-        <Icon glyph={IconAlertTriangle} role="ui" />
-        {`Stop ${plural(live, 'session')} and ${failed ? 'try again' : 'install'}`}
-      </button>
+        <><Icon glyph={IconAlertTriangle} role="ui" />{`Stop ${plural(live, 'session')} and ${failed ? 'try again' : 'install'}`}</>
+      </Button>
     )
   }
   return (
-    <button
+    <Button
       type="button"
       data-testid="update-confirm-keep"
-      className={`btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)]`}
+      variant="legacy-primary"
       disabled={busy}
       onClick={onConfirm}
     >
-      <Icon glyph={IconRefresh} role="ui" />
-      {failed ? 'Try again' : 'Install and reopen'}
-    </button>
+      <><Icon glyph={IconRefresh} role="ui" />{failed ? 'Try again' : 'Install and reopen'}</>
+    </Button>
   )
 }

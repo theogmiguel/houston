@@ -37,6 +37,10 @@ impl AgentEvent {
         ambiguous_idle_notification: bool,
     ) -> bool {
         match self {
+            AgentEvent::SessionStarted => !matches!(
+                current,
+                Some(proto::AgentStatus::Working | proto::AgentStatus::NeedsInput)
+            ),
             AgentEvent::NeedsInput => {
                 !ambiguous_idle_notification || current != Some(proto::AgentStatus::Idle)
             }
@@ -573,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn only_an_ambiguous_idle_notification_is_suppressed() {
+    fn event_guards_preserve_reported_turn_and_input_state() {
         assert!(!AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Idle), true));
         assert!(AgentEvent::NeedsInput.applies(Some(proto::AgentStatus::Idle), false));
 
@@ -590,7 +594,13 @@ mod tests {
             Some(proto::AgentStatus::NeedsInput),
             Some(proto::AgentStatus::Unavailable),
         ] {
-            assert!(AgentEvent::SessionStarted.applies(status, false));
+            assert_eq!(
+                AgentEvent::SessionStarted.applies(status, false),
+                !matches!(
+                    status,
+                    Some(proto::AgentStatus::Working | proto::AgentStatus::NeedsInput)
+                )
+            );
             assert!(AgentEvent::PromptSubmitted.applies(status, false));
             assert!(AgentEvent::Activity.applies(status, false));
             assert_eq!(

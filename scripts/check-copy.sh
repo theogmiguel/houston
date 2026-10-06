@@ -9,7 +9,7 @@ ui_src="${SCAN_ROOT:-ui/src/renderer/src}"
 mapfile -t sources < <(find "$ui_src" -type f -name '*.tsx' \
   -not -name '*.test.tsx' -not -path '*/components/ui/*' \
   -not -path '*/generated/*' -not -path '*/stories/*' \
-  -not -path '*/p5-harness/*' -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
+  -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
 
 reports="$(perl -e '
   my $proper = qr/(?:Houston|Claude|Codex|OpenCode|Cursor|Antigravity|Grok|ACP|MCP|PR|UI|API|GitHub|Linux|Windows|macOS|OAuth|PTY|SSH|URL|JSON|SQLite|ID|CPU|RAM|GPU|CLI|URL)/;
@@ -50,41 +50,16 @@ reports="$(perl -e '
   }
 ' "${sources[@]}")"
 
-source scripts/check-copy-baseline.sh
 fail=0
-for rule in title-case count banned-status; do
+while IFS=$'\t' read -r rule file line value; do
+  [ -z "$rule" ] && continue
   case "$rule" in
-    title-case) baseline_name=TITLE_CASE_BASELINE ;;
-    count) baseline_name=COUNT_BASELINE ;;
-    banned-status) baseline_name=BANNED_STATUS_BASELINE ;;
+    title-case) expected="sentence case" ;;
+    count) expected="counts expressed with Count, without parenthesized or dotted values" ;;
+    banned-status) expected="the approved status vocabulary" ;;
   esac
-  declare -n baseline="$baseline_name"
-  declare -A pinned=() actual=() locations=()
-  for entry in "${baseline[@]}"; do
-    pinned["${entry% *}"]="${entry##* }"
-  done
-  while IFS=$'\t' read -r report_rule file line value; do
-    [ "$report_rule" = "$rule" ] || continue
-    actual["$file"]=$(( ${actual[$file]:-0} + 1 ))
-    locations["$file"]+="$file:$line '$value'; "
-  done <<< "$reports"
-  for file in "${!actual[@]}"; do
-    if [ "${actual[$file]}" -gt "${pinned[$file]:-0}" ]; then
-      echo "FAIL: copy-$rule ${locations[$file]} expected sentence case and no parenthesized/dotted counts (found ${actual[$file]}, pin ${pinned[$file]:-0})" >&2
-      fail=1
-    fi
-  done
-  for file in "${!pinned[@]}"; do
-    if [ "${actual[$file]:-0}" -lt "${pinned[$file]}" ]; then
-      echo "FAIL: BASELINE pins ${pinned[$file]} $rule item(s) in $file, but only ${actual[$file]:-0} remain; lower or delete it" >&2
-      fail=1
-    fi
-  done
-  unset pinned actual locations
-  unset -n baseline
-done
-if [ "$fail" -eq 0 ]; then
-  pins=$((${#TITLE_CASE_BASELINE[@]} + ${#COUNT_BASELINE[@]} + ${#BANNED_STATUS_BASELINE[@]}))
-  echo "ok: copy checks pass ($pins pins)"
-fi
+  echo "FAIL: copy-$rule $file:$line '$value'; expected $expected" >&2
+  fail=1
+done <<< "$reports"
+if [ "$fail" -eq 0 ]; then echo "ok: copy checks pass"; fi
 exit "$fail"

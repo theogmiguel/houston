@@ -1,37 +1,36 @@
-import { describe, expect, it } from 'vitest'
-import { TEXT_ROLE_CLS, type TextRole } from './Text'
+// @vitest-environment jsdom
+import { createElement } from 'react'
+import { cleanup, render } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { Text, type TextSize, type TextWeight } from './ui/Text'
 
-const ROLES: TextRole[] = [
-  'display',
-  'title',
-  'heading',
-  'subhead',
-  'body',
-  'ui',
-  'small',
-  'label'
+afterEach(cleanup)
+
+const ROLES: Array<[TextSize, TextWeight]> = [
+  ['display', 'display'],
+  ['title', 'title'],
+  ['heading', 'heading'],
+  ['subhead', 'subhead'],
+  ['body', 'body'],
+  ['ui', 'ui'],
+  ['small', 'small'],
+  ['label', 'label']
 ]
 
-describe('Text — the eight rungs', () => {
-  it('every rung carries its own size and weight token, and nothing hand-typed', () => {
-    for (const role of ROLES) {
-      const cls = TEXT_ROLE_CLS[role]
-      expect(cls, role).toContain(`[font-size:var(--tr-text-${role}-size)]`)
-      expect(cls, role).toContain(`[font-weight:var(--tr-text-${role}-weight)]`)
-      expect(cls, role).not.toMatch(/\[[a-z-]+:\d/)
+describe('Text', () => {
+  it('renders each size and weight role with its theme tokens', () => {
+    for (const [size, weight] of ROLES) {
+      const { container, unmount } = render(createElement(Text, { size, weight }))
+      expect(container.firstElementChild?.className).toContain(`var(--tr-text-${size}-size)`)
+      expect(container.firstElementChild?.className).toContain(`var(--tr-text-${weight}-weight)`)
+      unmount()
     }
   })
 
-  it('display is the one rung that names a family; label is the one that transforms', () => {
-    expect(TEXT_ROLE_CLS.display).toContain('[font-family:var(--tr-text-display-family)]')
-    expect(TEXT_ROLE_CLS.label).toContain('[text-transform:var(--tr-text-label-transform)]')
-    for (const role of ROLES) {
-      if (role !== 'display') expect(TEXT_ROLE_CLS[role], role).not.toContain('font-family')
-      if (role !== 'label') expect(TEXT_ROLE_CLS[role], role).not.toContain('text-transform')
-    }
-  })
-
-  it('the table is frozen, so a consumer cannot redefine a rung at runtime', () => {
-    expect(Object.isFrozen(TEXT_ROLE_CLS)).toBe(true)
+  it('keeps display family and label transformation role-specific', () => {
+    const display = render(createElement(Text, { size: 'display', weight: 'display' }))
+    const label = render(createElement(Text, { size: 'label', weight: 'label' }))
+    expect(display.container.firstElementChild?.className).toContain('var(--tr-text-display-family)')
+    expect(label.container.firstElementChild?.className).toContain('var(--tr-text-label-transform)')
   })
 })

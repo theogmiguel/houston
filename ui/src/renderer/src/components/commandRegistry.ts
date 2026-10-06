@@ -5,6 +5,8 @@ import { requestSettingsRowJump } from '../settingsRowJump'
 import { PANE_TYPES, paneTypeButtonState, type PaneTypeKind } from '../layout/paneTypes'
 import type { AgentKind } from '../houston/client'
 import type { Workspace } from '../houston/generated/Workspace'
+import type { SessionInfo } from '../houston/generated/SessionInfo'
+import type { WorkspaceAction } from '../houston/generated/WorkspaceAction'
 import { gridRecency, gridRecencyKey } from '../gridRecency'
 import {
   newTerminal as newTerminalShortcut,
@@ -26,6 +28,8 @@ import {
 } from '../keymap'
 
 export type CommandGroup =
+  | 'Sessions'
+  | 'Recent'
   | 'Panes'
   | 'Agents'
   | 'Grid'
@@ -35,6 +39,7 @@ export type CommandGroup =
   | 'Appearance'
   | 'Workspaces'
   | 'Tasks'
+  | 'Run'
   | 'Window'
 
 export interface Command {
@@ -46,9 +51,13 @@ export interface Command {
   enabled: boolean
   disabledReason?: string
   run: () => void
+  session?: SessionInfo
+  subtitle?: string
 }
 
 export interface PaletteActions {
+  workspaceActions?: readonly WorkspaceAction[]
+  runWorkspaceAction?: (action: WorkspaceAction) => void
   newTerminal: () => void
   insertPane: (kind: 'browser') => void
   splitPane?: () => void
@@ -75,11 +84,13 @@ export interface PaletteActions {
   windowClose?: () => void
   quitAndStopDaemon?: () => void
 
-  selectNavRow: (row: 'routines' | 'skills' | 'mcp') => void
+  selectNavRow: (row: 'routines' | 'skills' | 'harness' | 'mcp' | 'usage') => void
 
   switchWorkspace: (path: string | 'all') => void
 
   switchGrid: (path: string, gridId: string) => void
+  focusPane?: (id: number) => void
+  restartPane?: (id: number) => void
 
   stepWorkspace?: (offset: 1 | -1) => void
   selectLastWorkspace?: () => void
@@ -110,7 +121,7 @@ export const APPEARANCE_PICKER_COMMAND_ID = 'go-to.appearance-picker'
 
 const PANE_DISABLED_REASON: Partial<Record<PaneTypeKind, string>> = {
   editor: 'Editor has no blank state — open a file, a diff, or a terminal link instead',
-  skills: 'Skills moved into Settings — open it from Settings › Capabilities › Skills'
+  skills: 'Open Skills from the navigation rail'
 }
 
 const PANE_KEYWORDS: Partial<Record<PaneTypeKind, string[]>> = {
@@ -169,13 +180,15 @@ function buildSettingsRowCommands(): Command[] {
 
 function buildRailNavCommands(actions: PaletteActions): Command[] {
   const rows: {
-    id: 'routines' | 'skills' | 'mcp'
+    id: 'routines' | 'skills' | 'harness' | 'mcp' | 'usage'
     title: string
     keywords: string[]
   }[] = [
     { id: 'routines', title: 'Go to Routines', keywords: ['schedule', 'cron'] },
     { id: 'skills', title: 'Go to Skills', keywords: ['library', 'commands'] },
-    { id: 'mcp', title: 'Go to Connections', keywords: ['mcp', 'servers', 'plugins', 'model context protocol'] }
+    { id: 'harness', title: 'Go to Harness', keywords: ['review', 'findings', 'mistakes'] },
+    { id: 'mcp', title: 'Go to Connections', keywords: ['mcp', 'servers', 'plugins', 'model context protocol'] },
+    { id: 'usage', title: 'Go to Usage', keywords: ['tokens', 'cost', 'spend', 'limits', 'analytics'] }
   ]
   return rows.map((r) => ({
     id: `go-to.nav.${r.id}`,
@@ -302,6 +315,19 @@ function buildTaskCommands(actions: PaletteActions, hasWorkspace: boolean): Comm
       run: () => actions.openTasks()
     }
   ]
+}
+
+function buildWorkspaceActionCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
+  return (actions.workspaceActions ?? []).map((action) => ({
+    id: `workspace-action.${action.id}`,
+    title: action.name,
+    group: 'Run',
+    keywords: [action.command, action.shortcut ?? ''],
+    subtitle: action.command,
+    enabled: hasWorkspace && Boolean(actions.runWorkspaceAction),
+    disabledReason: hasWorkspace ? undefined : 'Open a workspace to run this action',
+    run: () => actions.runWorkspaceAction?.(action)
+  }))
 }
 
 function buildAgentCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
@@ -519,6 +545,8 @@ export interface BuildCommandsInput {
   hasWorkspace: boolean
   workspaces: readonly Workspace[]
   grids?: readonly GridTarget[]
+  sessions?: readonly SessionInfo[]
+  activeSessionId?: number | null
 }
 
 export interface GridTarget {
@@ -529,10 +557,30 @@ export interface GridTarget {
 }
 
 export function buildCommands(input: BuildCommandsInput): Command[] {
-  const { actions, hasWorkspace, workspaces, grids } = input
+  const { actions, hasWorkspace, workspaces, grids, sessions = [], activeSessionId } = input
   return [
+    ...sessions.filter((session) => session.state === 'running' && !session.hidden).map((session) => ({
+      id: `session.focus.${session.id}`,
+      title: session.title || session.codename || `Pane ${session.id}`,
+      group: 'Sessions' as const,
+      keywords: [session.codename, session.cwd, session.project_dir, session.agent].filter((value): value is string => typeof value === 'string'),
+      enabled: Boolean(actions.focusPane),
+      session,
+      subtitle: workspaces.find((workspace) => workspace.path === session.project_dir)?.name ?? session.project_dir,
+      run: () => actions.focusPane?.(session.id)
+    })),
+    {
+      id: 'pane.restart-focused',
+      title: 'Restart pane',
+      group: 'Recent',
+      keywords: ['restart', 'pane', 'session'],
+      enabled: activeSessionId !== null && activeSessionId !== undefined && Boolean(actions.restartPane) && Boolean(sessions.find((session) => session.id === activeSessionId)?.resumable),
+      disabledReason: activeSessionId == null ? 'No pane is focused' : sessions.find((session) => session.id === activeSessionId)?.resumable ? undefined : 'This pane cannot be restarted',
+      run: () => { if (activeSessionId != null) actions.restartPane?.(activeSessionId) }
+    },
     ...buildOpenTabCommands(actions, grids ?? []),
     ...buildPaneCommands(actions, hasWorkspace),
+    ...buildWorkspaceActionCommands(actions, hasWorkspace),
     ...buildAgentCommands(actions, hasWorkspace),
     ...buildTaskCommands(actions, hasWorkspace),
     ...buildGridCommands(actions),

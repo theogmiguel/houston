@@ -3,10 +3,11 @@ import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 
 import { createPortal } from 'react-dom'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
-import { Icon } from './Icon'
+import { isLive } from '../houston/client'
+import { BadgeCount, BadgeSeparator, WaitingCount, StatusGlyph } from './ui/PopoverPanel'
 import { IconCornerDownRight, IconGitFork } from './icons'
-import { HOVER_DELAY_MS, Tooltip } from './Tooltip'
-import { HEAD_BADGE_CLS } from './headBadge'
+import { HOVER_DELAY_MS, Tooltip } from './ui/Tooltip'
+import { Button, Caption } from './ui'
 
 const DelegationPanel = lazy(() => import('./DelegationPanel'))
 
@@ -37,6 +38,16 @@ function titleIsCodename(info: { title?: string | null; codename?: string | null
   return codename != null && typeof info.title === 'string' && info.title.trim() === codename
 }
 
+export function pendingDeliveryStatus(d: DelegationInfo | null | undefined): 'Result staged' | 'Pending delivery' | null {
+  if (d == null) return null
+  if (d.result_staged) return 'Result staged'
+  return d.inbox_owed > 0 ? 'Pending delivery' : null
+}
+
+export function needsHumanInput(info: SessionInfo): boolean {
+  return isLive(info.state) && (info.status === 'needs-input' || info.children_waiting > 0 || info.delegation?.state === 'needs_input')
+}
+
 // `unknown` is ignorance, not a verdict: the daemon restarted mid-flight, so
 // nobody knows how the work ended. Saying "failed" would be a claim about the
 // child rather than about Houston.
@@ -55,9 +66,9 @@ export function stateWord(d: DelegationInfo): string {
 export function ProvisionalMarker(): React.JSX.Element {
   return (
     <Tooltip label="released on a stop with no sub-agent evidence; a correction may follow">
-      <span className="shrink-0 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
+      <Caption variant="provisional">
         may be corrected
-      </span>
+      </Caption>
     </Tooltip>
   )
 }
@@ -102,26 +113,21 @@ function BadgeContent({
   const count = info.children_waiting === 0 ? (
     <>{info.live_children}</>
   ) : (
-    <span className="inline-flex items-baseline">
-      <span className="text-[var(--warn)]">{info.children_waiting}</span>
-      <span className="px-px text-[var(--text-muted)]">/</span>
+    <BadgeCount>
+      <WaitingCount>{info.children_waiting}</WaitingCount>
+      <BadgeSeparator>/</BadgeSeparator>
       {info.live_children}
-    </span>
+    </BadgeCount>
   )
   if (!showIdentity || info.spawned_by != null) return count
   return (
-    <span className="inline-flex items-baseline">
+    <BadgeCount>
       {selfName}
-      <span className="px-px text-[var(--text-muted)]"> · </span>
+      <BadgeSeparator> · </BadgeSeparator>
       {count}
-    </span>
+    </BadgeCount>
   )
 }
-
-const BADGE_CLS =
-  `${HEAD_BADGE_CLS} gap-1.5 [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] ` +
-  'hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] ' +
-  'focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px]'
 
 export function HeaderDelegationBadge({
   kind,
@@ -130,11 +136,12 @@ export function HeaderDelegationBadge({
   onFocusPane,
   onDeliverNow,
   children,
-  className,
+  rosterRow = false,
   onSelect
 }: {
   children?: React.ReactNode
-  className?: string
+  /// Renders the badge as a roster row's open target instead of a header badge.
+  rosterRow?: boolean
   onSelect?: () => void
   kind: BadgeKind
   info: SessionInfo
@@ -208,14 +215,14 @@ export function HeaderDelegationBadge({
   const glyphWarn = kind === 'origin' && info.delegation?.stalled === true
 
   const badge = (
-    <button
+    <Button
+      variant={rosterRow ? 'roster-open' : 'badge'}
       ref={btnRef}
       type="button"
       data-testid={kind === 'origin' ? 'origin-badge' : 'orchestrator-badge'}
       aria-label={label}
       aria-expanded={open}
       aria-controls={open ? id : undefined}
-      className={className ?? BADGE_CLS}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerEnter={openAfterDelay}
       onPointerLeave={leave}
@@ -232,14 +239,10 @@ export function HeaderDelegationBadge({
       }}
     >
       {children ?? <>
-      <Icon
-        glyph={kind === 'origin' ? IconCornerDownRight : IconGitFork}
-        role="label"
-        className={glyphWarn ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}
-      />
+      <StatusGlyph glyph={kind === 'origin' ? IconCornerDownRight : IconGitFork} role="label" tone={glyphWarn ? "warn" : "muted"} />
       <BadgeContent kind={kind} info={info} selfName={selfName} />
       </>}
-    </button>
+    </Button>
   )
   return (
     <>

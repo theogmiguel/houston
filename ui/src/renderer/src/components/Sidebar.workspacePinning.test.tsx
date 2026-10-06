@@ -85,18 +85,18 @@ describe('Sidebar — workspace pinning', () => {
   ]
 
   describe('context menu', () => {
-    it('offers "Pin Workspace" for an unpinned workspace', () => {
+    it('offers "Pin workspace" for an unpinned workspace', () => {
       render({ workspaces: [ws('/a', 'alpha')], selected: '/a' })
       rightClick(wsRow('/a'))
       const item = document.querySelector('[data-testid="ws-toggle-pin"]')!
-      expect(item.textContent).toContain('Pin Workspace')
+      expect(item.textContent).toContain('Pin workspace')
     })
 
-    it('offers "Unpin Workspace" for an already-pinned workspace', () => {
+    it('offers "Unpin workspace" for an already-pinned workspace', () => {
       render({ workspaces: [ws('/a', 'alpha')], selected: '/a', pinnedWorkspaces: new Set(['/a']) })
       rightClick(wsRow('/a'))
       const item = document.querySelector('[data-testid="ws-toggle-pin"]')!
-      expect(item.textContent).toContain('Unpin Workspace')
+      expect(item.textContent).toContain('Unpin workspace')
     })
 
     it('clicking the item calls onTogglePinWorkspace with the workspace path, for a plain row', () => {

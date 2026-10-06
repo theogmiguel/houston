@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionContext } from '../houston/generated/SessionContext'
 import { ContextIndicator } from './ContextIndicator'
-import { HOVER_DELAY_MS } from './Tooltip'
+import { HOVER_DELAY_MS } from './ui/Tooltip'
 
 afterEach(() => {
   cleanup()

@@ -74,7 +74,7 @@ describe('EditorLeaf CM host right-click menu (R3)', () => {
     for (let i = 0; i < 10 && !cmHost().querySelector('.cm-editor'); i++) await flush()
   }
 
-  it('opens on contextmenu over the CM host with Copy, Cut, Paste, a divider, then Select All', async () => {
+  it('opens on contextmenu over the CM host with Copy, Cut, Paste, a divider, then Select all', async () => {
     await openLeaf('/ws/leaf-menu.txt')
 
     expect(menuButton('Copy')).toBeUndefined()
@@ -83,7 +83,7 @@ describe('EditorLeaf CM host right-click menu (R3)', () => {
     expect(menuButton('Copy')).not.toBeUndefined()
     expect(menuButton('Cut')).not.toBeUndefined()
     expect(menuButton('Paste')).not.toBeUndefined()
-    const selectAll = menuButton('Select All')
+    const selectAll = menuButton('Select all')
     expect(selectAll).not.toBeUndefined()
     expect(selectAll?.textContent).toContain('Ctrl+A')
     expect(container.querySelector('.ctx-sep')).not.toBeNull()
@@ -111,12 +111,12 @@ describe('EditorLeaf CM host right-click menu (R3)', () => {
     expect(menuButton('Paste')).not.toBeUndefined()
   })
 
-  it('Select All selects the whole document', async () => {
+  it('Select all selects the whole document', async () => {
     await openLeaf('/ws/leaf-selectall.txt')
     const view = getView()
 
     rightClick()
-    act(() => menuButton('Select All')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    act(() => menuButton('Select all')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
     expect(view.state.selection.main.from).toBe(0)
     expect(view.state.selection.main.to).toBe(view.state.doc.length)

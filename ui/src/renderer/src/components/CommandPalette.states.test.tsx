@@ -129,21 +129,45 @@ describe('CommandPalette — state matrix', () => {
   })
 
   it('Filled — opens grouped, with the first command highlighted', () => {
+    window.localStorage.setItem('houston-command-palette-recents', JSON.stringify(['view.toggle-sidebar']))
     act(() => {
-      root.render(<CommandPalette {...baseProps()} />)
+      root.render(<CommandPalette {...baseProps({
+        actions: makeActions({ focusPane: vi.fn() }),
+        sessions: [{ id: 1, agent: 'claude', project_dir: '/work/houston', cwd: '/work/houston', state: 'running', title: 'auth-refactor', codename: 'auth-refactor', hidden: false, status: 'needs-input', resumable: true } as never]
+      })} />)
     })
-    expect(rows().length).toBeGreaterThan(20)
-    expect(container.querySelectorAll('[data-testid="command-palette-group"]').length).toBeGreaterThan(1)
+    expect(rowById('session.focus.1')?.textContent).toContain('auth-refactor')
+    expect(rowById('view.toggle-sidebar')).not.toBeNull()
+    expect(rowById('pane.restart-focused')?.textContent).toContain('No pane is focused')
+    expect(container.querySelectorAll('[data-testid="command-palette-group"]')).toHaveLength(2)
     expect(selectedRow()).not.toBeNull()
+  })
+
+  it('sessions focus on Enter and closing restores focus to the trigger', () => {
+    const focusPane = vi.fn()
+    const trigger = document.createElement('button')
+    document.body.appendChild(trigger)
+    trigger.focus()
+    act(() => root.render(<CommandPalette {...baseProps({
+      actions: makeActions({ focusPane }),
+      sessions: [{ id: 7, agent: 'codex', project_dir: '/work/api', cwd: '/work/api', state: 'running', title: 'migrate-db', codename: 'migrate-db', hidden: false, status: 'working', resumable: true } as never]
+    })} />))
+    expect(document.activeElement).toBe(search())
+    pressOnSearch('Enter')
+    expect(focusPane).toHaveBeenCalledWith(7)
+    act(() => root.unmount())
+    expect(document.activeElement).toBe(trigger)
+    trigger.remove()
+    root = createRoot(container)
   })
 
   it('Search — typing filters the row list live (fuzzy)', () => {
     act(() => {
       root.render(<CommandPalette {...baseProps()} />)
     })
-    const before = rows().length
     typeInto(search(), 'new terminal')
-    expect(rows().length).toBeLessThan(before)
+    expect(rows().length).toBeGreaterThan(0)
+    expect(rows().length).toBeLessThan(buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] }).length)
     expect(rowById('panes.new-terminal')).not.toBeNull()
   })
 
@@ -153,6 +177,7 @@ describe('CommandPalette — state matrix', () => {
     })
     typeInto(search(), 'zzzzznosuchcommandzzzzz')
     expect(container.querySelector('[data-testid="command-palette-empty-set"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="command-palette-empty-set"] button')?.textContent).toBe('Clear search')
     expect(rows().length).toBe(0)
   })
 
@@ -257,7 +282,7 @@ describe('CommandPalette — state matrix', () => {
     }
   })
 
-  it('Appearance embed — selecting "Change terminal palette…" swaps the panel body for AppearancePicker, and Escape steps back to the list instead of closing', () => {
+  it('Appearance embed — selecting "Change terminal palette…" swaps the panel body for AppearancePicker, and Escape steps back to the list instead of closing', async () => {
     act(() => {
       root.render(<CommandPalette {...baseProps()} />)
     })
@@ -265,7 +290,7 @@ describe('CommandPalette — state matrix', () => {
     act(() => {
       rowById('go-to.appearance-picker')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('[data-testid="appearance-picker"]')).not.toBeNull()
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="appearance-picker"]')).not.toBeNull())
     expect(onClose).not.toHaveBeenCalled()
 
     pressEscapeOnWindow()
@@ -274,7 +299,7 @@ describe('CommandPalette — state matrix', () => {
     expect(container.querySelector('[data-testid="appearance-picker"]')).toBeNull()
   })
 
-  it('Committing a theme in the embedded picker closes the whole palette', () => {
+  it('Committing a theme in the embedded picker closes the whole palette', async () => {
     const onCommit = vi.fn()
     act(() => {
       root.render(<CommandPalette {...baseProps({ appearance: { currentTheme: THEMES[0], onPreview: vi.fn(), onCommit } })} />)
@@ -283,6 +308,7 @@ describe('CommandPalette — state matrix', () => {
     act(() => {
       rowById('go-to.appearance-picker')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="appearance-picker-row"]')).not.toBeNull())
     const paletteRow = container.querySelector('[data-testid="appearance-picker-row"]') as HTMLElement
     act(() => {
       paletteRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))

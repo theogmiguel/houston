@@ -2431,7 +2431,7 @@ checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "houston-core"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2462,6 +2462,7 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+ "tokio-tungstenite 0.26.2",
  "toml 0.8.23",
  "toml_edit 0.22.27",
  "tracing",
@@ -2470,12 +2471,13 @@ dependencies = [
  "uuid",
  "whisper-rs",
  "windows-sys 0.59.0",
+ "zbus",
  "zeroize",
 ]
 
 [[package]]
 name = "houston-protocol"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2483,7 +2485,7 @@ dependencies = [
 
 [[package]]
 name = "houston-tauri"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6519,7 +6521,11 @@ checksum = "7a9daff607c6d2bf6c16fd681ccb7eecc83e4e2cdc1ca067ffaadfca5de7f084"
 dependencies = [
  "futures-util",
  "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls",
  "tungstenite 0.26.2",
 ]
 
@@ -6876,6 +6882,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
+ "rustls",
+ "rustls-pki-types",
  "sha1 0.10.7",
  "thiserror 2.0.19",
  "utf-8",

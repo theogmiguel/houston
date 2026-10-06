@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ConfirmModal } from '../ConfirmModal'
-import { BTN_GHOST } from '../buttonChrome'
+import { BTN_GHOST } from '../ui/buttonChrome'
 import { FIELD_LABEL } from '../nav/navChrome'
 import {
   cleanNowConfirm,

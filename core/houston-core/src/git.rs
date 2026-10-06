@@ -3,6 +3,8 @@ use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
 const PATCH_CAP_BYTES: usize = 512 * 1024;
+/// Five hundred entries bound a commit-list reply while covering long-lived branches.
+pub const GIT_BRANCH_COMMITS_CAP: usize = 500;
 
 fn is_sensitive_path(path: &str) -> bool {
     let lower = path.to_lowercase();
@@ -503,6 +505,58 @@ pub fn sync(dir: &Path) -> SyncStatus {
     s
 }
 
+pub fn branch_commits(dir: &Path) -> Result<(Vec<proto::GitBranchCommit>, u64, bool)> {
+    ensure_repo(dir)?;
+    let range = "@{upstream}..HEAD";
+    let total = run_git(dir, &["rev-list", "--count", range])
+        .with_context(|| {
+            format!(
+                "listing branch commits in {:?}: expected the current branch to have an upstream",
+                dir.display().to_string()
+            )
+        })?
+        .trim()
+        .parse::<u64>()
+        .context(
+            "git rev-list returned an invalid commit count; expected a non-negative integer",
+        )?;
+    let truncated = total > GIT_BRANCH_COMMITS_CAP as u64;
+    let limit = GIT_BRANCH_COMMITS_CAP.to_string();
+    let raw = run_git(
+        dir,
+        &[
+            "log",
+            "-z",
+            "--format=%h%x00%s%x00%at",
+            &format!("--max-count={limit}"),
+            range,
+        ],
+    )?;
+    let mut fields: Vec<_> = raw.split('\0').collect();
+    if fields.last() == Some(&"") {
+        fields.pop();
+    }
+    let mut commits = Vec::with_capacity(fields.len() / 3);
+    for record in fields.as_chunks::<3>().0 {
+        let seconds = record[2].parse::<u64>().with_context(|| {
+            format!(
+                "git log returned author time {:?}; expected Unix epoch seconds",
+                record[2]
+            )
+        })?;
+        commits.push(proto::GitBranchCommit {
+            sha: record[0].to_string(),
+            subject: record[1].to_string(),
+            author_time_ms: seconds.saturating_mul(1000),
+        });
+    }
+    anyhow::ensure!(
+        fields.len().is_multiple_of(3),
+        "git log returned an incomplete branch commit record; expected sha, subject, and author time"
+    );
+    Ok((commits, total, truncated))
+}
+
 pub fn stage(dir: &Path, paths: &[String]) -> Result<()> {
     ensure_repo(dir)?;
     if paths.is_empty() {
@@ -733,6 +787,29 @@ pub fn status_vs_base(dir: &Path, base: &str) -> Result<Vec<proto::GitFileStatus
     Ok(out)
 }
 
+/// Files and lines a branch changed since its merge base with `base`; a
+/// binary file counts as a file with no lines.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DiffSize {
+    pub files: usize,
+    pub added: u64,
+    pub deleted: u64,
+}
+
+pub fn diff_size(dir: &Path, base: &str) -> Result<DiffSize> {
+    ensure_repo(dir)?;
+    let mb = merge_base(dir, base)?;
+    let raw = run_git(dir, &["diff", "--numstat", &format!("{mb}..HEAD")])?;
+    let mut size = DiffSize::default();
+    for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let mut parts = line.split('\t');
+        size.files += 1;
+        size.added += parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        size.deleted += parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+    }
+    Ok(size)
+}
+
 pub fn ref_slug(raw: &str) -> String {
     // Keep generated branch and directory segments short enough for nested paths.
     const MAX_CHARS: usize = 60;
@@ -777,6 +854,23 @@ pub fn remote_url(dir: &Path) -> Option<String> {
     } else {
         Some(url.to_string())
     }
+}
+
+/// The remote branch the checked-out branch tracks, without the remote's
+/// name: `feat/x` for `origin/feat/x`. `None` before the first push.
+pub fn upstream_branch(dir: &Path) -> Option<String> {
+    let out = run_git(
+        dir,
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+    )
+    .ok()?;
+    let (_, branch) = out.trim().split_once('/')?;
+    (!branch.is_empty()).then(|| branch.to_string())
 }
 
 pub fn is_git_repo(dir: &Path) -> bool {

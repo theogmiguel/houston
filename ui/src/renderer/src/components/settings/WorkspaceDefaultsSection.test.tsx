@@ -31,8 +31,6 @@ describe('WorkspaceDefaultsSection', () => {
           onWorktreeCleanupSet={onWorktreeCleanupSet}
           openLinksInPane={false}
           onOpenLinksInPane={() => {}}
-          historyWorkspace={null}
-          historyWorkspaceName={null}
           hostInfo={hostInfoFixture({ worktree_cleanup_enabled: false, worktree_cleanup_grace_hours: 24 })}
           sessionPolicy={null}
           onSessionPolicy={() => {}}

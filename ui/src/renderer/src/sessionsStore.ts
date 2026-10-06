@@ -98,7 +98,7 @@ export function useWorkspaceWaiting(path: string, fallback: boolean): boolean {
   )
 }
 
-const leafFields = new Set<keyof SessionInfo>(['status', 'context', 'compactions', 'delegation', 'live_children', 'children_waiting'])
+const leafFields = new Set<keyof SessionInfo>(['status', 'status_since_ms', 'context', 'compactions', 'delegation', 'live_children', 'children_waiting'])
 
 // App owns layout and actions; these fields only affect subscribed leaves.
 export function layoutSessionsEqual(previous: SessionsSnapshot, next: SessionsSnapshot): boolean {

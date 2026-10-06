@@ -10,6 +10,17 @@ Each row carries a priority glyph, the task key (`HOU-1`), its title and the tim
 last changed. The **Done** and **Canceled** groups start collapsed; click a group header to
 fold or unfold it. **Archived** tasks sit in a final collapsed group.
 
+## Tasks page
+
+Choose **Tasks** in the rail to see the queue. **Your turn** contains runs waiting for input
+and tasks handed back for review; **Agents working** contains live runs; **Stopped** contains
+interrupted or stopped work; **Up next** contains ready tasks. Done and archived tasks stay
+folded below the queue. The count beside Tasks is the number in **Your turn**. A ready task
+shows its pull request number, and a waiting run shows the agent's question when Houston has
+received one. Select a task to open its detail in a drawer over the queue. The drawer keeps
+acceptance items toggleable; its **…** menu includes **Open session** and task actions. The
+Tasks side panel remains available as a shortcut.
+
 ## Creating and editing
 
 Ctrl/Cmd-click a task key (`HOU-3`) in a terminal to open that task in the Tasks tab. The
@@ -27,6 +38,10 @@ The acceptance list holds the checks the work must satisfy. Open a task to edit 
 these; changes save when a field loses focus. Only one revision is saved at a time, so if the
 task changed elsewhere first, a **This task changed elsewhere** banner appears with **Reload**
 before you overwrite anything.
+
+A task created from a Harness finding keeps its source finding key and review. Tasks made from
+Harness show that origin in their details and list rows. A finding can have several linked fix
+tasks over time; only one linked task may remain open at once.
 
 Tick an acceptance item to check it. Comments appear in the same chronological activity feed
 as the recorded changes, with a composer below. The task menu in the detail header archives
@@ -130,6 +145,7 @@ their scope is the brief they were spawned with.
     hs-task comment [HOU-n] TEXT
     hs-task check [HOU-n] ITEM          (ITEM is the 1-based acceptance position)
     hs-task handback [HOU-n] --summary T
+    hs-task ask QUESTION                (a Slack-filed task: asks in its thread)
 
 The task key defaults to `$HOUSTON_TASK` when a task started the pane; otherwise pass
 `HOU-n`. Priorities are `1` urgent through `4` low.
@@ -143,6 +159,9 @@ a default or per-task reviewer sends the task text, the acceptance list and the
 implementation summary to the reviewer CLI as well. Access is per workspace and starts at
 **Read and write**. An agent's write is recorded with the pane's codename and role, so the
 attribution survives the pane.
+
+Tasks filed from Slack mentions are described in [Slack requests](slack.md), including
+what that connection sends.
 
 The only network call Tasks makes on its own is the merge check: while a task is in review
 with a run branch, Houston runs the GitHub CLI (`gh pr view`) in that task's worktree every

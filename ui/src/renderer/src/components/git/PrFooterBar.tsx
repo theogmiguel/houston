@@ -1,3 +1,5 @@
+import { Button } from '../ui/Button'
+import { PullRequestActionsBar, PullRequestActionMenu } from '../ui/PullRequestActions'
 import { useState } from 'react'
 import type {
   PrDetail,
@@ -5,13 +7,12 @@ import type {
   PrUpdateMethod,
   PullRequestLink
 } from '../../houston/client'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { MATERIAL_CLS, materialAttrs } from '../material'
-import { Icon } from '../Icon'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
+import { Icon } from '../ui/Icon'
 import { IconExternal } from '../icons'
-import { Select, type SelectOption } from '../Select'
-import { SplitButton } from '../SplitButton'
-import { Tooltip } from '../Tooltip'
+import { Select, type SelectOption } from '../ui/Select'
+import { SplitButton } from '../ui/SplitButton'
+import { Tooltip } from '../ui/Tooltip'
 import {
   actionDisabledReason,
   stackMergeHeads,
@@ -19,8 +20,6 @@ import {
   type PrActionKey
 } from './prDetailUi'
 import type { PrDetailController } from './usePrDetailSubscription'
-
-const ACTION = 'inline-flex items-center gap-1.5'
 
 const MERGE_METHODS: readonly SelectOption[] = [
   { value: 'squash', label: 'Squash' },
@@ -51,16 +50,47 @@ function PrActionButton({
 }): React.JSX.Element {
   return (
     <Tooltip label={disabledReason ?? undefined} className="inline-flex">
-      <button
+      <Button variant={danger ? 'pull-request-danger-action' : 'pull-request-action'}
         type="button"
         data-testid={testId}
         disabled={disabledReason !== null || busy}
         onClick={onClick}
-        className={`btn ${ACTION} ${BTN_SECONDARY} ${danger ? 'text-[var(--danger)] border-[color-mix(in_srgb,var(--danger)_42%,var(--border))]' : ''} disabled:opacity-45 disabled:cursor-not-allowed`}
       >
         {label}
-      </button>
+      </Button>
     </Tooltip>
+  )
+}
+
+function PrMergeWhenGreen({
+  detail,
+  pr,
+  method,
+  busy,
+  number,
+  open,
+  draft,
+  reason
+}: {
+  detail: PrDetail
+  pr: PrDetailController
+  method: PrMergeMethod
+  busy: boolean
+  number: number
+  open: boolean
+  draft: boolean
+  reason: (key: PrActionKey) => string | null
+}): React.JSX.Element | null {
+  if (!open || draft) return null
+  const enabled = detail.auto_merge_enabled === true
+  return (
+    <PrActionButton
+      label="Merge when green"
+      testId="pr-auto-merge"
+      disabledReason={enabled ? 'Auto-merge is already enabled' : reason('enable_auto_merge')}
+      busy={busy}
+      onClick={() => pr.action(number, 'enable_auto_merge', { mergeMethod: method })}
+    />
   )
 }
 
@@ -90,10 +120,10 @@ function PrFooterMenu({
   const stackRefusal = stack === null ? null : stackMergeRefusal(stack, link.number)
   const canMergeStack = detail.viewer?.can_write === true
   return (
-    <div
+    <PullRequestActionMenu
       role="menu"
       data-testid="pr-actions-items"
-      className={`absolute bottom-[calc(100%-var(--space-1))] right-[var(--space-2-5)] z-[var(--z-sticky)] min-w-[220px] flex flex-col gap-[var(--space-1)] p-[var(--space-1)] rounded-[var(--tr-radius-sm)] ${MATERIAL_CLS.raised}`}
+      className={MATERIAL_CLS.raised}
       {...materialAttrs('raised')}
     >
       {linked ? (
@@ -122,15 +152,14 @@ function PrFooterMenu({
           }
           className="inline-flex"
         >
-          <button
+          <Button variant="pull-request-action"
             type="button"
             data-testid="pr-stack-merge"
             disabled={busy || !canMergeStack || stackRefusal !== null}
             onClick={() => pr.mergeStack(link.number, stack.number, stackMergeHeads(stack, link.number), method)}
-            className={`btn ${ACTION} ${BTN_SECONDARY} disabled:opacity-45 disabled:cursor-not-allowed`}
           >
             Merge stack to #{link.number}
-          </button>
+          </Button>
         </Tooltip>
       )}
       <PrActionButton
@@ -204,7 +233,7 @@ function PrFooterMenu({
           }
         />
       )}
-    </div>
+    </PullRequestActionMenu>
   )
 }
 
@@ -251,43 +280,32 @@ export function PrFooterBar({
       : null
 
   return (
-    <div
-      className="relative flex items-center gap-[var(--space-2)] p-[var(--space-2-5)] border-t border-t-[var(--border)] bg-[var(--material-shell-bg)]"
-      data-testid="pr-actions"
-    >
-      <button
+    <PullRequestActionsBar data-testid="pr-actions">
+      <Button variant="pull-request-nav-action"
         type="button"
-        className={`btn ${BTN_GHOST} ${ACTION}`}
         data-testid="pr-open"
         disabled={!onOpenUrlInPane}
         onClick={() => onOpenUrlInPane?.(link.url)}
       >
         <Icon glyph={IconExternal} role="small" />
         GitHub
-      </button>
-      <button
+      </Button>
+      <Button variant="pull-request-nav-action"
         type="button"
-        className={`btn ${BTN_GHOST} ${ACTION}`}
         data-testid="pr-actions-menu"
         aria-label="More pull request actions"
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((value) => !value)}
       >
         ⋯
-      </button>
+      </Button>
+      <span data-testid="pr-merge-caption">
+        {mergeReason ?? 'Ready when checks and required reviews pass'}
+      </span>
       <span className="flex-1" />
-      {primary?.testId === 'pr-merge' && (
-        <Select
-          aria-label="Merge method"
-          data-testid="pr-merge-method"
-          value={method}
-          options={MERGE_METHODS}
-          onChange={(value) => setMethod(value as PrMergeMethod)}
-        />
-      )}
       {primary?.testId === 'pr-merge' ? (
         <SplitButton
-          label="Merge"
+          label={method === 'squash' ? 'Squash and merge' : 'Merge'}
           testId="pr-merge"
           disabled={primary.disabledReason !== null || busy || pr.mergeBusy}
           disabledReason={primary.disabledReason ?? undefined}
@@ -301,14 +319,13 @@ export function PrFooterBar({
         />
       ) : primary ? (
         <Tooltip label={primary.disabledReason ?? undefined} className="inline-flex">
-          <button
-            className={`btn ${BTN_PRIMARY} ${ACTION} disabled:opacity-45 disabled:cursor-not-allowed`}
+          <Button type="button" variant="pull-request-primary-action"
             data-testid={primary.testId}
             disabled={primary.disabledReason !== null || busy || pr.mergeBusy}
             onClick={primary.onClick}
           >
             {primary.label}
-          </button>
+          </Button>
         </Tooltip>
       ) : closed ? (
         <PrActionButton
@@ -328,6 +345,16 @@ export function PrFooterBar({
           onClick={() => pr.action(link.number, 'revert')}
         />
       ) : null}
+      <PrMergeWhenGreen
+        detail={detail}
+        pr={pr}
+        method={method}
+        busy={busy}
+        number={link.number}
+        open={open}
+        draft={draft}
+        reason={reason}
+      />
       {menuOpen && (
         <PrFooterMenu
           link={link}
@@ -341,6 +368,6 @@ export function PrFooterBar({
           reason={reason}
         />
       )}
-    </div>
+    </PullRequestActionsBar>
   )
 }

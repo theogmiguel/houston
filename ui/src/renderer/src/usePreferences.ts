@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   applyChromeTheme,
   applyTheme,
@@ -16,6 +16,10 @@ import { SHIFT_ENTER_KEY, shiftEnterEnabled } from './pane/shiftEnter'
 
 export const FONT_KEY = 'tr-font-size'
 export const FONT_DEFAULT = 14
+
+export type DesktopNotificationMode = 'off' | 'notifications' | 'sound' | 'notifications-sound'
+export const DESKTOP_NOTIFICATION_MODE_KEY = 'tr-desktop-notifications'
+export const IN_APP_NOTIFICATIONS_KEY = 'tr-in-app-notifications'
 
 export const FONT_MIN = 8
 export const FONT_MAX = 24
@@ -148,6 +152,10 @@ export function usePreferences(): {
   setCopyOnSelect: React.Dispatch<React.SetStateAction<boolean>>
   stripBoxGlyphs: boolean
   setStripBoxGlyphs: React.Dispatch<React.SetStateAction<boolean>>
+  desktopNotificationMode: DesktopNotificationMode
+  setDesktopNotificationMode: React.Dispatch<React.SetStateAction<DesktopNotificationMode>>
+  inAppNotifications: boolean
+  setInAppNotifications: React.Dispatch<React.SetStateAction<boolean>>
   changeFont: (dir: 1 | -1 | 0) => void
   changeZoom: (dir: 1 | -1 | 0) => void
 } {
@@ -188,10 +196,17 @@ export function usePreferences(): {
   const [stripBoxGlyphs, setStripBoxGlyphs] = useState(
     () => localStorage.getItem(STRIP_BOX_GLYPHS_KEY) !== '0'
   )
+  const [desktopNotificationMode, setDesktopNotificationMode] = useState<DesktopNotificationMode>(() => {
+    const saved = localStorage.getItem(DESKTOP_NOTIFICATION_MODE_KEY)
+    return saved === 'notifications' || saved === 'sound' || saved === 'notifications-sound' ? saved : 'off'
+  })
+  const [inAppNotifications, setInAppNotifications] = useState(
+    () => localStorage.getItem(IN_APP_NOTIFICATIONS_KEY) === '1'
+  )
 
   useEffect(() => applyTheme(theme), [theme])
   useEffect(() => saveTerminalPaletteChoice(themeChoice), [themeChoice])
-  useEffect(() => applyChromeTheme(chromeTheme), [chromeTheme])
+  useLayoutEffect(() => applyChromeTheme(chromeTheme), [chromeTheme])
   useEffect(() => localStorage.setItem(FONT_KEY, String(fontSize)), [fontSize])
   useEffect(
     () => localStorage.setItem(TERMINAL_LINE_HEIGHT_KEY, String(terminalLineHeight)),
@@ -229,6 +244,14 @@ export function usePreferences(): {
   useEffect(
     () => localStorage.setItem(STRIP_BOX_GLYPHS_KEY, stripBoxGlyphs ? '1' : '0'),
     [stripBoxGlyphs]
+  )
+  useEffect(
+    () => localStorage.setItem(DESKTOP_NOTIFICATION_MODE_KEY, desktopNotificationMode),
+    [desktopNotificationMode]
+  )
+  useEffect(
+    () => localStorage.setItem(IN_APP_NOTIFICATIONS_KEY, inAppNotifications ? '1' : '0'),
+    [inAppNotifications]
   )
   useEffect(() => {
     void setZoomFactor(uiZoom).catch((err: unknown) => {
@@ -291,6 +314,10 @@ export function usePreferences(): {
     setCopyOnSelect,
     stripBoxGlyphs,
     setStripBoxGlyphs,
+    desktopNotificationMode,
+    setDesktopNotificationMode,
+    inAppNotifications,
+    setInAppNotifications,
     changeFont,
     changeZoom
   }

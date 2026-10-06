@@ -93,6 +93,7 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             ON backlog_task_runs(session_id);",
     )?;
     super::add_column_if_missing(conn, "backlog_task_runs", "reason", "reason TEXT")?;
+    super::add_column_if_missing(conn, "backlog_task_runs", "pr_url", "pr_url TEXT")?;
     migrate_global_tasks(conn)?;
     Ok(())
 }
@@ -231,6 +232,7 @@ pub struct TaskRunRow {
     pub reason: Option<String>,
     pub started_at_ms: i64,
     pub ended_at_ms: Option<i64>,
+    pub pr_url: Option<String>,
 }
 
 /// The fields a new run is inserted with; `attempt` is allocated as the task's
@@ -384,12 +386,12 @@ pub(crate) const TASK_COLUMN_COUNT: usize = 14;
 /// The columns `map_task_run_offset` reads, in order.
 pub(crate) const TASK_RUN_COLUMNS: &str = "id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at";
-pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 17;
+    reason, started_at, ended_at, pr_url";
+pub(crate) const TASK_RUN_COLUMN_COUNT: usize = 18;
 
 const TASK_RUN_SELECT: &str = "SELECT id, task_id, attempt, kind, state, provider, reviewer, \
     session_id, delegation_id, worktree_path, branch, base_commit, initial_revision, summary, \
-    reason, started_at, ended_at FROM backlog_task_runs";
+    reason, started_at, ended_at, pr_url FROM backlog_task_runs";
 
 /// The column list of a two-table join, qualified per alias.
 fn prefixed_columns(columns: &str, alias: &str) -> String {
@@ -476,6 +478,7 @@ fn map_task_run_offset(r: &rusqlite::Row, base: usize) -> rusqlite::Result<TaskR
         reason: r.get(base + 14)?,
         started_at_ms: r.get(base + 15)?,
         ended_at_ms: r.get(base + 16)?,
+        pr_url: r.get(base + 17)?,
     })
 }
 
@@ -1117,6 +1120,84 @@ impl Db {
         drop(conn);
         self.task(id)?
             .with_context(|| format!("task {id} disappeared inside its own create transaction"))
+    }
+
+    /// Creates a Harness fix task and its finding link atomically. Returns the
+    /// existing open task number when another fix is already in progress.
+    pub fn create_harness_task(
+        &self,
+        w: &TaskWrite<'_>,
+        key: &str,
+        review_id: u32,
+    ) -> Result<(Option<TaskRow>, Option<u32>)> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let existing: Option<u32> = tx
+            .query_row(
+                "SELECT t.number FROM harness_finding_tasks l \
+                 JOIN backlog_tasks t ON t.id = l.task_id \
+                 WHERE l.workspace = ?1 AND l.key = ?2 \
+                   AND t.status NOT IN ('done', 'canceled') \
+                 ORDER BY l.created_at_ms DESC LIMIT 1",
+                rusqlite::params![w.workspace, key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if existing.is_some() {
+            return Ok((None, existing));
+        }
+        tx.execute("UPDATE backlog_task_counters SET next_number = next_number + 1 WHERE workspace = 'all'", [])?;
+        let next: i64 = tx.query_row(
+            "SELECT next_number FROM backlog_task_counters WHERE workspace = 'all'",
+            [],
+            |r| r.get(0),
+        )?;
+        let number = u32::try_from(next - 1).with_context(|| {
+            format!("global backlog ran out of task numbers at {next} (expected a value in 1..=u32::MAX)")
+        })?;
+        tx.execute(
+            "INSERT INTO backlog_tasks \
+                (workspace, number, title, description, status, priority, parent_id, ref_url, \
+                 revision, created_by, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?10)",
+            rusqlite::params![
+                w.workspace,
+                number,
+                w.title,
+                w.description,
+                wire_name(&w.status)?,
+                priority_value(w.priority),
+                w.parent_id,
+                w.ref_url,
+                w.created_by,
+                w.now_ms,
+            ],
+        )?;
+        let id = tx.last_insert_rowid();
+        for (position, text) in w.acceptance.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO backlog_task_acceptance (task_id, position, text) VALUES (?1, ?2, ?3)",
+                rusqlite::params![id, position as i64, text],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
+             VALUES (?1, ?2, 'create', '{}', ?3)",
+            rusqlite::params![id, w.created_by, w.now_ms],
+        )?;
+        tx.execute(
+            "INSERT INTO harness_finding_tasks (workspace, key, task_id, review_id, created_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![w.workspace, key, id, review_id, w.now_ms],
+        )?;
+        tx.commit()?;
+        drop(conn);
+        Ok((
+            Some(self.task(id)?.with_context(|| {
+                format!("task {id} disappeared after its linked create transaction")
+            })?),
+            None,
+        ))
     }
 
     /// Applies a full update guarded by revision. `Ok(false)` is a concurrent

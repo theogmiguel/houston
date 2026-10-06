@@ -1,10 +1,10 @@
+import { PaneFrame } from './ui/PaneFrame'
 import { useSession, useSessionFamily } from '../sessionsStore'
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useEffect, useContext, useRef, useState } from 'react'
-import { ChildrenRoster, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
+import { ChildrenRoster, ChildStatusDot, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
-import { RING_ACCENT_ICON } from './shadowChrome'
 import type {
   AgentKind,
   AgentStatus,
@@ -17,7 +17,7 @@ import type { ThemeName } from '../theme'
 import type { SplitSide } from '../layout/tree'
 import { TerminalPane, type RegisterOutput, type TermActions } from '../pane/TerminalPane'
 import { DictationIndicator } from '../voice/DictationIndicator'
-import { AnimOut, MenuLayer } from './AnimOut'
+import { AnimOut, MenuLayer } from './ui/AnimOut'
 import {
   RestartConfirm,
   ResumeNotice,
@@ -28,7 +28,7 @@ import {
 import type { HandoffSource } from './PaneHandoff'
 import { clampConversation } from './handoffPacket'
 import { RenameTitle } from './RenameTitle'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import {
   AGENT_DOT_COLOR,
   IconAgent,
@@ -51,9 +51,27 @@ import {
   IconTextSmaller,
   type IconComponent
 } from './icons'
-import { BTN_GHOST, BTN_ICO_STRUCTURE } from './buttonChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
+import { usePaneFocusTier } from '../windowFocus'
+import { PaneHeader } from './ui'
+import {
+  PaneBranchChip,
+  PaneEngineGlyph,
+  PaneHeadActions,
+  PaneHeadButton,
+  PaneHeadIdentity,
+  PaneStateChip,
+  PaneStatusDot,
+  PaneSubtitle,
+  PaneHeadBadge
+} from './ui/PaneControls'
+import {
+  ChildrenColumn,
+  PeekBarButton,
+  PeekBarIconButton,
+  SettledChildButton,
+  SettledChildFooter
+} from './ui/ChildPaneLayout'
+import { PaneContextMenu, PaneContextMenuChord, PaneContextMenuHead, PaneContextMenuRow, PaneContextMenuRowLabel, PaneContextMenuSeparator } from './ui/PaneContextMenu'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import { PaneHeaderTags, PaneTagMenu } from './PaneTags'
 import {
@@ -65,8 +83,7 @@ import {
   splitDown,
   splitRight
 } from '../keymap'
-import { ICON_ROLE_CLS, Icon } from './Icon'
-import { HEAD_BADGE_CLS } from './headBadge'
+import { ICON_ROLE_CLS, Icon } from './ui/Icon'
 import { HeaderDelegationBadge, type PaneRoster } from './DelegationCard'
 import {
   endedLabel,
@@ -77,10 +94,15 @@ import {
   visiblePeek,
   withSessionFamily
 } from './sessionPaneSubscriptions'
-import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
+import { popOriginStyle } from './ui/overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
 import { ContextIndicator } from './ContextIndicator'
 import { PaneTaskChip } from './tasks/PaneTaskChip'
+import { PrWatchChip } from './ui/PrWatch'
+import { usePrWatch } from './git/usePrWatch'
+import { Button } from './ui/Button'
+import { RosterPeekbar, RosterSplit } from './ui/RosterSurface'
+import { Count } from './ui/Count'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -92,20 +114,6 @@ export function basename(p: string): string {
   const parts = p.replace(/\/+$/, '').split('/')
   return parts[parts.length - 1] || p
 }
-
-const CTX_MENU_CLS =
-  `ctx-menu fixed z-[var(--z-overlay)] min-w-[180px] flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`
-
-const CTX_ITEM_CLS =
-  'ctx-item border-none flex items-center justify-between gap-[14px] w-full py-[5px] px-2.5 rounded-[var(--tr-radius-input)] bg-transparent text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-left hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)]'
-const CTX_ITEM_DANGER_CLS =
-  'ctx-item border-none flex items-center justify-between gap-[14px] w-full py-[5px] px-2.5 rounded-[var(--tr-radius-input)] bg-transparent text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-left hover:bg-[var(--card-hover)] hover:text-[var(--danger)] disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)]'
-const CTX_SEP_CLS = 'ctx-sep h-px bg-[var(--border)] my-1 mx-1.5 flex-none'
-
-const CTX_HEAD_CLS = 'flex flex-col gap-px px-2.5 pt-1.5 pb-1 min-w-0 max-w-[260px]'
-
-const CTX_CHORD_CLS =
-  'text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]'
 
 function CtxRow({
   glyph,
@@ -126,17 +134,13 @@ function CtxRow({
 }): React.JSX.Element {
   return (
     <Tooltip label={disabled ? disabledReason : undefined}>
-      <button
-        className={`btn ${tone === 'danger' ? CTX_ITEM_DANGER_CLS : CTX_ITEM_CLS}`}
-        disabled={disabled}
-        onClick={onClick}
-      >
-        <span className="flex items-center gap-2">
+      <PaneContextMenuRow tone={tone} disabled={disabled} onClick={onClick}>
+        <PaneContextMenuRowLabel>
           <Icon glyph={glyph} role="ui" />
           {label}
-        </span>
-        {chord !== undefined && <span className={CTX_CHORD_CLS}>{chord}</span>}
-      </button>
+        </PaneContextMenuRowLabel>
+        {chord !== undefined && <PaneContextMenuChord>{chord}</PaneContextMenuChord>}
+      </PaneContextMenuRow>
     </Tooltip>
   )
 }
@@ -144,19 +148,6 @@ function CtxRow({
 function collapseHome(path: string): string {
   return path.replace(/^\/(home|Users)\/[^/]+/, '~')
 }
-
-const ICO_HEAD_BASE =
-  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none [@container_(max-width:280px)]:w-5 [@container_(max-width:280px)]:h-5 [@container_(max-width:200px)]:w-[18px] [@container_(max-width:200px)]:h-[18px] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
-const ICO_HEAD_REGULAR =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] hover:text-[var(--text-primary)]'
-const ICO_HEAD_ACCENT =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:text-[color-mix(in_srgb,var(--accent)_75%,var(--text-primary))]'
-const ICO_HEAD_DANGER =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]'
-const ICO_HEAD_INFO =
-  'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
-
-const ICO_HEAD_HIDE_150 = '[@container_(max-width:150px)]:hidden'
 
 export function engineGlyphColor(agent: AgentKind): string {
   return AGENT_DOT_COLOR[agent] ?? 'var(--text-muted)'
@@ -177,22 +168,6 @@ function statusLabel(s: AgentStatus): string {
   }
 }
 
-function statusDotClass(status: AgentStatus): string {
-  const pulse = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'
-  switch (status) {
-    case 'working':
-      return `bg-[var(--info)] ${pulse}`
-    case 'spawning':
-      return `bg-[var(--accent)] ${pulse}`
-    case 'idle':
-      return 'bg-[var(--text-muted)]'
-    case 'needs-input':
-      return 'bg-[var(--warn)]'
-    case 'unavailable':
-      return 'bg-transparent ring-1 ring-inset ring-[var(--text-faint)]'
-  }
-}
-
 export function StatusDot({
   status,
   live
@@ -203,11 +178,7 @@ export function StatusDot({
   if (!live || !status) return null
   return (
     <Tooltip label={statusLabel(status)}>
-      <span
-        className={`agent-dot w-[7px] h-[7px] rounded-full flex-none ${statusDotClass(status)}`}
-        role="img"
-        aria-label={statusLabel(status)}
-      />
+      <PaneStatusDot status={status} role="img" aria-label={statusLabel(status)} />
     </Tooltip>
   )
 }
@@ -237,13 +208,12 @@ export function OriginBadge({
 export function AcpBadge({ slug }: { slug: string }): React.JSX.Element {
   return (
     <Tooltip label={`ACP mode (${slug}) — status comes from this CLI's own protocol stream, not hooks`}>
-      <span
+      <PaneHeadBadge
         data-testid="acp-badge"
-        className={HEAD_BADGE_CLS}
         aria-label={`ACP mode: ${slug}`}
       >
         acp
-      </span>
+      </PaneHeadBadge>
     </Tooltip>
   )
 }
@@ -281,15 +251,15 @@ export function BranchChip({
   const label = note ? `${branch}\n${note}` : branch
   return (
     <Tooltip label={label}>
-      <button
+      <PaneBranchChip
         type="button"
         data-testid="branch-chip"
         aria-label={`Branch ${branch}`}
-        className="[@container_(max-width:400px)]:hidden inline-flex items-center gap-[var(--space-1-5)] min-w-0 flex-none max-w-[180px] px-[var(--space-1-5)] h-[var(--h-tag-chip)] rounded-[var(--tr-radius-sm)] border-0 bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] text-[var(--text-secondary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-default"
+        className="[@container_(max-width:400px)]:hidden"
       >
         <Icon glyph={IconGitBranch} role="small" />
         <span className="truncate">{branch}</span>
-      </button>
+      </PaneBranchChip>
     </Tooltip>
   )
 }
@@ -297,13 +267,12 @@ export function BranchChip({
 export function ProfileBadge({ label }: { label: string }): React.JSX.Element {
   return (
     <Tooltip label={`Running as account profile "${label}"`}>
-      <span
+      <PaneHeadBadge
         data-testid="profile-badge"
-        className={HEAD_BADGE_CLS}
         aria-label={`Account profile: ${label}`}
       >
         {label}
-      </span>
+      </PaneHeadBadge>
     </Tooltip>
   )
 }
@@ -348,6 +317,10 @@ interface Props {
   onFocusPane?: (id: number) => void
 }
 
+function PaneWatchChip({ watches }: { watches: readonly { number: number }[] }): React.JSX.Element | null {
+  return watches[0] ? <PrWatchChip number={watches[0].number} /> : null
+}
+
 function SessionPaneImpl({
   client,
   info: infoProp,
@@ -386,6 +359,7 @@ function SessionPaneImpl({
   onFocusPane
 }: Props): React.JSX.Element {
   const info = useSession(infoProp.id, infoProp) ?? infoProp
+  const prWatches = usePrWatch(client, info.id)
   const family = useSessionFamily(info.id, rosterSessions(rosterProp))
   const roster = withSessionFamily(rosterProp, family)
   const [peekId, setPeekId] = useState<number | null>(null)
@@ -441,8 +415,11 @@ function SessionPaneImpl({
 
   const glyphAgent: AgentKind = info.detected_agent ?? info.agent
   return (
-    <section
-      className={`pane flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--terminal-frame-bg)] rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] overflow-hidden ${ended ? 'opacity-80' : ''} ${active ? 'focus' : ''}`}
+    <PaneFrame
+      kind="session"
+      focusTier={focusTier}
+      active={active}
+      dimmed={Boolean(ended)}
       data-panekey={info.id}
       onPointerDownCapture={() => onActivate(info.id)}
       onContextMenu={(e) => {
@@ -451,52 +428,48 @@ function SessionPaneImpl({
         openMenuAt(e.clientX, e.clientY)
       }}
     >
-      <header
-        className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[10px] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b border-b-[var(--divider)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [.pane-slot.drag-src_&]:cursor-grabbing [transition:background_0.2s] @container ${PANE_HEAD_BG_CLS[focusTier]}`}
+      <PaneHeader
+        data-pane-focus-head={focusTier}
+        divider="solid"
+        transition="background"
+        dragCursor
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button, input, [data-pane-head-control]')) return
           onHeaderPointerDown(info.id, e)
         }}
       >
-        <span
-          data-testid="head-identity"
-          className="head-identity inline-flex items-center gap-2 min-w-0 overflow-hidden [flex:0_1_auto]"
-        >
-          <StatusDot status={info.children_waiting > 0 ? 'needs-input' : info.status} live={live || info.children_waiting > 0} />
+        <PaneHeadIdentity>
+          <SessionHeaderStatusDot info={info} live={live} />
           <Tooltip label={`${glyphAgent} session`}>
-            <span
+            <PaneEngineGlyph
               data-testid="engine-glyph"
               aria-label={`${glyphAgent} session`}
-              className="[@container_(max-width:360px)]:hidden inline-flex items-center justify-center w-4 h-4 flex-none"
+              className="[@container_(max-width:360px)]:hidden"
               style={{ color: engineGlyphColor(glyphAgent) }}
             >
               <IconAgent agent={glyphAgent} className={ICON_ROLE_CLS.ui} />
-            </span>
+            </PaneEngineGlyph>
           </Tooltip>
           <RenameTitle
             title={info.title}
             onRename={(t) => client.renameSession(info.id, t)}
           />
           <PaneTaskChip task={info.task} />
+          <PaneWatchChip watches={prWatches} />
           <BranchChip branch={branch} note={branchNote} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}
           {showProject && (
-            <span
-              data-testid="pane-sub"
-              className="[@container_(max-width:400px)]:hidden text-[var(--text-faint)] text-[length:var(--tr-text-xs)] whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
-            >
+            <PaneSubtitle data-testid="pane-sub" className="[@container_(max-width:400px)]:hidden">
               · {info.agent === 'ssh' && info.ssh_host ? info.ssh_host : basename(info.project_dir)}
-            </span>
+            </PaneSubtitle>
           )}
-        </span>
+        </PaneHeadIdentity>
+        <SessionInboxButton info={info} />
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
-      </header>
-      <ResumeNotice
-        notice={info.resume_notice}
-        buttonClassName={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
-      />
+      </PaneHeader>
+      <ResumeNotice notice={info.resume_notice} />
       <ChildrenRoom info={info} children={children} roster={roster} client={client} peek={peek} selectChild={selectChild} moveChild={moveChild} collapsed={collapsed} onCollapse={() => setCollapsed(!collapsed)} terminals={<RosterTerminals client={client} info={info} children={children} recent={recent} gridSessionIds={gridSessionIds} peek={peek} active={active} connected={connected} theme={theme} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={onActivate} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={onOpenFile} onOpenDir={onOpenDir} termActions={termActions} />} />
       <AnimOut open={confirmRestart !== null} suppress="modal">
         {confirmRestart && (
@@ -511,40 +484,32 @@ function SessionPaneImpl({
       </AnimOut>
       <MenuLayer open={menu !== null} onClose={closeMenu} suppress="popover" menuRef={menuRef}>
         {menu && (
-        <div
+        <PaneContextMenu
           ref={menuRef}
           role="menu"
           tabIndex={-1}
-          className={CTX_MENU_CLS}
           style={{ left: menu.x, right: menu.right, top: menu.y, ...popOriginStyle(menu.originX, menu.originY) }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className={CTX_HEAD_CLS} data-testid="pane-menu-head">
-            <span className="min-w-0 truncate [font-size:var(--tr-text-small-size)] font-semibold text-[var(--text-primary)]">
-              {info.title}
-            </span>
-            <span className="min-w-0 truncate [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-[var(--text-faint)]">
-              {collapseHome(cwd)}
-            </span>
-          </div>
-          <div className={CTX_SEP_CLS} />
+          <PaneContextMenuHead heading={info.title} detail={collapseHome(cwd)} />
+          <PaneContextMenuSeparator />
           {children.length > 0 && <CtxRow glyph={IconFolder} label="Overview" onClick={menuItem(() => openSideOverview(info.id))} />}
           {info.spawned_by != null && onReturnChildToRoster && <CtxRow glyph={IconArrowUpRight} label="Return to roster" onClick={menuItem(() => onReturnChildToRoster(info.id))} />}
           <CtxRow
             glyph={IconSplitRight}
-            label="Split Right"
+            label="Split right"
             chord={effectiveLabel(splitRight, keymapOverrides)}
             onClick={menuItem(() => onSplit(info.id, 'right'))}
           />
           <CtxRow
             glyph={IconSplitDown}
-            label="Split Down"
+            label="Split down"
             chord={effectiveLabel(splitDown, keymapOverrides)}
             onClick={menuItem(() => onSplit(info.id, 'bottom'))}
           />
           <CtxRow
             glyph={IconSwap}
-            label="Swap with Previous Pane"
+            label="Swap with previous pane"
             chord={effectiveLabel(movePanePrev, keymapOverrides)}
             disabled={onSwapAdjacent === undefined}
             disabledReason="This grid holds one pane — nothing to swap with"
@@ -552,22 +517,22 @@ function SessionPaneImpl({
           />
           <CtxRow
             glyph={IconSwap}
-            label="Swap with Next Pane"
+            label="Swap with next pane"
             chord={effectiveLabel(movePaneNext, keymapOverrides)}
             disabled={onSwapAdjacent === undefined}
             disabledReason="This grid holds one pane — nothing to swap with"
             onClick={menuItem(() => onSwapAdjacent?.(info.id, 1))}
           />
-          <div className={CTX_SEP_CLS} />
+          <PaneContextMenuSeparator />
           <CtxRow
             glyph={IconTextLarger}
-            label="Bigger Text"
+            label="Bigger text"
             chord={effectiveLabel(fontZoomIn, keymapOverrides)}
             onClick={menuItem(() => onZoom(1))}
           />
           <CtxRow
             glyph={IconTextSmaller}
-            label="Smaller Text"
+            label="Smaller text"
             chord={effectiveLabel(fontZoomOut, keymapOverrides)}
             onClick={menuItem(() => onZoom(-1))}
           />
@@ -584,10 +549,10 @@ function SessionPaneImpl({
               })
             )}
           />
-          <div className={CTX_SEP_CLS} />
+          <PaneContextMenuSeparator />
           <CtxRow
             glyph={IconEraser}
-            label="Clear Screen"
+            label="Clear screen"
             onClick={menuItem(() => termActions.current?.clear())}
           />
           <CtxRow
@@ -617,10 +582,10 @@ function SessionPaneImpl({
               onClick={menuItem(entry.run)}
             />
           ))}
-          <div className={CTX_SEP_CLS} />
+          <PaneContextMenuSeparator />
           <CtxRow
             glyph={IconFolder}
-            label="Reveal in File Manager"
+            label="Reveal in file manager"
             onClick={menuItem(() => {
               void showItemInFolder(cwd).then((res) => {
                 if (!res.ok) termActions.current?.toast(res.error)
@@ -629,26 +594,21 @@ function SessionPaneImpl({
           />
           <CtxRow
             glyph={IconCopy}
-            label="Copy Path"
+            label="Copy path"
             onClick={menuItem(() => void navigator.clipboard.writeText(cwd))}
           />
-          <PaneTagMenu
-            tagIds={info.tags}
-            onChange={(tags) => client.setSessionTags(info.id, tags)}
-            itemCls={CTX_ITEM_CLS}
-            sepCls={CTX_SEP_CLS}
-          />
-          <div className={CTX_SEP_CLS} />
+          <PaneTagMenu tagIds={info.tags} onChange={(tags) => client.setSessionTags(info.id, tags)} />
+          <PaneContextMenuSeparator />
           <CtxRow
             glyph={IconClose}
-            label={live ? 'Close Pane (stops the agent)' : 'Close Pane'}
+            label={live ? 'Close pane (stops the agent)' : 'Close pane'}
             tone="danger"
             onClick={menuItem(() => client.closeSession(info.id))}
           />
-        </div>
+        </PaneContextMenu>
         )}
       </MenuLayer>
-    </section>
+    </PaneFrame>
   )
 }
 
@@ -667,7 +627,7 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
               return child && !gridSessionIds?.has(id) ? [child] : []
             })].map((shown) => {
               const hidden = shown.id !== (peek?.id ?? info.id)
-              return <div key={shown.id} data-peek-session={shown.id} className="absolute inset-0 flex min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', contentVisibility: 'hidden', contain: 'strict', pointerEvents: 'none' } : undefined}>
+              return <div key={shown.id} data-peek-session={shown.id} className="absolute inset-0 flex min-w-0 min-h-0" aria-hidden={hidden} style={hidden ? { visibility: 'hidden', pointerEvents: 'none' } : undefined}>
                 <GridHiddenContext.Provider value={gridHidden || hidden}>
                   <WarmContext.Provider value={gridWarm || hidden}>
                     <TerminalPane client={client} info={shown} theme={theme} active={active && !hidden} connected={connected} fontSize={fontSize} fontFamily={fontFamily} shiftEnterNewline={shiftEnterNewline} openLinksInPane={openLinksInPane} onOpenUrlInPane={onOpenUrlInPane} copyOnSelect={copyOnSelect} stripBoxGlyphs={stripBoxGlyphs} registerOutput={registerOutput} onActivate={() => onActivate(info.id)} onZoom={onZoom} onShellZoom={onShellZoom} onOpenFile={(path, line, col) => onOpenFile(shown.id, path, line, col)} onOpenDir={(path) => onOpenDir(path, shown.id)} actions={shown.id === info.id ? termActions : undefined} />
@@ -677,6 +637,17 @@ function RosterTerminals({ client, info, children, recent, gridSessionIds, peek,
             })}</>
 }
 
+function SessionHeaderStatusDot({ info, live }: { info: SessionInfo; live: boolean }): React.JSX.Element {
+  if (info.spawned_by != null) return <ChildStatusDot info={info} />
+  return <StatusDot status={info.children_waiting > 0 ? 'needs-input' : info.status} live={live || info.children_waiting > 0} />
+}
+
+function SessionInboxButton({ info }: { info: SessionInfo }): React.JSX.Element | null {
+  if (!(info.inbox_unread > 0)) return null
+  const label = `${info.inbox_unread} unread inbox messages`
+  return <Tooltip label={label}><Button variant="ghost" size="sm" aria-label={label} className="flex-none" onClick={() => openSideOverview(info.id)}>Inbox<Count value={info.inbox_unread} /></Button></Tooltip>
+}
+
 function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegration, onReconnectSsh, onExpand, onAddPane, menuOpen, closeMenu, openMenuAtButton }: Pick<Props, 'info' | 'client' | 'expanded' | 'shellIntegration' | 'onReconnectSsh' | 'onExpand' | 'onAddPane'> & {
   ended: string | null
   live: boolean
@@ -684,22 +655,18 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
   closeMenu: () => void
   openMenuAtButton: (rect: DOMRect) => void
 }): React.JSX.Element {
-  return (<span className="head-actions ml-auto flex items-center gap-px flex-none">
+  return (<PaneHeadActions>
           <ContextIndicator context={info.context} />
           {ended && (
-            <span
-              data-testid="pane-state"
-              className={`[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] rounded-full py-px px-2 flex-none [@container_(max-width:490px)]:hidden ${info.state === 'exited' ? 'text-[var(--status-done-text)] bg-[var(--status-done-bg)]' : 'text-[var(--status-blocked-text)] bg-[var(--status-blocked-bg)]'}`}
-            >
+            <PaneStateChip data-testid="pane-state" className="[@container_(max-width:490px)]:hidden" state={info.state}>
               {ended}
-            </span>
+            </PaneStateChip>
           )}
           {!live && (
             <Tooltip
               label={restartTooltip(info)}
             >
-              <button
-                className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
+              <PaneHeadButton
                 aria-label={info.agent === 'ssh' ? 'Reconnect' : 'Restart'}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -708,12 +675,12 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
                 }}
               >
                 <Icon glyph={IconRespawn} role="ui" />
-              </button>
+              </PaneHeadButton>
             </Tooltip>
           )}
           <Tooltip label="Terminal actions">
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
+            <PaneHeadButton
+              tone="accent"
               aria-label="Terminal actions"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -726,11 +693,12 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
               }}
             >
               <IconEllipsis className={HEAD_ICON_CLS} />
-            </button>
+            </PaneHeadButton>
           </Tooltip>
           <Tooltip label={expanded ? 'Collapse (z)' : 'Expand (z)'}>
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${expanded ? ICO_HEAD_INFO : ICO_HEAD_REGULAR} ${ICO_HEAD_HIDE_150}`}
+            <PaneHeadButton
+              tone={expanded ? 'info' : 'regular'}
+              className="[@container_(max-width:150px)]:hidden"
               aria-label={expanded ? 'Collapse' : 'Expand'}
               aria-pressed={expanded}
               onClick={(e) => {
@@ -739,12 +707,12 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
               }}
             >
               {expanded ? <IconMinimize className={HEAD_ICON_CLS} /> : <IconMaximize className={HEAD_ICON_CLS} />}
-            </button>
+            </PaneHeadButton>
           </Tooltip>
           {onAddPane && (
             <Tooltip label="New pane">
-              <button
-                className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
+              <PaneHeadButton
+                tone="accent"
                 aria-label="New pane"
                 onClick={(e) => {
                   e.stopPropagation()
@@ -752,12 +720,12 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
                 }}
               >
                 <IconPlus className={HEAD_ICON_CLS} />
-              </button>
+              </PaneHeadButton>
             </Tooltip>
           )}
           <Tooltip label={live ? 'Close (stops the agent)' : 'Close'}>
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
+            <PaneHeadButton
+              tone="danger"
               aria-label="Close"
               onClick={(e) => {
                 e.stopPropagation()
@@ -765,9 +733,9 @@ function SessionHeaderActions({ info, client, ended, live, expanded, shellIntegr
               }}
             >
               <Icon glyph={IconClose} role="ui" />
-            </button>
+            </PaneHeadButton>
           </Tooltip>
-        </span>)
+        </PaneHeadActions>)
 }
 
 function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveChild, collapsed, onCollapse, terminals }: Pick<Props, 'info' | 'roster' | 'client'> & {
@@ -779,20 +747,20 @@ function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveC
   onCollapse: () => void
   terminals: React.ReactNode
 }): React.JSX.Element {
-  return (<><div className={`children-split ${collapsed ? 'collapsed' : 'auto'}`}>
+  return (<><RosterSplit collapsed={collapsed}>
         {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={collapsed} onCollapse={onCollapse} />}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {peek && <div className="children-peekbar">
-            <button className="btn border-none bg-transparent min-h-7 truncate" onClick={() => selectChild(null)}>Orchestrator</button><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
-            <span className="flex-1" /><button className="btn border-none bg-transparent min-h-7 shrink-0" onClick={() => moveChild(peek.id)}>Move to grid</button>
-            <Tooltip label="Return to orchestrator"><button className={BTN_ICO_STRUCTURE + ' min-w-7 min-h-7'} aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></button></Tooltip>
-          </div>}
+        <ChildrenColumn>
+          {peek && <RosterPeekbar>
+            <PeekBarButton onClick={() => selectChild(null)}>Orchestrator</PeekBarButton><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
+            <span className="flex-1" /><PeekBarButton shrink onClick={() => moveChild(peek.id)}>Move to grid</PeekBarButton>
+            <Tooltip label="Return to orchestrator"><PeekBarIconButton aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></PeekBarIconButton></Tooltip>
+          </RosterPeekbar>}
           <div className="relative flex-1 min-h-0 min-w-0">
             {terminals}
           </div>
           {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
-        </div>
-      </div>
+        </ChildrenColumn>
+      </RosterSplit>
       <DictationIndicator session={info.id} /></>)
 }
 
@@ -806,11 +774,10 @@ function SettledChildBar({ info, client, onMove }: { info: SessionInfo; client: 
   const ended = info.delegation?.ended_at ?? info.delegation?.settled_at
   const retained = info.delegation?.retained_until
   const time = (value: number): string => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-  const button = `${BTN_GHOST} btn min-h-[var(--h-ctl)] shrink-0`
-  return <footer aria-label="Settled child" className="flex items-center flex-wrap gap-1 px-2 py-1 border-t border-[var(--divider)] bg-[var(--card-bg)] text-[length:var(--tr-text-sm)] text-[var(--text-muted)]">
+  return <SettledChildFooter>
     <span className="flex-1 min-w-0">Settled · ended {ended == null ? 'unknown' : `${time(ended)} (${delegationAge(ended, now)} ago)`} · kept until {retained == null ? 'unknown' : new Date(retained).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
-    <button className={button} disabled={!info.resumable} onClick={() => client.respawnSession(info.id, undefined, null, undefined, undefined, false)}>Continue</button>
-    <button className={button} onClick={() => client.closeSession(info.id)}>Close</button>
-    <button className={button} onClick={() => onMove(info.id)}>Move to grid</button>
-  </footer>
+    <SettledChildButton disabled={!info.resumable} onClick={() => client.respawnSession(info.id, undefined, null, undefined, undefined, false)}>Continue</SettledChildButton>
+    <SettledChildButton onClick={() => client.closeSession(info.id)}>Close</SettledChildButton>
+    <SettledChildButton onClick={() => onMove(info.id)}>Move to grid</SettledChildButton>
+  </SettledChildFooter>
 }

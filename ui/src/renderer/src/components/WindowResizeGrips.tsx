@@ -1,5 +1,6 @@
 import { isTauri } from '../houston/host'
 import { startResizeDragging, type ResizeDirection } from '../houston/bridge'
+import { WindowResizeGrip } from './ui/WindowControl'
 
 const EDGE = 6
 const CORNER = EDGE * 2
@@ -45,11 +46,10 @@ export function WindowResizeGrips(): React.JSX.Element | null {
   return (
     <>
       {GRIPS.map((grip) => (
-        <div
+        <WindowResizeGrip
           key={grip.direction}
           data-testid={`resize-grip-${grip.direction}`}
           aria-hidden="true"
-          className="fixed z-[var(--z-window)] [-webkit-app-region:no-drag]"
           style={{ ...grip.style, cursor: grip.cursor }}
           onMouseDown={(e) => {
             if (e.button !== 0) return

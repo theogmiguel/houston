@@ -24,6 +24,17 @@ pub struct ModelRate {
     pub output_cost_per_token: f64,
     pub cache_read_cost_per_token: f64,
     pub cache_creation_cost_per_token: f64,
+    pub fast_multiplier: Option<f64>,
+    pub priority: Option<SpeedRate>,
+    pub ultrafast: Option<SpeedRate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpeedRate {
+    pub input_cost_per_token: f64,
+    pub output_cost_per_token: f64,
+    pub cache_read_cost_per_token: f64,
+    pub cache_creation_cost_per_token: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -87,6 +98,14 @@ impl ModelTable {
                             .unwrap_or(input),
                         cache_creation_cost_per_token: cost("cache_creation_input_token_cost")
                             .unwrap_or(input),
+                        fast_multiplier: entry
+                            .get("provider_specific_entry")
+                            .and_then(Value::as_object)
+                            .and_then(|specific| specific.get("fast"))
+                            .and_then(Value::as_f64)
+                            .filter(|value| value.is_finite() && *value > 0.0),
+                        priority: speed_rate(entry, "priority"),
+                        ultrafast: speed_rate(entry, "ultrafast"),
                     });
                 // max_tokens often means output capacity; adding output would inflate the window.
                 let window = entry
@@ -150,6 +169,32 @@ impl ModelTable {
     pub fn window(&self, model: &str) -> Option<u64> {
         self.model(model)?.window
     }
+}
+
+fn speed_rate(entry: &serde_json::Map<String, Value>, tier: &str) -> Option<SpeedRate> {
+    let cost = |base: &str, fallback| {
+        entry
+            .get(&format!("{base}_{tier}"))
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .unwrap_or(fallback)
+    };
+    let (input_rate, output_rate) = (
+        entry
+            .get(&format!("input_cost_per_token_{tier}"))
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value >= 0.0)?,
+        entry
+            .get(&format!("output_cost_per_token_{tier}"))
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value >= 0.0)?,
+    );
+    Some(SpeedRate {
+        input_cost_per_token: input_rate,
+        output_cost_per_token: output_rate,
+        cache_read_cost_per_token: cost("cache_read_input_token_cost", input_rate),
+        cache_creation_cost_per_token: cost("cache_creation_input_token_cost", input_rate),
+    })
 }
 
 fn is_non_conversational_model(id: &str) -> bool {

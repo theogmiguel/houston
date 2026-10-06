@@ -67,7 +67,6 @@ function baseProps(): {
   chromeTheme: ChromeTheme
   onChromeTheme: (t: ChromeTheme) => void
   theme: TerminalPaletteChoice
-  onTheme: (t: TerminalPaletteChoice) => void
   uiZoom: number
   onUiZoom: (z: number) => void
 } {
@@ -75,7 +74,6 @@ function baseProps(): {
     chromeTheme: 'graphite',
     onChromeTheme: () => {},
     theme: 'auto',
-    onTheme: () => {},
     uiZoom: 1,
     onUiZoom: () => {}
   }

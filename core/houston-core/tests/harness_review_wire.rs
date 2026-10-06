@@ -211,6 +211,7 @@ fn reopening_the_daemon_fails_interrupted_harness_reviews_and_keeps_published_on
             cost_usd: None,
             summary: "published before restart",
             findings: &[],
+            verifications: &[],
         },
         3,
     )
@@ -249,6 +250,8 @@ fn plain_pane(daemon: &Arc<Daemon>, ws: &Path) -> u32 {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id
@@ -750,6 +753,8 @@ async fn hook_drop_links_session_to_its_transcript() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     let db_path = state.path().join("test.db");
@@ -865,6 +870,8 @@ async fn a_sub_agent_drop_never_replaces_the_root_conversation_link() {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
             .id

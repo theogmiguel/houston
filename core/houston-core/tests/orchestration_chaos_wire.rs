@@ -123,6 +123,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
             .id
@@ -2190,6 +2192,15 @@ async fn h4_codex_missing_call_identity_cannot_be_cleared_by_an_unrelated_tool()
     let parent = rig.parent();
     let script = rig.script("codex", 42, "missing-identity", json!([{"op":"hang"}]));
     let child = rig.spawn(parent, "codex", &script, json!({})).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        rig.daemon.hook_drop_tick_for_test();
+        if rig.daemon.session_status(child).unwrap() == Some(proto::AgentStatus::Working) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "startup prompt was not applied");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     let directory = drop_dir(rig.state.path());
     let permission = HookDrop {
         session: child,

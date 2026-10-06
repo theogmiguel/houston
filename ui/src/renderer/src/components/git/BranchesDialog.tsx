@@ -10,13 +10,13 @@ import {
   switchBranchDisabledReason
 } from './branches'
 import { ConfirmModal } from '../ConfirmModal'
-import { Select } from '../Select'
-import { Toggle } from '../settingsPrimitives'
-import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
-import { FIELD_INPUT, FIELD_LABEL } from '../nav/navChrome'
-import { IconAlertTriangle, IconGitBranch, IconPencil, IconRefresh, IconTrash } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Toggle } from '../ui/settingsPrimitives'
+import { IconGitBranch, IconPencil, IconRefresh, IconTrash } from '../icons'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
+import { Button, Notice } from '../ui'
+import { GitBaseSelect, GitBranchBadge, GitBranchCreateRow, GitBranchCreateSurface, GitBranchDeleteMenu, GitBranchEmptyText, GitBranchHelpText, GitBranchList, GitBranchNameText, GitBranchNote, GitBranchRow, GitBranchSelect, GitRefFieldLabel, GitRefInput } from '../ui'
+import { Text } from '../ui/Text'
 
 export interface BranchesDialogProps {
   branches: GitBranchInfo[]
@@ -33,39 +33,23 @@ export interface BranchesDialogProps {
   onDelete: (name: string, force: boolean) => void
 }
 
-const ROW =
-  'group/row flex items-center gap-2 h-7 px-2 rounded-[var(--tr-radius-sm)] text-[length:var(--tr-text-sm)]'
-
-const BADGE =
-  'flex-none px-1.5 rounded-[var(--tr-radius-pill)] font-mono text-[length:var(--tr-text-xs)] font-semibold leading-4'
-
-const MENU_ITEM =
-  'text-left px-2.5 py-1 text-[length:var(--tr-text-sm)] bg-transparent border-0 '
-
 function BranchBadges({ branch }: { branch: GitBranchInfo }): React.JSX.Element {
   return (
     <>
       {branch.current && (
-        <span
-          data-testid="branch-current-badge"
-          className={`${BADGE} bg-[color-mix(in_srgb,var(--success)_16%,transparent)] text-[var(--success)]`}
-        >
+        <GitBranchBadge role="current" data-testid="branch-current-badge">
           current
-        </span>
+        </GitBranchBadge>
       )}
       {branch.is_default && !branch.current && (
-        <span
-          className={`${BADGE} bg-[color-mix(in_srgb,var(--text-muted)_18%,transparent)] text-[var(--text-muted)]`}
-        >
+        <GitBranchBadge role="default">
           default
-        </span>
+        </GitBranchBadge>
       )}
       {branch.worktree_path && (
-        <span
-          className={`${BADGE} bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)]`}
-        >
+        <GitBranchBadge role="worktree">
           worktree
-        </span>
+        </GitBranchBadge>
       )}
     </>
   )
@@ -89,43 +73,20 @@ function DeleteBranchControl({
   return (
     <div className="relative flex-none">
       <Tooltip label={reason ?? 'Delete'} className="inline-flex">
-        <button
+        <Button
           type="button"
+          variant="legacy-ghost-icon-danger"
           data-testid="branch-delete"
           aria-label={`Delete ${branch.name}`}
           aria-expanded={open}
           disabled={disabled}
           onClick={onToggle}
-          className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`}
         >
           <Icon glyph={IconTrash} role="label" />
-        </button>
+        </Button>
       </Tooltip>
       {open && (
-        <div
-          role="menu"
-          data-testid="branch-delete-menu"
-          className="absolute right-0 top-7 z-[var(--z-sticky)] min-w-[170px] flex flex-col rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] py-1 shadow-[var(--shadow-1)]"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            data-testid="branch-delete-safe"
-            className={`${MENU_ITEM} text-[var(--text-secondary)] enabled:hover:bg-[var(--card-hover)]`}
-            onClick={() => onChoose(false)}
-          >
-            Delete
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            data-testid="branch-delete-force"
-            className={`${MENU_ITEM} text-[var(--danger)] enabled:hover:bg-[color-mix(in_srgb,var(--danger)_14%,transparent)]`}
-            onClick={() => onChoose(true)}
-          >
-            Force delete
-          </button>
-        </div>
+        <GitBranchDeleteMenu onDelete={() => onChoose(false)} onForceDelete={() => onChoose(true)} />
       )}
     </div>
   )
@@ -170,19 +131,15 @@ function BranchRow({
   const renaming = renamingValue !== null
 
   return (
-    <div
+    <GitBranchRow
+      current={branch.current}
       data-testid="branch-row"
       data-branch={branch.name}
       data-current={branch.current ? 'true' : undefined}
-      className={`${ROW} ${
-        branch.current
-          ? 'bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] text-[var(--text-primary)]'
-          : 'text-[var(--text-secondary)] hover:bg-[var(--card-hover)]'
-      }`}
     >
-      <span className="flex-none text-[var(--text-faint)]" aria-hidden>
+      <Text as="span" tone="faint" className="flex-none" aria-hidden>
         <Icon glyph={IconGitBranch} role="label" />
-      </span>
+      </Text>
       {renaming ? (
         <form
           className="flex flex-1 min-w-0 items-center gap-1.5"
@@ -191,11 +148,11 @@ function BranchRow({
             onRenameSubmit()
           }}
         >
-          <input
+          <GitRefInput
             autoFocus
             data-testid="branch-rename-input"
             aria-label={`Rename ${branch.name}`}
-            className={`${FIELD_INPUT} flex-1 min-w-0`}
+            className="flex-1 min-w-0"
             value={renamingValue}
             spellCheck={false}
             onChange={(e) => onRenameChange(e.target.value)}
@@ -204,17 +161,17 @@ function BranchRow({
               if (e.key === 'Escape') onRenameCancel()
             }}
           />
-          <button
+          <Button
             type="submit"
             data-testid="branch-rename-save"
-            className={`btn ${BTN_PRIMARY}`}
+            variant="legacy-primary"
             disabled={busy || !renameTargetLooksValid(branch.name, renamingValue.trim())}
           >
             Rename
-          </button>
-          <button type="button" className={`btn ${BTN_GHOST}`} onClick={onRenameCancel}>
+          </Button>
+          <Button variant="legacy-ghost" onClick={onRenameCancel}>
             Cancel
-          </button>
+          </Button>
         </form>
       ) : (
         <>
@@ -225,43 +182,34 @@ function BranchRow({
             }
             className="inline-flex flex-1 min-w-0"
           >
-            <button
-              type="button"
+            <GitBranchSelect
               data-testid="branch-select"
               aria-label={`Switch to ${branch.name}`}
               disabled={busy || switchReason !== null || remote}
               onClick={onSwitch}
-              className="flex flex-1 min-w-0 items-center gap-2 bg-transparent border-0 p-0 text-left text-inherit disabled:opacity-55 disabled:cursor-not-allowed"
             >
-              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[length:var(--tr-text-xs)]">
+              <GitBranchNameText>
                 {branch.name}
-              </span>
+              </GitBranchNameText>
               <BranchBadges branch={branch} />
-            </button>
+            </GitBranchSelect>
           </Tooltip>
           {note && (
-            <Tooltip label={note} className="inline-flex max-w-[40%]">
-              <span
-                data-testid="branch-note"
-                className="flex-none overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--tr-text-xs)] text-[var(--text-faint)]"
-              >
-                {note}
-              </span>
-            </Tooltip>
+            <span data-testid="branch-note"><GitBranchNote label={note} /></span>
           )}
           {!remote && (
             <>
               <Tooltip label="Rename" className="inline-flex">
-                <button
+                <Button
                   type="button"
+                  variant="legacy-ghost-icon"
                   data-testid="branch-rename"
                   aria-label={`Rename ${branch.name}`}
                   disabled={busy}
                   onClick={onStartRename}
-                  className={`btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`}
                 >
                   <Icon glyph={IconPencil} role="label" />
-                </button>
+                </Button>
               </Tooltip>
               <DeleteBranchControl
                 branch={branch}
@@ -275,7 +223,7 @@ function BranchRow({
           )}
         </>
       )}
-    </div>
+    </GitBranchRow>
   )
 }
 
@@ -327,59 +275,41 @@ export function BranchesDialog({
         onClose={onClose}
         footer={
           <>
-            <button
-              className={`btn ${BTN_GHOST}`}
+            <Button
+              variant="legacy-ghost"
               data-testid="branches-refresh"
               disabled={busy}
               onClick={onRefresh}
             >
               <Icon glyph={IconRefresh} role="small" />
               Refresh
-            </button>
-            <button className={`btn ${BTN_GHOST}`} onClick={onClose}>
+            </Button>
+            <Button variant="legacy-ghost" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </>
         }
       >
         {error && (
-          <div
-            role="alert"
-            data-testid="branches-error"
-            className="flex items-start gap-1.5 py-2 px-3 rounded-[var(--tr-radius-sm)] border border-[color-mix(in_srgb,var(--danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--danger)_11%,transparent)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)]"
-          >
-            <span className="flex-none text-[var(--danger)] pt-0.5">
-              <Icon glyph={IconAlertTriangle} role="small" />
-            </span>
-            <span>{error}</span>
-          </div>
+          <Notice tone="danger" variant="callout" data-testid="branches-error">{error}</Notice>
         )}
 
-        <div className="flex flex-col gap-2 p-2.5 rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--content-bg)]">
-          <div className={FIELD_LABEL}>New branch</div>
-          <div className="flex items-center gap-2">
-            <input
+        <GitBranchCreateSurface>
+          <GitRefFieldLabel>New branch</GitRefFieldLabel>
+          <GitBranchCreateRow>
+            <GitRefInput
               ref={nameRef}
               data-testid="branch-new-name"
               aria-label="New branch name"
-              className={`${FIELD_INPUT} flex-1 min-w-0`}
+              className="flex-1 min-w-0"
               placeholder="feat/thing"
               value={newName}
               spellCheck={false}
               onChange={(e) => setNewName(e.target.value)}
             />
-            <div className="w-[150px] flex-none">
-              <Select
-                value={base}
-                options={baseOptions}
-                onChange={setBase}
-                aria-label="Base ref"
-                data-testid="branch-new-base"
-                disabled={busy}
-              />
-            </div>
-            <button
-              className={`btn ${BTN_PRIMARY}`}
+            <GitBaseSelect value={base} options={baseOptions} onChange={setBase} label="Base ref" disabled={busy} />
+            <Button
+              variant="legacy-primary"
               data-testid="branch-new-create"
               disabled={createDisabled}
               onClick={() => {
@@ -389,22 +319,21 @@ export function BranchesDialog({
               }}
             >
               Create
-            </button>
-          </div>
-          <div className="flex items-center gap-1.5 text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)]">
+            </Button>
+          </GitBranchCreateRow>
+          <div className="flex items-center gap-1.5">
             <Toggle on={switchToNew} onChange={setSwitchToNew} data-testid="branch-new-switch" />
-            <span>Switch to it after creating</span>
+            <Text size="small" tone="secondary">Switch to it after creating</Text>
           </div>
-          <p className="m-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+          <GitBranchHelpText>
             Switching checks the branch out in this workspace. Git refuses when uncommitted changes
             would be overwritten; commit or stash them first.
-          </p>
-        </div>
+          </GitBranchHelpText>
+        </GitBranchCreateSurface>
 
-        <input
+        <GitRefInput
           data-testid="branches-filter"
           aria-label="Filter branches"
-          className={FIELD_INPUT}
           placeholder="Filter branches…"
           value={query}
           spellCheck={false}
@@ -412,11 +341,11 @@ export function BranchesDialog({
           onKeyDown={(e) => e.stopPropagation()}
         />
 
-        <div role="list" data-testid="branches-list" className="flex flex-col">
+        <GitBranchList>
           {rows.length === 0 ? (
-            <p className="m-0 px-2 py-3 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+            <GitBranchEmptyText>
               No branch matches “{query}”.
-            </p>
+            </GitBranchEmptyText>
           ) : (
             rows.map(({ branch, note, remote }) => (
               <BranchRow
@@ -451,18 +380,18 @@ export function BranchesDialog({
               />
             ))
           )}
-        </div>
+        </GitBranchList>
 
         {truncated && (
-          <p className="m-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+          <GitBranchHelpText>
             The listing hit the daemon&rsquo;s 200-ref cap; filter to find the rest.
-          </p>
+          </GitBranchHelpText>
         )}
         {remotes.length > 0 && (
-          <p className="m-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
+          <GitBranchHelpText>
             Remote-tracking branches are shown for reference. Switching to one with no local twin
             would need a local branch first.
-          </p>
+          </GitBranchHelpText>
         )}
       </GitDialogShell>
       {deleting && (
