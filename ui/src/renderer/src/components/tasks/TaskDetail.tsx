@@ -4,6 +4,7 @@ import type { SessionInfo } from '../../houston/client'
 import type { TaskAcceptanceItem } from '../../houston/generated/TaskAcceptanceItem'
 import type { TaskComment } from '../../houston/generated/TaskComment'
 import type { TaskHistoryEntry } from '../../houston/generated/TaskHistoryEntry'
+import type { TaskLink } from '../../houston/generated/TaskLink'
 import type { TaskPatch } from '../../houston/generated/TaskPatch'
 import type { TaskPriority } from '../../houston/generated/TaskPriority'
 import type { TaskRun } from '../../houston/generated/TaskRun'
@@ -11,6 +12,7 @@ import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
+import { openExternal } from '../../houston/bridge'
 import { BTN_GHOST, BTN_SECONDARY } from '../buttonChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from '../Icon'
@@ -186,6 +188,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             </span>
           )}
         </div>
+        <TaskLinks links={task.links} />
         <SectionHeading heading="Description" />
         <textarea
           className="tk-desc-input"
@@ -285,8 +288,32 @@ function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTi
         onCheck={(item, isChecked) => props.onCheck(task.id, item, isChecked)}
       /></TaskDrawerCard>
       {task.origin?.kind === 'harness_finding' && <TaskDrawerOrigin><Chip variant="compound" label={`From Harness finding · ${task.origin.key}`} /></TaskDrawerOrigin>}
+      <TaskLinks links={task.links} />
     </div>
   </TaskDetailFrame>
+}
+
+const LINK_PROVIDER_LABEL: Record<string, string> = { slack: 'Slack', github: 'GitHub' }
+
+/** The external items a task mirrors; a chip opens the item's page. */
+function TaskLinks({ links }: { links: TaskLink[] }): React.JSX.Element | null {
+  if (links.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-[var(--space-1)]" data-testid="task-links">
+      {links.map((link) => {
+        const label = `${LINK_PROVIDER_LABEL[link.provider] ?? link.provider} · ${link.external_id}`
+        const url = link.url
+        return (
+          <Chip
+            key={`${link.provider}:${link.external_id}`}
+            variant="compound"
+            label={label}
+            onClick={url ? () => void openExternal(url) : undefined}
+          />
+        )
+      })}
+    </div>
+  )
 }
 
 function commitTitle({ title, task, onSave, setTitle }: {

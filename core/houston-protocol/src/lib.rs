@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 126;
+pub const PROTOCOL_VERSION: u32 = 127;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -757,6 +757,28 @@ pub struct TaskSummary {
     pub origin: Option<TaskOrigin>,
 }
 
+/// One external item a task mirrors: a Slack request or a GitHub issue.
+/// `(provider, external_id)` is unique across the backlog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskLink {
+    /// `slack` or `github`.
+    pub provider: String,
+    /// `<channel>:<ts>` for Slack, `<owner>/<repo>#<number>` for GitHub.
+    pub external_id: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub url: Option<String>,
+    /// When Houston last read the item.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub fetched_at_ms: Option<i64>,
+    /// When Houston last wrote to the item.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub synced_at_ms: Option<i64>,
+}
+
 /// One task with its full text. Every mutation bumps `revision`, so a client
 /// that read one can tell its edit is stale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -790,6 +812,9 @@ pub struct Task {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub origin: Option<TaskOrigin>,
+    /// The external items this task mirrors, oldest first.
+    #[serde(default)]
+    pub links: Vec<TaskLink>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

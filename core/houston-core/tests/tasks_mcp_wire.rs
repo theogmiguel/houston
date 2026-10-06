@@ -784,3 +784,41 @@ async fn unassigned_tasks_are_visible_and_claim_assigns_the_callers_workspace() 
         .iter()
         .any(|entry| entry.action == "houston:claim-assign"));
 }
+
+#[tokio::test]
+async fn a_tasks_links_reach_task_get_and_the_http_door() {
+    let r = rig().await;
+    let pane = r.pane();
+    let token = r.token_for(pane);
+    ok_call(r.addr, &token, "task_create", json!({ "title": "Linked" })).await;
+    // The row a Slack filing writes.
+    rusqlite::Connection::open(r._state.path().join("test.db"))
+        .unwrap()
+        .execute(
+            "INSERT INTO backlog_task_links (task_id, provider, external_id, url, fetched_at) \
+             VALUES (1, 'slack', 'C1:1800000000.000100', 'https://example.test/p1', 5)",
+            [],
+        )
+        .unwrap();
+
+    let detail = ok_call(r.addr, &token, "task_get", json!({ "id": "HOU-1" })).await;
+    assert_eq!(
+        detail["task"]["links"],
+        json!([{
+            "provider": "slack",
+            "external_id": "C1:1800000000.000100",
+            "url": "https://example.test/p1",
+            "fetched_at_ms": 5,
+            "synced_at_ms": null,
+        }]),
+        "{detail}"
+    );
+    // `hs-task show` prints this route's reply.
+    let (status, shown) = request(r.addr, "GET", "/task/get?key=HOU-1", &token, None).await;
+    assert_eq!(status, 200, "{shown}");
+    assert_eq!(
+        shown["task"]["links"][0]["external_id"], "C1:1800000000.000100",
+        "{shown}"
+    );
+}
+

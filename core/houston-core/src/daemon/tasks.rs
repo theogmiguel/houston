@@ -12,7 +12,8 @@ use reqwest::Url;
 use super::{bracketed_paste, now_unix, now_unix_ms, CreatedWorktree, Daemon, MAX_TITLE_LEN};
 use crate::db::{
     ManagedWorktreeRow, SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow,
-    TaskQuery, TaskRow, TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
+    TaskLinkRow, TaskQuery, TaskRow, TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate,
+    TaskWrite,
 };
 
 /// The display prefix of a task number; `HOU-1`, `HOU-2`, ...
@@ -423,6 +424,17 @@ impl Daemon {
             updated_at_ms: row.updated_at_ms,
             archived_at_ms: row.archived_at_ms,
             origin: None,
+            links: Vec::new(),
+        }
+    }
+
+    fn task_link_to_wire(row: TaskLinkRow) -> proto::TaskLink {
+        proto::TaskLink {
+            provider: row.provider,
+            external_id: row.external_id,
+            url: row.url,
+            fetched_at_ms: row.fetched_at_ms,
+            synced_at_ms: row.synced_at_ms,
         }
     }
 
@@ -566,6 +578,12 @@ impl Daemon {
             .collect();
         let mut task = Self::task_to_wire(row);
         task.origin = self.db.harness_task_origin(id)?;
+        task.links = self
+            .db
+            .task_links(id)?
+            .into_iter()
+            .map(Self::task_link_to_wire)
+            .collect();
         Ok(proto::ServerMsg::TaskDetail {
             task,
             acceptance,
@@ -1921,7 +1939,12 @@ impl Daemon {
     }
 
     /// The untrusted task data every brief wraps between the explicit markers.
-    fn task_data_block(row: &TaskRow, acceptance: &[TaskAcceptanceRow]) -> String {
+    /// Links are data too: an external item's address, never an instruction.
+    fn task_data_block(
+        row: &TaskRow,
+        acceptance: &[TaskAcceptanceRow],
+        links: &[TaskLinkRow],
+    ) -> String {
         let mut block = String::from(TASK_DATA_OPEN);
         block.push('\n');
         if !row.description.trim().is_empty() {
@@ -1933,6 +1956,17 @@ impl Daemon {
             for item in acceptance {
                 block.push_str("- [ ] ");
                 block.push_str(item.text.trim());
+                block.push('\n');
+            }
+        }
+        if !links.is_empty() {
+            block.push_str("\nLinks:\n");
+            for link in links {
+                block.push_str(&format!("- {} {}", link.provider, link.external_id));
+                if let Some(url) = &link.url {
+                    block.push(' ');
+                    block.push_str(url);
+                }
                 block.push('\n');
             }
         }
@@ -1966,6 +2000,7 @@ impl Daemon {
         key: &str,
         row: &TaskRow,
         acceptance: &[TaskAcceptanceRow],
+        links: &[TaskLinkRow],
         branch: &str,
         followup: Option<&str>,
         slack_note: Option<&str>,
@@ -1983,7 +2018,7 @@ impl Daemon {
             row.id,
             row.title.trim(),
         );
-        brief.push_str(&Self::task_data_block(row, acceptance));
+        brief.push_str(&Self::task_data_block(row, acceptance, links));
         if let Some(followup) = followup {
             brief.push_str(followup);
         }
@@ -2006,6 +2041,7 @@ impl Daemon {
         key: &str,
         row: &TaskRow,
         acceptance: &[TaskAcceptanceRow],
+        links: &[TaskLinkRow],
         branch: &str,
         findings: Option<&str>,
     ) -> String {
@@ -2023,7 +2059,7 @@ impl Daemon {
             row.id,
             row.title.trim(),
         );
-        brief.push_str(&Self::task_data_block(row, acceptance));
+        brief.push_str(&Self::task_data_block(row, acceptance, links));
         if let Some(findings) = findings {
             brief.push_str(&Self::task_findings_block(key, findings));
         }
@@ -2189,11 +2225,13 @@ impl Daemon {
         let now = now_unix_ms();
         let key = Self::task_key(row.number);
         let acceptance = self.db.task_acceptance(row.id)?;
+        let links = self.db.task_links(row.id)?;
         let slack_note = self.slack_brief_note(row);
         let brief = Self::task_brief(
             &key,
             row,
             &acceptance,
+            &links,
             &created.branch,
             followup,
             slack_note.as_deref(),
@@ -2486,11 +2524,13 @@ impl Daemon {
         // The cap is checked before anything is created, so a refused Start
         // leaves no worktree or branch behind.
         let acceptance = self.db.task_acceptance(id)?;
+        let links = self.db.task_links(id)?;
         let slack_note = self.slack_brief_note(&row);
         let brief = Self::task_brief(
             &key,
             &row,
             &acceptance,
+            &links,
             &branch,
             None,
             slack_note.as_deref(),
@@ -3057,7 +3097,8 @@ impl Daemon {
         let task_slug = format!("{}-{slug}", crate::git::ref_slug(&key));
         let branch = crate::worktrees::branch_for_task(&task_slug);
         let acceptance = self.db.task_acceptance(id)?;
-        let brief = Self::task_child_brief(&key, &row, &acceptance, &branch, findings);
+        let links = self.db.task_links(id)?;
+        let brief = Self::task_child_brief(&key, &row, &acceptance, &links, &branch, findings);
         if brief.len() > proto::TASK_BRIEF_MAX_BYTES {
             return Ok(Self::task_limit_refused(
                 Some(id),
@@ -3095,7 +3136,9 @@ impl Daemon {
         let now = now_unix_ms();
         let key = Self::task_key(row.number);
         let acceptance = self.db.task_acceptance(row.id)?;
-        let brief = Self::task_child_brief(&key, row, &acceptance, &created.branch, findings);
+        let links = self.db.task_links(row.id)?;
+        let brief =
+            Self::task_child_brief(&key, row, &acceptance, &links, &created.branch, findings);
         if brief.len() > proto::TASK_BRIEF_MAX_BYTES {
             return Ok(Self::task_limit_refused(
                 Some(row.id),

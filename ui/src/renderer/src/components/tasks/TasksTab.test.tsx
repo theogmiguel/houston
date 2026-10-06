@@ -22,7 +22,7 @@ vi.mock('../../houston/useTasks', () => ({
 const TASK: Task = {
   id: 7, workspace: null, number: 7, key: 'HOU-7', title: 'Global task', description: '',
   status: 'todo', priority: 'none', parent_id: null, ref_url: null, revision: 1,
-  created_by: 'user', created_at_ms: 1, updated_at_ms: 1, archived_at_ms: null
+  created_by: 'user', created_at_ms: 1, updated_at_ms: 1, archived_at_ms: null, links: []
 }
 const WORKSPACES = [{ path: '/project', name: 'Project' }, { path: '/other', name: 'Other' }]
 

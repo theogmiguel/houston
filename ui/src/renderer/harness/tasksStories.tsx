@@ -120,7 +120,8 @@ const DETAIL: TaskDetailData = {
     created_by: 'user',
     created_at_ms: NOW - 2 * HOUR,
     updated_at_ms: NOW - 2 * MINUTE,
-    archived_at_ms: null
+    archived_at_ms: null,
+    links: []
   },
   acceptance: [
     acceptance(1, 0, 'Control characters are rejected', true),

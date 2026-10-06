@@ -137,7 +137,7 @@ describe('Start places the pane the daemon creates', () => {
     act(() => taskTitle()!.click())
     deliverClientMsg('task_detail', {
       type: 'task_detail',
-      task: { ...TASK, description: '' },
+      task: { ...TASK, description: '', links: [] },
       acceptance: [],
       comments: [],
       history: [],

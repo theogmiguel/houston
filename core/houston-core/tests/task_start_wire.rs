@@ -625,3 +625,41 @@ async fn start_requires_workspace_and_can_assign_an_unassigned_task() {
     let session = r.runs()[0].session_id.unwrap();
     r.daemon.kill(session).unwrap();
 }
+
+#[tokio::test]
+async fn a_linked_tasks_brief_carries_its_links_as_data() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("start-links").await;
+    let id = r.create_task("Linked work", "Body.", &["It works"]);
+    rusqlite::Connection::open(r.db_path())
+        .unwrap()
+        .execute(
+            "INSERT INTO backlog_task_links (task_id, provider, external_id, url, fetched_at) \
+             VALUES (?1, 'slack', 'C1:1800000000.000100', 'https://example.test/p1', 5)",
+            [id],
+        )
+        .unwrap();
+    let proto::ServerMsg::TaskDetail { task, .. } = r.daemon.task_get(id).unwrap() else {
+        panic!("expected TaskDetail");
+    };
+    assert_eq!(task.links.len(), 1, "{:?}", task.links);
+    assert_eq!(task.links[0].provider, "slack");
+
+    r.daemon
+        .task_start(id, proto::AgentKind::Grok, None)
+        .unwrap();
+    let session = r.runs()[0].session_id.unwrap();
+    let out = r.await_output(session, "FIXTURE-READY").await;
+    // The last opening marker starts the block; the first names it in prose.
+    let data = out
+        .rsplit("<<<HOUSTON-TASK-DATA")
+        .next()
+        .and_then(|rest| rest.split("HOUSTON-TASK-DATA>>>").next())
+        .unwrap_or_else(|| panic!("the brief has a data block: {out:?}"));
+    assert!(
+        data.contains("Links:")
+            && data.contains("slack C1:1800000000.000100 https://example.test/p1"),
+        "the link sits inside the untrusted block: {data:?}"
+    );
+}
+
