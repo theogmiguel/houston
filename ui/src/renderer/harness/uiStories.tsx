@@ -234,7 +234,7 @@ import {
   FeedbackBanner,
   DetailState,
   EmptyPane,
-  FieldSwitch,
+  Switch,
   IconAction,
   BackBar,
   SupportingNote,
@@ -292,7 +292,7 @@ import { PaneTitle } from '../src/components/ui/PaneTitle'
 import { PaneHeadActions, PaneHeadBadge, PaneHeadButton } from '../src/components/ui/PaneControls'
 import { BackdropLayerSpecimen, ContextMeterSpecimen, SaveStateMarkSpecimen, SplitButtonSpecimen, StatusNoteSpecimen } from '../src/components/ui'
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
-import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelSwitch, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
+import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
 import logoUrl from '../src/assets/logo-chrome.svg'
 
@@ -308,7 +308,7 @@ function SkillsChromeSpecimen(): React.JSX.Element {
         <PanelButton>Secondary action</PanelButton>
         <PanelButton tone="primary">Primary action</PanelButton>
         <PanelIconButton aria-label="Refresh"><IconClose /></PanelIconButton>
-        <PanelSwitch on={enabled} label="Automatic distribution" onChange={setEnabled} />
+        <Switch size="panel" on={enabled} label="Automatic distribution" onChange={setEnabled} />
         <PanelChoiceGroup>
           <PanelChoice pressed>Claude</PanelChoice>
           <PanelChoice pressed={false}>Codex</PanelChoice>
@@ -1407,8 +1407,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
               <FeedbackBanner tone="error" icon={<IconAlertTriangle />}>Error message</FeedbackBanner>
             </div>
             <div className="flex items-center gap-[var(--space-3)]">
-              <FieldSwitch on label="Enabled" onChange={noop} />
-              <FieldSwitch on={false} label="Disabled" onChange={noop} />
+              <Switch size="field" on label="Enabled" onChange={noop} />
+              <Switch size="field" on={false} label="Disabled" onChange={noop} />
               <IconAction aria-label="Open"><Icon glyph={IconFolder} role="small" /></IconAction>
               <IconAction aria-label="Delete" danger><Icon glyph={IconFolder} role="small" /></IconAction>
             </div>

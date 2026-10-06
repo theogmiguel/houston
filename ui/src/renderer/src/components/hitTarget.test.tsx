@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Chip } from './ui/Chip'
 import { Segmented } from './ui/SegmentedControl'
 import { Disclosure } from './ui/Disclosure'
-import { FieldSwitch } from './ui/navPrimitives'
+import { Switch } from './ui/Switch'
 import { Toggle } from './ui/settingsPrimitives'
 import { HIT_TARGET_28 } from './hitTarget'
 
@@ -78,7 +78,7 @@ describe('hit targets — charter §10 density floor', () => {
 
   it("FieldSwitch's 17px track hits the floor without growing", () => {
     act(() => {
-      root.render(<FieldSwitch on={false} label="Orchestration" onChange={() => {}} />)
+      root.render(<Switch size="field" on={false} label="Orchestration" onChange={() => {}} />)
     })
     const theme = readFileSync(resolve(__dirname, '..', 'theme.css'), 'utf8')
     expect(theme).toMatch(/--h-switch-track:\s*17px;/)

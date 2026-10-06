@@ -13,7 +13,8 @@ import { StatusIcon, type StatusIconState } from '../ui/StatusIcon'
 import { Tooltip } from '../ui/Tooltip'
 import { Text } from '../ui/Text'
 import { PaneHeaderButton } from '../ui/PaneHeaderButton'
-import { CenteredStatus, CompactSwitch, EmptyPanel, HookNotice, HookPath } from '../ui/SettingsStatus'
+import { CenteredStatus, EmptyPanel, HookNotice, HookPath } from '../ui/SettingsStatus'
+import { Switch } from '../ui/Switch'
 
 export const HOOK_COPY: Record<string, { label: string; writes: string }> = {
   claude: {
@@ -84,7 +85,7 @@ function switchFor(
   testId: string
 ): React.JSX.Element {
   return (
-    <CompactSwitch
+    <Switch size="status"
       on={state.enabled}
       disabled={pending || !state.present}
       label={

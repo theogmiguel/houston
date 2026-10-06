@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, Re
 import { IconChevronDown, IconChevronLeft } from '../icons'
 import { Icon } from './Icon'
 import { Text } from './Text'
-export { PanelFootnote, PanelIconButton, PanelSwitch, type PanelIconButtonProps, type PanelSwitchProps } from './PanelInlineControls'
+export { PanelFootnote, PanelIconButton, type PanelIconButtonProps } from './PanelInlineControls'
 
 const BUTTON_BASE = 'btn inline-flex items-center justify-center gap-[var(--space-panel-button-gap)] min-h-[var(--h-ctl)] px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
 

@@ -7,7 +7,6 @@ export {
   DetailState,
   EmptyPane,
   FeedbackBanner,
-  FieldSwitch,
   SupportingNote,
   BackBar as NavBack,
   ContentColumn as NavColumn,
@@ -15,7 +14,6 @@ export {
   EmptyPane as NavEmpty,
   FeedbackBanner as NavFeedback,
   SupportingNote as NavFootnote,
-  FieldSwitch as NavSwitch
 } from '../ui/navPrimitives'
 
 export const BLOCK =
