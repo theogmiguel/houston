@@ -8,7 +8,7 @@ import type { SessionInfo } from '../src/houston/client'
 const noop = (): void => {}
 
 const MARKDOWN = '# Goal\nShip the **roster** conversion.\n\n## Done\n- Moved `children-row` rules\n- Kept the hooks\n\n```\nbun run typecheck\n```\n\n### Next\nRun the pixel diff.'
-const STATIC_MOTION = <style>{`.b5b-static *, .b5b-static *::before, .b5b-static *::after { animation: none !important; transition: none !important; }`}</style>
+const STATIC_MOTION = <style>{`.orchestration-static *, .orchestration-static *::before, .orchestration-static *::after { animation: none !important; transition: none !important; }`}</style>
 
 function handoffState(over: Partial<HandoffUiState>): HandoffUiState {
   return { request: 1, session: 1, sessionTitle: 'Review API changes', provider: 'Claude Code', phase: 'done', text: '', markdown: MARKDOWN, savedPath: '', error: '', ...over }
@@ -18,9 +18,9 @@ function Cell({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <div style={{ position: 'relative', height: 390, border: '1px solid var(--border)' }}>{children}</div>
 }
 
-export function B5bHandoffStatesStory(): React.JSX.Element {
+export function HandoffStatesStory(): React.JSX.Element {
   return (
-    <div className="b5b-static" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: 8, height: '100%', background: 'var(--content-bg)' }}>
+    <div className="orchestration-static" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: 8, height: '100%', background: 'var(--content-bg)' }}>
       {STATIC_MOTION}
       <Cell><HandoffOverlay state={handoffState({ phase: 'generating', markdown: '' })} onCancel={noop} onClose={noop} onPaste={noop} /></Cell>
       <Cell><HandoffOverlay state={handoffState({ phase: 'generating', text: MARKDOWN, markdown: '' })} onCancel={noop} onClose={noop} onPaste={noop} /></Cell>
@@ -30,13 +30,13 @@ export function B5bHandoffStatesStory(): React.JSX.Element {
   )
 }
 
-export function B5bPaneHandoffSelectedStory(): React.JSX.Element {
+export function PaneHandoffSelectedStory(): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>('[data-agent="codex"]')?.click()
   }, [])
   return (
-    <div ref={ref} className="b5b-static">
+    <div ref={ref} className="orchestration-static">
       {STATIC_MOTION}
       <PaneHandoff source={{ session: 1, agent: 'claude', title: 'Review API changes', cwd: '/home/dev/acme', conversation: 'We have finished the API review.' }} onCancel={noop} onHandoff={noop} />
     </div>
@@ -45,10 +45,10 @@ export function B5bPaneHandoffSelectedStory(): React.JSX.Element {
 
 const OPTIONS = [{ id: 'tests', label: 'Add regression tests' }, { id: 'docs', label: 'Update the docs' }, { id: 'perf', label: 'Measure the render path before changing it so the numbers settle the argument' }]
 
-export function B5bQuestionStatesStory(): React.JSX.Element {
+export function QuestionStatesStory(): React.JSX.Element {
   const common = { questionIndex: 1, questionCount: 3, question: 'Which change should land first?', onSkip: noop }
   return (
-    <div className="b5b-static" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, padding: 12, alignItems: 'start', background: 'var(--content-bg)' }}>
+    <div className="orchestration-static" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, padding: 12, alignItems: 'start', background: 'var(--content-bg)' }}>
       {STATIC_MOTION}
       <QuestionCard {...common} body="multi-select" options={OPTIONS} selectedIds={['tests', 'perf']} onToggleOption={noop} />
       <QuestionCard {...common} body="single-select" options={OPTIONS} selectedId="docs" onSelectOption={noop} disabled disabledReason="Answered elsewhere" />
@@ -87,7 +87,7 @@ function Anchored({ left, top = 20, kind, info }: { left: number; top?: number; 
     <>
       <button ref={anchorRef} style={{ position: 'absolute', top, left, width: 80, height: 24 }}>anchor</button>
       <DelegationPanel
-        cardRef={cardRef} id={`b5b-${kind}-${info.id}`} label="Delegation" anchorRef={anchorRef} kind={kind} info={info}
+        cardRef={cardRef} id={`orchestration-${kind}-${info.id}`} label="Delegation" anchorRef={anchorRef} kind={kind} info={info}
         roster={{ sessions: new Map([PARENT, ...CREW].map((s) => [s.id, s])), maxLiveChildren: 3 }}
         onFocusPane={noop} onDeliverNow={noop} onClose={noop} onPointerEnter={noop} onPointerLeave={noop}
       />
@@ -102,9 +102,9 @@ function settled(id: number, state: 'failed' | 'done' | 'unknown'): SessionInfo 
   })
 }
 
-export function B5bDelegationPanelsStory(): React.JSX.Element {
+export function DelegationPanelsStory(): React.JSX.Element {
   return (
-    <div className="b5b-static" style={{ position: 'relative', height: '100%', background: 'var(--content-bg)' }}>
+    <div className="orchestration-static" style={{ position: 'relative', height: '100%', background: 'var(--content-bg)' }}>
       {STATIC_MOTION}
       <Anchored left={20} kind="origin" info={CHILD} />
       <Anchored left={420} kind="orchestrator" info={PARENT} />

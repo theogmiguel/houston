@@ -16,8 +16,8 @@ const OPEN_IN_ITEM_CLASS = 'ctx-item border-none flex items-center justify-betwe
 const previewSource = `# Release notes\n\nA paragraph with **emphasis** and [a link](https://example.com).\n\n- First item\n- Second item\n\n\`\`\`ts\nconst ready = true\n\`\`\`\n\n| Name | State |\n| --- | --- |\n| Editor | Ready |\n\n![Architecture](https://example.com/architecture.png "Architecture diagram")`
 
 function StoryFrame({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <div className="b9-story" style={{ display: 'grid', gap: 16, padding: 24, color: 'var(--text-primary)', background: 'var(--content-bg)' }}>
-    <style>{'html body *:not(style):not(script) { animation: none !important; transition: none !important; } .b9-editor-menu [role="menuitem"]:last-child { visibility: hidden; }'}</style>
+  return <div className="workbench-story" style={{ display: 'grid', gap: 16, padding: 24, color: 'var(--text-primary)', background: 'var(--content-bg)' }}>
+    <style>{'html body *:not(style):not(script) { animation: none !important; transition: none !important; } .workbench-editor-menu [role="menuitem"]:last-child { visibility: hidden; }'}</style>
     {children}
   </div>
 }
@@ -32,7 +32,7 @@ function EditorSurfaceStory(): React.JSX.Element {
     mdMode: 'preview', toggleMarkdownMode: noop, cmMenu: { x: 28, y: 28 }, setCmMenu: noop
   } as unknown as EditorSurfaceState
   const errorSurface = { ...surface, error: 'File changed on disk', cmMenu: null }
-  return <StoryFrame><div className="b9-editor-menu">
+  return <StoryFrame><div className="workbench-editor-menu">
     <EditorSurfaceBody surface={surface} />
     <EditorSurfaceBody surface={errorSurface} />
   </div></StoryFrame>
@@ -122,7 +122,7 @@ function LayoutStory(): React.JSX.Element {
   </StoryFrame>
 }
 
-export function B9MarkdownStory(): React.JSX.Element {
+export function MarkdownPreviewStory(): React.JSX.Element {
   const [ready, setReady] = React.useState(false)
   useEffect(() => {
     void loadMarkdownPipeline().then(() => setReady(true))
@@ -130,10 +130,10 @@ export function B9MarkdownStory(): React.JSX.Element {
   return <StoryFrame><div style={{ width: 440, maxHeight: 720, overflow: 'auto' }}>{ready && <MarkdownPreview source={previewSource} variant="chat" />}</div></StoryFrame>
 }
 
-export function B9EditorStory(): React.JSX.Element { return <EditorSurfaceStory /> }
-export function B9PreviewStory(): React.JSX.Element { return <EditorPreviewStory /> }
-export function B9VoiceListeningStory(): React.JSX.Element { return <VoiceStory state="listening" /> }
-export function B9VoiceTranscribingStory(): React.JSX.Element { return <VoiceStory state="transcribing" /> }
-export function B9WindowStory(): React.JSX.Element { return <WindowStory /> }
-export function B9LayoutStory(): React.JSX.Element { return <LayoutStory /> }
-export function B9OpenInStory(): React.JSX.Element { return <OpenInStory /> }
+export function EditorSurfaceMenuStory(): React.JSX.Element { return <EditorSurfaceStory /> }
+export function EditorPreviewStatesStory(): React.JSX.Element { return <EditorPreviewStory /> }
+export function DictationListeningStory(): React.JSX.Element { return <VoiceStory state="listening" /> }
+export function DictationTranscribingStory(): React.JSX.Element { return <VoiceStory state="transcribing" /> }
+export function WindowControlsStory(): React.JSX.Element { return <WindowStory /> }
+export function LayoutDropSlotsStory(): React.JSX.Element { return <LayoutStory /> }
+export function OpenInSubmenuStory(): React.JSX.Element { return <OpenInStory /> }

@@ -127,7 +127,7 @@ import {
   HarnessHistoryEmptyStory,
   HarnessFindingsDismissedStory
 } from './navStories'
-import { B5bHandoffStatesStory, B5bPaneHandoffSelectedStory, B5bQuestionStatesStory, B5bDelegationPanelsStory } from './b5bStories'
+import { HandoffStatesStory, PaneHandoffSelectedStory, QuestionStatesStory, DelegationPanelsStory } from './orchestrationStories'
 import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailStatesStory, TasksDetailStory, TasksListStatesStory, TasksListStory, TasksQueueEmptyStory, TasksQueueResultStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory, TasksStartStory } from './tasksStories'
 import { RenameTitleStory } from './renameTitleStories'
 
@@ -141,7 +141,7 @@ const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shor
 import { UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
-import { B9EditorStory, B9LayoutStory, B9MarkdownStory, B9OpenInStory, B9PreviewStory, B9VoiceListeningStory, B9VoiceTranscribingStory, B9WindowStory } from './b9Stories'
+import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
@@ -316,19 +316,19 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'boot/loading': () => <BootLoadingStory />,
   'boot/failure': () => <BootFailureStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,
-  'b5b/handoff-states': () => <B5bHandoffStatesStory />,
-  'b5b/pane-handoff-selected': () => <B5bPaneHandoffSelectedStory />,
-  'b5b/question-states': () => <B5bQuestionStatesStory />,
-  'b5b/delegation-panels': () => <B5bDelegationPanelsStory />,
+  'orchestration/handoff-states': () => <HandoffStatesStory />,
+  'orchestration/pane-handoff-selected': () => <PaneHandoffSelectedStory />,
+  'orchestration/question-states': () => <QuestionStatesStory />,
+  'orchestration/delegation-panels': () => <DelegationPanelsStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
-  'b9/markdown-preview': () => <B9MarkdownStory />,
-  'b9/editor-surface-menu': () => <B9EditorStory />,
-  'b9/editor-preview-states': () => <B9PreviewStory />,
-  'b9/dictation-listening': () => <B9VoiceListeningStory />,
-  'b9/dictation-transcribing': () => <B9VoiceTranscribingStory />,
-  'b9/window-controls-resize': () => <B9WindowStory />,
-  'b9/layout-drop-slots-splitter': () => <B9LayoutStory />,
-  'b9/open-in-submenu': () => <B9OpenInStory />,
+  'editor/markdown-preview': () => <MarkdownPreviewStory />,
+  'editor/surface-menu': () => <EditorSurfaceMenuStory />,
+  'editor/preview-states': () => <EditorPreviewStatesStory />,
+  'voice/dictation-listening': () => <DictationListeningStory />,
+  'voice/dictation-transcribing': () => <DictationTranscribingStory />,
+  'shell/window-controls-resize': () => <WindowControlsStory />,
+  'layout/drop-slots-splitter': () => <LayoutDropSlotsStory />,
+  'shell/open-in-submenu': () => <OpenInSubmenuStory />,
   'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,
   'connections/slack-reconnecting': () => <SlackConnectionsStory state="reconnecting" />,
   'connections/slack-off': () => <SlackConnectionsStory state="off" />,
