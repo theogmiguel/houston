@@ -4,7 +4,6 @@ import { ButtonRecipe } from './ButtonRecipe'
 import type { ButtonRecipeProps } from './Button'
 
 const RECIPES = {
-  outline: 'border-[var(--border)] bg-transparent text-[var(--text-primary)] hover:enabled:border-[var(--border-hover)] hover:enabled:bg-[var(--hover-fill)]',
   'picker-candidate': 'w-full min-h-0 flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] bg-transparent border-0 rounded-none text-left [font-size:inherit] [font-weight:inherit] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] disabled:opacity-55 hover:enabled:bg-[var(--card-hover)] focus-visible:outline-none focus-visible:bg-[var(--card-hover)]',
   'primary-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-55`,
   'secondary-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)]`,
@@ -47,8 +46,6 @@ export function ReviewButton({ variant, ...props }: ButtonRecipeProps & { varian
       {...props}
       recipe={RECIPES[variant]}
       recipeVariant={variant}
-      standardSize={variant === 'outline'}
-      chromeClass={variant === 'outline' ? 'rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]' : ''}
       selectedClass={SELECTED[variant as keyof typeof SELECTED]}
       unselectedClass={UNSELECTED[variant as keyof typeof UNSELECTED]}
     />
