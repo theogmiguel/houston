@@ -1,7 +1,7 @@
+import { ReviewButton } from './ReviewButtonRoles'
 import type { FormHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { Text } from './Text'
 import { TextInput } from './TextInput'
-import { Button } from './Button'
 
 function Region({ children, className, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode; className: string }): React.JSX.Element {
   return <div {...props} className={className}>{children}</div>
@@ -80,5 +80,5 @@ export function RepositoryLoadMoreRegion({ children }: { children: ReactNode }):
 }
 
 export function RepositoryBrowserSpecimen(): React.JSX.Element {
-  return <RepositoryBrowserFrame><RepositoryFilterPanel><RepositoryFilterToolbar><Button variant="outline">Open</Button><RepositoryFilterSpacer><Button variant="outline">Mine</Button></RepositoryFilterSpacer></RepositoryFilterToolbar><RepositorySearchForm><RepositorySearchField aria-label="Search repositories" placeholder="Search" /><Button variant="compact-control">Search</Button></RepositorySearchForm></RepositoryFilterPanel><RepositoryResultList><Button variant="repository-list-row"><RepositoryRowHeading><RepositoryNumber>#42</RepositoryNumber><RepositoryTitle>Keep browser sessions grouped</RepositoryTitle><RepositoryStateLabel>Open</RepositoryStateLabel></RepositoryRowHeading><RepositoryRowMeta><RepositoryRefSummary>theo · feature → main</RepositoryRefSummary><span>passing</span></RepositoryRowMeta><RepositoryLabels><span>bug</span><span>review</span></RepositoryLabels></Button></RepositoryResultList><RepositoryLoadMoreRegion><Button variant="repository-load-more-action">Load more</Button></RepositoryLoadMoreRegion></RepositoryBrowserFrame>
+  return <RepositoryBrowserFrame><RepositoryFilterPanel><RepositoryFilterToolbar><ReviewButton variant="outline">Open</ReviewButton><RepositoryFilterSpacer><ReviewButton variant="outline">Mine</ReviewButton></RepositoryFilterSpacer></RepositoryFilterToolbar><RepositorySearchForm><RepositorySearchField aria-label="Search repositories" placeholder="Search" /><ReviewButton variant="compact-control">Search</ReviewButton></RepositorySearchForm></RepositoryFilterPanel><RepositoryResultList><ReviewButton variant="repository-list-row"><RepositoryRowHeading><RepositoryNumber>#42</RepositoryNumber><RepositoryTitle>Keep browser sessions grouped</RepositoryTitle><RepositoryStateLabel>Open</RepositoryStateLabel></RepositoryRowHeading><RepositoryRowMeta><RepositoryRefSummary>theo · feature → main</RepositoryRefSummary><span>passing</span></RepositoryRowMeta><RepositoryLabels><span>bug</span><span>review</span></RepositoryLabels></ReviewButton></RepositoryResultList><RepositoryLoadMoreRegion><ReviewButton variant="repository-load-more-action">Load more</ReviewButton></RepositoryLoadMoreRegion></RepositoryBrowserFrame>
 }

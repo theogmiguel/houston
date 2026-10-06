@@ -1,3 +1,4 @@
+import { SettingsButton } from './ui/SettingsButtonRoles'
 import { useState } from 'react'
 import {
   IconPlus,
@@ -217,23 +218,23 @@ function PairListEditor({
                 onChange(next)
               }}
             />
-            <Button
+            <SettingsButton
               variant="compact-icon-danger"
               aria-label={`remove ${legend.toLowerCase()} row ${i + 1}`}
               onClick={() => onChange(pairs.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </Button>
+            </SettingsButton>
           </div>
         ))}
-        <Button
+        <SettingsButton
           variant="compact-secondary"
           className="justify-self-start"
           onClick={() => onChange([...pairs, ['', '']])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add
-        </Button>
+        </SettingsButton>
       </div>
     </div>
   )
@@ -263,23 +264,23 @@ function ArgListEditor({
                 onChange(next)
               }}
             />
-            <Button
+            <SettingsButton
               variant="compact-icon-danger"
               aria-label={`remove argument ${i + 1}`}
               onClick={() => onChange(args.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </Button>
+            </SettingsButton>
           </div>
         ))}
-        <Button
+        <SettingsButton
           variant="compact-secondary"
           className="justify-self-start"
           onClick={() => onChange([...args, ''])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add argument
-        </Button>
+        </SettingsButton>
         </div>
       </div>
       <Text as="p" size="small" tone="faint">
@@ -551,16 +552,16 @@ function McpServerForm({
           )}
 
           <div className="flex items-center gap-[var(--space-2)]">
-            <Button variant="compact-secondary" onClick={onCancel}>
+            <SettingsButton variant="compact-secondary" onClick={onCancel}>
               Cancel
-            </Button>
-            <Button
+            </SettingsButton>
+            <SettingsButton
               variant="compact-primary"
               disabled={!valid}
               onClick={() => onSubmit(serverFromForm(value))}
             >
               Save &amp; apply
-            </Button>
+            </SettingsButton>
           </div>
           <Footnote>
             Saving writes this server into your list, then applies it to the destinations above —

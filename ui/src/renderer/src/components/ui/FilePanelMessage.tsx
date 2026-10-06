@@ -1,5 +1,5 @@
+import { ReviewButton } from './ReviewButtonRoles'
 import type { HTMLAttributes, ReactNode } from 'react'
-import { Button } from './Button'
 import { Text } from './Text'
 
 export function FileRetryPanel({ children, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode }): React.JSX.Element {
@@ -15,5 +15,5 @@ export function EmptyFilesMessage({ children }: { children: ReactNode }): React.
 }
 
 export function FilePanelMessageSpecimen(): React.JSX.Element {
-  return <div className="flex flex-col gap-[var(--space-2)]"><FileRetryPanel><FileErrorMessage>The diff could not be read.</FileErrorMessage><Button variant="file-retry-action">Retry</Button></FileRetryPanel><EmptyFilesMessage>No files changed.</EmptyFilesMessage></div>
+  return <div className="flex flex-col gap-[var(--space-2)]"><FileRetryPanel><FileErrorMessage>The diff could not be read.</FileErrorMessage><ReviewButton variant="file-retry-action">Retry</ReviewButton></FileRetryPanel><EmptyFilesMessage>No files changed.</EmptyFilesMessage></div>
 }

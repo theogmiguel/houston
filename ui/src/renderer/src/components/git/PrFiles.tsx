@@ -1,3 +1,5 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { Button } from '../ui/Button'
 import { TextArea } from '../ui/TextArea'
 
@@ -53,7 +55,7 @@ function FileSection({
           return (
             <DiffHunk key={index}>
               <ReviewDiffLine kind={line.kind} drafted={draft !== undefined} oldLine={line.oldLine} newLine={line.newLine} text={line.text} action={anchor !== null && (
-                  <Button variant="diff-line-action"
+                  <ReviewButton variant="diff-line-action"
                     type="button"
                     data-testid={`pr-line-comment-${anchor.side}-${anchor.line}`}
                     aria-label={`Comment on line ${anchor.line}`}
@@ -96,13 +98,13 @@ function FileSection({
                     >
                       Add to review
                     </Button>
-                    <Button variant="legacy-secondary"
+                    <LazyLegacyButton variant="legacy-secondary"
                       type="button"
                       data-testid="pr-line-composer-cancel"
                       onClick={() => setComposer(null)}
                     >
                       Cancel
-                    </Button>
+                    </LazyLegacyButton>
                   </DiffCommentActions>
                 </DiffCommentComposer>
               )}
@@ -145,13 +147,13 @@ export function PrFiles({
         <FileErrorMessage>
           {diff?.message ?? 'The remote diff was not read.'}
         </FileErrorMessage>
-        <Button variant="file-retry-action"
+        <ReviewButton variant="file-retry-action"
           type="button"
           data-testid="pr-files-retry"
           onClick={onReload}
         >
           Retry
-        </Button>
+        </ReviewButton>
       </FileRetryPanel>
     )
   }

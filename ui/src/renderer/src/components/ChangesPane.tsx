@@ -1,3 +1,4 @@
+import { LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { DiffLoadingMark } from './ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -163,7 +164,7 @@ function ChangesStrip({
         ]}
       />
       <Tooltip label="Review with agent" className="inline-flex">
-        <Button
+        <LazyLegacyButton
           variant="legacy-secondary"
           data-testid="changes-review"
           disabled={!client || reviewBusy}
@@ -177,7 +178,7 @@ function ChangesStrip({
             <Icon glyph={IconSparkles} role="small" />
           )}
           <span className="[@container_(max-width:420px)]:hidden">Review with agent</span>
-        </Button>
+        </LazyLegacyButton>
       </Tooltip>
       <PullQuickButton
         upstream={upstream}
@@ -254,7 +255,7 @@ function CommitBox({
         </GitCommitStagedCount>
         <GitCommitButtonGroup>
           <Tooltip label={pushBlocked ?? undefined} className="inline-flex">
-            <Button
+            <LazyLegacyButton
               variant="legacy-secondary"
               data-testid="changes-push"
               disabled={pushBlocked !== null}
@@ -266,7 +267,7 @@ function CommitBox({
                 </DiffLoadingMark>
               )}
               {pushLabel(ahead)}
-            </Button>
+            </LazyLegacyButton>
           </Tooltip>
           {offerCreatePr && (
             <>
@@ -683,9 +684,9 @@ export function ChangesPane({
 
   if (statusError !== null)
     return shell(
-      <RepositoryPanelState testId="changes-error" title="Git status unavailable" icon={<Icon glyph={IconAlertTriangle} role="heading" />} action={<Button variant="legacy-secondary" onClick={refresh}>
+      <RepositoryPanelState testId="changes-error" title="Git status unavailable" icon={<Icon glyph={IconAlertTriangle} role="heading" />} action={<LazyLegacyButton variant="legacy-secondary" onClick={refresh}>
           Retry
-        </Button>}>
+        </LazyLegacyButton>}>
         {statusError}
       </RepositoryPanelState>
     )

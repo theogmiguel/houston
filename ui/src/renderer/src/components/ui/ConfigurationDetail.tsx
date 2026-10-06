@@ -1,7 +1,7 @@
+import { SettingsButton } from './SettingsButtonRoles'
 import type { ReactNode } from 'react'
 import { Text } from './Text'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { Button } from './Button'
 import { Chip, ChoiceGroup } from './Chip'
 import { Card } from './Card'
 import { FieldLabel } from './Field'
@@ -33,5 +33,5 @@ export function Footnote({ children }: { children: ReactNode }): React.JSX.Eleme
 }
 
 export function ConfigurationDetailSpecimen(): React.JSX.Element {
-  return <div className="grid gap-[var(--space-3)]"><ConfigurationDetail title="Houston's list" fingerprint="sha256:0123456789abcdef" rows={[{ label: 'transport', value: 'stdio' }, { label: 'command', value: 'npx @acme/mcp' }, { label: 'env', value: 'TOKEN=********' }]} /><ResultList><ResultRow><div className="grid gap-[var(--space-1)]"><Text size="ui" weight="semibold" tone="primary">Claude Code</Text><Text size="small" tone="danger">npx was not found on PATH</Text></div></ResultRow></ResultList><CompactSwitch on label="Enable server" onChange={() => {}} /><FieldLabel size="form">Server name</FieldLabel><TextInput size="form" surface="card" placeholder="context7" /><ChoiceGroup><Chip variant="choice" label="Claude Code" selected onClick={() => {}} /><Chip variant="choice" label="Codex" onClick={() => {}} /></ChoiceGroup><div className="flex gap-[var(--space-2)]"><Button variant="compact-secondary">Cancel</Button><Button variant="compact-primary">Save &amp; apply</Button></div><Card padding="sm">Compact detail group</Card></div>
+  return <div className="grid gap-[var(--space-3)]"><ConfigurationDetail title="Houston's list" fingerprint="sha256:0123456789abcdef" rows={[{ label: 'transport', value: 'stdio' }, { label: 'command', value: 'npx @acme/mcp' }, { label: 'env', value: 'TOKEN=********' }]} /><ResultList><ResultRow><div className="grid gap-[var(--space-1)]"><Text size="ui" weight="semibold" tone="primary">Claude Code</Text><Text size="small" tone="danger">npx was not found on PATH</Text></div></ResultRow></ResultList><CompactSwitch on label="Enable server" onChange={() => {}} /><FieldLabel size="form">Server name</FieldLabel><TextInput size="form" surface="card" placeholder="context7" /><ChoiceGroup><Chip variant="choice" label="Claude Code" selected onClick={() => {}} /><Chip variant="choice" label="Codex" onClick={() => {}} /></ChoiceGroup><div className="flex gap-[var(--space-2)]"><SettingsButton variant="compact-secondary">Cancel</SettingsButton><SettingsButton variant="compact-primary">Save &amp; apply</SettingsButton></div><Card padding="sm">Compact detail group</Card></div>
 }

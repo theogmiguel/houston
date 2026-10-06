@@ -1,6 +1,6 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { DiffLoadingMark, GitToolMenuItem, GitToolMenuSeparator, GitToolMenuSurface } from '../ui'
 import { useState } from 'react'
-import { Button } from '../ui/Button'
 import { IconEllipsis, IconGitBranch, IconGitFork, IconHistory, IconRefresh, IconArrowDown } from '../icons'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
@@ -40,7 +40,7 @@ export function GitToolsMenu({
   return (
     <div className="relative inline-flex" data-testid="git-tools">
       <Tooltip label="Git tools" className="inline-flex">
-        <Button
+        <LazyLegacyButton
           variant="legacy-secondary"
           data-testid="git-tools-menu"
           aria-haspopup="menu"
@@ -56,7 +56,7 @@ export function GitToolsMenu({
           ) : (
             <Icon glyph={IconEllipsis} role="small" />
           )}
-        </Button>
+        </LazyLegacyButton>
       </Tooltip>
       {open && (
         <GitToolMenuSurface>
