@@ -40,7 +40,7 @@ describe('hit targets — charter §10 density floor', () => {
     act(() => {
       root.render(<Chip variant="removable" label="claude-opus-5" onRemove={() => {}} />)
     })
-    expectExpandedHitArea(container.querySelector('button[aria-label^="Remove"]'), 'h-[16px]')
+    expectExpandedHitArea(container.querySelector('button[aria-label^="Remove"]'), 'h-[var(--h-chip-dismiss)]')
   })
 
   it("Segmented's retry keeps its 22px box and hit-tests to the floor", () => {
@@ -89,6 +89,6 @@ describe('hit targets — charter §10 density floor', () => {
     act(() => {
       root.render(<Toggle on={false} onChange={() => {}} />)
     })
-    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[20px]')
+    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[var(--h-settings-switch)]')
   })
 })

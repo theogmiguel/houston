@@ -49,7 +49,6 @@ export function TagEditorButton({
   variant,
   ...rest
 }: { variant: 'ghost' | 'primary' } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
-  const chrome = variant === 'ghost' ? BTN_GHOST : BTN_PRIMARY
   const { children, ...buttonProps } = rest
-  return <button {...buttonProps} type="button" className={`btn ${chrome} px-[var(--space-3)] py-[var(--space-tag-editor-button-block)] rounded-[var(--tr-radius-button)] ${variant === 'primary' ? 'disabled:opacity-45 disabled:cursor-default' : ''}`}><Text size="small" weight="semibold">{children}</Text></button>
+  return <button {...buttonProps} type="button" className={`btn ${variant === 'ghost' ? BTN_GHOST : BTN_PRIMARY} px-[var(--space-3)] py-[var(--space-tag-editor-button-block)] rounded-[var(--tr-radius-button)] ${variant === 'primary' ? 'disabled:opacity-45 disabled:cursor-default' : ''}`}><Text size="small" weight="semibold">{children}</Text></button>
 }
