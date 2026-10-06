@@ -376,12 +376,33 @@ impl Db {
             .optional()?)
     }
 
+    /// Binds the request to its task and records the task's link to it, in one
+    /// transaction, so a filed request is never without its link.
     pub fn intake_set_task(&self, id: i64, task_id: i64, permalink: Option<&str>) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE intake_events SET task_id = ?2, permalink = ?3 WHERE id = ?1",
             rusqlite::params![id, task_id, permalink],
         )?;
+        let (source, external_id, created_at): (String, String, i64) = tx.query_row(
+            "SELECT source, external_id, created_at FROM intake_events WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        super::task_links::insert_link(
+            &tx,
+            &super::TaskLinkWrite {
+                task_id,
+                provider: &source,
+                external_id: &external_id,
+                url: permalink,
+                fetched_at_ms: Some(created_at),
+                body_hash: None,
+                remote_rev: None,
+            },
+        )?;
+        tx.commit()?;
         Ok(())
     }
 

@@ -18,6 +18,8 @@ pub use intake::{
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
+mod task_links;
+pub use task_links::{TaskLinkRow, TaskLinkWrite};
 mod tasks;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
@@ -1596,6 +1598,7 @@ impl Db {
         harness::migrate(&conn)?;
         tasks::migrate(&conn)?;
         intake::migrate(&conn)?;
+        task_links::migrate(&conn)?;
         add_column_if_missing(
             &conn,
             "routines",

@@ -579,6 +579,23 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
         tasks[0].2.as_deref().is_some_and(|u| u.contains(CHANNEL)),
         "permalink as ref_url: {tasks:?}"
     );
+    let link: (i64, String, String, Option<String>) = r
+        .db()
+        .query_row(
+            "SELECT task_id, provider, external_id, url FROM backlog_task_links",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("the filed request is linked to its task");
+    assert_eq!(
+        (link.0, link.1.as_str(), link.2.as_str()),
+        (
+            tasks[0].0,
+            "slack",
+            format!("{CHANNEL}:1800000000.000100").as_str()
+        ),
+    );
+    assert_eq!(link.3, tasks[0].2, "the link carries the permalink");
     r.fake.await_reactions("1800000000.000100", &["eyes"]).await;
     let dm = r.fake.await_dm("Novo pedido").await;
     assert_eq!(
