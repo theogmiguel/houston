@@ -478,6 +478,18 @@ export function UiPrimitivesStory(): React.JSX.Element {
           />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Table — Muted row">
+          <Table
+            aria-label="Rows that need no action"
+            density="compact"
+            variant="framed"
+            rows={[{ name: 'Needs a decision', state: 'Ready' }, { name: 'Needs no action', state: 'Kept' }]}
+            getRowId={(row) => row.name}
+            rowTone={(row) => (row.state === 'Kept' ? 'muted' : 'default')}
+            columns={[{ key: 'name', header: 'Row' }, { key: 'state', header: 'State' }]}
+          />
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Usage chart, calendar and shares">
           <UsageSectionHeading fullWidth aside="Premium $121.40">Cost by speed</UsageSectionHeading>
           <UsageProviderRow mark="✳" label="Claude Code" sessions={172} amount="$2,071.40" note="83.3% of cost · 4.1B tokens" color="var(--claude)" />

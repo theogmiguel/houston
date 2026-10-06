@@ -48,11 +48,9 @@ export function WorktreeCleanupSection({
       key: 'branch' as const,
       header: 'Worktree',
       render: (_branch, row) => (
-        <span>
+        <span className="grid">
           <Caption variant="code">{row.branch}{row.pr !== null && ` #${row.pr}`}</Caption>
-          <br />
           <Caption tone="faint" variant="code">{row.path}</Caption>
-          <br />
           <Caption tone="faint">{row.reason}</Caption>
         </span>
       )
