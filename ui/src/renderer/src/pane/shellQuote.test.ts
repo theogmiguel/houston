@@ -9,7 +9,9 @@ describe('shellQuote', () => {
       encoding: 'utf8'
     })
     expect(out).toBe(path)
-  })
+  // Spawning sh on the Windows runner (Git Bash) usually takes under 1 s but has
+  // exceeded vitest's 5 s default while the rest of the suite loads the machine.
+  }, 30_000)
 
   it('wraps a plain path in single quotes', () => {
     expect(shellQuote('/tmp/foo')).toBe("'/tmp/foo'")
