@@ -2,10 +2,10 @@
 
 ## How Houston knows
 
-Houston learns what an agent is doing from a small hook it installs into the CLI's own
-config — never by reading the terminal. The CLI itself reports its lifecycle (a turn
-starting, a turn finishing, asking you for input) back to Houston. Nothing about a
-pane's status is guessed from what is printed on screen.
+Houston learns what an agent is doing from lifecycle hooks and supported native
+provider reports. The CLI itself reports a turn starting, a turn finishing or a
+request for input. Nothing about a pane's status is guessed from what is printed
+on screen.
 
 ## The statuses
 
@@ -14,22 +14,43 @@ A pane can show:
 - **Spawning** — the session just started; Houston is waiting for the first report from
   the CLI.
 - **Working** — a turn is in progress.
-- **Idle** — ready for another prompt after the CLI reported that the turn ended.
+- **Idle** — ready for another prompt after the provider confirmed startup readiness
+  or reported that the turn ended.
 - **Needs input** — the agent asked a question or is waiting on a permission decision. It
   stays in this state until you address it; providers that report the answer move back to
   Working immediately.
 - **Status unavailable** — the CLI did not report lifecycle within the startup window.
-  Check its hook setup; Houston does not guess from terminal output.
+  Inspect the pane for startup or trust requests and check its hook setup. A parent
+  receives a startup notice; missing reports do not prove that human input is needed.
 
 A CLI with no hook support shows none of this: its pane runs, but never reports Working,
 Idle or Needs input. Claude Code reports tool questions, permission prompts and MCP
 elicitations. Codex reports approvals, interruptions and `request_user_input` questions.
 OpenCode reports permissions, structured questions, busy/retry, completion and errors.
+Starting a supported CLI from a shell pane gives it that provider’s reported status
+and orchestration capabilities once its first hook arrives.
+
+Quiet or prolonged approval review is a warning on ongoing work, rather than a request
+for your input. A live child can show Done or Failed while its process remains open;
+its result may still be pending delivery to its parent.
 
 The pane and grid indicators use the same language: blue pulse for starting or working,
 neutral gray for ready, amber for needs input, and a hollow gray dot when status is
 unavailable. Green is reserved for successful completion and red for failure. A grid's
 tooltip lists the contributing pane states, so the indicator does not rely on color alone.
+
+On Linux with user systemd, Codex 0.160.0 and later use a private app-server for each
+pane while keeping the normal Codex terminal. Houston confirms startup readiness from the provider's
+thread status, so a restored pane can become Idle before its first turn. Hook review
+still belongs to Codex: a pane waiting for review stays unconfirmed.
+
+Older Codex versions, hosts without user systemd, other platforms and custom launches
+use lifecycle hooks only.
+Native Codex profiles (`--profile`), explicit remote endpoints and unsupported CLI
+flags also keep the hook path, with a notice in the terminal. Houston account profiles
+remain supported. Codex delays its startup hook until the first turn; on these fallback
+paths, inspect the pane and send the first prompt directly. Queued delivery waits for
+reported Idle. Houston does not read prompt text to infer readiness.
 
 ## Settings ▸ Agents
 
@@ -51,7 +72,8 @@ exactly what Houston added:
   `notify` line in your `config.toml` is parked (commented out) rather than overwritten,
   and restored when you turn the hook off. Codex also requires you to accept the hook
   once in its own review screen before it actually runs — open any Codex pane to confirm
-  it.
+  it. Reopening a pane or reinstalling unchanged hooks preserves that decision.
+  Changed hook definitions require another review in Codex.
 - **OpenCode** — drops a small plugin file Houston owns; if one is already there and
   Houston did not write it, install refuses rather than overwriting it.
 - **Cursor** — adds one entry to each of your `sessionStart`, `beforeSubmitPrompt` and

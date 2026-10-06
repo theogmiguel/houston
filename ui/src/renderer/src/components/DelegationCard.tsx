@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 
 import { createPortal } from 'react-dom'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
+import { isLive } from '../houston/client'
 import { Icon } from './Icon'
 import { IconCornerDownRight, IconGitFork } from './icons'
 import { HOVER_DELAY_MS, Tooltip } from './Tooltip'
@@ -35,6 +36,16 @@ export function sessionTaskLabel(info: {
 function titleIsCodename(info: { title?: string | null; codename?: string | null }): boolean {
   const codename = sessionCodename(info)
   return codename != null && typeof info.title === 'string' && info.title.trim() === codename
+}
+
+export function pendingDeliveryStatus(d: DelegationInfo | null | undefined): 'Result staged' | 'Pending delivery' | null {
+  if (d == null) return null
+  if (d.result_staged) return 'Result staged'
+  return d.inbox_owed > 0 ? 'Pending delivery' : null
+}
+
+export function needsHumanInput(info: SessionInfo): boolean {
+  return isLive(info.state) && (info.status === 'needs-input' || info.children_waiting > 0 || info.delegation?.state === 'needs_input')
 }
 
 // `unknown` is ignorance, not a verdict: the daemon restarted mid-flight, so

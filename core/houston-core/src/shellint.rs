@@ -243,6 +243,17 @@ claude() {
   fi
 }
 
+if [ -n "${HOUSTON_CODEX_LAUNCHER-}" ] && [ -n "${HOUSTON_CODEX_CLI-}" ] && [ -n "${HOUSTON_CODEX_HOOK_DROP_DIR-}" ]; then
+  unalias codex 2>/dev/null || true
+fi
+function codex {
+  if [ -n "${HOUSTON_CODEX_LAUNCHER-}" ] && [ -n "${HOUSTON_CODEX_CLI-}" ] && [ -n "${HOUSTON_CODEX_HOOK_DROP_DIR-}" ]; then
+    "$HOUSTON_CODEX_LAUNCHER" codex-shell "$HOUSTON_CODEX_HOOK_DROP_DIR" -- "$HOUSTON_CODEX_CLI" "$@"
+  else
+    command codex "$@"
+  fi
+}
+
 __tr_ran=""
 __tr_at_prompt=""
 __tr_in_pc=""
@@ -308,6 +319,17 @@ claude() {
     command claude --mcp-config "$HOUSTON_MCP_CONFIG" "$@"
   else
     command claude "$@"
+  fi
+}
+
+if [ -n "${HOUSTON_CODEX_LAUNCHER-}" ] && [ -n "${HOUSTON_CODEX_CLI-}" ] && [ -n "${HOUSTON_CODEX_HOOK_DROP_DIR-}" ]; then
+  unalias codex 2>/dev/null || true
+fi
+function codex {
+  if [ -n "${HOUSTON_CODEX_LAUNCHER-}" ] && [ -n "${HOUSTON_CODEX_CLI-}" ] && [ -n "${HOUSTON_CODEX_HOOK_DROP_DIR-}" ]; then
+    "$HOUSTON_CODEX_LAUNCHER" codex-shell "$HOUSTON_CODEX_HOOK_DROP_DIR" -- "$HOUSTON_CODEX_CLI" "$@"
+  else
+    command codex "$@"
   fi
 }
 
@@ -521,6 +543,77 @@ mod tests {
                     None => "first\ntwo words\n".to_string(),
                 };
                 assert_eq!(args, expected, "{shell}");
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn codex_shell_function_falls_back_without_removing_unmanaged_aliases() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = materialize(tmp.path()).unwrap();
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let stub = bin.join("codex");
+        std::fs::write(&stub, "#!/bin/sh\nprintf '%s\\0' \"$@\"\n").unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = format!("{}:/usr/bin:/bin", bin.display());
+        for (shell, rc) in [
+            ("/bin/bash", dir.join("bashrc")),
+            ("/bin/zsh", dir.join("zsh/.zshrc")),
+        ] {
+            for missing in [
+                None,
+                Some("HOUSTON_CODEX_LAUNCHER"),
+                Some("HOUSTON_CODEX_CLI"),
+                Some("HOUSTON_CODEX_HOOK_DROP_DIR"),
+            ] {
+                for alias in [false, true] {
+                    let startup = if alias {
+                        "alias codex='printf user-alias'\n"
+                    } else {
+                        ""
+                    };
+                    std::fs::write(tmp.path().join(".bashrc"), startup).unwrap();
+                    std::fs::write(tmp.path().join(".zshrc"), startup).unwrap();
+                    let script = if alias {
+                        "source \"$1\"; alias codex"
+                    } else {
+                        "source \"$1\"; codex first 'two words' 'a\"quote' ''"
+                    };
+                    let mut command = crate::spawn::command(shell);
+                    command
+                        .args(["-e", "-c", script, "houston-test"])
+                        .arg(&rc)
+                        .env_clear()
+                        .env("HOME", tmp.path())
+                        .env("PATH", &path)
+                        .env("HOUSTON_CODEX_LAUNCHER", "/missing-launcher")
+                        .env("HOUSTON_CODEX_CLI", "/missing-cli")
+                        .env("HOUSTON_CODEX_HOOK_DROP_DIR", "/missing-drop");
+                    for key in [
+                        "HOUSTON_CODEX_LAUNCHER",
+                        "HOUSTON_CODEX_CLI",
+                        "HOUSTON_CODEX_HOOK_DROP_DIR",
+                    ] {
+                        if missing.is_none() || missing == Some(key) {
+                            command.env_remove(key);
+                        }
+                    }
+                    let output = command.output().unwrap();
+                    assert!(
+                        output.status.success(),
+                        "{shell}, missing {missing:?}, alias {alias}: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    if alias {
+                        assert!(String::from_utf8_lossy(&output.stdout).contains("user-alias"));
+                    } else {
+                        assert_eq!(output.stdout, b"first\0two words\0a\"quote\0\0");
+                    }
+                }
             }
         }
     }

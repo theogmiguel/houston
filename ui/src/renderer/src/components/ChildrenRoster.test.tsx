@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSessionsStore, SessionsStoreContext } from '../sessionsStore'
-import { ChildrenRoster, childGroup, delegationAge, glyphLabel } from './ChildrenRoster'
+import { ChildrenRoster, childGroup, childStateWord, delegationAge, glyphLabel } from './ChildrenRoster'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 
 const child = (id: number, state: SessionInfo['state'] = 'running'): SessionInfo => ({ id, state, codename: `child-${id}`, hidden: false, inbox_unread: 0, resumable: false, title: `worker ${id}`, agent: 'claude', cwd: '/tmp/p', project_dir: '/tmp/p', spawned_by: 1, status: 'working', children_waiting: 0, live_children: 0, tags: [] } as SessionInfo)
@@ -34,10 +34,13 @@ describe('settled children', () => {
     act(() => row.querySelector<HTMLButtonElement>('[aria-label="Close 2"]')!.click())
     expect(closeSession).toHaveBeenCalledWith(2)
   })
-  it.each(['done', 'failed'] as const)('exposes a settled %s child\'s ended dot to the state tint', (state) => {
+  it.each(['done', 'failed'] as const)('uses the shared verdict dot for a settled %s child', (state) => {
     children = [{ ...child(2, 'exited'), delegation: { state } as SessionInfo['delegation'] }]
     render()
-    expect(host.querySelector(`.children-row.settled .children-status[data-state="${state}"] .agent-dot[aria-label="Ended"]`)).not.toBeNull()
+    const label = state === 'done' ? 'Done' : 'Failed'
+    const dot = host.querySelector(`.children-row.settled .children-status[data-state="${state}"] [aria-label="${label}"] .agent-dot`)
+    expect(dot).not.toBeNull()
+    expect(dot?.getAttribute('style')).toContain(state === 'done' ? 'var(--ok)' : 'var(--stop)')
   })
   it.each(['done', 'failed', 'unknown'] as const)('never settles or closes a live %s delegation', (state) => {
     children = [child(2, 'exited'), { ...child(3), delegation: { state } as SessionInfo['delegation'] }]
@@ -151,4 +154,40 @@ it('regroups a child after a pure status update while its input props remain unc
   act(() => store.set((previous) => new Map(previous).set(4, { ...children[0], status: 'needs-input' })))
   expect(host.querySelector('[aria-label="Answer 4"]')).not.toBeNull()
   expect(host.querySelector('.children-list [aria-label="needs your input"]')).not.toBeNull()
+})
+
+
+describe('reported child state', () => {
+  it('keeps a stalled working delegation out of human attention', () => {
+    children = [{ ...child(2), delegation: { state: 'working', stalled: true } as SessionInfo['delegation'] }]
+    expect(childGroup(children[0])).toBe('Working')
+    expect(childStateWord(children[0])).toBe('stalled')
+    render()
+    expect(host.querySelector('[aria-label="Answer 2"]')).toBeNull()
+    expect(host.querySelector('[aria-label="Stalled"]')).not.toBeNull()
+  })
+  it.each(['done', 'failed'] as const)('shows a live %s verdict without closing the PTY', (state) => {
+    children = [{ ...child(2), delegation: { state } as SessionInfo['delegation'] }]
+    expect(childStateWord(children[0])).toBe(state)
+    render()
+    expect(host.querySelector(`[aria-label="${state === 'done' ? 'Done' : 'Failed'}"]`)).not.toBeNull()
+    expect(host.querySelector('[aria-label="Stop 2"]')).not.toBeNull()
+  })
+  it.each([{ status: 'needs-input' as const }, { children_waiting: 1 }])('prioritizes a current input request over a done turn (%o)', (signal) => {
+    children = [{ ...child(2), ...signal, delegation: { state: 'done' } as SessionInfo['delegation'] }]
+    expect(childGroup(children[0])).toBe('Needs you')
+    expect(childStateWord(children[0])).toBe('needs input')
+    render()
+    expect(host.querySelector('[aria-label="Answer 2"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="Done"]')).toBeNull()
+  })
+  it('keeps staged and unread result labels visible without hover', () => {
+    children = [
+      { ...child(2), delegation: { state: 'done', result_staged: true } as SessionInfo['delegation'] },
+      { ...child(3), delegation: { state: 'done', inbox_owed: 1 } as SessionInfo['delegation'] },
+    ]
+    render()
+    expect(host.querySelector('.children-detail [aria-label="Result staged"]')).not.toBeNull()
+    expect(host.querySelector('.children-detail [aria-label="Pending delivery"]')).not.toBeNull()
+  })
 })

@@ -3,8 +3,12 @@ export const STATUS_LABELS = [
   'Needs input',
   'Idle',
   'Done',
+  'Ended',
   'Failed',
   'Paused',
+  'Stalled',
+  'Result staged',
+  'Pending delivery',
   'In sync',
   'Waiting for a slot',
   'Differs',
@@ -25,8 +29,12 @@ const STATUS_DOT: Record<StatusLabelValue, string> = {
   'Needs input': 'var(--warn)',
   Idle: 'var(--text-faint)',
   Done: 'var(--ok)',
+  Ended: 'var(--info)',
   Failed: 'var(--stop)',
   Paused: 'var(--text-muted)',
+  Stalled: 'var(--warn)',
+  'Result staged': 'var(--info)',
+  'Pending delivery': 'var(--info)',
   'In sync': 'var(--ok)',
   'Waiting for a slot': 'var(--warn)',
   Differs: 'var(--warn)',
@@ -55,19 +63,19 @@ const PILL_TONE: Record<PillTone, string> = {
   unknown: 'bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] text-[var(--text-muted)]'
 }
 
-export function StatusLabel({ status, size = 'ui', variant = 'default', tone = 'unknown', children }: { status: StatusLabelValue; size?: 'ui' | 'small'; variant?: 'default' | 'pill'; tone?: PillTone; children?: React.ReactNode }): React.JSX.Element {
+export function StatusLabel({ status, size = 'ui', variant = 'default', tone = 'unknown', children }: { status: StatusLabelValue; size?: 'ui' | 'small'; variant?: 'default' | 'pill' | 'dot'; tone?: PillTone; children?: React.ReactNode }): React.JSX.Element {
   if (variant === 'pill') return <span className={`${PILL_CLASS} ${PILL_TONE[tone]}`}>{children ?? status}</span>
   const hollow = status === 'Idle' || status === 'Paused' || status === 'Missing' || status === 'Not seen' || status === 'Off'
   return (
-    <span aria-label={status} className={`inline-flex items-center gap-[var(--space-1-5)] text-[var(--text-secondary)] ${STATUS_TEXT[status] ?? ''} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
+    <span role={variant === 'dot' ? 'img' : undefined} aria-label={status} className={`inline-flex items-center gap-[var(--space-1-5)] text-[var(--text-secondary)] ${STATUS_TEXT[status] ?? ''} ${size === 'small' ? 'text-[length:var(--tr-text-small-size)]' : ''}`}>
       <span
         aria-hidden="true"
-        className="h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full"
+        className="agent-dot h-[var(--space-1-5)] w-[var(--space-1-5)] flex-none rounded-full"
         style={hollow
           ? { backgroundColor: 'transparent', border: '1px solid var(--text-faint)' }
           : { backgroundColor: STATUS_DOT[status] }}
       />
-      {status}
+      {variant === 'default' && status}
     </span>
   )
 }

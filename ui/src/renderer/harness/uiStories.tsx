@@ -368,6 +368,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow>{STATUS_LABELS.map((status) => <StatusLabel key={status} status={status} />)}</SpecimenRow>
           <SpecimenRow><StatusLabel status="Open" size="small" /><StatusLabel status="Fixing" size="small" /><StatusLabel status="Not seen" size="small" /></SpecimenRow>
           <SpecimenRow><StatusLabel status="Needs input" variant="pill" tone="waiting" /><StatusLabel status="Failed" variant="pill" tone="failed" /><StatusLabel status="Working" variant="pill" tone="working">stalled</StatusLabel></SpecimenRow>
+          <SpecimenRow>{STATUS_LABELS.map((status) => <Tooltip key={status} label={status}><StatusLabel status={status} variant="dot" /></Tooltip>)}</SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="RoutineDetail and ConnectionCell">

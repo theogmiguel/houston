@@ -9,6 +9,8 @@ import type { TasksAccess } from '../src/houston/generated/TasksAccess'
 import type { TaskDetailData } from '../src/houston/useTasks'
 import { ChildrenRoster } from '../src/components/ChildrenRoster'
 import { OverviewTab } from '../src/components/OverviewTab'
+import { SessionPane } from '../src/components/SessionPane'
+import type { OutputSink } from '../src/pane/TerminalPane'
 import { TaskDetail } from '../src/components/tasks/TaskDetail'
 import { TasksList } from '../src/components/tasks/TasksList'
 import { SettingsScreen } from './settingsStories'
@@ -446,4 +448,36 @@ export function TasksRosterStory(): React.JSX.Element {
 
 export function TasksQueueStory(): React.JSX.Element {
   return <RosterStory view="queue" />
+}
+
+
+export function PaneLifecycleStory(): React.JSX.Element {
+  const children = React.useMemo(() => [
+    { ...rosterChild(431, 'reviewer', 'needs-input', null), task: null, title: 'Confirm the target branch' },
+    { ...rosterChild(432, 'validator', 'working', null), task: null, title: 'Waiting after validation', delegation: { ...rosterChild(432, 'validator', 'working', null).delegation!, stalled: true } },
+    { ...rosterChild(433, 'backend', 'working', null), task: null, title: 'Completed the requested change', delegation: { ...rosterChild(433, 'backend', 'working', null).delegation!, state: 'done' as const, result_staged: true, settled_at: NOW - MINUTE } },
+    { ...rosterChild(434, 'tests', 'working', null), task: null, title: 'Regression tests passed', delegation: { ...rosterChild(434, 'tests', 'working', null).delegation!, state: 'done' as const, inbox_owed: 1, settled_at: NOW - MINUTE } },
+  ], [])
+  const parent = { ...ROSTER_PARENT, title: 'Pane lifecycle', live_children: 4, children_waiting: 1, inbox_unread: 2 }
+  const sinks = React.useRef(new Map<number, OutputSink>())
+  const client = React.useMemo(() => new Proxy({
+    subscribe: () => noop,
+    attachSession: (id: number) => queueMicrotask(() => {
+      const text = id === 398 ? 'Orchestrator terminal ready.\r\nSelect a child to inspect its terminal.\r\n' : `Child ${id} terminal ready.\r\nRecorded output remains visible after switching children.\r\n`
+      const bytes = new TextEncoder().encode(text)
+      sinks.current.get(id)?.replay(bytes, bytes.length)
+    }),
+  }, {
+    get(target, prop, receiver) {
+      if (prop in target) return Reflect.get(target, prop, receiver)
+      if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined
+      return noop
+    },
+  }) as unknown as HoustonClient, [])
+  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><SessionPane
+    info={parent} client={client} roster={{ sessions: new Map([parent, ...children].map((pane) => [pane.id, pane])), maxLiveChildren: 8 }}
+    gridSessionIds={new Set([parent.id])} theme="black" active connected fontSize={14} copyOnSelect={false} stripBoxGlyphs={false} showProject={false} shellIntegration={false}
+    registerOutput={(id, sink) => { sinks.current.set(id, sink); return () => { sinks.current.delete(id) } }}
+    onReconnectSsh={noop} onActivate={noop} onExpand={noop} onZoom={noop} onShellZoom={noop} onSplit={noop} onHeaderPointerDown={noop} onHandoff={noop} onOpenFile={noop} onOpenDir={noop}
+  /></div>
 }

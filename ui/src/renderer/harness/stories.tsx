@@ -97,7 +97,7 @@ import {
   NavSkills,
   HarnessPageStory
 } from './navStories'
-import { TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
+import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
@@ -298,6 +298,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'usage/page': () => <UsagePageStory />,
   'tasks/page': () => <TasksPageStory />,
   'tasks/detail': () => <TasksDetailStory />,
+  'panes/lifecycle': () => <PaneLifecycleStory />,
   'tasks/roster': () => <TasksRosterStory />,
   'tasks/queue': () => <TasksQueueStory />,
   'tasks/overview-roster': () => <TasksOverviewRosterStory />,

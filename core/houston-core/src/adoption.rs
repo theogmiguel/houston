@@ -174,6 +174,7 @@ pub fn recv_fds(sock: RawFd, max_fds: usize) -> Result<Vec<OwnedFd>> {
 pub struct RawMasterPty {
     file: std::sync::Mutex<Option<File>>,
     child_pid: Option<i32>,
+    child_creation: Option<u64>,
     interrupt: crate::daemon::WriteInterrupt,
 }
 
@@ -187,6 +188,9 @@ impl RawMasterPty {
             RawMasterPty {
                 file: std::sync::Mutex::new(Some(file)),
                 child_pid,
+                child_creation: child_pid
+                    .and_then(|pid| u32::try_from(pid).ok())
+                    .and_then(crate::pid::process_creation_token),
                 interrupt: crate::daemon::WriteInterrupt::default(),
             },
             reader_half,
@@ -241,19 +245,33 @@ impl RawMasterPty {
     // Through crate::pid, never libc::kill directly: a pid is not an integer, and an
     // unchecked one reaching kill(2) is a broadcast (-1 = everything signallable, 0 =
     // this whole process group).
-    pub fn kill(&self) -> Result<()> {
+    pub fn kill(&self, session_id: u32, channel: Option<&str>) -> Result<()> {
         let Some(pid) = self.child_pid else {
             bail!("adopted session has no recorded child pid");
         };
         let pid: u32 = pid
             .try_into()
             .map_err(|_| anyhow!("adopted child pid {pid} is not a signallable pid"))?;
-        // SIGHUP, as for a session this generation spawned: an interactive shell
-        // ignores SIGTERM, and the reader still holds the master, so no hangup follows.
-        match crate::pid::signal_process_checked(pid, crate::pid::Signal::Hup) {
-            Ok(_) => Ok(()),
-            Err(e) => bail!("SIGHUP to adopted pid {pid}: {e}"),
+        #[cfg(target_os = "linux")]
+        if crate::session_isolation::terminate_owned_scope(
+            pid,
+            session_id,
+            channel,
+            self.child_creation,
+        )
+        .map_err(anyhow::Error::msg)?
+        {
+            return Ok(());
         }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (session_id, channel);
+        let guard = self.file.lock().expect("raw pty file lock");
+        crate::pid::terminate_pty_session(
+            pid,
+            guard.as_ref().map(AsRawFd::as_raw_fd),
+            self.child_creation,
+        )
+        .map_err(anyhow::Error::from)
     }
 
     pub fn release(&self) {
