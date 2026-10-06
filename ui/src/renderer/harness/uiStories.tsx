@@ -1,6 +1,11 @@
 import React, { useState } from 'react'
 import {
   BarSparkline,
+  AttachmentChipFilename,
+  AttachmentChipFrame,
+  AttachmentPreviewCard,
+  AttachmentRemoveButton,
+  AttachmentTypeGlyph,
   BrowserBlankState,
   BrowserUnreachableState,
   CalloutSpecimen,
@@ -20,6 +25,14 @@ import {
   Chip,
   Count,
   ConnectionCell,
+  ConnectionBanner,
+  ComposerBar,
+  ComposerPill,
+  ComposerPillCount,
+  ComposerPillField,
+  ComposerPillMenu,
+  ComposerPillOption,
+  ComposerSendButton,
   DoneDisclosure,
   Drawer,
   DialogSpecimen,
@@ -36,12 +49,42 @@ import {
   ListDetail,
   LaunchGridPreviewSpecimen,
   LaunchComposerHeaderSpecimen,
+  InlineControlRow,
+  PrimaryAction,
+  ScrollableFormBody,
+  LabeledControl,
+  OptionFieldset,
+  ActionFooter,
+  DockedFormPanel,
+  FormSection,
+  InlineSummary,
+  CountStepper,
+  FieldCounter,
+  FieldError,
+  FieldGroup,
+  FormLabel,
+  PresetGrid,
+  LaunchPresetCard,
+  RouteList,
+  RouteNote,
+  SectionHeading,
+  SlotList,
+  TaskInput,
   LaunchPresetOutlineSpecimen,
   LaunchSlotCardSpecimen,
   InsetPanelSpecimen,
   MonoBlockSpecimen,
   Notice,
   NumberFieldSpecimen,
+  NoticeEvictionCaption,
+  NoticeToast,
+  NoticeToastRegion,
+  PaneMenuAgentRow,
+  PaneMenuDivider,
+  PaneMenuLabel,
+  PaneMenuProfileGroup,
+  PaneMenuProfileRow,
+  PaneMenuSurface,
   PageFrame,
   PageHeader,
   PaneHeaderButton,
@@ -501,6 +544,77 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Launch slot card">
           <LaunchSlotCardSpecimen />
           <FieldLabel size="compact">Compact field label</FieldLabel>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Composer, launch, attachment and connection roles">
+          <div style={{ display: 'grid', gap: 'var(--space-4)', maxWidth: 760 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <span className="relative inline-flex">
+                <AttachmentChipFrame pressable hasRemove>
+                  <AttachmentTypeGlyph extension="md" />
+                  <AttachmentChipFilename>notes.md</AttachmentChipFilename>
+                </AttachmentChipFrame>
+                <AttachmentRemoveButton filename="notes.md" onRemove={noop} />
+              </span>
+              <AttachmentChipFrame pressable={false}>
+                <AttachmentTypeGlyph extension="png" />
+                image.png
+              </AttachmentChipFrame>
+              <AttachmentPreviewCard filename="notes.md" extension="md" />
+            </div>
+            <ComposerBar>
+              <div style={{ position: 'relative' }}>
+                <ComposerPill variant="dropdown">Model · Opus <span aria-hidden>⌄</span></ComposerPill>
+                <ComposerPillMenu variant="options">
+                  <ComposerPillOption selected>Opus</ComposerPillOption>
+                  <ComposerPillOption selected={false}>Sonnet</ComposerPillOption>
+                </ComposerPillMenu>
+              </div>
+              <ComposerPill variant="count">+<ComposerPillCount>2</ComposerPillCount></ComposerPill>
+              <ComposerPillMenu variant="fields">
+                <ComposerPillField>Effort <Select aria-label="Effort" value="High" options={[{ value: 'High', label: 'High' }]} onChange={noop} /></ComposerPillField>
+              </ComposerPillMenu>
+              <ComposerSendButton loading>Send</ComposerSendButton>
+            </ComposerBar>
+            <div style={{ display: 'grid', gap: 'var(--space-3)', maxWidth: 560 }}>
+              <DockedFormPanel>
+                <ScrollableFormBody>
+                  <OptionFieldset legend="Preset"><PresetGrid><LaunchPresetCard id="review" name="Review" blurb="Inspect changes" count={2} selected onSelect={noop} onPreviewStart={noop} onPreviewEnd={noop} /></PresetGrid></OptionFieldset>
+                  <InlineControlRow>
+                    <LabeledControl as="label" label="Default agent"><Select aria-label="Agent" value="Claude" options={[{ value: 'Claude', label: 'Claude' }]} onChange={noop} /></LabeledControl>
+                    <LabeledControl as="group" label="How many"><CountStepper value={2} min={1} max={8} onChange={noop} /></LabeledControl>
+                  </InlineControlRow>
+                  <FormSection>
+                    <SectionHeading>Task</SectionHeading>
+                    <FieldGroup>
+                      <FormLabel htmlFor="launch-task-specimen">Optional task</FormLabel>
+                      <TaskInput id="launch-task-specimen" rows={1} defaultValue="Inspect this feature" />
+                      <FieldError>Task is over the limit</FieldError>
+                      <FieldCounter>8,192 bytes</FieldCounter>
+                    </FieldGroup>
+                  </FormSection>
+                  <FormSection>
+                    <SectionHeading>Workspace routing</SectionHeading>
+                    <RouteList><RouteNote>src/**/*.rs → opus · high</RouteNote></RouteList>
+                    <SlotList><RouteNote>No additional routes</RouteNote></SlotList>
+                  </FormSection>
+                </ScrollableFormBody>
+                <ActionFooter><InlineSummary>Custom · 2 sessions in Houston</InlineSummary><PrimaryAction>Launch</PrimaryAction></ActionFooter>
+              </DockedFormPanel>
+            </div>
+            <PaneMenuSurface right={0} y={0}>
+              <PaneMenuLabel>Agents</PaneMenuLabel>
+              <PaneMenuAgentRow agent="claude" expanded onClick={noop} />
+              <PaneMenuProfileGroup><PaneMenuProfileRow onClick={noop}>Claude · Work</PaneMenuProfileRow></PaneMenuProfileGroup>
+              <PaneMenuDivider />
+            </PaneMenuSurface>
+            <NoticeToastRegion anchor="workspace-top" label="Specimen notifications">
+              <NoticeToast anchor="workspace-top" code="ready" kind="success" heading="Saved" action={{ label: 'Open', onClick: noop }} onDismiss={noop} />
+              <NoticeToast anchor="workspace-top" code="failed" kind="error" heading="Connection failed" body="daemon unavailable" />
+              <NoticeEvictionCaption>1 earlier notice dropped — the stack holds 5</NoticeEvictionCaption>
+            </NoticeToastRegion>
+            <ConnectionBanner message="daemon connection lost — reconnecting… 12s" actionLabel="Retry now" onAction={noop} />
+          </div>
         </SpecimenGroup>
 
         <SpecimenGroup heading="BarSparkline">

@@ -13,7 +13,6 @@ source scripts/check-radius-tokens-widened-baseline.sh
 BASELINE=(
   "ui/src/renderer/src/App.tsx 0"
   "ui/src/renderer/src/components/AgentProfiles.tsx 3"
-  "ui/src/renderer/src/components/AttachmentChip.tsx 2"
   "ui/src/renderer/src/components/BrowserActConfirm.tsx 7"
   "ui/src/renderer/src/components/browserFullscreenChrome.ts 3"
   "ui/src/renderer/src/components/BrowserPane.tsx 2"
@@ -27,7 +26,6 @@ BASELINE=(
   "ui/src/renderer/src/components/markdownPipeline.tsx 1"
   "ui/src/renderer/src/components/McpManager.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 2"
-  "ui/src/renderer/src/components/NewSessionComposer.tsx 1"
   "ui/src/renderer/src/components/ui/panelChrome.ts 1"
   "ui/src/renderer/src/components/QuestionCard.tsx 1"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 1"

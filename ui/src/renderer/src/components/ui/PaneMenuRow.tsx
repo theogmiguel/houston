@@ -1,8 +1,9 @@
 import type { IconComponent } from '../icons'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
+import { Text } from './Text'
 
-const ROW_CLS = 'flex items-center gap-2.5 px-3 min-h-[var(--h-ctl)] w-full text-left bg-transparent border-none [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:hover:bg-transparent'
+const ROW_CLS = 'flex items-center gap-[var(--space-2-5)] px-[var(--space-3)] min-h-[var(--h-ctl)] w-full text-left bg-transparent border-none hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:hover:bg-transparent'
 
 /** One row of the New pane menu: icon, label and an optional shortcut; `disabledReason` disables it and explains why. */
 export function PaneMenuRow({ icon, label, shortcut, disabledReason, onClick, 'data-testid': testId }: {
@@ -17,8 +18,8 @@ export function PaneMenuRow({ icon, label, shortcut, disabledReason, onClick, 'd
     <Tooltip label={disabledReason} className="inline-flex w-full">
       <button type="button" data-testid={testId} disabled={disabledReason !== undefined} className={ROW_CLS} onClick={onClick}>
         <Icon glyph={icon} role="ui" className="text-[var(--text-muted)] flex-none" />
-        <span className="flex-1">{label}</span>
-        {shortcut && <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] font-mono text-[var(--text-faint)]">{shortcut}</span>}
+        <Text size="ui" weight="ui" tone="secondary" className="flex-1">{label}</Text>
+        {shortcut && <Text size="small" weight="small" tone="faint" mono>{shortcut}</Text>}
       </button>
     </Tooltip>
   )

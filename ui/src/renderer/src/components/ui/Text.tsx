@@ -2,8 +2,8 @@ import type { ElementType, HTMLAttributes } from 'react'
 
 export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'sm' | 'xl' | 'xs'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
-export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'warning' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
-export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small'
+export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'info' | 'success' | 'warning' | 'blocked' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
+export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer'
 
 const SIZE: Record<TextSize, string> = {
   display: '[font-family:var(--tr-text-display-family)] [font-size:var(--tr-text-display-size)]',
@@ -39,7 +39,10 @@ const TONE: Record<TextTone, string> = {
   muted: 'text-[var(--text-muted)]',
   faint: 'text-[var(--text-faint)]',
   danger: 'text-[var(--danger)]',
+  info: 'text-[var(--info)]',
+  success: 'text-[var(--success)]',
   warning: 'text-[var(--warning)]',
+  blocked: 'text-[var(--status-blocked-text)]',
   accent: 'text-[var(--accent)]',
   'key-hint': 'text-[var(--text-key-hint)]',
   'quiet-button': 'text-[var(--quiet-button-ink)]',
@@ -52,7 +55,9 @@ const LEADING: Record<TextLeading, string> = {
   tight: 'leading-[var(--tr-text-tight-leading)]',
   normal: 'leading-[1.5]',
   relaxed: 'leading-[1.6]',
-  small: 'leading-[var(--tr-text-small-leading)]'
+  small: 'leading-[var(--tr-text-small-leading)]',
+  label: 'leading-[var(--tr-text-label-leading)]',
+  composer: 'leading-[var(--tr-text-task-leading)]'
 }
 
 export interface TextProps extends HTMLAttributes<HTMLElement> {

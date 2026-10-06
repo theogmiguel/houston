@@ -582,7 +582,11 @@
   --tr-radius-card: 12px;
   --tr-radius-ssh-panel: 14px;
   --tr-radius-pill: 9999px;
+  /* Corner of a file-type badge or thumbnail inside an attachment chip. */
+  --tr-radius-badge: 3px;
   --space-1: 4px;
+  --space-0-5: 2px;
+  --space-pixel: 1px;
   --space-1-5: 6px;
   --space-settings-detail-caption: 3px;
   --space-settings-number-y: 5px;
@@ -687,6 +691,43 @@
   --w-text-input-medium: 200px;
   --w-dialog-ssh-panel: 440px;
   --text-form-default: var(--text-primary);
+  /* Named dimensions retained for the reusable composer, notification and attachment roles. */
+  --space-attachment-glyph-inline: 3px;
+  --space-attachment-chip-remove-reserve: calc(var(--space-2) + var(--h-tag-chip) + var(--space-1-5));
+  --space-notice-inline-end: 7px;
+  --space-notice-inline-start: 9px;
+  --space-notice-row-gap: 7px;
+  --space-notice-row-y: 5px;
+  --space-notice-action-inline: 6px;
+  --space-card-grid-gap: 7px;
+  --space-task-field-block: 11px;
+  --space-action-footer-inline: 14px;
+  --space-action-footer-gap: 10px;
+  --space-connection-banner-inline: 14px;
+  --space-profile-row-indent: 32px;
+  --w-docked-form-viewport-max: 48vw;
+  --w-connection-banner-viewport-max: 70vw;
+  --z-notice-top-stack: calc(var(--z-leaf) + 1);
+  --z-notice-pane-corner: calc(var(--z-pane) + 3);
+  --motion-notice-entry-top: notice-in-top 200ms var(--motion-menu-ease);
+  --motion-notice-entry-corner: notice-in-corner 200ms var(--motion-menu-ease);
+  --motion-connection-pulse: dot-pulse 1.2s steps(4, end) infinite;
+  --opacity-connection-dot-pulse: 0.25;
+  --tr-text-task-leading: 18px;
+  --h-notice-row: 30px;
+  --h-action-footer: 56px;
+  --h-primary-action: 32px;
+  --h-attachment-preview: 120px;
+  --w-docked-form-panel: 560px;
+  --w-form-body: 556px;
+  --w-pane-menu: 220px;
+  --w-notice-top-stack: 560px;
+  --w-notice-pane-stack: 400px;
+  --w-composer-option-menu: 160px;
+  --w-composer-field-menu: 200px;
+  --w-stepper-button: 26px;
+  --w-attachment-preview: 220px;
+  --tr-spinner-border: 2px;
   --tr-text-xs: 11px;
   --tr-text-sm: 12px;
   --tr-text-base: 13px;
@@ -720,6 +761,7 @@
   --tr-text-label-size: calc(11px + var(--tr-type-zoom-delta));
   --tr-text-label-weight: round(nearest, 700 - 240 * max(0, var(--shell-zoom) - 1), 100);
   --tr-text-label-tracking: 0.1em;
+  --tr-text-label-leading: 14px;
   --tr-text-label-transform: uppercase;
   --tr-text-tight-leading: 1.4;
   --tr-text-snug-leading: 1.35;
@@ -754,6 +796,9 @@
   --h-ctl-mini: 22px;
   --h-row: 28px;
   --h-tag-chip: 16px;
+  /* The task composer grows from one line to this height, then scrolls. */
+  --h-task-input-min: 44px;
+  --h-task-input-max: 160px;
   --z-backdrop: 0;
   --z-base: 1;
   --z-pane: 5;

@@ -9,7 +9,6 @@ ui_src="${SCAN_ROOT:-ui/src}"
 fail=0
 
 BASELINE=(
-  "ui/src/renderer/src/components/AttachmentChip.tsx 1"
   "ui/src/renderer/src/components/browserFullscreenChrome.ts 2"
   "ui/src/renderer/src/components/browserPickerChrome.ts 1"
   "ui/src/renderer/src/components/BrowserPicker.tsx 1"
@@ -17,7 +16,6 @@ BASELINE=(
   "ui/src/renderer/src/components/ui/Chip.tsx 1"
   "ui/src/renderer/src/components/FilesPane.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 10"
-  "ui/src/renderer/src/components/NewSessionComposer.tsx 2"
   "ui/src/renderer/src/components/ui/pickerChrome.ts 1"
   "ui/src/renderer/src/components/ui/settingsPrimitives.tsx 1"
   "ui/src/renderer/src/components/SkillsView.tsx 1"

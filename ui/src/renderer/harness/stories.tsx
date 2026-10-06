@@ -16,10 +16,11 @@ function NewSession(): React.JSX.Element {
   )
 }
 
-function NewSessionClicked({ selector }: { selector: string }): React.JSX.Element {
+function NewSessionClicked({ selector, focusSelector }: { selector: string; focusSelector?: string }): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>(selector)?.click()
+    if (focusSelector) ref.current?.querySelector<HTMLButtonElement>(focusSelector)?.focus()
   }, [selector])
   return (
     <div ref={ref} style={{ display: 'flex', height: '100%' }}>
@@ -105,6 +106,7 @@ import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
 import { UiPrimitivesStory } from './uiStories'
+import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
@@ -207,7 +209,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell/workspace-empty': () => <WorkspaceEmpty onNewSession={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
   'launch/docked': () => <DockedLaunchStory />,
   'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,
-  'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' />,
+  'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' focusSelector='[data-preset="pair"]' />,
   'new-session/terminal': () => <NewSessionClicked selector='[data-agent="shell"]' />,
   'harness/smoke': () => (
     <div
@@ -304,6 +306,18 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/workspaces': () => <SettingsWorkspaces />,
   'settings/privacy': () => <SettingsPrivacy />,
   'settings/about': () => <SettingsAbout />,
+  'composer/controls-open': () => <ComposerControlsOpen />,
+  'composer/controls-overflow': () => <ComposerControlsOverflow />,
+  'composer/controls-states': () => <ComposerControlsStates />,
+  'composer/attachment-chips': () => <AttachmentChips />,
+  'composer/attachment-previews': () => <AttachmentPreviews />,
+  'new-session/routes': () => <NewSessionWithRoutes />,
+  'new-session/task-focus': () => <NewSessionTask text="Fix the flaky reconnect test" focus />,
+  'new-session/task-over-limit': () => <NewSessionTask text={'x'.repeat(9000)} focus={false} />,
+  'shell/add-pane-profiles': () => <AddPaneProfiles />,
+  'shell/add-pane-disabled': () => <AddPaneDisabled />,
+  'banner/reconnect': () => <ReconnectBannerStory error={null} />,
+  'banner/reconnect-error': () => <ReconnectBannerStory error="connection refused" />,
   'notices/resting': () => <NoticesResting />,
   'notices/stacked': () => <NoticesStacked />,
   'notices/error': () => <NoticesError />,
