@@ -3,12 +3,10 @@ import { BORDER_HAIRLINE_INSET_TRANSPARENT, RING_ACCENT_ICON } from './ui/shadow
 import type { EditorNode, PaneKey, SplitSide } from '../layout/tree'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import {
-  PANE_BORDER_CLS,
-  PANE_HEAD_BG_CLS,
-  PANE_TITLE_INK_CLS,
   usePaneFocusTier
 } from '../windowFocus'
 import { basename } from '../editor/bufferStore'
+import { PaneHeader, PaneTitle } from './ui'
 import { useEditorSurface } from '../editor/useEditorSurface'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { OpenInMenu } from './OpenInMenu'
@@ -45,9 +43,6 @@ const ICO_HEAD_INFO =
   'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
 const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
-const PANE_TITLE_CLS =
-  "pane-title font-medium tracking-[-0.01em] leading-[1.4] whitespace-nowrap overflow-hidden text-ellipsis min-w-[32px] max-w-[220px] [@container_(min-width:560px)]:max-w-[300px] [@container_(min-width:760px)]:max-w-[420px] [@container_(min-width:1000px)]:max-w-[560px] [@container_(min-width:1300px)]:max-w-[720px] [@container_(max-width:460px)]:max-w-[180px] [@container_(max-width:400px)]:max-w-[140px] [@container_(max-width:280px)]:max-w-[100px] [@container_(max-width:200px)]:max-w-[80px] [@container_(max-width:200px)]:min-w-[12px]"
-
 interface Props {
   node: EditorNode
   workspaceDir: string
@@ -75,7 +70,8 @@ export function EditorLeaf({
   const { buf, saveState, markdownReady, mdMode, toggleMarkdownMode } = surface
   return (
     <section
-      className={`pane editor-leaf flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] after:content-[''] after:absolute after:inset-0 after:rounded-[inherit] after:pointer-events-none after:z-[var(--z-base)] after:shadow-[${BORDER_HAIRLINE_INSET_TRANSPARENT}] ${active ? 'focus' : ''}`}
+      data-pane-focus-border={focusTier}
+      className={`pane editor-leaf flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--pane-bg)] overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] after:content-[''] after:absolute after:inset-0 after:rounded-[inherit] after:pointer-events-none after:z-[var(--z-base)] after:shadow-[${BORDER_HAIRLINE_INSET_TRANSPARENT}] ${active ? 'focus' : ''}`}
       data-panekey={node.id}
       onKeyDownCapture={(e) => {
         if (!keymapOverrides.shortcuts_enabled) return
@@ -86,8 +82,11 @@ export function EditorLeaf({
         }
       }}
     >
-      <header
-        className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[10px] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] ${PANE_HEAD_BG_CLS[focusTier]} border-b border-b-[color-mix(in_srgb,var(--divider)_55%,transparent)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [.pane-slot.drag-src_&]:cursor-grabbing [transition:background_0.2s,border-color_0.2s] @container`}
+      <PaneHeader
+        data-pane-focus-head={focusTier}
+        divider="dividerMuted"
+        transition="surface"
+        dragCursor
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return
           onHeaderPointerDown(e)
@@ -103,7 +102,7 @@ export function EditorLeaf({
           )
         )}
         <Tooltip label={node.path}>
-          <span className={`${PANE_TITLE_CLS} ${PANE_TITLE_INK_CLS}`}>{basename(node.path)}</span>
+          <PaneTitle>{basename(node.path)}</PaneTitle>
         </Tooltip>
         <span className="head-actions flex items-center gap-px flex-none ml-auto">
           {markdownReady && (
@@ -158,7 +157,7 @@ export function EditorLeaf({
             </button>
           </Tooltip>
         </span>
-      </header>
+      </PaneHeader>
       <Suspense fallback={<div className={EHOST_WRAP_CLS} />}>
         <EditorSurfaceBody
           surface={surface}

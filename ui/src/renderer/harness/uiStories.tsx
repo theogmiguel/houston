@@ -3,9 +3,12 @@ import {
   BarSparkline,
   BrowserBlankState,
   BrowserUnreachableState,
+  CalloutSpecimen,
+  ChoiceCardSpecimen,
   ActionMenu,
   ActionEmptyState,
   Button,
+  AppTitlebarSpecimen,
   Card,
   Caption as UiCaption,
   ContentSection,
@@ -13,6 +16,7 @@ import {
   DefinitionTable,
   Disclosure,
   IntegrationCard,
+  KeyCapSpecimen,
   Chip,
   Count,
   ConnectionCell,
@@ -22,6 +26,9 @@ import {
   EmptyState,
   Field,
   FieldLabel,
+  FloatingBannerSpecimen,
+  FormGridSpecimen,
+  FullScreenMessageSpecimen,
   FirstRunHooksStepSpecimen,
   TextInput,
   IconTile,
@@ -31,6 +38,8 @@ import {
   LaunchComposerHeaderSpecimen,
   LaunchPresetOutlineSpecimen,
   LaunchSlotCardSpecimen,
+  InsetPanelSpecimen,
+  MonoBlockSpecimen,
   Notice,
   NumberFieldSpecimen,
   PageFrame,
@@ -42,13 +51,25 @@ import {
   DetailsDisclosureSpecimen,
   FontSizeControlSpecimen,
   BackgroundFieldSpecimen,
+  OnboardingStageSpecimen,
+  PaneFocusSpecimen,
   PopoverViews,
+  ProgressStepsSpecimen,
+  QuietButtonSpecimen,
   SectionHead,
   Select,
   SettingsBreadcrumb,
   SettingsRailRow,
   SettingsScope,
   SettingsSearch,
+  GridRegionSpecimen,
+  GridSlotSpecimen,
+  SidePanelRowSpecimen,
+  ContentsSwitchSpecimen,
+  ContentRegionSpecimen,
+  ToolbarActionsSpecimen,
+  WindowControlDockSpecimen,
+  EmptyGridHintSpecimen,
   Segmented,
   SegmentedControl,
   Slider,
@@ -57,6 +78,8 @@ import {
   CheckedStamp,
   STATUS_LABELS,
   StatusLabel,
+  StartupFailureSpecimen,
+  StartupSkeletonSpecimen,
   RoutineDetail,
   RosterSurfaceSpecimen,
   Table,
@@ -71,12 +94,17 @@ import {
   TaskDrawerOrigin,
   TerminalPalettePicker,
   Tooltip,
+  TextSpecimen,
   UsageCalendar,
   UsageChart,
   UsageModelCell,
   UsageProviderRow,
   UsageSectionHeading,
-  UsageShareBar
+  UsageShareBar,
+  VersionTagSpecimen,
+  PaneTitleSpecimen,
+  PaneHeaderSpecimen,
+  InlineTextSpecimen
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
@@ -288,6 +316,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="legacy-primary">Legacy primary</Button>
             <Button variant="legacy-secondary">Legacy secondary</Button>
             <Button variant="legacy-ghost">Legacy ghost</Button>
+            <Button variant="legacy-icon-warning" icon={IconAlertTriangle} aria-label="Warning" />
+            <Button variant="legacy-titlebar-icon" icon={IconClose} aria-label="Titlebar action" />
+            <Button variant="legacy-ghost-compact"><IconEye />Show visual fingerprint</Button>
+            <Button variant="legacy-ghost-disclosure"><IconEye />Advanced</Button>
             <Button variant="legacy-focus-lever"><IconEye />Focus parent</Button>
             <Button variant="legacy-roster-footer">Roster footer action</Button>
           </SpecimenRow>
@@ -321,7 +353,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Palette options">
       <PaletteOptionsSpecimen />
-      <StackSpecimen />
       <FileAttachmentRowSpecimen />
       <DetailsDisclosureSpecimen />
       <FontSizeControlSpecimen />
@@ -337,6 +368,86 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Dialog">
           <DialogSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Text">
+          <TextSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Callout">
+          <CalloutSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Inset panel">
+          <InsetPanelSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Choice card">
+          <ChoiceCardSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Progress steps">
+          <ProgressStepsSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Mono block">
+          <MonoBlockSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Stack">
+          <StackSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Quiet button">
+          <QuietButtonSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Full screen message">
+          <FullScreenMessageSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Floating banner">
+          <FloatingBannerSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Onboarding stage">
+          <OnboardingStageSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Startup failure">
+          <StartupFailureSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Startup skeleton">
+          <StartupSkeletonSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Grid region">
+          <GridRegionSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Side panel row">
+          <SidePanelRowSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Grid slot">
+          <GridSlotSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Contents switch">
+          <ContentsSwitchSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Content region">
+          <ContentRegionSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Toolbar actions">
+          <ToolbarActionsSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="App titlebar">
+          <AppTitlebarSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Window control dock">
+          <WindowControlDockSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Inline text">
+          <InlineTextSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Empty grid hint">
+          <EmptyGridHintSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Modal roles">
+          <div className="grid gap-[var(--space-4)]">
+            <FormGridSpecimen />
+            <KeyCapSpecimen />
+            <VersionTagSpecimen />
+            <PaneTitleSpecimen />
+            <PaneHeaderSpecimen />
+            <PaneFocusSpecimen />
+          </div>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Browser pane states">

@@ -53,7 +53,8 @@ import {
 } from './icons'
 import { BTN_GHOST, BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
+import { usePaneFocusTier } from '../windowFocus'
+import { PaneHeader } from './ui'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import { PaneHeaderTags, PaneTagMenu } from './PaneTags'
 import {
@@ -451,7 +452,8 @@ function SessionPaneImpl({
   const glyphAgent: AgentKind = info.detected_agent ?? info.agent
   return (
     <section
-      className={`pane flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--terminal-frame-bg)] rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] overflow-hidden ${ended ? 'opacity-80' : ''} ${active ? 'focus' : ''}`}
+      data-pane-focus-border={focusTier}
+      className={`pane flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--terminal-frame-bg)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] overflow-hidden ${ended ? 'opacity-80' : ''} ${active ? 'focus' : ''}`}
       data-panekey={info.id}
       onPointerDownCapture={() => onActivate(info.id)}
       onContextMenu={(e) => {
@@ -460,8 +462,11 @@ function SessionPaneImpl({
         openMenuAt(e.clientX, e.clientY)
       }}
     >
-      <header
-        className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[10px] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b border-b-[var(--divider)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [.pane-slot.drag-src_&]:cursor-grabbing [transition:background_0.2s] @container ${PANE_HEAD_BG_CLS[focusTier]}`}
+      <PaneHeader
+        data-pane-focus-head={focusTier}
+        divider="solid"
+        transition="background"
+        dragCursor
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button, input, [data-pane-head-control]')) return
           onHeaderPointerDown(info.id, e)
@@ -503,7 +508,7 @@ function SessionPaneImpl({
         </span>
         <SessionInboxButton info={info} />
         <SessionHeaderActions info={info} client={client} ended={ended} live={live} expanded={expanded} shellIntegration={shellIntegration} onReconnectSsh={onReconnectSsh} onExpand={onExpand} onAddPane={onAddPane} menuOpen={menu !== null} closeMenu={closeMenu} openMenuAtButton={openMenuAtButton} />
-      </header>
+      </PaneHeader>
       <ResumeNotice
         notice={info.resume_notice}
         buttonClassName={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}

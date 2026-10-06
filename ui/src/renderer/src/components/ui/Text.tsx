@@ -1,8 +1,8 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'sm' | 'xl' | 'xs'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
-export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'accent' | 'dim' | 'dimmer'
+export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'warning' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
 export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small'
 
 const SIZE: Record<TextSize, string> = {
@@ -14,7 +14,10 @@ const SIZE: Record<TextSize, string> = {
   ui: '[font-size:var(--tr-text-ui-size)]',
   body: '[font-size:var(--tr-text-body-size)]',
   subhead: '[font-size:var(--tr-text-subhead-size)]',
-  label: '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)]'
+  label: '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)]',
+  sm: '[font-size:var(--tr-text-sm)]',
+  xl: '[font-size:var(--tr-text-xl)]',
+  xs: '[font-size:var(--tr-text-label-size)]'
 }
 
 const WEIGHT: Record<TextWeight, string> = {
@@ -36,14 +39,17 @@ const TONE: Record<TextTone, string> = {
   muted: 'text-[var(--text-muted)]',
   faint: 'text-[var(--text-faint)]',
   danger: 'text-[var(--danger)]',
+  warning: 'text-[var(--warning)]',
   accent: 'text-[var(--accent)]',
+  'key-hint': 'text-[var(--text-key-hint)]',
+  'quiet-button': 'text-[var(--quiet-button-ink)]',
   dim: 'text-[color-mix(in_srgb,var(--text-muted)_70%,transparent)]',
   dimmer: 'text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)]'
 }
 
 const LEADING: Record<TextLeading, string> = {
-  snug: 'leading-[1.35]',
-  tight: 'leading-[1.4]',
+  snug: 'leading-[var(--tr-text-snug-leading)]',
+  tight: 'leading-[var(--tr-text-tight-leading)]',
   normal: 'leading-[1.5]',
   relaxed: 'leading-[1.6]',
   small: 'leading-[var(--tr-text-small-leading)]'
@@ -76,8 +82,8 @@ export function Text({ as: Tag = 'span', size, weight, tone, leading, caps, tigh
     weight ? WEIGHT[weight] : '',
     tone ? TONE[tone] : '',
     leading ? LEADING[leading] : '',
-    caps ? 'uppercase tracking-[0.06em]' : '',
-    tight ? 'tracking-[-0.01em]' : '',
+    caps ? 'uppercase tracking-[var(--tr-text-field-label-tracking)]' : '',
+    tight ? 'tracking-[var(--tr-text-tight-tracking)]' : '',
     mono ? 'font-mono' : '',
     tabular ? 'tabular-nums' : '',
     breakAll ? 'break-all' : '',
@@ -85,4 +91,19 @@ export function Text({ as: Tag = 'span', size, weight, tone, leading, caps, tigh
     className
   ].filter(Boolean).join(' ')
   return <Tag {...props} className={classes} />
+}
+
+export function TextSpecimen(): React.JSX.Element {
+  return (
+    <div data-testid="text-specimen" className="grid gap-[var(--space-2)]">
+      <Text size="small" tone="muted">Secondary label</Text>
+      <Text size="ui" weight="ui" tone="primary">Interface text</Text>
+      <Text size="body" tone="secondary" leading="relaxed">Body copy</Text>
+      <Text size="subhead" weight="semibold" tone="primary" tight>Section heading</Text>
+      <Text size="label" weight="label" tone="muted">Form label</Text>
+      <Text size="xs" weight="label" tone="secondary">Compact key description</Text>
+      <Text size="ui" mono tabular tone="secondary">SHA256:0123 4567</Text>
+      <Text size="ui" tone="danger">Warning text</Text>
+    </div>
+  )
 }

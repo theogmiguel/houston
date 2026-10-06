@@ -26,10 +26,11 @@ import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './ui/panelChrome'
 
 const SURFACE_RADIUS_CLS =
   'rounded-b-[calc(var(--tr-radius-md)-1px)] [@container_(max-width:280px)]:rounded-b-[calc(var(--tr-radius-sm)-1px)]'
-import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
+import { usePaneFocusTier } from '../windowFocus'
 import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { Tooltip } from './ui/Tooltip'
+import { PaneHeader } from './ui'
 import { BrowserActConfirm } from './BrowserActConfirm'
 import { useBrowserConfirm } from '../houston/browserConfirm'
 import { useBrowserPaneLoad } from '../houston/browserOpenRequest'
@@ -220,11 +221,15 @@ export function BrowserPane({
   return (
     <section
       ref={hostRef}
-      className={`pane browser flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--tool-code-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] [transition:border-color_0.15s_ease] ${paneActive ? 'focus' : ''}`}
+      data-pane-focus-border={focusTier}
+      className={`pane browser flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--tool-code-bg)] overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] [transition:border-color_0.15s_ease] ${paneActive ? 'focus' : ''}`}
       data-panekey={node.id}
     >
-      <header
-        className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[10px] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] ${PANE_HEAD_BG_CLS[focusTier]} border-b border-b-[color-mix(in_srgb,var(--border)_55%,transparent)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [.pane-slot.drag-src_&]:cursor-grabbing [transition:background_0.2s,border-color_0.2s] @container`}
+      <PaneHeader
+        data-pane-focus-head={focusTier}
+        divider="borderMuted"
+        transition="browser"
+        dragCursor
         onPointerDown={onHeaderPointerDown}
       >
         <span className="agent-dot w-[7px] h-[7px] rounded-full flex-none bg-[var(--border-hover)]" />
@@ -288,7 +293,7 @@ export function BrowserPane({
           />
         </div>
         <BrowserHeadActions node={node} tabs={tabs} active={active} popover={popover} setPopover={setPopover} selectTab={selectTab} closeTab={closeTab} newTab={newTab} urlInput={urlInput} fullscreen={fullscreen} setFullscreen={setFullscreen} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} panel={panel} onSendToTerminal={onSendToTerminal} onMoveToGrid={onMoveToGrid} onClose={onClose} />
-      </header>
+      </PaneHeader>
       <div className="relative h-0.5 w-full overflow-hidden flex-none z-[var(--z-base)]" aria-hidden>
         {active.loading &&
           (active.progress != null ? (

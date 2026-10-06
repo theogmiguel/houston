@@ -129,6 +129,7 @@ import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
+import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 
 const noop = (): void => {}
 
@@ -236,6 +237,19 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/delegation-badge': () => <LegacyDelegationBadgeStory />,
   'legacy/delegation-panel': () => <LegacyDelegationPanelStory />,
   'legacy/update': () => <LegacyUpdateStory />,
+  'legacy/update-keep': () => <UpdateKeepStory />,
+  'legacy/update-stop': () => <UpdateStopStory />,
+  'legacy/update-unsupported': () => <UpdateUnsupportedStory />,
+  'legacy/update-empty': () => <UpdateEmptyStory />,
+  'legacy/update-running': () => <UpdateRunningStory />,
+  'legacy/update-installing': () => <UpdateInstallingStory />,
+  'legacy/host-key-changed': () => <HostKeyChangedStory />,
+  'legacy/ssh-advanced': () => <SshAdvancedStory />,
+  'legacy/shortcuts-off': () => <ShortcutsOffStory />,
+  'firstrun/orchestration': () => <FirstRunOrchestrationStory />,
+  'firstrun/workspace': () => <FirstRunWorkspaceStory />,
+  'boot/loading': () => <BootLoadingStory />,
+  'boot/failure': () => <BootFailureStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
   'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,

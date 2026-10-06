@@ -121,20 +121,25 @@ describe('pane focus geometry (charter §05b)', () => {
     const { container, root, pane } = renderPane(false)
     harness = { container, root }
     expect(pane.classList.contains('focus')).toBe(false)
-    expect(pane.className).toContain('border-[var(--border)]')
+    expect(pane.dataset.paneFocusBorder).toBe('none')
     expect(pane.className).not.toContain('--accent')
     expect(pane.className).not.toContain('after:shadow')
+    const css = readFileSync(join(__dirname, '../components/ui/paneFocus.css'), 'utf8')
+    expect(css).toContain("[data-pane-focus-border='none'] { border-color: var(--border); }")
+    expect(css).toContain('border-width: var(--pane-frame-border-width);')
   })
 
   it('a focused pane in a focused window gets the full --border-focus ring and header lift, still 1px', () => {
     const { container, root, pane, header } = renderPane(true)
     harness = { container, root }
     expect(pane.classList.contains('focus')).toBe(true)
-    expect(pane.className).toContain('border-[var(--border-focus)]')
-    expect(pane.className).toMatch(/(^|\s)border(\s|$)/)
+    expect(pane.dataset.paneFocusBorder).toBe('full')
     expect(pane.className).not.toMatch(/border-2\b/)
-    expect(header.className).toContain('bg-[var(--raised)]')
+    expect(header.dataset.paneFocusHead).toBe('full')
     expect(header.className).not.toContain('--accent')
+    const css = readFileSync(join(__dirname, '../components/ui/paneFocus.css'), 'utf8')
+    expect(css).toContain("[data-pane-focus-border='full'] { border-color: var(--border-focus); }")
+    expect(css).toContain("[data-pane-focus-head='full'] { background: var(--raised); }")
   })
 
   it('a focused pane in a BLURRED window dims the ring rather than dropping it', async () => {
@@ -144,8 +149,8 @@ describe('pane focus geometry (charter §05b)', () => {
       setWindowFocusedForTests(false)
     })
     expect(pane.classList.contains('focus')).toBe(true)
-    expect(pane.className).toContain('color-mix(in_srgb,var(--border-focus)_45%,var(--border))')
-    expect(header.className).toContain('color-mix(in_srgb,var(--raised)_45%,var(--session-terminal-header-bg))')
+    expect(pane.dataset.paneFocusBorder).toBe('dim')
+    expect(header.dataset.paneFocusHead).toBe('dim')
   })
 
   it('the pane name is primary ink, and steps down only while a SIBLING pane holds focus', () => {
@@ -153,21 +158,15 @@ describe('pane focus geometry (charter §05b)', () => {
     harness = { container, root }
     const title = container.querySelector('.pane-title')
     if (!(title instanceof HTMLElement)) throw new Error('SessionPane rendered no .pane-title')
+    expect(title.dataset.paneFocusHead).toBeUndefined()
     expect(title.className).toContain('text-[var(--text-primary)]')
-    expect(title.className).toContain(
-      '[body:has(.pane.focus)_.pane:not(.focus)_&]:text-[var(--text-secondary)]'
-    )
+    const css = readFileSync(join(__dirname, '../components/ui/paneFocus.css'), 'utf8')
+    expect(css).toContain('body:has(.pane.focus) .pane:not(.focus) .pane-title { color: var(--text-secondary); }')
   })
 
   it('every pane kind with a focus tier takes its name ink from the one shared rule', () => {
-    for (const file of ['RenameTitle.tsx', 'EditorLeaf.tsx', 'FilesPane.tsx']) {
-      const src = readFileSync(join(__dirname, file), 'utf8')
-      expect(
-        src,
-        `${file} must spend PANE_TITLE_INK_CLS on its title — a hand-rolled copy is how ` +
-          'three of these lost the rule in the first place'
-      ).toContain('PANE_TITLE_INK_CLS')
-    }
+    const css = readFileSync(join(__dirname, '../components/ui/paneFocus.css'), 'utf8')
+    expect(css.match(/\.pane-title \{ color: var\(--text-secondary\); \}/g)).toHaveLength(1)
   })
 
   it('the pane body (terminal canvas) never re-tints on focus', () => {

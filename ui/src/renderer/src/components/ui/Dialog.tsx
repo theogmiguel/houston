@@ -15,7 +15,7 @@ const panelClasses = variants(
       update: 'flex max-h-[92vh] w-[460px] max-w-[92vw] flex-col rounded-[var(--tr-radius-md)]',
       browser: 'w-[428px] max-w-[calc(100vw_-_32px)] flex flex-col gap-3',
       handoff: 'w-[720px] max-w-[92vw] rounded-[var(--tr-radius-md)]',
-      ssh: 'w-[min(440px,calc(100vw_-_32px))] p-6 flex flex-col gap-4 max-h-[calc(100vh_-_32px)] overflow-y-auto',
+      ssh: 'w-[min(var(--w-dialog-ssh-panel),calc(100vw_-_32px))] rounded-[var(--tr-radius-ssh-panel)] p-6 flex flex-col gap-4 max-h-[calc(100vh_-_32px)] overflow-y-auto',
       paneHandoff: 'w-[min(1180px,94vw)] h-[min(940px,92vh)] max-w-[94vw] rounded-[var(--tr-radius-md)] overflow-hidden flex flex-col',
       git: 'w-[560px] max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_4rem)] rounded-[var(--tr-radius-card)] overflow-hidden flex flex-col'
     },
@@ -71,18 +71,21 @@ export function DialogTitle({ children, id, tone = 'subhead', layout = 'default'
   return <div id={id} className={classes}>{children}</div>
 }
 
-export function DialogDescription({ children, id }: { children: ReactNode; id?: string }): React.JSX.Element {
-  return <div id={id} className="text-text-secondary [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-relaxed">{children}</div>
+export function DialogDescription({ children, as = 'div', ...props }: HTMLAttributes<HTMLDivElement> & { as?: 'div' | 'p' }): React.JSX.Element {
+  const Tag = as
+  return <Tag {...props} className={`m-0 text-[var(--text-secondary)] [font-size:var(--tr-text-body-size)] leading-relaxed ${props.className ?? ''}`}>{children}</Tag>
 }
 
-export function DialogBody({ children, variant = 'default', className = '', ...props }: HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'scroll' | 'bounded' | 'plain'; className?: string }): React.JSX.Element {
-  const baseClass = variant === 'default' ? 'p-5 space-y-4' : variant === 'bounded' ? 'p-5 space-y-4 max-h-[70vh] overflow-y-auto' : variant === 'scroll' ? 'flex-1 min-h-0 overflow-y-auto py-4 px-5 flex flex-col gap-3 [scrollbar-width:thin]' : ''
+export function DialogBody({ children, variant = 'default', className = '', ...props }: HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'scroll' | 'bounded' | 'stacked' | 'plain'; className?: string }): React.JSX.Element {
+  const baseClass = variant === 'default' ? 'p-5 space-y-4' : variant === 'bounded' ? 'p-5 space-y-4 max-h-[70vh] overflow-y-auto' : variant === 'scroll' ? 'flex-1 min-h-0 overflow-y-auto py-4 px-5 flex flex-col gap-3 [scrollbar-width:thin]' : variant === 'stacked' ? 'grid gap-[var(--space-3)] overflow-auto px-5 py-[var(--space-dialog-stacked-block)]' : ''
   return <div {...props} className={`${baseClass} ${className}`}>{children}</div>
 }
 
-export function DialogActions({ children, variant = 'default', className = '' }: { children: ReactNode; variant?: 'default' | 'footer' | 'stack' | 'row' | 'plain'; className?: string }): React.JSX.Element {
+export function DialogActions({ children, variant = 'default', className = '' }: { children: ReactNode; variant?: 'default' | 'footer' | 'stack' | 'row' | 'wrap' | 'plain'; className?: string }): React.JSX.Element {
   const baseClass = variant === 'plain'
     ? ''
+    : variant === 'wrap'
+    ? 'flex flex-wrap items-center justify-end gap-2 px-5 pb-5'
     : variant === 'default' || variant === 'stack'
     ? 'flex flex-col gap-2 px-5 pb-5'
     : variant === 'footer'
@@ -93,5 +96,5 @@ export function DialogActions({ children, variant = 'default', className = '' }:
 }
 
 export function DialogSpecimen(): React.JSX.Element {
-  return <DialogBackdrop onMouseDown={() => {}}><DialogForm role="dialog" aria-modal="true"><DialogTitle>Connect via SSH</DialogTitle><DialogBody><DialogDescription>Open a terminal on a remote machine.</DialogDescription></DialogBody><DialogActions variant="row"><Button variant="ghost">Cancel</Button><Button variant="primary">Connect</Button></DialogActions></DialogForm></DialogBackdrop>
+  return <DialogBackdrop onMouseDown={() => {}}><DialogForm role="dialog" aria-modal="true"><DialogTitle>Connect via SSH</DialogTitle><DialogBody variant="stacked"><DialogDescription>Open a terminal on a remote machine.</DialogDescription></DialogBody><DialogActions variant="wrap"><Button variant="ghost">Cancel</Button><Button variant="primary">Connect</Button></DialogActions></DialogForm></DialogBackdrop>
 }

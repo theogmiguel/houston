@@ -90,8 +90,8 @@ export function AppearancePicker({
   }
 
   return (
-    <Stack data-testid="appearance-picker" onKeyDown={onKeyDown}>
-      <Stack axis="horizontal" space="compact">
+    <Stack data-testid="appearance-picker" gap={3} onKeyDown={onKeyDown}>
+      <Stack axis="horizontal" align="center" gap={2}>
         <PaletteSearch value={query} onChange={(e) => setQuery(e.target.value)} />
         <Segmented
           aria-label="Filter palettes by mode"

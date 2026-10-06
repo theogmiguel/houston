@@ -9,12 +9,10 @@ import type { DirEntry } from '../env'
 import type { FilesNode, PaneKey } from '../layout/tree'
 import { readDir, showItemInFolder, createFile, createDirectory, renameFile, trashFile } from '../houston/bridge'
 import {
-  PANE_BORDER_CLS,
-  PANE_HEAD_BG_CLS,
-  PANE_TITLE_INK_CLS,
   usePaneFocusTier
 } from '../windowFocus'
 import { basename, getBuffer } from '../editor/bufferStore'
+import { PaneHeader, PaneTitle } from './ui'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import {
   ECTX_ITEM_CLS as EDITOR_CTX_ITEM_CLS,
@@ -60,9 +58,6 @@ const ICO_HEAD_DANGER =
   'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]'
 const ICO_HEAD_INFO =
   'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
-const PANE_TITLE_CLS =
-  'pane-title font-medium tracking-[-0.01em] leading-[1.4] whitespace-nowrap overflow-hidden text-ellipsis min-w-[32px]'
-
 // Dynamic import: CodeMirror plus its grammars has no business loading just
 // to show a file tree.
 const EditorSurfaceBody = lazy(() =>
@@ -354,8 +349,11 @@ export function FilesPane({
   const rootName = basename(root) || root
 
   const header = (
-    <header
-      className={`group pane-head touch-none flex items-center gap-2 pr-1 pl-[var(--space-2-5)] h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b border-b-[color-mix(in_srgb,var(--divider)_55%,transparent)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)] flex-none cursor-grab active:cursor-grabbing [transition:background_0.2s,border-color_0.2s] @container ${PANE_HEAD_BG_CLS[focusTier]}`}
+    <PaneHeader
+      data-pane-focus-head={focusTier}
+      divider="dividerMuted"
+      transition="surface"
+      inset="compact"
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest('button')) return
         onHeaderPointerDown(e)
@@ -364,7 +362,7 @@ export function FilesPane({
       <span className="flex-none text-[var(--text-muted)]">
         <Icon glyph={IconFolder} role="ui" />
       </span>
-      <span className={`${PANE_TITLE_CLS} ${PANE_TITLE_INK_CLS}`}>Files</span>
+      <PaneTitle>Files</PaneTitle>
       <Tooltip label={root}>
         <span
           data-testid="files-head-meta"
@@ -452,7 +450,7 @@ export function FilesPane({
           </button>
         </Tooltip>
       </span>
-    </header>
+    </PaneHeader>
   )
 
   const treeBody = (): React.JSX.Element => {
@@ -547,7 +545,8 @@ export function FilesPane({
           split.toggle()
         }
       }}
-      className={`pane files-pane ${panel ? "files-panel" : ""} flex-1 min-w-0 min-h-0 relative flex flex-col border ${PANE_BORDER_CLS[focusTier]} bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${active ? 'focus' : ''}`}
+      data-pane-focus-border={focusTier}
+      className={`pane files-pane ${panel ? "files-panel" : ""} flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--pane-bg)] overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${active ? 'focus' : ''}`}
       data-panekey={node.id}
       data-testid="files-pane"
     >

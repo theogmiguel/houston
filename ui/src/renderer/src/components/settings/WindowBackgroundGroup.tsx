@@ -438,7 +438,7 @@ export function WindowBackgroundGroup({
 
           <Group heading="Advanced" plain>
             <Inset space="compact-top">
-              <Stack space="compact">
+              <Stack gap={2}>
               <DetailsDisclosure summary="Fade and reset">
                 <Row title="Fade the bottom edge" desc="Blends the last tenth of the window into the theme.">
                   <Toggle

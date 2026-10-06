@@ -11,7 +11,7 @@ fail=0
 source scripts/check-radius-tokens-widened-baseline.sh
 
 BASELINE=(
-  "ui/src/renderer/src/App.tsx 1"
+  "ui/src/renderer/src/App.tsx 0"
   "ui/src/renderer/src/components/AgentProfiles.tsx 3"
   "ui/src/renderer/src/components/AttachmentChip.tsx 2"
   "ui/src/renderer/src/components/BrowserActConfirm.tsx 7"
@@ -20,9 +20,9 @@ BASELINE=(
   "ui/src/renderer/src/components/browserPickerChrome.ts 3"
   "ui/src/renderer/src/components/BrowserPicker.tsx 1"
   "ui/src/renderer/src/components/browserTabs.tsx 3"
-  "ui/src/renderer/src/components/FirstRun.tsx 1"
+  "ui/src/renderer/src/components/FirstRun.tsx 0"
   "ui/src/renderer/src/components/HandoffOverlay.tsx 1"
-  "ui/src/renderer/src/components/HostKeyModal.tsx 2"
+  "ui/src/renderer/src/components/HostKeyModal.tsx 0"
   "ui/src/renderer/src/components/LayoutView.tsx 1"
   "ui/src/renderer/src/components/markdownPipeline.tsx 1"
   "ui/src/renderer/src/components/McpManager.tsx 1"
@@ -38,7 +38,7 @@ BASELINE=(
   "ui/src/renderer/src/components/settings/VoiceSection.tsx 4"
   "ui/src/renderer/src/components/Sidebar.tsx 10"
   "ui/src/renderer/src/components/SkillsView.tsx 8"
-  "ui/src/renderer/src/components/SshConnectModal.tsx 2"
+  "ui/src/renderer/src/components/SshConnectModal.tsx 0"
   "ui/src/renderer/src/components/UsageSection.tsx 1"
   "ui/src/renderer/src/components/WindowControls.tsx 1"
   "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"

@@ -2,10 +2,7 @@ import { useState } from 'react'
 import { IconPencil } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
-import { PANE_TITLE_INK_CLS } from '../windowFocus'
-
-const PANE_TITLE_CLS =
-  "pane-title font-medium tracking-[-0.01em] leading-[1.4] whitespace-nowrap overflow-hidden text-ellipsis [flex:0_1_auto] min-w-[32px] max-w-[220px] [@container_(min-width:560px)]:max-w-[300px] [@container_(min-width:760px)]:max-w-[420px] [@container_(min-width:1000px)]:max-w-[560px] [@container_(min-width:1300px)]:max-w-[720px] [@container_(max-width:460px)]:max-w-[180px] [@container_(max-width:400px)]:max-w-[140px] [@container_(max-width:280px)]:max-w-[100px] [@container_(max-width:200px)]:max-w-[80px] [@container_(max-width:200px)]:min-w-[12px]"
+import { PaneTitle } from './ui'
 
 interface Props {
   title: string
@@ -26,12 +23,9 @@ export function RenameTitle({ title, onRename }: Props): React.JSX.Element {
     return (
       <>
         <Tooltip label="Double-click to rename">
-          <span
-            className={`${PANE_TITLE_CLS} ${PANE_TITLE_INK_CLS} cursor-text border-0 border-b border-dotted border-transparent group-hover:border-b-[color-mix(in_srgb,var(--text-muted)_55%,transparent)] group-focus-within:border-b-[color-mix(in_srgb,var(--text-muted)_55%,transparent)] [transition:border-color_0.2s,color_0.18s]`}
-            onDoubleClick={startEditing}
-          >
+          <PaneTitle editable onDoubleClick={startEditing}>
             {title}
-          </span>
+          </PaneTitle>
         </Tooltip>
         <Tooltip label="Rename">
           <button
