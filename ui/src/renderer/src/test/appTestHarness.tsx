@@ -312,7 +312,14 @@ export async function renderReadyApp(
   })
   await act(async () => {
     await flushGhosttyAttach()
+    await import('../components/ui/GridRailRow')
   })
+  // The rail row is lazy; a test that ends while it is still loading lets it resolve
+  // after teardown, which vitest reports as an unhandled error.
+  await settleLazySurface(
+    () => container.querySelector('[data-testid="grid-state-dot"][data-state="loading"]') === null,
+    'the grid rail row'
+  )
   return {
     container,
     root,

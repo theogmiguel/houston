@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
-import { act, render, renderHook } from '@testing-library/react'
+import { act, cleanup, render, renderHook } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgeLabel, useAgeNow } from './ageTicker'
+
+afterEach(cleanup)
 
 describe('age ticker', () => {
   afterEach(() => vi.useRealTimers())

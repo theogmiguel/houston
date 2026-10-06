@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button, ConnectionCell, Count, STATUS_LABELS, StatusLabel, TextInput } from './index'
 import { ThemeRevealSpecimen } from './ThemeRevealSpecimen'
 import { OrchestrationNoticeSpecimen } from './OrchestrationNotice'
 import { variants } from './variants'
+
+afterEach(cleanup)
 
 const textClass = variants('base', { tone: { quiet: 'muted', loud: 'strong' } }, { tone: 'quiet' })
 
