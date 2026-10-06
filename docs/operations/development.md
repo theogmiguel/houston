@@ -175,9 +175,13 @@ removed. Agent worktrees under `.houston/worktrees/` multiply this.
 
 - `scripts/sweep-targets.sh` deletes artifacts untouched for
   `HOUSTON_SWEEP_DAYS` (default 3) and artifacts built by toolchains rustup no
-  longer has, in the main checkout and every worktree below it. `--dry-run`
-  lists what it would delete. It needs `cargo install cargo-sweep`.
-- `scripts/sweep-targets.sh --install` runs that sweep daily through a
+  longer has, in the main checkout and every worktree below it. It also trims
+  each target directory to `HOUSTON_SWEEP_MAXSIZE` (default 30 GB; a full core
+  test build needs about 25 GB). `--dry-run` lists what it would delete. It
+  needs `cargo install cargo-sweep`.
+- Each sweep waits for the `oom-shield` lock, so it cannot overlap a shielded
+  build.
+- `scripts/sweep-targets.sh --install` runs that sweep hourly through a
   systemd user timer (`houston-sweep-targets.timer`) and writes
   `.houston/worktrees/.cargo/config.toml` with `incremental = false`, which
   Cargo applies to builds inside the agent worktrees only.
