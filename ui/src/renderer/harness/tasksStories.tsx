@@ -15,7 +15,6 @@ import { TaskDetail } from '../src/components/tasks/TaskDetail'
 import { TasksList } from '../src/components/tasks/TasksList'
 import { SettingsScreen } from './settingsStories'
 import '../src/components/tasks/tasks.css'
-import '../src/components/sidePanel.css'
 
 const NOW = 1_700_000_000_000
 const MINUTE = 60_000

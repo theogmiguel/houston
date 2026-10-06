@@ -1,9 +1,10 @@
+import { DiffLoadingMark } from '../ui'
 import { useMemo, useState } from 'react'
 import type { PrDiffSide, PrReviewDraft } from '../../houston/client'
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../ui/buttonChrome'
 import { Icon } from '../ui/Icon'
 import { IconLoaderCircle, IconPlus } from '../icons'
-import { SPIN_CLASS } from './DiffBody'
+
 import { HIT_TARGET_28 } from '../hitTarget'
 import { draftKey, parsePrDiff, type PrDiffFile, type PrDiffLine } from './prDetailUi'
 import type { PrDiffView } from './usePrDetailSubscription'
@@ -153,9 +154,9 @@ export function PrFiles({
   if (loading && diff === null) {
     return (
       <div className="flex-1 flex items-center justify-center p-6" data-testid="pr-files-loading">
-        <span className={SPIN_CLASS}>
+        <DiffLoadingMark>
           <Icon glyph={IconLoaderCircle} role="subhead" />
-        </span>
+        </DiffLoadingMark>
       </div>
     )
   }

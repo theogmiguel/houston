@@ -47,7 +47,7 @@ import { BTN_ICO } from '../components/ui/buttonChrome'
 const DROPZONE_FILE_ICON = resolveTightGlyph(IconFileDown, 'ui')
 import { registerVoiceInsert, registerVoiceNotice } from '../voice/store'
 import { abandonDictation, dictationActiveFor, voiceChordDown, voiceChordUp } from '../voice/dictation'
-import { SPIN_CLASS } from '../components/git/DiffBody'
+import { DiffLoadingMark } from '../components/ui'
 import { outputText, stripBoxGlyphs as stripBox } from './copyOutput'
 import {
   extractDragRangeText,
@@ -1484,9 +1484,9 @@ export function TerminalPane({
           aria-hidden="true"
         >
           {dropBusy ? (
-            <IconLoaderCircle className={`${ICON_ROLE_CLS.ui} text-primary ${SPIN_CLASS}`}
+            <DiffLoadingMark><IconLoaderCircle className={`${ICON_ROLE_CLS.ui} text-primary`}
               aria-hidden
-              data-testid="dropzone-icon-busy" />
+              data-testid="dropzone-icon-busy" /></DiffLoadingMark>
           ) : dragHasImages ? (
             <IconImage className={`${ICON_ROLE_CLS.ui} text-info`} data-testid="dropzone-icon-image" />
           ) : (

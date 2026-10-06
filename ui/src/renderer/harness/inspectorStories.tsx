@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react'
 import { SidePanel } from '../src/components/SidePanel'
+import { OverviewTab } from '../src/components/OverviewTab'
 import type { HoustonClient } from '../src/houston/client'
 import type { SessionInfo } from '../src/houston/client'
 
@@ -26,14 +27,14 @@ class InspectorClient {
   }
 
   gitStatus(dir: string): void {
-    queueMicrotask(() => this.emit({
+    setTimeout(() => this.emit({
       type: 'git_status', dir, base: null, branch: 'feat/tasks-backlog', upstream: 'origin/main',
       ahead: 4, behind: 0, default_base: 'main', not_a_repo: false,
       files: [
         { path: 'core/houston-core/src/orchestrate.rs', status: 'modified', staged: true, added: 52, deleted: 12, is_sensitive: false },
         { path: 'core/houston-core/tests/batch_wake_wire.rs', status: 'added', staged: true, added: 12, deleted: 0, is_sensitive: false }
       ]
-    }))
+    }), 10)
   }
 
   gitBranchCommits(dir: string): void {
@@ -49,10 +50,10 @@ class InspectorClient {
   }
 
   gitDiff(dir: string, path?: string): void {
-    queueMicrotask(() => this.emit({
+    this.emit({
       type: 'git_diff', dir, base: null, path: path ?? 'core/houston-core/src/orchestrate.rs', truncated: false,
       patch: 'diff --git a/core/houston-core/src/orchestrate.rs b/core/houston-core/src/orchestrate.rs\n--- a/core/houston-core/src/orchestrate.rs\n+++ b/core/houston-core/src/orchestrate.rs\n@@ -208,3 +208,4 @@ impl Daemon {\n-    for row in rows {\n+    let grouped = group_by_parent(rows);\n+    wake_each_parent(grouped);\n'
-    }))
+    })
   }
 
   prStatus(dir: string): void {
@@ -77,6 +78,8 @@ class InspectorClient {
     if (message.type === 'pr_watch_list') queueMicrotask(() => this.emit({ type: 'pr_watch_list', watches: [sessionId, orchestratorId].map((session) => ({ session, watches: [{ number: 412, url: 'https://github.com/acme/houston/pull/412', last_checked_at_ms: Date.now() - 40_000 }] })) }))
   }
 
+  inboxList(workspace: string): void { queueMicrotask(() => this.emit({ type: 'inbox_rows', workspace, rows: [] })) }
+  delegationResultsList(parent: number): void { queueMicrotask(() => this.emit({ type: 'delegation_results', parent, results: [] })) }
   gitStage(): void {}
   gitStatusRefresh(): void {}
 }
@@ -136,3 +139,5 @@ export const InspectorPrPaper = (): React.JSX.Element => <Frame theme="paper" bo
 export const InspectorFilesGraphite = (): React.JSX.Element => <Frame theme="graphite" board="files" />
 export const InspectorChildrenGraphite = (): React.JSX.Element => <Frame theme="graphite" board="children" />
 export const InspectorChildrenPaper = (): React.JSX.Element => <Frame theme="paper" board="children" />
+
+export const InspectorOverviewStory = (): React.JSX.Element => <><style>{'.agent-dot{animation:none!important}'}</style><OverviewTab parentId={orchestratorId} sessions={sessions} client={client} onClose={() => {}} onReview={() => {}} /></>

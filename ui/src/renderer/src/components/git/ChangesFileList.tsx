@@ -1,14 +1,13 @@
 import React from 'react'
 import type { GitFileStatus } from '../../houston/client'
 import { bulkLabelFor, discardKindFor, groupBulkDisabledReason, groupBulkPaths, groupRows, stageActionFor, GROUP_LABEL, type ChangeRow } from './changes'
-import { DIFF_EMPTY_CLASS, SPIN_CLASS } from './DiffBody'
+import { DiffEmptyState, DiffLoadingMark, GitStatusMark } from '../ui'
 import { Icon } from '../ui/Icon'
 import { IconArrowDown, IconArrowUp, IconFile, IconLoaderCircle, IconShieldAlert } from '../icons'
 import { materialAttrs } from '../ui/material'
 import { Tooltip } from '../ui/Tooltip'
 import { OpenInMenu } from '../OpenInMenu'
-import { MARK_TONE } from './scmChrome'
-import { changeFileClasses as classes, changeGroupHeadingClass, changeRowClass, changeMarkClass, changeMenuItemClass, changeStatusClass } from '../ui/inspectorChangeClasses'
+import { changeFileClasses as classes, changeGroupHeadingClass, changeRowClass, changeMenuItemClass } from '../ui/inspectorChangeClasses'
 const STATE_BODY = 'flex-1 min-h-0 flex flex-col items-center justify-center gap-2 p-6 text-center'
 const STATE_TITLE = 'text-[length:var(--tr-text-base)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]'
 const STATE_HINT = 'text-[length:var(--tr-text-sm)] text-[var(--text-muted)] max-w-[46ch]'
@@ -76,12 +75,12 @@ export function ChangesFileList({
     : []
   if (files === null) {
     return (
-      <div className={DIFF_EMPTY_CLASS} data-testid="changes-loading">
-        <span className={SPIN_CLASS}>
+      <DiffEmptyState data-testid="changes-loading">
+        <DiffLoadingMark>
           <Icon glyph={IconLoaderCircle} role="subhead" />
-        </span>
+        </DiffLoadingMark>
         Loading status…
-      </div>
+      </DiffEmptyState>
     )
   }
   if (rows.length === 0) {
@@ -292,9 +291,9 @@ function FileRow({
         className={classes.field}
       >
         <span className={classes.glyph}><Icon glyph={IconFile} role="label" /></span>
-        <span className={changeMarkClass(MARK_TONE[row.state] ?? MARK_TONE[row.tag])} aria-hidden>
+        <GitStatusMark status={row.state} kind="file" aria-hidden>
           {row.blocked ? <Icon glyph={IconShieldAlert} role="label" /> : MARK_GLYPH[row.state]}
-        </span>
+        </GitStatusMark>
         <span className={classes.label}>
           <span>{row.name}</span>
           <span className={classes.dir}>{row.dir}</span>
@@ -302,7 +301,7 @@ function FileRow({
       </button>
       <StageToggleButton stage={stage} onStageToggle={onStageToggle} />
       {counts}
-      <span aria-hidden className={changeStatusClass(MARK_TONE[row.state] ?? MARK_TONE[row.tag])}>{MARK_GLYPH[row.state]}</span>
+      <GitStatusMark aria-hidden status={row.state} kind="compact">{MARK_GLYPH[row.state]}</GitStatusMark>
       <button
         type="button"
         data-testid="changes-row-menu"

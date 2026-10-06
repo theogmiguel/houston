@@ -1,4 +1,10 @@
 import React, { useState } from 'react'
+import { DiffEmptyState } from '../src/components/ui/Diff'
+import { GitBranchBadge, GitBranchDeleteMenu, GitBranchRow } from '../src/components/ui/Branch'
+import { GitToolMenuItem, GitToolMenuSeparator, GitToolMenuSurface } from '../src/components/ui/Menu'
+import { GitStatusMark } from '../src/components/ui/GitStatusMark'
+import { GitPresenceDot, SourceControlCard, SourceControlHeaderBar, SourceControlMetaRow, SourceControlSectionHeading } from '../src/components/ui/SourceControl'
+import { RepositoryNotice } from '../src/components/ui/ScmNotice'
 import {
   BarSparkline,
   AttachmentChipFilename,
@@ -24,6 +30,8 @@ import {
   KeyCapSpecimen,
   Chip,
   Count,
+  OrchestratorOverviewSpecimen,
+  TimelineSpecimen,
   ConnectionCell,
   ConnectionBanner,
   ComposerBar,
@@ -188,7 +196,7 @@ import {
   FormPanelFooter,
   SingleLineText
 } from '../src/components/ui'
-import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconFolder, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconFolder, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal, IconPanelRight, IconRefresh } from '../src/components/icons'
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/ui/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
@@ -400,6 +408,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
             <Button variant="icon" icon={IconClose} aria-label="Close" />
+            <Button variant="icon-selected" icon={IconPanelRight} aria-label="Panel open" />
+            <Button variant="icon-structure" icon={IconRefresh} aria-label="Refresh" />
+            <Button variant="compact-primary-action">Compact primary</Button>
             <Button variant="text">Task row title</Button>
             <Button variant="badge">Orchestrator</Button>
             <Button variant="ghost-icon"><IconClose /></Button>
@@ -479,6 +490,14 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Roster surfaces">
           <RosterSurfaceSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Orchestrator overview">
+          <OrchestratorOverviewSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Progress timeline">
+          <TimelineSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Dialog">
@@ -780,6 +799,14 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Text">
+          <SpecimenRow>
+            <Text size="ui" weight="semibold" tight tone="primary">Source control heading</Text>
+            <Text size="small" tone="muted">Supporting detail</Text>
+            <Text size="small" mono tone="faint">origin/main</Text>
+          </SpecimenRow>
+        </SpecimenGroup>
+
         <SpecimenGroup heading="EmptyState">
           <SpecimenRow>
             <div style={{ flex: '1 1 360px', padding: 24, border: '1px solid var(--divider)' }}>
@@ -791,6 +818,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
           <SpecimenRow>
             <ActionEmptyState headline="No sessions yet" description="Start a session to see it here." action={{ label: 'New session', onClick: noop }} size="compact" />
+            <ActionEmptyState surface="shell" className="h-full" headline="No file selected" description="Choose a file to inspect its diff." action={{ label: 'Review', onClick: noop }} size="compact" />
           </SpecimenRow>
         </SpecimenGroup>
 
@@ -1080,6 +1108,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
             backLabel="Skills"
             renderDetail={(item) => <span>{item ? item.title : 'Nothing selected'}</span>}
           />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Git source control chrome">
+          <div className="flex flex-col gap-[var(--space-2)]"><SourceControlSectionHeading>Changes</SourceControlSectionHeading><SourceControlCard><GitBranchRow current><span>main</span><GitBranchBadge role="current">current</GitBranchBadge><GitStatusMark status="modified">M</GitStatusMark></GitBranchRow><SourceControlMetaRow>2 files changed</SourceControlMetaRow></SourceControlCard><GitToolMenuSurface><GitToolMenuItem>Fetch</GitToolMenuItem><GitToolMenuSeparator /><GitToolMenuItem>Branches</GitToolMenuItem></GitToolMenuSurface><DiffEmptyState>No diff selected</DiffEmptyState><GitPresenceDot tone="warn" /><GitBranchDeleteMenu onDelete={() => {}} onForceDelete={() => {}} /><SourceControlHeaderBar>Source control header</SourceControlHeaderBar><RepositoryNotice tone="info" icon={<span aria-hidden>i</span>}>Repository status refreshed</RepositoryNotice></div>
         </SpecimenGroup>
       </div>
     </Viewport>

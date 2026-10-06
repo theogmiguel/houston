@@ -1,3 +1,4 @@
+import { DiffLoadingMark } from '../ui'
 import { useEffect, useState } from 'react'
 import type {
   PrDetail,
@@ -9,7 +10,7 @@ import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../ui/buttonChrome'
 import { Icon } from '../ui/Icon'
 import { IconCheck, IconClose, IconLoaderCircle, IconPlus } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
-import { SPIN_CLASS } from './DiffBody'
+
 import {
   REACTION_GLYPH,
   REACTION_LABEL,
@@ -18,7 +19,7 @@ import {
   reviewerName,
   requestedReviewers
 } from './prDetailUi'
-import { META_ROW_CLS } from './scmChrome'
+import { SourceControlMetaRow } from '../ui'
 
 const SMALL = 'text-[length:var(--tr-text-small-size)]'
 const ACTION = 'inline-flex items-center gap-1.5'
@@ -159,7 +160,7 @@ export function PrReviewerPicker({
 
   return (
     <div className="flex flex-col gap-1" data-testid="pr-reviewers">
-      <div className={META_ROW_CLS}>
+      <SourceControlMetaRow>
         <span className={`${LABEL} w-[92px]`}>Reviewers</span>
         <span className={`min-w-0 flex-1 ${SMALL} text-[var(--text-primary)]`} data-testid="pr-reviewers-value">
           {detail.reviewers.length === 0 ? 'none requested' : requestedReviewers(detail.reviewers)}
@@ -175,14 +176,14 @@ export function PrReviewerPicker({
           className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ${SMALL} text-[var(--text-muted)] disabled:opacity-55`}
         >
           {loading ? (
-            <span className={SPIN_CLASS}>
+            <DiffLoadingMark>
               <Icon glyph={IconLoaderCircle} role="small" />
-            </span>
+            </DiffLoadingMark>
           ) : (
             'Manage'
           )}
         </button>
-      </div>
+      </SourceControlMetaRow>
       {message !== null && <div className={ERROR_LINE}>{message}</div>}
       {open && candidates !== null && (
         <div
@@ -272,7 +273,7 @@ export function PrLabelPicker({
   }
   return (
     <div className="flex flex-col gap-1" data-testid="pr-labels">
-      <div className={`${META_ROW_CLS} flex-wrap`}>
+      <SourceControlMetaRow wrap>
         <span className={`${LABEL} w-[92px]`}>Labels</span>
         <span className="min-w-0 flex-1 inline-flex items-center gap-1 flex-wrap" data-testid="pr-labels-value">
           {detail.labels.length === 0 ? (
@@ -300,14 +301,14 @@ export function PrLabelPicker({
           className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ${SMALL} text-[var(--text-muted)] disabled:opacity-55`}
         >
           {loading ? (
-            <span className={SPIN_CLASS}>
+            <DiffLoadingMark>
               <Icon glyph={IconLoaderCircle} role="small" />
-            </span>
+            </DiffLoadingMark>
           ) : (
             'Edit'
           )}
         </button>
-      </div>
+      </SourceControlMetaRow>
       {message !== null && <div className={ERROR_LINE}>{message}</div>}
       {open && candidates !== null && (
         <div

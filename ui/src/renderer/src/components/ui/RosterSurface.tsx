@@ -18,7 +18,7 @@ export function RosterQueuePanel({ className = '', ...props }: HTMLAttributes<HT
 }
 
 export function RosterOverview({ className = '', ...props }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
-  return <div {...props} className={`overview ${className}`} />
+  return <div {...props} className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-[var(--space-2-5)] pb-[var(--space-3)] ${className}`} />
 }
 
 export function RosterSurfaceSpecimen(): React.JSX.Element {

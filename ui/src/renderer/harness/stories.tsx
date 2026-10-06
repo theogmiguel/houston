@@ -121,15 +121,19 @@ import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, 
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
 import { B9EditorStory, B9LayoutStory, B9MarkdownStory, B9OpenInStory, B9PreviewStory, B9VoiceListeningStory, B9VoiceTranscribingStory, B9WindowStory } from './b9Stories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
-import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
+import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
   LegacyBranchesStory,
+  LegacyBranchesPopulatedStory,
   LegacyBrowserActStory,
   LegacyCheckpointsStory,
+  LegacyCheckpointsPopulatedStory,
   LegacyConfirmStory,
   LegacyDelegationBadgeStory,
   LegacyDelegationPanelStory,
   LegacyGitShellStory,
+  LegacyChangesIdleStory,
+  LegacyTimelineStatesStory,
   LegacyHandoffStory,
   LegacyHostKeyStory,
   LegacyPaneHandoffStory,
@@ -247,8 +251,13 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/tags': () => <LegacyTagsStory />,
   'legacy/question': () => <LegacyQuestionStory />,
   'legacy/git-shell': () => <LegacyGitShellStory />,
+  'legacy/changes-idle': () => <LegacyChangesIdleStory />,
+  'legacy/timeline-states': () => <LegacyTimelineStatesStory />,
+  'legacy/overview': () => <InspectorOverviewStory />,
   'legacy/branches': () => <LegacyBranchesStory />,
+  'legacy/branches-populated': () => <LegacyBranchesPopulatedStory />,
   'legacy/checkpoints': () => <LegacyCheckpointsStory />,
+  'legacy/checkpoints-populated': () => <LegacyCheckpointsPopulatedStory />,
   'legacy/delegation-badge': () => <LegacyDelegationBadgeStory />,
   'legacy/delegation-panel': () => <LegacyDelegationPanelStory />,
   'legacy/update': () => <LegacyUpdateStory />,

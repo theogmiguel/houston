@@ -6,7 +6,6 @@ import type { TaskSummary } from '../src/houston/generated/TaskSummary'
 import type { TaskDetailData } from '../src/houston/useTasks'
 import { TasksSurface } from '../src/components/nav/TasksSurface'
 import '../src/components/tasks/tasks.css'
-import '../src/components/sidePanel.css'
 
 const NOW = 1_700_000_000_000
 const WORKSPACE = '/home/dev/code/houston'

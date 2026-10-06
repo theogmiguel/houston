@@ -1,3 +1,4 @@
+import { DiffLoadingMark } from '../ui'
 import { useState } from 'react'
 import type { PrListItem, PrListInvolvement, PrListState } from '../../houston/client'
 import { BTN_GHOST, BTN_SECONDARY } from '../ui/buttonChrome'
@@ -5,7 +6,7 @@ import { Icon } from '../ui/Icon'
 import { IconLoaderCircle, IconSearch } from '../icons'
 import { Segmented } from '../ui/SegmentedControl'
 import { Select, type SelectOption } from '../ui/Select'
-import { SPIN_CLASS } from './DiffBody'
+
 import type { PrListController } from './usePrDetailSubscription'
 
 const SMALL = 'text-[length:var(--tr-text-small-size)]'
@@ -137,9 +138,9 @@ export function PrBrowse({
       <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]">
         {list.busy && list.items === null && (
           <div className="flex items-center justify-center p-6" data-testid="pr-browse-loading">
-            <span className={SPIN_CLASS}>
+            <DiffLoadingMark>
               <Icon glyph={IconLoaderCircle} role="subhead" />
-            </span>
+            </DiffLoadingMark>
           </div>
         )}
         {list.message !== null && (
@@ -202,9 +203,9 @@ export function PrBrowse({
               className={`btn ${ACTION} ${BTN_SECONDARY} disabled:opacity-55`}
             >
               {list.loadingMore ? (
-                <span className={SPIN_CLASS}>
+                <DiffLoadingMark>
                   <Icon glyph={IconLoaderCircle} role="small" />
-                </span>
+                </DiffLoadingMark>
               ) : (
                 'Load more'
               )}

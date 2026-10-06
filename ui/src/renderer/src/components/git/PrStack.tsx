@@ -1,9 +1,10 @@
+import { DiffLoadingMark } from '../ui'
 import type { PrStack } from '../../houston/client'
 import { BTN_GHOST } from '../ui/buttonChrome'
 import { Icon } from '../ui/Icon'
 import { IconLoaderCircle } from '../icons'
-import { SPIN_CLASS } from './DiffBody'
-import { META_ROW_CLS } from './scmChrome'
+
+import { SourceControlMetaRow } from '../ui'
 
 const SMALL = 'text-[length:var(--tr-text-small-size)]'
 const ACTION = 'inline-flex items-center gap-1.5'
@@ -42,7 +43,7 @@ export function PrStackSection({
   const open = openProp ?? stack !== null
   return (
     <div className="flex flex-col gap-1" data-testid="pr-stack">
-      <div className={META_ROW_CLS}>
+      <SourceControlMetaRow>
         <span className={`${LABEL} w-[92px]`}>Stack</span>
         {stack === null ? (
           <span className={`min-w-0 flex-1 ${SMALL} text-[var(--text-primary)]`} data-testid="pr-stack-value">
@@ -64,16 +65,16 @@ export function PrStackSection({
           className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ${SMALL} text-[var(--text-muted)] disabled:opacity-55`}
         >
           {loading ? (
-            <span className={SPIN_CLASS}>
+            <DiffLoadingMark>
               <Icon glyph={IconLoaderCircle} role="small" />
-            </span>
+            </DiffLoadingMark>
           ) : checked ? (
             'Reload'
           ) : (
             'Check'
           )}
         </button>
-      </div>
+      </SourceControlMetaRow>
       {message !== null && <div className={ERROR_LINE} data-testid="pr-stack-message">{message}</div>}
       {open && stack !== null && (
         <div

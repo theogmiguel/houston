@@ -6,7 +6,14 @@ const FILES = [
   join(__dirname, '../ChangesPane.tsx'),
   join(__dirname, 'changes.ts'),
   join(__dirname, 'DiffBody.tsx'),
-  join(__dirname, 'scmChrome.ts'),
+  join(__dirname, '../ui/Diff.tsx'),
+  join(__dirname, '../ui/GitStatusMark.tsx'),
+  join(__dirname, '../ui/Branch.tsx'),
+  join(__dirname, '../ui/Checkpoint.tsx'),
+  join(__dirname, '../ui/Menu.tsx'),
+  join(__dirname, '../ui/SourceControl.tsx'),
+  join(__dirname, '../ui/Changes.tsx'),
+  join(__dirname, '../ui/ScmNotice.tsx'),
   join(__dirname, 'ScmNotice.tsx')
 ]
 

@@ -49,6 +49,7 @@ export interface EmptyStateProps {
   testId?: string
   actionTestId?: string
   actionClassName?: string
+  surface?: 'default' | 'shell'
   className?: string
 }
 
@@ -72,6 +73,7 @@ export function EmptyState({
   testId = 'empty-state',
   actionTestId = 'empty-state-action',
   actionClassName = BTN_PRIMARY,
+  surface = 'default',
   className = ''
 }: EmptyStateProps): React.JSX.Element {
   const disabled = loading || action.disabled
@@ -83,7 +85,7 @@ export function EmptyState({
       data-testid={testId}
       data-state={loading ? 'loading' : 'filled'}
       data-size={size}
-      className={`flex flex-col items-center justify-center text-center ${step.root} ${className}`}
+      className={`flex flex-col items-center justify-center text-center ${step.root} ${surface === 'shell' ? 'bg-[var(--material-shell-bg)]' : ''} ${className}`}
     >
       {icon && (
         <span aria-hidden className="flex-none text-[var(--text-muted)]">

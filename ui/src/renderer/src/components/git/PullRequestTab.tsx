@@ -1,3 +1,4 @@
+import { DiffLoadingMark } from '../ui'
 import { useEffect, useRef, useState } from 'react'
 import type {
   GhState,
@@ -13,14 +14,14 @@ import type {
 } from '../../houston/client'
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../ui/buttonChrome'
 import { Segmented } from '../ui/SegmentedControl'
-import { META_ROW_CLS, SCM_CARD_ATTRS, SCM_CARD_CLS, SECTION_HEAD_CLS } from './scmChrome'
+import { SourceControlCard, SourceControlMetaRow, SourceControlSectionHeading } from '../ui'
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../ui/Disclosure'
 import { Icon } from '../ui/Icon'
 import { IconLoaderCircle, IconPencil, IconExternal, IconGitPullRequest } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
 import { prDecisionLabel } from './changes'
-import { SPIN_CLASS } from './DiffBody'
+
 import { PrBrowse } from './PrBrowse'
 import { PrComments, PrThreads } from './PrDiscussion'
 import { PrFiles } from './PrFiles'
@@ -69,7 +70,6 @@ const SECTION_HEAD = 'flex flex-col gap-1.5 p-3'
 const ACTION = 'inline-flex items-center gap-1.5'
 const SMALL = 'text-[length:var(--tr-text-small-size)]'
 const ROW = 'flex flex-col gap-0.5 px-3 py-1.5 border-t border-t-[var(--divider)] first:border-t-0'
-const META_DANGER_GROUND = 'bg-[color-mix(in_srgb,var(--danger)_7%,transparent)]'
 const META_DANGER_INK = 'text-[color-mix(in_srgb,var(--danger)_88%,var(--text-primary))]'
 const INPUT =
   'h-[var(--h-ctl)] px-2 rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] ' +
@@ -590,23 +590,23 @@ function PrMeta({
 }): React.JSX.Element {
   return (
     <div>
-      <div className={META_ROW_CLS}>
+      <SourceControlMetaRow>
         <span className="w-[92px] flex-none text-[var(--text-muted)]">Review</span>
         <span className="min-w-0 flex-1 text-[var(--text-primary)]">{reviewLabel(link.review_decision)}</span>
-      </div>
-      <div className={`${META_ROW_CLS} ${mergeReason !== null ? META_DANGER_GROUND : ''}`}>
+      </SourceControlMetaRow>
+      <SourceControlMetaRow tone={mergeReason !== null ? 'danger' : 'default'}>
         <span className="w-[92px] flex-none text-[var(--text-muted)]">Mergeable</span>
         <span className={`min-w-0 flex-1 ${mergeReason !== null ? META_DANGER_INK : 'text-[var(--text-primary)]'}`} data-testid="pr-merge-reason">
           {mergeReason ?? 'Ready to merge'}
         </span>
-      </div>
+      </SourceControlMetaRow>
       {detail.viewer_message !== null && detail.viewer_message !== undefined && (
-        <div className={`${META_ROW_CLS} ${META_DANGER_GROUND}`}>
+        <SourceControlMetaRow tone="danger">
           <span className="w-[92px] flex-none text-[var(--text-muted)]">Permissions</span>
           <span className={`${ERROR_LINE} ${META_DANGER_INK} min-w-0 flex-1`} data-testid="pr-viewer-message">
             {detail.viewer_message}
           </span>
-        </div>
+        </SourceControlMetaRow>
       )}
     </div>
   )
@@ -704,7 +704,7 @@ function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approva
     <div className="pr-inspector-head"><PrHeader link={link} detail={detail} busy={busy} editBusy={false} onEdit={() => {}} onReact={() => {}} onOpenUrlInPane={onOpenUrlInPane} compact /></div>
     {watchRows}
     <PrInspectorSections checks={detail.checks} detail={detail} approvalsRequired={approvalsRequired} approvalsReceived={approvalsReceived} number={number} busy={busy} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onSendToOrchestrator={onSendToOrchestrator} onOpenChecks={onOpenUrlInPane ? () => onOpenUrlInPane(`${link.url}/checks`) : undefined} />
-    <div data-testid="pr-details" className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+    <SourceControlCard data-testid="pr-details">
       <Disclosure summary="Details" scrollBody={false} className="rounded-none border-0 bg-transparent">
         <div className="flex flex-col gap-3">
           <PrEditDetails link={link} detail={detail} busy={busy} editBusy={pr.write.busy === `edit:${number}`} onEdit={(title, body) => pr.edit(number, title, body)} />
@@ -713,14 +713,14 @@ function PrInspectorBoard({ link, detail, pr, number, busy, mergeReason, approva
           {(detail.threads.length > 0 || detail.threads_message !== null || detail.threads_truncated) && <PrThreads detail={detail} busy={busy} number={number} onSendToOrchestrator={onSendToOrchestrator} onReply={(threadId, body) => pr.threadReply(number, threadId, body)} onResolve={(threadId, resolved) => pr.threadResolve(number, threadId, resolved)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />}
           <PrComments detail={detail} busy={busy} onComment={(body) => pr.comment(number, body)} onCommentEdit={(commentId, body) => pr.commentEdit(number, commentId, 'issue_comment', body)} onReact={(subjectId, content, reacted) => pr.react(number, subjectId, content, reacted)} />
           {reviewBar}
-          <div><div className={SECTION_HEAD_CLS}>People &amp; labels</div>
+          <div><SourceControlSectionHeading>People &amp; labels</SourceControlSectionHeading>
             <PrReviewerPicker detail={detail} busy={busy} candidates={pr.reviewers} loading={pr.reviewersBusy} message={pr.reviewersMessage} onLoad={() => pr.loadReviewers(number)} onApply={(added, removed) => pr.reviewerApply(number, added, removed)} open={openPicker === 'reviewers'} onOpenChange={(open) => setOpenPicker(open ? 'reviewers' : null)} />
             <PrLabelPicker detail={detail} busy={busy} candidates={pr.labels} loading={pr.labelsBusy} message={pr.labelsMessage} onLoad={() => pr.loadLabels(number)} onToggle={(name, applied) => pr.labelSet(number, [name], applied)} open={openPicker === 'labels'} onOpenChange={(open) => setOpenPicker(open ? 'labels' : null)} />
             <PrStackSection number={number} busy={busy} stack={pr.stack} checked={pr.stackChecked} loading={pr.stackBusy} message={pr.stackMessage} onLoad={() => pr.loadStack(number)} open={openPicker === 'stack'} onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)} />
           </div>
         </div>
       </Disclosure>
-    </div>
+    </SourceControlCard>
   </PrSummary>
 }
 
@@ -904,7 +904,7 @@ function PrDetailView({
           </div>
         ) : (
           <PrSummary>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+            <SourceControlCard>
               <PrHeader
                 link={link}
                 detail={detail}
@@ -914,14 +914,14 @@ function PrDetailView({
                 onReact={(content, reacted) => pr.react(number, null, content, reacted)}
                 onOpenUrlInPane={onOpenUrlInPane}
               />
-            </div>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
-              <div className={SECTION_HEAD_CLS}>Status</div>
+            </SourceControlCard>
+            <SourceControlCard>
+              <SourceControlSectionHeading>Status</SourceControlSectionHeading>
               <PrChecks checks={detail.checks} />
               <PrMeta link={link} detail={detail} mergeReason={mergeReason} />
-            </div>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
-              <div className={SECTION_HEAD_CLS}>People &amp; labels</div>
+            </SourceControlCard>
+            <SourceControlCard>
+              <SourceControlSectionHeading>People &amp; labels</SourceControlSectionHeading>
               <PrReviewerPicker
                 detail={detail}
                 busy={busy}
@@ -955,8 +955,8 @@ function PrDetailView({
                 open={openPicker === 'stack'}
                 onOpenChange={(open) => setOpenPicker(open ? 'stack' : null)}
               />
-            </div>
-            <div className={SCM_CARD_CLS} {...SCM_CARD_ATTRS}>
+            </SourceControlCard>
+            <SourceControlCard>
               {link.review_decision === 'REVIEW_REQUIRED' && approvalsRequired > 0 && (
                 <div className="flex items-center" data-testid="pr-review-requirement">
                   <span>Review · {approvalsRequired} approval{approvalsRequired === 1 ? '' : 's'} required</span>
@@ -991,7 +991,7 @@ function PrDetailView({
                 }
               />
               {reviewBar}
-            </div>
+            </SourceControlCard>
           </PrSummary>
         )}
       </div>
@@ -1068,9 +1068,9 @@ export function PullRequestTab({
   if (pr.view === null) {
     return withWatchRows(
       <div className={EMPTY} data-testid="pr-loading">
-        <span className={SPIN_CLASS}>
+        <DiffLoadingMark>
           <Icon glyph={IconLoaderCircle} role="subhead" />
-        </span>
+        </DiffLoadingMark>
       </div>
     )
   }

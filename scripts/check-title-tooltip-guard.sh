@@ -8,7 +8,7 @@ cd "$repo_root"
 ui_src="ui/src"
 fail=0
 
-COMPONENT_PROPS=(Row SettingsRow GoalProgressRow DetailCard LinkPanel RenameTitle SettingsDetail SettingsDetailPanel NavSurface Centered SectionHead NavDetailState NavEmpty StartupFailure CenteredStatus EmptyPanel)
+COMPONENT_PROPS=(Row SettingsRow GoalProgressRow DetailCard LinkPanel RenameTitle SettingsDetail SettingsDetailPanel NavSurface Centered SectionHead NavDetailState NavEmpty StartupFailure CenteredStatus EmptyPanel RepositoryPanelState)
 
 COMPONENT_PROPS_OPTIONAL=(ConfirmModal)
 

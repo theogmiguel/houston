@@ -7,7 +7,6 @@ import { requestReveal } from '../editor/bufferStore'
 import { SourceControlPanel, ScmResizeHandle, type SourceControlPanelProps } from './SourceControlPanel'
 import { InspectorBody, InspectorCard, InspectorHeader, InspectorSurface } from './ui/InspectorHeader'
 import { IconAgent } from './icons'
-import './sidePanel.css'
 import './tasks/tasks.css'
 
 const FilesPane = lazy(() => import('./FilesPane').then((module) => ({ default: module.FilesPane })))
