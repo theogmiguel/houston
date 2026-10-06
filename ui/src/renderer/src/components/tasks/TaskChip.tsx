@@ -1,6 +1,6 @@
 import type { SessionTask } from '../../houston/generated/SessionTask'
 import { openSideTasks } from '../../sidePanel'
-import { TaskKeyChip, TaskKeyTag } from '../ui/TaskSurface'
+import { TaskKeyChip, TaskKeyTag } from '../ui/TaskKeyChip'
 import { Tooltip } from '../ui/Tooltip'
 import { runStateLabel } from './format'
 import { TaskStatusGlyph } from './glyphs'

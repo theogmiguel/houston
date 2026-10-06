@@ -1,5 +1,5 @@
 import { IconCheck, IconLoaderCircle } from '../icons'
-import { DiffLoadingMark } from './Diff'
+import { DiffLoadingMark } from './DiffLoadingMark'
 import { ICON_ROLE_CLS } from './Icon'
 
 /** The editor header's save state: a turning ring while a write is in flight, then a check. */

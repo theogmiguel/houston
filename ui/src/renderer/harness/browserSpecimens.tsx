@@ -3,7 +3,6 @@ import { IconChevronDown, IconExternal, IconMonitor, IconPhone, IconSearch, Icon
 import { Icon } from '../src/components/ui/Icon'
 import { Text } from '../src/components/ui/Text'
 import {
-  ConfirmationCard,
   DevicePresetButton,
   BrowserDeviceFrame,
   BrowserNavigationButton,
@@ -19,7 +18,6 @@ import {
   BrowserTabsList,
   BrowserTabsPopover,
   UrlField,
-  BrowserActSpotlight,
   BrowserCaption,
   BrowserDetachedPlaceholder,
   BrowserDeviceGroup,
@@ -32,6 +30,10 @@ import {
   BrowserUrlInput,
   BrowserUrlSearchIcon
 } from '../src/components/ui/BrowserSurface'
+import {
+  ConfirmationCard,
+  BrowserActSpotlight
+} from '../src/components/ui/BrowserActSurface'
 
 const noop = (): void => {}
 

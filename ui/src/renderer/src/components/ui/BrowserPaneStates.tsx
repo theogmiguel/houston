@@ -1,13 +1,13 @@
 import { Button } from './Button'
+import { Text } from './Text'
 import { variants } from './variants'
 import { IconGlobe, IconHistory, IconPlug, IconPlus, IconRefresh, IconServer } from '../icons'
 import { IconTile } from './IconTile'
 import type { LocalServer } from '../../houston/generated/LocalServer'
 import { clearRecents, faviconInitial, hostLabel } from '../browserTabs'
-import type { Dispatch, RefObject, SetStateAction } from 'react'
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from 'react'
 import { unreachableHost, unreachableMessage } from './browserUnreachable'
 import { lastRunLabel } from '../nav/routineFormat'
-import { BrowserCaption } from './BrowserSurface'
 
 const groupTitle = variants(
   'inline-flex items-center gap-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-muted)]',
@@ -187,4 +187,8 @@ export function BrowserPaneStageState({
       onToggleDetails={() => setDetails((visible) => !visible)}
     />
   )
+}
+
+export function BrowserCaption({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text size="xs" tone="faint" mono tabular className="flex-none">{children}</Text>
 }

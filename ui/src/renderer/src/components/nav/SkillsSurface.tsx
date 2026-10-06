@@ -13,7 +13,7 @@ import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
 import { Row, SettingsList, SubHead } from '../ui/settingsPrimitives'
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../ui'
-import { PanelFootnote, PanelIconButton, PanelSwitch } from '../ui/PanelControls'
+import { PanelFootnote, PanelIconButton, PanelSwitch } from '../ui/PanelInlineControls'
 
 const SkillsView = lazy(() =>
   import('../SkillsView').then((m) => ({ default: m.SkillsView }))

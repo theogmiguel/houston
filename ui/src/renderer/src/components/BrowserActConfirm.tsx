@@ -28,7 +28,7 @@ import {
   TrustOption,
   WarningCallout,
   BrowserActSpotlight
-} from './ui/BrowserSurface'
+} from './ui/BrowserActSurface'
 import { Text } from './ui/Text'
 
 function originOf(url: string | null): string {

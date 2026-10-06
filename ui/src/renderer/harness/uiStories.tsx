@@ -13,8 +13,6 @@ import {
   AttachmentPreviewCard,
   AttachmentRemoveButton,
   AttachmentTypeGlyph,
-  BrowserBlankState,
-  BrowserUnreachableState,
   CalloutSpecimen,
   ChoiceCardSpecimen,
   ActionMenu,
@@ -264,6 +262,7 @@ import {
   FormPanelFooter,
   SingleLineText
 } from '../src/components/ui'
+import { BrowserBlankState, BrowserUnreachableState } from '../src/components/ui/BrowserPaneStates'
 import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconFolder, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal, IconPanelRight, IconRefresh } from '../src/components/icons'
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/ui/overlayChrome'

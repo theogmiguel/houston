@@ -1,5 +1,6 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Button } from './Button'
+export { DiffLoadingMark } from './DiffLoadingMark'
 
 type DiffKind = 'ctx' | 'add' | 'del' | 'hunk' | 'meta'
 
@@ -61,10 +62,6 @@ export function DiffGutter({ children }: { children?: ReactNode }): React.JSX.El
 
 export function DiffLineText({ children }: { children: ReactNode }): React.JSX.Element {
   return <span className="flex-1 min-w-0">{children}</span>
-}
-
-export function DiffLoadingMark({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="loop-anim motion-safe:animate-[git-spin_0.9s_linear_infinite]">{children}</span>
 }
 
 export function DiffPaneSurface({ children, selected = false }: { children: ReactNode; selected?: boolean }): React.JSX.Element {

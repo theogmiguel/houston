@@ -1,9 +1,8 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
-import { HIT_TARGET_28 } from '../hitTarget'
 import { IconChevronDown, IconChevronLeft } from '../icons'
 import { Icon } from './Icon'
 import { Text } from './Text'
+export { PanelFootnote, PanelIconButton, PanelSwitch, type PanelIconButtonProps, type PanelSwitchProps } from './PanelInlineControls'
 
 const BUTTON_BASE = 'btn inline-flex items-center justify-center gap-[var(--space-panel-button-gap)] min-h-[var(--h-ctl)] px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
 
@@ -20,17 +19,6 @@ export interface PanelButtonProps extends ButtonHTMLAttributes<HTMLButtonElement
 /** A text button for panel and list chrome, one rung tighter than `Button`. */
 export function PanelButton({ tone = 'secondary', type = 'button', className = '', children, ...props }: PanelButtonProps): React.JSX.Element {
   return <button {...props} type={type} className={`${BUTTON_BASE} ${BUTTON_TONE[tone]} ${className}`}>{children}</button>
-}
-
-const ICON_BUTTON = `btn inline-flex items-center justify-center flex-none ${CONTROL_SIZE_SQUARE_CLS.mini} ${HIT_TARGET_28} rounded-[var(--tr-radius-sm)] border-0 bg-transparent text-[var(--text-secondary)] cursor-pointer [transition:color_var(--transition-panel-icon)_ease-out,background-color_var(--transition-panel-icon)_ease-out] hover:not-disabled:bg-[var(--hover-fill)] hover:not-disabled:text-[var(--text-primary)] disabled:text-[var(--text-faint)] disabled:opacity-55 disabled:cursor-default`
-
-export interface PanelIconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  danger?: boolean
-}
-
-/** A 22px quiet icon button (28px hit target) for rows and panel headers. */
-export function PanelIconButton({ danger = false, type = 'button', className = '', ...props }: PanelIconButtonProps): React.JSX.Element {
-  return <button {...props} type={type} className={`${ICON_BUTTON} ${danger ? 'hover:not-disabled:text-[var(--danger)]!' : ''} ${className}`} />
 }
 
 export interface PanelChoiceProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -80,40 +68,6 @@ export function PanelTextArea({ fill = false, className = '', ...props }: PanelT
   return <textarea {...props} className={`${TEXTAREA_BASE} ${fill ? 'flex-1 min-h-0 font-mono' : ''} ${className}`} />
 }
 
-export interface PanelSwitchProps {
-  on: boolean
-  disabled?: boolean
-  label: string
-  onChange: (next: boolean) => void
-  testId?: string
-}
-
-/** A 30x17 on/off switch for panel rows. */
-export function PanelSwitch({ on, disabled, label, onChange, testId }: PanelSwitchProps): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      data-testid={testId ?? 'nav-switch'}
-      disabled={disabled}
-      onClick={() => onChange(!on)}
-      className={`btn relative flex-none w-[var(--w-panel-switch)] h-[var(--h-switch-track)] p-0 rounded-full border cursor-pointer [transition:border-color_var(--transition-panel-switch)_ease-out,background-color_var(--transition-panel-switch)_ease-out] disabled:cursor-default disabled:opacity-55 ${HIT_TARGET_28} ${
-        on
-          ? 'border-[var(--panel-switch-border-on)] bg-[var(--accent)]'
-          : 'border-[var(--border)] bg-[var(--hover-fill)]'
-      }`}
-    >
-      <span
-        className={`absolute top-[var(--space-panel-switch-inset)] left-[var(--space-panel-switch-inset)] w-[var(--h-panel-switch-thumb)] h-[var(--h-panel-switch-thumb)] rounded-full [transition:background-color_var(--transition-panel-switch)_ease-out,transform_var(--transition-panel-switch)_var(--ease-panel-switch)] ${
-          on ? 'bg-[var(--accent-ink)] translate-x-[var(--space-panel-switch-travel)]' : 'bg-[var(--text-secondary)]'
-        }`}
-      />
-    </button>
-  )
-}
-
 /** The 42px bar that returns from a detail view to its list, with trailing actions. */
 export function PanelBackBar({ label, onClick, children }: { label: string; onClick: () => void; children?: ReactNode }): React.JSX.Element {
   return (
@@ -152,15 +106,6 @@ export function PanelEmpty({ icon, title, children, action, testId }: PanelEmpty
       <Text as="p" size="small" weight="small" leading="normal" tone="secondary" className="max-w-[var(--w-panel-empty-copy)] pt-[var(--space-panel-empty-copy-top)] pb-[var(--space-panel-empty-copy-bottom)] text-pretty">{children}</Text>
       {action}
     </div>
-  )
-}
-
-/** A one-line footnote under a panel, in the faintest ink. */
-export function PanelFootnote({ children }: { children: ReactNode }): React.JSX.Element {
-  return (
-    <Text as="p" data-testid="nav-footnote" size="small" weight="small" leading="normal" tone="faint" className="pt-[var(--space-3)]">
-      {children}
-    </Text>
   )
 }
 
