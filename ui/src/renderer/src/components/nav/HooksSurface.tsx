@@ -1,8 +1,8 @@
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
+import { NavSurfaceFrame } from '../ui'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import { AgentStatusSection } from '../settings/AgentStatusSection'
 import { ContentColumn } from './navChrome'
-import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 export function HooksSurface(props: {
   providers: AgentHookState[] | null
@@ -12,11 +12,7 @@ export function HooksSurface(props: {
 }): React.JSX.Element {
   const { providers, onSet, onRefresh, checkedAt = null } = props
   return (
-    <div
-      data-testid="nav-surface"
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
+    <NavSurfaceFrame>
       <ContentColumn wide>
         <AgentStatusSection
           providers={providers}
@@ -25,6 +21,6 @@ export function HooksSurface(props: {
           checkedAt={checkedAt}
         />
       </ContentColumn>
-    </div>
+    </NavSurfaceFrame>
   )
 }

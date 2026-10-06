@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Button, EmptyState, ListDetail, Notice, PageFrame, PageHeader, StatusLabel, type ListDetailItem } from '../ui'
+import { Button, EmptyState, ListDetail, Notice, PageFrame, PageHeader, StatusLabel, type ListDetailItem, NavSurfaceFrame } from '../ui'
 import { IconClock, IconPlus } from '../icons'
 import { formatRoutineError, nextUpTimeLabel } from './routineFormat'
 import { RoutineEditor, type RoutineFormValue } from './RoutineEditor'
@@ -12,7 +12,6 @@ import type {
   RoutineWorkspaceOption
 } from '../../houston/routineTypes'
 import { ROUTINE_RUNS_CONCURRENT } from '../../houston/generated/DEFAULTS'
-import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 const RoutineDetail = lazy(() => import('../ui/RoutineDetail').then((module) => ({ default: module.RoutineDetail })))
 
@@ -138,7 +137,7 @@ export function RoutinesSurface(props: {
 
   if (panel) {
     return (
-      <div data-testid="nav-surface" {...materialAttrs('base')} className={`flex flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
+      <NavSurfaceFrame row>
         <PageFrame width="wide" className="flex-1 min-w-0">
           <PageHeader heading="Routines" description="Prompts that run on a schedule, each in its own pane." />
           {error && <Notice tone="danger">{formatRoutineError(error)}</Notice>}
@@ -161,12 +160,12 @@ export function RoutinesSurface(props: {
             onCancel={() => { onDismissError(); setPanel(null) }}
           />
         </PageFrame>
-      </div>
+      </NavSurfaceFrame>
     )
   }
 
   return (
-    <div data-testid="nav-surface" {...materialAttrs('base')} className={`flex flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
+    <NavSurfaceFrame row>
     <PageFrame width="wide" className="flex-1 min-w-0">
       <PageHeader
         heading="Routines"
@@ -213,7 +212,7 @@ export function RoutinesSurface(props: {
         }}
       />
     </PageFrame>
-    </div>
+    </NavSurfaceFrame>
   )
 }
 

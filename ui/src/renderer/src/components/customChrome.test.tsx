@@ -188,24 +188,35 @@ describe('every chrome theme cuts its own custom ground', () => {
     }
   })
 
+  // Each full-region screen renders its root through one components/ui role; the role owns the
+  // material rung and the corner cut against the rail.
+  const SCREEN_ROOTS: Array<[screen: string, role: string, roleFile: string]> = [
+    ['SettingsView.tsx', 'SettingsPageSurface', 'ui/SettingsPageSurface.tsx'],
+    ['NewSessionComposer.tsx', 'DockedFormPanel', 'ui/LaunchComposerParts.tsx'],
+    ['FirstRun.tsx', 'OnboardingStage', 'ui/OnboardingStage.tsx'],
+    ['WorkspacesEmpty.tsx', 'ScreenRegion', 'ui/ScreenRegion.tsx'],
+    ['nav/SkillsSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['nav/HooksSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['nav/RoutinesSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx'],
+    ['nav/TasksSurface.tsx', 'NavSurfaceFrame', 'ui/NavSurfaceFrame.tsx']
+  ]
+
+  /** The role's own source, after checking the screen renders it. */
+  function screenRootRole(screen: string, role: string, roleFile: string): string {
+    const src = readFileSync(resolve(__dirname, screen), 'utf8')
+    expect(src, `${screen} must render its root through <${role}>`).toMatch(new RegExp(`<${role}[\\s>]`))
+    return readFileSync(resolve(__dirname, roleFile), 'utf8')
+  }
+
   it('every screen that fills a region wears the base rung, never a literal ground', () => {
-    const ROOTS: Array<[string, string]> = [
-      ['SettingsView.tsx', 'SettingsView.tsx'],
-      ['NewSessionComposer.tsx', 'NewSessionComposer.tsx'],
-      ['FirstRun.tsx', 'FirstRun.tsx'],
-      ['nav/SkillsSurface.tsx', 'nav/SkillsSurface.tsx'],
-      ['nav/HooksSurface.tsx', 'nav/HooksSurface.tsx'],
-      ['nav/RoutinesSurface.tsx', 'nav/RoutinesSurface.tsx'],
-      ['WorkspacesEmpty.tsx', 'ui/ScreenRegion.tsx']
-    ]
-    for (const [screen, sourceFile] of ROOTS) {
-      const src = readFileSync(resolve(__dirname, sourceFile), 'utf8')
-      expect(src, `${screen} must wear the rung's class`).toContain('MATERIAL_CLS.base')
-      expect(src, `${screen} must carry data-material, or it gets the ground and no ink`).toContain(
+    for (const [screen, role, roleFile] of SCREEN_ROOTS) {
+      const src = screenRootRole(screen, role, roleFile)
+      expect(src, `${role} must wear the rung's class`).toContain('MATERIAL_CLS.base')
+      expect(src, `${role} must carry data-material, or it gets the ground and no ink`).toContain(
         "materialAttrs('base')"
       )
       const rootCls = src.split('\n').find((l) => l.includes('MATERIAL_CLS.base')) ?? ''
-      expect(rootCls, `${screen}: the root must not paint an opaque ground over the picture`)
+      expect(rootCls, `${role}: the root must not paint an opaque ground over the picture`)
         .not.toContain('bg-background')
     }
   })
@@ -220,9 +231,9 @@ describe('every chrome theme cuts its own custom ground', () => {
     expect(THEME_CSS).toContain('.content-region::before')
     expect(THEME_CSS).not.toContain('.agents-region')
     const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8')
-    const wrappers = app.match(/className="(?:content-region )?absolute inset-0 flex z-\[var\(--z-leaf\)\]"/g) ?? []
-    expect(wrappers.length).toBeGreaterThanOrEqual(2)
-    for (const w of wrappers) expect(w).toContain('content-region')
+    expect((app.match(/<ContentRegion>/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    const region = readFileSync(resolve(__dirname, 'ui/ContentRegion.tsx'), 'utf8')
+    expect(region).toContain('className="content-region absolute inset-0 flex z-[var(--z-leaf)]"')
   })
 
   it("a screen's corner is CUT out of the screen, never coated over it", () => {
@@ -234,23 +245,10 @@ describe('every chrome theme cuts its own custom ground', () => {
     )
     expect(THEME_CSS).toContain('.grid-region:has(> .content-region)::before')
     expect(THEME_CSS).toContain('.grid-region:has(> .content-region)::after')
-    const ROOTS: Array<[string, string]> = [
-      ['SettingsView.tsx', 'SettingsView.tsx'],
-      ['NewSessionComposer.tsx', 'NewSessionComposer.tsx'],
-      ['FirstRun.tsx', 'FirstRun.tsx'],
-      ['WorkspacesEmpty.tsx', 'ui/ScreenRegion.tsx'],
-      ['nav/SkillsSurface.tsx', 'nav/SkillsSurface.tsx'],
-      ['nav/HooksSurface.tsx', 'nav/HooksSurface.tsx'],
-      ['nav/RoutinesSurface.tsx', 'nav/RoutinesSurface.tsx']
-    ]
-    for (const [screen, sourceFile] of ROOTS) {
-      const src = readFileSync(resolve(__dirname, sourceFile), 'utf8')
-      expect(src, `${screen} must cut the region's top-left corner`).toContain(
-        'rounded-tl-[var(--r-content)]'
-      )
-      expect(src, `${screen} must cut the region's bottom-left corner`).toContain(
-        'rounded-bl-[var(--r-content)]'
-      )
+    for (const [screen, role, roleFile] of SCREEN_ROOTS) {
+      const src = screenRootRole(screen, role, roleFile)
+      expect(src, `${role} must cut the region's top-left corner`).toContain('rounded-tl-[var(--r-content)]')
+      expect(src, `${role} must cut the region's bottom-left corner`).toContain('rounded-bl-[var(--r-content)]')
     }
   })
 

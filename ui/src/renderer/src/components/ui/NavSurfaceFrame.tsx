@@ -2,17 +2,19 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { MATERIAL_CLS, materialAttrs } from './material'
 
 export interface NavSurfaceFrameProps extends Omit<HTMLAttributes<HTMLDivElement>, 'className'> {
+  /** Lays the page and a side panel out in a row. */
+  row?: boolean
   children: ReactNode
 }
 
 /** The scrolling base-material surface a navigation page sits on, rounded against the rail. */
-export function NavSurfaceFrame({ children, ...props }: NavSurfaceFrameProps): React.JSX.Element {
+export function NavSurfaceFrame({ row = false, children, ...props }: NavSurfaceFrameProps): React.JSX.Element {
   return (
     <div
       data-testid="nav-surface"
       {...props}
       {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
+      className={`${row ? 'flex ' : ''}flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
       {children}
     </div>

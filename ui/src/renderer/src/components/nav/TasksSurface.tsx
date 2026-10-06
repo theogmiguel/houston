@@ -3,13 +3,12 @@ import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionInfo, HoustonClient } from '../../houston/client'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import { useTaskStartSettings, useTasks } from '../../houston/useTasks'
-import { Button, Card, DoneDisclosure, Drawer, PageFrame, PageHeader, SectionHead, StatusLabel, TaskQueueMeta } from '../ui'
+import { Button, Card, DoneDisclosure, Drawer, PageFrame, PageHeader, SectionHead, StatusLabel, TaskQueueMeta, NavSurfaceFrame } from '../ui'
 import { IconPlus } from '../icons'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { formatAge, queueActionOf, queueGroupOf, queueGroups, taskAgentLabel } from '../tasks/format'
 import type { InboxRow } from '../../houston/generated/InboxRow'
-import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 export function TasksSurface({
   client,
@@ -95,7 +94,7 @@ export function TasksSurface({
   }
 
   return (
-    <div data-testid="nav-surface" data-page="tasks" {...materialAttrs('base')} className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
+    <NavSurfaceFrame data-page="tasks">
       <PageFrame width="form">
         {create ? (
           <TaskComposer parentOptions={parentOptions} initialTitle={createDraft?.title} initialDescription={createDraft?.description} onCancel={() => setCreate(false)} onCreate={(patch) => {
@@ -161,7 +160,7 @@ export function TasksSurface({
           />
         ) : <div role="status">Loading task…</div>}
       </Drawer>
-    </div>
+    </NavSurfaceFrame>
   )
 }
 

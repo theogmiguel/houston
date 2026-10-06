@@ -273,3 +273,5 @@ export { ScrollBody, StatusCaption, CodeBlock, CopyButton, TypingCursor, ErrorMe
 export { RetryMessage, FreeTextOption, PromptCard, FreeTextArea, PromptHeader, QuestionNote, OptionButton, OptionList, QuestionPager, PromptText, SkipButton, OptionButtonSpecimen } from './QuestionOption'
 export * from './TaskSurface'
 export * from './TaskRunSurface'
+export { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from './NavSurfaceFrame'
+export type { NavSurfaceFrameProps } from './NavSurfaceFrame'

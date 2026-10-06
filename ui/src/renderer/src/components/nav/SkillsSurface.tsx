@@ -12,7 +12,7 @@ import { CheckedStamp } from '../ui/CheckedStamp'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
 import { Row, SettingsList, SubHead } from '../ui/settingsPrimitives'
-import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../ui/NavSurfaceFrame'
+import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../ui'
 import { PanelFootnote, PanelIconButton, PanelSwitch } from '../ui/PanelControls'
 
 const SkillsView = lazy(() =>
