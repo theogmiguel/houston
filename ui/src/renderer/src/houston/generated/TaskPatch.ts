@@ -7,4 +7,8 @@ import type { TaskStatus } from "./TaskStatus";
  * `acceptance` are absent-or-value; workspace, parent and URL are three-state,
  * so absent, null and a value are distinct. `acceptance` replaces the list.
  */
-export type TaskPatch = { workspace?: string | null, title?: string | null, description?: string | null, status?: TaskStatus | null, priority?: TaskPriority | null, parent_id?: number | null, ref_url?: string | null, acceptance?: Array<string> | null, };
+export type TaskPatch = { workspace?: string | null, title?: string | null, description?: string | null, status?: TaskStatus | null, priority?: TaskPriority | null, parent_id?: number | null, ref_url?: string | null, acceptance?: Array<string> | null,
+/**
+ * Replaces the task's blockers, by task id; `[]` clears them.
+ */
+blocked_by?: Array<number> | null, };

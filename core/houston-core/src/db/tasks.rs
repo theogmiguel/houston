@@ -700,6 +700,51 @@ impl Db {
         Ok(rows)
     }
 
+    /// The ids of the tasks this one is blocked by, lowest first.
+    pub fn task_blockers(&self, task_id: i64) -> Result<Vec<i64>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT blocked_by_id FROM backlog_task_blocks WHERE task_id = ?1 \
+             ORDER BY blocked_by_id",
+        )?;
+        let rows = stmt
+            .query_map([task_id], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Replaces the task's blockers in one transaction.
+    pub fn set_task_blockers(&self, task_id: i64, blockers: &[i64]) -> Result<()> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM backlog_task_blocks WHERE task_id = ?1",
+            [task_id],
+        )?;
+        for blocker in blockers {
+            tx.execute(
+                "INSERT OR IGNORE INTO backlog_task_blocks (task_id, blocked_by_id) \
+                 VALUES (?1, ?2)",
+                rusqlite::params![task_id, blocker],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Whether `target` is `from` or one of the tasks `from` waits for,
+    /// directly or through other blockers: the cycle a new edge would close.
+    pub fn task_waits_for(&self, from: i64, target: i64) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "WITH RECURSIVE chain(id) AS (SELECT ?1 UNION \
+                 SELECT b.blocked_by_id FROM backlog_task_blocks b JOIN chain c ON b.task_id = c.id) \
+             SELECT EXISTS(SELECT 1 FROM chain WHERE id = ?2)",
+            rusqlite::params![from, target],
+            |r| r.get(0),
+        )?)
+    }
+
     pub fn task_acceptance(&self, task_id: i64) -> Result<Vec<TaskAcceptanceRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(

@@ -818,6 +818,11 @@ pub struct Task {
     /// The external items this task mirrors, oldest first.
     #[serde(default)]
     pub links: Vec<TaskLink>,
+    /// The ids of the tasks this one waits for; it is not ready while one of
+    /// them is neither done nor canceled.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "Array<number>"))]
+    pub blocked_by: Vec<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1005,6 +1010,10 @@ pub struct TaskPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<string> | null"))]
     pub acceptance: Option<Vec<String>>,
+    /// Replaces the task's blockers, by task id; `[]` clears them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<number> | null"))]
+    pub blocked_by: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4721,6 +4730,10 @@ pub const TASK_TITLE_MAX: usize = 200;
 pub const TASK_DESCRIPTION_MAX: usize = 65_536;
 /// A comment body; keeps one task's detail reply bounded.
 pub const TASK_COMMENT_MAX: usize = 16_384;
+/// Blockers one task may name; enough for a delivery's slices, small enough
+/// that the readiness check stays one indexed query.
+pub const TASK_BLOCKERS_PER_TASK: u32 = 50;
+
 /// Tasks the global backlog may hold; snapshot sends summaries only.
 pub const TASKS_PER_WORKSPACE: u32 = 5_000;
 /// Far above a Slack token's length, low enough to refuse a paste of

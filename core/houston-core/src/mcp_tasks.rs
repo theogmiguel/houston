@@ -114,6 +114,15 @@ fn write_fields() -> serde_json::Map<String, Value> {
                             question: the task is not ready until it is rewritten.",
         }),
     );
+    properties.insert(
+        "blocked_by".into(),
+        json!({
+            "type": "array",
+            "items": { "type": "string" },
+            "maxItems": proto::TASK_BLOCKERS_PER_TASK,
+            "description": "Keys (HOU-2) this task waits for; replaces the list, [] clears.",
+        }),
+    );
     properties
 }
 
@@ -534,8 +543,12 @@ fn dispatch(
                         .map_err(|e| ToolError(format!("serializing a task run: {e}")))
                 })
                 .collect::<Result<_, _>>()?;
+            let blocked_by = daemon
+                .task_keys_of(&task.blocked_by)
+                .map_err(|e| ToolError(format!("{e:#}")))?;
             let mut task_value = serde_json::to_value(&task)
                 .map_err(|e| ToolError(format!("serializing a task: {e}")))?;
+            task_value["blocked_by"] = json!(blocked_by);
             cap_field(&mut task_value, "title");
             cap_field(&mut task_value, "description");
             Ok(task_output(json!({
@@ -801,6 +814,22 @@ fn patch_from_args(
                 )))
             }
         });
+    }
+    if let Some(keys) = optional_string_list(args, "blocked_by")? {
+        let mut ids = Vec::with_capacity(keys.len());
+        for key in keys {
+            let Some(id) = daemon
+                .task_id_for_key(workspace, &key)
+                .map_err(|e| ToolError(format!("{e:#}")))?
+            else {
+                return Err(ToolError(format!(
+                    "blocked_by key {key:?} does not exist in the global backlog (expected an \
+                     existing task key, for example HOU-2)"
+                )));
+            };
+            ids.push(id);
+        }
+        patch.blocked_by = Some(ids);
     }
     if let Some(parent) = optional_string(args, "parent")? {
         let Some(parent_id) = daemon

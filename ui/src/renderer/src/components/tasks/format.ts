@@ -320,7 +320,8 @@ const CHANGE_LABEL: Readonly<Record<string, string>> = {
   priority: 'priority',
   parent_id: 'parent',
   ref_url: 'link',
-  acceptance: 'acceptance'
+  acceptance: 'acceptance',
+  blocked_by: 'blockers'
 }
 
 export interface HistoryLine {

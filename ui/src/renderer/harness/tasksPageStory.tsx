@@ -42,7 +42,7 @@ const DETAIL: TaskDetailData = {
     id: 42, workspace: WORKSPACE, number: 42, key: 'HOU-42', title: 'Block bun test in agent settings',
     description: 'Use bun run test for the renderer suite.', status: 'in_progress', priority: 'medium', parent_id: null,
     ref_url: null, revision: 1, created_by: 'user', origin: { kind: 'harness_finding', workspace: WORKSPACE, key: 'bun-test', review_id: 7 }, created_at_ms: NOW - 60 * MINUTE,
-    updated_at_ms: NOW - 14 * MINUTE, archived_at_ms: null, links: []
+    updated_at_ms: NOW - 14 * MINUTE, archived_at_ms: null, links: [], blocked_by: []
   },
   acceptance: [
     { id: 1, position: 0, text: 'bun test is denied in .claude/settings.json', checked_at_ms: NOW - 30 * MINUTE, checked_by: 'user' },

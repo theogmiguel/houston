@@ -75,7 +75,7 @@ const SNAPSHOT: Extract<ServerMsg, { type: 'task_snapshot' }> = {
 
 const DETAIL: Extract<ServerMsg, { type: 'task_detail' }> = {
   type: 'task_detail',
-  task: { ...SNAPSHOT.tasks[0], title: 'from detail', description: '', links: [] },
+  task: { ...SNAPSHOT.tasks[0], title: 'from detail', description: '', links: [], blocked_by: [] },
   acceptance: [],
   comments: [],
   history: [],

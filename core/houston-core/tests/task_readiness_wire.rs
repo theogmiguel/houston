@@ -129,3 +129,104 @@ async fn ready_needs_a_workspace_a_criterion_and_no_open_question() {
     assert_eq!(counts.ready, 2);
 }
 
+async fn task(ws: &mut common::WsStream, id: i64) -> proto::Task {
+    send(ws, &proto::ClientMsg::TaskGet { id }).await;
+    match next_task_reply(ws).await {
+        proto::ServerMsg::TaskDetail { task, .. } => task,
+        other => panic!("expected TaskDetail, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn blockers_are_written_refused_on_a_cycle_and_hold_readiness() {
+    let (mut ws, workspace, _state) = rig().await;
+    let (first, _) = changed(save(&mut ws, &workspace, None, None, todo("First", &["Done"])).await);
+    let (second, second_rev) = changed(
+        save(
+            &mut ws,
+            &workspace,
+            None,
+            None,
+            proto::TaskPatch {
+                blocked_by: Some(vec![first]),
+                ..todo("Second", &["Done"])
+            },
+        )
+        .await,
+    );
+    assert_eq!(task(&mut ws, second).await.blocked_by, vec![first]);
+    let (_, counts) = snapshot(&mut ws, &workspace).await;
+    assert_eq!(counts.ready, 1, "the blocked task waits for its blocker");
+
+    // First blocked by second closes a cycle.
+    let refused = save(
+        &mut ws,
+        &workspace,
+        Some(first),
+        Some(1),
+        proto::TaskPatch {
+            blocked_by: Some(vec![second]),
+            ..Default::default()
+        },
+    )
+    .await;
+    let proto::ServerMsg::TaskRefused { kind, message, .. } = refused else {
+        panic!("expected TaskRefused, got {refused:?}");
+    };
+    assert_eq!(kind, proto::TaskErrorKind::Cycle);
+    assert!(
+        message.contains("HOU-2") && message.contains("cycle"),
+        "{message}"
+    );
+
+    // A task cannot block itself, and a missing blocker is named.
+    let refused = save(
+        &mut ws,
+        &workspace,
+        Some(second),
+        Some(second_rev),
+        proto::TaskPatch {
+            blocked_by: Some(vec![999]),
+            ..Default::default()
+        },
+    )
+    .await;
+    let proto::ServerMsg::TaskRefused { kind, message, .. } = refused else {
+        panic!("expected TaskRefused, got {refused:?}");
+    };
+    assert_eq!(kind, proto::TaskErrorKind::Invalid);
+    assert!(message.contains("999"), "{message}");
+
+    changed(
+        save(
+            &mut ws,
+            &workspace,
+            Some(first),
+            Some(1),
+            proto::TaskPatch {
+                status: Some(proto::TaskStatus::Done),
+                ..Default::default()
+            },
+        )
+        .await,
+    );
+    let (_, counts) = snapshot(&mut ws, &workspace).await;
+    assert_eq!(counts.ready, 1, "a finished blocker releases the task");
+
+    // `[]` clears the list.
+    changed(
+        save(
+            &mut ws,
+            &workspace,
+            Some(second),
+            Some(second_rev),
+            proto::TaskPatch {
+                blocked_by: Some(Vec::new()),
+                ..Default::default()
+            },
+        )
+        .await,
+    );
+    assert!(task(&mut ws, second).await.blocked_by.is_empty());
+}
+

@@ -12,4 +12,9 @@ export type Task = { id: number, workspace?: string | null, number: number, key:
 /**
  * The external items this task mirrors, oldest first.
  */
-links: Array<TaskLink>, };
+links: Array<TaskLink>,
+/**
+ * The ids of the tasks this one waits for; it is not ready while one of
+ * them is neither done nor canceled.
+ */
+blocked_by: Array<number>, };

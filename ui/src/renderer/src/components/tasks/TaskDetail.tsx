@@ -181,6 +181,12 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             chrome="prop-select"
             onChange={(value) => props.onSave(task.id, task.revision, { parent_id: value === '' ? null : Number(value) })}
           />
+          <BlockedBy
+            blockedBy={task.blocked_by}
+            options={props.parentOptions.filter((option) => option.value !== String(task.id))}
+            disabled={readOnly}
+            onChange={(next) => props.onSave(task.id, task.revision, { blocked_by: next })}
+          />
           {reviewer !== null && (
             <span className="prop" data-testid="task-reviewer-prop">
               <span className="k">Reviewer</span>
@@ -292,6 +298,41 @@ function TaskDetailDrawer({ props, taskTitle, onStartAnyway }: { props: TaskDeta
       <TaskLinks links={task.links} />
     </div>
   </TaskDetailFrame>
+}
+
+/** The tasks this one waits for: a chip each, removable, and a picker to add one. */
+function BlockedBy({
+  blockedBy,
+  options,
+  disabled,
+  onChange
+}: {
+  blockedBy: number[]
+  options: SelectOption[]
+  disabled: boolean
+  onChange: (next: number[]) => void
+}): React.JSX.Element {
+  const label = (id: number): string => options.find((option) => option.value === String(id))?.label ?? `#${id}`
+  const remaining = options.filter((option) => !blockedBy.includes(Number(option.value)))
+  return (
+    <span className="prop flex flex-wrap items-center gap-[var(--space-1)]" data-testid="task-blocked-by">
+      <span className="k">Blocked by</span>
+      {blockedBy.map((id) => (
+        <Chip key={id} variant="removable" label={label(id)} disabled={disabled} onRemove={() => onChange(blockedBy.filter((other) => other !== id))} />
+      ))}
+      <Select
+        aria-label="Add blocker"
+        data-testid="task-add-blocker"
+        value=""
+        options={[{ value: '', label: blockedBy.length > 0 ? 'Add' : 'None' }, ...remaining]}
+        disabled={disabled}
+        chrome="prop-select"
+        onChange={(value) => {
+          if (value !== '') onChange([...blockedBy, Number(value)])
+        }}
+      />
+    </span>
+  )
 }
 
 const LINK_PROVIDER_LABEL: Record<string, string> = { slack: 'Slack', github: 'GitHub' }

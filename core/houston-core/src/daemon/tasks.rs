@@ -425,6 +425,7 @@ impl Daemon {
             archived_at_ms: row.archived_at_ms,
             origin: None,
             links: Vec::new(),
+            blocked_by: Vec::new(),
         }
     }
 
@@ -584,6 +585,7 @@ impl Daemon {
             .into_iter()
             .map(Self::task_link_to_wire)
             .collect();
+        task.blocked_by = self.db.task_blockers(id)?;
         Ok(proto::ServerMsg::TaskDetail {
             task,
             acceptance,
@@ -741,6 +743,66 @@ impl Daemon {
             current = self.db.task(pid)?.and_then(|t| t.parent_id);
         }
         Ok(None)
+    }
+
+    /// The blocker list, deduplicated: over the cap is a limit refusal; a
+    /// missing task, the task itself or a blocker that already waits for it
+    /// (a cycle the queue could never drain) is refused by name.
+    fn check_task_blockers(
+        &self,
+        id: Option<i64>,
+        raw: &[i64],
+        operation: &str,
+    ) -> Result<std::result::Result<Vec<i64>, proto::ServerMsg>> {
+        let mut blockers: Vec<i64> = raw.to_vec();
+        blockers.sort_unstable();
+        blockers.dedup();
+        if blockers.len() > proto::TASK_BLOCKERS_PER_TASK as usize {
+            return Ok(Err(Self::task_limit_refused(
+                id,
+                operation,
+                proto::TASK_BLOCKERS_PER_TASK,
+                blockers.len() as u64,
+                "blockers",
+            )));
+        }
+        for &blocker in &blockers {
+            let Some(row) = self.db.task(blocker)? else {
+                return Ok(Err(Self::task_invalid(
+                    id,
+                    operation,
+                    format!("blocker task {blocker} does not exist (expected an existing task id)"),
+                )));
+            };
+            let Some(id) = id else { continue };
+            if blocker == id || self.db.task_waits_for(blocker, id)? {
+                return Ok(Err(Self::task_refused(
+                    Some(id),
+                    proto::TaskErrorKind::Cycle,
+                    None,
+                    None,
+                    None,
+                    None,
+                    format!(
+                        "{operation} refused: {} already waits for task {id}, so it cannot block \
+                         it (a blocker cycle)",
+                        Self::task_key(row.number)
+                    ),
+                )));
+            }
+        }
+        Ok(Ok(blockers))
+    }
+
+    /// Display keys of existing tasks, in the order given; a vanished id is skipped.
+    pub fn task_keys_of(&self, ids: &[i64]) -> Result<Vec<String>> {
+        let mut keys = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(row) = self.db.task(*id)? {
+                keys.push(Self::task_key(row.number));
+            }
+        }
+        Ok(keys)
     }
 
     /// The JSON diff stored in history for an update; only moved fields.
@@ -1016,6 +1078,13 @@ impl Daemon {
                 return Ok(msg);
             }
         }
+        let blockers = match patch.blocked_by.as_deref() {
+            Some(raw) => match self.check_task_blockers(None, raw, operation)? {
+                Ok(list) => list,
+                Err(msg) => return Ok(msg),
+            },
+            None => Vec::new(),
+        };
         let existing = u64::from(self.db.task_count("all")?);
         if existing >= u64::from(proto::TASKS_PER_WORKSPACE) {
             return Ok(Self::task_limit_refused(
@@ -1038,6 +1107,9 @@ impl Daemon {
             now_ms: now_unix_ms(),
             acceptance: &acceptance,
         })?;
+        if !blockers.is_empty() {
+            self.db.set_task_blockers(row.id, &blockers)?;
+        }
         Ok(proto::ServerMsg::TaskChanged {
             workspace: row.workspace,
             id: row.id,
@@ -1116,6 +1188,15 @@ impl Daemon {
             let from = self.db.task_acceptance(id).map(|a| a.len()).unwrap_or(0);
             (from, items.len())
         });
+        let blockers = match patch.blocked_by.as_deref() {
+            Some(raw) => match self.check_task_blockers(Some(id), raw, operation)? {
+                Ok(list) => Some(list),
+                Err(msg) => return Ok(msg),
+            },
+            None => None,
+        };
+        let current_blockers = self.db.task_blockers(id)?;
+        let blockers = blockers.filter(|list| *list != current_blockers);
         let changes = Self::task_changes_json(
             &row,
             &TaskNew {
@@ -1131,6 +1212,12 @@ impl Daemon {
         let mut changes: serde_json::Value = serde_json::from_str(&changes)?;
         if assigned != row.workspace {
             changes["workspace"] = serde_json::json!({"from": row.workspace, "to": assigned});
+        }
+        if let Some(list) = &blockers {
+            changes["blocked_by"] = serde_json::json!({
+                "from": self.task_keys_of(&current_blockers)?,
+                "to": self.task_keys_of(list)?,
+            });
         }
         let changes = changes.to_string();
         let applied = self.db.update_task(&TaskUpdate {
@@ -1161,6 +1248,9 @@ impl Daemon {
                 expected_revision,
                 actual,
             ));
+        }
+        if let Some(list) = &blockers {
+            self.db.set_task_blockers(id, list)?;
         }
         Ok(proto::ServerMsg::TaskChanged {
             workspace: assigned,

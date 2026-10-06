@@ -827,3 +827,28 @@ async fn a_tasks_links_reach_task_get_and_the_http_door() {
     );
 }
 
+#[tokio::test]
+async fn agents_write_blockers_by_key() {
+    let r = rig().await;
+    let pane = r.pane();
+    let token = r.token_for(pane);
+    ok_call(r.addr, &token, "task_create", json!({ "title": "Schema" })).await;
+    ok_call(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "Endpoint", "blocked_by": ["HOU-1"] }),
+    )
+    .await;
+    let detail = ok_call(r.addr, &token, "task_get", json!({ "id": "HOU-2" })).await;
+    assert_eq!(detail["task"]["blocked_by"], json!(["HOU-1"]), "{detail}");
+    let text = refused(
+        r.addr,
+        &token,
+        "task_update",
+        json!({ "id": "HOU-1", "expected_revision": 1, "blocked_by": ["HOU-2"] }),
+    )
+    .await;
+    assert!(text.contains("cycle"), "{text}");
+}
+
