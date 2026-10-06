@@ -123,6 +123,13 @@ import {
   StatusLabel,
   StartupFailureSpecimen,
   StartupSkeletonSpecimen,
+  ProfilePanelSpecimen,
+  ShortcutGroupLabelSpecimen,
+  SettingsPageSurfaceSpecimen,
+  TaskSettingDetailsSpecimen,
+  ShortcutControlsSpecimen,
+  SettingsProtocolSpecimen,
+  SettingsStatusSpecimen,
   RoutineDetail,
   RosterSurfaceSpecimen,
   Table,
@@ -367,6 +374,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="legacy-ghost-disclosure"><IconEye />Advanced</Button>
             <Button variant="legacy-focus-lever"><IconEye />Focus parent</Button>
             <Button variant="legacy-roster-footer">Roster footer action</Button>
+            <Button variant="accent-soft">Accent soft</Button>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
@@ -722,6 +730,11 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Field label="Owner's member ID" hint="A plain text field."><TextInput value="U012ABCDEF" font="mono" width="md" readOnly /></Field>
           <Field label="Bot token" hint="A secret: the value is never shown back."><TextInput type="password" font="mono" width="md" placeholder="xoxb-…" /></Field>
           <Field label="Search"><TextInput width="full" placeholder="Filter by name" /></Field>
+          <TextInput variant="unstyled" aria-label="Unstyled table input" value="Role pattern" readOnly />
+          <TextInput variant="compact" aria-label="Compact profile name" value="work" readOnly />
+          <TextInput variant="setting-number" aria-label="Compact setting number" type="number" value={4} readOnly />
+          <TextInput variant="setting-number-rounded" aria-label="Rounded setting number" type="number" value={15} readOnly />
+          <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
         </SpecimenGroup>
 
         <SpecimenGroup heading="EmptyState">
@@ -748,6 +761,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="Settings primitives">
+          <ProfilePanelSpecimen />
+          <ShortcutGroupLabelSpecimen />
+          <SettingsPageSurfaceSpecimen />
+          <TaskSettingDetailsSpecimen />
+          <ShortcutControlsSpecimen />
+          <SettingsProtocolSpecimen />
+          <SettingsStatusSpecimen />
           <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
             <Toggle on aria-label="Enabled setting" onChange={noop} />
             <Toggle on={false} aria-label="Disabled setting" onChange={noop} />
@@ -770,7 +790,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
         </SpecimenGroup>
 
         <SpecimenGroup heading="PaneHeaderButton">
-          <SpecimenRow><PaneHeaderButton icon={IconClose} aria-label="Close pane" /><PaneHeaderButton icon={IconPlus} aria-label="Add pane" /><PaneHeaderButton icon={IconClose} aria-label="Disabled close pane" disabled /></SpecimenRow>
+          <SpecimenRow><PaneHeaderButton icon={IconClose} aria-label="Close pane" /><PaneHeaderButton icon={IconPlus} aria-label="Add pane" /><PaneHeaderButton icon={IconClose} iconRole="small" size="mini" tone="secondary" aria-label="Small icon" /><PaneHeaderButton icon={IconClose} iconRole="small" size="mini" tone="secondary" aria-label="Disabled small icon" disabled /><PaneHeaderButton icon={IconClose} aria-label="Disabled close pane" disabled /></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Select">

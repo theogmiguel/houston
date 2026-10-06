@@ -12,7 +12,6 @@ source scripts/check-spacing-tokens-widened-baseline.sh
 BASELINE=(
   "ui/src/renderer/src/App.tsx 0"
   "ui/src/renderer/src/BootstrapGate.tsx 0"
-  "ui/src/renderer/src/components/AgentProfiles.tsx 3"
   "ui/src/renderer/src/components/BrowserActConfirm.tsx 1"
   "ui/src/renderer/src/components/browserTabs.tsx 1"
   "ui/src/renderer/src/components/ui/ActionEmptyState.tsx 2"
@@ -26,10 +25,8 @@ BASELINE=(
   "ui/src/renderer/src/components/nav/SkillsSurface.tsx 1"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 0"
   "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 7"
-  "ui/src/renderer/src/components/settings/OrchestrationSection.tsx 4"
   "ui/src/renderer/src/components/ui/settingsPrimitives.tsx 1"
   "ui/src/renderer/src/components/settings/PrivacySection.tsx 2"
-  "ui/src/renderer/src/components/settings/ShortcutsSection.tsx 1"
   "ui/src/renderer/src/components/settings/VoiceSection.tsx 2"
   "ui/src/renderer/src/components/ShortcutSheet.tsx 0"
   "ui/src/renderer/src/components/SkillsView.tsx 4"

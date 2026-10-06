@@ -5,7 +5,7 @@ import { variants } from './variants'
 import { FOCUS_HALO } from './shadowChrome'
 import './button.css'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'accent-soft' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -84,7 +84,8 @@ const buttonClasses = variants(
       'legacy-ghost-icon': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`,
       'legacy-ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`,
       'legacy-focus-lever': 'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer transition-[background,border-color] hover:bg-[var(--hover-fill)] hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]',
-      'legacy-roster-footer': `btn ${BTN_GHOST} min-h-[var(--h-ctl)]`
+      'legacy-roster-footer': `btn ${BTN_GHOST} min-h-[var(--h-ctl)]`,
+      'accent-soft': 'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[var(--tr-space-profile-action-inline)] py-[var(--tr-space-profile-action-block)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default'
     },
     size: sizeClasses
   },
@@ -92,8 +93,8 @@ const buttonClasses = variants(
 )
 
 // Variants that carry their own type and padding: no button chrome, no size padding.
-const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'text', 'badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'compact-ghost', 'compact-danger'])
-const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation'])
+const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'text', 'badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'compact-ghost', 'compact-danger', 'accent-soft'])
+const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'accent-soft'])
 const isLegacy = (variant: ButtonVariant): boolean => variant.startsWith('legacy-')
 
 function buttonSize(variant: ButtonVariant, size: ButtonSize): ButtonSize | 'icon' {

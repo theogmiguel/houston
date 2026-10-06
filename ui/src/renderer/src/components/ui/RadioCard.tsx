@@ -50,7 +50,7 @@ export function ThemePreviewSwatch({ theme, 'data-testid': testId }: { theme: 'g
 
 export function RadioCardFooter({ label, tag, selected, testId }: { label: string; tag: string; selected: boolean; testId?: string }): React.JSX.Element {
   return <span className="flex w-full items-center justify-between gap-[var(--space-1-5)] border-t border-t-[var(--divider)] px-[var(--space-2-5)] py-[var(--space-2)]">
-    <Text size="small" weight="medium" tone="primary" className="min-w-0 truncate">{label}</Text>
+    <Text as="b" size="small" weight="medium" tone="primary" className="min-w-0 truncate">{label}</Text>
     <Text size="label" weight="label" tone={selected ? 'accent' : 'faint'} mono data-testid={testId}>{tag}</Text>
   </span>
 }

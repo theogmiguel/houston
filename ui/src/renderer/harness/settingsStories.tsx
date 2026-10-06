@@ -128,6 +128,28 @@ export function SettingsShortcuts(): React.JSX.Element {
   return <SettingsScreen section="shortcuts" />
 }
 
+export function SettingsShortcutsArmed(): React.JSX.Element {
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      document.querySelector<HTMLButtonElement>('[data-testid="settings-shortcut-row"] .key-chip--capture')?.click()
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [])
+  return <SettingsScreen section="shortcuts" />
+}
+
+export function SettingsShortcutsConflict(): React.JSX.Element {
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="settings-shortcut-row"]')).find((node) => node.textContent?.includes('zoom out (whole app)'))
+      row?.querySelector<HTMLButtonElement>('.key-chip--capture')?.click()
+      window.setTimeout(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '=', code: 'Equal', ctrlKey: true, bubbles: true })), 50)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [])
+  return <SettingsScreen section="shortcuts" />
+}
+
 export function SettingsNotifications(): React.JSX.Element {
   return <SettingsScreen section="notifications" props={{
     desktopNotificationMode: 'notifications-sound',
@@ -210,6 +232,14 @@ export function SettingsAgentSetup(): React.JSX.Element {
   }} />
 }
 
+export function SettingsAgentStatusLoading(): React.JSX.Element {
+  return <SettingsScreen section="agents" props={{ agentHooks: null }} />
+}
+
+export function SettingsAgentStatusEmpty(): React.JSX.Element {
+  return <SettingsScreen section="agents" props={{ agentHooks: [] }} />
+}
+
 export function SettingsOrchestration(): React.JSX.Element {
   const orchestrationState: OrchestrationStateView = {
     enabled: true,
@@ -227,6 +257,18 @@ export function SettingsOrchestration(): React.JSX.Element {
     historyWorkspaceName: 'houston',
     daemonClient: routingClient([{ pattern: '*', model: 'claude-sonnet-4-5', effort: 'high' }])
   }} />
+}
+
+export function SettingsOrchestrationLoading(): React.JSX.Element {
+  return <SettingsScreen section="orchestration" props={{ orchestrationState: null, hostInfo: null, daemonClient: routingClient([]) }} />
+}
+
+export function SettingsOrchestrationEmptyRoster(): React.JSX.Element {
+  return <SettingsScreen section="orchestration" props={{ orchestrationState: { enabled: true, caps: { max_live_children: 4, max_spawn_depth: 2 }, acpAgents: [] }, orchestrationEnabled: true, hostInfo: hostInfoFixture(), daemonClient: routingClient([]) }} />
+}
+
+export function SettingsOrchestrationNoWorkspace(): React.JSX.Element {
+  return <SettingsScreen section="orchestration" props={{ orchestrationState: { enabled: true, caps: { max_live_children: 4, max_spawn_depth: 2 }, acpAgents: [] }, orchestrationEnabled: true, hostInfo: hostInfoFixture(), historyWorkspace: null, historyWorkspaceName: null, daemonClient: routingClient([]) }} />
 }
 
 export function SettingsDictation(): React.JSX.Element {

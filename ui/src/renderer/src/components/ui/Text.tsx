@@ -1,9 +1,9 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
 export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
-export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer'
+export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description'
 
 const SIZE: Record<TextSize, string> = {
   display: '[font-family:var(--tr-text-display-family)] [font-size:var(--tr-text-display-size)]',
@@ -21,7 +21,8 @@ const SIZE: Record<TextSize, string> = {
   caption: '[font-size:var(--tr-text-label-size)]',
   xs: '[font-size:var(--tr-text-xs)]',
   fileBreadcrumb: '[font-size:var(--tr-text-file-breadcrumb)]',
-  fileStatus: '[font-size:var(--tr-text-file-status)]'
+  fileStatus: '[font-size:var(--tr-text-file-status)]',
+  'shortcut-label': '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-shortcut-group-tracking)] uppercase'
 }
 
 const WEIGHT: Record<TextWeight, string> = {
@@ -64,7 +65,9 @@ const LEADING: Record<TextLeading, string> = {
   relaxed: 'leading-[1.6]',
   small: 'leading-[var(--tr-text-small-leading)]',
   label: 'leading-[var(--tr-text-label-leading)]',
-  composer: 'leading-[var(--tr-text-task-leading)]'
+  composer: 'leading-[var(--tr-text-task-leading)]',
+  shortcut: 'leading-[var(--tr-text-shortcut-leading)]',
+  'profile-description': 'leading-[var(--tr-text-profile-description-leading)]'
 }
 
 export interface TextProps extends HTMLAttributes<HTMLElement> {

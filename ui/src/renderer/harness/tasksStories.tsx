@@ -244,18 +244,21 @@ export function TasksDetailStory(): React.JSX.Element {
   )
 }
 
-function tasksAccessClient(initial: TasksAccess): HoustonClient {
+function tasksAccessClient(initial: TasksAccess, refuseReview = false): HoustonClient {
   let access = initial
   let review: { reviewer: AgentKind | null; reworkRounds: number } = { reviewer: null, reworkRounds: 0 }
   const accessHandlers = new Set<(msg: ServerMsg) => void>()
   const reviewHandlers = new Set<(msg: ServerMsg) => void>()
+  const refusalHandlers = new Set<(msg: ServerMsg) => void>()
   const client = {
     subscribe: (kind: string, handler: (msg: ServerMsg) => void) => {
       if (kind === 'tasks_access') accessHandlers.add(handler)
       if (kind === 'task_review_settings') reviewHandlers.add(handler)
+      if (kind === 'task_refused') refusalHandlers.add(handler)
       return () => {
         accessHandlers.delete(handler)
         reviewHandlers.delete(handler)
+        refusalHandlers.delete(handler)
       }
     },
     tasksAccessGet: (workspace: string) => {
@@ -269,8 +272,15 @@ function tasksAccessClient(initial: TasksAccess): HoustonClient {
       for (const handler of reviewHandlers) {
         handler({ type: 'task_review_settings', workspace, reviewer: review.reviewer, rework_rounds: review.reworkRounds })
       }
+      if (refuseReview) {
+        for (const handler of refusalHandlers) handler({ type: 'task_refused', kind: 'limit', limit: 5, requested: 6, expected: null, actual: null, message: 'Automatic rework rounds is limited to 5; requested 6.' })
+      }
     },
     taskReviewSettingsSet: (workspace: string, reviewer: AgentKind | null, reworkRounds: number) => {
+      if (refuseReview) {
+        for (const handler of refusalHandlers) handler({ type: 'task_refused', kind: 'limit', limit: 5, requested: 6, expected: null, actual: null, message: 'Automatic rework rounds is limited to 5; requested 6.' })
+        return
+      }
       review = { reviewer, reworkRounds }
       for (const handler of reviewHandlers) {
         handler({ type: 'task_review_settings', workspace, reviewer, rework_rounds: reworkRounds })
@@ -292,6 +302,10 @@ export function TasksSettingsStory(): React.JSX.Element {
     historyWorkspace: '/home/dev/code/houston',
     historyWorkspaceName: 'houston'
   }} />
+}
+
+export function TasksSettingsReviewRefusalStory(): React.JSX.Element {
+  return <SettingsScreen section="tasks" props={{ daemonClient: tasksAccessClient('write', true), historyWorkspace: '/home/dev/code/houston', historyWorkspaceName: 'houston' }} />
 }
 
 const ROSTER_WORKSPACE = '/home/dev/code/houston'

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 BASELINE=(
-  "ui/src/renderer/src/components/AgentProfiles.tsx 85"
   "ui/src/renderer/src/components/BrowserActConfirm.tsx 118"
   "ui/src/renderer/src/components/BrowserFullscreen.tsx 2"
   "ui/src/renderer/src/components/BrowserPane.tsx 106"
@@ -87,18 +86,12 @@ BASELINE=(
   "ui/src/renderer/src/components/nav/SkillsSurface.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 68"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 19"
-  "ui/src/renderer/src/components/settings/AgentStatusSection.tsx 35"
   "ui/src/renderer/src/components/settings/DaemonSection.tsx 39"
   "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 61"
-  "ui/src/renderer/src/components/settings/OrchestrationSection.tsx 49"
   "ui/src/renderer/src/components/settings/PrivacySection.tsx 39"
-  "ui/src/renderer/src/components/settings/RoutingSettings.tsx 3"
-  "ui/src/renderer/src/components/settings/ShortcutsSection.tsx 40"
-  "ui/src/renderer/src/components/settings/TasksSection.tsx 42"
   "ui/src/renderer/src/components/settings/ThirdPartyNotices.tsx 63"
   "ui/src/renderer/src/components/settings/VoiceModelManager.tsx 23"
   "ui/src/renderer/src/components/settings/VoiceSection.tsx 54"
-  "ui/src/renderer/src/components/settings/WorkspaceDefaultsSection.tsx 17"
   "ui/src/renderer/src/components/tagEditing.tsx 38"
   "ui/src/renderer/src/components/tags.tsx 17"
   "ui/src/renderer/src/components/tasks/RosterQueue.tsx 18"

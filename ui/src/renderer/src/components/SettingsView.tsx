@@ -39,7 +39,7 @@ import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
 import type { UsageSummaryMsg } from './UsageSection'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
-import { MATERIAL_CLS, materialAttrs } from './ui/material'
+import { SettingsPageSurface } from './ui/SettingsPageSurface'
 
 export interface AgentProfileState {
   profiles: AgentProfile[]
@@ -473,11 +473,7 @@ export function SettingsView(props: Props): React.JSX.Element {
   }, [section])
 
   return (
-    <div
-      ref={columnRef}
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
+    <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
       <PageFrame width={section === 'agents' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
         <SectionDispatch
@@ -491,6 +487,6 @@ export function SettingsView(props: Props): React.JSX.Element {
           onTerminalScrollbackLines={onTerminalScrollbackLines}
         />
       </PageFrame>
-    </div>
+    </SettingsPageSurface>
   )
 }

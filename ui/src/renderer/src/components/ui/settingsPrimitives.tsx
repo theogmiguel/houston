@@ -46,12 +46,14 @@ export type SettingsRowVariant = 'card' | 'flush' | 'list'
 
 export function SettingsList({
   children,
-  className = ''
+  className = '',
+  spaceAfter = false
 }: {
   children: React.ReactNode
   className?: string
+  spaceAfter?: boolean
 }): React.JSX.Element {
-  return (
+  const list = (
     <div
       data-testid="settings-list"
       className={`border border-[var(--border)] rounded-[var(--tr-radius-md)] bg-[var(--card-bg)] overflow-hidden ${className}`}
@@ -59,6 +61,7 @@ export function SettingsList({
       {children}
     </div>
   )
+  return spaceAfter ? <div className="pb-[var(--space-settings-list-break)]">{list}</div> : list
 }
 
 export function SectionHead({

@@ -78,7 +78,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAgentSetup, SettingsAppearance, SettingsAppearanceCustom, SettingsDetailStory, SettingsDiagnostics, SettingsDictation, SettingsNotifications, SettingsOrchestration, SettingsPrivacy, SettingsSearchStory, SettingsShortcuts, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsDetailStory, SettingsDiagnostics, SettingsDictation, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -98,7 +98,7 @@ import {
   NavSkills,
   HarnessPageStory
 } from './navStories'
-import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
+import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
@@ -288,6 +288,8 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'rail/grid-row-paper-420': () => <RailGridRowStory theme="paper" width={420} />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
   'settings/agents': () => <SettingsAgentSetup />,
+  'settings/agents-loading': () => <SettingsAgentStatusLoading />,
+  'settings/agents-empty': () => <SettingsAgentStatusEmpty />,
   'settings/appearance': () => <SettingsAppearance />,
   'settings/appearance-custom': () => <SettingsAppearanceCustom />,
   'settings/detail': () => <SettingsDetailStory />,
@@ -300,9 +302,14 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/terminal': () => <SettingsTerminal />,
   'settings/notifications': () => <SettingsNotifications />,
   'settings/shortcuts': () => <SettingsShortcuts />,
+  'settings/shortcuts-armed': () => <SettingsShortcutsArmed />,
+  'settings/shortcuts-conflict': () => <SettingsShortcutsConflict />,
   'settings/diagnostics': () => <SettingsDiagnostics />,
   'settings/daemon': () => <SettingsDiagnostics />,
   'settings/orchestration': () => <SettingsOrchestration />,
+  'settings/orchestration-loading': () => <SettingsOrchestrationLoading />,
+  'settings/orchestration-empty-roster': () => <SettingsOrchestrationEmptyRoster />,
+  'settings/orchestration-no-workspace': () => <SettingsOrchestrationNoWorkspace />,
   'settings/dictation': () => <SettingsDictation />,
   'settings/workspaces': () => <SettingsWorkspaces />,
   'settings/privacy': () => <SettingsPrivacy />,
@@ -358,5 +365,6 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'files/rename': () => <FilesRenameGraphite />,
   'files/empty': () => <FilesEmptyGraphite />,
   'files/root-error': () => <FilesRootErrorGraphite />,
-  'settings/tasks': () => <TasksSettingsStory />
+  'settings/tasks': () => <TasksSettingsStory />,
+  'settings/tasks-review-refusal': () => <TasksSettingsReviewRefusalStory />
 }
