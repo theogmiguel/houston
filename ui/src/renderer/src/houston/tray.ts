@@ -99,7 +99,10 @@ export function buildTrayPayload(
 ): TraySyncPayload {
   return {
     connection,
-    sessions: orderForTray(sessions, activity).map((s) => traySessionPayload(s, workspaceName))
+    sessions: orderForTray(
+      sessions.filter((session) => session.state === 'running'),
+      activity
+    ).map((s) => traySessionPayload(s, workspaceName))
   }
 }
 

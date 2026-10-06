@@ -116,19 +116,27 @@ fn running_count(payload: &TrayPayload) -> usize {
     payload
         .sessions
         .iter()
-        .filter(|s| s.status == TrayStatus::Running)
+        .filter(|s| is_live(s) && s.status == TrayStatus::Running)
         .count()
 }
 
+fn is_live(session: &TraySession) -> bool {
+    !matches!(session.status, TrayStatus::Done | TrayStatus::Error)
+}
+
 fn attention_count(payload: &TrayPayload) -> usize {
-    payload.sessions.iter().filter(|s| s.needs_input).count()
+    payload
+        .sessions
+        .iter()
+        .filter(|s| is_live(s) && s.needs_input)
+        .count()
 }
 
 fn unknown_count(payload: &TrayPayload) -> usize {
     payload
         .sessions
         .iter()
-        .filter(|s| s.status == TrayStatus::Unknown)
+        .filter(|s| is_live(s) && s.status == TrayStatus::Unknown)
         .count()
 }
 
@@ -139,7 +147,8 @@ pub fn header_text(payload: &TrayPayload) -> String {
             "Houston · disconnected".into()
         }
         TrayConnection::Ready => {
-            if payload.sessions.is_empty() {
+            let live_count = payload.sessions.iter().filter(|s| is_live(s)).count();
+            if live_count == 0 {
                 return "Houston · idle".into();
             }
             let running = running_count(payload);
@@ -160,7 +169,7 @@ pub fn header_text(payload: &TrayPayload) -> String {
                 parts.push(format!("{unknown} status unknown"));
             }
             if parts.is_empty() {
-                parts.push(format!("{} idle", plural(payload.sessions.len(), "agent")));
+                parts.push(format!("{} idle", plural(live_count, "agent")));
             }
             format!("Houston · {}", parts.join(" · "))
         }
@@ -240,7 +249,13 @@ pub fn menu_model(payload: &TrayPayload) -> Vec<TrayItem> {
         TrayItem::Separator,
     ];
 
-    let attention: Vec<&TraySession> = payload.sessions.iter().filter(|s| s.needs_input).collect();
+    let live: Vec<TraySession> = payload
+        .sessions
+        .iter()
+        .filter(|s| is_live(s))
+        .cloned()
+        .collect();
+    let attention: Vec<&TraySession> = live.iter().filter(|s| s.needs_input).collect();
     for session in attention.iter().take(ATTENTION_ROW_CAP) {
         items.push(TrayItem::Session {
             id: session.id,
@@ -254,10 +269,10 @@ pub fn menu_model(payload: &TrayPayload) -> Vec<TrayItem> {
         )));
     }
 
-    if !payload.sessions.is_empty() {
+    if !live.is_empty() {
         items.push(TrayItem::Submenu {
-            label: format!("Agents ({})", payload.sessions.len()),
-            items: agents_submenu(&payload.sessions),
+            label: format!("Agents ({})", live.len()),
+            items: agents_submenu(&live),
         });
         items.push(TrayItem::Separator);
     }
@@ -350,6 +365,28 @@ mod tests {
                 session(2, "shell", "b", TrayStatus::Done),
             ])),
             "Houston · 2 agents idle"
+        );
+    }
+
+    #[test]
+    fn closed_sessions_do_not_contribute_to_tray_counts_or_agent_rows() {
+        let payload = ready(vec![
+            session(1, "claude", "live", TrayStatus::Idle),
+            session(2, "codex", "finished", TrayStatus::Done),
+            session(3, "codex", "interrupted", TrayStatus::Error),
+        ]);
+        let items = menu_model(&payload);
+        assert_eq!(header_text(&payload), "Houston · 1 agent idle");
+        assert_eq!(
+            items.iter().find_map(|item| match item {
+                TrayItem::Submenu { label, .. } => Some(label.as_str()),
+                _ => None,
+            }),
+            Some("Agents (1)")
+        );
+        assert_eq!(
+            stop_confirm_message(&payload),
+            "This ends 1 live session and stops the daemon. Reopening Houston starts a new daemon."
         );
     }
 

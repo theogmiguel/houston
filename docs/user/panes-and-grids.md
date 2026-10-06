@@ -112,7 +112,8 @@ prompt/command tracking in plain-shell panes.
 
 Closing the window leaves the daemon and its sessions running. Settings ▸ Daemon ▸
 Background controls whether Houston stays in the tray or quits its client when the
-window closes. Reopen Houston to reconnect to the sessions.
+window closes. Reopen Houston to reconnect to the sessions. Tray counts include live
+sessions only; ended sessions do not appear in the tray menu.
 
 To end the sessions and exit, use **Quit and stop daemon** in the command palette,
 or **Stop daemon** in Settings ▸ Daemon. Confirming names the affected sessions and

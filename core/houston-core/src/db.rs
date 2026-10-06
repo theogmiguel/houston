@@ -1944,6 +1944,34 @@ impl Db {
         Ok(n)
     }
 
+    pub fn backfill_settled_retention(
+        &self,
+        now: u64,
+        retention_ms: u64,
+    ) -> Result<(usize, usize)> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let closed = tx.execute(
+            "UPDATE sessions SET state = 'closed'
+             WHERE state != 'closed' AND id IN (
+                 SELECT d.child_session FROM delegations d
+                 JOIN sessions parent ON parent.id = d.parent_session
+                 WHERE parent.state = 'closed'
+             )",
+            [],
+        )?;
+        let until = now.saturating_add(retention_ms);
+        let backfilled = tx.execute(
+            "UPDATE delegations SET retained_until = ?1
+             WHERE retained_until IS NULL AND settled_at IS NOT NULL
+               AND child_session IN (SELECT id FROM sessions WHERE state = 'exited')
+               AND parent_session IN (SELECT id FROM sessions WHERE state != 'closed')",
+            [until as i64],
+        )?;
+        tx.commit()?;
+        Ok((closed, backfilled))
+    }
+
     pub fn list_interrupted(&self) -> Result<Vec<proto::SessionInfo>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(

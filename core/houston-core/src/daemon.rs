@@ -2439,6 +2439,19 @@ impl Daemon {
         #[cfg(not(target_os = "linux"))]
         let _ = session_launcher;
         let db = Db::open(&cfg.db_path)?;
+        if adopted.is_none() {
+            let retention_hours = db
+                .get_setting("settled_retention_hours")?
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(SETTLED_RETENTION_DEFAULT_HOURS);
+            let (closed, backfilled) =
+                db.backfill_settled_retention(now_ms(), u64::from(retention_hours) * 3_600_000)?;
+            if closed > 0 || backfilled > 0 {
+                tracing::info!(
+                    "backfilled settled child retention for {backfilled} child session(s) and closed {closed} child session(s) whose parent was closed"
+                );
+            }
+        }
         let tag_registry: BTreeMap<u32, proto::TagInfo> =
             db.tag_list()?.into_iter().map(|t| (t.id, t)).collect();
         let adopted_ids: HashSet<u32> = adopted
