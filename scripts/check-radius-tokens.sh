@@ -28,7 +28,6 @@ BASELINE=(
   "ui/src/renderer/src/components/settings/PrivacySection.tsx 1"
   "ui/src/renderer/src/components/settings/VoiceSection.tsx 4"
   "ui/src/renderer/src/components/Sidebar.tsx 10"
-  "ui/src/renderer/src/components/SkillsView.tsx 8"
   "ui/src/renderer/src/components/SshConnectModal.tsx 0"
   "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
 )

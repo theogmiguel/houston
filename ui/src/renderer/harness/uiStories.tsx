@@ -240,8 +240,82 @@ import { SurfaceCrash } from '../src/components/ui/SurfaceCrash'
 import { TILE_AGENT_CLS, TILE_IDLE, URL_INPUT_CLS } from '../src/components/ui'
 import { FileExplorerSpecimen } from '../src/components/ui/FileExplorer'
 import { InspectorBody, InspectorCard, InspectorSurface } from '../src/components/ui/InspectorHeader'
+import { BlockBar, BlockBarList, BlockRow, BlockRowActions, BlockRowDetail, BlockRowMeta, BlockRowTile, BlockRowTitle, CodePane } from '../src/components/ui/Block'
+import { ConfirmDialog } from '../src/components/ui/ConfirmDialog'
+import { LeafPane, LeafPaneButton, LeafPaneHeader } from '../src/components/ui/LeafPane'
+import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
+import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelSwitch, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
+import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
 
 const noop = (): void => {}
+
+function SkillsChromeSpecimen(): React.JSX.Element {
+  const [enabled, setEnabled] = useState(true)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  return (
+    <div className="grid gap-[var(--space-4)]">
+      <SpecimenRow>
+        <PanelButton>Secondary action</PanelButton>
+        <PanelButton tone="primary">Primary action</PanelButton>
+        <PanelIconButton aria-label="Refresh"><IconClose /></PanelIconButton>
+        <PanelSwitch on={enabled} label="Automatic distribution" onChange={setEnabled} />
+        <PanelChoiceGroup>
+          <PanelChoice pressed>Claude</PanelChoice>
+          <PanelChoice pressed={false}>Codex</PanelChoice>
+        </PanelChoiceGroup>
+      </SpecimenRow>
+      <Card tone="block" shape="md">
+        <BlockBar edge="bottom" text="faint">Skill library</BlockBar>
+        <BlockRow>
+          <BlockRowTile><Icon glyph={IconTerminal} role="ui" /></BlockRowTile>
+          <div className="min-w-0 flex-1">
+            <BlockRowTitle>deploy</BlockRowTitle>
+            <BlockRowDetail>Deploy a service and verify its health.</BlockRowDetail>
+            <BlockRowMeta>
+              <Text as="code" size="small" mono tone="faint">/deploy</Text>
+              <BlockRowActions><PanelIconButton aria-label="Edit"><IconClose /></PanelIconButton></BlockRowActions>
+            </BlockRowMeta>
+          </div>
+        </BlockRow>
+        <BlockBarList><BlockBar as="li" edge="rows" text="small" className="flex items-center gap-[var(--space-2)]">
+          <Text size="small" tone="secondary">Tool row status</Text>
+        </BlockBar></BlockBarList>
+        <BlockBar edge="top" pad="lg"><CodePane size="preview"># Deploy\nVerify health after release.</CodePane></BlockBar>
+      </Card>
+      <PanelEmpty title="No skills yet" icon={<Icon glyph={IconTerminal} role="display" />} action={<PanelButton>New skill</PanelButton>}>
+        A skill is a saved procedure an agent can paste into a terminal and run.
+      </PanelEmpty>
+      <PanelNotice variant="alert">The skill could not be saved.</PanelNotice>
+      <PanelField>
+        <PanelFieldLabel htmlFor="skills-chrome-url">Skill URL</PanelFieldLabel>
+        <PanelTextInput id="skills-chrome-url" value="https://example.com/SKILL.md" readOnly />
+        <PanelTextArea value="Instructions" readOnly />
+      </PanelField>
+      <PanelBackBar label="Back to skills" onClick={noop}><PanelIconButton aria-label="More"><IconClose /></PanelIconButton></PanelBackBar>
+      <PanelListHead><PanelToolbarField><PanelTextInput height="control" aria-label="Search skills" placeholder="Search skills…" /></PanelToolbarField></PanelListHead>
+      <PanelDetailFrame><PanelBackBar label="Skills" onClick={noop} /><PanelDetailBody><PanelBadge><Icon glyph={IconTerminal} role="ui" /></PanelBadge><PanelStatusLine>Loading skills…</PanelStatusLine></PanelDetailBody></PanelDetailFrame>
+      <PanelColumns><PanelSection><PanelSectionToggle collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>Distribution</PanelSectionToggle>{!collapsed && <Text size="small">Claude Code · available</Text>}</PanelSection><PanelSection><Text size="small">Other tools</Text></PanelSection></PanelColumns>
+      <div className="h-48 overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)]">
+        <NavSurfaceFrame><NavSurfaceContent><NavSurfaceSection><PanelFootnote>Distribution status</PanelFootnote></NavSurfaceSection></NavSurfaceContent></NavSurfaceFrame>
+      </div>
+      <LeafPane>
+        <LeafPaneHeader icon={<Icon glyph={IconTerminal} role="ui" />} title="Skills">
+          <LeafPaneButton aria-label="Close"><IconClose /></LeafPaneButton>
+        </LeafPaneHeader>
+        <PaneViewRoot>
+          <PaneViewBar variant="title"><div className="flex items-center gap-2"><PaneViewBadge><Icon glyph={IconTerminal} role="ui" /></PaneViewBadge><Text as="h2" size="ui" weight="semibold" flush>Skills</Text><PaneViewCount>3</PaneViewCount></div></PaneViewBar>
+          <PaneViewBar variant="toolbar"><PaneViewInput aria-label="Search skills" value="Deploy" readOnly /><PaneViewPill selected>Claude</PaneViewPill></PaneViewBar>
+          <PaneViewBar variant="edit"><PaneViewCloseButton aria-label="Close editor"><IconClose /></PaneViewCloseButton><PaneViewSaveButton>Save skill</PaneViewSaveButton></PaneViewBar>
+          <PaneViewNotice>Unable to save the skill.</PaneViewNotice>
+          <PaneViewBody variant="list"><PaneViewTextArea value="Instructions" readOnly /></PaneViewBody>
+        </PaneViewRoot>
+      </LeafPane>
+      <div><PanelButton onClick={() => setConfirmOpen(true)}>Show confirmation</PanelButton></div>
+      {confirmOpen && <ConfirmDialog title="Delete this skill?" confirmLabel="Delete" onConfirm={() => setConfirmOpen(false)} onCancel={() => setConfirmOpen(false)}>The skill will be removed.</ConfirmDialog>}
+    </div>
+  )
+}
 
 const breakdownRows = [
   { rank: 1, model: 'claude-opus-5-5', cost: '$1,812.30', share: '72.9%', tokens: '2.9B', bar: 72.9 },
@@ -720,6 +794,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
           <Card tone="material-inset" shape="inset" padding="md">Pull request details</Card>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Skills panel chrome">
+          <SkillsChromeSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Launch grid preview">

@@ -17,7 +17,6 @@ BASELINE=(
   "ui/src/renderer/src/components/nav/navChrome.tsx 4"
   "ui/src/renderer/src/components/ui/pickerChrome.ts 1"
   "ui/src/renderer/src/components/ui/settingsPrimitives.tsx 1"
-  "ui/src/renderer/src/components/SkillsView.tsx 1"
 )
 
 mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \

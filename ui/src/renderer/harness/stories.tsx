@@ -154,6 +154,7 @@ import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
 import { PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagEditorStory, TagsFormsStory } from './paneChromeStories'
+import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 
 const noop = (): void => {}
 
@@ -387,6 +388,19 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/skills': () => <NavSkills />,
   'nav/skills/graphite': () => <NavSkills />,
   'nav/skills/paper': () => <NavSkills />,
+  'skills/standalone-a': () => <SkillsStandaloneA />,
+  'skills/standalone-b': () => <SkillsStandaloneB />,
+  'skills/standalone-c': () => <SkillsStandaloneC />,
+  'skills/row-actions': () => <SkillsRowActions />,
+  'skills/embedded-a': () => <SkillsEmbeddedA />,
+  'skills/embedded-b': () => <SkillsEmbeddedB />,
+  'skills/embedded-c': () => <SkillsEmbeddedC />,
+  'skills/embedded-d': () => <SkillsEmbeddedD />,
+  'skills/delete-confirm': () => <SkillsDeleteConfirm />,
+  'skills/install-blank': () => <SkillsInstallBlank />,
+  'skills/install-url': () => <SkillsInstallUrl />,
+  'skills/install-preview': () => <SkillsInstallPreview />,
+  'skills/install-conflict': () => <SkillsInstallConflict />,
   'nav/mcp': () => <NavMcp />,
   'nav/mcp-detail': () => <NavMcpDetail />,
   'nav/mcp-form': () => <NavMcpForm />,

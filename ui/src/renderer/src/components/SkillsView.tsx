@@ -8,7 +8,6 @@ import { buildSkillRows, needsPush, skillCellFor } from '../houston/skillRows'
 import {
   IconAgent,
   IconCheck,
-  IconChevronDown,
   IconClose,
   IconCopy,
   IconFile,
@@ -21,9 +20,6 @@ import {
   IconTrash,
   IconZap
 } from './icons'
-import { RVIEW_CLS } from './ui/panelChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { BTN_DANGER_SOLID, BTN_GHOST } from './ui/buttonChrome'
 import { SkillItemDistribution } from './SkillDistribution'
 import { SkillInstallDialog } from './SkillInstallDialog'
 import { useCopyFeedback } from './useCopyFeedback'
@@ -31,29 +27,48 @@ import { Tooltip } from './ui/Tooltip'
 import { SettingsList, SettingsRow as Row, SubHead } from './ui/settingsPrimitives'
 import { StatusIcon, STATUS_ICON_WORD, type StatusIconState } from './ui/StatusIcon'
 import { ListDetail, type ListDetailItem } from './nav/ListDetail'
-import {
-  BLOCK,
-  CHROME_BUTTON,
-  CHROME_BUTTON_DANGER,
-  FIELD_INPUT,
-  FIELD_LABEL,
-  FIELD_TEXTAREA,
-  NavBack,
-  NavEmpty,
-  PRIMARY_BUTTON,
-  ROW_TOP,
-  ROW_ACTIONS,
-  ROW_DETAIL,
-  ROW_TILE,
-  ROW_TITLE,
-  SECONDARY_BUTTON,
-  chipClass
-} from './nav/navChrome'
 import { ICON_ROLE_CLS, Icon } from './ui/Icon'
 import { Button } from './ui/Button'
 import { Caption } from './ui/Caption'
 import { Card } from './ui/Card'
 import { PageHeader } from './ui/PageHeader'
+import { Text } from './ui/Text'
+import { BlockPathLabel, BlockRow, BlockRowActions, BlockRowDetail, BlockRowMeta, BlockRowTile, BlockRowTitle, CodePane } from './ui/Block'
+import {
+  PanelBackBar,
+  PanelBadge,
+  PanelButton,
+  PanelChoice,
+  PanelChoiceGroup,
+  PanelDetailBody,
+  PanelDetailFrame,
+  PanelEmpty,
+  PanelField,
+  PanelFieldLabel,
+  PanelIconButton,
+  PanelListHead,
+  PanelNotice,
+  PanelSection,
+  PanelSectionToggle,
+  PanelStatusLine,
+  PanelTextArea,
+  PanelTextInput,
+  PanelToolbarField
+} from './ui/PanelControls'
+import {
+  PaneViewBadge,
+  PaneViewBar,
+  PaneViewBody,
+  PaneViewCloseButton,
+  PaneViewCount,
+  PaneViewInput,
+  PaneViewNotice,
+  PaneViewPill,
+  PaneViewRoot,
+  PaneViewSaveButton,
+  PaneViewTextArea
+} from './ui/PaneView'
+import { ConfirmDialog } from './ui/ConfirmDialog'
 import { skillCliRelations, skillRelationLines, skillUsageLine } from '../houston/skillSurface'
 
 const AGENT_LABEL: Record<Skill['agent'], string> = {
@@ -180,58 +195,41 @@ function SkillRow({
   onDelete: (s: Skill) => void
 }): React.JSX.Element {
   return (
-    <div data-testid="skill-row" className={ROW_TOP}>
-      {}
-      <span aria-hidden="true" className={`${ROW_TILE} mt-[1px]`}>
+    <BlockRow data-testid="skill-row">
+      <BlockRowTile>
         <Icon glyph={IconFile} role="subhead" />
-      </span>
-      {}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-[8px]">
-          <button
-            type="button"
-            aria-label={`View ${skill.name}`}
-            className={`btn ${ROW_TITLE} flex-1 min-w-0 text-left border-0 bg-transparent p-0 cursor-pointer`}
-            onClick={() => onOpen(skill)}
-          >
-            {skill.name}
-          </button>
-          <span className="flex-none [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
-            {skill.source === 'project' ? 'project' : 'user'}
-          </span>
+      </BlockRowTile>
+      <div className="min-w-0 flex-1 grid gap-[var(--space-1-5)]">
+        <div className="grid gap-[var(--space-1)]">
+          <div className="flex items-center gap-[var(--space-2)]">
+            <BlockRowTitle aria-label={`View ${skill.name}`} onClick={() => onOpen(skill)}>
+              {skill.name}
+            </BlockRowTitle>
+            <Text size="small" weight="small" tone="faint" className="flex-none">
+              {skill.source === 'project' ? 'project' : 'user'}
+            </Text>
+          </div>
+          <BlockRowDetail>{skill.description || 'No description provided.'}</BlockRowDetail>
         </div>
-        <div className={`${ROW_DETAIL} whitespace-normal line-clamp-2 mt-[4px]`}>
-          {skill.description || 'No description provided.'}
-        </div>
-        <div className="mt-[6px] flex items-center min-h-[24px]">
-          <code className="truncate font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
+        <BlockRowMeta>
+          <Text as="code" size="small" weight="small" tone="faint" mono className="truncate">
             {skill.invoke}
-          </code>
-          <div className={ROW_ACTIONS}>
+          </Text>
+          <BlockRowActions>
             <Tooltip label="Edit skill">
-              <button
-                type="button"
-                aria-label={`Edit ${skill.name}`}
-                className={CHROME_BUTTON}
-                onClick={() => onEdit(skill)}
-              >
+              <PanelIconButton aria-label={`Edit ${skill.name}`} onClick={() => onEdit(skill)}>
                 <Icon glyph={IconPencil} role="small" />
-              </button>
+              </PanelIconButton>
             </Tooltip>
             <Tooltip label="Delete skill">
-              <button
-                type="button"
-                aria-label={`Delete ${skill.name}`}
-                className={CHROME_BUTTON_DANGER}
-                onClick={() => onDelete(skill)}
-              >
+              <PanelIconButton danger aria-label={`Delete ${skill.name}`} onClick={() => onDelete(skill)}>
                 <Icon glyph={IconTrash} role="small" />
-              </button>
+              </PanelIconButton>
             </Tooltip>
-          </div>
-        </div>
+          </BlockRowActions>
+        </BlockRowMeta>
       </div>
-    </div>
+    </BlockRow>
   )
 }
 
@@ -253,10 +251,10 @@ function SkillInvocationActions({
   const { copyState, copy } = useCopyFeedback()
   const runActionLabel = runLabel ? `Use in ${runLabel}` : 'Use in selected terminal'
   return (
-    <div className={`${BLOCK} px-[14px] py-[12px] flex items-center gap-[10px]`}>
-      <code className="flex-1 min-w-0 truncate font-mono [font-size:var(--tr-text-ui-size)] text-[var(--text-primary)]">
+    <Card tone="block" shape="md" padding="invocation" className="flex items-center gap-[var(--space-2-5)]">
+      <Text as="code" size="ui" tone="primary" mono className="flex-1 min-w-0 truncate">
         {skill.invoke}
-      </code>
+      </Text>
       {(onRun || runDisabledReason) && (
         <Tooltip label={runDisabledReason ?? runActionLabel}>
           <Button
@@ -277,17 +275,13 @@ function SkillInvocationActions({
         </Button>
       ) : (
         <Tooltip label="Copy invocation">
-          <button type="button" aria-label="Copy invocation" className={CHROME_BUTTON} onClick={() => copy(skill.invoke)}>
+          <PanelIconButton aria-label="Copy invocation" onClick={() => copy(skill.invoke)}>
             <Icon glyph={copyState === 'success' ? IconCheck : IconCopy} role="small" />
-          </button>
+          </PanelIconButton>
         </Tooltip>
       )}
-      {includePath && (
-        <span className="flex-none truncate max-w-[240px] font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
-          {skill.path}
-        </span>
-      )}
-    </div>
+      {includePath && <BlockPathLabel>{skill.path}</BlockPathLabel>}
+    </Card>
   )
 }
 
@@ -305,7 +299,7 @@ function SkillAgentRelations({
   hasHarnessReview?: boolean
 }): React.JSX.Element {
   return (
-    <section className="flex flex-col gap-[var(--space-2)]" data-testid="skill-agent-relations">
+    <section className="grid gap-[var(--space-2)]" data-testid="skill-agent-relations">
       <SubHead>Where agents find it</SubHead>
       <div className="grid gap-[var(--space-1)]">
         {skillRelationLines(skillCliRelations(skill, tools ?? null)).map((line) => (
@@ -313,11 +307,11 @@ function SkillAgentRelations({
         ))}
       </div>
       {(usageLine || hasHarnessReview !== undefined) && (
-        <p data-testid="skill-usage" className="m-0">
+        <Text as="p" flush data-testid="skill-usage">
           <Caption tone="faint">
             {usageLine ?? skillUsageLine(skill.name, usageDigest ?? null, hasHarnessReview ?? false)}
           </Caption>
-        </p>
+        </Text>
       )}
     </section>
   )
@@ -363,62 +357,52 @@ function SkillDetail({
   const canDistribute = skill.agent === 'claude' && tools != null && onPush != null && onPushUndo != null
 
   return (
-    <div className="flex flex-col gap-4">
-      <NavBack label="Skills" onClick={onBack}>
+    <PanelDetailFrame>
+      <PanelBackBar label="Skills" onClick={onBack}>
         <Tooltip label="Edit skill">
-          <button
-            type="button"
-            aria-label={`Edit ${skill.name}`}
-            className={SECONDARY_BUTTON}
-            onClick={() => onEdit(skill)}
-          >
+          <PanelButton aria-label={`Edit ${skill.name}`} onClick={() => onEdit(skill)}>
             <Icon glyph={IconPencil} role="small" />
             Edit
-          </button>
+          </PanelButton>
         </Tooltip>
         <Tooltip label="Delete skill">
-          <button
-            type="button"
-            aria-label={`Delete ${skill.name}`}
-            className={`${SECONDARY_BUTTON} hover:not-disabled:text-[var(--danger)]!`}
-            onClick={() => onDelete(skill)}
-          >
+          <PanelButton tone="secondary-danger" aria-label={`Delete ${skill.name}`} onClick={() => onDelete(skill)}>
             <Icon glyph={IconTrash} role="small" />
             Delete
-          </button>
+          </PanelButton>
         </Tooltip>
-      </NavBack>
+      </PanelBackBar>
 
-      <div className="px-[14px] flex flex-col gap-4">
-        <div className="flex items-center gap-[10px]">
-          <span className="inline-flex items-center justify-center w-9 h-9 rounded-[var(--tr-radius-md)] flex-none text-[var(--text-secondary)] bg-[var(--hover-fill)] border border-[var(--border)]">
+      <PanelDetailBody>
+        <div className="flex items-center gap-[var(--space-2-5)]">
+          <PanelBadge>
             <IconAgent agent={skill.agent} className={ICON_ROLE_CLS.subhead} />
-          </span>
+          </PanelBadge>
           <div className="min-w-0 flex-1">
-            <h2 className="m-0 truncate [font-size:var(--tr-text-body-size)] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
+            <Text as="h2" size="body" weight="semibold" tight tone="primary" flush className="truncate">
               {skill.name}
-            </h2>
-            <div className="flex items-center gap-[6px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
+            </Text>
+            <Text as="div" size="small" weight="small" tone="faint" className="flex items-center gap-[var(--space-1-5)]">
               <span>{AGENT_LABEL[skill.agent]}</span>
               <span aria-hidden>·</span>
               <span>
                 {scopeLabel ?? (skill.source === 'project' && dir ? `Project scope (${dir})` : 'User scope')}
               </span>
-            </div>
+            </Text>
           </div>
         </div>
 
-        <p className="m-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[1.6] text-[var(--text-secondary)]">
+        <Text as="p" size="ui" weight="ui" leading="relaxed" tone="secondary" flush>
           {skill.description || 'No description provided.'}
-        </p>
+        </Text>
 
-        <div className="flex flex-col gap-[6px]">
-          <span className="[font-size:var(--tr-text-small-size)] font-semibold uppercase tracking-[0.06em] text-[var(--text-secondary)]">
+        <div className="grid gap-[var(--space-1-5)]">
+          <Text size="small" weight="semibold" caps tone="secondary">
             Origin
-          </span>
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)] break-all">
+          </Text>
+          <Text size="small" weight="small" tone="faint" breakAll>
             {skill.path}
-          </span>
+          </Text>
         </div>
 
         <SkillInvocationActions
@@ -447,68 +431,53 @@ function SkillDetail({
             onPushUndo={onPushUndo!}
           />
         )}
-      </div>
-    </div>
+      </PanelDetailBody>
+    </PanelDetailFrame>
   )
 }
 
 function SkillEditForm({
   form,
   dir,
-  embedded,
   setForm,
   submitForm
 }: {
   form: SkillFormState
   dir: string | null
-  embedded: boolean
   setForm: (form: SkillFormState | null) => void
   submitForm: () => void
 }): React.JSX.Element {
   const isEdit = form.path !== null
   return (
-    <div className={`${RVIEW_CLS} relative ${embedded ? '' : 'bg-background'}`}>
-      <div className="flex items-center gap-2.5 py-3 px-4 border-b border-[color-mix(in_srgb,var(--border)_40%,transparent)] bg-surface flex-none">
-        <button
-          className={`btn inline-flex items-center justify-center ${CONTROL_SIZE_SQUARE_CLS.regular} rounded-[var(--tr-radius-md)] flex-none bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.06)] text-text-muted cursor-pointer hover:text-text-primary hover:bg-[rgba(255,255,255,0.08)]`}
-          aria-label="Cancel"
-          onClick={() => setForm(null)}
-        >
+    <PaneViewRoot>
+      <PaneViewBar variant="edit">
+        <PaneViewCloseButton aria-label="Cancel" onClick={() => setForm(null)}>
           <Icon glyph={IconClose} role="ui" />
-        </button>
-        <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg flex-none text-info bg-[linear-gradient(135deg,color-mix(in_srgb,var(--info)_15%,transparent),color-mix(in_srgb,var(--success)_15%,transparent))] border border-[color-mix(in_srgb,var(--info)_20%,transparent)]">
+        </PaneViewCloseButton>
+        <PaneViewBadge>
           <Icon glyph={IconZap} role="subhead" />
-        </span>
+        </PaneViewBadge>
         <div className="flex-1 min-w-0">
-          <h2 className="m-0 [font-size:var(--tr-text-ui-size)] font-semibold tracking-[-0.01em] text-text-primary whitespace-nowrap overflow-hidden text-ellipsis">
+          <Text as="h2" size="ui" weight="semibold" tight tone="primary" flush className="truncate">
             {isEdit ? 'Edit Skill' : 'New Skill'}
-          </h2>
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-text-muted">
+          </Text>
+          <Text size="small" weight="small" tone="muted">
             Saved into the provider&apos;s own skills folder
             {dir ? ' (or this project’s)' : ''}
-          </span>
+          </Text>
         </div>
-        <button
-          className="btn inline-flex items-center gap-1.5 py-2 px-3.5 rounded-[var(--tr-radius-md)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-primary bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] border border-[color-mix(in_srgb,var(--accent)_25%,transparent)] cursor-pointer whitespace-nowrap flex-none [transition:background_0.15s_ease] hover:bg-[color-mix(in_srgb,var(--accent)_25%,transparent)] disabled:opacity-60 disabled:cursor-default"
-          disabled={form.busy || !form.name.trim()}
-          onClick={submitForm}
-        >
+        <PaneViewSaveButton disabled={form.busy || !form.name.trim()} onClick={submitForm}>
           <Icon glyph={IconSave} role="small" />
           {isEdit ? 'Save changes' : 'Create skill'}
-        </button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-y-auto py-4 px-4 flex flex-col gap-4">
-        {form.error && (
-          <div className="flex items-center justify-between gap-2 py-2.5 px-3.5 rounded-xl border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-danger [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] flex-none">
-            {form.error}
-          </div>
-        )}
-        <div className="flex flex-col gap-1.5">
-          <label className="[font-size:var(--tr-text-small-size)] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+        </PaneViewSaveButton>
+      </PaneViewBar>
+      <PaneViewBody variant="form">
+        {form.error && <PaneViewNotice>{form.error}</PaneViewNotice>}
+        <PanelField>
+          <Text as="label" size="small" weight="semibold" caps tone="secondary">
             Name
-          </label>
-          <input
-            className="w-full py-2 px-3 rounded-[10px] bg-[color-mix(in_srgb,var(--card-bg)_50%,transparent)] border border-[color-mix(in_srgb,var(--border)_60%,transparent)] text-text-primary [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] outline-none focus:border-[var(--border-hover)] focus:bg-surface focus-visible:border-[var(--border-hover)]"
+          </Text>
+          <PaneViewInput
             placeholder="skill-name"
             maxLength={64}
             value={form.name}
@@ -517,43 +486,38 @@ function SkillEditForm({
             onKeyDown={(e) => e.stopPropagation()}
             spellCheck={false}
           />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="[font-size:var(--tr-text-small-size)] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+        </PanelField>
+        <PanelField>
+          <Text as="label" size="small" weight="semibold" caps tone="secondary">
             Provider
-          </label>
-          <div className="flex flex-wrap gap-2">
+          </Text>
+          <PanelChoiceGroup>
             {(['claude', 'codex', 'antigravity'] as const).map((p) => (
-              <button
+              <PaneViewPill
                 key={p}
-                className={`btn py-[5px] px-3 rounded-[var(--tr-radius-pill)] [font-size:var(--tr-text-small-size)] font-medium border cursor-pointer disabled:opacity-[0.55] disabled:cursor-default ${
-                  form.provider === p
-                    ? 'text-primary bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] border-[color-mix(in_srgb,var(--accent)_30%,transparent)]'
-                    : 'text-text-muted bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.06)] hover:text-text-secondary'
-                }`}
+                selected={form.provider === p}
                 disabled={isEdit}
                 onClick={() => setForm({ ...form, provider: p })}
               >
                 {AGENT_LABEL[p]}
-              </button>
+              </PaneViewPill>
             ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="[font-size:var(--tr-text-small-size)] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+          </PanelChoiceGroup>
+        </PanelField>
+        <PanelField>
+          <Text as="label" size="small" weight="semibold" caps tone="secondary">
             Content
-          </label>
-          <textarea
-            className="w-full min-h-[240px] resize-y py-3 px-3 rounded-xl bg-[color-mix(in_srgb,var(--card-bg)_50%,transparent)] border border-[color-mix(in_srgb,var(--border)_60%,transparent)] text-text-primary font-mono [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[1.75] outline-none focus:border-[var(--border-hover)] focus:bg-surface focus-visible:border-[var(--border-hover)]"
+          </Text>
+          <PaneViewTextArea
             value={form.content}
             placeholder={'# Skill name\n\n## Phase 1\n- Step\n- Step\n\n## Phase 2\n- Step\n- Step'}
             onChange={(e) => setForm({ ...form, content: e.target.value })}
             onKeyDown={(e) => e.stopPropagation()}
             spellCheck={false}
           />
-        </div>
-      </div>
-    </div>
+        </PanelField>
+      </PaneViewBody>
+    </PaneViewRoot>
   )
 }
 
@@ -595,10 +559,10 @@ function SkillCopiesGroup({
   const now = Date.now()
 
   return (
-    <div className="flex flex-col gap-[6px]">
-      <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
+    <div className="grid gap-[var(--space-1-5)]">
+      <Text size="label" weight="label" tone="faint">
         Copies
-      </span>
+      </Text>
       <SettingsList>
         {others.map((tool) => {
           const cell = skillCellFor(row, tool)
@@ -622,36 +586,22 @@ function SkillCopiesGroup({
                   : "its own copy, in sync"
           return (
             <Row key={tool.tool} title={skillToolLabel(tool.tool)} desc={desc}>
-              <div className="flex items-center gap-[8px]">
+              <div className="flex items-center gap-[var(--space-2)]">
                 <StatusIcon state={state} label={STATUS_ICON_WORD[state]} />
                 {cell.kind === 'differs' && (
-                  <button
-                    type="button"
-                    className={SECONDARY_BUTTON}
-                    onClick={() => onPush(tool.tool, skill.name)}
-                  >
-                    Push again
-                  </button>
+                  <PanelButton onClick={() => onPush(tool.tool, skill.name)}>Push again</PanelButton>
                 )}
                 {cell.kind === 'missing' && pushable && (
-                  <button
-                    type="button"
-                    className={SECONDARY_BUTTON}
-                    onClick={() => onPush(tool.tool, skill.name)}
-                  >
-                    Copy here
-                  </button>
+                  <PanelButton onClick={() => onPush(tool.tool, skill.name)}>Copy here</PanelButton>
                 )}
                 {push && (
                   <Tooltip label="Undo this push">
-                    <button
-                      type="button"
+                    <PanelIconButton
                       aria-label={`Undo pushing ${skill.name} into ${skillToolLabel(tool.tool)}`}
-                      className={CHROME_BUTTON}
                       onClick={() => onPushUndo(tool.tool, skill.name)}
                     >
                       <Icon glyph={IconRespawn} role="small" />
-                    </button>
+                    </PanelIconButton>
                   </Tooltip>
                 )}
               </div>
@@ -686,15 +636,14 @@ function SkillInstructionsBox({ path }: { path: string }): React.JSX.Element {
     }
   }, [path])
   return (
-    <pre
+    <CodePane
+      size="instructions"
+      tone={error ? 'danger' : 'secondary'}
       data-testid="skill-instructions"
       data-state={error ? 'error' : content === null ? 'loading' : 'ready'}
-      className={`m-0 flex-1 min-h-[120px] max-h-[360px] overflow-auto rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--content-bg)] py-[12px] px-[14px] font-mono [font-size:var(--tr-text-small-size)] leading-[1.6] whitespace-pre-wrap break-words ${
-        error ? 'text-[var(--danger)]' : 'text-[var(--text-secondary)]'
-      }`}
     >
       {error ? `Couldn't read ${path}: ${error}` : (content ?? 'Reading…')}
-    </pre>
+    </CodePane>
   )
 }
 
@@ -733,47 +682,32 @@ function SkillEmbeddedDetail({
 }): React.JSX.Element {
   return (
     <>
-      <div className="flex items-center justify-between gap-[10px]">
-        <h2 className="m-0 min-w-0 truncate [font-size:17px] font-semibold text-[var(--text-primary)]">
+      <div className="flex items-center justify-between gap-[var(--space-2-5)]">
+        <Text as="h2" size="subhead" weight="semibold" tone="primary" flush className="min-w-0 truncate">
           {skill.name}
-        </h2>
-        <div className="flex-none flex items-center gap-[6px]">
+        </Text>
+        <div className="flex-none flex items-center gap-[var(--space-1-5)]">
           {!showAgentRelations && onRun && (
-            <button
-              type="button"
-              aria-label={`Use ${skill.name} in pane`}
-              className={SECONDARY_BUTTON}
-              onClick={() => onRun(skill.invoke)}
-            >
+            <PanelButton aria-label={`Use ${skill.name} in pane`} onClick={() => onRun(skill.invoke)}>
               <Icon glyph={IconPlay} role="small" />
               Use in pane
-            </button>
+            </PanelButton>
           )}
           <Tooltip label="Edit skill">
-            <button
-              type="button"
-              aria-label={`Edit ${skill.name}`}
-              className={CHROME_BUTTON}
-              onClick={() => onEdit(skill)}
-            >
+            <PanelIconButton aria-label={`Edit ${skill.name}`} onClick={() => onEdit(skill)}>
               <Icon glyph={IconPencil} role="small" />
-            </button>
+            </PanelIconButton>
           </Tooltip>
           <Tooltip label="Delete skill">
-            <button
-              type="button"
-              aria-label={`Delete ${skill.name}`}
-              className={CHROME_BUTTON_DANGER}
-              onClick={() => onDelete(skill)}
-            >
+            <PanelIconButton danger aria-label={`Delete ${skill.name}`} onClick={() => onDelete(skill)}>
               <Icon glyph={IconTrash} role="small" />
-            </button>
+            </PanelIconButton>
           </Tooltip>
         </div>
       </div>
-      <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+      <Text as="p" size="small" weight="small" tone="muted" flush>
         {skill.description || 'No description provided.'}
-      </p>
+      </Text>
       {scopeLabel && <Caption tone="faint">{scopeLabel}</Caption>}
       <SkillInvocationActions
         skill={skill}
@@ -793,12 +727,12 @@ function SkillEmbeddedDetail({
           hasHarnessReview={hasHarnessReview}
         />
       )}
-      <div className="flex flex-col gap-[6px] flex-1 min-h-0">
-        <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)]">
+      <PanelField grow>
+        <Text size="label" weight="label" tone="faint">
           Instructions
-        </span>
+        </Text>
         <SkillInstructionsBox path={skill.path} />
-      </div>
+      </PanelField>
     </>
   )
 }
@@ -815,16 +749,17 @@ function SkillEmbeddedEditor({
   const isEdit = form.path !== null
   return (
     <>
-      <h2 className="m-0 [font-size:17px] font-semibold text-[var(--text-primary)]">
+      <Text as="h2" size="subhead" weight="semibold" tone="primary" flush>
         {isEdit ? `Edit ${form.name}` : 'New skill'}
-      </h2>
+      </Text>
       {form.error && (
-        <div className="[font-size:var(--tr-text-small-size)] text-[var(--danger)]">{form.error}</div>
+        <Text as="div" size="small" tone="danger">
+          {form.error}
+        </Text>
       )}
-      <div className="flex flex-col gap-[6px]">
-        <label className={FIELD_LABEL}>Name</label>
-        <input
-          className={FIELD_INPUT}
+      <PanelField>
+        <PanelFieldLabel>Name</PanelFieldLabel>
+        <PanelTextInput
           placeholder="skill-name"
           maxLength={64}
           value={form.name}
@@ -833,47 +768,38 @@ function SkillEmbeddedEditor({
           onKeyDown={(e) => e.stopPropagation()}
           spellCheck={false}
         />
-      </div>
-      <div className="flex flex-col gap-[6px]">
-        <label className={FIELD_LABEL}>Provider</label>
-        <div className="flex flex-wrap gap-2">
+      </PanelField>
+      <PanelField>
+        <PanelFieldLabel>Provider</PanelFieldLabel>
+        <PanelChoiceGroup>
           {(['claude', 'codex', 'antigravity'] as const).map((p) => (
-            <button
+            <PanelChoice
               key={p}
-              type="button"
-              aria-pressed={form.provider === p}
-              className={chipClass(form.provider === p)}
+              pressed={form.provider === p}
               disabled={isEdit}
               onClick={() => setForm({ ...form, provider: p })}
             >
               {AGENT_LABEL[p]}
-            </button>
+            </PanelChoice>
           ))}
-        </div>
-      </div>
-      <div className="flex flex-col gap-[6px] flex-1 min-h-[160px]">
-        <label className={FIELD_LABEL}>Instructions</label>
-        <textarea
-          className={`${FIELD_TEXTAREA} flex-1 min-h-0 font-mono`}
+        </PanelChoiceGroup>
+      </PanelField>
+      <PanelField fill>
+        <PanelFieldLabel>Instructions</PanelFieldLabel>
+        <PanelTextArea
+          fill
           value={form.content}
           placeholder={'# Skill name\n\n## Phase 1\n- Step\n- Step'}
           onChange={(e) => setForm({ ...form, content: e.target.value })}
           onKeyDown={(e) => e.stopPropagation()}
           spellCheck={false}
         />
-      </div>
-      <div className="flex items-center gap-[8px]">
-        <button type="button" className={SECONDARY_BUTTON} onClick={() => setForm(null)}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className={PRIMARY_BUTTON}
-          disabled={form.busy || !form.name.trim()}
-          onClick={submitForm}
-        >
+      </PanelField>
+      <div className="flex items-center gap-[var(--space-2)]">
+        <PanelButton onClick={() => setForm(null)}>Cancel</PanelButton>
+        <PanelButton tone="primary" disabled={form.busy || !form.name.trim()} onClick={submitForm}>
           {isEdit ? 'Save changes' : 'Create skill'}
-        </button>
+        </PanelButton>
       </div>
     </>
   )
@@ -899,43 +825,33 @@ function SkillSection({
   onDelete: (s: Skill) => void
 }): React.JSX.Element {
   return (
-    <section className="flex flex-col gap-2 mb-[14px] last:mb-0">
-      <button
-        type="button"
-        className="btn group flex items-center gap-[8px] w-full p-0 border-0 bg-transparent text-left cursor-pointer"
-        aria-expanded={!collapsed}
-        onClick={onToggle}
-      >
+    <PanelSection>
+      <PanelSectionToggle collapsed={collapsed} onToggle={onToggle}>
         <IconAgent agent={agent} className={ICON_ROLE_CLS.label} />
-        <span className="[font-size:var(--tr-text-small-size)] font-semibold text-[var(--text-secondary)]">
+        <Text size="small" weight="semibold" tone="secondary">
           {AGENT_LABEL[agent]}
-        </span>
-        <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)] tabular-nums">
+        </Text>
+        <Text size="small" weight="small" tone="faint" tabular>
           {items.length}
-        </span>
-        <span className="truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
+        </Text>
+        <Text size="small" weight="small" tone="faint" className="truncate">
           {agent === 'claude' && dir ? 'User + project skills.' : 'User skills.'}
-        </span>
-        <span
-          className={`inline-flex items-center ml-auto text-[var(--text-faint)] [transition:transform_0.18s_var(--animate-ease-menu,ease)] group-hover:text-[var(--text-primary)] ${collapsed ? '-rotate-90' : ''}`}
-        >
-          <Icon glyph={IconChevronDown} role="label" />
-        </span>
-      </button>
+        </Text>
+      </PanelSectionToggle>
       {collapsed ? null : items.length === 0 ? (
-        <div
-          className={`${BLOCK} px-[14px] py-[13px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]`}
-        >
-          No skills for {AGENT_LABEL[agent]} yet.
-        </div>
+        <Card tone="block" shape="md" padding="note">
+          <Text as="div" size="small" weight="small" tone="faint">
+            No skills for {AGENT_LABEL[agent]} yet.
+          </Text>
+        </Card>
       ) : (
-        <div className={BLOCK}>
+        <Card tone="block" shape="md">
           {items.map((sk) => (
             <SkillRow key={skillKey(sk)} skill={sk} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} />
           ))}
-        </div>
+        </Card>
       )}
-    </section>
+    </PanelSection>
   )
 }
 
@@ -971,47 +887,35 @@ function SkillsLibraryBody({
   onClearSearch: () => void
 }): React.JSX.Element {
   if (skills === null) {
-    return (
-      <div className="text-center py-12 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[color-mix(in_srgb,var(--text-muted)_70%,transparent)]">
-        Loading skills…
-      </div>
-    )
+    return <PanelStatusLine>Loading skills…</PanelStatusLine>
   }
   if (all.length === 0) {
     return (
-      <NavEmpty
+      <PanelEmpty
         testId="skills-empty"
         title="No skills yet"
         icon={<Icon glyph={IconZap} role="display" />}
         action={
-          <div className="flex items-center gap-2">
-            <button type="button" className={SECONDARY_BUTTON} onClick={onInstall}>
-              Install from link
-            </button>
-            <button type="button" className={SECONDARY_BUTTON} onClick={onCreate}>
-              New skill
-            </button>
+          <div className="flex items-center gap-[var(--space-2)]">
+            <PanelButton onClick={onInstall}>Install from link</PanelButton>
+            <PanelButton onClick={onCreate}>New skill</PanelButton>
           </div>
         }
       >
         A skill is a saved procedure an agent can paste into a terminal and run.
-      </NavEmpty>
+      </PanelEmpty>
     )
   }
   if (filtered.length === 0) {
     return (
-      <NavEmpty
+      <PanelEmpty
         testId="skills-no-matches"
         title="No matches"
         icon={<Icon glyph={IconZap} role="display" />}
-        action={
-          <button type="button" className={SECONDARY_BUTTON} onClick={onClearSearch}>
-            Clear search
-          </button>
-        }
+        action={<PanelButton onClick={onClearSearch}>Clear search</PanelButton>}
       >
         No skill matches &quot;{search}&quot;.
-      </NavEmpty>
+      </PanelEmpty>
     )
   }
   return (
@@ -1036,14 +940,12 @@ function SkillsLibraryBody({
 function SkillActionError({ message, onDismiss }: { message: string | null; onDismiss: () => void }): React.JSX.Element | null {
   if (!message) return null
   return (
-    <div className="pb-[var(--space-2-5)]">
-    <div className="flex items-center justify-between gap-[8px] min-h-[34px] px-[10px] py-[8px] rounded-[var(--tr-radius-sm)] border border-[color-mix(in_srgb,var(--danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--danger)_11%,transparent)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
+    <PanelNotice variant="bar">
       {message}
-      <button type="button" className={CHROME_BUTTON} aria-label="Dismiss" onClick={onDismiss}>
+      <PanelIconButton aria-label="Dismiss" onClick={onDismiss}>
         <Icon glyph={IconClose} role="label" />
-      </button>
-    </div>
-    </div>
+      </PanelIconButton>
+    </PanelNotice>
   )
 }
 
@@ -1160,38 +1062,14 @@ export function SkillsView({
   }))
 
   const deleteModal = deleting ? (
-    <div
-      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[color-mix(in_srgb,var(--content-bg)_80%,transparent)] backdrop-blur-[4px]"
-      onMouseDown={() => setDeleting(null)}
-    >
-      <div
-        className="w-[420px] max-w-[calc(100vw_-_2rem)] rounded-2xl border border-[color-mix(in_srgb,var(--border)_60%,transparent)] bg-surface shadow-[var(--shadow-lg)] overflow-hidden"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="py-3.5 px-5 border-b border-[color-mix(in_srgb,var(--border)_40%,transparent)] [font-size:var(--tr-text-ui-size)] font-semibold tracking-[-0.01em] text-text-primary">
-          Delete this skill?
-        </div>
-        <div className="py-3.5 px-5 flex flex-col gap-1">
-          <p className="m-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-text-secondary leading-[1.5]">
-            <b className="text-text-primary">{deleting.name}</b> will be removed.
-          </p>
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)] leading-[1.4] break-all">
-            {deleting.path}
-          </span>
-        </div>
-        <div className="py-3 px-5 border-t border-[color-mix(in_srgb,var(--border)_40%,transparent)] flex items-center justify-end gap-2">
-          <button className={`btn ${BTN_GHOST}`} onClick={() => setDeleting(null)}>
-            Cancel
-          </button>
-          <button
-            className={`btn ${BTN_DANGER_SOLID} py-1.5 px-3.5 rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer`}
-            onClick={confirmDelete}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog title="Delete this skill?" confirmLabel="Delete" onConfirm={confirmDelete} onCancel={() => setDeleting(null)}>
+      <Text as="p" size="ui" weight="ui" tone="secondary" leading="normal" flush>
+        <Text as="b" tone="primary">{deleting.name}</Text> will be removed.
+      </Text>
+      <Text size="small" weight="small" tone="dimmer" leading="tight" breakAll>
+        {deleting.path}
+      </Text>
+    </ConfirmDialog>
   ) : null
 
   const installModal = installOpen ? (
@@ -1229,20 +1107,16 @@ export function SkillsView({
             <SkillEmbeddedEditor form={form!} setForm={setForm} submitForm={submitForm} />
           </Card>
         ) : loadError ? (
-          <NavEmpty
+          <PanelEmpty
             title="Couldn't load skills"
             icon={<Icon glyph={IconFile} role="ui" />}
             testId="skills-load-error"
-            action={
-              <button type="button" className={SECONDARY_BUTTON} onClick={refresh}>
-                Try again
-              </button>
-            }
+            action={<PanelButton onClick={refresh}>Try again</PanelButton>}
           >
             {loadError}
-          </NavEmpty>
+          </PanelEmpty>
         ) : all.length === 0 ? (
-          <NavEmpty
+          <PanelEmpty
             testId="skills-empty"
             title="No skills yet"
             icon={<Icon glyph={IconZap} role="display" />}
@@ -1254,20 +1128,16 @@ export function SkillsView({
             }
           >
             A skill is a saved procedure an agent can paste into a terminal and run.
-          </NavEmpty>
+          </PanelEmpty>
         ) : filtered.length === 0 ? (
-          <NavEmpty
+          <PanelEmpty
             testId="skills-no-matches"
             title="No matches"
             icon={<Icon glyph={IconZap} role="display" />}
-            action={
-              <button type="button" className={SECONDARY_BUTTON} onClick={() => setSearch('')}>
-                Clear search
-              </button>
-            }
+            action={<PanelButton onClick={() => setSearch('')}>Clear search</PanelButton>}
           >
             No skill matches &quot;{search}&quot;.
-          </NavEmpty>
+          </PanelEmpty>
         ) : (
           <ListDetail
             items={listItems}
@@ -1275,18 +1145,18 @@ export function SkillsView({
             forceDetailOpen={creating}
             onCloseForced={() => setForm(null)}
             listHead={
-              <div className="pb-[var(--space-1-5)]">
-                <input
+              <PanelListHead>
+                <PanelTextInput
                   type="text"
                   role="searchbox"
                   aria-label="Search skills"
                   placeholder="Search skills…"
-                  className={`${FIELD_INPUT} h-[var(--h-ctl)]`}
+                  height="control"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onKeyDown={(e) => e.stopPropagation()}
                 />
-              </div>
+              </PanelListHead>
             }
             renderDetail={(item) => {
               if (creating) {
@@ -1294,9 +1164,9 @@ export function SkillsView({
               }
               if (!item) {
                 return (
-                  <div className="flex-1 flex items-center justify-center text-center [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+                  <Text as="div" size="small" tone="faint" center className="flex-1 flex items-center justify-center">
                     Pick a skill from the list to see its details.
-                  </div>
+                  </Text>
                 )
               }
               const skill = all.find((s) => skillKey(s) === item.id)
@@ -1333,14 +1203,12 @@ export function SkillsView({
   }
 
   if (form) {
-    return (
-      <SkillEditForm form={form} dir={dir} embedded={embedded} setForm={setForm} submitForm={submitForm} />
-    )
+    return <SkillEditForm form={form} dir={dir} setForm={setForm} submitForm={submitForm} />
   }
 
   if (selected) {
     return (
-      <div className={`${RVIEW_CLS} relative ${embedded ? '' : 'bg-background'} overflow-y-auto`}>
+      <PaneViewRoot scroll>
         <SkillDetail
           skill={selected}
           dir={dir}
@@ -1361,44 +1229,44 @@ export function SkillsView({
           onDelete={startDelete}
         />
         {deleteModal}
-      </div>
+      </PaneViewRoot>
     )
   }
 
   const toolbar = (
     <>
-      <div className="relative flex-1 min-w-[140px]">
-        <input
+      <PanelToolbarField>
+        <PanelTextInput
           type="text"
           role="searchbox"
           aria-label="Search skills"
           placeholder="Search skills…"
-          className={`${FIELD_INPUT} h-[var(--h-ctl)]`}
+          height="control"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.stopPropagation()}
         />
-      </div>
-      <button type="button" className={SECONDARY_BUTTON} onClick={() => setInstallOpen(true)}>
+      </PanelToolbarField>
+      <PanelButton onClick={() => setInstallOpen(true)}>
         <Icon glyph={IconFileDown} role="small" />
         Install from link
-      </button>
-      <button type="button" className={SECONDARY_BUTTON} onClick={startCreate}>
+      </PanelButton>
+      <PanelButton onClick={startCreate}>
         <Icon glyph={IconPlus} role="small" />
         New skill
-      </button>
+      </PanelButton>
     </>
   )
 
   const body = loadError ? (
-    <NavEmpty
+    <PanelEmpty
       title="Couldn't load skills"
       icon={<Icon glyph={IconFile} role="ui" />}
       testId="skills-load-error"
-      action={<button type="button" className={SECONDARY_BUTTON} onClick={refresh}>Try again</button>}
+      action={<PanelButton onClick={refresh}>Try again</PanelButton>}
     >
       {loadError}
-    </NavEmpty>
+    </PanelEmpty>
   ) : (
     <SkillsLibraryBody
       skills={skills}
@@ -1419,33 +1287,25 @@ export function SkillsView({
   )
 
   return (
-    <div className={`${RVIEW_CLS} relative bg-background`}>
-      <div className="flex items-center justify-between gap-3 pt-4 px-4 pb-[14px] border-b border-[color-mix(in_srgb,var(--border)_40%,transparent)] bg-surface flex-none">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg flex-none text-info bg-[linear-gradient(135deg,color-mix(in_srgb,var(--info)_15%,transparent),color-mix(in_srgb,var(--success)_15%,transparent))] border border-[color-mix(in_srgb,var(--info)_20%,transparent)]">
+    <PaneViewRoot>
+      <PaneViewBar variant="title">
+        <div className="flex items-center gap-[var(--space-2-5)] min-w-0">
+          <PaneViewBadge>
             <Icon glyph={IconZap} role="subhead" />
-          </span>
-          <h1 className="m-0 [font-size:var(--tr-text-body-size)] font-semibold tracking-[-0.01em] text-text-primary">
+          </PaneViewBadge>
+          <Text as="h1" size="body" weight="semibold" tight tone="primary" flush>
             Skills
-          </h1>
-          <span className="[font-size:var(--tr-text-small-size)] font-medium text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)] bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.06)] rounded-[999px] py-px px-2.5 tabular-nums">
-            {all.length}
-          </span>
+          </Text>
+          <PaneViewCount>{all.length}</PaneViewCount>
         </div>
-      </div>
-      <div className="flex items-center gap-2 py-2.5 px-4 border-b border-[color-mix(in_srgb,var(--border)_40%,transparent)] bg-surface flex-none">
-        {toolbar}
-      </div>
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-7">
-        {actionError && (
-          <div className="flex items-center justify-between gap-2 py-2.5 px-3.5 rounded-xl border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-danger [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] flex-none">
-            {actionError}
-          </div>
-        )}
+      </PaneViewBar>
+      <PaneViewBar variant="toolbar">{toolbar}</PaneViewBar>
+      <PaneViewBody variant="list">
+        {actionError && <PaneViewNotice>{actionError}</PaneViewNotice>}
         {body}
-      </div>
+      </PaneViewBody>
       {deleteModal}
       {installModal}
-    </div>
+    </PaneViewRoot>
   )
 }
