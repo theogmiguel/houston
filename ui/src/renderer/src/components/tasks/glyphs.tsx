@@ -13,7 +13,7 @@ import {
   type IconProps
 } from '../icons'
 
-export const TASK_GLYPH_CLS = 'tk-glyph'
+export const TASK_GLYPH_CLS = 'flex-none'
 
 export function TaskStatusGlyph({
   status,

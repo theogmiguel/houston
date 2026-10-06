@@ -39,7 +39,7 @@ import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
 import type { UsageSummaryMsg } from './UsageSection'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { SettingsPageSurface } from './ui/SettingsPageSurface'
 
 export interface AgentProfileState {
   profiles: AgentProfile[]
@@ -142,6 +142,7 @@ export interface Props {
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
   onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
+  onWorktreeIdleRemovalDaysSet: (days: number) => void
   sessionPolicy: SessionPolicy | null
   onSessionPolicy: (next: SessionPolicy) => void
 
@@ -234,6 +235,7 @@ function SectionDispatch({
   onRestoreBudgetSet,
   onRestoreResumeSet,
   onWorktreeCleanupSet,
+  onWorktreeIdleRemovalDaysSet,
   sessionPolicy,
   onSessionPolicy,
   orchestrationEnabled,
@@ -394,6 +396,7 @@ function SectionDispatch({
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
             onWorktreeCleanupSet={onWorktreeCleanupSet}
+            onWorktreeIdleRemovalDaysSet={onWorktreeIdleRemovalDaysSet}
             openLinksInPane={openLinksInPane}
             onOpenLinksInPane={onOpenLinksInPane}
             hostInfo={hostInfo}
@@ -473,11 +476,7 @@ export function SettingsView(props: Props): React.JSX.Element {
   }, [section])
 
   return (
-    <div
-      ref={columnRef}
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
+    <SettingsPageSurface ref={columnRef} className="flex-1 min-w-0 h-full min-h-0 overflow-y-auto">
       {}
       <PageFrame width={section === 'agents' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
         <SectionDispatch
@@ -491,6 +490,6 @@ export function SettingsView(props: Props): React.JSX.Element {
           onTerminalScrollbackLines={onTerminalScrollbackLines}
         />
       </PageFrame>
-    </div>
+    </SettingsPageSurface>
   )
 }

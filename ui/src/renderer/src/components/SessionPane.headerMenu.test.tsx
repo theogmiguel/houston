@@ -27,19 +27,19 @@ const openPath = vi.fn().mockResolvedValue({ ok: true })
 }
 
 const ROWS = [
-  'Split Right',
-  'Split Down',
-  'Swap with Previous Pane',
-  'Swap with Next Pane',
-  'Bigger Text',
-  'Smaller Text',
+  'Split right',
+  'Split down',
+  'Swap with previous pane',
+  'Swap with next pane',
+  'Bigger text',
+  'Smaller text',
   'Handoff…',
-  'Clear Screen',
+  'Clear screen',
   'Interrupt',
   'Restart',
-  'Reveal in File Manager',
-  'Copy Path',
-  'Close Pane'
+  'Reveal in file manager',
+  'Copy path',
+  'Close pane'
 ]
 
 function makeSession(over: Partial<SessionInfo> = {}): SessionInfo {
@@ -164,15 +164,15 @@ describe('pane ··· menu', () => {
   it('shows each row its real keymap.ts chord, and nothing where there is no route', () => {
     render()
     openPaneMenu()
-    expect(row('Split Right').textContent).toContain('d')
-    expect(row('Split Down').textContent).toContain('s')
-    expect(row('Swap with Previous Pane').textContent).toContain('{')
-    expect(row('Swap with Next Pane').textContent).toContain('}')
+    expect(row('Split right').textContent).toContain('d')
+    expect(row('Split down').textContent).toContain('s')
+    expect(row('Swap with previous pane').textContent).toContain('{')
+    expect(row('Swap with next pane').textContent).toContain('}')
     expect(row('Interrupt').textContent).toContain('Ctrl+C')
     expect(row('Handoff…').querySelectorAll('span').length).toBe(1)
-    expect(row('Clear Screen').querySelectorAll('span').length).toBe(1)
+    expect(row('Clear screen').querySelectorAll('span').length).toBe(1)
     expect(row('Restart').querySelectorAll('span').length).toBe(1)
-    expect(row('Copy Path').querySelectorAll('span').length).toBe(1)
+    expect(row('Copy path').querySelectorAll('span').length).toBe(1)
   })
 
   it('gives every row its own glyph', () => {
@@ -184,27 +184,27 @@ describe('pane ··· menu', () => {
   it('swaps this pane, not the focused one', () => {
     render()
     openPaneMenu()
-    click(row('Swap with Previous Pane'))
+    click(row('Swap with previous pane'))
     expect(onSwapAdjacent).toHaveBeenCalledWith(1, -1)
     openPaneMenu()
-    click(row('Swap with Next Pane'))
+    click(row('Swap with next pane'))
     expect(onSwapAdjacent).toHaveBeenCalledWith(1, 1)
   })
 
   it('disables both swap rows when the grid has nothing to swap with', () => {
     render(makeSession(), null)
     openPaneMenu()
-    expect(row('Swap with Previous Pane').disabled).toBe(true)
-    expect(row('Swap with Next Pane').disabled).toBe(true)
+    expect(row('Swap with previous pane').disabled).toBe(true)
+    expect(row('Swap with next pane').disabled).toBe(true)
   })
 
   it('drives the text size through the pane zoom handler', () => {
     render()
     openPaneMenu()
-    click(row('Bigger Text'))
+    click(row('Bigger text'))
     expect(onZoom).toHaveBeenCalledWith(1)
     openPaneMenu()
-    click(row('Smaller Text'))
+    click(row('Smaller text'))
     expect(onZoom).toHaveBeenCalledWith(-1)
   })
 
@@ -254,8 +254,8 @@ describe('pane ··· menu', () => {
   it('closes the pane from the last row, and says so while the agent is live', () => {
     render()
     openPaneMenu()
-    expect(row('Close Pane').textContent).toContain('stops the agent')
-    click(row('Close Pane'))
+    expect(row('Close pane').textContent).toContain('stops the agent')
+    click(row('Close pane'))
     expect(fakeClient.closeSession).toHaveBeenCalledWith(1)
   })
 

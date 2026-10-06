@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { isTauri } from '../../houston/host'
 import { nativeNotificationsSupported } from '../../houston/bridge'
 import type { DesktopNotificationMode } from '../../usePreferences'
-import { Select } from '../Select'
-import { Icon } from '../Icon'
+import { Select } from '../ui/Select'
+import { Icon } from '../ui/Icon'
 import { Caption } from '../ui/Caption'
+import { StatusNote, type StatusNoteTone } from '../ui/StatusNote'
 import { IconCheck } from '../icons'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { SectionHead, Row } from './shared'
 
 const DESKTOP_OPTIONS = [
@@ -43,11 +44,11 @@ function desktopStatusMessage({
   return 'Desktop notifications are off.'
 }
 
-function desktopStatusTone(delivery: { allowed: boolean; error?: string } | null): string {
-  if (delivery?.allowed) return 'text-[var(--ok)]'
-  if (delivery?.error) return 'text-[var(--stop)]'
-  if (delivery) return 'text-[var(--warn)]'
-  return 'text-[var(--text-muted)]'
+function desktopStatusTone(delivery: { allowed: boolean; error?: string } | null): StatusNoteTone {
+  if (delivery?.allowed) return 'ok'
+  if (delivery?.error) return 'stop'
+  if (delivery) return 'warn'
+  return 'muted'
 }
 
 export function NotificationsSection({
@@ -108,10 +109,10 @@ export function NotificationsSection({
                 When an agent finishes a turn or needs your input while Houston is in the background. Clicking one opens that pane. The pane name, agent and workspace go to the desktop’s notification service on this machine; nothing else is sent.
               </span>
               <Caption tone="secondary">
-                <span role="status" data-testid="desktop-notification-status" className={`inline-flex items-center gap-[5px] ${desktopStatusTone(delivery)}`}>
+                <StatusNote data-testid="desktop-notification-status" tone={desktopStatusTone(delivery)}>
                   {delivery?.allowed && <Icon glyph={IconCheck} role="small" />}
                   {delivery?.error ? `Desktop notification failed: ${delivery.error}` : supportStatus}
-                </span>
+                </StatusNote>
               </Caption>
             </div>
           }

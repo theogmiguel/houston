@@ -1,8 +1,13 @@
-import { cloneElement, useId, type ReactElement } from 'react'
-import type { ReactNode } from 'react'
+import { cloneElement, useId, type ElementType, type ReactElement } from 'react'
+import type { LabelHTMLAttributes, ReactNode } from 'react'
 
-export function FieldLabel({ children, size = 'default', id }: { children: ReactNode; size?: 'default' | 'compact'; id?: string }): React.JSX.Element {
-  return <span id={id} className={size === 'compact' ? 'text-[length:var(--tr-text-label-size)] font-medium leading-[var(--tr-text-small-leading)] [text-transform:var(--tr-text-label-transform)] tracking-[var(--tr-text-label-tracking)] text-[var(--text-faint)]' : 'text-[length:var(--tr-text-small-size)] font-semibold leading-[var(--tr-text-small-leading)] text-[var(--text-secondary)]'}>{children}</span>
+export function FieldLabel({ children, size = 'default', id, as: Tag = 'span', htmlFor, className = '', ...props }: Omit<LabelHTMLAttributes<HTMLLabelElement>, 'children' | 'id' | 'htmlFor' | 'className'> & { children: ReactNode; size?: 'default' | 'compact' | 'form'; id?: string; as?: ElementType; htmlFor?: string; className?: string }): React.JSX.Element {
+  const classes = size === 'compact'
+    ? 'text-[length:var(--tr-text-label-size)] font-medium leading-[var(--tr-text-small-leading)] [text-transform:var(--tr-text-label-transform)] tracking-[var(--tr-text-label-tracking)] text-[var(--text-faint)]'
+    : size === 'form'
+      ? 'block [font-size:var(--tr-text-small-size)] font-semibold text-[var(--text-secondary)]'
+      : 'text-[length:var(--tr-text-small-size)] font-semibold leading-[var(--tr-text-small-leading)] text-[var(--text-secondary)]'
+  return <Tag {...props} id={id} htmlFor={htmlFor} className={`${classes} ${className}`}>{children}</Tag>
 }
 
 export interface FieldProps {

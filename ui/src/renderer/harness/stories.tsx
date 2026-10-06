@@ -1,4 +1,21 @@
 import React from 'react'
+import {
+  BrowserActModalStory,
+  BrowserActOverlayStory,
+  BrowserFullscreenStory,
+  BrowserPaneFocused,
+  BrowserPaneFresh,
+  BrowserPaneInsecure,
+  BrowserPaneNarrow,
+  BrowserPanePage,
+  BrowserPanePersistError,
+  BrowserPanePhone,
+  BrowserPaneTablet,
+  BrowserPaneTabs,
+  BrowserPickerError,
+  BrowserPickerHint,
+  BrowserPickerSelected
+} from './browserStories'
 import { NewSessionComposer } from '../src/components/NewSessionComposer'
 import { LaunchGridPreview } from '../src/components/ui/LaunchGridPreview'
 import type { SessionSlot } from '../src/components/sessionPresets'
@@ -16,10 +33,11 @@ function NewSession(): React.JSX.Element {
   )
 }
 
-function NewSessionClicked({ selector }: { selector: string }): React.JSX.Element {
+function NewSessionClicked({ selector, focusSelector }: { selector: string; focusSelector?: string }): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>(selector)?.click()
+    if (focusSelector) ref.current?.querySelector<HTMLButtonElement>(focusSelector)?.focus()
   }, [selector])
   return (
     <div ref={ref} style={{ display: 'flex', height: '100%' }}>
@@ -77,7 +95,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { SettingsAbout, SettingsAgentSetup, SettingsAppearance, SettingsAppearanceCustom, SettingsDiagnostics, SettingsDictation, SettingsNotifications, SettingsOrchestration, SettingsPrivacy, SettingsSearchStory, SettingsShortcuts, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -91,30 +109,53 @@ import {
   NavHooks,
   NavMcp,
   NavMcpDetail,
+  NavMcpForm,
   NavRoutineEditor,
   NavRoutines,
   NavRoutinesEmpty,
   NavSkills,
-  HarnessPageStory
+  HarnessPageStory,
+  NavRoutineEditorClock,
+  NavRoutineEditorInterval,
+  NavRoutineRows,
+  NavRoutineRunOutcomes,
+  NavListDetailStates,
+  NavChromeStates,
+  HarnessReportStates,
+  HarnessHistoryStory,
+  HarnessReportLoadingStory,
+  HarnessHistoryEmptyStory,
+  HarnessFindingsDismissedStory
 } from './navStories'
-import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
+import { HandoffStatesStory, PaneHandoffSelectedStory, QuestionStatesStory, DelegationPanelsStory } from './orchestrationStories'
+import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailStatesStory, TasksDetailStory, TasksListStatesStory, TasksListStory, TasksQueueEmptyStory, TasksQueueResultStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory, TasksStartStory } from './tasksStories'
+import { RenameTitleStory } from './renameTitleStories'
+
+document.documentElement.setAttribute('data-motion-paused', '')
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
 import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
-import { UiPrimitivesStory } from './uiStories'
+import { StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
+import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
+import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
+import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
-import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
+import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
   LegacyBranchesStory,
+  LegacyBranchesPopulatedStory,
   LegacyBrowserActStory,
   LegacyCheckpointsStory,
+  LegacyCheckpointsPopulatedStory,
   LegacyConfirmStory,
   LegacyDelegationBadgeStory,
   LegacyDelegationPanelStory,
   LegacyGitShellStory,
+  LegacyChangesIdleStory,
+  LegacyTimelineStatesStory,
   LegacyHandoffStory,
   LegacyHostKeyStory,
   LegacyPaneHandoffStory,
@@ -129,6 +170,11 @@ import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
+import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
+import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
+import { PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagEditorStory, TagsFormsStory } from './paneChromeStories'
+import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
+import { RAIL_STORIES } from './railStories'
 
 const noop = (): void => {}
 
@@ -201,12 +247,27 @@ function RailWorkspacesMulti(): React.JSX.Element {
 }
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
+  'browser/pane': () => <BrowserPanePage />,
+  'browser/pane-focused': () => <BrowserPaneFocused />,
+  'browser/pane-fresh': () => <BrowserPaneFresh />,
+  'browser/pane-narrow': () => <BrowserPaneNarrow />,
+  'browser/pane-insecure': () => <BrowserPaneInsecure />,
+  'browser/pane-phone': () => <BrowserPanePhone />,
+  'browser/pane-tablet': () => <BrowserPaneTablet />,
+  'browser/pane-tabs': () => <BrowserPaneTabs />,
+  'browser/pane-persist-error': () => <BrowserPanePersistError />,
+  'browser/picker-hint': () => <BrowserPickerHint />,
+  'browser/picker-selected': () => <BrowserPickerSelected />,
+  'browser/picker-error': () => <BrowserPickerError />,
+  'browser/fullscreen': () => <BrowserFullscreenStory />,
+  'browser/act-overlay': () => <BrowserActOverlayStory />,
+  'browser/act-modal': () => <BrowserActModalStory />,
   'new-session/default': () => <NewSession />,
   'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onNewBrowser={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
   'shell/workspace-empty': () => <WorkspaceEmpty onNewSession={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
   'launch/docked': () => <DockedLaunchStory />,
   'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,
-  'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' />,
+  'new-session/swarm': () => <NewSessionClicked selector='[data-preset="swarm"]' focusSelector='[data-preset="pair"]' />,
   'new-session/terminal': () => <NewSessionClicked selector='[data-agent="shell"]' />,
   'harness/smoke': () => (
     <div
@@ -231,13 +292,44 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/tags': () => <LegacyTagsStory />,
   'legacy/question': () => <LegacyQuestionStory />,
   'legacy/git-shell': () => <LegacyGitShellStory />,
+  'legacy/changes-idle': () => <LegacyChangesIdleStory />,
+  'legacy/timeline-states': () => <LegacyTimelineStatesStory />,
+  'legacy/overview': () => <InspectorOverviewStory />,
   'legacy/branches': () => <LegacyBranchesStory />,
+  'legacy/branches-populated': () => <LegacyBranchesPopulatedStory />,
   'legacy/checkpoints': () => <LegacyCheckpointsStory />,
+  'legacy/checkpoints-populated': () => <LegacyCheckpointsPopulatedStory />,
   'legacy/delegation-badge': () => <LegacyDelegationBadgeStory />,
   'legacy/delegation-panel': () => <LegacyDelegationPanelStory />,
   'legacy/update': () => <LegacyUpdateStory />,
+  'legacy/update-keep': () => <UpdateKeepStory />,
+  'legacy/update-stop': () => <UpdateStopStory />,
+  'legacy/update-unsupported': () => <UpdateUnsupportedStory />,
+  'legacy/update-empty': () => <UpdateEmptyStory />,
+  'legacy/update-running': () => <UpdateRunningStory />,
+  'legacy/update-installing': () => <UpdateInstallingStory />,
+  'legacy/host-key-changed': () => <HostKeyChangedStory />,
+  'legacy/ssh-advanced': () => <SshAdvancedStory />,
+  'legacy/shortcuts-off': () => <ShortcutsOffStory />,
+  'firstrun/orchestration': () => <FirstRunOrchestrationStory />,
+  'firstrun/workspace': () => <FirstRunWorkspaceStory />,
+  'boot/loading': () => <BootLoadingStory />,
+  'boot/failure': () => <BootFailureStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,
+  'orchestration/handoff-states': () => <HandoffStatesStory />,
+  'orchestration/pane-handoff-selected': () => <PaneHandoffSelectedStory />,
+  'orchestration/question-states': () => <QuestionStatesStory />,
+  'orchestration/delegation-panels': () => <DelegationPanelsStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
+  'git/worktree-stale': () => <StaleWorktreesStory />,
+  'editor/markdown-preview': () => <MarkdownPreviewStory />,
+  'editor/surface-menu': () => <EditorSurfaceMenuStory />,
+  'editor/preview-states': () => <EditorPreviewStatesStory />,
+  'voice/dictation-listening': () => <DictationListeningStory />,
+  'voice/dictation-transcribing': () => <DictationTranscribingStory />,
+  'shell/window-controls-resize': () => <WindowControlsStory />,
+  'layout/drop-slots-splitter': () => <LayoutDropSlotsStory />,
+  'shell/open-in-submenu': () => <OpenInSubmenuStory />,
   'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,
   'connections/slack-reconnecting': () => <SlackConnectionsStory state="reconnecting" />,
   'connections/slack-off': () => <SlackConnectionsStory state="off" />,
@@ -271,19 +363,55 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'rail/grid-row-paper-420': () => <RailGridRowStory theme="paper" width={420} />,
   'settings/agent-setup': () => <SettingsAgentSetup />,
   'settings/agents': () => <SettingsAgentSetup />,
+  'settings/agents-loading': () => <SettingsAgentStatusLoading />,
+  'settings/agents-empty': () => <SettingsAgentStatusEmpty />,
   'settings/appearance': () => <SettingsAppearance />,
   'settings/appearance-custom': () => <SettingsAppearanceCustom />,
+  'settings/detail': () => <SettingsDetailStory />,
+  'settings/detail-error': () => <SettingsDetailStory state="error" />,
+  'settings/detail-loading': () => <SettingsDetailStory state="loading" />,
+  'settings/detail-empty': () => <SettingsDetailStory state="empty" />,
+  'settings/appearance-picker': () => <AppearancePickerStory />,
+  'settings/appearance-picker-empty': () => <AppearancePickerStory empty />,
   'settings/search': () => <SettingsSearchStory />,
   'settings/terminal': () => <SettingsTerminal />,
   'settings/notifications': () => <SettingsNotifications />,
   'settings/shortcuts': () => <SettingsShortcuts />,
+  'settings/shortcuts-armed': () => <SettingsShortcutsArmed />,
+  'settings/shortcuts-conflict': () => <SettingsShortcutsConflict />,
   'settings/diagnostics': () => <SettingsDiagnostics />,
-  'settings/daemon': () => <SettingsDiagnostics />,
+  'settings/diagnostics-loading': () => <SettingsDiagnosticsLoading />,
+  'settings/diagnostics-open-hooks': () => <SettingsDiagnosticsOpenHooks />,
+  'settings/daemon': () => <SettingsDaemon />,
+  'settings/daemon-error': () => <SettingsDaemonError />,
   'settings/orchestration': () => <SettingsOrchestration />,
+  'settings/orchestration-loading': () => <SettingsOrchestrationLoading />,
+  'settings/orchestration-empty-roster': () => <SettingsOrchestrationEmptyRoster />,
+  'settings/orchestration-no-workspace': () => <SettingsOrchestrationNoWorkspace />,
   'settings/dictation': () => <SettingsDictation />,
+  'settings/dictation-model-states': () => <SettingsDictationModelStates />,
+  'settings/dictation-cloud-error': () => <SettingsDictationCloud />,
   'settings/workspaces': () => <SettingsWorkspaces />,
   'settings/privacy': () => <SettingsPrivacy />,
+  'settings/privacy-edit': () => <SettingsPrivacyEditor />,
   'settings/about': () => <SettingsAbout />,
+  'composer/controls-open': () => <ComposerControlsOpen />,
+  'composer/controls-overflow': () => <ComposerControlsOverflow />,
+  'composer/controls-states': () => <ComposerControlsStates />,
+  'composer/attachment-chips': () => <AttachmentChips />,
+  'composer/attachment-previews': () => <AttachmentPreviews />,
+  'new-session/routes': () => <NewSessionWithRoutes />,
+  'new-session/task-focus': () => <NewSessionTask text="Fix the flaky reconnect test" focus />,
+  'new-session/task-over-limit': () => <NewSessionTask text={'x'.repeat(9000)} focus={false} />,
+  'shell/add-pane-profiles': () => <AddPaneProfiles />,
+  'shell/add-pane-disabled': () => <AddPaneDisabled />,
+  'banner/reconnect': () => <ReconnectBannerStory error={null} />,
+  'banner/reconnect-error': () => <ReconnectBannerStory error="connection refused" />,
+  'settings/about-available': () => <SettingsAboutAvailable />,
+  'settings/about-installing': () => <SettingsAboutInstallState state={{ kind: 'downloading', downloaded: 3_200_000, total: 8_000_000 }} />,
+  'settings/about-install-failed': () => <SettingsAboutInstallState state={{ kind: 'failed', version: '1.2.3', error: 'Signature verification failed' }} />,
+  'settings/about-notices': () => <SettingsAboutNotices />,
+  'settings/notices-loaded': () => <SettingsNoticesLoaded />,
   'notices/resting': () => <NoticesResting />,
   'notices/stacked': () => <NoticesStacked />,
   'notices/error': () => <NoticesError />,
@@ -293,26 +421,91 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/routines': () => <NavRoutines />,
   'nav/routines-empty': () => <NavRoutinesEmpty />,
   'nav/routine-editor': () => <NavRoutineEditor />,
+  'nav/routine-editor-clock': () => <NavRoutineEditorClock />,
+  'nav/routine-editor-interval': () => <NavRoutineEditorInterval />,
+  'nav/routine-rows': () => <NavRoutineRows />,
+  'nav/routine-run-outcomes': () => <NavRoutineRunOutcomes />,
+  'nav/list-detail': () => <NavListDetailStates />,
+  'nav/chrome-states': () => <NavChromeStates />,
+  'harness/report': () => <HarnessReportStates />,
+  'harness/report-loading': () => <HarnessReportLoadingStory />,
+  'harness/history-empty': () => <HarnessHistoryEmptyStory />,
+  'harness/findings-dismissed': () => <HarnessFindingsDismissedStory />,
+  'harness/history': () => <HarnessHistoryStory />,
   'nav/skills': () => <NavSkills />,
   'nav/skills/graphite': () => <NavSkills />,
   'nav/skills/paper': () => <NavSkills />,
+  'skills/standalone-a': () => <SkillsStandaloneA />,
+  'skills/standalone-b': () => <SkillsStandaloneB />,
+  'skills/standalone-c': () => <SkillsStandaloneC />,
+  'skills/row-actions': () => <SkillsRowActions />,
+  'skills/embedded-a': () => <SkillsEmbeddedA />,
+  'skills/embedded-b': () => <SkillsEmbeddedB />,
+  'skills/embedded-c': () => <SkillsEmbeddedC />,
+  'skills/embedded-d': () => <SkillsEmbeddedD />,
+  'skills/delete-confirm': () => <SkillsDeleteConfirm />,
+  'skills/install-blank': () => <SkillsInstallBlank />,
+  'skills/install-url': () => <SkillsInstallUrl />,
+  'skills/install-preview': () => <SkillsInstallPreview />,
+  'skills/install-conflict': () => <SkillsInstallConflict />,
   'nav/mcp': () => <NavMcp />,
   'nav/mcp-detail': () => <NavMcpDetail />,
+  'nav/mcp-form': () => <NavMcpForm />,
   'nav/hooks': () => <NavHooks />,
   'tasks/list': () => <TasksListStory />,
   'usage/page': () => <UsagePageStory />,
+  'usage/error': () => <UsagePageStory state="error" />,
+  'usage/stale': () => <UsagePageStory state="stale" />,
+  'usage/empty': () => <UsagePageStory state="empty" />,
   'tasks/page': () => <TasksPageStory />,
   'tasks/detail': () => <TasksDetailStory />,
+  'tasks/start-card': () => <TasksStartStory />,
   'panes/lifecycle': () => <PaneLifecycleStory />,
+  'panes/chrome-menu': () => <PaneMenuStory />,
+  'panes/chrome-ended': () => <PaneEndedStory />,
+  'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
+  'panes/chrome-misc': () => <PaneMiscStory />,
+  'panes/title-controls': () => <RenameTitleStory />,
+  'legacy/tags-forms': () => <TagsFormsStory />,
+  'legacy/tag-editor': () => <TagEditorStory />,
   'tasks/roster': () => <TasksRosterStory />,
+  'tasks/list-states': () => <TasksListStatesStory />,
+  'tasks/composer': () => <TasksComposerStory />,
+  'tasks/detail-states': () => <TasksDetailStatesStory />,
+  'tasks/chips': () => <TasksChipsStory />,
   'tasks/queue': () => <TasksQueueStory />,
+  'tasks/queue-empty': () => <TasksQueueEmptyStory />,
+  'tasks/queue-result': () => <TasksQueueResultStory />,
   'tasks/overview-roster': () => <TasksOverviewRosterStory />,
   'shell-a/changes-graphite': () => <InspectorChangesGraphite />,
   'shell-a/changes-paper': () => <InspectorChangesPaper />,
   'shell-a/pr-graphite': () => <InspectorPrGraphite />,
   'shell-a/pr-paper': () => <InspectorPrPaper />,
+  'shell-a/pr-browse': () => <PrBrowseCapture />,
+  'shell-a/pr-browse-states': () => <PrBrowseStatesCapture />,
+  'shell-a/pr-discussion': () => <PrDiscussionCapture />,
+  'shell-a/pr-comment-edit': () => <PrCommentEditCapture />,
+  'shell-a/pr-empty': () => <PrEmptyCapture />,
+  'shell-a/pr-files': () => <PrFilesCapture />,
+  'shell-a/pr-file-states': () => <PrFilesStatesCapture />,
+  'shell-a/pr-actions': () => <PrActionsCapture />,
+  'shell-a/pr-pickers': () => <PrPickerCapture />,
+  'shell-a/pr-review': () => <PrReviewCapture />,
+  'shell-a/pr-provider': () => <ReviewProviderCapture />,
+  'shell-a/pr-provider-selected': () => <ReviewProviderSelectedCapture />,
   'shell-a/files-graphite': () => <InspectorFilesGraphite />,
   'shell-a/children-graphite': () => <InspectorChildrenGraphite />,
   'shell-a/children-paper': () => <InspectorChildrenPaper />,
-  'settings/tasks': () => <TasksSettingsStory />
+  'files/narrow': () => <FilesNarrowGraphite />,
+  'files/split': () => <FilesSplitGraphite />,
+  'files/split-paper': () => <FilesSplitPaper />,
+  'files/pane': () => <FilesPaneGraphite />,
+  'files/tree-menu': () => <FilesTreeMenuGraphite />,
+  'files/tab-menu': () => <FilesTabMenuGraphite />,
+  'files/rename': () => <FilesRenameGraphite />,
+  'files/empty': () => <FilesEmptyGraphite />,
+  'files/root-error': () => <FilesRootErrorGraphite />,
+  'settings/tasks': () => <TasksSettingsStory />,
+  'settings/tasks-review-refusal': () => <TasksSettingsReviewRefusalStory />,
+  ...RAIL_STORIES
 }

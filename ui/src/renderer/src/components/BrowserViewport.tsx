@@ -6,6 +6,7 @@ import {
   unregisterBrowserSurface
 } from '../houston/browserSurfaceRegistry'
 import type { NativeSuppressionReason } from '../layout/nativeSuppression'
+import { BrowserDetachedPlaceholder, BrowserWebviewSurface } from './ui/BrowserSurface'
 
 async function invoker(): Promise<
   <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
@@ -25,7 +26,7 @@ export interface BrowserViewportProps {
   workspaceDir?: string | null
   overlay?: React.ReactNode
   fullscreen?: boolean
-  className?: string
+  rounded?: boolean
   style?: React.CSSProperties
   hidden?: boolean
   dropzoneActive?: boolean
@@ -76,7 +77,7 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
       workspaceDir = null,
       overlay,
       fullscreen = false,
-      className,
+      rounded = false,
       style,
       hidden,
       dropzoneActive,
@@ -151,57 +152,32 @@ export const BrowserViewport = forwardRef<BrowserViewportHandle, BrowserViewport
 
     if (!isTauri())
       return (
-        <div className={className} style={{ position: 'relative', ...style }}>
+        <BrowserWebviewSurface rounded={rounded} style={{ position: 'relative', ...style }}>
           {children}
           {overlay}
-        </div>
+        </BrowserWebviewSurface>
       )
 
     return (
-      <div
+      <BrowserWebviewSurface
         ref={containerRef}
-        className={className}
-        style={{ position: 'relative', background: 'var(--content-bg)', ...style }}
+        rounded={rounded}
+        native
+        style={{ position: 'relative', ...style }}
         data-browser-surface-id={id}
         data-browser-detached={detached || undefined}
       >
         {overlay}
         {detached && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.75rem',
-              background: 'var(--content-bg)',
-              color: 'var(--text-secondary)'
+          <BrowserDetachedPlaceholder
+            onReattach={() => {
+              void reattach().catch((err: unknown) => {
+                console.warn(`houston: browser_reattach failed for id ${id}`, err)
+              })
             }}
-          >
-            <span>Detached into its own window</span>
-            <button
-              type="button"
-              onClick={() => {
-                void reattach().catch((err: unknown) => {
-                  console.warn(`houston: browser_reattach failed for id ${id}`, err)
-                })
-              }}
-              style={{
-                background: 'var(--accent)',
-                color: 'var(--text-primary)',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '0.4rem 0.9rem',
-                cursor: 'pointer'
-              }}
-            >
-              Reattach
-            </button>
-          </div>
+          />
         )}
-      </div>
+      </BrowserWebviewSurface>
     )
   }
 )

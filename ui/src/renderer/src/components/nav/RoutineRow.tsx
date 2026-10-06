@@ -1,20 +1,15 @@
 import { IconChevronDown, IconExternal, IconPencil, IconPlay, IconTrash } from '../icons'
 import { lastRunLabel, nextRunLabel, formatCadence, formatRunTime } from './routineFormat'
-import {
-  CHROME_BUTTON,
-  CHROME_BUTTON_DANGER,
-  NavSwitch,
-  ROW_STACK,
-  ROW_ACTIONS,
-  ROW_DETAIL,
-  ROW_FOOTER,
-  ROW_TITLE
-} from './navChrome'
 import type { Routine, RoutineRun, RoutineWorkspaceOption } from '../../houston/routineTypes'
 import type { RoutineOutcome } from '../../houston/generated/RoutineOutcome'
 import type { RoutineRunStatus } from '../../houston/generated/RoutineRunStatus'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
+import { IconAction } from '../ui/navPrimitives'
+import { Switch } from '../ui/Switch'
+import { Text } from '../ui/Text'
+import { StatusChip as ToneStatusChip } from '../ui/navText'
+import { ListRow, ListRowActions, ListRowDetail, ListRowFooter, ListRowTitle, RunHistory } from '../ui/navRow'
 
 const OUTCOME_CHIP: Record<RoutineOutcome, { label: string; tone: string }> = {
   ok: { label: 'Ok', tone: 'var(--ok)' },
@@ -33,13 +28,6 @@ const RUN_STATUS: Record<RoutineRunStatus, { label: string; tone: string }> = {
   failed: OUTCOME_CHIP.failed
 }
 
-const CHIP_CLS =
-  'inline-flex flex-none items-center h-[18px] px-[7px] rounded-[var(--tr-radius-pill)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]'
-
-function chipStyle(tone: string): React.CSSProperties {
-  return { color: tone, background: `color-mix(in srgb, ${tone} 14%, transparent)` }
-}
-
 function StatusChip({
   status,
   testId
@@ -49,28 +37,18 @@ function StatusChip({
 }): React.JSX.Element {
   const { label, tone } = RUN_STATUS[status]
   return (
-    <span
-      data-testid={testId}
-      data-status={status}
-      className={CHIP_CLS}
-      style={chipStyle(tone)}
-    >
+    <ToneStatusChip data-testid={testId} data-status={status} tone={tone}>
       {label}
-    </span>
+    </ToneStatusChip>
   )
 }
 
 function OutcomeChip({ outcome }: { outcome: RoutineOutcome }): React.JSX.Element {
   const { label, tone } = OUTCOME_CHIP[outcome]
   return (
-    <span
-      data-testid="routine-outcome"
-      data-outcome={outcome}
-      className={CHIP_CLS}
-      style={chipStyle(tone)}
-    >
+    <ToneStatusChip data-testid="routine-outcome" data-outcome={outcome} tone={tone}>
       {label}
-    </span>
+    </ToneStatusChip>
   )
 }
 
@@ -89,64 +67,53 @@ export function RoutineHistory({
 }): React.JSX.Element {
   if (loading) {
     return (
-      <div
-        data-testid="routine-history"
-        className="flex flex-col gap-[6px] pt-[8px] [font-size:var(--tr-text-small-size)] text-[var(--text-muted)]"
-      >
+      <RunHistory state="loading" data-testid="routine-history">
         Loading runs…
-      </div>
+      </RunHistory>
     )
   }
   if (!runs || runs.length === 0) {
     return (
-      <div
-        data-testid="routine-history"
-        className="flex flex-col gap-[6px] pt-[8px] [font-size:var(--tr-text-small-size)] text-[var(--text-faint)]"
-      >
+      <RunHistory state="empty" data-testid="routine-history">
         No runs yet.
-      </div>
+      </RunHistory>
     )
   }
   return (
-    <div data-testid="routine-history" className="flex flex-col gap-[6px] pt-[8px]">
+    <RunHistory state="list" data-testid="routine-history">
       {runs.map((run) => (
         <div
           key={run.id}
           data-testid="routine-run-row"
-          className="flex items-center gap-[8px] min-w-0"
+          className="flex items-center gap-[var(--space-2)] min-w-0"
         >
           <StatusChip status={run.status} testId="routine-run-status" />
-          <span className="flex-none [font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">
+          <Text size="small" tone="muted" className="flex-none">
             {run.trigger === 'manual' ? 'Run now' : 'Scheduled'}
-          </span>
-          <span className="flex-none tabular-nums [font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">
+          </Text>
+          <Text size="small" tone="muted" tabular className="flex-none">
             {formatRunTime(run.started_at_ms, now)}
-          </span>
+          </Text>
           {run.error && (
             <Tooltip label={run.error}>
-              <span
-                data-testid="routine-run-error"
-                className="flex-1 min-w-0 truncate [font-size:var(--tr-text-small-size)] text-[var(--warning)]"
-              >
+              <Text data-testid="routine-run-error" size="small" tone="warning" className="flex-1 min-w-0 truncate">
                 {run.error}
-              </span>
+              </Text>
             </Tooltip>
           )}
           <span className="flex-1" />
           {run.session_id != null && onOpenSession && (
-            <button
-              type="button"
+            <IconAction
               data-testid="routine-run-open"
               aria-label="Open this run's pane"
-              className={CHROME_BUTTON}
               onClick={() => onOpenSession(run.session_id!)}
             >
               <Icon glyph={IconExternal} role="small" />
-            </button>
+            </IconAction>
           )}
         </div>
       ))}
-    </div>
+    </RunHistory>
   )
 }
 
@@ -178,32 +145,32 @@ function RoutineStatusLine({
   nextRunAtMs: number
   now: number
 }): React.JSX.Element {
-  if (running) return <span className="truncate text-[var(--info)]">Running</span>
+  if (running) return <Text  tone="info" className="truncate">Running</Text>
   if (waitingForSlot) {
     return (
-      <span className="truncate text-[var(--text-muted)]">
+      <Text  tone="muted" className="truncate">
         waiting for a slot (
-        <span className="tabular-nums">
+        <Text  tabular>
           {waitingForSlot.running} of {waitingForSlot.limit}
-        </span>{' '}
+        </Text>{' '}
         running)
-      </span>
+      </Text>
     )
   }
   if (lastError != null) {
     return (
       <Tooltip label={lastError}>
-        <span className="truncate text-[var(--warning)]">{lastError}</span>
+        <Text  tone="warning" className="truncate">{lastError}</Text>
       </Tooltip>
     )
   }
   if (!enabled) return <span>Paused</span>
-  const next = <span className="tabular-nums">{nextRunLabel(nextRunAtMs, now)}</span>
+  const next = <Text  tabular>{nextRunLabel(nextRunAtMs, now)}</Text>
   if (lastRunAtMs == null) return <span className="truncate">{next}</span>
   return (
     <span className="truncate">
       {next} &middot; last run{' '}
-      <span className="tabular-nums">{lastRunLabel(lastRunAtMs, now)}</span>
+      <Text  tabular>{lastRunLabel(lastRunAtMs, now)}</Text>
     </span>
   )
 }
@@ -255,18 +222,14 @@ export function RoutineRow(props: {
   const lastSessionId = routine.last_run_session_id
 
   return (
-    <div
-      data-testid="routine-row"
-      data-state={routineState(running, failing, routine.enabled)}
-      className={ROW_STACK}
-    >
-      <div className="flex items-center gap-[8px] min-w-0">
+    <ListRow data-testid="routine-row" data-state={routineState(running, failing, routine.enabled)}>
+      <div className="flex items-center gap-[var(--space-2)] min-w-0">
         <Tooltip label={routine.name}>
-          <strong className={ROW_TITLE}>{routine.name}</strong>
+          <ListRowTitle>{routine.name}</ListRowTitle>
         </Tooltip>
         <RoutineHeadChip running={running} outcome={routine.last_outcome} />
         <span className="flex-1" />
-        <NavSwitch
+        <Switch size="field"
           on={routine.enabled}
           label={routine.enabled ? `Pause ${routine.name}` : `Resume ${routine.name}`}
           onChange={onToggleEnabled}
@@ -274,9 +237,9 @@ export function RoutineRow(props: {
         />
       </div>
       <Tooltip label={formatCadence(routine.cadence)}>
-        <div className={`${ROW_DETAIL} mt-[4px]`}>{routineDetail(routine, workspace)}</div>
+        <ListRowDetail>{routineDetail(routine, workspace)}</ListRowDetail>
       </Tooltip>
-      <div className={ROW_FOOTER}>
+      <ListRowFooter>
         <RoutineStatusLine
           running={running}
           waitingForSlot={props.waitingForSlot}
@@ -286,71 +249,62 @@ export function RoutineRow(props: {
           nextRunAtMs={routine.next_run_at_ms}
           now={now}
         />
-        <div className={ROW_ACTIONS}>
+        <ListRowActions>
           {lastSessionId != null && props.onOpenSession && (
             <Tooltip label="Open the last run's pane">
-              <button
-                type="button"
+              <IconAction
                 data-testid="routine-open-session"
                 aria-label={`Open ${routine.name}'s last run pane`}
-                className={CHROME_BUTTON}
                 onClick={() => props.onOpenSession?.(lastSessionId)}
               >
                 <Icon glyph={IconExternal} role="small" />
-              </button>
+              </IconAction>
             </Tooltip>
           )}
           {props.onToggleHistory && (
             <Tooltip label="Run history, newest first">
-              <button
-                type="button"
+              <IconAction
                 data-testid="routine-history-toggle"
                 aria-expanded={historyOpen}
                 aria-label={`${routine.name} run history`}
-                className={CHROME_BUTTON}
                 onClick={props.onToggleHistory}
               >
                 <Icon glyph={IconChevronDown} role="small" />
-              </button>
+              </IconAction>
             </Tooltip>
           )}
           {props.onRunNow && (
             <Tooltip label="Run this routine now, on its own cadence's path">
-              <button
-                type="button"
+              <IconAction
                 data-testid="routine-run-now"
                 aria-label={`Run ${routine.name} now`}
-                className={CHROME_BUTTON}
                 onClick={props.onRunNow}
               >
                 <Icon glyph={IconPlay} role="small" />
-              </button>
+              </IconAction>
             </Tooltip>
           )}
           <Tooltip label="Edit this routine">
-            <button
-              type="button"
+            <IconAction
               data-testid="routine-edit"
               aria-label={`Edit ${routine.name}`}
-              className={CHROME_BUTTON}
               onClick={onEdit}
             >
               <Icon glyph={IconPencil} role="small" />
-            </button>
+            </IconAction>
           </Tooltip>
           <Tooltip label="Delete this routine">
-            <button
-              type="button"
+            <IconAction
               data-testid="routine-delete"
               aria-label={`Delete ${routine.name}`}
-              className={CHROME_BUTTON_DANGER}
+              danger
               onClick={onDelete}
             >
               <Icon glyph={IconTrash} role="small" />
-            </button>
+            </IconAction>
           </Tooltip>
-        </div>
-      </div>
+        </ListRowActions>
+      </ListRowFooter>
       {historyOpen && (
         <RoutineHistory
           runs={props.runs}
@@ -359,6 +313,6 @@ export function RoutineRow(props: {
           onOpenSession={props.onOpenSession}
         />
       )}
-    </div>
+    </ListRow>
   )
 }

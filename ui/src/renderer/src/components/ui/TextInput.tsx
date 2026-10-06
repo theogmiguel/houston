@@ -1,17 +1,78 @@
 import { forwardRef, type InputHTMLAttributes } from 'react'
+import { FOCUS_HALO } from './shadowChrome'
 
-export type TextInputWidth = 'md' | 'full'
+export type TextInputWidth = 'md' | 'full' | 'port' | 'setting-number' | 'task-number' | 'compact' | 'number' | 'medium' | 'long' | 'wide'
+export type TextInputPadding = 'default' | 'compact'
 
-const INPUT_CLS = 'min-h-[var(--h-ctl)] rounded-[var(--tr-radius-input)] border border-[var(--border)] px-[var(--space-3)] [font-size:var(--tr-text-ui-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]'
-const WIDTH_CLS: Record<TextInputWidth, string> = {
-  md: 'w-[200px]',
-  full: 'w-full'
+const INPUT_CLS = 'min-h-[var(--h-ctl)] rounded-[var(--tr-radius-input)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]'
+const FONT_CLS = {
+  ui: '[font-size:var(--tr-text-ui-size)]',
+  small: '[font-size:var(--tr-text-small-size)]',
+  mono: 'font-mono [font-size:var(--tr-text-ui-size)]'
+} as const
+const PADDING_CLS: Record<TextInputPadding, string> = {
+  default: 'px-[var(--space-3)]',
+  compact: 'px-[var(--space-2)]'
 }
-export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width'> & { surface?: 'content' | 'card'; font?: 'ui' | 'mono'; width?: TextInputWidth }
+const WIDTH_CLS: Record<TextInputWidth, string> = {
+  md: 'w-[var(--w-text-input-medium)]',
+  full: 'w-full',
+  port: 'w-[var(--w-ssh-port)] tabular-nums',
+  'setting-number': 'w-[var(--tr-width-setting-number)]',
+  'task-number': 'w-[var(--tr-width-task-number)]',
+  compact: 'w-[var(--tr-control-width-compact)]',
+  number: 'w-[var(--tr-control-width-number)]',
+  medium: 'w-[var(--tr-control-width-medium)]',
+  long: 'w-[var(--tr-control-width-long)]',
+  wide: 'w-[var(--tr-control-width-wide)]'
+}
+const FORM_SIZE_CLS = 'h-[var(--h-form-ctl)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] text-[var(--text-primary)] font-medium outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[0.72]'
+/** A rename field that takes over a row's label in place. */
+const INLINE_EDIT_CLS = `flex-1 min-w-0 bg-[var(--content-bg)] border border-[var(--accent)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-family:inherit] [font-weight:inherit] [font-style:inherit] [line-height:inherit] text-[length:var(--tr-text-md)] px-[var(--space-1-5)] py-[var(--space-0-5)] outline-none focus-visible:shadow-[${FOCUS_HALO}]`
+const FORM_CLS = 'w-full min-w-0 h-[var(--h-ssh-input)] px-[var(--space-2-5)] bg-background border border-border rounded-[var(--tr-radius-sm)] text-text-primary text-[length:var(--tr-text-base)]'
+const PANEL_INPUT = 'w-full px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] font-medium text-[var(--text-primary)] outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[var(--panel-disabled-opacity)]'
+const PANE_INPUT = 'w-full bg-[var(--panel-field-fill)] border border-[var(--panel-field-border)] text-text-primary outline-none focus:border-[var(--border-hover)] focus:bg-surface focus-visible:border-[var(--border-hover)] py-2 px-3 rounded-[var(--tr-radius-md)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]'
+export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'> & { surface?: 'content' | 'card'; font?: 'ui' | 'small' | 'mono'; padding?: TextInputPadding; width?: TextInputWidth; size?: 'default' | 'form'; density?: 'default' | 'compact'; radius?: 'input' | 'small'; height?: 'field' | 'control'; variant?: 'field' | 'form' | 'unstyled' | 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number' | 'inline-edit' | 'panel' | 'pane' }
+
+type NumberFieldVariant = 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number'
+const NUMBER_FIELD_VARIANTS: ReadonlySet<string> = new Set<NumberFieldVariant>(['compact', 'setting-number', 'setting-number-rounded', 'task-number'])
+const NUMBER_FIELD_STATE: Record<NumberFieldVariant, string> = {
+  compact: 'disabled:opacity-50',
+  'setting-number': 'text-right',
+  'setting-number-rounded': 'text-right disabled:opacity-50',
+  'task-number': 'text-right'
+}
+
+function numberFieldClass(variant: NumberFieldVariant): string {
+  const widthClass = WIDTH_CLS[variant === 'task-number' ? 'task-number' : variant === 'compact' ? 'full' : 'setting-number']
+  const radiusClass = variant === 'task-number' ? 'rounded-[var(--tr-radius-input)]' : 'rounded-[var(--tr-radius-sm)]'
+  return `${widthClass} border border-[var(--border)] ${radiusClass} bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--space-compact-field-block)] px-[var(--space-2)] ${NUMBER_FIELD_STATE[variant]}`
+}
+
+type FieldOptions = Required<Pick<TextInputProps, 'surface' | 'font' | 'padding' | 'width' | 'size' | 'density' | 'radius' | 'height'>>
+
+function fieldClass({ surface, font, padding, width, size, density, radius }: FieldOptions): string {
+  const ground = surface === 'card' ? 'bg-[var(--card-bg)]' : 'bg-[var(--content-bg)]'
+  if (density === 'compact') {
+    return `[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-input-compact-inset-y)] px-[var(--space-2)] ${WIDTH_CLS[width]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : 'rounded-[var(--tr-radius-input)]'} border border-[var(--border)] ${ground} text-[var(--text-primary)] ${font === 'mono' ? 'font-mono' : ''}`
+  }
+  return `${size === 'form' ? FORM_SIZE_CLS : INPUT_CLS} ${PADDING_CLS[padding]} ${WIDTH_CLS[width]} ${ground} ${FONT_CLS[font]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : ''}`
+}
+
+function variantClass(variant: NonNullable<TextInputProps['variant']>, options: FieldOptions): string {
+  if (variant === 'panel') return `${PANEL_INPUT} ${options.height === 'control' ? 'h-[var(--h-ctl)]' : 'h-[var(--h-panel-field)]'}`
+  if (variant === 'pane') return PANE_INPUT
+  if (variant === 'form') return `${FORM_CLS} ${options.width === 'port' ? 'w-[var(--w-ssh-port)] tabular-nums' : ''}`
+  if (variant === 'unstyled') return ''
+  if (variant === 'inline-edit') return INLINE_EDIT_CLS
+  if (NUMBER_FIELD_VARIANTS.has(variant)) return numberFieldClass(variant as NumberFieldVariant)
+  return fieldClass(options)
+}
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   function TextInput(props, ref): React.JSX.Element {
-    const { className = '', surface = 'content', font = 'ui', width = 'full', ...inputProps } = props
-    return <input {...inputProps} ref={ref} className={`${INPUT_CLS} ${WIDTH_CLS[width]} ${surface === 'card' ? 'bg-[var(--card-bg)]' : 'bg-[var(--content-bg)]'} ${font === 'mono' ? 'font-mono' : ''} ${className}`} />
+    const { className = '', surface = 'content', font = 'ui', padding = 'default', width = 'full', size = 'default', density = 'default', radius = 'input', height = 'field', variant = 'field', ...inputProps } = props
+    const base = variantClass(variant, { surface, font, padding, width, size, density, radius, height })
+    return <input {...inputProps} ref={ref} className={variant === 'unstyled' ? className : `${base} ${className}`} />
   }
 )

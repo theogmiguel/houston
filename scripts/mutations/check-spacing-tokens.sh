@@ -5,3 +5,6 @@ out="$(SCAN_ROOT=scripts/mutations/fixtures/spacing bash "$root/scripts/check-sp
 grep -q 'mt-3' <<< "$out"
 grep -q '\[padding:8px\]' <<< "$out"
 grep -q 'gap: 7px' <<< "$out"
+
+out="$(SCAN_ROOT="$root/scripts/mutations/fixtures/spacing" bash "$root/scripts/check-spacing-tokens.sh" 2>&1 || true)"
+grep -q 'components/ui/Bad.tsx' <<< "$out"

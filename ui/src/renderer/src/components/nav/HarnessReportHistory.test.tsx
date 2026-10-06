@@ -80,7 +80,7 @@ describe('Harness report and history layout', () => {
     expect(cells[windowIndex].querySelector('span')?.className).toContain('whitespace-nowrap')
     expect(headers[startedIndex].getAttribute('style')).toContain('160px')
     expect(headers[windowIndex].getAttribute('style')).toContain('260px')
-    expect(table?.className).toContain('min-w-[1000px]')
+    expect((table as HTMLElement | null)?.style.minWidth).toBe('1000px')
     expect(table?.parentElement?.className).toContain('overflow-x-auto')
   })
 

@@ -13,11 +13,8 @@ import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
 import { openExternal } from '../../houston/bridge'
-import { BTN_GHOST, BTN_SECONDARY } from '../buttonChrome'
-import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import {
-  IconAgent,
   IconAlertTriangle,
   IconArchive,
   IconCheck,
@@ -34,8 +31,8 @@ import {
   IconUndo,
   IconUser
 } from '../icons'
-import { Select, type SelectOption } from '../Select'
-import { Tooltip } from '../Tooltip'
+import { Select, type SelectOption } from '../ui/Select'
+import { Tooltip } from '../ui/Tooltip'
 import {
   acceptanceText,
   actorLabel,
@@ -53,7 +50,44 @@ import {
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
-import { Button, Chip, Notice, TaskDetailFrame, TaskDrawerCard, TaskDrawerHeader, TaskDrawerOrigin, TaskAcceptanceRow } from '../ui'
+import {
+  Button,
+  Chip,
+  Notice,
+  TaskAcceptanceRow,
+  TaskActivityActor,
+  TaskActivityBubble,
+  TaskActivityIcon,
+  TaskActivityRow,
+  TaskActivityTime,
+  TaskAgentIcon,
+  TaskBanner,
+  TaskBannerDetail,
+  TaskBannerMessage,
+  TaskBody,
+  TaskButton,
+  TaskCheckButton,
+  TaskCommentBox,
+  TaskCommentField,
+  TaskDescriptionField,
+  TaskDetailFrame,
+  TaskDot,
+  TaskDrawerCard,
+  TaskDrawerHeader,
+  TaskDrawerOrigin,
+  TaskIconButton,
+  TaskMetaLine,
+  TaskMono,
+  TaskPanel,
+  TaskProp,
+  TaskPropKey,
+  TaskPropRow,
+  TaskRecordBody,
+  TaskSectionLabel,
+  TaskSystemMark,
+  TaskTitleField,
+  TaskToolbar
+} from '../ui'
 
 export interface TaskDetailProps {
   detail: TaskDetailData
@@ -96,14 +130,14 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   if (drawer) return <TaskDetailDrawer props={{ ...props, onStart: startAnyway.start }} taskTitle={title} onStartAnyway={startAnyway.force} />
 
   return (
-    <div className="tasks-root" data-testid="task-detail">
-      <div className="tk-head">
-        <button type="button" className={`btn ${BTN_GHOST} ${HIT_TARGET_28}`} onClick={props.onBack}>
+    <TaskPanel data-testid="task-detail">
+      <TaskToolbar>
+        <TaskButton tone="ghost" density="toolbar" onClick={props.onBack}>
           <Icon glyph={IconChevronLeft} role="small" />
           Tasks
-        </button>
-        <span className="font-mono text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">{task.key}</span>
-        <span className="spacer" />
+        </TaskButton>
+        <TaskMono faint label>{task.key}</TaskMono>
+        <span className="flex-1" />
         <CopyKeyButton taskKey={task.key} />
         <TaskMenu
           label="Task actions"
@@ -124,11 +158,10 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             }
           ]}
         />
-      </div>
+      </TaskToolbar>
       {refusal && refusal.id === task.id && <RefusalBanner refusal={refusal} onReload={props.onReload} taskId={task.id} onStartAnyway={startAnyway.force} />}
-      <div className="tk-detail">
-        <input
-          className="tk-title-input"
+      <TaskRecordBody>
+        <TaskTitleField
           aria-label="Task title"
           value={title}
           disabled={readOnly}
@@ -139,21 +172,21 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             if (event.key === 'Escape') setTitle(task.title)
           }}
         />
-        <div className="sub3">
+        <TaskMetaLine>
           <span>created by {task.created_by === 'user' ? 'you' : task.created_by}</span>
           <span>·</span>
           <span>{formatAgo(task.created_at_ms, now)}</span>
           <span>·</span>
-          <span className="font-mono">revision {task.revision}</span>
+          <TaskMono>revision {task.revision}</TaskMono>
           {archived && (
             <>
               <span>·</span>
               <span>archived {formatAgo(task.archived_at_ms ?? task.updated_at_ms, now)}</span>
             </>
           )}
-        </div>
-        <div className="tk-props">
-          <Select aria-label="Workspace" data-testid="task-workspace" value={task.workspace ?? ''} options={[{ value: '', label: 'No workspace' }, ...(props.workspaceOptions ?? [])]} disabled={readOnly} prefix={<span className="k">Workspace</span>} chrome="prop-select" onChange={(value) => props.onSave(task.id, task.revision, { workspace: value || null })} />
+        </TaskMetaLine>
+        <TaskPropRow>
+          <Select aria-label="Workspace" data-testid="task-workspace" value={task.workspace ?? ''} options={[{ value: '', label: 'No workspace' }, ...(props.workspaceOptions ?? [])]} disabled={readOnly} prefix={<span>Workspace</span>} variant="property-chip" onChange={(value) => props.onSave(task.id, task.revision, { workspace: value || null })} />
           <Select
             aria-label="Status"
             data-testid="task-status"
@@ -161,7 +194,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             options={STATUS_OPTIONS}
             disabled={readOnly}
             prefix={<TaskStatusGlyph status={task.status} />}
-            chrome="prop-select"
+            variant="property-chip"
             onChange={(value) => props.onSave(task.id, task.revision, { status: value as TaskStatus })}
           />
           <Select
@@ -171,7 +204,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             options={PRIORITY_OPTIONS}
             disabled={readOnly}
             prefix={<TaskPriorityGlyph priority={task.priority} />}
-            chrome="prop-select"
+            variant="property-chip"
             onChange={(value) => props.onSave(task.id, task.revision, { priority: value as TaskPriority })}
           />
           <Select
@@ -180,8 +213,8 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             value={task.parent_id == null ? '' : String(task.parent_id)}
             options={[{ value: '', label: 'None' }, ...props.parentOptions]}
             disabled={readOnly}
-            prefix={<span className="k">Parent</span>}
-            chrome="prop-select"
+            prefix={<span>Parent</span>}
+            variant="property-chip"
             onChange={(value) => props.onSave(task.id, task.revision, { parent_id: value === '' ? null : Number(value) })}
           />
           <BlockedBy
@@ -191,17 +224,16 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             onChange={(next) => props.onSave(task.id, task.revision, { blocked_by: next })}
           />
           {reviewer !== null && (
-            <span className="prop" data-testid="task-reviewer-prop">
-              <span className="k">Reviewer</span>
-              <IconAgent agent={reviewer} brand className="w-3.5 h-3.5 flex-none" />
+            <TaskProp data-testid="task-reviewer-prop">
+              <TaskPropKey>Reviewer</TaskPropKey>
+              <TaskAgentIcon agent={reviewer} />
               {taskAgentLabel(reviewer)}
-            </span>
+            </TaskProp>
           )}
-        </div>
+        </TaskPropRow>
         <TaskLinks links={task.links} />
-        <SectionHeading heading="Description" />
-        <textarea
-          className="tk-desc-input"
+        <TaskSectionLabel heading="Description" />
+        <TaskDescriptionField
           aria-label="Task description"
           rows={Math.max(2, description.split('\n').length)}
           placeholder="No description."
@@ -227,7 +259,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
         ) : (
           startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={startAnyway.start} />
         )}
-        <SectionHeading
+        <TaskSectionLabel
           heading="Acceptance"
           trailing={acceptanceText(detail.acceptance.filter((item) => item.checked_at_ms != null).length, detail.acceptance.length)}
         />
@@ -237,11 +269,11 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           presentation="side"
           onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
         />
-          <SectionHeading heading="Activity" />
+          <TaskSectionLabel heading="Activity" />
           <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
           <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
-      </div>
-    </div>
+      </TaskRecordBody>
+    </TaskPanel>
   )
 }
 
@@ -291,7 +323,7 @@ function TaskDetailDrawer({ props, taskTitle, onStartAnyway }: { props: TaskDeta
     />}
     {!latestRun && startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={false} onStart={props.onStart} />}
     <div className="grid gap-[var(--space-2)]">
-      <SectionHeading heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
+      <TaskSectionLabel heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
       <TaskDrawerCard><AcceptanceList
         items={detail.acceptance}
         readOnly={false}
@@ -406,27 +438,15 @@ function useServerDraft(server: string, revision: number): [string, (value: stri
   return [draft, setDraft]
 }
 
-function SectionHeading({ heading, trailing }: { heading: string; trailing?: string }): React.JSX.Element {
-  return (
-    <div className="tk-sec">
-      <span>{heading}</span>
-      {trailing && <span className="font-mono tracking-normal">{trailing}</span>}
-    </div>
-  )
-}
-
 function CopyKeyButton({ taskKey }: { taskKey: string }): React.JSX.Element {
   return (
     <Tooltip label="Copy task key" className="inline-flex">
-      <button
-        type="button"
+      <TaskIconButton
+        glyph={IconCopy}
         aria-label="Copy task key"
         data-testid="task-copy-key"
-        className={`tk-ibtn ${HIT_TARGET_28}`}
         onClick={() => void navigator.clipboard?.writeText(taskKey).catch(() => {})}
-      >
-        <Icon glyph={IconCopy} role="small" />
-      </button>
+      />
     </Tooltip>
   )
 }
@@ -451,23 +471,23 @@ function RefusalBanner({
   }
   if (refusal.kind === 'conflict') {
     return (
-      <div className="tk-banner" data-testid="task-conflict-banner">
+      <TaskBanner data-testid="task-conflict-banner">
         <Icon glyph={IconAlertTriangle} role="small" />
-        <span className="msg">
+        <TaskBannerMessage>
           This task changed elsewhere
-          <span className="block text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">{refusal.message}</span>
-        </span>
-        <button type="button" className={`btn ${BTN_SECONDARY} ${HIT_TARGET_28}`} onClick={() => onReload(taskId)}>
+          <TaskBannerDetail>{refusal.message}</TaskBannerDetail>
+        </TaskBannerMessage>
+        <TaskButton tone="secondary" density="form" onClick={() => onReload(taskId)}>
           Reload
-        </button>
-      </div>
+        </TaskButton>
+      </TaskBanner>
     )
   }
   return (
-    <div className="tk-banner error" data-testid="task-refusal">
+    <TaskBanner tone="error" data-testid="task-refusal">
       <Icon glyph={IconAlertTriangle} role="small" />
-      <span className="msg">{refusal.message}</span>
-    </div>
+      <TaskBannerMessage>{refusal.message}</TaskBannerMessage>
+    </TaskBanner>
   )
 }
 
@@ -482,7 +502,7 @@ function AcceptanceList({
   presentation: 'side' | 'drawer'
   onCheck: (itemId: number, checked: boolean) => void
 }): React.JSX.Element {
-  if (items.length === 0) return <div className="tk-body muted">No acceptance items.</div>
+  if (items.length === 0) return <TaskBody>No acceptance items.</TaskBody>
   const rows = items.map((item) => (
         <Tooltip key={item.id} label={readOnly ? READ_ONLY_REASON : undefined} className="flex">
           {presentation === 'drawer' ? <TaskAcceptanceRow
@@ -492,26 +512,20 @@ function AcceptanceList({
             by={item.checked_by ? actorLabel(item.checked_by) : null}
             disabled={readOnly}
             onToggle={() => onCheck(item.id, item.checked_at_ms == null)}
-          /> : <button
-            type="button"
+          /> : <TaskCheckButton
             role="checkbox"
             aria-checked={item.checked_at_ms != null}
             disabled={readOnly}
             data-testid={`task-acceptance-${item.id}`}
-            className={`chkl ${item.checked_at_ms != null ? 'on' : ''}`}
+            checked={item.checked_at_ms != null}
+            mark={<Icon glyph={IconCheck} role="small" />}
+            text={item.text}
+            by={item.checked_by ? actorLabel(item.checked_by) : null}
             onClick={() => onCheck(item.id, item.checked_at_ms == null)}
-          >
-            <span className="bx">{item.checked_at_ms != null && <Icon glyph={IconCheck} role="small" />}</span>
-            <span className="tx">{item.text}</span>
-            {item.checked_by && <span className="by">{actorLabel(item.checked_by)}</span>}
-          </button>}
+          />}
         </Tooltip>
   ))
-  return presentation === 'drawer' ? <div>{rows}</div> : (
-    <div className="tk-body flex flex-col">
-      {rows}
-    </div>
-  )
+  return presentation === 'drawer' ? <div>{rows}</div> : <TaskBody column>{rows}</TaskBody>
 }
 
 interface ActivityEntry {
@@ -536,7 +550,7 @@ const HISTORY_ICON: Readonly<Record<string, ReactNode>> = {
   handback: <Icon glyph={IconCornerDownRight} role="small" />,
   start: <Icon glyph={IconPlay} role="small" />,
   resume: <Icon glyph={IconPlay} role="small" />,
-  pane_working: <span className="tk-dot working" />,
+  pane_working: <TaskDot tone="working" inset />,
   pr_merged: <Icon glyph={IconGitFork} role="small" />,
   default: <Icon glyph={IconPencil} role="small" />
 }
@@ -585,20 +599,20 @@ function ActivityFeed({
   now: number
 }): React.JSX.Element {
   const entries = activityEntries(history, comments, runs)
-  if (entries.length === 0) return <div className="tk-body muted">No activity yet.</div>
+  if (entries.length === 0) return <TaskBody>No activity yet.</TaskBody>
   return (
     <>
       {entries.map((entry) => (
-        <div key={entry.key} className="act" data-testid="task-activity">
-          <span className="ic">{entry.icon}</span>
+        <TaskActivityRow key={entry.key} data-testid="task-activity">
+          <TaskActivityIcon>{entry.icon}</TaskActivityIcon>
           <span>
-            <b>{actorLabel(entry.actor)}</b> {entry.verb}
-            {entry.detail && <span className="muted"> {entry.detail}</span>}
-            {entry.system && <span className="sysmark">{entry.system}</span>}
-            {entry.comment && <div className="bubble">{entry.comment}</div>}
+            <TaskActivityActor>{actorLabel(entry.actor)}</TaskActivityActor> {entry.verb}
+            {entry.detail && <span> {entry.detail}</span>}
+            {entry.system && <TaskSystemMark size="system">{entry.system}</TaskSystemMark>}
+            {entry.comment && <TaskActivityBubble>{entry.comment}</TaskActivityBubble>}
           </span>
-          <span className="tm">{formatAge(entry.at, now)}</span>
-        </div>
+          <TaskActivityTime>{formatAge(entry.at, now)}</TaskActivityTime>
+        </TaskActivityRow>
       ))}
     </>
   )
@@ -619,8 +633,8 @@ function CommentComposer({
     setBody('')
   }
   return (
-    <div className="composer">
-      <textarea
+    <TaskCommentBox>
+      <TaskCommentField
         aria-label="Leave a comment"
         placeholder="Leave a comment…"
         value={body}
@@ -634,17 +648,17 @@ function CommentComposer({
         }}
       />
       <Tooltip label={readOnly ? READ_ONLY_REASON : undefined} className="inline-flex">
-        <button
-          type="button"
-          className={`btn ${BTN_SECONDARY} ${HIT_TARGET_28}`}
+        <TaskButton
+          tone="secondary"
+          density="composer"
           data-testid="task-comment-submit"
           disabled={readOnly || body.trim() === ''}
           onClick={submit}
         >
           Comment
-        </button>
+        </TaskButton>
       </Tooltip>
-    </div>
+    </TaskCommentBox>
   )
 }
 

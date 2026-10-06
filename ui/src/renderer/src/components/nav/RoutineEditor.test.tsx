@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RoutineEditor } from './RoutineEditor'
-import { SELECT_CLS } from '../selectChrome'
+import { SELECT_CLS } from '../ui/selectChrome'
 
 function noop(): void {}
 

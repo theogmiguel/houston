@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Chip } from './Chip'
-import { Segmented } from './Segmented'
-import { Disclosure } from './Disclosure'
-import { NavSwitch } from './nav/navChrome'
-import { Toggle } from './settingsPrimitives'
+import { Chip } from './ui/Chip'
+import { Segmented } from './ui/SegmentedControl'
+import { Disclosure } from './ui/Disclosure'
+import { Switch } from './ui/Switch'
+import { Toggle } from './ui/settingsPrimitives'
 import { HIT_TARGET_28 } from './hitTarget'
 
 describe('hit targets — charter §10 density floor', () => {
@@ -38,7 +40,7 @@ describe('hit targets — charter §10 density floor', () => {
     act(() => {
       root.render(<Chip variant="removable" label="claude-opus-5" onRemove={() => {}} />)
     })
-    expectExpandedHitArea(container.querySelector('button[aria-label^="Remove"]'), 'h-[16px]')
+    expectExpandedHitArea(container.querySelector('button[aria-label^="Remove"]'), 'h-[var(--h-chip-dismiss)]')
   })
 
   it("Segmented's retry keeps its 22px box and hit-tests to the floor", () => {
@@ -74,17 +76,19 @@ describe('hit targets — charter §10 density floor', () => {
     expectExpandedHitArea(retry ?? null, 'h-[var(--h-ctl-mini)]')
   })
 
-  it("NavSwitch's 17px track hits the floor without growing", () => {
+  it("FieldSwitch's 17px track hits the floor without growing", () => {
     act(() => {
-      root.render(<NavSwitch on={false} label="Orchestration" onChange={() => {}} />)
+      root.render(<Switch size="field" on={false} label="Orchestration" onChange={() => {}} />)
     })
-    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[17px]')
+    const theme = readFileSync(resolve(__dirname, '..', 'theme.css'), 'utf8')
+    expect(theme).toMatch(/--h-switch-track:\s*17px;/)
+    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[var(--h-switch-track)]')
   })
 
   it("Toggle's 20px track hits the floor without growing", () => {
     act(() => {
       root.render(<Toggle on={false} onChange={() => {}} />)
     })
-    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[20px]')
+    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[var(--h-settings-switch)]')
   })
 })

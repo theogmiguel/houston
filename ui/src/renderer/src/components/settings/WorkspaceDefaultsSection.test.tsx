@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { WorkspaceDefaultsSection } from './WorkspaceDefaultsSection'
+import type { HostInfo } from '../SettingsView'
 import { hostInfoFixture, setInputValue } from '../settingsViewTestFixtures'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -20,6 +21,7 @@ afterEach(() => {
 describe('WorkspaceDefaultsSection', () => {
   it('worktree cleanup settings', () => {
     const onWorktreeCleanupSet = vi.fn()
+    const onStaleWorktreeDaysSet = vi.fn()
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
@@ -29,9 +31,13 @@ describe('WorkspaceDefaultsSection', () => {
           onRestoreBudgetSet={() => {}}
           onRestoreResumeSet={() => {}}
           onWorktreeCleanupSet={onWorktreeCleanupSet}
+          onWorktreeIdleRemovalDaysSet={onStaleWorktreeDaysSet}
           openLinksInPane={false}
           onOpenLinksInPane={() => {}}
-          hostInfo={hostInfoFixture({ worktree_cleanup_enabled: false, worktree_cleanup_grace_hours: 24 })}
+          hostInfo={{
+            ...hostInfoFixture({ worktree_cleanup_enabled: false, worktree_cleanup_grace_hours: 24 }),
+            worktree_idle_removal_days: 30
+          } as HostInfo & { worktree_idle_removal_days: number }}
           sessionPolicy={null}
           onSessionPolicy={() => {}}
         />
@@ -39,9 +45,11 @@ describe('WorkspaceDefaultsSection', () => {
     })
 
     const text = document.body.textContent ?? ''
-    expect(text).toContain('Remove merged worktrees automatically')
+    expect(text).toContain('Remove worktrees automatically')
     expect(text).toContain('Grace after merge')
     expect(text).toContain('1 to 720 h')
+    expect(text).toContain('Remove idle worktrees after')
+    expect(text).toContain('All workspaces')
 
     act(() => {
       document.querySelector<HTMLButtonElement>('[data-testid="worktree-cleanup-switch"]')!.click()
@@ -56,5 +64,15 @@ describe('WorkspaceDefaultsSection', () => {
       grace.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
     })
     expect(onWorktreeCleanupSet).toHaveBeenLastCalledWith(false, 48)
+
+    const staleDays = document.querySelector<HTMLInputElement>('[data-testid="settings-worktree-idle-removal-days"]')!
+    expect(staleDays.value).toBe('30')
+    expect(staleDays.min).toBe('1')
+    expect(staleDays.max).toBe('365')
+    act(() => {
+      setInputValue(staleDays, '45')
+      staleDays.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    })
+    expect(onStaleWorktreeDaysSet).toHaveBeenCalledWith(45)
   })
 })

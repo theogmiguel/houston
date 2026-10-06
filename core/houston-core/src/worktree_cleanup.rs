@@ -3,6 +3,7 @@
 
 use std::path::Path;
 use std::time::Duration;
+use std::time::UNIX_EPOCH;
 
 /// A pass runs unattended: a fetch stuck on the network, or a status over a huge tree,
 /// must end it rather than hold it. A command past this reads as "unknown", which
@@ -78,6 +79,37 @@ pub fn ignored_files(tree: &Path) -> Option<u32> {
     )
 }
 
+pub fn idle_days(tree: &Path, now_ms: i64) -> Option<u32> {
+    if dirty_files(tree)? != 0 || ignored_files(tree)? != 0 {
+        return None;
+    }
+    let unpushed = git(tree, &["rev-list", "--count", "HEAD", "--not", "--remotes"])?;
+    if unpushed.trim().parse::<u64>().ok()? != 0 {
+        return None;
+    }
+    let mut paths = Vec::new();
+    for item in ["HEAD", "ORIG_HEAD", "COMMIT_EDITMSG", "logs/HEAD"] {
+        let raw = git(tree, &["rev-parse", "--git-path", item])?;
+        let path = Path::new(raw.trim());
+        paths.push(if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            tree.join(path)
+        });
+    }
+    let latest_ms = paths
+        .into_iter()
+        .filter_map(|p| {
+            let modified = std::fs::metadata(p).ok()?.modified().ok()?;
+            let duration = modified.duration_since(UNIX_EPOCH).ok()?;
+            Some(duration.as_millis().min(i64::MAX as u128) as i64)
+        })
+        .max()?;
+    let elapsed = now_ms.saturating_sub(latest_ms).max(0);
+    let idle_days = (elapsed / 86_400_000).min(u32::MAX as i64) as u32;
+    Some(idle_days)
+}
+
 pub fn has_object(tree: &Path, oid: &str) -> bool {
     git(tree, &["cat-file", "-e", &format!("{oid}^{{commit}}")]).is_some()
 }
@@ -140,6 +172,18 @@ pub fn commits_outside(tree: &Path, pr_head: &str) -> Option<u32> {
         .trim()
         .parse()
         .ok()
+}
+
+/// The commits `git cherry <upstream> <branch>` marks `+`: on `branch` with no
+/// patch-equivalent in `upstream`. Squash and cherry-pick integration count as present.
+pub fn cherry_unintegrated(repo: &Path, upstream: &str, branch: &str) -> Option<Vec<String>> {
+    let out = git(repo, &["cherry", upstream, branch])?;
+    Some(
+        out.lines()
+            .filter_map(|line| line.strip_prefix("+ "))
+            .map(|commit| commit.trim().to_string())
+            .collect(),
+    )
 }
 
 /// Read from the remote-tracking refs as they stand: Houston does not fetch for this,

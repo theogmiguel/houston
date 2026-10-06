@@ -1,4 +1,4 @@
-import { AnimOut } from './AnimOut'
+import { AnimOut } from './ui/AnimOut'
 import { ConfirmModal } from './ConfirmModal'
 
 export function QuitAndStopDaemonConfirm({

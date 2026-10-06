@@ -1,25 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { GLOW_DANGER } from './shadowChrome'
 import { isTauri } from '../houston/host'
 import { usePickerEvent, type PickerSelection } from '../houston/browserPicker'
 import {
-  PICKER_AGENT_SELECT_CLS,
-  PICKER_COMP_CLS,
-  PICKER_DOT_CLS,
-  PICKER_ERROR_CLS,
-  PICKER_HINT_CLS,
-  PICKER_HINT_TEXT_CLS,
-  PICKER_INPUTROW_CLS,
-  PICKER_PROMPT_INPUT_CLS,
-  PICKER_SELROW_CLS,
-  PICKER_STATUS_HINT_CLS,
-  PICKER_SUBMIT_CLS,
-  PICKER_TAG_CLS
-} from './browserPickerChrome'
-import { Select } from './Select'
-import { IconClose } from './icons'
-import { Icon } from './Icon'
-import { HIT_TARGET_28 } from './hitTarget'
+  BrowserPickerAgentSelect,
+  BrowserPickerHint,
+  BrowserPickerInputRow,
+  BrowserPickerPromptInput,
+  BrowserPickerSelectionRow,
+  BrowserPickerSubmitButton,
+  BrowserStatusBand
+} from './ui/BrowserSurface'
 
 export const PICKER_AGENTS: { id: string; name: string; description: string }[] = [
   {
@@ -201,24 +191,14 @@ export function PickerStrip({ id, controller }: { id: string; controller: Picker
   return (
     <>
       {enabled && (
-        <div className={PICKER_HINT_CLS} role="status" data-testid={`browser-picker-hint-${id}`}>
-          <span className={PICKER_DOT_CLS} aria-hidden />
-          <span className={PICKER_HINT_TEXT_CLS}>Selecting elements. Links are paused.</span>
-        </div>
+        <BrowserPickerHint role="status" data-testid={`browser-picker-hint-${id}`}>Selecting elements. Links are paused.</BrowserPickerHint>
       )}
       {enabled && selection && (
-        <div className={PICKER_SELROW_CLS} data-testid={`browser-picker-selection-${id}`}>
-          <span className={PICKER_TAG_CLS}>&lt;{selection.tagName.toLowerCase() || '?'}&gt;</span>
-          <span className={PICKER_COMP_CLS}>{selection.componentName}</span>
-          <span className={PICKER_STATUS_HINT_CLS} aria-hidden>
-            links paused
-          </span>
-        </div>
+        <BrowserPickerSelectionRow data-testid={`browser-picker-selection-${id}`} tag={`<${selection.tagName.toLowerCase() || '?'}>`} component={selection.componentName} status="links paused" />
       )}
       {enabled && selection && (
-        <div className={PICKER_INPUTROW_CLS}>
-          <input
-            className={PICKER_PROMPT_INPUT_CLS}
+        <BrowserPickerInputRow>
+          <BrowserPickerPromptInput
             placeholder="Describe the change…"
             aria-label="Describe the change to the selected element"
             value={controller.promptInput}
@@ -229,8 +209,7 @@ export function PickerStrip({ id, controller }: { id: string; controller: Picker
               if (e.key === 'Enter' && controller.promptInput.trim()) controller.submit()
             }}
           />
-          <Select
-            chrome={PICKER_AGENT_SELECT_CLS}
+          <BrowserPickerAgentSelect
             aria-label="Agent to send the prompt to"
             value={controller.agentId}
             options={controller.agents.map((a) => ({
@@ -240,35 +219,27 @@ export function PickerStrip({ id, controller }: { id: string; controller: Picker
             }))}
             onChange={(v) => controller.setAgentId(v)}
           />
-          <button
+          <BrowserPickerSubmitButton
             type="button"
-            className={PICKER_SUBMIT_CLS}
             disabled={!controller.promptInput.trim() || controller.submitting}
             aria-busy={controller.submitting}
             data-testid={`browser-picker-submit-${id}`}
             onClick={() => controller.submit()}
           >
             {controller.submitting ? 'Sending…' : 'Send'}
-          </button>
-        </div>
+          </BrowserPickerSubmitButton>
+        </BrowserPickerInputRow>
       )}
       {controller.pickerError && (
-        <div className={PICKER_ERROR_CLS} role="alert" data-testid={`browser-picker-error-${id}`}>
-          <span
-            className={`flex-none w-1.5 h-1.5 rounded-[999px] bg-danger shadow-[${GLOW_DANGER}]`}
-            aria-hidden
-          />
-          <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{controller.pickerError}</span>
-          {}
-          <button
-            type="button"
-            className={`btn flex-none inline-flex items-center justify-center w-[18px] h-[18px] rounded-[var(--tr-radius-input)] border-0 bg-transparent text-inherit hover:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] ${HIT_TARGET_28}`}
-            aria-label="Dismiss picker error"
-            onClick={controller.dismissError}
-          >
-            <Icon glyph={IconClose} role="label" />
-          </button>
-        </div>
+        <BrowserStatusBand
+          tone="danger"
+          edge="top"
+          indicator
+          data-testid={`browser-picker-error-${id}`}
+          dismiss={{ label: 'Dismiss picker error', onClick: controller.dismissError }}
+        >
+          {controller.pickerError}
+        </BrowserStatusBand>
       )}
     </>
   )

@@ -1298,6 +1298,7 @@ pub struct Daemon {
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
+    worktree_cleanup_notify: tokio::sync::Notify,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
@@ -2440,6 +2441,19 @@ impl Daemon {
         #[cfg(not(target_os = "linux"))]
         let _ = session_launcher;
         let db = Db::open(&cfg.db_path)?;
+        if adopted.is_none() {
+            let retention_hours = db
+                .get_setting("settled_retention_hours")?
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(SETTLED_RETENTION_DEFAULT_HOURS);
+            let (closed, backfilled) =
+                db.backfill_settled_retention(now_ms(), u64::from(retention_hours) * 3_600_000)?;
+            if closed > 0 || backfilled > 0 {
+                tracing::info!(
+                    "backfilled settled child retention for {backfilled} child session(s) and closed {closed} child session(s) whose parent was closed"
+                );
+            }
+        }
         let tag_registry: BTreeMap<u32, proto::TagInfo> =
             db.tag_list()?.into_iter().map(|t| (t.id, t)).collect();
         let adopted_ids: HashSet<u32> = adopted
@@ -2635,6 +2649,7 @@ impl Daemon {
             spawn_observer_for_test: Mutex::new(None),
             worktree_spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
+            worktree_cleanup_notify: tokio::sync::Notify::new(),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),
@@ -4235,6 +4250,9 @@ impl Daemon {
             path: path.display().to_string(),
             repo_common_dir: common_dir,
             branch: wt.branch.clone().unwrap_or_default(),
+            base_branch: base
+                .map(str::to_string)
+                .or_else(|| crate::git::default_base(repo)),
             provenance: crate::db::WorktreeProvenance::ChangesPane,
             created_by_session: None,
             created_at_ms: now_ms() as i64,
@@ -8391,9 +8409,7 @@ impl Daemon {
             if let Some(launcher) = self.cli_launcher() {
                 crate::session_isolation::resolve_program(&mut cmd)
                     .with_context(|| format!("resolving Codex for session {id}"))?;
-                let directory = tempfile::Builder::new()
-                    .prefix("houston-codex-")
-                    .tempdir_in("/tmp")
+                let directory = crate::codex_pane::private_socket_dir()
                     .context("creating a private Codex socket directory")?;
                 crate::codex_pane::wrap(
                     &mut cmd,
@@ -9798,6 +9814,7 @@ impl Daemon {
             session.remove_shell_token_file();
             session.removed.store(true, Ordering::Release);
             self.db.mark_closed(id)?;
+            worktree_pass::queue_closed_session(self, id);
             self.write_run_state();
             self.mcp_creds.revoke_session(id);
             self.mcp_notify.close_session(id);
@@ -9812,6 +9829,7 @@ impl Daemon {
         }
         if self.dead.lock().expect("dead lock").remove(&id).is_some() {
             self.db.mark_closed(id)?;
+            worktree_pass::queue_closed_session(self, id);
             self.remove_persisted_scrollback(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
@@ -12164,6 +12182,7 @@ impl Daemon {
             settled_retention_hours: self.settled_retention_hours(),
             worktree_cleanup_enabled: self.worktree_cleanup_enabled(),
             worktree_cleanup_grace_hours: self.worktree_cleanup_grace_hours(),
+            worktree_idle_removal_days: self.worktree_idle_removal_days(),
             command_history_ignore_glob_count: self.command_history_ignore_globs().len() as u32,
             session_db_bytes,
         }
@@ -14926,6 +14945,7 @@ impl Daemon {
             path: created.path.display().to_string(),
             repo_common_dir: common_dir,
             branch: created.branch.clone(),
+            base_branch: crate::git::default_base(project_dir),
             provenance: crate::db::WorktreeProvenance::PaneSpawn,
             created_by_session: caller,
             created_at_ms: now_ms() as i64,

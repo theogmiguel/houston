@@ -108,8 +108,8 @@ describe('WorkspacesEmpty — state matrix', () => {
 
   it('with global shortcuts OFF the footer dims and says why', () => {
     render(props({ keymapOverrides: { bindings: {}, shortcuts_enabled: false } }))
-    const strip = container.querySelector('[data-testid="launcher-hint-footer"] > div')
-    expect(strip?.className).toContain('opacity-45')
+    const hintList = container.querySelector('[data-testid="launcher-hint-footer"] > div')
+    expect(hintList?.className).toContain('opacity-[var(--opacity-shortcuts-disabled)]')
     expect(container.querySelector('[data-testid="launcher-hints-off"]')).not.toBeNull()
   })
 })

@@ -169,7 +169,8 @@ function findInheritedTraps(rules: ParsedRule[]): { selector: string; property: 
 describe('base.css @layer base inheritance traps', () => {
   const raw = readFileSync(BASE_CSS_PATH, 'utf8')
   const stripped = stripComments(raw)
-  const blocks = extractLayerBlocks(stripped, BASE_LAYER)
+  const buttonRaw = readFileSync(join(__dirname, 'components/ui/button.css'), 'utf8')
+  const blocks = [...extractLayerBlocks(stripped, BASE_LAYER), ...extractLayerBlocks(stripComments(buttonRaw), BASE_LAYER)]
 
   it('found at least one "@layer base" block (sanity check against a rename/removal)', () => {
     expect(blocks.length).toBeGreaterThan(0)

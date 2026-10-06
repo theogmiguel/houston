@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SRC = __dirname
-const SHARED_CONSTANTS = [join(SRC, 'components/buttonChrome.ts'), join(SRC, 'editor/editorChrome.ts')]
+const SHARED_CONSTANTS = [join(SRC, 'components/ui/buttonChrome.ts'), join(SRC, 'editor/editorChrome.ts')]
 
 function tsxFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -38,7 +38,7 @@ function expand(expr: string, table: Map<string, string>, depth = 0): string {
   )
 }
 
-// `btn-ghost` is BTN_GHOST's component class and resets the border itself (base.css).
+// `btn-ghost` is BTN_GHOST's component class and resets the border itself (button.css).
 const MENTIONS_BORDER =
   /(?<![\w-])btn-ghost(?![\w-])|(?<![\w-])border(?![\w-])|(?<![\w-])border-(0|none|\[|t|r|b|l|x|y|s|e|current|transparent|solid|dashed|dotted|hidden|\d|[a-z]+-?\d*)/
 

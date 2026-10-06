@@ -1,8 +1,9 @@
 import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { HarnessReviewStatus } from '../../houston/generated/HarnessReviewStatus'
-import { Chip, type ChipTone } from '../Chip'
-import { DataTable } from '../DataTable'
-import { SECONDARY_BUTTON } from './navChrome'
+import { Chip, type ChipTone } from '../ui/Chip'
+import { DataTable } from '../ui/DataTable'
+import { FieldActionButton } from '../ui/formPrimitives'
+import { SingleLineText, Text } from '../ui'
 import { REVIEW_STATUS_LABEL, formatDay, formatWindow } from './harnessFormat'
 
 const STATUS_TONE: Record<HarnessReviewStatus, ChipTone> = {
@@ -11,8 +12,9 @@ const STATUS_TONE: Record<HarnessReviewStatus, ChipTone> = {
   failed: 'danger'
 }
 
-const RESULT_CLS =
-  'block truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]'
+function ResultText({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <Text as="div" size="small" weight="small" tone="secondary" className="truncate">{children}</Text>
+}
 
 export function HarnessHistory({
   reviews,
@@ -24,11 +26,11 @@ export function HarnessHistory({
   onOpenSession: (sessionId: number) => void
 }): React.JSX.Element {
   return (
-    <div className="flex min-w-0 flex-col gap-[8px]">
+    <div className="grid min-w-0 gap-[var(--space-2)]">
       <div className="min-w-0 overflow-x-auto">
           <DataTable
             aria-label="Review runs"
-            className="min-w-[1000px]"
+            minWidth={1000}
             rows={reviews}
             getRowId={(r) => String(r.id)}
             emptySetLabel="No review has run in this workspace yet."
@@ -38,13 +40,13 @@ export function HarnessHistory({
                 key: 'started',
                 header: 'Started',
                 width: '160px',
-                render: (r) => <span className="whitespace-nowrap">{formatDay(r.started_at_ms)}</span>
+                render: (r) => <SingleLineText>{formatDay(r.started_at_ms)}</SingleLineText>
               },
               {
                 key: 'window',
                 header: 'Window',
                 width: '260px',
-                render: (r) => <span className="whitespace-nowrap">{formatWindow(r.window)}</span>
+                render: (r) => <SingleLineText>{formatWindow(r.window)}</SingleLineText>
               },
               {
                 key: 'sessions',
@@ -71,7 +73,7 @@ export function HarnessHistory({
               {
                 key: 'result',
                 header: 'Result',
-                render: (r) => <span className={RESULT_CLS}>{r.error ?? r.summary ?? ''}</span>
+                render: (r) => <ResultText>{r.error ?? r.summary ?? ''}</ResultText>
               },
               {
                 key: 'pane',
@@ -79,23 +81,19 @@ export function HarnessHistory({
                 width: '110px',
                 render: (r) =>
                   r.session_id != null && liveSessions.has(r.session_id) ? (
-                    <button
-                      type="button"
-                      className={SECONDARY_BUTTON}
-                      onClick={() => onOpenSession(r.session_id as number)}
-                    >
+                    <FieldActionButton onClick={() => onOpenSession(r.session_id as number)}>
                       Open pane
-                    </button>
+                    </FieldActionButton>
                   ) : (
-                    <span className={RESULT_CLS}>Closed</span>
+                    <ResultText>Closed</ResultText>
                   )
               }
             ]}
           />
       </div>
-      <p className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
+      <Text as="p" size="small" weight="small" tone="faint">
         A finished run says what it found; it does not mean the findings are resolved.
-      </p>
+      </Text>
     </div>
   )
 }

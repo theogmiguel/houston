@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SessionInfo } from '../../houston/client'
 import type { TagInfo } from '../../houston/generated/TagInfo'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconClose, IconGrid } from '../icons'
 import { formatRailDuration, gridStatus } from './railRows'
 import type { GridStatusModel } from './railRows'

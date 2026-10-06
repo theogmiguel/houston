@@ -2,9 +2,9 @@ import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { ChatEffort } from '../../houston/generated/ChatEffort'
 import { useState } from 'react'
 import type { SessionSlot, SlotOverrides } from '../sessionPresets'
-import { Select } from '../Select'
+import { Select } from './Select'
 import { IconAgent } from '../icons'
-import { ICON_ROLE_CLS } from '../Icon'
+import { ICON_ROLE_CLS } from './Icon'
 import { FieldLabel } from './Field'
 
 const AGENTS: readonly AgentKind[] = ['claude', 'codex', 'cursor', 'antigravity', 'opencode', 'grok', 'shell']

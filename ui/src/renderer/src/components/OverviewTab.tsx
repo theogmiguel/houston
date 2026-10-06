@@ -1,7 +1,7 @@
+import { OverviewButton } from './ui/OverviewButtonRoles'
 import { useSession, useSessionsSelector, shallowArrayEqual } from '../sessionsStore'
-import { Icon } from './Icon'
-import { Segmented } from './Segmented'
-import { Tooltip } from './Tooltip'
+import { Icon } from './ui/Icon'
+import { Tooltip } from './ui/Tooltip'
 import { Suspense, useEffect, useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
@@ -10,10 +10,12 @@ import type { InboxRow } from '../houston/generated/InboxRow'
 import { selectOverviewChild } from '../sidePanel'
 import { ChildStatusDot, childGroup, childStateWord, DelegationAge } from './ChildrenRoster'
 import { pendingDeliveryStatus, sessionIdentity } from './DelegationCard'
-import { IconAgent, IconEye, IconGitBranch, IconStopCircle, IconRespawn, IconCornerDownRight } from './icons'
+import { IconEye, IconGitBranch, IconStopCircle, IconRespawn, IconCornerDownRight } from './icons'
 import { StatusDot } from './SessionPane'
 import { Button, RosterOverview } from './ui'
 import { StatusLabel } from './ui/StatusLabel'
+import { OrchestratorActionDock, OrchestratorActionRow, OrchestratorAgentIcon, OrchestratorAge, OrchestratorBranch, OrchestratorChildCard, OrchestratorChildHeader, OrchestratorChildList, OrchestratorChildState, OrchestratorChildTitle, OrchestratorCount, OrchestratorGroupToggle, OrchestratorHeader, OrchestratorIdentity, OrchestratorInlineAction, OrchestratorMetadata, OrchestratorProgress, OrchestratorProgressSegment, OrchestratorResult, OrchestratorSectionLabel, OrchestratorSummary, OrchestratorTask, OrchestratorStatusDot, OrchestratorTitle } from './ui/OrchestratorOverview'
+import { Text } from './ui/Text'
 
 export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   parentId: number
@@ -64,29 +66,29 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   const done = children.filter((child) => !isLive(child.state) && child.delegation?.state !== 'failed').length
   const failed = children.filter((child) => !isLive(child.state) && child.delegation?.state === 'failed').length
   const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
-  const action = (label: string, onClick: () => void): React.JSX.Element => <Button variant="legacy-ghost" onClick={onClick}>{label}</Button>
+  const action = (label: string, onClick: () => void, summary = false): React.JSX.Element => <OrchestratorInlineAction summary={summary} onClick={onClick}>{label}</OrchestratorInlineAction>
   return <RosterOverview>
-    <header className="overview-head"><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <IconAgent brand agent={parent.detected_agent ?? parent.agent} className="w-3.5 h-3.5 flex-none" />}<strong>{parent?.title ?? `Orchestrator ${parentId}`}</strong><span className="font-mono text-[var(--text-faint)]">pane {parentId}</span>{parent && <CompactionCount parent={parent} />}{action('Show terminal', () => selectOverviewChild(parentId, null))}</header>
-    {(!parent || !isLive(parent.state)) && <div className="overview-summary">Orchestrator ended.{action('Close', onClose)}</div>}
-    <div className="overview-summary"><strong className={children.some((child) => childGroup(child) === 'Needs you') ? 'text-[var(--warn)]' : undefined}>{children.length}</strong><span className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</span><span className="flex-1" /><Segmented aria-label="Group children" className="overview-grouping" value={groupBy} onChange={setGroupBy} options={[{ value: 'status', label: 'Status' }, { value: 'worktree', label: 'Worktree' }]} /></div>
-    <div className="overview-bar">{(['Needs you', 'Working', 'Done', 'Failed'] as const).map((group) => <i key={group} data-group={group} style={{ flex: group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length }} />)}</div>
-    <div className="overview-cards">{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={results.find((result) => result.child === child.id)} counts={counts} client={client} onReview={onReview} />)}</div>
-    {addressed.length > 0 && <section aria-label="Addressed to you"><h3 className="overview-summary">Addressed to you</h3>{addressed.map((row) => <article key={String(row.id)} className="overview-child"><div className="overview-task">{row.summary || row.body}</div><div className="overview-actions">{action('Acknowledge', () => client.inboxAck(row.id))}{action('Resolve', () => client.inboxResolve(row.id))}</div></article>)}</section>}
+    <OrchestratorHeader><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <OrchestratorAgentIcon agent={parent.detected_agent ?? parent.agent} />}<OrchestratorTitle>{parent?.title ?? `Orchestrator ${parentId}`}</OrchestratorTitle><OrchestratorIdentity>pane {parentId}</OrchestratorIdentity>{parent && <CompactionCount parent={parent} />}{action('Show terminal', () => selectOverviewChild(parentId, null))}</OrchestratorHeader>
+    {(!parent || !isLive(parent.state)) && <OrchestratorSummary>Orchestrator ended.{action('Close', onClose, true)}</OrchestratorSummary>}
+    <OrchestratorSummary><OrchestratorCount needsInput={children.some((child) => childGroup(child) === 'Needs you')}>{children.length}</OrchestratorCount><Text size="small" tone="muted" className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</Text><span className="flex-1" /><OrchestratorGroupToggle value={groupBy} onChange={setGroupBy} /></OrchestratorSummary>
+    <OrchestratorProgress>{(['Needs you', 'Working', 'Done', 'Failed'] as const).map((group) => <OrchestratorProgressSegment key={group} group={group} weight={group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length} />)}</OrchestratorProgress>
+    <OrchestratorChildList>{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={results.find((result) => result.child === child.id)} counts={counts} client={client} onReview={onReview} />)}</OrchestratorChildList>
+    {addressed.length > 0 && <section aria-label="Addressed to you"><OrchestratorSectionLabel>Addressed to you</OrchestratorSectionLabel>{addressed.map((row) => <OrchestratorChildCard key={String(row.id)}><OrchestratorTask>{row.summary || row.body}</OrchestratorTask><OrchestratorActionRow>{action('Acknowledge', () => client.inboxAck(row.id))}{action('Resolve', () => client.inboxResolve(row.id))}</OrchestratorActionRow></OrchestratorChildCard>)}</section>}
   </RosterOverview>
 }
 
 function CompactionCount({ parent }: { parent: SessionInfo }): React.JSX.Element | null {
   const agent = parent.detected_agent ?? parent.agent
   if (parent.compactions == null) {
-    return agent === 'shell' || agent === 'custom' || agent === 'ssh' ? null : <span className="text-[var(--text-faint)]">compactions not reported by {agent}</span>
+    return agent === 'shell' || agent === 'custom' || agent === 'ssh' ? null : <Text size="small" tone="faint">compactions not reported by {agent}</Text>
   }
-  return <Tooltip label="Context compactions the agent reported. Every third one, Houston offers this orchestrator a handoff to a new pane."><span className="font-mono text-[var(--text-faint)]">{parent.compactions} {parent.compactions === 1 ? 'compaction' : 'compactions'}</span></Tooltip>
+  return <Tooltip label="Context compactions the agent reported. Every third one, Houston offers this orchestrator a handoff to a new pane."><Text size="small" mono tone="faint">{parent.compactions} {parent.compactions === 1 ? 'compaction' : 'compactions'}</Text></Tooltip>
 }
 
 function CheckoutChips({ child, parent, shared, count }: { child: SessionInfo; parent?: SessionInfo; shared?: SessionInfo; count?: number }): React.JSX.Element {
   const separate = child.project_dir !== parent?.project_dir
   const checkout = child.worktree?.branch
-  return <div className="overview-chips">{separate && <span>{child.project_dir}</span>}{checkout && <span className="overview-branch"><Icon glyph={IconGitBranch} role="label" />{checkout}</span>}{shared && <span>shares checkout with {shared.delegation?.role ?? sessionIdentity(shared)}</span>}{child.worktree && count !== undefined && <span>{count} changed files</span>}</div>
+  return <OrchestratorMetadata>{separate && <span>{child.project_dir}</span>}{checkout && <OrchestratorBranch><Icon glyph={IconGitBranch} role="label" />{checkout}</OrchestratorBranch>}{shared && <span>shares checkout with {shared.delegation?.role ?? sessionIdentity(shared)}</span>}{child.worktree && count !== undefined && <span>{count} changed files</span>}</OrchestratorMetadata>
 }
 
 function OverviewChildCard({ child, parent, parentId, children, result, counts, client, onReview }: {
@@ -105,14 +107,14 @@ function OverviewChildCard({ child, parent, parentId, children, result, counts, 
       const deliveryStatus = pendingDeliveryStatus(child.delegation)
 
       const shared = isLive(child.state) ? children.find((other) => other.id !== child.id && isLive(other.state) && child.checkout_root != null && other.checkout_root === child.checkout_root) : undefined
-      return <article key={child.id} className={`overview-child ${needs ? 'needs' : ''}`}>
+      return <OrchestratorChildCard key={child.id} needsInput={needs}>
         <OverviewChildHead child={child} needs={needs} settled={settled} />
-        <div className="overview-task">{child.title}</div>
+        <OrchestratorTask>{child.title}</OrchestratorTask>
         <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.worktree?.path ?? child.project_dir)} />
-        <div className="overview-actions">{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</div>
+        <OrchestratorActionDock>{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</OrchestratorActionDock>
         {deliveryStatus != null && <StatusLabel status={deliveryStatus} />}
-        <div className="overview-result">{needs && <Icon glyph={IconCornerDownRight} role="label" />}<span>{childResultExcerpt(child, result, needs)}</span>{needs && <Button variant="legacy-primary" onClick={() => selectOverviewChild(parentId, child.id)}>Answer</Button>}</div>
-      </article>
+        <OrchestratorResult>{needs && <Icon glyph={IconCornerDownRight} role="label" />}<Text tone="muted">{childResultExcerpt(child, result, needs)}</Text>{needs && <OverviewButton onClick={() => selectOverviewChild(parentId, child.id)}>Answer</OverviewButton>}</OrchestratorResult>
+      </OrchestratorChildCard>
 }
 
 function childResultExcerpt(child: SessionInfo, result: DelegationResult | undefined, needs: boolean): string {
@@ -121,5 +123,7 @@ function childResultExcerpt(child: SessionInfo, result: DelegationResult | undef
 
 
 function OverviewChildHead({ child, needs, settled }: { child: SessionInfo; needs: boolean; settled: boolean }): React.JSX.Element {
-  return <div className="overview-child-head"><span className="overview-dot" data-state={settled ? child.delegation?.state : undefined}><ChildStatusDot info={child} /></span><IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" /><strong>{child.delegation?.role ?? child.title}</strong><span className="font-mono text-[var(--text-faint)]">{sessionIdentity(child)}</span><span className="overview-state" data-state={needs ? 'needs_input' : childStateWord(child)}>{needs ? 'Needs you' : childStateWord(child).replace(/^./, (letter) => letter.toUpperCase())}</span><span className="age"><Suspense fallback={null}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={!settled && child.delegation?.settled_at == null} /></Suspense></span></div>
+  const childState = childStateWord(child)
+  const state = needs ? 'needs_input' : childState === 'working' ? 'working' : childState === 'done' ? 'done' : childState === 'failed' ? 'failed' : 'other'
+  return <OrchestratorChildHeader><OrchestratorStatusDot state={settled ? child.delegation?.state === 'done' ? 'done' : child.delegation?.state === 'failed' ? 'failed' : undefined : undefined}><ChildStatusDot info={child} /></OrchestratorStatusDot><OrchestratorAgentIcon agent={child.detected_agent ?? child.agent} /><OrchestratorChildTitle>{child.delegation?.role ?? child.title}</OrchestratorChildTitle><OrchestratorIdentity size="xs">{sessionIdentity(child)}</OrchestratorIdentity><OrchestratorChildState state={state}>{needs ? 'Needs you' : childStateWord(child).replace(/^./, (letter) => letter.toUpperCase())}</OrchestratorChildState><OrchestratorAge><Suspense fallback={null}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={!settled && child.delegation?.settled_at == null} /></Suspense></OrchestratorAge></OrchestratorChildHeader>
 }

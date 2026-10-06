@@ -1,0 +1,30 @@
+/* Restates tailwind.css's layer order: this sheet can load first, and a layer is placed where it is first seen. */
+@layer properties, theme, base, components, utilities;
+
+/* Pane frame and header grounds by focus tier. Kept below `utilities` so a call site's
+   utilities still win, as they did when these were classes: the narrow-container radius
+   step on a pane root must override the default frame radius. */
+@layer components {
+  [data-pane-focus-border='none'] { border-color: var(--border); }
+  [data-pane-focus-border='dim'] { border-color: var(--pane-focus-border-dim); }
+  [data-pane-focus-border='full'] { border-color: var(--border-focus); }
+  [data-pane-focus-head='none'] { background: var(--session-terminal-header-bg); }
+  [data-pane-focus-head='dim'] { background: var(--pane-focus-head-dim); }
+  [data-pane-focus-head='full'] { background: var(--raised); }
+  [data-pane-focus-head] {
+    font-size: var(--tr-text-small-size);
+    font-weight: var(--tr-text-small-weight);
+    letter-spacing: var(--tr-text-pane-header-tracking);
+    color: var(--text-primary);
+  }
+
+  [data-pane-focus-border] {
+    border-style: solid;
+    border-width: var(--pane-frame-border-width);
+    border-radius: var(--tr-radius-md);
+  }
+}
+
+/* Unlayered on purpose: a title in an unfocused pane dims over its own tone utility. */
+body:has(.pane.focus) .pane:not(.focus) .pane-title { color: var(--text-secondary); }
+[data-grid-area='rail'] { grid-area: rail; }

@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from '../settingsPrimitives'
+import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
 import { variants } from './variants'
 
 export type PageWidth = 'form' | 'wide' | 'settings' | 'settingsWide'

@@ -1,11 +1,10 @@
+import { LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { useEffect, useRef, useState } from 'react'
 import type { SshAuth, SshConfigHost, SshProfile } from '../houston/client'
 import { pickFile } from '../houston/bridge'
-import { IconChevronRight } from './icons'
-import { Icon } from './Icon'
-import { Tooltip } from './Tooltip'
-import { Toggle } from './settingsPrimitives'
-import { Button, DialogBackdrop, DialogForm } from './ui'
+import { Tooltip } from './ui/Tooltip'
+import { Toggle } from './ui/settingsPrimitives'
+import { Button, ContentsSwitch, DialogBackdrop, DialogForm, DisclosureChevron, FormGrid, FormGridLabel, Stack, Text, TextInput } from './ui'
 import { useFocusTrap } from './dialogFocus'
 
 export interface SshConnectParams {
@@ -98,13 +97,10 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
       setBusy(false)
     }
   }
-  const textInput = 'w-full min-w-0 h-[30px] px-2.5 bg-background border border-border rounded-[6px] text-text-primary text-[length:var(--tr-text-base)]'
-  const labelClass = 'text-right text-[length:var(--tr-text-base)] text-text-primary'
   return (
     <DialogBackdrop onMouseDown={() => { if (!busyRef.current) onClose() }}>
       <DialogForm
         ref={dialogRef}
-        className="rounded-[14px]"
         role="dialog" aria-modal="true" aria-labelledby="ssh-connect-title" aria-describedby="ssh-connect-description"
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => { event.preventDefault(); void submit() }}
@@ -117,35 +113,35 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
           trapTab(event)
         }}
       >
-        <header className="flex flex-col gap-2">
-          <h2 id="ssh-connect-title" className="m-0 text-[length:var(--tr-text-xl)] font-semibold text-text-primary">Connect via SSH</h2>
-          <p id="ssh-connect-description" className="m-0 text-[length:var(--tr-text-base)] text-text-primary">Open a terminal on a Linux or Mac machine over SSH.</p>
-        </header>
-        <div className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
-          <label className={labelClass} htmlFor="ssh-machine">Machine</label>
+        <Stack as="header" gap={2}>
+          <Text as="h2" size="xl" weight="semibold" tone="primary" flush id="ssh-connect-title">Connect via SSH</Text>
+          <Text as="p" size="base" tone="primary" flush id="ssh-connect-description">Open a terminal on a Linux or Mac machine over SSH.</Text>
+        </Stack>
+        <FormGrid>
+          <FormGridLabel htmlFor="ssh-machine">Machine</FormGridLabel>
           <Tooltip label="Hostname, IP address, or a name from your SSH config">
-            <input id="ssh-machine" className={textInput} value={host} onChange={(event) => edit(setHost, event.target.value)} placeholder="server or SSH config name" autoFocus autoComplete="off" spellCheck={false} disabled={busy} />
+            <TextInput variant="form" id="ssh-machine" value={host} onChange={(event) => edit(setHost, event.target.value)} placeholder="server or SSH config name" autoFocus autoComplete="off" spellCheck={false} disabled={busy} />
           </Tooltip>
-          <label className={labelClass} htmlFor="ssh-user">Username</label>
-          <input id="ssh-user" className={textInput} value={user} onChange={(event) => edit(setUser, event.target.value)} placeholder="Use SSH configuration" autoComplete="off" spellCheck={false} disabled={busy} />
-          <label className={labelClass} htmlFor="ssh-folder">Folder</label>
-          <input id="ssh-folder" className={textInput} value={folder} onChange={(event) => edit(setFolder, event.target.value)} placeholder="~/projects/app" spellCheck={false} disabled={busy} />
-          <Button type="button" variant="legacy-ghost" className="col-start-2 justify-self-start -ml-2.5 flex items-center gap-1 text-[length:var(--tr-text-base)]" aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
-            <span className={advanced ? 'rotate-90' : ''}><Icon glyph={IconChevronRight} role="ui" /></span>Advanced
-          </Button>
-          {advanced && <div id="ssh-advanced" className="contents">
-            <label className={labelClass} htmlFor="ssh-port">Port</label>
-            <input id="ssh-port" className={`${textInput} w-[88px] tabular-nums`} value={port} onChange={(event) => edit(setPort, event.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric" maxLength={5} disabled={busy} />
-            <label className="col-start-2 flex items-center gap-2 text-[length:var(--tr-text-base)] text-text-primary">
+          <FormGridLabel htmlFor="ssh-user">Username</FormGridLabel>
+          <TextInput variant="form" id="ssh-user" value={user} onChange={(event) => edit(setUser, event.target.value)} placeholder="Use SSH configuration" autoComplete="off" spellCheck={false} disabled={busy} />
+          <FormGridLabel htmlFor="ssh-folder">Folder</FormGridLabel>
+          <TextInput variant="form" id="ssh-folder" value={folder} onChange={(event) => edit(setFolder, event.target.value)} placeholder="~/projects/app" spellCheck={false} disabled={busy} />
+          <LazyLegacyButton type="button" variant="legacy-ghost-disclosure" className="col-start-2 justify-self-start" aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
+            <DisclosureChevron open={advanced} />Advanced
+          </LazyLegacyButton>
+          {advanced && <ContentsSwitch shown id="ssh-advanced">
+            <FormGridLabel htmlFor="ssh-port">Port</FormGridLabel>
+            <TextInput variant="form" width="port" id="ssh-port" value={port} onChange={(event) => edit(setPort, event.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric" maxLength={5} disabled={busy} />
+            <Text as="label" size="base" tone="primary" className="col-start-2 flex items-center gap-[var(--space-2)]">
               <Toggle on={chooseKey} disabled={busy} onChange={(value) => { setChooseKey(value); setError(null) }} />
               <span id="ssh-key-label">Choose an SSH key when connecting</span>
-            </label>
-            <p className="col-start-2 m-0 text-[length:var(--tr-text-sm)] text-text-secondary">Otherwise, use your SSH agent or existing SSH configuration.</p>
-          </div>}
-          {error && <p role="alert" className="col-span-2 m-0 text-[length:var(--tr-text-sm)] text-danger">{error}</p>}
-        </div>
-        <footer className="flex items-center gap-2">
-          <Button type="button" variant="legacy-secondary" disabled={busy} onClick={onClose}>Cancel</Button>
+            </Text>
+            <Text as="p" size="sm" tone="secondary" flush id="ssh-advanced-description" className="col-start-2">Otherwise, use your SSH agent or existing SSH configuration.</Text>
+          </ContentsSwitch>}
+          {error && <Text as="p" size="sm" tone="danger" flush role="alert" className="col-span-2">{error}</Text>}
+        </FormGrid>
+        <footer className="flex items-center gap-[var(--space-2)]">
+          <LazyLegacyButton type="button" variant="legacy-secondary" disabled={busy} onClick={onClose}>Cancel</LazyLegacyButton>
           <span className="flex-1" />
           <Button type="submit" variant="legacy-primary" disabled={host === '' || busy}>{busy ? 'Connecting…' : 'Connect'}</Button>
         </footer>

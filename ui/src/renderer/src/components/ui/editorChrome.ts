@@ -1,0 +1,2 @@
+export const ECTX_ITEM_CLS = 'ctx-item border-none flex items-center justify-between gap-[14px] w-full py-[5px] px-2.5 rounded-[var(--tr-radius-input)] bg-transparent text-[var(--text-secondary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-left hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)] disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)]'
+export const ECTX_SEP_CLS = 'ctx-sep h-px bg-[var(--border)] my-1 mx-1.5 flex-none'

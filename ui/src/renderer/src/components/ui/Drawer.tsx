@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { Button } from './Button'
 import { IconClose } from '../icons'
-import { PAGE_COLUMN_CLS } from '../settingsPrimitives'
+import { PAGE_COLUMN_CLS } from './settingsPrimitives'
 import { variants } from './variants'
 
 export interface DrawerProps {

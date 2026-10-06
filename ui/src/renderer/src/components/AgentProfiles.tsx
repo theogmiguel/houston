@@ -1,16 +1,14 @@
+import { SettingsButton } from './ui/SettingsButtonRoles'
 import React, { useState } from 'react'
-import { Tooltip } from './Tooltip'
-import { Select } from './Select'
+import { Tooltip } from './ui/Tooltip'
+import { Select } from './ui/Select'
+import { Button } from './ui/Button'
+import { ProfileActiveSection, ProfileDescription, ProfileFieldLabel, ProfileFormField, ProfileFormRow, ProfileHeader, ProfileName, ProfileNotice, ProfilePanel, ProfilePath, ProfileSavedHeading, ProfileSavedList, ProfileSavedRow, ProfileValue } from './ui/ProfilePanel'
+import { Text } from './ui/Text'
+import { TextInput } from './ui/TextInput'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
 import type { AgentProfileActive } from '../houston/generated/AgentProfileActive'
-
-const BTN =
-  'border-0 bg-transparent rounded-[var(--tr-radius-sm)] px-[10px] py-[5px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-default'
-const PROFILE_BTN_PRIMARY =
-  'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[10px] py-[5px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default'
-const INPUT =
-  'w-full bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2 disabled:opacity-50'
 
 const AGENT_LABEL: Record<'claude' | 'codex', string> = {
   claude: 'Claude Code',
@@ -50,22 +48,24 @@ function AgentProfileCard({
   const canAdd = name.trim().length > 0 && dir.trim().length > 0
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--content-bg)]">
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--divider)] px-[14px] py-[9px]">
-        <span className="[font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]">
+    <ProfilePanel>
+      <ProfileHeader>
+        <Text size="ui" weight="ui" tone="primary">
           {AGENT_LABEL[agent]}
-        </span>
-        <span className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">{AGENT_VAR[agent]}</span>
-      </div>
+        </Text>
+        <ProfileValue>{AGENT_VAR[agent]}</ProfileValue>
+      </ProfileHeader>
 
-      <div data-settings-row-name="Active profile" className="px-[14px] py-2">
+      <ProfileActiveSection data-settings-row-name="Active profile">
         {}
-        <label className="mb-1 block [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
-          Spawned panes — active profile
-        </label>
-        <div className="mb-[6px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.45] text-[var(--text-muted)]">
-          The account exported to panes Houston launches. If you switch accounts with a shell alias,
-          keep this on default — the alias sets the variable itself.
+        <div className="grid gap-[var(--space-1)]">
+          <ProfileFieldLabel>
+            Spawned panes — active profile
+          </ProfileFieldLabel>
+          <ProfileDescription>
+            The account exported to panes Houston launches. If you switch accounts with a shell alias,
+            keep this on default — the alias sets the variable itself.
+          </ProfileDescription>
         </div>
         <Select
           className="w-full"
@@ -81,26 +81,23 @@ function AgentProfileCard({
           ]}
           onChange={(v) => onSetActive(agent, v === '' ? null : Number(v))}
         />
-      </div>
+      </ProfileActiveSection>
 
-      <div data-settings-row-name="Saved profiles" className="border-t border-[var(--divider)] px-[14px] pb-[2px] pt-2">
-        <div className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
+      <ProfileSavedHeading data-settings-row-name="Saved profiles">
+        <Text size="label" weight="label" tone="faint" caps>
           Saved profiles
-        </div>
-      </div>
+        </Text>
+      </ProfileSavedHeading>
 
       {profiles.length > 0 && (
-        <ul className="border-t border-[var(--divider)]">
+        <ProfileSavedList>
           {profiles.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center justify-between gap-2 border-b border-[var(--divider)] px-[14px] py-[7px] last:border-b-0"
-            >
+            <ProfileSavedRow key={p.id}>
               <div className="min-w-0">
-                <div className="truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">{p.name}</div>
-                <div className="truncate font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+                <ProfileName>{p.name}</ProfileName>
+                <ProfilePath>
                   {p.config_dir}
-                </div>
+                </ProfilePath>
               </div>
               <Tooltip
                 label={
@@ -109,37 +106,36 @@ function AgentProfileCard({
                     : 'Delete'
                 }
               >
-                <button type="button" className={BTN} onClick={() => onDelete(p.id)}>
+                <Button variant="ghost" size="sm" onClick={() => onDelete(p.id)}>
                   Delete
-                </button>
+                </Button>
               </Tooltip>
-            </li>
+            </ProfileSavedRow>
           ))}
-        </ul>
+        </ProfileSavedList>
       )}
 
-      <div data-settings-row-name="Add profile" className="flex items-end gap-2 border-t border-[var(--divider)] px-[14px] py-[9px]">
-        <div className="flex-1 flex flex-col gap-1">
-          <label className="block [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">Name</label>
-          <input
-            className={INPUT}
+      <ProfileFormRow data-settings-row-name="Add profile">
+        <ProfileFormField>
+          <ProfileFieldLabel variant="input">Name</ProfileFieldLabel>
+          <TextInput
+            variant="compact"
             value={name}
             placeholder="work"
             onChange={(e) => setName(e.target.value)}
           />
-        </div>
-        <div className="flex-[2] flex flex-col gap-1">
-          <label className="block [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">Directory</label>
-          <input
-            className={INPUT}
+        </ProfileFormField>
+        <ProfileFormField grow="two">
+          <ProfileFieldLabel variant="input">Directory</ProfileFieldLabel>
+          <TextInput
+            variant="compact"
             value={dir}
             placeholder={agent === 'claude' ? '~/.claude-work' : '~/.codex-work'}
             onChange={(e) => setDir(e.target.value)}
           />
-        </div>
-        <button
-          type="button"
-          className={`btn ${PROFILE_BTN_PRIMARY}`}
+        </ProfileFormField>
+        <SettingsButton
+          variant="accent-soft"
           disabled={!canAdd}
           onClick={() => {
             onUpsert(null, agent, name.trim(), dir.trim())
@@ -148,9 +144,9 @@ function AgentProfileCard({
           }}
         >
           Add
-        </button>
-      </div>
-    </div>
+        </SettingsButton>
+      </ProfileFormRow>
+    </ProfilePanel>
   )
 }
 
@@ -159,13 +155,13 @@ export function AgentProfiles({ profiles, active, onUpsert, onDelete, onSetActiv
     active.find((a) => a.agent === agent)?.id ?? null
 
   return (
-    <div>
-      <div className="mb-[10px] rounded-md border border-[var(--border)] bg-[var(--surface-hover)] px-3 py-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--text-secondary)]">
+    <div className="grid gap-[var(--space-2-5)]">
+      <ProfileNotice>
         Switching applies only to the <strong>next</strong> terminal Houston opens for that CLI —
         sessions already running keep their account. Added or removed accounts apply at once,
         however the agent was started.
-      </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      </ProfileNotice>
+      <div className="grid gap-[var(--space-3)] md:grid-cols-2">
         {agents.includes('claude') && <AgentProfileCard
           agent="claude"
           profiles={profiles.filter((p) => p.agent === 'claude')}

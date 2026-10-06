@@ -1,22 +1,14 @@
+import { ReviewButton } from '../ui/ReviewButtonRoles'
+import { TextArea } from '../ui/TextArea'
+import { DiscussionEntry, DiscussionBody, DiscussionMeta, DiscussionActionsRow, DiscussionComposer, DiscussionCommentRow, DiscussionThreadHeader, DiscussionCommentMetaRow, DiscussionThreadList, DiscussionErrorMessage, DiscussionComposerPanel, DiscussionAuthor, DiscussionPath, DiscussionResolveAction } from '../ui/DiscussionEntry'
 import { useState } from 'react'
 import type { PrComment, PrDetail, PrReaction, PrThread } from '../../houston/client'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { Disclosure } from '../Disclosure'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Disclosure } from '../ui/Disclosure'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
 import { IconCheck, IconRefresh } from '../icons'
 import { PrReactions } from './PrPickers'
 import { ScmNotice } from './ScmNotice'
-
-const SMALL = 'text-[length:var(--tr-text-small-size)]'
-const ACTION = 'inline-flex items-center gap-1.5'
-const ROW = 'flex flex-col gap-1 px-3 py-2 border-t border-t-[var(--divider)] first:border-t-0'
-const BODY = `${SMALL} text-[var(--text-secondary)] whitespace-pre-wrap break-words`
-const META = `${SMALL} text-[var(--text-faint)]`
-const TEXTAREA =
-  'w-full resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 ' +
-  'text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] ' +
-  'focus-visible:outline-none focus-visible:border-[var(--border-focus)]'
 
 type ReactFn = (subjectId: string | null, content: PrReaction, reacted: boolean) => void
 
@@ -35,13 +27,11 @@ function CommentRow({
   const [draft, setDraft] = useState(comment.body)
   const id = comment.id ?? null
   return (
-    <div className={ROW} data-testid="pr-comment-row">
-      <div className="flex items-center gap-2">
-        <span className={`${SMALL} [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]`}>
-          {comment.author}
-        </span>
+    <DiscussionEntry data-testid="pr-comment-row">
+      <DiscussionActionsRow>
+        <DiscussionAuthor>{comment.author}</DiscussionAuthor>
         {onEdit !== undefined && id !== null && (
-          <button
+          <ReviewButton
             type="button"
             data-testid={`pr-comment-edit-${id}`}
             disabled={busy}
@@ -49,24 +39,24 @@ function CommentRow({
               setDraft(comment.body)
               setEditing((v) => !v)
             }}
-            className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1 ${SMALL} text-[var(--text-muted)] disabled:opacity-55`}
+            variant="discussion-edit-action"
           >
             Edit
-          </button>
+          </ReviewButton>
         )}
-      </div>
+      </DiscussionActionsRow>
       {editing ? (
-        <div className="flex flex-col gap-1.5">
-          <textarea
+        <DiscussionComposer>
+          <TextArea surface="background"
             data-testid={`pr-comment-editor-${id}`}
             aria-label={`Edit comment by ${comment.author}`}
             rows={4}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className={TEXTAREA}
+
           />
-          <div className="flex items-center gap-[var(--space-2)]">
-            <button
+          <DiscussionActionsRow>
+            <ReviewButton
               type="button"
               data-testid={`pr-comment-save-${id}`}
               disabled={busy || draft.trim().length === 0}
@@ -74,29 +64,29 @@ function CommentRow({
                 setEditing(false)
                 if (id !== null) onEdit?.(id, draft)
               }}
-              className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-55`}
+              variant="primary-action"
             >
               Save
-            </button>
-            <button
+            </ReviewButton>
+            <ReviewButton
               type="button"
               data-testid={`pr-comment-cancel-${id}`}
               onClick={() => setEditing(false)}
-              className={`btn ${ACTION} ${BTN_SECONDARY}`}
+              variant="secondary-action"
             >
               Cancel
-            </button>
-          </div>
-        </div>
+            </ReviewButton>
+          </DiscussionActionsRow>
+        </DiscussionComposer>
       ) : (
-        <span className={BODY}>{comment.body}</span>
+        <DiscussionBody>{comment.body}</DiscussionBody>
       )}
       <PrReactions
         reactions={comment.reactions}
         busy={busy}
         onToggle={(content, reacted) => onReact(id, content, reacted)}
       />
-    </div>
+    </DiscussionEntry>
   )
 }
 
@@ -123,63 +113,58 @@ function ThreadRow({
 }): React.JSX.Element {
   const [reply, setReply] = useState('')
   return (
-    <div className={ROW} data-testid="pr-thread">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`font-mono ${SMALL} text-[var(--text-primary)] break-all`}>
+    <DiscussionEntry data-testid="pr-thread">
+      <DiscussionThreadHeader>
+        <DiscussionPath>
           {thread.path ?? 'a file'}
           {thread.line !== null && thread.line !== undefined ? `:${thread.line}` : ''}
-        </span>
-        {thread.outdated && <span className={META}>outdated</span>}
-        <span
-          data-testid={`pr-thread-state-${thread.id}`}
-          className={thread.resolved ? `${META} text-[var(--ok)]` : META}
-        >
+        </DiscussionPath>
+        {thread.outdated && <DiscussionMeta>outdated</DiscussionMeta>}
+        <DiscussionMeta data-testid={`pr-thread-state-${thread.id}`} tone={thread.resolved ? 'ok' : 'faint'}>
           {thread.resolved ? 'resolved' : 'open'}
-        </span>
-        <Tooltip label={!allowResolve ? (resolveReason ?? undefined) : undefined} className="ml-auto">
-          <button
+        </DiscussionMeta>
+        <DiscussionResolveAction><Tooltip label={!allowResolve ? (resolveReason ?? undefined) : undefined}>
+          <ReviewButton
             type="button"
             data-testid={`pr-thread-resolve-${thread.id}`}
             disabled={busy || !allowResolve}
             onClick={() => onResolve(!thread.resolved)}
-            className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1.5 ${SMALL} text-[var(--text-muted)] disabled:opacity-55`}
+            variant="compact-action"
           >
             <Icon glyph={thread.resolved ? IconRefresh : IconCheck} role="small" />
             {thread.resolved ? 'Reopen' : 'Resolve'}
-          </button>
-        </Tooltip>
-      </div>
+          </ReviewButton>
+        </Tooltip></DiscussionResolveAction>
+      </DiscussionThreadHeader>
       {thread.comments.map((comment) => (
-        <div key={comment.id} className="flex flex-col gap-0.5" data-testid="pr-thread-comment">
-          <div className="flex items-center gap-2">
-            <span className={`${SMALL} [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]`}>
-              {comment.author}
-            </span>
-            <span className={`${META} ml-auto`} data-testid="pr-thread-comment-time">
+        <DiscussionCommentRow key={comment.id} data-testid="pr-thread-comment">
+          <DiscussionCommentMetaRow>
+            <DiscussionAuthor>{comment.author}</DiscussionAuthor>
+            <DiscussionMeta align="end" data-testid="pr-thread-comment-time">
               {Math.max(0, Math.floor((Date.now() / 1000 - comment.created_at) / 60))}m
-            </span>
-          </div>
-          <span className={BODY}>{comment.body}</span>
-          {onSendToOrchestrator && <button type="button" className={`btn ${BTN_GHOST} ${ACTION} h-[var(--h-ctl-mini)] px-1 ${SMALL} text-[var(--text-muted)]`} onClick={() => onSendToOrchestrator(`PR #${number} · ${thread.path ?? 'review'}${thread.line ? `:${thread.line}` : ''}\n${comment.author}: ${comment.body}`)}>Send to orchestrator</button>}
+            </DiscussionMeta>
+          </DiscussionCommentMetaRow>
+          <DiscussionBody>{comment.body}</DiscussionBody>
+          {onSendToOrchestrator && <ReviewButton variant="compact-action" type="button" onClick={() => onSendToOrchestrator(`PR #${number} · ${thread.path ?? 'review'}${thread.line ? `:${thread.line}` : ''}\n${comment.author}: ${comment.body}`)}>Send to orchestrator</ReviewButton>}
           <PrReactions
             reactions={comment.reactions}
             busy={busy}
             onToggle={(content, reacted) => onReact(comment.id, content, reacted)}
           />
-        </div>
+        </DiscussionCommentRow>
       ))}
-      <div className="flex flex-col gap-1.5">
-        <textarea
+      <DiscussionComposer>
+        <TextArea surface="background"
           data-testid={`pr-thread-reply-${thread.id}`}
           aria-label={`Reply to the thread on ${thread.path ?? 'a file'}`}
           rows={2}
           value={reply}
           onChange={(e) => setReply(e.target.value)}
           placeholder="Reply to this discussion"
-          className={TEXTAREA}
+
         />
-        <div className="flex items-center gap-2">
-          <button
+        <DiscussionActionsRow>
+          <ReviewButton
             type="button"
             data-testid={`pr-thread-reply-send-${thread.id}`}
             disabled={busy || reply.trim().length === 0}
@@ -187,13 +172,13 @@ function ThreadRow({
               onReply(reply)
               setReply('')
             }}
-            className={`btn ${ACTION} ${BTN_SECONDARY} disabled:opacity-55`}
+            variant="discussion-reply-action"
           >
             Reply
-          </button>
-        </div>
-      </div>
-    </div>
+          </ReviewButton>
+        </DiscussionActionsRow>
+      </DiscussionComposer>
+    </DiscussionEntry>
   )
 }
 
@@ -225,21 +210,18 @@ export function PrThreads({
       count={detail.threads.length}
       defaultOpen={detail.threads.length > 0}
       scrollBody={false}
-      className="rounded-none border-0 bg-transparent"
+      variant="flush"
     >
-      <div className="flex flex-col" data-testid="pr-threads">
+      <DiscussionThreadList data-testid="pr-threads">
         {detail.threads_truncated && (
           <ScmNotice tone="info" testId="pr-threads-capped">
             GitHub had more discussions than this read carried.
           </ScmNotice>
         )}
         {detail.threads_message !== null && (
-          <div
-            className={`px-3 py-1.5 ${SMALL} text-[var(--danger)] break-words [overflow-wrap:anywhere]`}
-            data-testid="pr-threads-message"
-          >
+          <DiscussionErrorMessage data-testid="pr-threads-message">
             {detail.threads_message}
-          </div>
+          </DiscussionErrorMessage>
         )}
         {detail.threads.map((thread) => (
           <ThreadRow
@@ -255,7 +237,7 @@ export function PrThreads({
             onReact={onReact}
           />
         ))}
-      </div>
+      </DiscussionThreadList>
     </Disclosure>
   )
 }
@@ -279,9 +261,9 @@ export function PrComments({
       summary="Comments"
       count={detail.comments_total}
       scrollBody={false}
-      className="rounded-none border-0 bg-transparent"
+      variant="flush"
     >
-      <div className="flex flex-col" data-testid="pr-comments">
+      <DiscussionThreadList data-testid="pr-comments">
         {detail.comments.length < detail.comments_total && (
           <ScmNotice tone="info" testId="pr-comments-capped">
             Showing {detail.comments.length} of {detail.comments_total} comments — open on GitHub
@@ -297,18 +279,18 @@ export function PrComments({
             onEdit={onCommentEdit}
           />
         ))}
-        <div className="flex flex-col gap-1.5 p-3 border-t border-t-[var(--divider)]">
-          <textarea
+        <DiscussionComposerPanel>
+          <TextArea surface="background"
             data-testid="pr-comment-composer"
             aria-label="New comment"
             rows={3}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Write a comment"
-            className={TEXTAREA}
+
           />
-          <div className="flex items-center gap-2">
-            <button
+          <DiscussionActionsRow>
+            <ReviewButton
               type="button"
               data-testid="pr-comment-send"
               disabled={busy || draft.trim().length === 0}
@@ -316,13 +298,13 @@ export function PrComments({
                 onComment(draft)
                 setDraft('')
               }}
-              className={`btn ${ACTION} ${BTN_PRIMARY} disabled:opacity-55`}
+            variant="primary-action"
             >
               Comment
-            </button>
-          </div>
-        </div>
-      </div>
+            </ReviewButton>
+          </DiscussionActionsRow>
+        </DiscussionComposerPanel>
+      </DiscussionThreadList>
     </Disclosure>
   )
 }

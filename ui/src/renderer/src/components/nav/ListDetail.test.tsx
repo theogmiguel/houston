@@ -13,6 +13,7 @@ describe('ListDetail — the shared list+detail shell', () => {
   let root: Root
 
   beforeEach(() => {
+    document.documentElement.style.setProperty('--w-list-detail-breakpoint', '720px')
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -21,6 +22,7 @@ describe('ListDetail — the shared list+detail shell', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    document.documentElement.style.removeProperty('--w-list-detail-breakpoint')
   })
 
   function render(list: ListDetailItem[]): void {
@@ -45,37 +47,33 @@ describe('ListDetail — the shared list+detail shell', () => {
     return Array.from(container.querySelectorAll('[data-testid="list-detail-item"]'))
   }
 
-  it('the two-column shape is an @container override over a stacked default', () => {
+  it('uses the stacked layout until its observed container reaches the breakpoint', () => {
     render(items(['a', 'b']))
     const shell = container.querySelector('[data-testid="list-detail"]')!
     expect(shell.className).toContain('grid-cols-1')
-    expect(shell.className).toContain('[@container_(min-width:720px)]:grid-cols-[280px_minmax(0,1fr)]')
+    expect(shell.className).not.toContain('grid-cols-[var(--w-list-detail-column)_minmax(0,1fr)]')
   })
 
-  it('nothing selected: the list shows unconditionally, the detail is stacked-hidden with no NavBack', () => {
+  it('nothing selected: the list shows unconditionally, the detail is stacked-hidden with no BackBar', () => {
     render(items(['a', 'b']))
     expect(listCol().className).not.toContain('hidden')
     expect(detailCol().className).toContain('hidden')
-    expect(detailCol().className).toContain('[@container_(min-width:720px)]:flex')
     expect(container.querySelector('[data-testid="nav-back"]')).toBeNull()
     expect(container.querySelector('[data-testid="detail-body"]')?.textContent).toBe('nothing selected')
   })
 
-  it('picking an item stacked-hides the list, shows the detail with a NavBack that itself hides at the wide rung', () => {
+  it('picking an item stacked-hides the list, shows the detail with a BackBar that itself hides at the wide rung', () => {
     render(items(['a', 'b']))
     act(() => itemButtons()[0].dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(listCol().className).toContain('hidden')
-    expect(listCol().className).toContain('[@container_(min-width:720px)]:flex')
     expect(detailCol().className).not.toContain('hidden')
     const back = container.querySelector('[data-testid="nav-back"]')!
     expect(back).not.toBeNull()
-    expect(back.parentElement?.parentElement?.className).toContain(
-      '[@container_(min-width:720px)]:hidden'
-    )
+    expect(back.parentElement?.parentElement?.className).toBe('')
     expect(container.querySelector('[data-testid="detail-body"]')?.textContent).toBe('a')
   })
 
-  it('clicking NavBack clears the selection', () => {
+  it('clicking BackBar clears the selection', () => {
     render(items(['a', 'b']))
     act(() => itemButtons()[0].dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const back = container.querySelector('[data-testid="nav-back"]')!
@@ -93,7 +91,7 @@ describe('ListDetail — the shared list+detail shell', () => {
     expect(container.querySelector('[data-testid="detail-body"]')?.textContent).toBe('a')
   })
 
-  it('forceDetailOpen shows the detail with nothing selected, and NavBack defers to onCloseForced', () => {
+  it('forceDetailOpen shows the detail with nothing selected, and BackBar defers to onCloseForced', () => {
     let closed = 0
     act(() => {
       root.render(

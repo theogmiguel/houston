@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { thirdPartyLicenses } from '../../houston/bridge'
-import { BTN_GHOST } from '../buttonChrome'
+import { Button, TextInput, Inline, InlineLink, LicenseList, LicensePackage, LicenseText, Text, Stack } from '../ui'
 import { Row } from './shared'
 
 export interface ThirdPartyLicensePackage {
@@ -40,60 +40,52 @@ function PackageRow({
   onToggle: () => void
 }): React.JSX.Element {
   return (
-    <div className="border-t border-t-[var(--divider)] first:border-t-0 p-[var(--space-3)] flex flex-col gap-[var(--space-2)]">
-      <div className="flex flex-wrap items-baseline gap-[var(--space-2)]">
+    <LicensePackage>
+      <Inline gap="small" wrap align="baseline">
         {pkg.repository ? (
-          <a
-            href={pkg.repository}
-            target="_blank"
-            rel="noreferrer"
-            className="break-all text-[var(--accent)] underline [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]"
-          >
+          <InlineLink href={pkg.repository}>
             {pkg.name}
-          </a>
+          </InlineLink>
         ) : (
-          <span className="break-all text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">
+          <Text weight="medium" size="small" breakAll tone="primary">
             {pkg.name}
-          </span>
+          </Text>
         )}
         {pkg.version && (
-          <span className="font-mono [font-size:var(--tr-text-small-size)] text-[var(--text-faint)] tabular-nums">
+          <Text size="small" mono tone="faint" tabular>
             {pkg.version}
-          </span>
+          </Text>
         )}
-        <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">
+        <Text weight="medium" size="small" tone="secondary">
           {pkg.license ?? 'licence not declared'}
-        </span>
-      </div>
+        </Text>
+      </Inline>
       {pkg.note && (
-        <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+        <Text weight="medium" size="small" as="div" tone="muted">
           {pkg.note}
-        </div>
+        </Text>
       )}
       {pkg.textIds.length > 0 && (
-        <div className="flex flex-col gap-[var(--space-2)]">
+        <Stack gap={2}>
           <div>
-            <button
+            <Button
               type="button"
+              variant="legacy-ghost"
               aria-label={`${expanded ? 'Hide' : 'Show'} licence for ${pkg.name}`}
-              className={`btn ${BTN_GHOST}`}
               onClick={onToggle}
             >
               {expanded ? 'Hide licence' : 'Show licence'}
-            </button>
+            </Button>
           </div>
           {expanded &&
             pkg.textIds.map((id) => (
-              <pre
-                key={id}
-                className="m-0 max-h-[240px] overflow-auto rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--content-bg)] p-2 font-mono [font-size:var(--tr-text-small-size)] leading-[1.5] text-[var(--text-secondary)] whitespace-pre-wrap break-words"
-              >
+              <LicenseText key={id} >
                 {texts[id] ?? ''}
-              </pre>
+              </LicenseText>
             ))}
-        </div>
+        </Stack>
       )}
-    </div>
+    </LicensePackage>
   )
 }
 
@@ -138,35 +130,37 @@ export function ThirdPartyNotices(): React.JSX.Element {
         title="Third-party notices"
         desc="Every third-party package inside the binaries, with its licence."
       >
-        <button type="button" className={`btn ${BTN_GHOST}`} onClick={toggleOpen}>
+        <Button type="button" variant="legacy-ghost" onClick={toggleOpen}>
           {open ? 'Hide notices' : 'Show notices'}
-        </button>
+        </Button>
       </Row>
       {open && (
-        <div className="pt-[var(--space-3)] flex flex-col gap-[var(--space-3)]">
+        <Stack insetTop={3} gap={3}>
           {state.kind === 'loading' && (
-            <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+            <Text weight="medium" size="small" as="div" tone="muted">
               Loading the package inventory
-            </div>
+            </Text>
           )}
           {state.kind === 'error' && (
-            <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)]">
+            <Text weight="medium" size="small" as="div" tone="danger">
               {state.message}
-            </div>
+            </Text>
           )}
           {state.kind === 'loaded' && (
             <>
-              <input
+              <TextInput
                 type="text"
-                className="w-[220px] bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2"
+                width="long"
+                radius="small"
+                density="compact"
                 placeholder="Filter by name or licence"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
-              <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+              <Text weight="medium" size="small" as="div" tone="muted">
                 {`${shown.length} of ${state.packages.length} packages`}
-              </div>
-              <div className="max-h-[360px] overflow-y-auto rounded-[var(--tr-radius-md)] border border-[var(--border)]">
+              </Text>
+              <LicenseList >
                 {shown.map((pkg) => {
                   const key = packageKey(pkg)
                   return (
@@ -179,10 +173,10 @@ export function ThirdPartyNotices(): React.JSX.Element {
                     />
                   )
                 })}
-              </div>
+              </LicenseList>
             </>
           )}
-        </div>
+        </Stack>
       )}
     </>
   )

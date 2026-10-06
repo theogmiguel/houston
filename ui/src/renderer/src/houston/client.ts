@@ -779,6 +779,18 @@ export class HoustonClient {
     this.send({ type: 'worktree_cleanup_run', dir, paths })
   }
 
+  worktreeIdleRemovalDaysGet(): void {
+    this.send({ type: 'worktree_idle_removal_days_get' })
+  }
+
+  worktreeIdleRemovalDaysSet(days: number): void {
+    this.send({ type: 'worktree_idle_removal_days_set', days })
+  }
+
+  worktreeIdleRemove(dir: string, path: string): void {
+    this.send({ type: 'worktree_idle_remove', dir, path })
+  }
+
   gitCheckpointCreate(dir: string, label: string): void {
     this.send({ type: 'git_checkpoint_create', dir, label })
   }

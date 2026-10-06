@@ -1,5 +1,5 @@
 import { IconAlertTriangle, IconCheck, IconClose } from '../icons'
-import { ICON_ROLE_CLS } from '../Icon'
+import { ICON_ROLE_CLS } from './Icon'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Button } from './Button'
 

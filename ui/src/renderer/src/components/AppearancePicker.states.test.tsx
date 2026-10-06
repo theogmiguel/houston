@@ -115,7 +115,7 @@ describe('AppearancePicker — state matrix', () => {
     })
     const elapsedMs = performance.now() - start
     const list = container.querySelector('[data-testid="appearance-picker-list"]') as HTMLElement | null
-    expect(list?.style.maxHeight).toBe('320px')
+    expect(list?.style.maxHeight).toBe('var(--h-palette-option-list)')
     expect(rows().length).toBe(THEMES.length)
     // eslint-disable-next-line no-console -- this log IS the measurement: the number that decided against virtualizing the list
     console.log(`AppearancePicker: warm render of all ${THEMES.length} rows took ${elapsedMs.toFixed(2)}ms`)

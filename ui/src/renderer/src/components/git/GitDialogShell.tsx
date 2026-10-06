@@ -1,8 +1,9 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { useRef } from 'react'
 import { useFocusRestore, useFocusTrap } from '../dialogFocus'
-import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel } from '../ui'
+import { DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle, Text } from '../ui'
 import { IconClose } from '../icons'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 
 export interface GitDialogShellProps {
   heading: string
@@ -47,21 +48,18 @@ export function GitDialogShell({
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 py-3.5 px-5 border-b border-[var(--divider)] flex-none">
-          <h2
-            id={`${testid}-title`}
-            className="m-0 flex-1 [font-size:var(--tr-text-ui-size)] font-semibold tracking-[-0.01em] text-[var(--text-primary)]"
-          >
+        <DialogTitle tone="ui" id={`${testid}-title`}>
+          <Text as="h2" size="ui" weight="semibold" tight tone="primary" flush className="flex-1">
             {heading}
-          </h2>
-          <Button
+          </Text>
+          <LazyLegacyButton
             ref={closeRef}
             variant="legacy-ghost-icon"
             aria-label="Close"
             data-testid={`${testid}-close`}
             onClick={onClose}
-          ><Icon glyph={IconClose} role="label" /></Button>
-        </div>
+          ><Icon glyph={IconClose} role="label" /></LazyLegacyButton>
+        </DialogTitle>
         <DialogBody variant="scroll" data-testid={`${testid}-body`}>
           {children}
         </DialogBody>

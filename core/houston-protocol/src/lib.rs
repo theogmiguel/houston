@@ -2144,6 +2144,10 @@ pub struct GitWorktreeInfo {
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorktreeKeep {
+    Stale {
+        idle_days: u32,
+        removal_in_days: u32,
+    },
     /// The tree is no longer on the branch Houston recorded, so its PR says nothing
     /// about the recorded branch; `current` is `None` on a detached HEAD.
     BranchChanged {
@@ -2179,9 +2183,23 @@ pub enum WorktreeKeep {
         gh: GhState,
     },
     ProbablyIntegrated,
+    /// `count` commits on the branch have no patch-equivalent in `base`.
+    NotIntegrated {
+        count: u32,
+        base: String,
+    },
     RemoveFailed {
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeStatus {
+    Ready,
+    Stale,
+    Kept,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2189,6 +2207,8 @@ pub enum WorktreeKeep {
 pub struct ManagedWorktreeInfo {
     pub path: String,
     pub branch: String,
+    pub base_branch: Option<String>,
+    pub status: WorktreeStatus,
     pub pr: Option<u32>,
     pub keep: Option<WorktreeKeep>,
     #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
@@ -3318,6 +3338,14 @@ pub enum ClientMsg {
         #[serde(default)]
         paths: Vec<String>,
     },
+    WorktreeIdleRemovalDaysGet,
+    WorktreeIdleRemovalDaysSet {
+        days: u32,
+    },
+    WorktreeIdleRemove {
+        dir: String,
+        path: String,
+    },
     GitCheckpointCreate {
         dir: String,
         label: String,
@@ -4209,6 +4237,9 @@ pub enum ServerMsg {
         #[serde(default)]
         removed: Vec<RemovedWorktree>,
     },
+    WorktreeIdleRemovalDays {
+        days: u32,
+    },
     GitCheckpoints {
         dir: String,
         checkpoints: Vec<GitCheckpointInfo>,
@@ -4552,6 +4583,7 @@ pub enum ServerMsg {
         settled_retention_hours: u32,
         worktree_cleanup_enabled: bool,
         worktree_cleanup_grace_hours: u32,
+        worktree_idle_removal_days: u32,
         command_history_ignore_glob_count: u32,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         session_db_bytes: u64,
@@ -4846,6 +4878,10 @@ pub const MAILBOX_RETENTION_HOURS_MAX: u32 = 720;
 pub const WORKTREE_CLEANUP_GRACE_HOURS_DEFAULT: u32 = 24;
 
 pub const WORKTREE_CLEANUP_GRACE_HOURS_MAX: u32 = 720;
+/// Long pauses should survive automatic cleanup; 30 days matches comparable tools' idle cleanup.
+pub const WORKTREE_IDLE_REMOVAL_DAYS_DEFAULT: u32 = 30;
+pub const WORKTREE_IDLE_REMOVAL_DAYS_MIN: u32 = 1;
+pub const WORKTREE_IDLE_REMOVAL_DAYS_MAX: u32 = 365;
 
 pub const ORCHESTRATION_CAP_MAX: u32 = 16;
 

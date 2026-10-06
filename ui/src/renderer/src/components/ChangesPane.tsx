@@ -1,8 +1,10 @@
+import { GitPrOpenAction, LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
+import { DiffLoadingMark } from './ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle } from './overlayChrome'
+import { OVERLAY_GLASS_OVERLAY_ATTRS, popOriginStyle } from './ui/overlayChrome'
 import type { AgentKind, GitFileStatus, HoustonClient } from '../houston/client'
-import { SPIN_CLASS } from './git/DiffBody'
+
 import { DiffArea } from './git/DiffArea'
 import {
   discardConfirmLabel,
@@ -40,22 +42,35 @@ import {
   IconEllipsis,
   IconSparkles
 } from './icons'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
-import { BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
-import { MATERIAL_CLS, materialAttrs } from './material'
-import { Segmented } from './Segmented'
-import { SplitButton } from './SplitButton'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
+import { Button } from './ui/Button'
+import { RepositoryPanelState, GitPrNotice, GitPrSummaryLine } from './ui'
+import { Text } from './ui/Text'
+import {
+  GitChangesBody,
+  GitChangesFileColumn,
+  GitChangesFileListFrame,
+  GitChangesNarrowActions,
+  GitChangesSurface,
+  GitChangesToolbarSurface,
+  GitChangesWideActions,
+  GitCommitActionRow,
+  GitCommitButtonGroup,
+  GitCommitMessageField,
+  GitCommitMessageRow,
+  GitCommitPanel,
+  GitCommitStagedCount,
+  GitCompactToolsAnchor,
+  GitCompactToolsSurface,
+  GitPrSummaryLabel
+} from './ui'
+import { Segmented } from './ui/SegmentedControl'
+import { SplitButton } from './ui/SplitButton'
 import { ChangesFileList } from './git/ChangesFileList'
 import { BranchCommits } from './git/BranchCommits'
 import { changeListKeyDown } from './git/changeListKeyboard'
 import { canCommit as canCommitForState, offerCreatePr as offerPrCreateForState, openSelectedFile, pushBlockedReason, reviewDisabledReason } from './git/changesPaneDerived'
-
-const STATE_BODY =
-  'flex-1 min-h-0 flex flex-col items-center justify-center gap-2 p-6 text-center'
-const STATE_TITLE =
-  'text-[length:var(--tr-text-base)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-primary)]'
-const STATE_HINT = 'text-[length:var(--tr-text-sm)] text-[var(--text-muted)] max-w-[46ch]'
 
 export interface ChangesReview {
   session: number
@@ -125,7 +140,7 @@ function ChangesStrip({
 }): React.JSX.Element {
   const labels = scopeLabels(defaultBase)
   return (
-    <div className="flex items-center gap-[var(--space-2)] px-[var(--space-2-5)] py-[var(--space-1-5)] border-b border-b-[var(--divider)] flex-none flex-wrap">
+    <GitChangesToolbarSurface>
       <Segmented
         aria-label="Diff scope"
         value={scope}
@@ -148,21 +163,21 @@ function ChangesStrip({
         ]}
       />
       <Tooltip label="Review with agent" className="inline-flex">
-        <button
-          className={`btn ${BTN_SECONDARY}`}
+        <LazyLegacyButton
+          variant="legacy-secondary"
           data-testid="changes-review"
           disabled={!client || reviewBusy}
           onClick={openReview}
         >
           {reviewBusy ? (
-            <span className={SPIN_CLASS}>
+            <DiffLoadingMark>
               <Icon glyph={IconLoaderCircle} role="small" />
-            </span>
+            </DiffLoadingMark>
           ) : (
             <Icon glyph={IconSparkles} role="small" />
           )}
           <span className="[@container_(max-width:420px)]:hidden">Review with agent</span>
-        </button>
+        </LazyLegacyButton>
       </Tooltip>
       <PullQuickButton
         upstream={upstream}
@@ -182,7 +197,7 @@ function ChangesStrip({
         fallbackBase={defaultBase}
         onAddWorkspace={onAddWorkspace}
       />
-    </div>
+    </GitChangesToolbarSurface>
   )
 }
 
@@ -222,48 +237,47 @@ function CommitBox({
   target?: string
 }): React.JSX.Element {
   return (
-    <div className="changes-commit flex-none flex flex-col gap-[var(--space-2)] p-[var(--space-2-5)] border-t border-t-[var(--border)] bg-[var(--material-shell-bg)]">
-      {hasChanges && <div className="flex items-center gap-1.5">
-        <textarea
+    <GitCommitPanel>
+      {hasChanges && <GitCommitMessageRow>
+        <GitCommitMessageField
           data-testid="changes-commit-message"
           aria-label="Commit message"
           value={commitMsg}
           onChange={(event) => setCommitMsg(event.target.value)}
           placeholder="Commit message"
           rows={compact ? 3 : 2}
-          className="flex-1 min-w-0 min-h-[var(--h-ctl)] resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--content-bg)] px-[var(--space-2)] py-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus-visible:border-[var(--border-focus)] focus-visible:outline-none"
         />
-      </div>}
-      <div data-testid="changes-actions" className="flex items-center gap-[var(--space-2)]">
-      <span data-testid="changes-staged-count" className={`font-mono text-[length:var(--tr-text-small-size)] text-[var(--text-faint)] whitespace-nowrap ${compact ? 'hidden' : ''}`}>
+      </GitCommitMessageRow>}
+      <GitCommitActionRow>
+        <GitCommitStagedCount compact={compact}>
           {staged} file{staged === 1 ? '' : 's'} staged
-        </span>
-        <div className="flex flex-wrap items-center justify-end gap-[var(--space-2)] ml-auto">
+        </GitCommitStagedCount>
+        <GitCommitButtonGroup>
           <Tooltip label={pushBlocked ?? undefined} className="inline-flex">
-            <button
-              className={`btn ${BTN_SECONDARY}`}
+            <LazyLegacyButton
+              variant="legacy-secondary"
               data-testid="changes-push"
               disabled={pushBlocked !== null}
               onClick={doPush}
             >
               {pushing && (
-                <span className={SPIN_CLASS}>
+                <DiffLoadingMark>
                   <Icon glyph={IconLoaderCircle} role="small" />
-                </span>
+                </DiffLoadingMark>
               )}
               {pushLabel(ahead)}
-            </button>
+            </LazyLegacyButton>
           </Tooltip>
           {offerCreatePr && (
             <>
-              <button
-                className={`btn ${BTN_PRIMARY}`}
+              <Button
+                variant="legacy-primary"
                 data-testid="changes-create-pr"
                 disabled={prBusy || !client}
                 onClick={onCreatePr}
               >
                 {prBusy ? 'Creating PR…' : 'Create PR'}
-              </button>
+              </Button>
             </>
           )}
           {!offerCreatePr && (
@@ -279,9 +293,9 @@ function CommitBox({
             />
           )}
           {compact && target && <span data-testid="changes-commit-target">to {target}</span>}
-        </div>
-      </div>
-    </div>
+        </GitCommitButtonGroup>
+      </GitCommitActionRow>
+    </GitCommitPanel>
   )
 }
 
@@ -297,30 +311,29 @@ function PrLine({
   if (!pr) return null
   if (pr.gh !== 'ready') {
     return (
-      <div hidden={hidden} data-testid="changes-pr-blocked" className="flex-none px-2.5 py-1.5 border-t border-t-[var(--divider)] text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
+      <GitPrNotice hidden={hidden} testId="changes-pr-blocked">
         {pr.hint ?? 'gh is unavailable.'}
-      </div>
+      </GitPrNotice>
     )
   }
   if (!pr.pr) return null
   const checks = prChecksLabel(pr.pr.checks)
   const decision = prDecisionLabel(pr.pr.review_decision)
   return (
-    <div hidden={hidden} data-testid="changes-pr-line" className="flex-none flex items-center gap-2 px-2.5 py-1.5 border-t border-t-[var(--divider)] text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
-      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+    <GitPrSummaryLine hidden={hidden} testId="changes-pr-line">
+      <GitPrSummaryLabel>
         PR #{pr.pr.number} · {checks}
         {decision ? ` · ${decision}` : ''}
-      </span>
-      <button
-        className={`btn ${BTN_SECONDARY} ml-auto`}
+      </GitPrSummaryLabel>
+      <GitPrOpenAction
         data-testid="changes-pr-open"
         disabled={!onOpenUrlInPane}
         onClick={() => onOpenUrlInPane?.(pr.pr!.url)}
       >
         <Icon glyph={IconExternal} role="small" />
         Open
-      </button>
-    </div>
+      </GitPrOpenAction>
+    </GitPrSummaryLine>
   )
 }
 
@@ -634,14 +647,7 @@ export function ChangesPane({
   const offerCreatePr = offerPrCreateForState(pr)
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
-    <section
-      className={`changes-pane flex-1 min-w-0 min-h-0 relative flex flex-col overflow-hidden ${MATERIAL_CLS.shell}`}
-      data-testid="changes-pane"
-      data-compact={compact}
-      data-state={paneState}
-      data-reviewing={reviewing ? 'true' : undefined}
-      {...materialAttrs('shell')}
-    >
+    <GitChangesSurface compact={compact === true} state={paneState} reviewing={reviewing}>
       {body}
       {reviewPickerOpen && (
         <ReviewProviderModal
@@ -658,40 +664,29 @@ export function ChangesPane({
           onCancel={() => setConfirmDiscard(null)}
         />
       )}
-    </section>
+    </GitChangesSurface>
   )
 
   if (!repoDir)
     return shell(
-      <div className={STATE_BODY} data-testid="changes-idle">
-        <div className={STATE_TITLE}>No workspace selected</div>
-        <p className={STATE_HINT}>Select this pane&rsquo;s workspace to see its changes.</p>
-      </div>
+      <RepositoryPanelState testId="changes-idle" title="No workspace selected">Select this pane&rsquo;s workspace to see its changes.</RepositoryPanelState>
     )
 
   if (notARepo)
     return shell(
-      <div className={STATE_BODY} data-testid="changes-not-a-repo">
-        <div className={STATE_TITLE}>Not a Git repository</div>
-        <p className={STATE_HINT}>
-          {repoDir} has no git repository yet. Once <code className="font-mono">git init</code>{' '}
-          runs there — from a Shell pane — Changes will track it.
-        </p>
-      </div>
+      <RepositoryPanelState testId="changes-not-a-repo" title="Not a Git repository">
+        {repoDir} has no git repository yet. Once <Text as="code" mono>git init</Text>{' '}
+        runs there — from a Shell pane — Changes will track it.
+      </RepositoryPanelState>
     )
 
   if (statusError !== null)
     return shell(
-      <div className={STATE_BODY} data-testid="changes-error">
-        <span className="text-[var(--danger)]">
-          <Icon glyph={IconAlertTriangle} role="heading" />
-        </span>
-        <div className={STATE_TITLE}>Git status unavailable</div>
-        <p className={STATE_HINT}>{statusError}</p>
-        <button className={`btn ${BTN_SECONDARY}`} onClick={refresh}>
+      <RepositoryPanelState testId="changes-error" title="Git status unavailable" icon={<Icon glyph={IconAlertTriangle} role="heading" />} action={<LazyLegacyButton variant="legacy-secondary" onClick={refresh}>
           Retry
-        </button>
-      </div>
+        </LazyLegacyButton>}>
+        {statusError}
+      </RepositoryPanelState>
     )
 
   const strip = (
@@ -806,27 +801,21 @@ export function ChangesPane({
         {reviewError ? errorLine(reviewError, 'changes-review-error') : null}
         {commitError ? errorLine(commitError, 'changes-commit-error') : null}
         {prMessage ? errorLine(prMessage, 'changes-pr-message') : null}
-      <div
-          data-testid="changes-body"
-          className={`flex-1 min-h-0 flex flex-col [@container_(min-width:720px)]:flex-row [@container_(min-width:720px)]:overflow-hidden`}
-        >
-          <div
-            data-testid="changes-left"
-          className={`flex flex-col min-h-0 flex-none max-h-[45%] [@container_(min-width:720px)]:max-h-none [@container_(min-width:720px)]:h-full [@container_(min-width:720px)]:w-[300px] [@container_(min-width:720px)]:border-r [@container_(min-width:720px)]:border-r-[var(--divider)] border-b border-b-[var(--divider)] [@container_(min-width:720px)]:border-b-0`}
-          >
-            <div className="flex-1 min-h-0 flex flex-col">{fileList}</div>
-            <div className={`hidden [@container_(min-width:720px)]:flex [@container_(min-width:720px)]:flex-col flex-none`}>
+      <GitChangesBody>
+          <GitChangesFileColumn>
+            <GitChangesFileListFrame>{fileList}</GitChangesFileListFrame>
+            <GitChangesWideActions>
               {commitBox}
               {prLine}
-            </div>
-          </div>
+            </GitChangesWideActions>
+          </GitChangesFileColumn>
           {diffPane}
-        </div>
+        </GitChangesBody>
         <BranchCommits client={client} dir={repoDir} />
-        <div className={`flex-none flex flex-col [@container_(min-width:720px)]:hidden`}>
+        <GitChangesNarrowActions>
           {commitBox}
           {prLine}
-        </div>
+        </GitChangesNarrowActions>
       </>
     )
 
@@ -857,7 +846,7 @@ function ChangesToolbar({ compact, strip }: { compact: boolean; strip: React.Rea
   }, [anchor])
   if (!compact) return <>{strip}</>
   return (
-    <div className="changes-compact-tools">
+    <GitCompactToolsAnchor>
       <Tooltip label="Git actions and diff scope">
         <button
           ref={trigger}
@@ -872,16 +861,15 @@ function ChangesToolbar({ compact, strip }: { compact: boolean; strip: React.Rea
         </button>
       </Tooltip>
       {anchor && createPortal(
-        <div
+        <GitCompactToolsSurface
           {...OVERLAY_GLASS_OVERLAY_ATTRS}
-          className={`changes-compact-tools-body z-[var(--z-popover)] ${OVERLAY_GLASS_OVERLAY_CLS}`}
           style={{ position: 'fixed', ...anchor, ...popOriginStyle('right', 'top') }}
           onMouseDown={(event) => event.stopPropagation()}
         >
           {strip}
-        </div>,
+        </GitCompactToolsSurface>,
         document.body
       )}
-    </div>
+    </GitCompactToolsAnchor>
   )
 }

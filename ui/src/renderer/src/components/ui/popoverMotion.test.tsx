@@ -3,7 +3,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PopoverViews } from './PopoverViews'
 import { anchorPopoverStart, largestViewBounds } from './popoverMotion'
-import { AnimOut } from '../AnimOut'
+import { AnimOut } from './AnimOut'
 
 describe('popover motion helpers', () => {
   it('keeps the trigger start edge when its label width changes', () => {

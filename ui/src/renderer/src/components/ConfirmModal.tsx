@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Button, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle } from './ui'
 import { IconAlertTriangle } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 
 interface Props {
   message: string

@@ -1,24 +1,12 @@
+import { SettingsButton } from './ui/SettingsButtonRoles'
 import { useState } from 'react'
 import {
   IconPlus,
   IconServer,
   IconTrash
 } from './icons'
-import {
-  BLOCK,
-  CHROME_BUTTON_DANGER,
-  FIELD_INPUT,
-  FIELD_LABEL,
-  NavFootnote,
-  NavSwitch,
-  PRIMARY_BUTTON,
-  ROW_TOP,
-  ROW_TITLE,
-  SECONDARY_BUTTON,
-  chipClass
-} from './nav/navChrome'
 import { ConfirmModal } from './ConfirmModal'
-import { Segmented } from './Segmented'
+import { Segmented } from './ui/SegmentedControl'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { McpConnectionCheck } from '../houston/generated/McpConnectionCheck'
 import type { McpServer } from '../houston/generated/McpServer'
@@ -27,8 +15,9 @@ import type { McpToolState } from '../houston/generated/McpToolState'
 import type { HoustonClient } from '../houston/client'
 import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
-import { Icon } from './Icon'
-import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, type TableColumn } from './ui'
+import { Icon } from './ui/Icon'
+import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
+import { Switch } from './ui/Switch'
 import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
 import { ConnectionsIntegrations } from './ConnectionsIntegrations'
@@ -131,7 +120,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         }}
         empty={{ icon: IconServer, heading: 'No MCP servers', description: 'Add an MCP server to connect it to your agents.' }}
       />
-      {selectedDiff?.source && <section aria-label={`${selectedDiff.name} configuration differences`}><Card className="grid gap-[var(--space-2)] p-[var(--space-2-5)]">
+      {selectedDiff?.source && <section aria-label={`${selectedDiff.name} configuration differences`}><Card padding="sm" className="grid gap-[var(--space-2)]">
         <DetailCard title="Houston's list" server={selectedDiff.source} />
         {DESTINATIONS.filter((tool) => selectedDiff.byTool[tool] && selectedDiff.byTool[tool]!.fingerprint !== selectedDiff.source!.fingerprint).map((tool) => <DetailCard key={tool} title={label(tool)} server={selectedDiff.byTool[tool]!} />)}
       </Card></section>}
@@ -191,26 +180,7 @@ function DetailCard({ title, server }: { title: string; server: McpServer }): Re
   if (server.headers.length > 0) {
     rows.push(['headers', server.headers.map(([k, v]) => `${k}: ${maskSecret(v)}`).join('  ')])
   }
-  return (
-    <div className="rounded-[10px] border border-[var(--border)] bg-[var(--content-bg)] p-[14px]">
-      <div className="mb-[8px] flex items-center justify-between gap-[8px]">
-        <span className="[font-size:var(--tr-text-small-size)] font-semibold text-[var(--text-primary)]">{title}</span>
-        <span className="truncate font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-faint)]">
-          {server.fingerprint}
-        </span>
-      </div>
-      <dl className="flex flex-col gap-[4px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex gap-[8px]">
-            <dt className="w-[76px] shrink-0 text-[var(--text-faint)]">{k}</dt>
-            <dd className="min-w-0 break-all font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]">
-              {v}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  )
+  return <ConfigurationDetail title={title} fingerprint={server.fingerprint} rows={rows.map(([label, value]) => ({ label, value }))} />
 }
 
 function PairListEditor({
@@ -225,13 +195,12 @@ function PairListEditor({
   keyPlaceholder: string
 }): React.JSX.Element {
   return (
-    <div>
-      <span className={FIELD_LABEL}>{legend}</span>
-      <div className="flex flex-col gap-[6px]">
+    <div className="grid gap-[var(--space-field-label-bottom)]">
+      <FieldLabel size="form">{legend}</FieldLabel>
+      <div className="grid gap-[var(--space-1-5)]">
         {pairs.map(([k, v], i) => (
-          <div key={i} className="flex items-center gap-[6px]">
-            <input
-              className={`${FIELD_INPUT} min-h-[var(--h-ctl)]`}
+          <div key={i} className="flex items-center gap-[var(--space-1-5)]">
+            <TextInput size="form" surface="card"
               placeholder={keyPlaceholder}
               value={k}
               onChange={(e) => {
@@ -240,8 +209,7 @@ function PairListEditor({
                 onChange(next)
               }}
             />
-            <input
-              className={`${FIELD_INPUT} min-h-[var(--h-ctl)]`}
+            <TextInput size="form" surface="card"
               placeholder="value"
               value={v}
               onChange={(e) => {
@@ -250,24 +218,23 @@ function PairListEditor({
                 onChange(next)
               }}
             />
-            <button
-              type="button"
+            <SettingsButton
+              variant="compact-icon-danger"
               aria-label={`remove ${legend.toLowerCase()} row ${i + 1}`}
-              className={CHROME_BUTTON_DANGER}
               onClick={() => onChange(pairs.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </button>
+            </SettingsButton>
           </div>
         ))}
-        <button
-          type="button"
-          className={`${SECONDARY_BUTTON} self-start`}
+        <SettingsButton
+          variant="compact-secondary"
+          className="justify-self-start"
           onClick={() => onChange([...pairs, ['', '']])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add
-        </button>
+        </SettingsButton>
       </div>
     </div>
   )
@@ -281,13 +248,13 @@ function ArgListEditor({
   onChange: (args: string[]) => void
 }): React.JSX.Element {
   return (
-    <div className="flex flex-col gap-[4px]">
-      <span className={FIELD_LABEL}>Arguments</span>
-      <div className="flex flex-col gap-[6px]">
+    <div className="grid gap-[var(--space-1)]">
+      <div className="grid gap-[var(--space-form-label-control-gap)]">
+        <FieldLabel size="form">Arguments</FieldLabel>
+        <div className="grid gap-[var(--space-1-5)]">
         {args.map((a, i) => (
-          <div key={i} className="flex items-center gap-[6px]">
-            <input
-              className={`${FIELD_INPUT} min-h-[var(--h-ctl)]`}
+          <div key={i} className="flex items-center gap-[var(--space-1-5)]">
+            <TextInput size="form" surface="card"
               aria-label={`argument ${i + 1}`}
               placeholder="-y"
               value={a}
@@ -297,28 +264,28 @@ function ArgListEditor({
                 onChange(next)
               }}
             />
-            <button
-              type="button"
+            <SettingsButton
+              variant="compact-icon-danger"
               aria-label={`remove argument ${i + 1}`}
-              className={CHROME_BUTTON_DANGER}
               onClick={() => onChange(args.filter((_, j) => j !== i))}
             >
               <Icon glyph={IconTrash} role="small" />
-            </button>
+            </SettingsButton>
           </div>
         ))}
-        <button
-          type="button"
-          className={`${SECONDARY_BUTTON} self-start`}
+        <SettingsButton
+          variant="compact-secondary"
+          className="justify-self-start"
           onClick={() => onChange([...args, ''])}
         >
           <Icon glyph={IconPlus} role="small" />
           Add argument
-        </button>
+        </SettingsButton>
+        </div>
       </div>
-      <p className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+      <Text as="p" size="small" tone="faint">
         One field per argument, in order — an embedded space is kept exactly as typed.
-      </p>
+      </Text>
     </div>
   )
 }
@@ -417,30 +384,31 @@ function McpServerForm({
 
   return (
     <>
-          <h2 className="m-0 [font-size:17px] font-semibold text-[var(--text-primary)]">
+          <Text as="h2" size="subhead" weight="semibold" tone="primary" flush>
             {previousName ? `Edit ${previousName}` : 'Add server'}
-          </h2>
-          <div className="flex flex-col gap-[4px]">
-            <label className={FIELD_LABEL} htmlFor="mcp-form-name">
-              Name
-            </label>
-            <input
-              id="mcp-form-name"
-              className={FIELD_INPUT}
-              value={value.name}
-              onChange={(e) => setValue({ ...value, name: e.target.value })}
-              placeholder="context7"
-              aria-invalid={nameTaken || undefined}
-            />
+          </Text>
+          <div className="grid gap-[var(--space-1)]">
+            <div className="grid gap-[var(--space-form-label-control-gap)]">
+              <FieldLabel as="label" size="form" htmlFor="mcp-form-name">
+                Name
+              </FieldLabel>
+              <TextInput size="form" surface="card"
+                id="mcp-form-name"
+                value={value.name}
+                onChange={(e) => setValue({ ...value, name: e.target.value })}
+                placeholder="context7"
+                aria-invalid={nameTaken || undefined}
+              />
+            </div>
             {nameTaken && (
-              <p className="[font-size:var(--tr-text-small-size)] text-[var(--danger)]">
+              <Text as="p" size="small" tone="danger">
                 {value.name.trim()} is already the name of another server in your list.
-              </p>
+              </Text>
             )}
           </div>
 
-          <div>
-            <span className={FIELD_LABEL}>Reached by</span>
+          <div className="grid justify-items-start gap-[var(--space-field-label-bottom)]">
+            <FieldLabel size="form">Reached by</FieldLabel>
             <Segmented
               aria-label="Transport"
               options={TRANSPORT_OPTIONS}
@@ -451,13 +419,12 @@ function McpServerForm({
 
           {value.transport === 'stdio' ? (
             <>
-              <div>
-                <label className={FIELD_LABEL} htmlFor="mcp-form-command">
+              <div className="grid gap-[var(--space-field-label-bottom)]">
+                <FieldLabel as="label" size="form" htmlFor="mcp-form-command">
                   Command
-                </label>
-                <input
+                </FieldLabel>
+                <TextInput size="form" surface="card"
                   id="mcp-form-command"
-                  className={FIELD_INPUT}
                   value={value.command}
                   onChange={(e) => setValue({ ...value, command: e.target.value })}
                   placeholder="npx"
@@ -467,13 +434,12 @@ function McpServerForm({
                 args={value.args}
                 onChange={(args) => setValue({ ...value, args })}
               />
-              <div>
-                <label className={FIELD_LABEL} htmlFor="mcp-form-cwd">
-                  Working directory <span className="text-[var(--text-faint)]">(optional)</span>
-                </label>
-                <input
+              <div className="grid gap-[var(--space-field-label-bottom)]">
+                <FieldLabel as="label" size="form" htmlFor="mcp-form-cwd">
+                  Working directory <Text tone="faint">(optional)</Text>
+                </FieldLabel>
+                <TextInput size="form" surface="card"
                   id="mcp-form-cwd"
-                  className={FIELD_INPUT}
                   value={value.cwd}
                   onChange={(e) => setValue({ ...value, cwd: e.target.value })}
                   placeholder="/home/you/project"
@@ -481,13 +447,12 @@ function McpServerForm({
               </div>
             </>
           ) : (
-            <div>
-              <label className={FIELD_LABEL} htmlFor="mcp-form-url">
+            <div className="grid gap-[var(--space-field-label-bottom)]">
+              <FieldLabel as="label" size="form" htmlFor="mcp-form-url">
                 URL
-              </label>
-              <input
+              </FieldLabel>
+              <TextInput size="form" surface="card"
                 id="mcp-form-url"
-                className={FIELD_INPUT}
                 value={value.url}
                 onChange={(e) => setValue({ ...value, url: e.target.value })}
                 placeholder="https://example.com/mcp"
@@ -509,23 +474,24 @@ function McpServerForm({
               keyPlaceholder="Authorization"
             />
           )}
-          <p className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+          <Text as="p" size="small" tone="faint">
             A value starting with <code>$</code> or <code>${'{'}NAME{'}'}</code> is kept as a
             reference to an environment variable, never stored as the secret itself; the detail
             view masks anything else.
-          </p>
+          </Text>
 
-          <div className="flex flex-col gap-[6px]">
-            <span className={FIELD_LABEL}>Destinations</span>
-            <div className="flex flex-wrap gap-[8px]">
+          <div className="grid gap-[var(--space-1-5)]">
+            <div className="grid gap-[var(--space-form-choice-label-gap)]">
+              <FieldLabel size="form">Destinations</FieldLabel>
+              <ChoiceGroup>
               {DESTINATIONS.map((tool) => {
                 const on = value.destinations.includes(tool)
                 return (
-                  <button
+                  <Chip
                     key={tool}
-                    type="button"
-                    aria-pressed={on}
-                    className={chipClass(on)}
+                    variant="choice"
+                    label={label(tool)}
+                    selected={on}
                     onClick={() =>
                       setValue({
                         ...value,
@@ -534,75 +500,73 @@ function McpServerForm({
                           : [...value.destinations, tool]
                       })
                     }
-                  >
-                    {label(tool)}
-                  </button>
+                  />
                 )
               })}
+              </ChoiceGroup>
             </div>
-            <p className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
+            <Text as="p" size="small" tone="faint">
               {value.destinations.length === 0
                 ? 'Nothing selected — this server goes to every tool.'
                 : `Saving applies it to exactly these: ${destinationsLabel(value.destinations)}.`}
-            </p>
+            </Text>
           </div>
 
-          <label className="flex items-center gap-[8px] [font-size:var(--tr-text-ui-size)] text-[var(--text-primary)]">
-            <NavSwitch
+          <label className="flex items-center gap-[var(--space-2)]">
+            <Switch size="configuration"
               on={value.enabled}
               label={value.enabled ? 'Turn this server off' : 'Turn this server on'}
               onChange={(enabled) => setValue({ ...value, enabled })}
             />
-            Enabled
+            <Text size="ui" tone="primary">Enabled</Text>
           </label>
 
           {results.length > 0 && (
-            <div>
-              <span className={FIELD_LABEL}>Applied to</span>
-              <div className={BLOCK}>
+              <div className="grid gap-[var(--space-field-label-bottom)]">
+              <FieldLabel size="form">Applied to</FieldLabel>
+              <ResultList>
                 {results.map((r) => (
-                  <div key={r.tool} className={ROW_TOP}>
-                    <div className="min-w-0 flex-1 flex flex-col gap-[3px]">
-                      <strong className={ROW_TITLE}>{label(r.tool)}</strong>
+                  <ResultRow key={r.tool}>
+                    <div className="min-w-0 flex-1 grid gap-[var(--space-result-copy-gap)]">
+                      <Text as="strong" size="ui" weight="semibold" leading="snug" tone="primary">{label(r.tool)}</Text>
                       {r.error ? (
-                        <div className="[font-size:var(--tr-text-small-size)] text-[var(--danger)]">
+                        <Text size="small" tone="danger">
                           {r.error}
-                        </div>
+                        </Text>
                       ) : r.skipped.length > 0 ? (
                         r.skipped.map((s) => (
-                          <div key={s} className="[font-size:var(--tr-text-small-size)] text-[var(--warn)]">
+                          <Text as="div" key={s} size="small" tone="warn">
                             {s}
-                          </div>
+                          </Text>
                         ))
                       ) : (
-                        <div className="[font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]">
+                        <Text as="div" size="small" tone="secondary">
                           Wrote {r.written}, removed {r.removed}
-                        </div>
+                        </Text>
                       )}
                     </div>
-                  </div>
+                  </ResultRow>
                 ))}
-              </div>
+              </ResultList>
             </div>
           )}
 
-          <div className="flex items-center gap-[8px]">
-            <button type="button" className={SECONDARY_BUTTON} onClick={onCancel}>
+          <div className="flex items-center gap-[var(--space-2)]">
+            <SettingsButton variant="compact-secondary" onClick={onCancel}>
               Cancel
-            </button>
-            <button
-              type="button"
-              className={PRIMARY_BUTTON}
+            </SettingsButton>
+            <SettingsButton
+              variant="compact-primary"
               disabled={!valid}
               onClick={() => onSubmit(serverFromForm(value))}
             >
               Save &amp; apply
-            </button>
+            </SettingsButton>
           </div>
-          <NavFootnote>
+          <Footnote>
             Saving writes this server into your list, then applies it to the destinations above —
             each one reports what actually happened, above, once the daemon answers.
-          </NavFootnote>
+          </Footnote>
     </>
   )
 }
