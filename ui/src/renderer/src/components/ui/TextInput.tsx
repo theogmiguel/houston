@@ -32,29 +32,43 @@ const INLINE_EDIT_CLS = `flex-1 min-w-0 bg-[var(--content-bg)] border border-[va
 const FORM_CLS = 'w-full min-w-0 h-[var(--h-ssh-input)] px-[var(--space-2-5)] bg-background border border-border rounded-[var(--tr-radius-sm)] text-text-primary text-[length:var(--tr-text-base)]'
 export type TextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size'> & { surface?: 'content' | 'card'; font?: 'ui' | 'small' | 'mono'; padding?: TextInputPadding; width?: TextInputWidth; size?: 'default' | 'form'; density?: 'default' | 'compact'; radius?: 'input' | 'small'; variant?: 'field' | 'form' | 'unstyled' | 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number' | 'inline-edit' }
 
+type NumberFieldVariant = 'compact' | 'setting-number' | 'setting-number-rounded' | 'task-number'
+const NUMBER_FIELD_VARIANTS: ReadonlySet<string> = new Set<NumberFieldVariant>(['compact', 'setting-number', 'setting-number-rounded', 'task-number'])
+const NUMBER_FIELD_STATE: Record<NumberFieldVariant, string> = {
+  compact: 'disabled:opacity-50',
+  'setting-number': 'text-right',
+  'setting-number-rounded': 'text-right disabled:opacity-50',
+  'task-number': 'text-right'
+}
+
+function numberFieldClass(variant: NumberFieldVariant): string {
+  const widthClass = WIDTH_CLS[variant === 'task-number' ? 'task-number' : variant === 'compact' ? 'full' : 'setting-number']
+  const radiusClass = variant === 'task-number' ? 'rounded-[var(--tr-radius-input)]' : 'rounded-[var(--tr-radius-sm)]'
+  return `${widthClass} border border-[var(--border)] ${radiusClass} bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-space-compact-field-block)] px-[var(--space-2)] ${NUMBER_FIELD_STATE[variant]}`
+}
+
+type FieldOptions = Required<Pick<TextInputProps, 'surface' | 'font' | 'padding' | 'width' | 'size' | 'density' | 'radius'>>
+
+function fieldClass({ surface, font, padding, width, size, density, radius }: FieldOptions): string {
+  const ground = surface === 'card' ? 'bg-[var(--card-bg)]' : 'bg-[var(--content-bg)]'
+  if (density === 'compact') {
+    return `[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-input-compact-inset-y)] px-[var(--space-2)] ${WIDTH_CLS[width]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : 'rounded-[var(--tr-radius-input)]'} border border-[var(--border)] ${ground} text-[var(--text-primary)] ${font === 'mono' ? 'font-mono' : ''}`
+  }
+  return `${size === 'form' ? FORM_SIZE_CLS : INPUT_CLS} ${PADDING_CLS[padding]} ${WIDTH_CLS[width]} ${ground} ${FONT_CLS[font]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : ''}`
+}
+
+function variantClass(variant: NonNullable<TextInputProps['variant']>, options: FieldOptions): string {
+  if (variant === 'form') return `${FORM_CLS} ${options.width === 'port' ? 'w-[var(--w-ssh-port)] tabular-nums' : ''}`
+  if (variant === 'unstyled') return ''
+  if (variant === 'inline-edit') return INLINE_EDIT_CLS
+  if (NUMBER_FIELD_VARIANTS.has(variant)) return numberFieldClass(variant as NumberFieldVariant)
+  return fieldClass(options)
+}
+
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   function TextInput(props, ref): React.JSX.Element {
     const { className = '', surface = 'content', font = 'ui', padding = 'default', width = 'full', size = 'default', density = 'default', radius = 'input', variant = 'field', ...inputProps } = props
-    if (variant === 'form') {
-      return <input {...inputProps} ref={ref} className={`${FORM_CLS} ${width === 'port' ? 'w-[var(--w-ssh-port)] tabular-nums' : ''} ${className}`} />
-    }
-    if (variant === 'unstyled') return <input {...inputProps} ref={ref} className={className} />
-    if (variant === 'inline-edit') return <input {...inputProps} ref={ref} className={`${INLINE_EDIT_CLS} ${className}`} />
-    if (variant === 'compact' || variant === 'setting-number' || variant === 'setting-number-rounded' || variant === 'task-number') {
-      const widthVariant = variant === 'task-number' ? 'task-number' : variant === 'compact' ? 'full' : 'setting-number'
-      const widthClass = WIDTH_CLS[widthVariant]
-      const radiusClass = variant === 'task-number' ? 'rounded-[var(--tr-radius-input)]' : 'rounded-[var(--tr-radius-sm)]'
-      const stateClass = variant === 'compact'
-        ? 'disabled:opacity-50'
-        : variant === 'setting-number-rounded'
-          ? 'text-right disabled:opacity-50'
-          : 'text-right'
-      return <input {...inputProps} ref={ref} className={`${widthClass} border border-[var(--border)] ${radiusClass} bg-[var(--content-bg)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-space-compact-field-block)] px-[var(--space-2)] ${stateClass} ${className}`} />
-    }
-    const ground = surface === 'card' ? 'bg-[var(--card-bg)]' : 'bg-[var(--content-bg)]'
-    if (density === 'compact') {
-      return <input {...inputProps} ref={ref} className={`[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[var(--tr-input-compact-inset-y)] px-[var(--space-2)] ${WIDTH_CLS[width]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : 'rounded-[var(--tr-radius-input)]'} border border-[var(--border)] ${ground} text-[var(--text-primary)] ${font === 'mono' ? 'font-mono' : ''} ${className}`} />
-    }
-    return <input {...inputProps} ref={ref} className={`${size === 'form' ? FORM_SIZE_CLS : INPUT_CLS} ${PADDING_CLS[padding]} ${WIDTH_CLS[width]} ${ground} ${FONT_CLS[font]} ${radius === 'small' ? 'rounded-[var(--tr-radius-sm)]' : ''} ${className}`} />
+    const base = variantClass(variant, { surface, font, padding, width, size, density, radius })
+    return <input {...inputProps} ref={ref} className={variant === 'unstyled' ? className : `${base} ${className}`} />
   }
 )

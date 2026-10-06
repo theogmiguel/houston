@@ -156,6 +156,47 @@ function buttonChrome(variant: ButtonVariant): string {
   return OWN_CHROME.has(variant) || isLegacy(variant) ? '' : 'rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]'
 }
 
+const BARE_ICON_VARIANTS: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'legacy-bare-ghost'])
+
+// Prefix rewrites for variants whose recipe drops part of the shared `btn inline-flex …` head.
+const HEAD_REWRITE: Partial<Record<ButtonVariant, [RegExp, string]>> = {
+  'legacy-roster-footer': [/^btn inline-flex items-center (?:justify-center )?disabled:cursor-not-allowed /, ''],
+  'roster-open': [/^btn inline-flex /, 'flex '],
+  'legacy-danger-solid': [/^btn inline-flex items-center disabled:cursor-not-allowed /, 'btn ']
+}
+
+function structureClasses(variant: ButtonVariant, size: ButtonSize, contentAlign: 'center' | 'start'): string {
+  const selectedClasses = buttonClasses({ variant, size: buttonSize(variant, size) })
+  const aligned = contentAlign === 'start' ? selectedClasses.replace(' justify-center', '') : selectedClasses
+  const rewrite = BARE_ICON_VARIANTS.has(variant)
+    ? ([/^btn inline-flex items-center justify-center disabled:cursor-not-allowed /, ''] as [RegExp, string])
+    : HEAD_REWRITE[variant]
+  const classSet = rewrite ? aligned.replace(rewrite[0], rewrite[1]) : aligned
+  return variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet
+}
+
+function selectionClasses(variant: ButtonVariant, selected: boolean): string {
+  if (variant === 'reaction') {
+    return selected ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--text-primary)]' : 'border-[var(--border)] bg-transparent text-[var(--text-muted)] hover:enabled:text-[var(--text-primary)]'
+  }
+  if (variant === 'agent-option') {
+    return selected ? `border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,var(--card-bg))] shadow-[${RING_ACCENT_INSET_18}] text-[var(--text-primary)]` : 'border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-muted)] hover:enabled:border-[var(--text-faint)]'
+  }
+  if (!selected) return ''
+  if (variant === 'diff-line-action') return 'text-[var(--accent)]'
+  return variant === 'subtle-icon' ? 'bg-selected-fill text-[var(--text-primary)]' : ''
+}
+
+function stateClasses(variant: ButtonVariant, selected: boolean, armed: boolean, status: 'available' | 'failed'): string {
+  const arm = (variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''
+  const chip = variant !== 'status-chip'
+    ? ''
+    : status === 'failed'
+      ? 'bg-[color-mix(in_srgb,var(--warn)_16%,transparent)] text-[var(--warn)] hover:bg-[color-mix(in_srgb,var(--warn)_24%,transparent)]'
+      : 'bg-[var(--accent-muted)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]'
+  return `${selectionClasses(variant, selected)} ${arm} ${chip}`
+}
+
 export function Button(props: ButtonProps): React.JSX.Element {
   const {
     variant = 'secondary',
@@ -173,25 +214,7 @@ export function Button(props: ButtonProps): React.JSX.Element {
     ref,
     ...buttonProps
   } = props
-  const selectedClasses = buttonClasses({ variant, size: buttonSize(variant, size) })
-  const alignedClasses = contentAlign === 'start' ? selectedClasses.replace(' justify-center', '') : selectedClasses
-  const classSet = variant === 'legacy-roster-footer'
-    ? alignedClasses.replace(/^btn inline-flex items-center (?:justify-center )?disabled:cursor-not-allowed /, '')
-    : variant === 'roster-open'
-      ? alignedClasses.replace(/^btn inline-flex /, 'flex ')
-      : ['subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'legacy-bare-ghost'].includes(variant)
-        ? alignedClasses.replace(/^btn inline-flex items-center justify-center disabled:cursor-not-allowed /, '')
-        : variant === 'legacy-danger-solid'
-          ? alignedClasses.replace(/^btn inline-flex items-center disabled:cursor-not-allowed /, 'btn ')
-          : alignedClasses
-  const reactionState = variant === 'reaction'
-    ? selected ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--text-primary)]' : 'border-[var(--border)] bg-transparent text-[var(--text-muted)] hover:enabled:text-[var(--text-primary)]'
-    : ''
-  const agentOptionState = variant === 'agent-option'
-    ? selected ? `border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,var(--card-bg))] shadow-[${RING_ACCENT_INSET_18}] text-[var(--text-primary)]` : 'border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-muted)] hover:enabled:border-[var(--text-faint)]'
-    : ''
-  const diffLineActionState = variant === 'diff-line-action' && selected ? 'text-[var(--accent)]' : ''
-  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${variant === 'roster-open' ? 'children-open' : ''} ${buttonChrome(variant)} ${reactionState} ${agentOptionState} ${diffLineActionState} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${selected && variant === 'subtle-icon' ? 'bg-selected-fill text-[var(--text-primary)]' : ''} ${variant === 'status-chip' ? status === 'failed' ? 'bg-[color-mix(in_srgb,var(--warn)_16%,transparent)] text-[var(--warn)] hover:bg-[color-mix(in_srgb,var(--warn)_24%,transparent)]' : 'bg-[var(--accent-muted)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]' : ''} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
+  const classes = `${structureClasses(variant, size, contentAlign)} ${variant === 'roster-open' ? 'children-open' : ''} ${buttonChrome(variant)} ${stateClasses(variant, selected, armed, status)} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd
 

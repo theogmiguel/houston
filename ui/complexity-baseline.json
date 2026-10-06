@@ -25,28 +25,13 @@
   "max": 20,
   "files": {
     "src/renderer/src/App.tsx": {
-      "total": 983,
-      "worst": 84,
+      "total": 1025,
+      "worst": 83,
       "over": 3
     },
     "src/renderer/src/components/BrowserPane.tsx": {
-      "total": 118,
-      "worst": 33,
-      "over": 1
-    },
-    "src/renderer/src/components/ChangesPane.tsx": {
-      "total": 155,
-      "worst": 19,
-      "over": 0
-    },
-    "src/renderer/src/components/ui/Chip.tsx": {
-      "total": 36,
-      "worst": 32,
-      "over": 1
-    },
-    "src/renderer/src/components/ui/Disclosure.tsx": {
-      "total": 33,
-      "worst": 30,
+      "total": 108,
+      "worst": 26,
       "over": 1
     },
     "src/renderer/src/components/EditorSurface.tsx": {
@@ -55,28 +40,28 @@
       "over": 1
     },
     "src/renderer/src/components/FilesPane.tsx": {
-      "total": 247,
-      "worst": 23,
-      "over": 1
-    },
-    "src/renderer/src/components/ui/IconTile.tsx": {
-      "total": 25,
+      "total": 239,
       "worst": 23,
       "over": 1
     },
     "src/renderer/src/components/LayoutView.tsx": {
-      "total": 176,
+      "total": 179,
       "worst": 27,
       "over": 1
     },
     "src/renderer/src/components/QuestionCard.tsx": {
-      "total": 55,
+      "total": 51,
       "worst": 28,
       "over": 1
     },
-    "src/renderer/src/pane/TerminalPane.tsx": {
-      "total": 361,
-      "worst": 21,
+    "src/renderer/src/components/ui/Chip.tsx": {
+      "total": 42,
+      "worst": 25,
+      "over": 1
+    },
+    "src/renderer/src/components/ui/Disclosure.tsx": {
+      "total": 41,
+      "worst": 27,
       "over": 1
     }
   }

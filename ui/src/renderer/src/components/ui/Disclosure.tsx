@@ -60,6 +60,23 @@ function DisclosureBody({
   )
 }
 
+const FRAME_SHAPE: Record<NonNullable<DisclosureProps['variant']>, string> = {
+  default: 'rounded-[var(--tr-radius-card)] border',
+  divided: 'rounded-none border-0 border-t border-t-[var(--divider)] bg-transparent',
+  flush: 'rounded-none border-0 bg-transparent'
+}
+
+function frameClass(variant: NonNullable<DisclosureProps['variant']>, failed: boolean): string {
+  const ground = failed ? 'border-[var(--danger)] bg-[var(--status-blocked-bg)]' : variant === 'default' ? 'border-[var(--border)] bg-[var(--surface)]' : ''
+  return `${FRAME_SHAPE[variant]} ${ground}`
+}
+
+function disclosureState(failed: boolean, loading: boolean, open: boolean): 'error' | 'loading' | 'open' | 'closed' {
+  if (failed) return 'error'
+  if (loading) return 'loading'
+  return open ? 'open' : 'closed'
+}
+
 export function Disclosure({
   summary,
   count,
@@ -92,10 +109,8 @@ export function Disclosure({
   return (
     <div
       data-testid="disclosure"
-      data-state={error ? 'error' : loading ? 'loading' : open ? 'open' : 'closed'}
-      className={`${variant === 'divided' ? 'rounded-none border-0 border-t border-t-[var(--divider)] bg-transparent' : variant === 'flush' ? 'rounded-none border-0 bg-transparent' : 'rounded-[var(--tr-radius-card)] border'} ${
-        error ? 'border-[var(--danger)] bg-[var(--status-blocked-bg)]' : variant === 'default' ? 'border-[var(--border)] bg-[var(--surface)]' : ''
-      } ${className}`}
+      data-state={disclosureState(Boolean(error), loading, open)}
+      className={`${frameClass(variant, Boolean(error))} ${className}`}
     >
       <Tooltip label={disabled ? disabledReason : undefined} className="flex w-full">
         <button

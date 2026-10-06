@@ -42,6 +42,29 @@ function Spinner({ size = 12 }: { size?: number | string }): React.JSX.Element {
   )
 }
 
+function tileClass({ radius, tone, interactive, selected, disabled, empty }: Required<Pick<IconTileProps, 'radius' | 'tone' | 'interactive' | 'selected' | 'disabled'>> & { empty: boolean }): string {
+  const shape = radius === 'medium' ? 'rounded-[var(--tr-radius-md)]' : 'rounded-[var(--tr-radius-button)]'
+  const hover = interactive ? `cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]` : ''
+  const pressed = selected ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--accent)]' : ''
+  return `inline-flex flex-none items-center justify-center border ${shape} ${TONE_CLASS[tone]} ${hover} ${pressed} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${empty ? 'border-dashed' : ''}`
+}
+
+function IconTileContent({ icon, loading, spinnerSize }: { icon?: React.ReactNode; loading: boolean; spinnerSize: number | string }): React.JSX.Element {
+  if (loading) return <Spinner size={spinnerSize} />
+  if (!icon) {
+    return (
+      <span aria-hidden data-testid="icon-tile-placeholder" className="opacity-40 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]">
+        –
+      </span>
+    )
+  }
+  return (
+    <span aria-hidden data-testid="icon-tile-icon" className="flex-none">
+      {icon}
+    </span>
+  )
+}
+
 export function IconTile({
   icon,
   size = 'md',
@@ -72,23 +95,9 @@ export function IconTile({
       title={title}
       onClick={interactive && !disabled ? onClick : undefined}
       style={{ width: px, height: px }}
-      className={`inline-flex flex-none items-center justify-center border ${radius === 'medium' ? 'rounded-[var(--tr-radius-md)]' : 'rounded-[var(--tr-radius-button)]'} ${TONE_CLASS[tone]} ${
-        interactive
-          ? `cursor-pointer hover:bg-[var(--surface-hover)] active:scale-[0.96] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`
-          : ''
-      } ${selected ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--accent)]' : ''} ${
-        disabled ? 'opacity-50 cursor-not-allowed' : ''
-      } ${!icon && !loading ? 'border-dashed' : ''} ${className}`}
+      className={`${tileClass({ radius, tone, interactive, selected, disabled, empty: !icon && !loading })} ${className}`}
     >
-      {loading ? <Spinner size={spinnerSize} /> : icon ? (
-        <span aria-hidden data-testid="icon-tile-icon" className="flex-none">
-          {icon}
-        </span>
-      ) : (
-        <span aria-hidden data-testid="icon-tile-placeholder" className="opacity-40 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]">
-          –
-        </span>
-      )}
+      <IconTileContent icon={icon} loading={loading} spinnerSize={spinnerSize} />
     </Tag>
   )
 }

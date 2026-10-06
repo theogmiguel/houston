@@ -52,6 +52,22 @@ interface MenuPos {
   maxHeight: number
 }
 
+const TRIGGER_CHROME: Partial<Record<NonNullable<SelectProps['variant']>, string>> = {
+  'property-chip': 'h-[var(--task-inline-control-height)] pl-[var(--space-2)] pr-[var(--space-1-5)] gap-[var(--space-1-5)]! border border-[var(--border)]! rounded-[var(--tr-radius-button)] bg-transparent text-[var(--text-secondary)] text-[length:var(--tr-text-sm)] font-normal',
+  'property-field': 'h-[var(--h-ctl)] pl-[var(--space-2)] pr-[var(--space-1-5)] gap-[var(--space-1-5)]! border border-[var(--border)]! rounded-[var(--tr-radius-button)] bg-transparent text-[var(--text-secondary)] text-[length:var(--tr-text-sm)] font-normal'
+}
+const TRIGGER_WIDTH: Record<NonNullable<SelectProps['width']>, string> = {
+  auto: '',
+  full: 'w-full',
+  'task-setting': 'min-w-[var(--tr-width-task-select)]',
+  medium: 'w-[var(--tr-control-width-medium)]'
+}
+const VALUE_TEXT: Record<NonNullable<SelectProps['variant']>, { size?: 'sm'; tone?: 'secondary' }> = {
+  default: {},
+  'property-chip': { size: 'sm', tone: 'secondary' },
+  'property-field': { size: 'sm', tone: 'secondary' }
+}
+
 export function Select({
   value,
   options,
@@ -75,11 +91,7 @@ export function Select({
   useNativeOverlaySuppression('popover', open && pos !== null, menuRef)
   const typeahead = useRef<{ buf: string; at: number }>({ buf: '', at: 0 })
   const listboxId = useId()
-  const triggerChrome = variant === 'property-chip'
-    ? 'h-[var(--task-inline-control-height)] pl-[var(--space-2)] pr-[var(--space-1-5)] gap-[var(--space-1-5)]! border border-[var(--border)]! rounded-[var(--tr-radius-button)] bg-transparent text-[var(--text-secondary)] text-[length:var(--tr-text-sm)] font-normal'
-    : variant === 'property-field'
-      ? 'h-[var(--h-ctl)] pl-[var(--space-2)] pr-[var(--space-1-5)] gap-[var(--space-1-5)]! border border-[var(--border)]! rounded-[var(--tr-radius-button)] bg-transparent text-[var(--text-secondary)] text-[length:var(--tr-text-sm)] font-normal'
-      : chrome
+  const triggerChrome = TRIGGER_CHROME[variant] ?? chrome
 
   const selectedIndex = options.findIndex((o) => o.value === value)
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined
@@ -261,10 +273,10 @@ export function Select({
             if (open) close(true)
             else openMenu()
           }}
-          className={`${triggerChrome} ${TRIGGER_LAYOUT_CLS} ${width === 'full' ? 'w-full' : width === 'task-setting' ? 'min-w-[var(--tr-width-task-select)]' : width === 'medium' ? 'w-[var(--tr-control-width-medium)]' : ''} ${className}`}
+          className={`${triggerChrome} ${TRIGGER_LAYOUT_CLS} ${TRIGGER_WIDTH[width]} ${className}`}
         >
-          {prefix && <Text as="span" size={variant === 'default' ? undefined : 'sm'} className="flex-none inline-flex items-center">{prefix}</Text>}
-          <Text as="span" size={variant === 'default' ? undefined : 'sm'} tone={variant === 'default' ? undefined : 'secondary'} className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ''}</Text>
+          {prefix && <Text as="span" size={VALUE_TEXT[variant].size} className="flex-none inline-flex items-center">{prefix}</Text>}
+          <Text as="span" size={VALUE_TEXT[variant].size} tone={VALUE_TEXT[variant].tone} className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ''}</Text>
           <Icon glyph={IconChevronDown} role="small" className="flex-none text-[var(--text-muted)]" />
         </button>
       </Tooltip>
