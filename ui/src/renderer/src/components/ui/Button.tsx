@@ -6,7 +6,7 @@ import { FOCUS_HALO } from './shadowChrome'
 import './button.css'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'compact-primary-action' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'accent-soft' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'compact-primary-action' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'accent-soft' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure' | 'roster-open'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -90,7 +90,8 @@ const buttonClasses = variants(
       'legacy-ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`,
       'legacy-focus-lever': 'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer transition-[background,border-color] hover:bg-[var(--hover-fill)] hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]',
       'legacy-roster-footer': `btn ${BTN_GHOST} min-h-[var(--h-ctl)]`,
-      'accent-soft': 'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[var(--tr-space-profile-action-inline)] py-[var(--tr-space-profile-action-block)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default'
+      'accent-soft': 'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[var(--tr-space-profile-action-inline)] py-[var(--tr-space-profile-action-block)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default',
+      'roster-open': 'h-auto p-0 border-0 bg-transparent gap-[7px] flex-1 min-w-0 min-h-[19px] text-left text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] whitespace-nowrap cursor-default [font-variant-numeric:tabular-nums] rounded-[var(--tr-radius-sm)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:2px] [&_strong]:font-semibold [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap'
     },
     size: sizeClasses
   },
@@ -98,8 +99,8 @@ const buttonClasses = variants(
 )
 
 // Variants that carry their own type and padding: no button chrome, no size padding.
-const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'icon-selected', 'icon-structure', 'compact-primary-action', 'text', 'badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'compact-ghost', 'compact-danger', 'accent-soft'])
-const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'compact-primary-action', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'accent-soft'])
+const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'icon-selected', 'icon-structure', 'compact-primary-action', 'text', 'badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'compact-ghost', 'compact-danger', 'accent-soft', 'roster-open'])
+const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'compact-primary-action', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'accent-soft', 'roster-open'])
 const isLegacy = (variant: ButtonVariant): boolean => variant.startsWith('legacy-')
 
 function buttonSize(variant: ButtonVariant, size: ButtonSize): ButtonSize | 'icon' {
@@ -127,8 +128,10 @@ export function Button(props: ButtonProps): React.JSX.Element {
   const selectedClasses = buttonClasses({ variant, size: buttonSize(variant, size) })
   const classSet = variant === 'legacy-roster-footer'
     ? selectedClasses.replace(/^btn inline-flex items-center justify-center disabled:cursor-not-allowed /, '')
-    : selectedClasses
-  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${buttonChrome(variant)} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
+    : variant === 'roster-open'
+      ? selectedClasses.replace(/^btn inline-flex /, 'flex ')
+      : selectedClasses
+  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${variant === 'roster-open' ? 'children-open' : ''} ${buttonChrome(variant)} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd
 

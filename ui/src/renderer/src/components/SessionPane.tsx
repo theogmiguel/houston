@@ -85,6 +85,7 @@ import { PaneTaskChip } from './tasks/PaneTaskChip'
 import { PrWatchChip } from './ui/PrWatch'
 import { usePrWatch } from './git/usePrWatch'
 import { Button } from './ui/Button'
+import { RosterPeekbar, RosterSplit } from './ui/RosterSurface'
 import { Count } from './ui/Count'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
@@ -806,20 +807,20 @@ function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveC
   onCollapse: () => void
   terminals: React.ReactNode
 }): React.JSX.Element {
-  return (<><div className={`children-split ${collapsed ? 'collapsed' : 'auto'}`}>
+  return (<><RosterSplit collapsed={collapsed}>
         {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={collapsed} onCollapse={onCollapse} />}
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {peek && <div className="children-peekbar">
+          {peek && <RosterPeekbar>
             <button className="btn border-none bg-transparent min-h-7 truncate" onClick={() => selectChild(null)}>Orchestrator</button><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
             <span className="flex-1" /><button className="btn border-none bg-transparent min-h-7 shrink-0" onClick={() => moveChild(peek.id)}>Move to grid</button>
             <Tooltip label="Return to orchestrator"><button className={BTN_ICO_STRUCTURE + ' min-w-7 min-h-7'} aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></button></Tooltip>
-          </div>}
+          </RosterPeekbar>}
           <div className="relative flex-1 min-h-0 min-w-0">
             {terminals}
           </div>
           {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
         </div>
-      </div>
+      </RosterSplit>
       <DictationIndicator session={info.id} /></>)
 }
 

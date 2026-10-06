@@ -22,6 +22,11 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 const noop = (): void => {}
+const STATIC_MOTION = <style>{`.tasks-static *, .tasks-static *::before, .tasks-static *::after { animation: none !important; transition: none !important; }`}</style>
+
+function useFrozenStoryClock(): void {
+  Date.now = () => NOW
+}
 
 function summary(
   id: number,
@@ -385,6 +390,7 @@ const ROSTER_SESSIONS: ReadonlyMap<number, SessionInfo> = new Map(
 )
 
 function OverviewRosterStory(): React.JSX.Element {
+  useFrozenStoryClock()
   const client = React.useMemo(() => new Proxy({
     subscribe: () => () => {},
     delegationResultsList: noop,
@@ -398,7 +404,7 @@ function OverviewRosterStory(): React.JSX.Element {
     }
   }) as unknown as HoustonClient, [])
   const sessions = new Map([[ROSTER_PARENT.id, ROSTER_PARENT], ...ROSTER_SESSIONS])
-  return <div style={{ height: '100%', overflow: 'auto', background: 'var(--content-bg)' }}><OverviewTab parentId={ROSTER_PARENT.id} sessions={sessions} client={client} onClose={noop} onReview={noop} /></div>
+  return <div className="tasks-static" style={{ height: '100%', overflow: 'auto', background: 'var(--content-bg)' }}>{STATIC_MOTION}<OverviewTab parentId={ROSTER_PARENT.id} sessions={sessions} client={client} onClose={noop} onReview={noop} /></div>
 }
 
 export function TasksOverviewRosterStory(): React.JSX.Element {
@@ -407,20 +413,24 @@ export function TasksOverviewRosterStory(): React.JSX.Element {
 
 function rosterClient(): HoustonClient {
   const handlers = new Set<(msg: ServerMsg) => void>()
+  const snapshot = (workspace: string): ServerMsg => ({
+    type: 'task_snapshot',
+    scope: workspace,
+    tasks: ROSTER_READY,
+    counts: { ready: 2, backlog: 2, todo: 2, in_progress: 2, in_review: 2, done: 2, canceled: 0 }
+  })
   const client = {
     subscribe: (kind: string, handler: (msg: ServerMsg) => void) => {
-      if (kind === 'task_snapshot') handlers.add(handler)
+      if (kind === 'task_snapshot') {
+        handlers.add(handler)
+        queueMicrotask(() => {
+          if (handlers.has(handler)) handler(snapshot(ROSTER_WORKSPACE))
+        })
+      }
       return () => handlers.delete(handler)
     },
     taskSnapshot: (workspace: string) => {
-      for (const handler of handlers) {
-        handler({
-          type: 'task_snapshot',
-          scope: workspace,
-          tasks: ROSTER_READY,
-          counts: { ready: 2, backlog: 2, todo: 2, in_progress: 2, in_review: 2, done: 2, canceled: 0 }
-        })
-      }
+      for (const handler of handlers) handler(snapshot(workspace))
     },
     closeSession: noop,
     inboxDeliverNow: noop,
@@ -436,9 +446,11 @@ function rosterClient(): HoustonClient {
 }
 
 function RosterStory({ view }: { view: 'children' | 'queue' }): React.JSX.Element {
+  useFrozenStoryClock()
   const client = React.useMemo(() => rosterClient(), [])
   return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--card-bg)' }}>
+    <div className="tasks-static" style={{ display: 'flex', height: '100%', background: 'var(--card-bg)' }}>
+      {STATIC_MOTION}
       <ChildrenRoster
         parent={ROSTER_PARENT}
         children={[...ROSTER_SESSIONS.values()]}

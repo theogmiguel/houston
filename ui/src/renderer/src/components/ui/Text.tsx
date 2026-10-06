@@ -1,8 +1,8 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
-export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
+export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
 export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown'
 
 const SIZE: Record<TextSize, string> = {
@@ -22,7 +22,9 @@ const SIZE: Record<TextSize, string> = {
   xs: '[font-size:var(--tr-text-xs)]',
   fileBreadcrumb: '[font-size:var(--tr-text-file-breadcrumb)]',
   fileStatus: '[font-size:var(--tr-text-file-status)]',
-  'shortcut-label': '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-shortcut-group-tracking)] uppercase'
+  'shortcut-label': '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-shortcut-group-tracking)] uppercase',
+  rosterName: '[font-size:var(--tr-text-roster-name-size)]',
+  rosterDetail: '[font-size:var(--tr-text-roster-detail-size)]'
 }
 
 const WEIGHT: Record<TextWeight, string> = {
@@ -52,6 +54,7 @@ const TONE: Record<TextTone, string> = {
   warning: 'text-[var(--warning)]',
   blocked: 'text-[var(--status-blocked-text)]',
   accent: 'text-[var(--accent)]',
+  accentInk: 'text-[var(--accent-ink)]',
   'key-hint': 'text-[var(--text-key-hint)]',
   'quiet-button': 'text-[var(--quiet-button-ink)]',
   dim: 'text-[color-mix(in_srgb,var(--text-muted)_70%,transparent)]',

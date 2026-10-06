@@ -7,11 +7,29 @@ import { HeaderDelegationBadge, needsHumanInput, pendingDeliveryStatus, stateWor
 import { StatusDot } from './SessionPane'
 import { IconAgent, IconClose, IconArrowUpRight, IconEye, IconSearch, IconStopCircle, IconChevronLeft, IconChevronRight, IconUndo, IconGrid } from './icons'
 import { Icon } from './ui/Icon'
+import { Text } from './ui/Text'
 import { Tooltip } from './ui/Tooltip'
-import { BTN_ICO } from './ui/buttonChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { Segmented } from './ui/SegmentedControl'
-import { Button, RosterColumn, RosterStrip } from './ui'
+import {
+  RosterActions,
+  RosterColumn,
+  RosterCount,
+  RosterDetail,
+  RosterFooter,
+  RosterFooterButton,
+  RosterGlyphButton,
+  RosterGroupHead,
+  RosterGroupToggle,
+  RosterHead,
+  RosterIconButton,
+  RosterList,
+  RosterRow,
+  RosterRule,
+  RosterSlot,
+  RosterState,
+  RosterStatus,
+  RosterStrip
+} from './ui'
 import { StatusLabel } from './ui/StatusLabel'
 
 // The queue view and the task chip carry the backlog helpers; both load on
@@ -39,8 +57,6 @@ function useTaskReadyCount(client: HoustonClient, workspace: string, enabled: bo
 export const PEEK_KEEP_MOUNTED = 3
 // Delay destruction so Undo can preserve the original PTYs.
 export const CLOSE_SETTLED_UNDO_MS = 5000
-
-const ROSTER_ICON = `${BTN_ICO} ${CONTROL_SIZE_SQUARE_CLS.regular}`
 
 export function childGroup(info: SessionInfo): 'Needs you' | 'Working' | 'Settled' {
   if (!isLive(info.state)) return 'Settled'
@@ -79,7 +95,7 @@ export function ChildStatusDot({ info }: { info: SessionInfo }): React.JSX.Eleme
 
 function ChildDeliveryStatus({ info }: { info: SessionInfo }): React.JSX.Element | null {
   const status = pendingDeliveryStatus(info.delegation)
-  return status == null ? null : <div className="children-detail"><StatusLabel status={status} /></div>
+  return status == null ? null : <RosterDetail><StatusLabel status={status} /></RosterDetail>
 }
 
 export function ChildrenRoster({ parent: parentProp, children: childrenProp, roster: rosterProp, client, selected, onSelect, onMove, collapsed, onCollapse, defaultView = 'children' }: {
@@ -140,15 +156,15 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
   const dot = (child: SessionInfo): React.JSX.Element => <ChildStatusDot info={child} />
   const glyph = (child: SessionInfo): React.JSX.Element => <IconAgent brand agent={child.detected_agent ?? child.agent} className="w-3.5 h-3.5 flex-none" />
   const strip = <RosterStrip aria-label="Children strip">
-    <Tooltip label="Orchestrator"><button className={`${ROSTER_ICON} children-glyph`} aria-label="Orchestrator" aria-pressed={selected == null} onClick={() => onSelect(null)}>{glyph(parent)}{dot(parent)}</button></Tooltip>
-    <span className="children-rule" />
-    {ordered.map((child) => <Tooltip key={child.id} label={glyphLabel(child)}><button className={`${ROSTER_ICON} children-glyph`} aria-label={`Open ${child.delegation?.role ?? child.title}`} aria-pressed={selected === child.id} onClick={() => onSelect(child.id)}>{glyph(child)}<span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span></button></Tooltip>)}
-    {pending.length > 0 && <Tooltip label={`Undo closing ${pending.length} children`}><button className={ROSTER_ICON} aria-label="Undo closing settled children" onClick={undoClose}><Icon glyph={IconUndo} role="ui" /></button></Tooltip>}
-    <Tooltip label="Show children"><button className={`${ROSTER_ICON} mt-auto`} aria-label="Show children" onClick={onCollapse}><Icon glyph={IconChevronRight} role="ui" /></button></Tooltip>
+    <Tooltip label="Orchestrator"><RosterGlyphButton aria-label="Orchestrator" aria-pressed={selected == null} onClick={() => onSelect(null)}>{glyph(parent)}{dot(parent)}</RosterGlyphButton></Tooltip>
+    <RosterRule />
+    {ordered.map((child) => <Tooltip key={child.id} label={glyphLabel(child)}><RosterGlyphButton aria-label={`Open ${child.delegation?.role ?? child.title}`} aria-pressed={selected === child.id} onClick={() => onSelect(child.id)}>{glyph(child)}<RosterStatus state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</RosterStatus></RosterGlyphButton></Tooltip>)}
+    {pending.length > 0 && <Tooltip label={`Undo closing ${pending.length} children`}><RosterIconButton aria-label="Undo closing settled children" onClick={undoClose}><Icon glyph={IconUndo} role="ui" /></RosterIconButton></Tooltip>}
+    <Tooltip label="Show children"><RosterIconButton pushEnd aria-label="Show children" onClick={onCollapse}><Icon glyph={IconChevronRight} role="ui" /></RosterIconButton></Tooltip>
   </RosterStrip>
   return <>
     {!collapsed && <RosterColumn aria-label="Children roster">
-      <div className="children-head">
+      <RosterHead>
         <Segmented<'children' | 'queue'>
           aria-label="Roster view"
           value={view}
@@ -159,8 +175,8 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
           onChange={setView}
         />
         <span className="flex-1" />
-        <Tooltip label="Collapse children"><button className={ROSTER_ICON} aria-label="Collapse children" onClick={onCollapse}><Icon glyph={IconChevronLeft} role="ui" /></button></Tooltip>
-      </div>
+        <Tooltip label="Collapse children"><RosterIconButton aria-label="Collapse children" onClick={onCollapse}><Icon glyph={IconChevronLeft} role="ui" /></RosterIconButton></Tooltip>
+      </RosterHead>
       {view === 'queue' ? (
         <Suspense fallback={null}>
           <RosterQueue
@@ -173,35 +189,35 @@ export function ChildrenRoster({ parent: parentProp, children: childrenProp, ros
           />
         </Suspense>
       ) : (
-      <div className="children-list">
-        <div className={`children-row ${selected == null ? 'selected' : ''}`}>
-          <HeaderDelegationBadge className="children-open" kind="orchestrator" info={parent} roster={roster} onSelect={() => onSelect(null)} onFocusPane={(id) => onSelect(id === parent.id ? null : id)}>{dot(parent)}{glyph(parent)}<strong>Orchestrator</strong></HeaderDelegationBadge><span className="children-count">pane {parent.id}</span>
-        </div>
+      <RosterList>
+        <RosterRow selected={selected == null} settled={false}>
+          <HeaderDelegationBadge rosterRow kind="orchestrator" info={parent} roster={roster} onSelect={() => onSelect(null)} onFocusPane={(id) => onSelect(id === parent.id ? null : id)}>{dot(parent)}{glyph(parent)}<Text as="strong" size="rosterName" weight="semibold">Orchestrator</Text></HeaderDelegationBadge><RosterCount>pane {parent.id}</RosterCount>
+        </RosterRow>
         {grouped.map((group) => {
           const items = ordered.filter((child) => childGroup(child) === group && (!filter || group === 'Needs you'))
           return items.length > 0 && <div key={group}>
-            <div className="children-group"><span>{group}</span>{group === 'Needs you' && <button className="children-group-toggle" aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="small" />Show only</button>}<span>{items.length}</span></div>
-            {items.map((child) => <div key={child.id} className={`children-row ${group === 'Settled' ? 'settled' : ''} ${selected === child.id ? 'selected' : ''}`}>
-              <HeaderDelegationBadge className="children-open" kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><span className="children-status" data-state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</span>{glyph(child)}<strong>{child.delegation?.role ?? child.title}</strong>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
-              <span className="children-slot"><span className="children-state"><Suspense fallback={delegationAge(child.delegation?.started_at ?? Date.now(), child.delegation?.settled_at ?? Date.now())}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={ageTicks(child)} /></Suspense></span>
-                <span className="children-actions">
-                  {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><button className={ROSTER_ICON} aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>}
-                  <Tooltip label="Open"><button className={ROSTER_ICON} aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></button></Tooltip>
-                  <Tooltip label="Move to grid"><button className={ROSTER_ICON} aria-label={`Move ${child.id} to grid`} onClick={() => onMove(child.id)}><Icon glyph={IconArrowUpRight} role="ui" /></button></Tooltip>
-                  <Tooltip label={isLive(child.state) ? "Stop" : "Close"}><button className={ROSTER_ICON} aria-label={`${isLive(child.state) ? "Stop" : "Close"} ${child.id}`} onClick={() => client.closeSession(child.id)}><Icon glyph={isLive(child.state) ? IconStopCircle : IconClose} role="ui" /></button></Tooltip>
-                </span>
-              </span>
-              <div className="children-detail"><span className="truncate">{child.title}</span></div>
+            <RosterGroupHead><span>{group}</span>{group === 'Needs you' && <RosterGroupToggle aria-pressed={filter} onClick={() => setFilter(!filter)}><Icon glyph={IconSearch} role="small" />Show only</RosterGroupToggle>}<span>{items.length}</span></RosterGroupHead>
+            {items.map((child) => <RosterRow key={child.id} settled={group === 'Settled'} selected={selected === child.id}>
+              <HeaderDelegationBadge rosterRow kind="origin" info={child} roster={roster} onSelect={() => onSelect(child.id)} onFocusPane={onSelect} onDeliverNow={(id) => client.inboxDeliverNow(id)}><RosterStatus state={isLive(child.state) ? undefined : child.delegation?.state}>{dot(child)}</RosterStatus>{glyph(child)}<Text as="strong" size="rosterName" weight="semibold">{child.delegation?.role ?? child.title}</Text>{child.task != null && <Suspense fallback={null}><TaskChip task={child.task} compact /></Suspense>}</HeaderDelegationBadge>
+              <RosterSlot><RosterState><Suspense fallback={delegationAge(child.delegation?.started_at ?? Date.now(), child.delegation?.settled_at ?? Date.now())}><DelegationAge start={child.delegation?.started_at ?? Date.now()} end={child.delegation?.settled_at} ticking={ageTicks(child)} /></Suspense></RosterState>
+                <RosterActions>
+                  {childGroup(child) === 'Needs you' && <Tooltip label="Answer"><RosterIconButton aria-label={`Answer ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></RosterIconButton></Tooltip>}
+                  <Tooltip label="Open"><RosterIconButton aria-label={`Open ${child.id}`} onClick={() => onSelect(child.id)}><Icon glyph={IconEye} role="ui" /></RosterIconButton></Tooltip>
+                  <Tooltip label="Move to grid"><RosterIconButton aria-label={`Move ${child.id} to grid`} onClick={() => onMove(child.id)}><Icon glyph={IconArrowUpRight} role="ui" /></RosterIconButton></Tooltip>
+                  <Tooltip label={isLive(child.state) ? "Stop" : "Close"}><RosterIconButton aria-label={`${isLive(child.state) ? "Stop" : "Close"} ${child.id}`} onClick={() => client.closeSession(child.id)}><Icon glyph={isLive(child.state) ? IconStopCircle : IconClose} role="ui" /></RosterIconButton></Tooltip>
+                </RosterActions>
+              </RosterSlot>
+              <RosterDetail><span className="truncate">{child.title}</span></RosterDetail>
               <ChildDeliveryStatus info={child} />
-            </div>)}
+            </RosterRow>)}
           </div>
         })}
-      </div>
+      </RosterList>
       )}
-      <footer className="children-footer">
-        {pending.length > 0 ? <><span className="truncate">Closing {pending.length}</span><Button variant="legacy-roster-footer" onClick={undoClose}>Undo</Button></> : <Button variant="legacy-roster-footer" disabled={!settled.length} onClick={closeSettled}>Close settled ({settled.length})</Button>}
-        <Button variant="legacy-roster-footer" onClick={() => openSideOverview(parent.id)}><Icon glyph={IconGrid} role="label" />Overview</Button>
-      </footer>
+      <RosterFooter>
+        {pending.length > 0 ? <><span className="truncate">Closing {pending.length}</span><RosterFooterButton onClick={undoClose}>Undo</RosterFooterButton></> : <RosterFooterButton disabled={!settled.length} onClick={closeSettled}>Close settled ({settled.length})</RosterFooterButton>}
+        <RosterFooterButton onClick={() => openSideOverview(parent.id)}><Icon glyph={IconGrid} role="label" />Overview</RosterFooterButton>
+      </RosterFooter>
     </RosterColumn>}
     {strip}
   </>

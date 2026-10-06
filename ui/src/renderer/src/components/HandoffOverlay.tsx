@@ -1,8 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
-import { BTN_GHOST, BTN_GHOST_DANGER_HOVER } from './ui/buttonChrome'
 import { IconAlertTriangle, IconCheck } from './icons'
 import { Icon } from './ui/Icon'
-import { DialogBackdrop, DialogPanel } from './ui'
+import { Button, DialogBackdrop, DialogPanel } from './ui'
+import {
+  ScrollBody,
+  StatusCaption,
+  CodeBlock,
+  CopyButton,
+  TypingCursor,
+  ErrorMessage,
+  ActionRow,
+  OverlayHeader,
+  MarkdownHeading,
+  InlineCode,
+  MarkdownList,
+  OverlaySurface,
+  MarkdownParagraph,
+  MarkdownBody,
+  StatusPulse,
+  SavedPath,
+  LoadingPlaceholder,
+  LoadingPlaceholderLine,
+  KeyHint
+} from './ui/MarkdownContent'
 
 export interface HandoffUiState {
   request: number
@@ -44,12 +64,7 @@ function renderInline(text: string): React.ReactNode[] {
       token.startsWith('**') ? (
         <strong key={key++}>{token.slice(2, -2)}</strong>
       ) : (
-        <code
-          key={key++}
-          className="bg-[var(--tool-code-bg)] rounded px-[5px] py-px [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] text-text-primary"
-        >
-          {token.slice(1, -1)}
-        </code>
+        <InlineCode key={key++}>{token.slice(1, -1)}</InlineCode>
       )
     )
     last = re.lastIndex
@@ -68,11 +83,11 @@ function renderMarkdown(md: string): React.JSX.Element[] {
   const flushList = (): void => {
     if (listBuf.length === 0) return
     blocks.push(
-      <ul key={key++} className="my-1.5 pl-5">
+      <MarkdownList key={key++}>
         {listBuf.map((item, j) => (
           <li key={j}>{renderInline(item)}</li>
         ))}
-      </ul>
+      </MarkdownList>
     )
     listBuf = []
   }
@@ -89,14 +104,7 @@ function renderMarkdown(md: string): React.JSX.Element[] {
       }
       i++
       blocks.push(
-        <pre
-          key={key++}
-          className="bg-[var(--tool-code-bg)] border border-border rounded-[var(--tr-radius-sm)] px-2.5 py-2 my-2 overflow-x-auto"
-        >
-          <code className="bg-transparent p-0 [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-text-secondary">
-            {codeLines.join('\n')}
-          </code>
-        </pre>
+        <CodeBlock key={key++}>{codeLines.join('\n')}</CodeBlock>
       )
       continue
     }
@@ -106,21 +114,11 @@ function renderMarkdown(md: string): React.JSX.Element[] {
     if (h3 || h2 || h1) {
       flushList()
       const text = (h3 ?? h2 ?? h1)![1]
-      const headingClass = 'text-text-primary mt-3.5 mb-1.5 first:mt-0'
+      const level = h3 ? 3 : h2 ? 2 : 1
       blocks.push(
-        h3 ? (
-          <h3 key={key++} className={headingClass}>
-            {renderInline(text)}
-          </h3>
-        ) : h2 ? (
-          <h2 key={key++} className={headingClass}>
-            {renderInline(text)}
-          </h2>
-        ) : (
-          <h1 key={key++} className={headingClass}>
-            {renderInline(text)}
-          </h1>
-        )
+        <MarkdownHeading key={key++} level={level} className="mt-3.5">
+          {renderInline(text)}
+        </MarkdownHeading>
       )
       i++
       continue
@@ -150,9 +148,7 @@ function renderMarkdown(md: string): React.JSX.Element[] {
       i++
     }
     blocks.push(
-      <p key={key++} className="my-1.5">
-        {renderInline(paraLines.join(' '))}
-      </p>
+      <MarkdownParagraph key={key++}>{renderInline(paraLines.join(' '))}</MarkdownParagraph>
     )
   }
   flushList()
@@ -224,105 +220,82 @@ export function HandoffOverlay({
 
   const content = (
     <>
-      <div className="px-3.5 py-[11px] border-b border-border [font-size:var(--tr-text-subhead-size)] [font-weight:var(--tr-text-subhead-weight)] [letter-spacing:var(--tr-text-subhead-tracking)] text-text-primary">
+      <OverlayHeader>
         HANDOFF — {state.sessionTitle} via {state.provider}
-      </div>
-      <div className={`p-5 space-y-4 flex flex-col ${isPane ? 'flex-1 min-h-0' : 'max-h-[60vh]'}`}>
+      </OverlayHeader>
+      <ScrollBody pane={isPane}>
         {state.phase === 'generating' && (
           <>
             {state.text === '' ? (
-              <div
-                data-testid="handoff-skeleton"
-                className={`flex-1 min-h-0 flex flex-col justify-center gap-2 ${isPane ? '' : 'h-[44vh]'}`}
-              >
+              <LoadingPlaceholder data-testid="handoff-skeleton" extent={isPane ? 'natural' : 'tall'}>
                 {SKELETON_WIDTHS.map((w, i) => (
-                  <div
+                  <LoadingPlaceholderLine
                     key={i}
-                    className="loop-anim h-[13px] rounded-[3px] bg-[color-mix(in_srgb,var(--text-faint)_20%,transparent)] motion-safe:[animation:skeleton-shimmer_1.4s_steps(4,end)_infinite]"
                     style={{ width: `${w}%`, animationDelay: `${i * 60}ms` }}
                   />
                 ))}
-                <div className="text-[var(--text-faint)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]">Preparing handoff…</div>
-              </div>
+                <StatusCaption>Preparing handoff…</StatusCaption>
+              </LoadingPlaceholder>
             ) : (
-              <div
-                ref={preRef}
-                className={`text-text-secondary [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-[1.6] overflow-y-auto ${isPane ? 'flex-1 min-h-0' : 'h-[44vh]'}`}
-                onScroll={onScroll}
-              >
+              <MarkdownBody ref={preRef} extent={isPane ? 'fill' : 'tall'} onScroll={onScroll}>
                 {renderMarkdown(state.text)}
-                <span
-                  aria-hidden="true"
-                  className="loop-anim inline-block w-2 h-4 mb-[-3px] bg-[var(--text-primary)] motion-safe:[animation:skeleton-cursor-blink_1s_steps(2,end)_infinite]"
-                />
-              </div>
+                <TypingCursor />
+              </MarkdownBody>
             )}
-            <div className="flex items-center gap-2 text-[var(--text-faint)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]">
-              <span className="loop-anim w-[7px] h-[7px] rounded-full bg-primary [--dot-pulse-opacity:0.25] motion-safe:animate-[dot-pulse_1.2s_steps(4,end)_infinite]" />
+            <StatusCaption className="flex items-center gap-[var(--space-2)]">
+              <StatusPulse />
               <span>generating…</span>
-            </div>
+            </StatusCaption>
           </>
         )}
         {state.phase === 'done' && (
           <>
-            <div
-              className={`text-text-secondary [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-[1.6] overflow-y-auto ${isPane ? 'flex-1 min-h-0' : ''}`}
+            <MarkdownBody extent={isPane ? 'fill' : 'natural'}>{renderMarkdown(state.markdown)}</MarkdownBody>
+            {state.savedPath && <SavedPath>saved to {state.savedPath}</SavedPath>}
+          </>
+        )}
+        {state.phase === 'error' && <ErrorMessage>{state.error}</ErrorMessage>}
+      </ScrollBody>
+      <ActionRow>
+        {state.phase === 'generating' && (
+          <Button variant="legacy-danger" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+        {state.phase === 'done' && (
+          <>
+            <CopyButton
+              failed={copyState === 'failed'}
+              data-testid="handoff-copy"
+              data-copy-state={copyState}
+              onClick={copy}
             >
-              {renderMarkdown(state.markdown)}
-            </div>
-            {state.savedPath && (
-              <div className="text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.55]">
-                saved to {state.savedPath}
-              </div>
-            )}
+              {copyState === 'copied' ? (
+                <span className="inline-flex items-center gap-[var(--space-1)]">
+                  <Icon glyph={IconCheck} role="small" /> Copied
+                </span>
+              ) : copyState === 'failed' ? (
+                <span className="inline-flex items-center gap-[var(--space-1)]">
+                  <Icon glyph={IconAlertTriangle} role="small" /> Failed
+                </span>
+              ) : (
+                'Copy'
+              )}
+            </CopyButton>
+            <Button variant="legacy-ghost" onClick={onPaste}>
+              Paste into pane
+            </Button>
+            <Button variant="legacy-ghost" onClick={onClose}>
+              Close <KeyHint>esc</KeyHint>
+            </Button>
           </>
         )}
         {state.phase === 'error' && (
-          <div className="text-[var(--status-blocked-text)] [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)]">{state.error}</div>
+          <Button variant="legacy-ghost" onClick={onClose}>
+            Close <KeyHint>esc</KeyHint>
+          </Button>
         )}
-      </div>
-      <div className="flex flex-col gap-2 px-5 pb-5">
-        <div className="flex gap-2 justify-end">
-          {state.phase === 'generating' && (
-            <button className={`btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER}`} onClick={onCancel}>
-              Cancel
-            </button>
-          )}
-          {state.phase === 'done' && (
-            <>
-              <button
-                className={`btn ${BTN_GHOST} ${copyState === 'failed' ? 'text-warning hover:text-warning' : ''}`}
-                data-testid="handoff-copy"
-                data-copy-state={copyState}
-                onClick={copy}
-              >
-                {copyState === 'copied' ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Icon glyph={IconCheck} role="small" /> Copied
-                  </span>
-                ) : copyState === 'failed' ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Icon glyph={IconAlertTriangle} role="small" /> Failed
-                  </span>
-                ) : (
-                  'Copy'
-                )}
-              </button>
-              <button className={`btn ${BTN_GHOST}`} onClick={onPaste}>
-                Paste into pane
-              </button>
-              <button className={`btn ${BTN_GHOST}`} onClick={onClose}>
-                Close <span className="opacity-55 font-normal">esc</span>
-              </button>
-            </>
-          )}
-          {state.phase === 'error' && (
-            <button className={`btn ${BTN_GHOST}`} onClick={onClose}>
-              Close <span className="opacity-55 font-normal">esc</span>
-            </button>
-          )}
-        </div>
-      </div>
+      </ActionRow>
     </>
   )
 
@@ -346,12 +319,5 @@ export function HandoffOverlay({
       </DialogBackdrop>
     )
   }
-  return (
-    <div
-      className="handoff-overlay absolute inset-0 z-[calc(var(--z-leaf)+2)] flex flex-col bg-[var(--card-bg)] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
-      onMouseDown={(e) => e.stopPropagation()}
-    >
-      {content}
-    </div>
-  )
+  return <OverlaySurface onMouseDown={(e) => e.stopPropagation()}>{content}</OverlaySurface>
 }

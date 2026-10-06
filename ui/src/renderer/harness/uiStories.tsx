@@ -140,6 +140,10 @@ import {
   SettingsStatusSpecimen,
   RoutineDetail,
   RosterSurfaceSpecimen,
+  PopoverPanelSpecimen,
+  ChoiceTileSpecimen,
+  MarkdownContentSpecimen,
+  OptionButtonSpecimen,
   Table,
   Text,
   SettingsDetailPanelSpecimen,
@@ -498,6 +502,22 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Progress timeline">
           <TimelineSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Popover panel">
+          <PopoverPanelSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Choice tiles">
+          <ChoiceTileSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Markdown content">
+          <MarkdownContentSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Question options">
+          <OptionButtonSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Dialog">

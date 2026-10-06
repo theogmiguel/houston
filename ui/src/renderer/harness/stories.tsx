@@ -109,6 +109,7 @@ import {
   HarnessHistoryEmptyStory,
   HarnessFindingsDismissedStory
 } from './navStories'
+import { B5bHandoffStatesStory, B5bPaneHandoffSelectedStory, B5bQuestionStatesStory, B5bDelegationPanelsStory } from './b5bStories'
 import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
@@ -275,6 +276,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'boot/loading': () => <BootLoadingStory />,
   'boot/failure': () => <BootFailureStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,
+  'b5b/handoff-states': () => <B5bHandoffStatesStory />,
+  'b5b/pane-handoff-selected': () => <B5bPaneHandoffSelectedStory />,
+  'b5b/question-states': () => <B5bQuestionStatesStory />,
+  'b5b/delegation-panels': () => <B5bDelegationPanelsStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
   'b9/markdown-preview': () => <B9MarkdownStory />,
   'b9/editor-surface-menu': () => <B9EditorStory />,

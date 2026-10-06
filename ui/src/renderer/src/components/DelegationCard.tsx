@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
-import { Icon } from './ui/Icon'
+import { BadgeCount, BadgeSeparator, WaitingCount, StatusGlyph } from './ui/PopoverPanel'
 import { IconCornerDownRight, IconGitFork } from './icons'
 import { HOVER_DELAY_MS, Tooltip } from './ui/Tooltip'
 import { Button, Caption } from './ui'
@@ -113,19 +113,19 @@ function BadgeContent({
   const count = info.children_waiting === 0 ? (
     <>{info.live_children}</>
   ) : (
-    <span className="inline-flex items-baseline">
-      <span className="text-[var(--warn)]">{info.children_waiting}</span>
-      <span className="px-px text-[var(--text-muted)]">/</span>
+    <BadgeCount>
+      <WaitingCount>{info.children_waiting}</WaitingCount>
+      <BadgeSeparator>/</BadgeSeparator>
       {info.live_children}
-    </span>
+    </BadgeCount>
   )
   if (!showIdentity || info.spawned_by != null) return count
   return (
-    <span className="inline-flex items-baseline">
+    <BadgeCount>
       {selfName}
-      <span className="px-px text-[var(--text-muted)]"> · </span>
+      <BadgeSeparator> · </BadgeSeparator>
       {count}
-    </span>
+    </BadgeCount>
   )
 }
 
@@ -136,11 +136,12 @@ export function HeaderDelegationBadge({
   onFocusPane,
   onDeliverNow,
   children,
-  className,
+  rosterRow = false,
   onSelect
 }: {
   children?: React.ReactNode
-  className?: string
+  /// Renders the badge as a roster row's open target instead of a header badge.
+  rosterRow?: boolean
   onSelect?: () => void
   kind: BadgeKind
   info: SessionInfo
@@ -215,14 +216,13 @@ export function HeaderDelegationBadge({
 
   const badge = (
     <Button
-      variant="badge"
+      variant={rosterRow ? 'roster-open' : 'badge'}
       ref={btnRef}
       type="button"
       data-testid={kind === 'origin' ? 'origin-badge' : 'orchestrator-badge'}
       aria-label={label}
       aria-expanded={open}
       aria-controls={open ? id : undefined}
-      className={className}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerEnter={openAfterDelay}
       onPointerLeave={leave}
@@ -239,11 +239,7 @@ export function HeaderDelegationBadge({
       }}
     >
       {children ?? <>
-      <Icon
-        glyph={kind === 'origin' ? IconCornerDownRight : IconGitFork}
-        role="label"
-        className={glyphWarn ? 'text-[var(--warn)]' : 'text-[var(--text-muted)]'}
-      />
+      <StatusGlyph glyph={kind === 'origin' ? IconCornerDownRight : IconGitFork} role="label" tone={glyphWarn ? "warn" : "muted"} />
       <BadgeContent kind={kind} info={info} selfName={selfName} />
       </>}
     </Button>
