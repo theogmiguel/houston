@@ -1,4 +1,4 @@
-import { ButtonRecipe } from './ButtonRecipe'
+import { BUTTON_BASE_CHROME, ButtonRecipe } from './ButtonRecipe'
 import type { ButtonRecipeProps } from './Button'
 
 const RECIPES = {
@@ -9,5 +9,5 @@ const RECIPES = {
 export type BrowserButtonVariant = keyof typeof RECIPES
 
 export function BrowserButton({ variant, ...props }: ButtonRecipeProps & { variant: BrowserButtonVariant }): React.JSX.Element {
-  return <ButtonRecipe {...props} recipe={RECIPES[variant]} recipeVariant={variant} standardSize={variant === 'outline'} />
+  return <ButtonRecipe {...props} recipe={RECIPES[variant]} recipeVariant={variant} standardSize={variant === 'outline'} chromeClass={variant === 'outline' ? BUTTON_BASE_CHROME : ''} />
 }

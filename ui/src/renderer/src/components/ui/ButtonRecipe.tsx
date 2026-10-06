@@ -2,6 +2,8 @@ import type { ButtonRecipeProps } from './Button'
 import { ButtonFrame } from './Button'
 
 const BUTTON_HEAD = 'btn inline-flex items-center justify-center disabled:cursor-not-allowed'
+/** Radius and type every Button variant without its own chrome carries. */
+export const BUTTON_BASE_CHROME = 'rounded-[var(--tr-radius-button)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]'
 const SIZE_CLASSES = {
   md: 'h-[var(--h-ctl)] px-[var(--space-3)] gap-[var(--space-1-5)]',
   sm: 'h-[var(--h-ctl-mini)] px-[var(--space-2)] gap-[var(--space-1-5)]',

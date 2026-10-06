@@ -16,7 +16,7 @@ const RECIPES = {
   'diff-line-action': `btn ${BTN_GHOST} flex-none inline-flex items-center px-1 leading-none text-[var(--text-muted)] hover:enabled:text-[var(--text-primary)] disabled:opacity-55`,
   'compact-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] disabled:opacity-55`,
   'compact-self-start-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] self-start px-[var(--space-1)] text-[var(--text-muted)]`,
-  'compact-trailing-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] ml-auto text-[var(--text-muted)]`,
+  'compact-trailing-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] ml-auto text-[var(--text-muted)] disabled:opacity-55`,
   'compact-control': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl)] px-[var(--space-2)]`,
   'discussion-edit-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] disabled:opacity-55`,
   'discussion-reply-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-55`,

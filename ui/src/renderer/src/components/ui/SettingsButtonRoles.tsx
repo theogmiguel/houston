@@ -1,6 +1,6 @@
 import { BTN_GHOST, BTN_GHOST_DANGER_HOVER } from './buttonChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { ButtonRecipe } from './ButtonRecipe'
+import { BUTTON_BASE_CHROME, ButtonRecipe } from './ButtonRecipe'
 import type { ButtonRecipeProps } from './Button'
 
 const RECIPES = {
@@ -15,6 +15,8 @@ const RECIPES = {
 
 export type SettingsButtonVariant = keyof typeof RECIPES
 
+const BASE_CHROME_VARIANTS: ReadonlySet<SettingsButtonVariant> = new Set<SettingsButtonVariant>(['compact-ghost', 'compact-danger', 'label-action'])
+
 export function SettingsButton({ variant, ...props }: ButtonRecipeProps & { variant: SettingsButtonVariant }): React.JSX.Element {
-  return <ButtonRecipe {...props} recipe={RECIPES[variant]} recipeVariant={variant} />
+  return <ButtonRecipe {...props} recipe={RECIPES[variant]} recipeVariant={variant} standardSize={variant === 'label-action'} chromeClass={BASE_CHROME_VARIANTS.has(variant) ? BUTTON_BASE_CHROME : ''} />
 }
