@@ -1,3 +1,4 @@
+import { LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { useEffect, useRef, useState } from 'react'
 import type { SshAuth, SshConfigHost, SshProfile } from '../houston/client'
 import { pickFile } from '../houston/bridge'
@@ -125,9 +126,9 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
           <TextInput variant="form" id="ssh-user" value={user} onChange={(event) => edit(setUser, event.target.value)} placeholder="Use SSH configuration" autoComplete="off" spellCheck={false} disabled={busy} />
           <FormGridLabel htmlFor="ssh-folder">Folder</FormGridLabel>
           <TextInput variant="form" id="ssh-folder" value={folder} onChange={(event) => edit(setFolder, event.target.value)} placeholder="~/projects/app" spellCheck={false} disabled={busy} />
-          <Button type="button" variant="legacy-ghost-disclosure" className="col-start-2 justify-self-start" aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
+          <LazyLegacyButton type="button" variant="legacy-ghost-disclosure" className="col-start-2 justify-self-start" aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
             <DisclosureChevron open={advanced} />Advanced
-          </Button>
+          </LazyLegacyButton>
           {advanced && <ContentsSwitch shown id="ssh-advanced">
             <FormGridLabel htmlFor="ssh-port">Port</FormGridLabel>
             <TextInput variant="form" width="port" id="ssh-port" value={port} onChange={(event) => edit(setPort, event.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric" maxLength={5} disabled={busy} />
@@ -140,7 +141,7 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
           {error && <Text as="p" size="sm" tone="danger" flush role="alert" className="col-span-2">{error}</Text>}
         </FormGrid>
         <footer className="flex items-center gap-[var(--space-2)]">
-          <Button type="button" variant="legacy-secondary" disabled={busy} onClick={onClose}>Cancel</Button>
+          <LazyLegacyButton type="button" variant="legacy-secondary" disabled={busy} onClick={onClose}>Cancel</LazyLegacyButton>
           <span className="flex-1" />
           <Button type="submit" variant="legacy-primary" disabled={host === '' || busy}>{busy ? 'Connecting…' : 'Connect'}</Button>
         </footer>

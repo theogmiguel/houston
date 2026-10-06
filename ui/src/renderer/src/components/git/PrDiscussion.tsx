@@ -1,4 +1,4 @@
-import { Button } from '../ui/Button'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { TextArea } from '../ui/TextArea'
 import { DiscussionEntry, DiscussionBody, DiscussionMeta, DiscussionActionsRow, DiscussionComposer, DiscussionCommentRow, DiscussionThreadHeader, DiscussionCommentMetaRow, DiscussionThreadList, DiscussionErrorMessage, DiscussionComposerPanel, DiscussionAuthor, DiscussionPath, DiscussionResolveAction } from '../ui/DiscussionEntry'
 import { useState } from 'react'
@@ -31,7 +31,7 @@ function CommentRow({
       <DiscussionActionsRow>
         <DiscussionAuthor>{comment.author}</DiscussionAuthor>
         {onEdit !== undefined && id !== null && (
-          <Button
+          <ReviewButton
             type="button"
             data-testid={`pr-comment-edit-${id}`}
             disabled={busy}
@@ -42,7 +42,7 @@ function CommentRow({
             variant="discussion-edit-action"
           >
             Edit
-          </Button>
+          </ReviewButton>
         )}
       </DiscussionActionsRow>
       {editing ? (
@@ -56,7 +56,7 @@ function CommentRow({
 
           />
           <DiscussionActionsRow>
-            <Button
+            <ReviewButton
               type="button"
               data-testid={`pr-comment-save-${id}`}
               disabled={busy || draft.trim().length === 0}
@@ -67,15 +67,15 @@ function CommentRow({
               variant="discussion-submit-action"
             >
               Save
-            </Button>
-            <Button
+            </ReviewButton>
+            <ReviewButton
               type="button"
               data-testid={`pr-comment-cancel-${id}`}
               onClick={() => setEditing(false)}
               variant="discussion-cancel-action"
             >
               Cancel
-            </Button>
+            </ReviewButton>
           </DiscussionActionsRow>
         </DiscussionComposer>
       ) : (
@@ -124,7 +124,7 @@ function ThreadRow({
           {thread.resolved ? 'resolved' : 'open'}
         </DiscussionMeta>
         <DiscussionResolveAction><Tooltip label={!allowResolve ? (resolveReason ?? undefined) : undefined}>
-          <Button
+          <ReviewButton
             type="button"
             data-testid={`pr-thread-resolve-${thread.id}`}
             disabled={busy || !allowResolve}
@@ -133,7 +133,7 @@ function ThreadRow({
           >
             <Icon glyph={thread.resolved ? IconRefresh : IconCheck} role="small" />
             {thread.resolved ? 'Reopen' : 'Resolve'}
-          </Button>
+          </ReviewButton>
         </Tooltip></DiscussionResolveAction>
       </DiscussionThreadHeader>
       {thread.comments.map((comment) => (
@@ -145,7 +145,7 @@ function ThreadRow({
             </DiscussionMeta>
           </DiscussionCommentMetaRow>
           <DiscussionBody>{comment.body}</DiscussionBody>
-          {onSendToOrchestrator && <Button variant="compact-action" type="button" onClick={() => onSendToOrchestrator(`PR #${number} · ${thread.path ?? 'review'}${thread.line ? `:${thread.line}` : ''}\n${comment.author}: ${comment.body}`)}>Send to orchestrator</Button>}
+          {onSendToOrchestrator && <ReviewButton variant="compact-action" type="button" onClick={() => onSendToOrchestrator(`PR #${number} · ${thread.path ?? 'review'}${thread.line ? `:${thread.line}` : ''}\n${comment.author}: ${comment.body}`)}>Send to orchestrator</ReviewButton>}
           <PrReactions
             reactions={comment.reactions}
             busy={busy}
@@ -164,7 +164,7 @@ function ThreadRow({
 
         />
         <DiscussionActionsRow>
-          <Button
+          <ReviewButton
             type="button"
             data-testid={`pr-thread-reply-send-${thread.id}`}
             disabled={busy || reply.trim().length === 0}
@@ -175,7 +175,7 @@ function ThreadRow({
             variant="discussion-reply-action"
           >
             Reply
-          </Button>
+          </ReviewButton>
         </DiscussionActionsRow>
       </DiscussionComposer>
     </DiscussionEntry>
@@ -290,7 +290,7 @@ export function PrComments({
 
           />
           <DiscussionActionsRow>
-            <Button
+            <ReviewButton
               type="button"
               data-testid="pr-comment-send"
               disabled={busy || draft.trim().length === 0}
@@ -301,7 +301,7 @@ export function PrComments({
             variant="discussion-submit-action"
             >
               Comment
-            </Button>
+            </ReviewButton>
           </DiscussionActionsRow>
         </DiscussionComposerPanel>
       </DiscussionThreadList>

@@ -1,3 +1,4 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
 import { useMemo, useRef, useState } from 'react'
 import type { GitBranchInfo } from '../../houston/generated/GitBranchInfo'
 import { GitDialogShell } from './GitDialogShell'
@@ -73,7 +74,7 @@ function DeleteBranchControl({
   return (
     <div className="relative flex-none">
       <Tooltip label={reason ?? 'Delete'} className="inline-flex">
-        <Button
+        <LazyLegacyButton
           type="button"
           variant="legacy-ghost-icon-danger"
           data-testid="branch-delete"
@@ -83,7 +84,7 @@ function DeleteBranchControl({
           onClick={onToggle}
         >
           <Icon glyph={IconTrash} role="label" />
-        </Button>
+        </LazyLegacyButton>
       </Tooltip>
       {open && (
         <GitBranchDeleteMenu onDelete={() => onChoose(false)} onForceDelete={() => onChoose(true)} />
@@ -200,7 +201,7 @@ function BranchRow({
           {!remote && (
             <>
               <Tooltip label="Rename" className="inline-flex">
-                <Button
+                <LazyLegacyButton
                   type="button"
                   variant="legacy-ghost-icon"
                   data-testid="branch-rename"
@@ -209,7 +210,7 @@ function BranchRow({
                   onClick={onStartRename}
                 >
                   <Icon glyph={IconPencil} role="label" />
-                </Button>
+                </LazyLegacyButton>
               </Tooltip>
               <DeleteBranchControl
                 branch={branch}

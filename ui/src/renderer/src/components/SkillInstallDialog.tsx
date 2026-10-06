@@ -1,8 +1,8 @@
+import { LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { useRef, useState } from 'react'
 import { useFocusRestore, useFocusTrap } from './dialogFocus'
 import { installSkillFromUrl, previewSkillUrl, type SkillUrlConflict } from '../houston/skillInstall'
 import { IconClose, IconFileDown } from './icons'
-import { Button } from './ui/Button'
 import { CodePane } from './ui/Block'
 import { DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from './ui/Dialog'
 import { Icon } from './ui/Icon'
@@ -90,9 +90,9 @@ export function SkillInstallDialog({
           <Text as="h2" id="skill-install-title" size="ui" weight="semibold" tight tone="primary" flush className="flex-1">
             Install skill from link
           </Text>
-          <Button variant="legacy-ghost-icon" ref={closeRef} aria-label="Close" onClick={onClose}>
+          <LazyLegacyButton variant="legacy-ghost-icon" ref={closeRef} aria-label="Close" onClick={onClose}>
             <Icon glyph={IconClose} role="label" />
-          </Button>
+          </LazyLegacyButton>
         </DialogTitle>
 
         <DialogBody variant="scroll">

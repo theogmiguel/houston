@@ -1,4 +1,4 @@
-import { Button } from './Button'
+import { SettingsButton } from './SettingsButtonRoles'
 import { Text } from './Text'
 
 export interface FileAttachmentRowProps {
@@ -20,8 +20,8 @@ export function FileAttachmentRow({ filename, metadata, thumbnail, emptyLabel, e
         <Text as="span" size="small" tone="secondary" mono className="block truncate" data-testid="background-image-filename">{filename}</Text>
         <Text as="span" size="small" tone="faint" tabular className="block">{metadata}</Text>
       </span> : <Text size="small" tone="muted" leading="small" className="min-w-0 flex-1">{emptyLabel}</Text>}
-      <Button variant="compact-ghost" className="flex-none" data-testid="background-image-choose" onClick={onChoose}>{present ? 'Replace…' : 'Choose…'}</Button>
-      {present && onRemove && <Button variant="compact-danger" className="flex-none" data-testid="background-image-remove" onClick={onRemove}>Remove</Button>}
+      <SettingsButton variant="compact-ghost" className="flex-none" data-testid="background-image-choose" onClick={onChoose}>{present ? 'Replace…' : 'Choose…'}</SettingsButton>
+      {present && onRemove && <SettingsButton variant="compact-danger" className="flex-none" data-testid="background-image-remove" onClick={onRemove}>Remove</SettingsButton>}
     </div>
     {error && <Text as="p" size="small" tone="danger" leading="small" flush className="pt-[var(--space-2)]" data-testid="background-image-error">{error}</Text>}
   </div>

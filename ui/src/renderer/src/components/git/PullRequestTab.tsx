@@ -1,3 +1,5 @@
+import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { Button } from '../ui/Button'
 import { PullRequestRole, PullRequestNumberField } from '../ui/PullRequestRoles'
 import { TextArea } from '../ui/TextArea'
@@ -172,9 +174,9 @@ function PrBlocked({
     <PullRequestRole data-testid="pr-detail-blocked" as="div" role="empty-panel">
       <PullRequestRole as="div" role="empty-heading">{headline}</PullRequestRole>
       <PullRequestRole as="p" role="empty-description">{body}</PullRequestRole>
-      <Button type="button" variant="legacy-secondary" data-testid="pr-retry" onClick={onRetry}>
+      <LazyLegacyButton type="button" variant="legacy-secondary" data-testid="pr-retry" onClick={onRetry}>
         Retry
-      </Button>
+      </LazyLegacyButton>
     </PullRequestRole>
   )
 }
@@ -199,13 +201,13 @@ function PrLinkForm({ pr }: { pr: PrDetailController }): React.JSX.Element {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
         />
-        <Button variant="legacy-secondary"
+        <LazyLegacyButton variant="legacy-secondary"
           type="submit"
           data-testid="pr-link"
           disabled={parsed === null || pr.linkBusy}
         >
           Link pull request
-        </Button>
+        </LazyLegacyButton>
       </PullRequestRole>
       {invalid && (
         <PullRequestRole data-testid="pr-link-invalid" as="div" role="error-message">
@@ -225,20 +227,20 @@ function PrRetryRow({
 }): React.JSX.Element {
   return (
     <PullRequestRole as="div" role="action-row">
-      <Button type="button" variant="legacy-secondary"
+      <LazyLegacyButton type="button" variant="legacy-secondary"
         data-testid="pr-retry"
         onClick={pr.refresh}
       >
         Retry
-      </Button>
+      </LazyLegacyButton>
       {view.linked && (
-        <Button type="button" variant="legacy-secondary"
+        <LazyLegacyButton type="button" variant="legacy-secondary"
           data-testid="pr-unlink"
           disabled={pr.linkBusy}
           onClick={pr.unlink}
         >
           Unlink
-        </Button>
+        </LazyLegacyButton>
       )}
     </PullRequestRole>
   )
@@ -251,12 +253,12 @@ function PrDescription({ body }: { body: string | null | undefined }): React.JSX
     <>
       <PullRequestDescription clamped={!expanded}>{body}</PullRequestDescription>
       {body.length > 240 && (
-        <Button variant="compact-self-start-action"
+        <ReviewButton variant="compact-self-start-action"
           type="button"
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? 'Show less' : 'Show more'}
-        </Button>
+        </ReviewButton>
       )}
     </>
   )
@@ -297,23 +299,23 @@ function PrEmpty({
               inline
               label={view.hasUpstream ? undefined : 'This branch has no upstream, so it cannot have a pull request yet.'}
             >
-              <Button type="button" variant="pull-request-primary-action"
+              <ReviewButton type="button" variant="pull-request-primary-action"
                 data-testid="pr-create"
                 disabled={!view.hasUpstream || pr.createBusy}
                 onClick={pr.create}
               >
                 {pr.createBusy ? 'Creating…' : 'Create pull request'}
-              </Button>
+              </ReviewButton>
             </Tooltip>
           </PullRequestRole>
           {!view.hasUpstream && onShowChanges && (
             <div>
-              <Button type="button" variant="legacy-secondary"
+              <LazyLegacyButton type="button" variant="legacy-secondary"
                 data-testid="pr-show-changes"
                 onClick={onShowChanges}
               >
                 Changes
-              </Button>
+              </LazyLegacyButton>
             </div>
           )}
         </>
@@ -384,7 +386,7 @@ function PrHeaderMetadata({ link, detail, onOpenUrlInPane }: {
         <Icon glyph={IconGitPullRequest} role="small" />{stateLabel(link)}
       </PullRequestState>
       <span data-testid="pr-number">#{link.number}</span>
-      {onOpenUrlInPane && <Button variant="pull-request-external-action" type="button" onClick={() => onOpenUrlInPane(link.url)}><Icon glyph={IconExternal} role="small" />Open on GitHub</Button>}
+      {onOpenUrlInPane && <ReviewButton variant="pull-request-external-action" type="button" onClick={() => onOpenUrlInPane(link.url)}><Icon glyph={IconExternal} role="small" />Open on GitHub</ReviewButton>}
     </div>
     <PullRequestRole data-testid="pr-title" as="div" role="pull-request-title">{link.title ?? `Pull request #${link.number}`}</PullRequestRole>
     <PullRequestRole data-testid="pr-sub" as="div" role="branch-summary">
@@ -409,20 +411,20 @@ function PrHeaderEditor({ link, detail, busy, editBusy, onEdit, onReact }: {
   const [body, setBody] = useState(detail.body ?? '')
   return <>
     <Tooltip label="Edit title and description">
-      <Button variant="compact-trailing-action" type="button" data-testid="pr-edit-open" disabled={busy} onClick={() => {
+      <ReviewButton variant="compact-trailing-action" type="button" data-testid="pr-edit-open" disabled={busy} onClick={() => {
         setTitle(link.title ?? '')
         setBody(detail.body ?? '')
         setEditing((value) => !value)
       }}>
         <Icon glyph={IconPencil} role="small" />
-      </Button>
+      </ReviewButton>
     </Tooltip>
     {editing ? <PullRequestRole data-testid="pr-edit-form" as="div" role="edit-form">
       <PullRequestNumberField variant="full" data-testid="pr-edit-title" aria-label="Pull request title" value={title} onChange={(event) => setTitle(event.target.value)} />
       <TextArea surface="content" data-testid="pr-edit-body" aria-label="Pull request description" rows={5} value={body} onChange={(event) => setBody(event.target.value)}  />
       <PullRequestRole as="div" role="action-row">
         <Button variant="legacy-primary" type="button" data-testid="pr-edit-save" disabled={editBusy || title.trim().length === 0} onClick={() => { setEditing(false); onEdit(title, body) }}>Save</Button>
-        <Button variant="legacy-secondary" type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)}>Cancel</Button>
+        <LazyLegacyButton variant="legacy-secondary" type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)}>Cancel</LazyLegacyButton>
       </PullRequestRole>
     </PullRequestRole> : <PrDescription body={detail.body} />}
     {!editing && <PrReactions reactions={detail.reactions} busy={busy} onToggle={onReact} />}
@@ -484,7 +486,7 @@ function PrEditDetails({ link, detail, busy, editBusy, onEdit }: {
       <TextArea surface="content" data-testid="pr-edit-body" aria-label="Pull request description" rows={5} value={body} onChange={(event) => setBody(event.target.value)}  />
       <PullRequestRole as="div" role="action-row">
         <Button variant="legacy-primary" type="button" data-testid="pr-edit-save" disabled={editBusy || title.trim().length === 0} onClick={() => { setEditing(false); onEdit(title, body) }}>Save</Button>
-        <Button variant="legacy-secondary" type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)}>Cancel</Button>
+        <LazyLegacyButton variant="legacy-secondary" type="button" data-testid="pr-edit-cancel" onClick={() => setEditing(false)}>Cancel</LazyLegacyButton>
       </PullRequestRole>
     </PullRequestRole>}
   </PullRequestRole>
@@ -797,26 +799,26 @@ function PrDetailView({
             { value: 'files', label: 'Files', testId: 'pr-pane-files' }
           ]}
         />
-        <Button variant="compact-action"
+        <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-browse-open"
           onClick={onBrowse}
         >
           Browse…
-        </Button>
+        </ReviewButton>
         {pr.viewed !== null && (
           <PullRequestRole data-testid="pr-browsed" as="span" role="viewed-label">
             Viewing #{pr.viewed}, not this branch's pull request
           </PullRequestRole>
         )}
         {pr.viewed !== null && (
-          <Button variant="legacy-secondary"
+          <LazyLegacyButton variant="legacy-secondary"
             type="button"
             data-testid="pr-back-to-branch"
             onClick={pr.showBranch}
           >
             Back
-          </Button>
+          </LazyLegacyButton>
         )}
         <PullRequestRole as="span" role="merge-status">
           {detail.mergeable === 'conflicting' ? 'conflicts' : ''}

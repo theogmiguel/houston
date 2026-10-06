@@ -1,4 +1,4 @@
-import { Button } from '../ui/Button'
+import { ReviewButton } from '../ui/ReviewButtonRoles'
 import { PullRequestActionsBar, PullRequestActionMenu } from '../ui/PullRequestActions'
 import { useState } from 'react'
 import type {
@@ -50,14 +50,14 @@ function PrActionButton({
 }): React.JSX.Element {
   return (
     <Tooltip label={disabledReason ?? undefined} className="inline-flex">
-      <Button variant={danger ? 'pull-request-danger-action' : 'pull-request-action'}
+      <ReviewButton variant={danger ? 'pull-request-danger-action' : 'pull-request-action'}
         type="button"
         data-testid={testId}
         disabled={disabledReason !== null || busy}
         onClick={onClick}
       >
         {label}
-      </Button>
+      </ReviewButton>
     </Tooltip>
   )
 }
@@ -152,14 +152,14 @@ function PrFooterMenu({
           }
           className="inline-flex"
         >
-          <Button variant="pull-request-action"
+          <ReviewButton variant="pull-request-action"
             type="button"
             data-testid="pr-stack-merge"
             disabled={busy || !canMergeStack || stackRefusal !== null}
             onClick={() => pr.mergeStack(link.number, stack.number, stackMergeHeads(stack, link.number), method)}
           >
             Merge stack to #{link.number}
-          </Button>
+          </ReviewButton>
         </Tooltip>
       )}
       <PrActionButton
@@ -281,7 +281,7 @@ export function PrFooterBar({
 
   return (
     <PullRequestActionsBar data-testid="pr-actions">
-      <Button variant="pull-request-nav-action"
+      <ReviewButton variant="pull-request-nav-action"
         type="button"
         data-testid="pr-open"
         disabled={!onOpenUrlInPane}
@@ -289,8 +289,8 @@ export function PrFooterBar({
       >
         <Icon glyph={IconExternal} role="small" />
         GitHub
-      </Button>
-      <Button variant="pull-request-nav-action"
+      </ReviewButton>
+      <ReviewButton variant="pull-request-nav-action"
         type="button"
         data-testid="pr-actions-menu"
         aria-label="More pull request actions"
@@ -298,7 +298,7 @@ export function PrFooterBar({
         onClick={() => setMenuOpen((value) => !value)}
       >
         ⋯
-      </Button>
+      </ReviewButton>
       <span data-testid="pr-merge-caption">
         {mergeReason ?? 'Ready when checks and required reviews pass'}
       </span>
@@ -319,13 +319,13 @@ export function PrFooterBar({
         />
       ) : primary ? (
         <Tooltip label={primary.disabledReason ?? undefined} className="inline-flex">
-          <Button type="button" variant="pull-request-primary-action"
+          <ReviewButton type="button" variant="pull-request-primary-action"
             data-testid={primary.testId}
             disabled={primary.disabledReason !== null || busy || pr.mergeBusy}
             onClick={primary.onClick}
           >
             {primary.label}
-          </Button>
+          </ReviewButton>
         </Tooltip>
       ) : closed ? (
         <PrActionButton

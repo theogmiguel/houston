@@ -1,3 +1,4 @@
+import { SettingsButton } from './ui/SettingsButtonRoles'
 import React, { useState } from 'react'
 import { Tooltip } from './ui/Tooltip'
 import { Select } from './ui/Select'
@@ -133,7 +134,7 @@ function AgentProfileCard({
             onChange={(e) => setDir(e.target.value)}
           />
         </ProfileFormField>
-        <Button
+        <SettingsButton
           variant="accent-soft"
           disabled={!canAdd}
           onClick={() => {
@@ -143,7 +144,7 @@ function AgentProfileCard({
           }}
         >
           Add
-        </Button>
+        </SettingsButton>
       </ProfileFormRow>
     </ProfilePanel>
   )
