@@ -53,7 +53,7 @@ import {
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 import { TaskExecutionCard, TaskStartCard } from './TaskExecution'
 import { TaskMenu } from './TaskMenu'
-import { Button, Chip, TaskDetailFrame, TaskDrawerCard, TaskDrawerHeader, TaskDrawerOrigin, TaskAcceptanceRow } from '../ui'
+import { Button, Chip, Notice, TaskDetailFrame, TaskDrawerCard, TaskDrawerHeader, TaskDrawerOrigin, TaskAcceptanceRow } from '../ui'
 
 export interface TaskDetailProps {
   detail: TaskDetailData
@@ -319,16 +319,15 @@ function BlockedBy({
   const label = (id: number): string => options.find((option) => option.value === String(id))?.label ?? `#${id}`
   const remaining = options.filter((option) => !blockedBy.includes(Number(option.value)))
   return (
-    <span className="prop flex flex-wrap items-center gap-[var(--space-1)]" data-testid="task-blocked-by">
-      <span className="k">Blocked by</span>
+    <span className="inline-flex items-center gap-[var(--space-1)]" data-testid="task-blocked-by">
       {blockedBy.map((id) => (
         <Chip key={id} variant="removable" label={label(id)} disabled={disabled} onRemove={() => onChange(blockedBy.filter((other) => other !== id))} />
       ))}
       <Select
-        aria-label="Add blocker"
+        aria-label="Blocked by"
         data-testid="task-add-blocker"
         value=""
-        options={[{ value: '', label: blockedBy.length > 0 ? 'Add' : 'None' }, ...remaining]}
+        options={[{ value: '', label: blockedBy.length > 0 ? 'Add blocker' : 'Blocked by: none' }, ...remaining]}
         disabled={disabled}
         chrome="prop-select"
         onChange={(value) => {
@@ -351,7 +350,7 @@ const LINK_PROVIDER_LABEL: Record<string, string> = { slack: 'Slack', github: 'G
 function TaskLinks({ links }: { links: TaskLink[] }): React.JSX.Element | null {
   if (links.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-[var(--space-1)]" data-testid="task-links">
+    <div className="grid justify-items-start gap-[var(--space-1)]" data-testid="task-links">
       {links.map((link) => {
         const label = `${LINK_PROVIDER_LABEL[link.provider] ?? link.provider} · ${link.external_id}`
         const url = link.url
@@ -445,13 +444,9 @@ function RefusalBanner({
 }): React.JSX.Element {
   if (refusal.kind === 'not_ready') {
     return (
-      <div className="tk-banner" data-testid="task-not-ready-banner">
-        <Icon glyph={IconAlertTriangle} role="small" />
-        <span className="msg">{refusal.message}</span>
-        <button type="button" className={`btn ${BTN_SECONDARY} ${HIT_TARGET_28}`} data-testid="task-start-anyway" onClick={onStartAnyway}>
-          Start anyway
-        </button>
-      </div>
+      <Notice tone="warn" data-testid="task-not-ready-banner" action={{ label: 'Start anyway', onClick: onStartAnyway }}>
+        {refusal.message}
+      </Notice>
     )
   }
   if (refusal.kind === 'conflict') {

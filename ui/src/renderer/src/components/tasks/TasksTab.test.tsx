@@ -202,7 +202,7 @@ describe('global Tasks viewer', () => {
     expect(onStart).toHaveBeenLastCalledWith(7, 'codex', null)
     render({ id: 7, kind: 'not_ready', message: 'task_start refused: task HOU-7 is not ready; it needs at least one acceptance item', expected: null, actual: null, limit: null, requested: null })
     expect(container.querySelector('[data-testid="task-not-ready-banner"]')?.textContent).toContain('at least one acceptance item')
-    click('[data-testid="task-start-anyway"]')
+    act(() => screen.getByRole('button', { name: 'Start anyway' }).click())
     expect(onStart).toHaveBeenLastCalledWith(7, 'codex', null, true)
   })
   it('offers Open GitHub issue only while the task mirrors no issue', () => {

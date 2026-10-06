@@ -11,6 +11,7 @@ import { Segmented } from '../Segmented'
 import { Select, type SelectOption } from '../Select'
 import { SettingsList, Toggle } from '../settingsPrimitives'
 import { SettingsScope } from '../ui/SettingsScope'
+import { Notice, TextInput } from '../ui'
 import { formatAgo, parseReworkRounds, TASK_AGENTS, taskAgentLabel } from '../tasks/format'
 import { Row, SubHead } from './shared'
 
@@ -133,27 +134,32 @@ export function TasksSection({
           />
         </Row>
       </SettingsList>
-      {reviewRefusal !== null && (
-        <div
-          data-testid="settings-tasks-review-refusal"
-          className="pt-[var(--space-2)] [font-size:var(--tr-text-small-size)] text-[var(--danger)]"
-        >
-          {reviewRefusal.message}
-        </div>
-      )}
+      {reviewRefusal !== null && <SectionRefusal testId="settings-tasks-review-refusal" message={reviewRefusal.message} />}
       <SubHead>GitHub Issues</SubHead>
       <SettingsList>
         <GithubRows state={github} workspace={workspace} workspaceName={workspaceName} onChange={setGithub} />
       </SettingsList>
-      {githubRefusal !== null && (
-        <div
-          data-testid="settings-tasks-github-refusal"
-          className="pt-[var(--space-2)] [font-size:var(--tr-text-small-size)] text-[var(--danger)]"
-        >
-          {githubRefusal.message}
-        </div>
-      )}
+      {githubRefusal !== null && <SectionRefusal testId="settings-tasks-github-refusal" message={githubRefusal.message} />}
     </>
+  )
+}
+
+/// A daemon refusal under its settings group: it names the limit, the value
+/// and the operation.
+function SectionRefusal({ testId, message }: { testId: string; message: string }): React.JSX.Element {
+  return (
+    <div data-testid={testId} className="pt-[var(--space-2)] [font-size:var(--tr-text-small-size)] text-[var(--danger)]">
+      {message}
+    </div>
+  )
+}
+
+/// The "Currently <value>" line every stateful row shows beside its control.
+function CurrentValue({ testId, value }: { testId: string; value: string }): React.JSX.Element {
+  return (
+    <span data-testid={testId} className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">
+      Currently <b className="font-semibold text-[var(--text-primary)]">{value}</b>
+    </span>
   )
 }
 
@@ -182,22 +188,15 @@ function GithubRows({
       <Row
         title="Import issues"
         desc={
-          <span className="block">
-            Open issues with the label below, or assigned to your gh user, become backlog tasks
-            linked to their issue. Houston reads and writes GitHub through your gh login.
-            <span
-              data-testid="settings-tasks-github-current"
-              className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]"
-            >
-              Currently <b className="font-semibold text-[var(--text-primary)]">{status}</b>
+          <>
+            <span>
+              Open issues with the label below, or assigned to your gh user, become backlog tasks
+              linked to their issue. Houston reads and writes GitHub through your gh login.
             </span>
-            {state?.error != null && (
-              <span data-testid="settings-tasks-github-error" className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--danger)]">
-                {state.error}
-              </span>
-            )}
+            <CurrentValue testId="settings-tasks-github-current" value={status} />
+            {state?.error != null && <Notice tone="danger" data-testid="settings-tasks-github-error">{state.error}</Notice>}
             <SettingsScope workspace={workspaceName} row />
-          </span>
+          </>
         }
       >
         <Toggle
@@ -248,8 +247,9 @@ function GithubLabelInput({
   const [draft, setDraft] = useState(value)
   useEffect(() => setDraft(value), [value])
   return (
-    <input
+    <TextInput
       type="text"
+      width="md"
       aria-label="GitHub label"
       data-testid="settings-tasks-github-label"
       placeholder="houston"
@@ -262,7 +262,6 @@ function GithubLabelInput({
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur()
       }}
-      className="w-[160px] bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-input)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2"
     />
   )
 }
@@ -287,15 +286,7 @@ function AgentAccessRow({
             Agents can read the global backlog and write tasks assigned to this workspace or no
             workspace. Tasks of another workspace are read-only to agents. Children of an
             orchestrator never see the backlog; they get their brief.
-            <span
-              data-testid="settings-tasks-current"
-              className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]"
-            >
-              Currently{' '}
-              <b className="font-semibold text-[var(--text-primary)]">
-                {access === null ? 'loading…' : ACCESS_LABEL[access]}
-              </b>
-            </span>
+            <CurrentValue testId="settings-tasks-current" value={access === null ? 'loading…' : ACCESS_LABEL[access]} />
             <SettingsScope workspace={workspace} row />
           </span>
         }
