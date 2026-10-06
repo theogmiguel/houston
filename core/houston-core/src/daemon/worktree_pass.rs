@@ -17,12 +17,14 @@ use crate::worktree_cleanup as wc;
 pub(super) const WORKTREE_CLEANUP_INTERVAL_MS: u64 = 6 * 60 * 60 * 1000;
 const ENABLED_KEY: &str = "worktree_cleanup_enabled";
 const GRACE_HOURS_KEY: &str = "worktree_cleanup_grace_hours";
+const IDLE_REMOVAL_DAYS_KEY: &str = "worktree_idle_removal_days";
 
 /// What the last pass found, kept in memory: a status reply reads it and asks nothing.
 #[derive(Default)]
 pub(super) struct CleanupState {
     checked: HashMap<String, Checked>,
     running: HashSet<String>,
+    pending_sessions: HashSet<u32>,
 }
 
 #[derive(Clone)]
@@ -30,6 +32,7 @@ struct Checked {
     at_ms: i64,
     pr: Option<u32>,
     keep: Option<WorktreeKeep>,
+    status: proto::WorktreeStatus,
 }
 
 struct CleanupWorkspace {
@@ -102,6 +105,31 @@ impl Daemon {
         Ok(())
     }
 
+    pub fn worktree_idle_removal_days(&self) -> u32 {
+        self.db
+            .get_setting(IDLE_REMOVAL_DAYS_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(proto::WORKTREE_IDLE_REMOVAL_DAYS_DEFAULT)
+    }
+
+    pub fn set_worktree_idle_removal_days(&self, days: u32) -> Result<()> {
+        if !(proto::WORKTREE_IDLE_REMOVAL_DAYS_MIN..=proto::WORKTREE_IDLE_REMOVAL_DAYS_MAX)
+            .contains(&days)
+        {
+            bail!(
+                "worktree idle removal must be {}..={} days (asked for {days}; currently {})",
+                proto::WORKTREE_IDLE_REMOVAL_DAYS_MIN,
+                proto::WORKTREE_IDLE_REMOVAL_DAYS_MAX,
+                self.worktree_idle_removal_days()
+            );
+        }
+        self.db
+            .set_setting(IDLE_REMOVAL_DAYS_KEY, &days.to_string())?;
+        Ok(())
+    }
+
     pub fn worktree_cleanup_status(&self, dir: &str) -> Result<proto::ServerMsg> {
         let ws = self.cleanup_workspace(dir)?;
         Ok(self.cleanup_message(&ws, Vec::new()))
@@ -123,14 +151,58 @@ impl Daemon {
         Ok(())
     }
 
+    pub fn worktree_idle_remove(&self, dir: &str, path: &str) -> Result<()> {
+        let ws = self.cleanup_workspace(dir)?;
+        let row = self
+            .rows_of(&ws)
+            .into_iter()
+            .find(|r| r.path == path)
+            .ok_or_else(|| anyhow!("{path} is not a managed worktree in {dir}"))?;
+        let tree = PathBuf::from(&row.path);
+        if !tree.exists()
+            || wc::idle_days(&tree, now_ms() as i64)
+                .is_none_or(|idle| idle < self.worktree_idle_removal_days().div_ceil(2))
+        {
+            bail!("{path} is not stale (expected a clean worktree with all commits on a remote and no live session, idle for at least {} days)", self.worktree_idle_removal_days().div_ceil(2));
+        }
+        if self
+            .live_session_cwds()
+            .iter()
+            .any(|(_, cwd)| cwd.starts_with(&tree))
+        {
+            bail!("{path} is in use (expected no live session in the stale worktree)");
+        }
+        let claim = self.claim_pass(&ws)?;
+        crate::worktrees::remove(&ws.dir, &tree, false)?;
+        self.db.managed_worktree_delete(&row.path)?;
+        self.forget_checked(&row.path);
+        drop(claim);
+        self.broadcast_control(&self.cleanup_message(
+            &ws,
+            vec![proto::RemovedWorktree {
+                path: row.path,
+                branch: row.branch,
+                pr: None,
+                bytes: row.bytes.map(|b| b as u64),
+            }],
+        ));
+        Ok(())
+    }
+
     /// One pass of the loop over every workspace with managed worktrees. With the
     /// setting off it does nothing at all: no `gh`, no fetch, no measuring. A workspace
     /// already mid-pass is skipped.
     pub fn worktree_cleanup_tick(&self) {
-        if !self.worktree_cleanup_enabled() {
-            return;
-        }
         let rows = self.db.managed_worktrees().unwrap_or_default();
+        let pending = {
+            let mut state = self.worktree_cleanup.lock().expect("worktree cleanup lock");
+            std::mem::take(&mut state.pending_sessions)
+        };
+        let scheduled_common: HashSet<String> = rows
+            .iter()
+            .filter(|r| r.created_by_session.is_some_and(|id| pending.contains(&id)))
+            .map(|r| r.repo_common_dir.clone())
+            .collect();
         for ws in self.cleanup_workspaces() {
             if !rows
                 .iter()
@@ -138,10 +210,22 @@ impl Daemon {
             {
                 continue;
             }
+            let scheduled = ws
+                .common_dir
+                .as_ref()
+                .is_some_and(|common| scheduled_common.contains(common));
+            if !scheduled && !self.worktree_cleanup_enabled() {
+                continue;
+            }
             let Ok(claim) = self.claim_pass(&ws) else {
                 continue;
             };
-            let removed = self.cleanup_pass(&ws, &Removal::All);
+            let removal = if self.worktree_cleanup_enabled() {
+                Removal::All
+            } else {
+                Removal::None
+            };
+            let removed = self.cleanup_pass(&ws, &removal);
             drop(claim);
             self.broadcast_control(&self.cleanup_message(&ws, removed));
         }
@@ -151,7 +235,10 @@ impl Daemon {
         loop {
             let daemon = Arc::clone(&self);
             let _ = tokio::task::spawn_blocking(move || daemon.worktree_cleanup_tick()).await;
-            tokio::time::sleep(Duration::from_millis(WORKTREE_CLEANUP_INTERVAL_MS)).await;
+            tokio::select! {
+                _ = self.worktree_cleanup_notify.notified() => {},
+                _ = tokio::time::sleep(Duration::from_millis(WORKTREE_CLEANUP_INTERVAL_MS)) => {},
+            }
         }
     }
 
@@ -221,6 +308,10 @@ impl Daemon {
                     measured_at_ms: r.measured_at_ms,
                     path: r.path,
                     branch: r.branch,
+                    base_branch: r.base_branch,
+                    status: checked
+                        .map(|c| c.status)
+                        .unwrap_or(proto::WorktreeStatus::Kept),
                 }
             })
             .collect();
@@ -255,15 +346,49 @@ impl Daemon {
                 continue;
             }
             let now = now_ms() as i64;
-            let (pr, keep) = keep_reason(ws, &row, &path, gh, grace_ms, now, &live);
-            let bytes = if keep.is_none() {
-                let bytes = wc::tree_bytes(&path);
-                let _ = self
-                    .db
-                    .managed_worktree_set_size(&row.path, bytes as i64, now);
-                bytes
-            } else {
-                row.bytes.unwrap_or(0) as u64
+            let (pr, mut keep) = keep_reason(ws, &row, &path, gh, grace_ms, now, &live);
+            let idle_days = wc::idle_days(&path, now)
+                .filter(|_| !live.iter().any(|(_, cwd)| cwd.starts_with(&path)));
+            let bytes = wc::tree_bytes(&path);
+            let _ = self
+                .db
+                .managed_worktree_set_size(&row.path, bytes as i64, now);
+            if let Some(idle_days) = idle_days {
+                let threshold = self.worktree_idle_removal_days();
+                if idle_days >= threshold && matches!(removal, Removal::All) {
+                    match remove_idle_managed(ws, &row, &path, &self.db) {
+                        Ok(()) => {
+                            tracing::info!(
+                                "removed idle worktree {} (kept branch {}, {bytes} bytes)",
+                                row.path,
+                                row.branch
+                            );
+                            self.forget_checked(&row.path);
+                            removed.push(proto::RemovedWorktree {
+                                path: row.path,
+                                branch: row.branch,
+                                pr,
+                                bytes: Some(bytes),
+                            });
+                            continue;
+                        }
+                        Err(e) => {
+                            keep = Some(WorktreeKeep::RemoveFailed {
+                                message: format!("{e:#}"),
+                            });
+                        }
+                    }
+                } else if idle_days >= threshold.div_ceil(2) {
+                    keep = Some(WorktreeKeep::Stale {
+                        idle_days,
+                        removal_in_days: threshold.saturating_sub(idle_days),
+                    });
+                }
+            }
+            let status = match &keep {
+                Some(WorktreeKeep::Stale { .. }) => proto::WorktreeStatus::Stale,
+                Some(_) => proto::WorktreeStatus::Kept,
+                None => proto::WorktreeStatus::Ready,
             };
             let keep = match keep {
                 None if removal.covers(&row.path) => {
@@ -282,6 +407,7 @@ impl Daemon {
                                     at_ms: now,
                                     pr,
                                     keep: Some(WorktreeKeep::InUse { session: *session }),
+                                    status: proto::WorktreeStatus::Kept,
                                 },
                             );
                         continue;
@@ -320,6 +446,7 @@ impl Daemon {
                         at_ms: now,
                         pr,
                         keep,
+                        status,
                     },
                 );
         }
@@ -351,6 +478,16 @@ impl Daemon {
     }
 }
 
+pub(super) fn queue_closed_session(daemon: &Daemon, session: u32) {
+    daemon
+        .worktree_cleanup
+        .lock()
+        .expect("worktree cleanup lock")
+        .pending_sessions
+        .insert(session);
+    daemon.worktree_cleanup_notify.notify_one();
+}
+
 /// The first thing keeping `path`, in the order a reader would ask: is it still on the
 /// recorded branch, can Houston see the PR, is it merged, would removing lose work, is
 /// someone in it, has the grace run.
@@ -380,7 +517,14 @@ fn keep_reason(
     }
     if gh != proto::GhState::Ready {
         let keep = if wc::upstream_gone(&ws.dir, &row.branch) {
-            WorktreeKeep::ProbablyIntegrated
+            match row
+                .base_branch
+                .as_deref()
+                .and_then(|base| wc::cherry_unintegrated(&ws.dir, base, &row.branch, None))
+            {
+                Some(0) => WorktreeKeep::ProbablyIntegrated,
+                _ => WorktreeKeep::NotIntegrated,
+            }
         } else {
             WorktreeKeep::GhUnavailable { gh }
         };
@@ -425,26 +569,22 @@ fn keep_reason(
     let head_here = wc::has_object(path, &facts.head_oid)
         || wc::pr_remote(path, &facts.url)
             .is_some_and(|remote| wc::fetch_pr_head(path, &remote, facts.number, &facts.head_oid));
-    let outside = head_here
-        .then(|| wc::commits_outside(path, &facts.head_oid))
-        .flatten();
-    match outside {
-        None => {
-            return (
-                pr,
-                Some(WorktreeKeep::PrHeadUnavailable { pr: facts.number }),
-            )
+    if !head_here {
+        return (
+            pr,
+            Some(WorktreeKeep::PrHeadUnavailable { pr: facts.number }),
+        );
+    }
+    match row
+        .base_branch
+        .as_deref()
+        .and_then(|base| wc::cherry_unintegrated(path, base, "HEAD", Some(facts.head_oid.as_str())))
+    {
+        None => return (pr, Some(WorktreeKeep::NotIntegrated)),
+        Some(unintegrated) if unintegrated > 0 => {
+            return (pr, Some(WorktreeKeep::NotIntegrated));
         }
-        Some(0) => {}
-        Some(count) => {
-            return (
-                pr,
-                Some(WorktreeKeep::CommitsOutsidePr {
-                    count,
-                    pr: facts.number,
-                }),
-            )
-        }
+        Some(_) => {}
     }
     if let Some((session, _)) = live.iter().find(|(_, cwd)| cwd.starts_with(path)) {
         return (pr, Some(WorktreeKeep::InUse { session: *session }));
@@ -477,6 +617,17 @@ fn remove_managed(
             row.branch
         );
     }
+    db.managed_worktree_delete(&row.path)?;
+    Ok(())
+}
+
+fn remove_idle_managed(
+    ws: &CleanupWorkspace,
+    row: &ManagedWorktreeRow,
+    path: &Path,
+    db: &crate::db::Db,
+) -> Result<()> {
+    crate::worktrees::remove(&ws.dir, path, false)?;
     db.managed_worktree_delete(&row.path)?;
     Ok(())
 }

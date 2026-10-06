@@ -1297,6 +1297,7 @@ pub struct Daemon {
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
+    worktree_cleanup_notify: tokio::sync::Notify,
     swarm_wake_lanes: Mutex<HashMap<u32, WakeLane>>,
     swarm_wake_generation: AtomicU64,
     delegation_settle: Mutex<HashMap<u32, DelegationSettleSample>>,
@@ -2647,6 +2648,7 @@ impl Daemon {
             spawn_observer_for_test: Mutex::new(None),
             worktree_spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
+            worktree_cleanup_notify: tokio::sync::Notify::new(),
             inbox_flush_scheduled: Mutex::new(HashSet::new()),
             composer_occupied: Mutex::new(HashMap::new()),
             orchestration_retry_lock: Mutex::new(()),
@@ -4247,6 +4249,9 @@ impl Daemon {
             path: path.display().to_string(),
             repo_common_dir: common_dir,
             branch: wt.branch.clone().unwrap_or_default(),
+            base_branch: base
+                .map(str::to_string)
+                .or_else(|| crate::git::default_base(repo)),
             provenance: crate::db::WorktreeProvenance::ChangesPane,
             created_by_session: None,
             created_at_ms: now_ms() as i64,
@@ -9810,6 +9815,7 @@ impl Daemon {
             session.remove_shell_token_file();
             session.removed.store(true, Ordering::Release);
             self.db.mark_closed(id)?;
+            worktree_pass::queue_closed_session(self, id);
             self.write_run_state();
             self.mcp_creds.revoke_session(id);
             self.mcp_notify.close_session(id);
@@ -9824,6 +9830,7 @@ impl Daemon {
         }
         if self.dead.lock().expect("dead lock").remove(&id).is_some() {
             self.db.mark_closed(id)?;
+            worktree_pass::queue_closed_session(self, id);
             self.remove_persisted_scrollback(id);
             self.broadcast_control(&proto::ServerMsg::SessionRemoved { session: id });
             return Ok(());
@@ -12176,6 +12183,7 @@ impl Daemon {
             settled_retention_hours: self.settled_retention_hours(),
             worktree_cleanup_enabled: self.worktree_cleanup_enabled(),
             worktree_cleanup_grace_hours: self.worktree_cleanup_grace_hours(),
+            worktree_idle_removal_days: self.worktree_idle_removal_days(),
             command_history_ignore_glob_count: self.command_history_ignore_globs().len() as u32,
             session_db_bytes,
         }
@@ -14938,6 +14946,7 @@ impl Daemon {
             path: created.path.display().to_string(),
             repo_common_dir: common_dir,
             branch: created.branch.clone(),
+            base_branch: crate::git::default_base(project_dir),
             provenance: crate::db::WorktreeProvenance::PaneSpawn,
             created_by_session: caller,
             created_at_ms: now_ms() as i64,
