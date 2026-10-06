@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { PrCheck, PrDetail, PrThread } from '../../houston/client'
 import { Button } from './Button'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconCheck, IconLoaderCircle } from '../icons'
 
 const SPIN_CLASS = 'loop-anim motion-safe:animate-[git-spin_0.9s_linear_infinite]'

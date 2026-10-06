@@ -5,6 +5,7 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 @source '.';
+@source './components/ui';
 @source not './**/*.test.ts';
 @source not './**/*.test.tsx';
 
@@ -54,4 +55,3 @@
     transform: rotate(360deg);
   }
 }
-

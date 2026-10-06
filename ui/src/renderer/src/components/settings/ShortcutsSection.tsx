@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { BTN_GHOST } from '../buttonChrome'
 import {
   chordFromEvent,
   effectiveLabel,
@@ -11,12 +10,16 @@ import {
 import type { Chord, ShortcutCategory, ShortcutEntry } from '../../keymap'
 import type { KeymapOverrides } from '../../houston/client'
 import { setPassKeysToTerminal, usePassKeysToTerminal } from '../../paneCaps'
-import { Tooltip } from '../Tooltip'
-import { Toggle } from '../settingsPrimitives'
+import { Tooltip } from '../ui/Tooltip'
+import { Toggle } from '../ui/settingsPrimitives'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
 import { TextInput } from '../ui/TextInput'
 import { Row } from './shared'
+import { KeyChip } from '../ui/KeyCap'
+import { ShortcutGroupLabel } from '../ui/ShortcutGroupLabel'
+import { Text } from '../ui/Text'
+import { ShortcutBindingRow, ShortcutConflictActions, ShortcutResetSlot, ShortcutToolbar } from '../ui/ShortcutControls'
 
 const SHORTCUT_GROUPS: { category: ShortcutCategory; label: string }[] = [
   { category: 'global', label: 'Global' },
@@ -80,39 +83,34 @@ function ShortcutRow({
   const overridden = remappable && s.id in keymapOverrides.bindings
   const inertNow = isSwitchGoverned(s.category) && !keymapOverrides.shortcuts_enabled
   return (
-    <div
+    <ShortcutBindingRow
       data-testid="settings-shortcut-row"
-      data-inert={inertNow || undefined}
-      className={`flex items-start gap-[10px] py-[8px] px-[14px] [&+&]:border-t [&+&]:border-t-[var(--divider)] ${inertNow ? '[&_.key-chip]:opacity-45' : ''}`}
+      inert={inertNow}
     >
       {remappable ? (
-        <button
+        <KeyChip
+          as="button"
           type="button"
-          className={`btn key-chip key-chip--capture flex-none min-w-[118px] font-semibold bg-[var(--content-bg)] border rounded-[var(--tr-radius-input)] py-px px-[7px] justify-center text-center [font-size:var(--tr-text-small-size)] font-mono ${
-            armedId === s.id
-              ? 'armed border-[var(--accent,var(--text-primary))] text-[var(--text-primary)]'
-              : 'border-transparent hover:border-[var(--border)] text-[var(--text-muted)]'
-          }`}
+          state={armedId === s.id ? 'armed' : 'idle'}
+          size="shortcut"
           onClick={() => onArm(s.id)}
         >
           {armedId === s.id ? 'Press a key… (Esc cancels)' : effectiveLabel(s, keymapOverrides)}
-        </button>
+        </KeyChip>
       ) : (
         <Tooltip label="Not remappable">
-          <span
-            className="key-chip key-chip--fixed flex-none min-w-[118px] font-semibold bg-[var(--content-bg)] border border-[var(--border)] rounded-sm py-px px-[7px] text-center [font-size:var(--tr-text-small-size)] font-mono text-[var(--text-muted)] opacity-60"
-          >
+          <KeyChip size="shortcut">
             {s.keyLabel}
-          </span>
+          </KeyChip>
         </Tooltip>
       )}
-      <span className="min-w-0 flex-1 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.45] text-[var(--text-muted)]">
+      <Text className="min-w-0 flex-1" leading="shortcut" size="small" weight="small" tone="muted">
         {s.description}
         {inertNow && (
-          <span className="text-[var(--text-muted)] italic"> — off (shortcuts disabled)</span>
+          <em><Text tone="muted"> — off (shortcuts disabled)</Text></em>
         )}
         {conflict && conflict.forId === s.id && (
-          <div className="flex flex-wrap items-center gap-[var(--space-2)]">
+          <ShortcutConflictActions>
             <Notice
               tone="warn"
               indicator="dot"
@@ -121,21 +119,22 @@ function ShortcutRow({
             >
               {conflict.message}
             </Notice>
-            <Button variant="ghost" size="sm" onClick={onCancelConflict}>Cancel</Button>
-          </div>
+          <Button variant="ghost" size="sm" onClick={onCancelConflict}>Cancel</Button>
+          </ShortcutConflictActions>
         )}
-      </span>
+      </Text>
       {overridden && (
-        <button
-          type="button"
+        <Button
+          variant="legacy-ghost"
+          size="sm"
           data-testid="settings-row-reset"
-          className={`btn ${BTN_GHOST} flex-none`}
+          className="flex-none"
           onClick={() => onReset(s.id)}
         >
           Reset
-        </button>
+        </Button>
       )}
-    </div>
+    </ShortcutBindingRow>
   )
 }
 
@@ -243,7 +242,7 @@ export function ShortcutsSection({
           />
         </Row>
       </div>
-      <div className="flex items-center justify-between gap-[var(--space-3)] py-[var(--space-3)]">
+      <ShortcutToolbar>
         <TextInput
           type="search"
           aria-label="Search shortcuts"
@@ -253,10 +252,9 @@ export function ShortcutsSection({
           onChange={(event) => setQuery(event.target.value)}
           className="min-w-0 flex-1"
         />
-        <div className="pt-2 mb-[var(--space-5)]">
-        <button
-          type="button"
-          className={`btn ${BTN_GHOST}`}
+        <ShortcutResetSlot>
+        <Button
+          variant="legacy-ghost"
           disabled={Object.keys(keymapOverrides.bindings).length === 0}
           onClick={() => {
             setArmedId(null)
@@ -265,9 +263,9 @@ export function ShortcutsSection({
           }}
         >
           Reset all to defaults
-        </button>
-        </div>
-      </div>
+        </Button>
+        </ShortcutResetSlot>
+      </ShortcutToolbar>
       <div className="">
         {SHORTCUT_GROUPS.map(({ category, label }) => {
           const needle = query.trim().toLocaleLowerCase()
@@ -275,12 +273,7 @@ export function ShortcutsSection({
           if (rows.length === 0) return null
           return (
             <div key={category} data-testid="settings-shortcut-group">
-              <div
-                className="px-3 py-[6px] [font-size:var(--tr-text-label-size)] font-semibold uppercase tracking-[0.04em] text-[var(--text-muted)] bg-[var(--content-bg)] border-b border-[var(--divider)]"
-                data-testid="settings-shortcut-group-label"
-              >
-                {label}
-              </div>
+              <ShortcutGroupLabel testId="settings-shortcut-group-label">{label}</ShortcutGroupLabel>
               {rows.map((s) => (
                 <ShortcutRow
                   key={s.id}

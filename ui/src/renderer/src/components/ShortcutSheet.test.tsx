@@ -36,7 +36,7 @@ describe('ShortcutSheet (fix round F1)', () => {
   }
 
   function rowFor(description: string): HTMLElement {
-    const row = Array.from(container.querySelectorAll('label + div > div')).find((r) =>
+    const row = Array.from(container.querySelectorAll('.flex.items-baseline')).find((r) =>
       r.textContent?.includes(description)
     )
     if (!row) throw new Error(`no row found for "${description}"`)
@@ -54,19 +54,19 @@ describe('ShortcutSheet (fix round F1)', () => {
     render({ bindings: {}, shortcuts_enabled: false })
 
     const editorRow = rowFor('split the editor pane down')
-    expect(editorRow.className).toContain('opacity-[0.45]')
+    expect(editorRow.className).toContain('opacity-[var(--opacity-inactive)]')
 
     const globalRow = rowFor('new terminal in this workspace')
-    expect(globalRow.className).toContain('opacity-[0.45]')
+    expect(globalRow.className).toContain('opacity-[var(--opacity-inactive)]')
 
     const terminalRow = rowFor('find in the terminal')
-    expect(terminalRow.className).not.toContain('opacity-[0.45]')
+    expect(terminalRow.className).not.toContain('opacity-[var(--opacity-inactive)]')
   })
 
   it('leaves every row at full opacity while shortcuts are on', () => {
     render({ bindings: {}, shortcuts_enabled: true })
     const editorRow = rowFor('split the editor pane down')
-    expect(editorRow.className).not.toContain('opacity-[0.45]')
+    expect(editorRow.className).not.toContain('opacity-[var(--opacity-inactive)]')
   })
 
   it("the OFF banner names both sections it silences, not just KEYBOARD", () => {

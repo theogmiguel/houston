@@ -156,7 +156,7 @@ describe('Sidebar workspace tree — every open workspace shows its tabs', () =>
     const row = wsRow('/a')
     expect(row.textContent).toContain('alpha')
     expect(row.querySelector('[data-testid="nav-count"]')).toBeNull()
-    expect(row.querySelector('span[aria-hidden]')?.className).not.toContain('opacity-0')
+    expect(row.querySelector('[data-testid="ws-chevron"] svg')?.getAttribute('class')).not.toContain('opacity-0')
   })
 
   it('an expanded workspace row does not include a pane-count chip', () => {

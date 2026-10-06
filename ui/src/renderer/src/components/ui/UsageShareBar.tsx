@@ -1,4 +1,4 @@
-import { Tooltip } from '../Tooltip'
+import { Tooltip } from './Tooltip'
 import { UsageSectionHeading } from './UsageSectionHeading'
 import { formatUsd } from '../../usage'
 

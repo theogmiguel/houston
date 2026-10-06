@@ -11,7 +11,7 @@ import type {
   PrThread,
   PullRequestLink
 } from '../../houston/client'
-import { BTN_PRIMARY } from '../buttonChrome'
+import { BTN_PRIMARY } from '../ui/buttonChrome'
 import {
   checkMeta,
   pendingMergeReason,

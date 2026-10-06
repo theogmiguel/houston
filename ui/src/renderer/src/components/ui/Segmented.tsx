@@ -1,4 +1,4 @@
-import { Segmented as BaseSegmented, type SegmentedOption, type SegmentedProps } from '../Segmented'
+import { Segmented as BaseSegmented, type SegmentedOption, type SegmentedProps } from './SegmentedControl'
 
 export interface CountedSegmentedOption<T extends string = string> extends SegmentedOption<T> {
   count?: number

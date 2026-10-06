@@ -263,7 +263,7 @@ describe('BrowserPane element picker (C11)', () => {
     for (const token of HIT_TARGET_28.split(/\s+/)) {
       expect(dismiss!.className, `missing "${token}" — hit area is not expanded`).toContain(token)
     }
-    expect(dismiss!.className).toContain('h-[18px]')
+    expect(dismiss!.className).toContain('h-[var(--browser-control-size)]')
   })
 
   it('Esc clears the picker selection via browser_clear_picker_selection', async () => {

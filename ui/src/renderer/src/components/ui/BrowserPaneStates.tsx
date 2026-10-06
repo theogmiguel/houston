@@ -1,10 +1,11 @@
 import { Button } from './Button'
+import { Text } from './Text'
 import { variants } from './variants'
 import { IconGlobe, IconHistory, IconPlug, IconPlus, IconRefresh, IconServer } from '../icons'
-import { IconTile } from '../IconTile'
+import { IconTile } from './IconTile'
 import type { LocalServer } from '../../houston/generated/LocalServer'
 import { clearRecents, faviconInitial, hostLabel } from '../browserTabs'
-import type { Dispatch, RefObject, SetStateAction } from 'react'
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from 'react'
 import { unreachableHost, unreachableMessage } from './browserUnreachable'
 import { lastRunLabel } from '../nav/routineFormat'
 
@@ -172,7 +173,7 @@ export function BrowserPaneStageState({
       />
     )
   }
-  if (failMsg === null) return <span className="browser-caption">Select element · click to hand it to the focused agent</span>
+  if (failMsg === null) return <BrowserCaption>Select element · click to hand it to the focused agent</BrowserCaption>
   return (
     <BrowserUnreachableState
       host={unreachableHost(url)}
@@ -186,4 +187,8 @@ export function BrowserPaneStageState({
       onToggleDetails={() => setDetails((visible) => !visible)}
     />
   )
+}
+
+export function BrowserCaption({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text size="xs" tone="faint" mono tabular className="flex-none">{children}</Text>
 }

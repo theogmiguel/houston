@@ -3,6 +3,7 @@ import { useBackgroundState } from '../backgroundMode'
 import { renderBackdrop } from './index'
 import { loadBackgroundSource, sourceFor, USER_IMAGE, type LoadedSource } from './source'
 import type { DitherParams } from './types'
+import { BackdropLayer } from '../components/ui'
 
 type CustomBackdropProps = {
   theme: string
@@ -107,11 +108,7 @@ export function CustomBackdrop({
   if (bg.mode !== 'custom') return null
 
   return (
-    <div
-      data-testid="custom-backdrop"
-      aria-hidden
-      className={`fixed inset-0 z-[var(--z-backdrop)] pointer-events-none ${className}`}
-    >
+    <BackdropLayer data-testid="custom-backdrop" className={className}>
       <canvas
         ref={canvasRef}
         data-testid="custom-backdrop-canvas"
@@ -125,6 +122,6 @@ export function CustomBackdrop({
           background: `linear-gradient(to bottom, transparent ${bg.fadeStop}%, var(--material-shell-bg) 100%)`
         }}
       />
-    </div>
+    </BackdropLayer>
   )
 }

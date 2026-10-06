@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { IconTile } from '../IconTile'
+import { IconTile } from './IconTile'
 import { Caption } from './Caption'
 import { Card } from './Card'
 import { StatusLabel, type StatusLabelValue } from './StatusLabel'

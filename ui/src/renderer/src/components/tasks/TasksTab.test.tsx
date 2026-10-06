@@ -64,14 +64,13 @@ describe('global Tasks viewer', () => {
     act(() => root.render(<TasksTab client={null} workspace="/project" workspaces={WORKSPACES} />))
     expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', 'all'])
     // The scope toggle replaces the workspace breadcrumb in the single header bar.
-    expect(container.querySelectorAll('.tk-head')).toHaveLength(1)
-    expect(container.querySelector('.tk-head .crumb2')).toBeNull()
-    expect(container.querySelector('.tk-head [role="radio"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-testid="tasks-new"]')).toHaveLength(1)
+    expect(container.querySelector('[data-testid="tasks-list"] > div:first-child [role="radio"]')).not.toBeNull()
     expect([...container.querySelectorAll('[data-testid="task-workspace-chip"]')].map((item) => item.textContent))
       .toEqual(['other', 'No workspace'])
-    // The chip is an extra grid cell; without the `ws` column the right slot wraps onto a second line.
+    // The chip is an extra grid cell; without the sixth column the right slot wraps onto a second line.
     expect([...container.querySelectorAll('[data-testid="task-workspace-chip"]')]
-      .every((chip) => chip.closest('.tk-row')?.classList.contains('ws'))).toBe(true)
+      .every((chip) => chip.closest('[data-task]')?.className.includes('_auto_auto]'))).toBe(true)
     act(() => [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
       .find((button) => button.textContent === 'This workspace')!.click())
     expect(mocks.useTasks.mock.calls.at(-1)?.slice(1)).toEqual(['/project', '/project'])
@@ -154,10 +153,10 @@ describe('global Tasks viewer', () => {
     click('[data-testid="task-run-review"]')
     expect(onReview).toHaveBeenLastCalledWith(current)
     expect(onReview.mock.calls.at(-1)?.[0]).toBe(current)
-    expect(container.querySelector('[data-testid="tasks-now"] .tk-st')?.textContent).toBe('In progress')
+    expect(container.querySelector('[data-testid="tasks-now"] [data-run-state]')?.textContent).toBe('In progress')
     renderCards({ ...run, state: 'waiting_for_input' })
-    expect(container.querySelector('[data-testid="tasks-now"] .tk-st')?.textContent).toBe('Needs you')
-    expect(container.querySelector('[data-testid="task-execution"] .tk-st')?.textContent).toBe('Needs you')
+    expect(container.querySelector('[data-testid="tasks-now"] [data-run-state]')?.textContent).toBe('Needs you')
+    expect(container.querySelector('[data-testid="task-execution"] [data-run-state]')?.textContent).toBe('Needs you')
   })
 
   it('renders the drawer detail with the mock actions and toggleable acceptance rows', () => {

@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { BackdropMount } from '../../backdrop/BackdropMount'
 import { RAIL_DEFAULT } from '../../railWidth'
 import type { ChromeTheme } from '../../theme'
+import { Viewport } from '../ui/Viewport'
 
 export function Shell({
   chromeTheme,
@@ -17,8 +18,8 @@ export function Shell({
   children: ReactNode
 }): React.JSX.Element {
   return (
-    <div
-      className="h-screen relative grid overflow-hidden"
+    <Viewport
+      className="relative grid overflow-hidden"
       style={{
         ['--w-rail' as string]: railCollapsed ? '0px' : `${railWidth}px`,
         gridTemplateColumns: 'var(--w-rail) minmax(0, 1fr)',
@@ -31,6 +32,6 @@ export function Shell({
         {...(onBackgroundUnavailable ? { onUnavailable: onBackgroundUnavailable } : {})}
       />
       {children}
-    </div>
+    </Viewport>
   )
 }

@@ -1,7 +1,7 @@
 import { useContext } from 'react'
 import { effectiveLabel, isSwitchGoverned, KEYMAP, type ShortcutCategory } from '../keymap'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
-import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from './ui'
+import { Button, DialogActions, DialogAlert, DialogBackdrop, DialogBody, DialogPanel, DialogTitle, KeyBindingRow, Stack, Text } from './ui'
 
 interface Props {
   onClose: () => void
@@ -21,10 +21,10 @@ export function ShortcutSheet({ onClose }: Props): React.JSX.Element {
       <DialogPanel size="wide" surface="glass" onMouseDown={(e) => e.stopPropagation()}>
         <DialogTitle>SHORTCUTS</DialogTitle>
         {!keymapOverrides.shortcuts_enabled && (
-          <div className="mx-4 mb-2 px-2.5 py-1.5 rounded-[var(--tr-radius-sm)] bg-danger/12 text-text-secondary [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">
+          <DialogAlert>
             Global shortcuts are OFF (Settings → Shortcuts) — KEYBOARD and IN THE EDITOR rows below
             are inert.
-          </div>
+          </DialogAlert>
         )}
         <DialogBody>
           {SECTIONS.map(({ category, label }) => {
@@ -32,29 +32,21 @@ export function ShortcutSheet({ onClose }: Props): React.JSX.Element {
             if (items.length === 0) return null
             const inert = isSwitchGoverned(category) && !keymapOverrides.shortcuts_enabled
             return (
-              <div key={category}>
-                <label className="block text-text-muted [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase mb-[5px]">
+              <Stack key={category} gap="field">
+                <Text as="label" size="label" weight="label" tone="muted">
                   {label}
-                </label>
-                <div className="flex flex-col gap-1 overflow-y-auto">
+                </Text>
+                <Stack gap={1} className="overflow-y-auto">
                   {items.map((s) => (
-                    <div
-                      key={s.id}
-                      className={`flex gap-2.5 items-baseline [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] ${inert ? 'opacity-[0.45]' : ''}`}
-                    >
-                      <span className="flex-none min-w-[118px] text-text-muted font-semibold bg-background border border-border rounded px-1.75 py-px text-center [font-size:var(--tr-text-small-size)]">
-                        {effectiveLabel(s, keymapOverrides)}
-                      </span>
-                      <span className="text-text-secondary">{s.description}</span>
-                    </div>
+                    <KeyBindingRow key={s.id} keyName={effectiveLabel(s, keymapOverrides)} description={s.description} disabled={inert} />
                   ))}
-                </div>
-              </div>
+                </Stack>
+              </Stack>
             )
           })}
         </DialogBody>
         <DialogActions>
-          <Button variant="legacy-ghost" onClick={onClose}>Close <span className="opacity-55 font-normal">esc</span></Button>
+          <Button variant="legacy-ghost" onClick={onClose}>Close <Text tone="key-hint" weight="medium">esc</Text></Button>
         </DialogActions>
       </DialogPanel>
     </DialogBackdrop>

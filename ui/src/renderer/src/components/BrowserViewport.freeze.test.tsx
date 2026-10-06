@@ -49,7 +49,7 @@ it('uses a theme background when capture fails', async () => {
   const view = mount(async () => { throw new Error('capture failed') })
   act(() => assertNativeSuppression('modal'))
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('browser_set_visible', { id: 'guest', visible: false, reason: 'modal' }))
-  expect(view.container.querySelector('[data-browser-surface-id]')?.getAttribute('style')).toContain('var(--content-bg)')
+  expect(view.container.querySelector('[data-browser-surface-id]')?.className).toContain('bg-[var(--content-bg)]!')
   expect(view.container.querySelector('img')).toBeNull()
 })
 

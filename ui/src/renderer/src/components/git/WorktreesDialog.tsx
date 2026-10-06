@@ -15,11 +15,11 @@ import {
 import { ConfirmModal } from '../ConfirmModal'
 import { WorktreeCleanupSection } from './WorktreeCleanupSection'
 import type { WorktreeCleanupView } from './worktreeCleanup'
-import { Select } from '../Select'
+import { Select } from '../ui/Select'
 import { Button, Caption, Card, Chip, Notice, SectionHead, TextInput } from '../ui'
 import { IconFolderOpen, IconRefresh, IconTrash } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
 
 export interface WorktreesDialogProps {
   dir: string | null

@@ -5,10 +5,8 @@ import { clampScmWidth, defaultScmWidth, type ScmTab } from '../scmPanel'
 import { selectOverviewChild, type SideOpen } from '../sidePanel'
 import { requestReveal } from '../editor/bufferStore'
 import { SourceControlPanel, ScmResizeHandle, type SourceControlPanelProps } from './SourceControlPanel'
-import { InspectorHeader } from './ui/InspectorHeader'
+import { InspectorBody, InspectorCard, InspectorHeader, InspectorSurface } from './ui/InspectorHeader'
 import { IconAgent } from './icons'
-import './sidePanel.css'
-import './tasks/tasks.css'
 
 const FilesPane = lazy(() => import('./FilesPane').then((module) => ({ default: module.FilesPane })))
 const OverviewTab = lazy(() => import('./OverviewTab').then((module) => ({ default: module.OverviewTab })))
@@ -48,7 +46,7 @@ function InspectorContent({ props, tab, focused, isOrchestrator, filesRoot, open
     const checkoutLabel = focused?.worktree?.path
       ? `wt/${focused.worktree.path.split(/[\\/]/).filter(Boolean).at(-1)}`
       : focused?.checkout_root ?? props.dir ?? ''
-    return <div className="side-card"><SourceControlPanel {...props} key={`${props.dir ?? 'none'}:${props.activeSessionId ?? 'none'}`} session={props.activeSessionId} tab={tab} hideHeader onSummaryChange={setSummary} embedded checkoutLabel={checkoutLabel} /></div>
+    return <InspectorCard><SourceControlPanel {...props} key={`${props.dir ?? 'none'}:${props.activeSessionId ?? 'none'}`} session={props.activeSessionId} tab={tab} hideHeader onSummaryChange={setSummary} embedded checkoutLabel={checkoutLabel} /></InspectorCard>
   }
   if (tab === 'files') {
     return <Suspense fallback={<div className="flex-1" />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'inspector-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} onSendToTerminal={props.onSendToTerminal} sendToTerminalLabel={props.sendToTerminalLabel} /></Suspense>
@@ -136,11 +134,11 @@ export function SidePanel(props: SidePanelProps): React.JSX.Element {
     props.onFocusGrid()
   }
 
-  return <aside aria-label="Pane inspector" data-testid="side-panel" data-dir={props.dir ?? undefined} className={`pane-inspector ${props.hiddenByOverlay ? 'invisible' : ''}`} style={{ width: rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={onKeyDown}>
+  return <InspectorSurface aria-label="Pane inspector" data-testid="side-panel" data-dir={props.dir ?? undefined} hiddenByOverlay={props.hiddenByOverlay} style={{ width: rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={onKeyDown}>
     <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />
     <PaneInspectorHeader props={props} focused={focused} tab={activeTab} summary={summary} onTab={selectTab} />
-    <div className="pane-inspector-content"><InspectorContent props={props} tab={activeTab} focused={focused} isOrchestrator={isOrchestrator} filesRoot={filesRoot} openFile={openFile} setTab={setActiveTab} setSummary={setSummary} /></div>
-  </aside>
+    <InspectorBody><InspectorContent props={props} tab={activeTab} focused={focused} isOrchestrator={isOrchestrator} filesRoot={filesRoot} openFile={openFile} setTab={setActiveTab} setSummary={setSummary} /></InspectorBody>
+  </InspectorSurface>
 }
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: sessionsProp, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: SourceControlPanelProps & {

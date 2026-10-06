@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SettingsView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
-import { SELECT_CLS } from './selectChrome'
+import { SELECT_CLS } from './ui/selectChrome'
 import { selectTrigger } from '../test/selectHarness'
 import type { KeymapOverrides } from '../houston/client'
 import type { VoiceSettings } from '../houston/generated/VoiceSettings'
@@ -155,7 +155,7 @@ describe('SettingsView — every picker composes SELECT_CLS (dropdown-01)', () =
     for (const id of testIds) {
       const cls = selectTrigger(container, id).className
       expect(cls, `${id} lost SELECT_CLS`).toContain(SELECT_CLS)
-      expect(cls, `${id} lost its width`).toContain('w-[200px]')
+      expect(cls, `${id} lost its width`).toContain('w-[var(--tr-control-width-medium)]')
     }
   })
 

@@ -6,16 +6,26 @@ import {
   type Dispatch,
   type SetStateAction
 } from 'react'
-import { BORDER_HAIRLINE_INSET } from './shadowChrome'
 import { normalizeUrl, type WebviewEl } from '../houston/browserUrl'
 import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { useBrowserOpenUrl } from '../houston/browserState'
 import { IconClose, IconPlus } from './icons'
-import { WEBVIEW_HOST_CLS } from './panelChrome'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
-import { HIT_TARGET_28 } from './hitTarget'
+import { WEBVIEW_HOST_CLS } from './ui/panelChrome'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
+import { Text } from './ui/Text'
+import {
+  BrowserNewTabButton,
+  BrowserTabButton,
+  BrowserTabCloseButton,
+  BrowserTabFavicon,
+  BrowserTabFaviconImage,
+  BrowserTabRow,
+  BrowserTabTitle,
+  BrowserTabsList,
+  BrowserTabsPopover
+} from './ui/BrowserSurface'
 
 const RECENTS_KEY = 'tr-browser-recents'
 // Kept at 8 deliberately: raising it decides how much browsing history Houston
@@ -433,37 +443,33 @@ export function TabsPopover({
   }, [onDismiss])
 
   return (
-    <div
+    <BrowserTabsPopover
       ref={ref}
-      className="absolute top-[calc(100%_+_6px)] right-0 z-[var(--z-sticky)] min-w-[260px] max-w-[320px] p-1 rounded-lg bg-surface border border-border shadow-[var(--shadow-1)] motion-safe:[animation:menu-in_var(--animate-t-fast)_var(--animate-ease-menu)]"
       role="menu"
     >
-      <div className="flex flex-col gap-px max-h-[360px] overflow-y-auto [scrollbar-width:thin]">
+      <BrowserTabsList>
         {tabs.map((t) => {
           const title = t.title?.trim() || (t.url ? hostLabel(t.url) : 'New tab')
           return (
-            <div
+            <BrowserTabRow
               key={t.id}
-              className={`group/pop relative flex items-center gap-0.5 rounded-md text-text-secondary [transition:background_0.12s_ease,color_0.12s_ease] hover:bg-background hover:text-text-primary data-[active]:bg-background data-[active]:text-text-primary data-[active]:shadow-[${BORDER_HAIRLINE_INSET}]`}
               data-active={t.id === activeId || undefined}
               data-loading={t.loading || undefined}
               role="none"
             >
               <Tooltip label={t.url ?? undefined}>
-                <button
+                <BrowserTabButton
                   aria-label={t.url ?? undefined}
                   type="button"
                   role="menuitemradio"
                   aria-checked={t.id === activeId}
-                  className="btn flex-1 min-w-0 flex items-center gap-2 py-1.5 pr-1.5 pl-2 border-0 rounded-[var(--tr-radius-sm)] bg-transparent text-inherit text-left"
                   onClick={() => {
                     onSelect(t)
                     onDismiss()
                   }}
                 >
                   {}
-                  <span
-                    className="relative flex-none inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] bg-surface-hover text-text-secondary font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] overflow-hidden uppercase [--dot-pulse-opacity:0.45] group-data-[loading]/pop:loop-anim group-data-[loading]/pop:motion-safe:[animation:dot-pulse_1.2s_steps(4,end)_infinite] group-data-[loading]/pop:motion-reduce:opacity-70"
+                  <BrowserTabFavicon
                     aria-hidden
                   >
                     {t.url === null ? (
@@ -474,8 +480,7 @@ export function TabsPopover({
                           {faviconInitial(t.url)}
                         </span>
                         {faviconSrc(t) && (
-                          <img
-                            className="absolute inset-0 w-full h-full object-contain bg-[inherit]"
+                          <BrowserTabFaviconImage
                             src={faviconSrc(t) as string}
                             alt=""
                             loading="lazy"
@@ -487,40 +492,38 @@ export function TabsPopover({
                         )}
                       </>
                     )}
-                  </span>
-                  <span className="flex-1 min-w-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] overflow-hidden text-ellipsis whitespace-nowrap">
+                  </BrowserTabFavicon>
+                  <BrowserTabTitle>
                     {title}
-                  </span>
-                </button>
+                  </BrowserTabTitle>
+                </BrowserTabButton>
               </Tooltip>
               {}
-              <button
+              <BrowserTabCloseButton
                 type="button"
                 aria-label={`Close ${title}`}
-                className={`btn flex-none inline-flex items-center justify-center w-[18px] h-[18px] rounded-[var(--tr-radius-input)] text-[color-mix(in_srgb,currentColor_55%,transparent)] bg-transparent border-0 p-0 opacity-0 [transition:opacity_0.12s_ease,color_0.12s_ease,background_0.12s_ease] group-hover/pop:opacity-100 group-focus-within/pop:opacity-100 group-data-[active]/pop:opacity-100 hover:text-text-primary hover:bg-[color-mix(in_srgb,var(--text-primary)_12%,transparent)] ${HIT_TARGET_28}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   onCloseTab(t.id)
                 }}
               >
                 <Icon glyph={IconClose} role="label" />
-              </button>
-            </div>
+              </BrowserTabCloseButton>
+            </BrowserTabRow>
           )
         })}
-      </div>
-      <button
+      </BrowserTabsList>
+      <BrowserNewTabButton
         type="button"
         data-testid="browser-new-tab"
-        className="btn flex items-center gap-2 w-full mt-1 py-[7px] px-2.5 rounded-[var(--tr-radius-button)] bg-transparent border border-dashed border-border text-text-secondary [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] [transition:color_0.14s_ease,background_0.14s_ease,border-color_0.14s_ease] hover:text-text-primary hover:border-[var(--text-muted)] hover:bg-background [&>span]:flex-1 [&>span]:text-left"
         onClick={() => {
           onNewTab()
           onDismiss()
         }}
       >
         <Icon glyph={IconPlus} role="ui" />
-        <span>New tab</span>
-      </button>
-    </div>
+        <Text size="small" weight="small">New tab</Text>
+      </BrowserNewTabButton>
+    </BrowserTabsPopover>
   )
 }

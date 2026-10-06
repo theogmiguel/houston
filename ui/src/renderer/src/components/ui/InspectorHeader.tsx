@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { variants } from './variants'
+import { Text } from './Text'
 import './inspector.css'
 
 export interface InspectorTab {
@@ -7,6 +8,18 @@ export interface InspectorTab {
   label: string
   count?: number
   countPrefix?: string
+}
+
+export function InspectorSurface({ hiddenByOverlay, ...props }: HTMLAttributes<HTMLElement> & { hiddenByOverlay?: boolean }): React.JSX.Element {
+  return <aside {...props} className={`pane-inspector${hiddenByOverlay ? ' invisible' : ''}`} />
+}
+
+export function InspectorBody(props: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
+  return <div {...props} className="pane-inspector-content" />
+}
+
+export function InspectorCard(props: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
+  return <div {...props} className="inspector-card" />
 }
 
 const tab = variants('inspector-tab', {
@@ -46,8 +59,8 @@ export function InspectorHeader({
     </div>
     <div className="inspector-subject">
       <span className="inspector-subject-icon">{icon}</span>
-      <strong>{title}</strong>
-      <span className="inspector-subject-meta">{checkout}{ahead ? ` · ↑${ahead}${branch ? ` on ${branch}` : ''}` : ''}</span>
+      <Text as="strong" weight="semibold" tone="primary">{title}</Text>
+      <Text as="span" size="caption" tone="muted" mono className="inspector-subject-meta">{checkout}{ahead ? ` · ↑${ahead}${branch ? ` on ${branch}` : ''}` : ''}</Text>
     </div>
   </>
 }

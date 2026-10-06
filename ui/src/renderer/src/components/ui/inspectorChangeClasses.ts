@@ -1,5 +1,5 @@
-import { BTN_GHOST } from '../buttonChrome'
-import { RING_ACCENT_ICON, RING_ACCENT_INSET_45 } from '../shadowChrome'
+import { BTN_GHOST } from './buttonChrome'
+import { RING_ACCENT_ICON, RING_ACCENT_INSET_45 } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 
 const SECTION_HEAD_CLS = 'flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tracking-[0.1em] uppercase text-[var(--text-muted)]'

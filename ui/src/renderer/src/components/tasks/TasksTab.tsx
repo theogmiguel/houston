@@ -2,12 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionInfo, HoustonClient } from '../../houston/client'
 import type { TaskPatch } from '../../houston/generated/TaskPatch'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
-import type { SelectOption } from '../Select'
+import type { SelectOption } from '../ui/Select'
 import { useTaskStartSettings, useTasks, type TaskRefusal } from '../../houston/useTasks'
-import { BTN_GHOST } from '../buttonChrome'
-import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import { IconAlertTriangle, IconChevronLeft } from '../icons'
+import { TaskBanner, TaskBannerMessage, TaskButton, TaskPanel, TaskToolbar } from '../ui'
 import { TaskComposer } from './TaskComposer'
 import { TaskDetail } from './TaskDetail'
 import { TaskNowCard } from './TaskNowCard'
@@ -229,20 +228,20 @@ function TaskDetailLoading({
   onBack: () => void
 }): React.JSX.Element {
   return (
-    <div className="tasks-root" data-testid="task-detail-loading">
-      <div className="tk-head">
-        <button type="button" className={`btn ${BTN_GHOST} ${HIT_TARGET_28}`} onClick={onBack}>
+    <TaskPanel data-testid="task-detail-loading">
+      <TaskToolbar>
+        <TaskButton tone="ghost" density="toolbar" onClick={onBack}>
           <Icon glyph={IconChevronLeft} role="small" />
           Tasks
-        </button>
-      </div>
+        </TaskButton>
+      </TaskToolbar>
       {refusal && refusal.id !== null && (
-        <div className="tk-banner error">
+        <TaskBanner tone="error">
           <Icon glyph={IconAlertTriangle} role="small" />
-          <span className="msg">{refusal.message}</span>
-        </div>
+          <TaskBannerMessage>{refusal.message}</TaskBannerMessage>
+        </TaskBanner>
       )}
-    </div>
+    </TaskPanel>
   )
 }
 

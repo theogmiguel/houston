@@ -68,7 +68,7 @@ describe('Sidebar — the workspace row’s doors match the reference', () => {
     expect(container.querySelector('[aria-label="New tab"]')).toBeNull()
   })
 
-  it('the row’s context menu is New Grid · Rename · Reveal · Open Workspace In · Remove', () => {
+  it('the row’s context menu is New grid · Rename · Reveal · Open workspace in · Remove', () => {
     act(() => {
       root.render(<Sidebar {...props({ onNewWorkspaceSession: noop, onAddGrid: noop })} />)
     })
@@ -82,12 +82,12 @@ describe('Sidebar — the workspace row’s doors match the reference', () => {
       (b.textContent ?? '').replace(/F2|Ctrl\+Shift\+W/g, '').trim()
     )
     expect(labels).toEqual([
-      'New Grid',
-      'Rename Workspace',
-      'Pin Workspace',
+      'New grid',
+      'Rename workspace',
+      'Pin workspace',
       'Reveal in Files',
-      'Open Workspace In',
-      'Remove Workspace'
+      'Open workspace in',
+      'Remove workspace'
     ])
     expect(container.querySelector('[data-testid="swatch"]')).toBeNull()
     expect(container.querySelector('[data-testid="grid-add"]')).toBeNull()

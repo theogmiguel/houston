@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from '../buttonChrome'
+import { Button, HistoryEditor, Inline, Text, SettingsTextarea, Stack } from '../ui'
 import { isTauri } from '../../houston/host'
 import {
   COMMAND_HISTORY_IGNORE_GLOBS_MAX,
   COMMAND_HISTORY_IGNORE_GLOB_LEN_MAX
 } from '../../houston/generated/DEFAULTS'
-import { SettingsList } from '../settingsPrimitives'
+import { SettingsList } from '../ui/settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import { Row, SubHead } from './shared'
 
@@ -78,13 +78,14 @@ export function PrivacySection({
           title="Command history"
           desc={
             <>
-              <span className="tabular-nums">{historyCount ?? '…'}</span> recorded command
+              <Text weight="medium" size="small" tabular>{historyCount ?? '…'}</Text> recorded command
               {historyCount === 1 ? '' : 's'} across all workspaces
             </>
           }
         >
-          <button
-            className={`btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER} ${confirmClear ? BTN_GHOST_DANGER_ARM : ''}`}
+          <Button
+            variant="legacy-danger"
+            armed={confirmClear}
             onClick={() => {
               if (confirmClear) {
                 onClearHistory()
@@ -96,15 +97,15 @@ export function PrivacySection({
             onBlur={() => setConfirmClear(false)}
           >
             {confirmClear ? 'Click again to clear all history' : 'Clear history…'}
-          </button>
+          </Button>
         </Row>
         <Row
           title="History ignore patterns"
           desc="Commands matching these are never recorded. Ships with secret-bearing patterns."
         >
-          <button
+          <Button
             type="button"
-            className={`btn ${BTN_GHOST}`}
+            variant="legacy-ghost"
             data-testid="settings-history-ignore-edit"
             onClick={() => {
               setIgnoreGlobsDraft((historyIgnoreGlobs ?? []).join('\n'))
@@ -114,35 +115,36 @@ export function PrivacySection({
             {(historyIgnoreGlobs ?? null) === null
               ? 'Edit patterns…'
               : `Edit ${historyIgnoreGlobs!.length} pattern${historyIgnoreGlobs!.length === 1 ? '' : 's'}…`}
-          </button>
+          </Button>
         </Row>
         {editingIgnoreGlobs && (
-          <div className="px-[14px] pb-[12px] pt-[2px] border-t border-t-[var(--divider)]">
-            <textarea
+          <HistoryEditor>
+            <SettingsTextarea
               autoFocus
               rows={6}
               data-testid="settings-history-ignore-textarea"
-              className="w-full bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[6px] px-2 leading-[1.5]"
+              mono
+              radius="small"
               placeholder="One glob per line, e.g. aws configure*"
               value={ignoreGlobsDraft}
               onChange={(e) => setIgnoreGlobsDraft(e.target.value)}
             />
-            <div className="mt-[4px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+            <Stack gap={1} insetTop={1}>
               {(() => {
                 const lines = ignoreGlobsDraft.split('\n').filter((l) => l.trim().length > 0)
                 const longest = lines.reduce((m, l) => Math.max(m, l.length), 0)
                 return (
-                  <span className="tabular-nums">
+                  <Text weight="medium" size="small" tone="muted" tabular>
                     {lines.length}/{COMMAND_HISTORY_IGNORE_GLOBS_MAX} patterns · longest {longest}/
                     {COMMAND_HISTORY_IGNORE_GLOB_LEN_MAX} chars
-                  </span>
+                  </Text>
                 )
               })()}
-            </div>
-            <div className="mt-[8px] flex items-center gap-2">
-              <button
+            </Stack>
+            <Inline gap="small" insetTop>
+              <Button
                 type="button"
-                className={`btn ${BTN_GHOST}`}
+                variant="legacy-ghost"
                 data-testid="settings-history-ignore-save"
                 onClick={() => {
                   const globs = ignoreGlobsDraft
@@ -154,16 +156,16 @@ export function PrivacySection({
                 }}
               >
                 Save
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className={`btn ${BTN_GHOST}`}
+                variant="legacy-ghost"
                 onClick={() => setEditingIgnoreGlobs(false)}
               >
                 Cancel
-              </button>
-            </div>
-          </div>
+              </Button>
+            </Inline>
+          </HistoryEditor>
         )}
         <Row
           title="Browser pane data"
@@ -172,15 +174,16 @@ export function PrivacySection({
               ? 'Cookies, logins and cache kept by browser panes on this channel'
               : (
                   <>
-                    <span className="tabular-nums">{formatBytes(browsingData)}</span> of cookies, logins and
+                    <Text weight="medium" size="small" tabular>{formatBytes(browsingData)}</Text> of cookies, logins and
                     cache kept by browser panes on this channel
                   </>
                 )
           }
         >
-          <button
+          <Button
+            variant="legacy-danger"
+            armed={confirmClearBrowsing}
             data-testid="settings-clear-browsing-data"
-            className={`btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER} ${confirmClearBrowsing ? BTN_GHOST_DANGER_ARM : ''}`}
             onClick={() => {
               if (!confirmClearBrowsing) {
                 setConfirmClearBrowsing(true)
@@ -192,7 +195,7 @@ export function PrivacySection({
             onBlur={() => setConfirmClearBrowsing(false)}
           >
             {confirmClearBrowsing ? 'Click again to clear' : 'Clear browsing data…'}
-          </button>
+          </Button>
         </Row>
         {browsingError !== null && (
           <Row title="" desc={browsingError} />
@@ -202,20 +205,20 @@ export function PrivacySection({
           desc="Pane titles, workspaces and status history. Deleting it loses no files."
         >
           {!hostInfo ? (
-            <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">…</span>
+            <Text weight="medium" size="small" tone="muted">…</Text>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)] tabular-nums">
+            <div className="flex items-center gap-[var(--space-2)]">
+              <Text weight="medium" size="small" tone="secondary" tabular>
                 {formatBytes(hostInfo.session_db_bytes)}
-              </span>
-              <button
+              </Text>
+              <Button
                 type="button"
-                className={`btn ${BTN_GHOST}`}
+                variant="legacy-ghost"
                 data-testid="settings-reveal-session-db"
                 onClick={onRevealSessionDb}
               >
                 Reveal…
-              </button>
+              </Button>
             </div>
           )}
         </Row>
@@ -223,13 +226,13 @@ export function PrivacySection({
       <SubHead>What Houston never does</SubHead>
       <SettingsList>
         <Row title="Telemetry" desc="Houston sends no usage data, crash reports or analytics anywhere.">
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">None</span>
+          <Text weight="medium" size="small" tone="secondary">None</Text>
         </Row>
         <Row
           title="Agent transcripts"
           desc="Houston reads no agent transcripts, only hooks and documented event streams."
         >
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">Never read</span>
+          <Text weight="medium" size="small" tone="secondary">Never read</Text>
         </Row>
       </SettingsList>
     </>

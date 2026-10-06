@@ -1,0 +1,5 @@
+/* Unlayered on purpose: CodeMirror injects its base theme without a cascade layer, so a
+   layered utility cannot override the gutter background. */
+.editor-leaf .cm-editor .cm-gutters {
+  background: var(--tool-code-bg);
+}

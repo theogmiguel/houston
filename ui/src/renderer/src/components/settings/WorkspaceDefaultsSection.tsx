@@ -5,10 +5,12 @@ import {
   WORKTREE_IDLE_REMOVAL_DAYS_MIN
 } from '../../houston/generated/DEFAULTS'
 import { Caption } from '../ui/Caption'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
 import { SettingsScope } from '../ui/SettingsScope'
+import { Text } from '../ui/Text'
+import { TextInput } from '../ui/TextInput'
 import { NumberSetting, Row, SubHead } from './shared'
 
 
@@ -48,7 +50,7 @@ export function WorkspaceDefaultsSection({
           desc={globalDescription(`How many sessions boot at once. The rest come back deferred. Up to ${RESTORE_BUDGET_MAX}.`)}
         >
           {!hostInfo ? (
-            <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">Asking the daemon…</span>
+            <Text size="small" weight="small" tone="muted">Asking the daemon…</Text>
           ) : (
             <NumberSetting
               value={hostInfo.restore_budget}
@@ -91,7 +93,7 @@ export function WorkspaceDefaultsSection({
           desc={globalDescription(`How long a merged worktree is kept before it can be removed. 1 to ${WORKTREE_CLEANUP_GRACE_HOURS_MAX} h.`)}
         >
           {!hostInfo ? (
-            <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">Asking the daemon…</span>
+            <Text size="small" weight="small" tone="muted">Asking the daemon…</Text>
           ) : (
             <NumberSetting
               value={hostInfo.worktree_cleanup_grace_hours}
@@ -140,10 +142,10 @@ export function WorkspaceDefaultsSection({
           title="Idle for"
           desc={globalDescription('Minutes of no activity, counted only while the workspace is hidden.')}
         >
-          <input
+          <TextInput
+            variant="setting-number-rounded"
             type="number"
             aria-label="Minutes idle before a background session is closed"
-            className="w-[64px] bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-sm)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2 text-right disabled:opacity-50"
             min={1}
             step={5}
             disabled={sessionPolicy === null || !sessionPolicy.idle_reap_enabled}

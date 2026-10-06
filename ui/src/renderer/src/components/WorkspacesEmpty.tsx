@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
-import { EmptyState } from './EmptyState'
+import { EmptyState } from './ui/ActionEmptyState'
 import { IconFolderOpen } from './icons'
 import { effectiveLabel, settingsShortcut, shortcutSheetShortcut, toggleSidebar } from '../keymap'
 import type { KeymapOverrides } from '../houston/client'
-import { Icon } from './Icon'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { ScreenRegion, EmptyStateDetails, IconTile, ShortcutHint, ShortcutHintFooter, Stack, Text } from './ui'
+import { Icon } from './ui/Icon'
 
 const FOOTER_HINTS = [
   { entry: toggleSidebar, label: 'Toggle sidebar' },
@@ -30,70 +30,49 @@ export function WorkspacesEmpty({
   footer
 }: WorkspacesEmptyProps): React.JSX.Element {
   return (
-    <div
+    <ScreenRegion
       data-testid="workspaces-empty"
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full overflow-y-auto flex flex-col items-center justify-center p-[28px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
+      className="gap-[var(--space-6)]"
     >
-      <EmptyState
-        headline="No workspaces yet"
-        description="Add a project folder. Terminals, browsers, and threads stay scoped to that workspace."
-        loading={pending}
-        action={{
-          label: pending ? 'Opening picker…' : 'Add Workspace',
-          onClick: onAdd
-        }}
-        icon={
-          <span className="flex h-[50px] w-[50px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-secondary)]">
-            <Icon glyph={IconFolderOpen} role="title" />
-          </span>
-        }
-      />
+      <Stack gap={0} align="center" className="w-full">
+        <EmptyState
+          headline="No workspaces yet"
+          description="Add a project folder. Terminals, browsers, and threads stay scoped to that workspace."
+          loading={pending}
+          action={{
+            label: pending ? 'Opening picker…' : 'Add Workspace',
+            onClick: onAdd
+          }}
+          icon={
+            <IconTile size="xl" radius="medium" tone="surface-muted" icon={<Icon glyph={IconFolderOpen} role="title" />} label="No workspaces yet" />
+          }
+        />
 
-      {footer}
+        {footer}
 
-      {(refusals.length > 0 || error) && (
-        <div
-          role="alert"
-          data-testid="workspaces-empty-refusals"
-          className="mt-[var(--space-4)] flex max-w-[430px] flex-col gap-1.5 text-center"
-        >
-          {refusals.map((r) => (
-            <p key={r} className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--danger)]">
-              {r}
-            </p>
-          ))}
-          {error && (
-            <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-[var(--danger)]">{error}</p>
-          )}
-        </div>
-      )}
+        {(refusals.length > 0 || error) && (
+          <EmptyStateDetails
+            role="alert"
+            data-testid="workspaces-empty-refusals"
+          >
+            {refusals.map((r) => (
+              <Text as="p" flush size="small" weight="small" leading="normal" tone="danger" key={r}>
+                {r}
+              </Text>
+            ))}
+            {error && (
+              <Text as="p" flush size="small" weight="small" leading="normal" tone="danger">{error}</Text>
+            )}
+          </EmptyStateDetails>
+        )}
+      </Stack>
 
       {}
-      <div
-        className="mt-8 flex w-full max-w-[520px] flex-col items-center gap-1.5 border-t border-[color-mix(in_srgb,var(--border)_60%,transparent)] pt-4"
-        data-testid="launcher-hint-footer"
-      >
-        <div
-          className={`flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 ${
-            keymapOverrides.shortcuts_enabled ? '' : 'opacity-45'
-          }`}
-        >
+      <ShortcutHintFooter disabled={!keymapOverrides.shortcuts_enabled} disabledMessage={!keymapOverrides.shortcuts_enabled ? 'Global shortcuts are OFF (Settings → Shortcuts) — these keys are inert.' : undefined}>
           {FOOTER_HINTS.map((h) => (
-            <span key={h.entry.id} className="flex items-center gap-[7px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-text-muted">
-              <kbd className="font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] bg-background border border-border rounded-[4px] py-0.5 px-[7px]">
-                {effectiveLabel(h.entry, keymapOverrides)}
-              </kbd>
-              {h.label}
-            </span>
+            <ShortcutHint key={h.entry.id} shortcut={effectiveLabel(h.entry, keymapOverrides)} label={h.label} />
           ))}
-        </div>
-        {!keymapOverrides.shortcuts_enabled && (
-          <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-text-muted" data-testid="launcher-hints-off">
-            Global shortcuts are OFF (Settings → Shortcuts) — these keys are inert.
-          </p>
-        )}
-      </div>
-    </div>
+      </ShortcutHintFooter>
+    </ScreenRegion>
   )
 }

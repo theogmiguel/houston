@@ -8,7 +8,10 @@ import { Sidebar } from './Sidebar'
 import { setSettingsNavForTests } from '../settingsNav'
 import { setBackgroundStateForTests } from '../backgroundMode'
 
-const BASE_CSS = readFileSync(resolve(process.cwd(), 'src/renderer/src/base.css'), 'utf8')
+// Element rules live in base.css; the `.btn` box lives with its role in ui/button.css.
+const BASE_CSS = ['src/renderer/src/base.css', 'src/renderer/src/components/ui/button.css']
+  .map((path) => readFileSync(resolve(process.cwd(), path), 'utf8'))
+  .join('\n')
 const NOOP = (): void => {}
 
 function buttonRules(): { selector: string; body: string }[] {

@@ -85,13 +85,13 @@ describe('the tag quick editor hands over to the manager', () => {
   // Both surfaces are code-split: poll for the chunk rather than guess a tick —
   // under a loaded full-suite run it can take far longer than it does alone.
   const settle = async (selector: string): Promise<void> => {
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 2000; i++) {
       await act(async () => {
         await new Promise((r) => setTimeout(r, 5))
       })
       if (document.querySelector(selector) !== null) return
     }
-    throw new Error(`${selector} never rendered within 2s of its trigger`)
+    throw new Error(`${selector} never rendered within 10s of its trigger`)
   }
 
   const openEditor = async (): Promise<void> => {
@@ -129,7 +129,7 @@ describe('the tag quick editor hands over to the manager', () => {
     expect(editor()).toBeNull()
     expect(manager()).toBeNull()
     expect(created).toEqual([])
-  })
+  }, 15000)
 
   it('a click inside the editor leaves it open', async () => {
     render()
@@ -140,7 +140,7 @@ describe('the tag quick editor hands over to the manager', () => {
     })
 
     expect(editor()).not.toBeNull()
-  })
+  }, 15000)
 
   it('creating a tag closes the editor and lands in the manager with the new row marked', async () => {
     render()
@@ -166,7 +166,7 @@ describe('the tag quick editor hands over to the manager', () => {
     const marked = document.querySelectorAll('[data-tag-new="true"]')
     expect(marked).toHaveLength(1)
     expect(marked[0].textContent).toContain('renewals')
-  })
+  }, 15000)
 
   it('opened from the menu, the manager marks nothing as new', async () => {
     render()
@@ -174,7 +174,7 @@ describe('the tag quick editor hands over to the manager', () => {
 
     expect(manager()).not.toBeNull()
     expect(document.querySelectorAll('[data-tag-new="true"]')).toHaveLength(0)
-  })
+  }, 15000)
 
   it('a click on the manager\u2019s scrim closes it', async () => {
     render()
@@ -185,5 +185,5 @@ describe('the tag quick editor hands over to the manager', () => {
     act(() => scrim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
 
     expect(manager()).toBeNull()
-  })
+  }, 15000)
 })

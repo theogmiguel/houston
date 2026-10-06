@@ -1,7 +1,7 @@
 import type { PrInfo } from '../../houston/client'
 import { openExternal, showItemInFolder } from '../../houston/bridge'
 import { OpenInMenu } from '../OpenInMenu'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconCodeXml, IconFolder, IconGitBranch } from '../icons'
 
 export function GridRailContextActions({
