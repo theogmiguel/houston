@@ -3,6 +3,7 @@ import { HIT_TARGET_28 } from '../hitTarget'
 import { IconAgent, IconPlus, IconSearch, type IconComponent } from '../icons'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
+import { Chip } from './Chip'
 import { Icon } from './Icon'
 import { Text } from './Text'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from './overlayChrome'
@@ -179,14 +180,16 @@ export interface TaskRowProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   withWorkspace?: boolean
 }
 
-/** One task in the list: priority, status, key, title, optional workspace, and a trailing slot. */
+/** One task in the list: priority, status, key, title, optional workspace, and a trailing slot.
+ *  Chips between the title and the trailing slot (subtask progress, intake) each take an auto
+ *  column on the same line. */
 export function TaskListRow({ selected = false, withWorkspace = false, className, ...props }: TaskRowProps): React.JSX.Element {
   return (
     <button
       type="button"
       {...props}
         className={cx(
-        'grid items-center gap-[var(--space-2)] h-[var(--task-toolbar-height)] mx-[var(--space-1-5)] px-[var(--space-2)] border-0 rounded-[var(--tr-radius-sm)] text-inherit text-left cursor-pointer w-[calc(100%-2*var(--space-1-5))]',
+        'grid grid-flow-col auto-cols-auto items-center gap-[var(--space-2)] h-[var(--task-toolbar-height)] mx-[var(--space-1-5)] px-[var(--space-2)] border-0 rounded-[var(--tr-radius-sm)] text-inherit text-left cursor-pointer w-[calc(100%-2*var(--space-1-5))]',
         withWorkspace
           ? 'grid-cols-[var(--task-row-priority-width)_var(--task-row-status-width)_var(--task-row-key-width)_minmax(0,1fr)_auto_auto]'
           : 'grid-cols-[var(--task-row-priority-width)_var(--task-row-status-width)_var(--task-row-key-width)_minmax(0,1fr)_auto]',
@@ -616,6 +619,7 @@ export function TaskSurfaceSpecimen(): React.JSX.Element {
         </TaskListRow>
       </TaskGroupSection>
       <TaskListRow selected withWorkspace><span /><span /><TaskKey>HOU-43</TaskKey><TaskListTitle>Regression test</TaskListTitle><TaskTagChip narrow>houston</TaskTagChip><TaskAge>1h</TaskAge></TaskListRow>
+      <TaskListRow withWorkspace><span /><span /><TaskKey>HOU-44</TaskKey><TaskListTitle>Parent with subtasks</TaskListTitle><TaskTagChip narrow>houston</TaskTagChip><Chip variant="state" label="1/3" /><Chip variant="state" tone="info" label="Slack · awaiting ✅" /><TaskAge>2h</TaskAge></TaskListRow>
       <div className="flex items-center gap-[var(--space-2)] px-3.5">
         <TaskKeyChip>HOU-41</TaskKeyChip>
         <TaskKeyTag compact>HOU-42</TaskKeyTag>
