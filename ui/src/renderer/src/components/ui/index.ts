@@ -254,7 +254,7 @@ export { ChipGroup, ChoiceChip, FieldActionButton, FormField, FormHint, FieldCon
 export type { FieldActionButtonProps, FieldControlProps } from './formPrimitives'
 export { SingleLineText } from './SingleLineText'
 export { OrchestratorOverviewSpecimen } from './OrchestratorOverview'
-export { Timeline as TimelinePrimitive, TimelineSpecimen } from './Timeline'
+export { Timeline, TimelineSpecimen } from './Timeline'
 export { Switch } from './Switch'
 export type { SwitchProps } from './Switch'
 
