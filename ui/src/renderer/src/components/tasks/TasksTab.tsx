@@ -158,6 +158,7 @@ export function TasksTab({
             tasks.startTask(id, agent, assignedWorkspace, force)
           }}
           onRunControl={tasks.runControl}
+          onOpenIssue={tasks.openIssue}
           onOpenSession={(sessionId) => onFocusPane?.(sessionId)}
           onReview={(session) => onReviewChild?.(session)}
         />

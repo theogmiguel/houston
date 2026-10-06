@@ -7,6 +7,7 @@ import type { TaskAcceptanceItem } from './generated/TaskAcceptanceItem'
 import type { TaskComment } from './generated/TaskComment'
 import type { TaskCounts } from './generated/TaskCounts'
 import type { TaskErrorKind } from './generated/TaskErrorKind'
+import type { TaskGithubSettings } from './generated/TaskGithubSettings'
 import type { TaskHistoryEntry } from './generated/TaskHistoryEntry'
 import type { TaskPatch } from './generated/TaskPatch'
 import type { TaskPromptDelivery } from './generated/TaskPromptDelivery'
@@ -64,6 +65,8 @@ export interface UseTasks {
   /// `force` is the user's "start anyway" past the readiness gate.
   startTask: (id: number, agent: AgentKind, workspace?: string | null, force?: boolean) => void
   runControl: (runId: number, action: TaskRunAction) => void
+  /// Opens a GitHub issue for the task in its workspace's repository.
+  openIssue: (id: number) => void
   /// Creates a task and opens it: the daemon's create reply is the only signal
   /// that names the new id, so the detail opens on its `task_changed`.
   createTask: (patch: TaskPatch, onCreated?: (id: number) => void) => void
@@ -132,6 +135,76 @@ export function useTaskReviewSettings(
   )
 
   return { settings, refusal, setReviewSettings }
+}
+
+/// A workspace's GitHub Issues connector, from `task_github`, with the
+/// repository its remote names and the last sync's outcome.
+export interface TaskGithubState {
+  settings: TaskGithubSettings
+  repository: string | null
+  lastSyncAtMs: number | null
+  error: string | null
+}
+
+export function useTaskGithub(
+  client: HoustonClient | null,
+  workspace: string | null
+): {
+  state: TaskGithubState | null
+  refusal: TaskRefusal | null
+  setGithub: (settings: TaskGithubSettings) => void
+} {
+  const [state, setState] = useState<TaskGithubState | null>(null)
+  const [refusal, setRefusal] = useState<TaskRefusal | null>(null)
+  const pending = useRef(false)
+
+  useEffect(() => {
+    setState(null)
+    setRefusal(null)
+    pending.current = false
+    if (!client || !workspace) return
+    const offState = client.subscribe('task_github', (msg) => {
+      if (msg.workspace !== workspace) return
+      pending.current = false
+      setRefusal(null)
+      setState({
+        settings: msg.settings,
+        repository: msg.repository ?? null,
+        lastSyncAtMs: msg.last_sync_at_ms ?? null,
+        error: msg.error ?? null
+      })
+    })
+    const offRefused = client.subscribe('task_refused', (msg) => {
+      if (!pending.current) return
+      pending.current = false
+      setRefusal({
+        id: msg.id ?? null,
+        kind: msg.kind,
+        message: msg.message,
+        expected: msg.expected ?? null,
+        actual: msg.actual ?? null,
+        limit: msg.limit ?? null,
+        requested: msg.requested ?? null
+      })
+    })
+    client.taskGithubGet(workspace)
+    return () => {
+      offState()
+      offRefused()
+    }
+  }, [client, workspace])
+
+  const setGithub = useCallback(
+    (settings: TaskGithubSettings) => {
+      if (!client || !workspace) return
+      pending.current = true
+      setRefusal(null)
+      client.taskGithubSet(workspace, settings)
+    },
+    [client, workspace]
+  )
+
+  return { state, refusal, setGithub }
 }
 
 /// The `task_queue_result` the roster's "Run next N" comes back with.
@@ -445,6 +518,15 @@ export function useTasks(client: HoustonClient | null, workspace: string | null,
     [client]
   )
 
+  const openIssue = useCallback(
+    (id: number) => {
+      if (!client) return
+      setRefusal(null)
+      client.taskGithubOpenIssue(id)
+    },
+    [client]
+  )
+
   const runControl = useCallback(
     (runId: number, action: TaskRunAction) => {
       if (!client) return
@@ -482,6 +564,7 @@ export function useTasks(client: HoustonClient | null, workspace: string | null,
     setAccess: setAccessValue,
     startTask,
     runControl,
+    openIssue,
     createTask
   }
 }

@@ -4,13 +4,14 @@ import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { TaskPromptDelivery } from '../../houston/generated/TaskPromptDelivery'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import { TASKS_REWORK_ROUNDS_MAX } from '../../houston/generated/DEFAULTS'
-import { useTaskReviewSettings, useTaskStartSettings, useTasksAccess } from '../../houston/useTasks'
+import type { TaskGithubSettings } from '../../houston/generated/TaskGithubSettings'
+import { useTaskGithub, useTaskReviewSettings, useTaskStartSettings, useTasksAccess, type TaskGithubState } from '../../houston/useTasks'
 import { IconAgent } from '../icons'
 import { Segmented } from '../Segmented'
 import { Select, type SelectOption } from '../Select'
-import { SettingsList } from '../settingsPrimitives'
+import { SettingsList, Toggle } from '../settingsPrimitives'
 import { SettingsScope } from '../ui/SettingsScope'
-import { parseReworkRounds, TASK_AGENTS, taskAgentLabel } from '../tasks/format'
+import { formatAgo, parseReworkRounds, TASK_AGENTS, taskAgentLabel } from '../tasks/format'
 import { Row, SubHead } from './shared'
 
 const ACCESS_LABEL: Readonly<Record<TasksAccess, string>> = {
@@ -25,7 +26,8 @@ const ACCESS_OPTIONS: { value: TasksAccess; label: string }[] = [
   { value: 'write', label: 'Read and write' }
 ]
 
-/// Settings ▸ Tasks: agent access, the workspace's Start defaults, and review.
+/// Settings ▸ Tasks: agent access, the workspace's Start defaults, review and
+/// the GitHub Issues connector.
 export function TasksSection({
   client,
   workspace,
@@ -38,6 +40,7 @@ export function TasksSection({
   const { access, setAccess } = useTasksAccess(client, workspace)
   const { settings, setStartSettings } = useTaskStartSettings(client, workspace)
   const { settings: review, refusal: reviewRefusal, setReviewSettings } = useTaskReviewSettings(client, workspace)
+  const { state: github, refusal: githubRefusal, setGithub } = useTaskGithub(client, workspace)
   const noWorkspaceReason = 'Select a single workspace in the sidebar to manage its task settings'
 
   return (
@@ -138,7 +141,129 @@ export function TasksSection({
           {reviewRefusal.message}
         </div>
       )}
+      <SubHead>GitHub Issues</SubHead>
+      <SettingsList>
+        <GithubRows state={github} workspace={workspace} workspaceName={workspaceName} onChange={setGithub} />
+      </SettingsList>
+      {githubRefusal !== null && (
+        <div
+          data-testid="settings-tasks-github-refusal"
+          className="pt-[var(--space-2)] [font-size:var(--tr-text-small-size)] text-[var(--danger)]"
+        >
+          {githubRefusal.message}
+        </div>
+      )}
     </>
+  )
+}
+
+/// The connector's three settings, each with its current value beside it; the
+/// state line names the repository, the last sync and its error.
+function GithubRows({
+  state,
+  workspace,
+  workspaceName,
+  onChange
+}: {
+  state: TaskGithubState | null
+  workspace: string | null
+  workspaceName: string | null
+  onChange: (settings: TaskGithubSettings) => void
+}): React.JSX.Element {
+  const settings = state?.settings ?? { enabled: false, label: null, open_on_create: false }
+  const disabled = workspace === null || state === null
+  const status = state === null
+    ? 'loading…'
+    : !settings.enabled
+      ? 'Off'
+      : `On · ${state.repository ?? 'no github.com remote'}${state.lastSyncAtMs != null ? ` · synced ${formatAgo(state.lastSyncAtMs, Date.now())}` : ''}`
+  return (
+    <>
+      <Row
+        title="Import issues"
+        desc={
+          <span className="block">
+            Open issues with the label below, or assigned to your gh user, become backlog tasks
+            linked to their issue. Houston reads and writes GitHub through your gh login.
+            <span
+              data-testid="settings-tasks-github-current"
+              className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]"
+            >
+              Currently <b className="font-semibold text-[var(--text-primary)]">{status}</b>
+            </span>
+            {state?.error != null && (
+              <span data-testid="settings-tasks-github-error" className="block pt-[6px] text-[length:var(--tr-text-label-size)] text-[var(--danger)]">
+                {state.error}
+              </span>
+            )}
+            <SettingsScope workspace={workspaceName} row />
+          </span>
+        }
+      >
+        <Toggle
+          aria-label="Import GitHub issues"
+          data-testid="settings-tasks-github-enabled"
+          on={settings.enabled}
+          disabled={disabled}
+          onChange={(enabled) => onChange({ ...settings, enabled })}
+        />
+      </Row>
+      <Row
+        title="Label"
+        desc={<><span>Issues carrying this label are imported. Empty imports only your assigned issues.</span><SettingsScope workspace={workspaceName} row /></>}
+      >
+        <GithubLabelInput
+          value={settings.label ?? ''}
+          disabled={disabled}
+          onCommit={(label) => onChange({ ...settings, label: label === '' ? null : label })}
+        />
+      </Row>
+      <Row
+        title="Open an issue for every new task"
+        desc={<><span>A task you create in this workspace opens an issue with its title, description and acceptance. Otherwise use Open GitHub issue on a task.</span><SettingsScope workspace={workspaceName} row /></>}
+      >
+        <Toggle
+          aria-label="Open an issue for every new task"
+          data-testid="settings-tasks-github-open-on-create"
+          on={settings.open_on_create}
+          disabled={disabled || !settings.enabled}
+          onChange={(open) => onChange({ ...settings, open_on_create: open })}
+        />
+      </Row>
+    </>
+  )
+}
+
+/// The label field commits on blur or Enter; the daemon refuses an over-long
+/// label naming GitHub's limit, and the refusal shows below the section.
+function GithubLabelInput({
+  value,
+  disabled,
+  onCommit
+}: {
+  value: string
+  disabled: boolean
+  onCommit: (label: string) => void
+}): React.JSX.Element {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  return (
+    <input
+      type="text"
+      aria-label="GitHub label"
+      data-testid="settings-tasks-github-label"
+      placeholder="houston"
+      value={draft}
+      disabled={disabled}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft.trim() !== value) onCommit(draft.trim())
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+      className="w-[160px] bg-[var(--content-bg)] border border-[var(--border)] rounded-[var(--tr-radius-input)] text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2"
+    />
   )
 }
 

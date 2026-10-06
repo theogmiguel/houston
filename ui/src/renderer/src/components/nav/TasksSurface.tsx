@@ -155,6 +155,7 @@ export function TasksSurface({
               tasks.startTask(id, agent, assignedWorkspace, force)
             }}
             onRunControl={tasks.runControl}
+            onOpenIssue={tasks.openIssue}
             onOpenSession={onOpenSession}
             onReview={onReview}
             presentation="drawer"

@@ -72,6 +72,8 @@ export interface TaskDetailProps {
   onArchive: (id: number, archived: boolean, expectedRevision: number) => void
   onStart: (id: number, agent: AgentKind, workspace?: string | null, force?: boolean) => void
   onRunControl: (runId: number, action: TaskRunAction) => void
+  /// Opens a GitHub issue for the task; absent hides the action.
+  onOpenIssue?: (id: number) => void
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
   presentation?: 'side' | 'drawer'
@@ -110,6 +112,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           sections={[
             {
               items: [
+                ...openIssueItems(task, props.onOpenIssue),
                 {
                   id: 'task-archive',
                   label: archived ? 'Restore task' : 'Archive task',
@@ -267,6 +270,7 @@ function TaskDetailDrawer({ props, taskTitle, onStartAnyway }: { props: TaskDeta
           sections={[{ items: [
             ...(latestRun?.session_id != null ? [{ id: 'task-open-session', label: 'Open session', onSelect: () => props.onOpenSession(latestRun.session_id!) }] : []),
             { id: 'task-copy-key', label: 'Copy task key', onSelect: () => void navigator.clipboard?.writeText(task.key).catch(() => {}) },
+            ...openIssueItems(task, props.onOpenIssue),
             { id: 'task-archive', label: archived ? 'Restore task' : 'Archive task', onSelect: () => props.onArchive(task.id, !archived, task.revision) }
           ] }]}
         />
@@ -333,6 +337,12 @@ function BlockedBy({
       />
     </span>
   )
+}
+
+/** "Open GitHub issue" while the task mirrors none; the daemon names any refusal. */
+function openIssueItems(task: TaskDetailData['task'], onOpenIssue?: (id: number) => void): { id: string; label: string; onSelect: () => void }[] {
+  if (!onOpenIssue || task.links.some((link) => link.provider === 'github')) return []
+  return [{ id: 'task-open-issue', label: 'Open GitHub issue', onSelect: () => onOpenIssue(task.id) }]
 }
 
 const LINK_PROVIDER_LABEL: Record<string, string> = { slack: 'Slack', github: 'GitHub' }

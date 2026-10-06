@@ -205,4 +205,17 @@ describe('global Tasks viewer', () => {
     click('[data-testid="task-start-anyway"]')
     expect(onStart).toHaveBeenLastCalledWith(7, 'codex', null, true)
   })
+  it('offers Open GitHub issue only while the task mirrors no issue', () => {
+    const onOpenIssue = vi.fn()
+    const render = (links: typeof TASK.links): void => act(() => root.render(
+      <TaskDetail detail={{ task: { ...TASK, links }, acceptance: [], comments: [], history: [], runs: [] }} access="write" refusal={null} now={1} parentOptions={[]} sessions={new Map()} startSettings={null} onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={vi.fn()} onArchive={vi.fn()} onStart={vi.fn()} onRunControl={vi.fn()} onOpenIssue={onOpenIssue} onOpenSession={vi.fn()} onReview={vi.fn()} />
+    ))
+    render([])
+    click('[data-testid="task-detail-menu"]')
+    act(() => screen.getByRole('menuitem', { name: 'Open GitHub issue' }).click())
+    expect(onOpenIssue).toHaveBeenCalledWith(7)
+    render([{ provider: 'github', external_id: 'o/r#12', url: null }])
+    click('[data-testid="task-detail-menu"]')
+    expect(screen.queryByRole('menuitem', { name: 'Open GitHub issue' })).toBeNull()
+  })
 })

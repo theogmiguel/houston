@@ -17,6 +17,7 @@ import type { Cadence } from './generated/Cadence'
 import type { HarnessFindingState } from './generated/HarnessFindingState'
 import type { TaskPatch } from './generated/TaskPatch'
 import type { TaskPromptDelivery } from './generated/TaskPromptDelivery'
+import type { TaskGithubSettings } from './generated/TaskGithubSettings'
 import type { TaskRunAction } from './generated/TaskRunAction'
 import type { TasksAccess } from './generated/TasksAccess'
 import type { GitDiscardKind } from './generated/GitDiscardKind'
@@ -1513,6 +1514,18 @@ export class HoustonClient {
 
   taskReviewSettingsSet(workspace: string, reviewer: AgentKind | null, reworkRounds: number): void {
     this.send({ type: 'task_review_settings_set', workspace, reviewer, rework_rounds: reworkRounds })
+  }
+
+  taskGithubGet(workspace: string): void {
+    this.send({ type: 'task_github_get', workspace })
+  }
+
+  taskGithubSet(workspace: string, settings: TaskGithubSettings): void {
+    this.send({ type: 'task_github_set', workspace, settings })
+  }
+
+  taskGithubOpenIssue(id: number): void {
+    this.send({ type: 'task_github_open_issue', id })
   }
 
   workspaceActionsGet(workspace: string): void {
