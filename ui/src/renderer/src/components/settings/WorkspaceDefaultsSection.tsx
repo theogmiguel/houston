@@ -1,9 +1,13 @@
+import { useState } from 'react'
 import { RESTORE_BUDGET_MAX, WORKTREE_CLEANUP_GRACE_HOURS_MAX } from '../../houston/generated/DEFAULTS'
 import { SettingsList, Toggle } from '../settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
 import { SettingsScope } from '../ui/SettingsScope'
 import { NumberSetting, Row, SubHead } from './shared'
+
+const DEFAULT_WORKTREE_IDLE_REMOVAL_DAYS = 30
+const WORKTREE_IDLE_REMOVAL_DAYS_MAX = 365
 
 function globalDescription(description: string): React.JSX.Element {
   return <><SettingsScope workspace={null} row scope="global" />{description}</>
@@ -13,6 +17,8 @@ export interface WorkspaceDefaultsSectionProps {
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
   onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
+  worktreeIdleRemovalDays?: number
+  onWorktreeIdleRemovalDaysSet?: (days: number) => void
   openLinksInPane: boolean
   onOpenLinksInPane: (on: boolean) => void
   hostInfo: HostInfo | null
@@ -24,12 +30,16 @@ export function WorkspaceDefaultsSection({
   onRestoreBudgetSet,
   onRestoreResumeSet,
   onWorktreeCleanupSet,
+  worktreeIdleRemovalDays,
+  onWorktreeIdleRemovalDaysSet,
   openLinksInPane,
   onOpenLinksInPane,
   hostInfo,
   sessionPolicy,
   onSessionPolicy
 }: WorkspaceDefaultsSectionProps): React.JSX.Element {
+  const [localWorktreeIdleRemovalDays, setLocalWorktreeIdleRemovalDays] = useState(DEFAULT_WORKTREE_IDLE_REMOVAL_DAYS)
+  const idleRemovalDays = worktreeIdleRemovalDays ?? localWorktreeIdleRemovalDays
   return (
     <>
       <SubHead>Restoring</SubHead>
@@ -65,8 +75,8 @@ export function WorkspaceDefaultsSection({
       <SubHead>Worktrees</SubHead>
       <SettingsList>
         <Row
-          title="Remove merged worktrees automatically"
-          desc={globalDescription('Every 6 h, remove a worktree Houston created once its PR has merged, with its branch. A worktree with uncommitted changes, commits outside the PR or a pane inside it stays. Off by default, because it deletes files.')}
+          title="Remove worktrees automatically"
+          desc={globalDescription('Every 6 h, remove clean worktrees after their PR is merged or their commits are integrated into the branch they came from, after the grace period; their branches are removed. Remove idle worktrees after the configured threshold, keeping their branches. Worktrees with uncommitted changes, unpushed commits or a pane inside stay. Off by default, because it deletes files.')}
         >
           <Toggle
             on={hostInfo?.worktree_cleanup_enabled ?? false}
@@ -93,6 +103,22 @@ export function WorkspaceDefaultsSection({
               onCommit={(hours) => onWorktreeCleanupSet(hostInfo.worktree_cleanup_enabled, hours)}
             />
           )}
+        </Row>
+        <Row
+          title="Remove idle worktrees after"
+          desc={globalDescription('Automatic removal must survive a long pause; 30 days matches comparable tools’ idle cleanup. Stale worktrees are listed halfway to this threshold (15 days by default). 1 to 365 days.')}
+        >
+          <NumberSetting
+            value={idleRemovalDays}
+            min={1}
+            max={WORKTREE_IDLE_REMOVAL_DAYS_MAX}
+            unit="days"
+            testId="settings-worktree-idle-removal-days"
+            onCommit={(days) => {
+              if (onWorktreeIdleRemovalDaysSet) onWorktreeIdleRemovalDaysSet(days)
+              else setLocalWorktreeIdleRemovalDays(days)
+            }}
+          />
         </Row>
       </SettingsList>
       <SubHead>Background sessions</SubHead>

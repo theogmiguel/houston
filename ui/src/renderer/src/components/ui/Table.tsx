@@ -33,6 +33,7 @@ export interface TableProps<T, K extends keyof T = keyof T> {
   className?: string
   density?: 'default' | 'compact'
   layout?: 'auto' | 'fixed'
+  rowTone?: (row: T) => 'default' | 'muted'
 }
 
 const TABLE_CLS = 'w-full border-collapse text-[length:var(--tr-text-ui-size)]'
@@ -68,6 +69,7 @@ export function Table<T, K extends keyof T = keyof T>({
   className = '',
   density = 'default',
   layout = 'auto',
+  rowTone,
   ...rest
 }: TableProps<T, K>): React.JSX.Element {
   const ariaLabel = rest['aria-label']
@@ -112,7 +114,7 @@ export function Table<T, K extends keyof T = keyof T>({
               tabIndex={onRowClick ? 0 : undefined}
               onClick={onRowClick ? (event) => { if (!isInteractiveTarget(event.target)) onRowClick(row) } : undefined}
               onKeyDown={handleRowKeyDown(row)}
-              className={`hover:bg-[var(--hover-fill)] ${onRowClick ? 'cursor-pointer focus-visible:bg-[var(--hover-fill)] focus-visible:outline-none' : ''}`}
+              className={`hover:bg-[var(--hover-fill)] ${rowTone?.(row) === 'muted' ? 'opacity-50' : ''} ${onRowClick ? 'cursor-pointer focus-visible:bg-[var(--hover-fill)] focus-visible:outline-none' : ''}`}
             >
               {columns.map((column) => {
                 const value = row[column.key]

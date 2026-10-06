@@ -1,140 +1,134 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ConfirmModal } from '../ConfirmModal'
-import { BTN_GHOST } from '../buttonChrome'
-import { FIELD_LABEL } from '../nav/navChrome'
-import {
-  cleanNowConfirm,
-  cleanupHeader,
-  removablePaths,
-  removableSummary,
-  sizeLine,
-  statusLine,
-  type WorktreeCleanupView
-} from './worktreeCleanup'
+import { Button, Caption, Card, SectionHead, StatusLabel, Table } from '../ui'
+import type { TableColumn } from '../ui'
+import { cleanNowConfirm, formatBytes, isRemovable, removablePaths, statusLine } from './worktreeCleanup'
+import type { WorktreeCleanupView } from './worktreeCleanup'
+import { sortWorktreeCleanupRows, type WorktreeCleanupRow } from './worktreeCleanupRows'
 
 export interface WorktreeCleanupSectionProps {
   view: WorktreeCleanupView
+  staleRows?: WorktreeCleanupRow[]
   busy: boolean
   nowMs: number
   onCheck: () => void
   onCleanNow: (paths: string[]) => void
-  onRemove: (path: string) => void
+  onRemoveStale: (path: string) => void
 }
 
-const MUTED = 'm-0 text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]'
-
-// The worktrees Houston created and may remove once their PR merges. Everything
-// here comes from the daemon's last pass; nothing is measured on open. Clean now sends
-// the paths its confirmation listed, so the daemon removes nothing the operator did not see.
+// Ready paths are included in the confirmation payload as a snapshot so a later
+// cleanup pass cannot remove a row the operator did not see.
 export function WorktreeCleanupSection({
   view,
+  staleRows = [],
   busy,
   nowMs,
   onCheck,
   onCleanNow,
-  onRemove
+  onRemoveStale
 }: WorktreeCleanupSectionProps): React.JSX.Element {
-  const [confirming, setConfirming] = useState(false)
+  const [confirmingClean, setConfirmingClean] = useState(false)
+  const [confirmingStale, setConfirmingStale] = useState<WorktreeCleanupRow | null>(null)
+  const readyEntries = view.status === 'ready' ? view.entries : []
+  const rows = useMemo(() => sortWorktreeCleanupRows([
+    ...readyEntries.map((entry): WorktreeCleanupRow => ({
+      path: entry.path,
+      branch: entry.branch,
+      state: isRemovable(entry) ? 'ready' : 'kept',
+      reason: statusLine(entry, nowMs),
+      sizeBytes: entry.bytes,
+      pr: entry.pr
+    })),
+    ...staleRows
+  ]), [nowMs, readyEntries, staleRows])
+  const readyCount = rows.filter((row) => row.state === 'ready').length
 
-  let body: React.JSX.Element
-  if (view.status === 'pending') {
-    body = <p className={MUTED}>Checking worktrees…</p>
-  } else if (view.status === 'refused') {
-    body = (
-      <p role="alert" data-testid="worktree-cleanup-error" className={MUTED}>
-        {view.message}
-      </p>
-    )
-  } else if (view.entries.length === 0) {
-    body = <p className={MUTED}>No worktrees created by Houston here</p>
-  } else {
-    const entries = view.entries
-    body = (
-      <>
-        <div className="flex items-center gap-2">
-          <span data-testid="worktree-cleanup-header" className="flex-1 text-[length:var(--tr-text-small-size)] text-[var(--text-primary)]">
-            {cleanupHeader(entries)}
-          </span>
-          <button
-            type="button"
-            className={`btn ${BTN_GHOST}`}
-            data-testid="worktree-cleanup-check"
-            disabled={busy}
-            onClick={onCheck}
-          >
-            Check
-          </button>
-          <button
-            type="button"
-            className={`btn ${BTN_GHOST}`}
-            data-testid="worktree-cleanup-run"
-            disabled={busy || removableSummary(entries).count === 0}
-            onClick={() => setConfirming(true)}
-          >
-            Clean now
-          </button>
-        </div>
-        <div role="list" className="flex flex-col gap-1">
-          {entries.map((e) => (
-            <div
-              key={e.path}
-              role="listitem"
-              data-testid="worktree-cleanup-row"
-              data-path={e.path}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-[var(--tr-radius-sm)] text-[var(--text-secondary)]"
-            >
-              <div className="flex-1 min-w-0 flex flex-col">
-                <span className="font-mono text-[length:var(--tr-text-xs)] text-[var(--text-primary)] overflow-hidden text-ellipsis whitespace-nowrap">
-                  {e.branch}
-                  {e.pr !== null && <span className="text-[var(--text-faint)]"> #{e.pr}</span>}
-                </span>
-                <span className="text-[length:var(--tr-text-xs)] text-[var(--text-faint)] overflow-hidden text-ellipsis whitespace-nowrap">
-                  {e.path}
-                </span>
-                <span className="text-[length:var(--tr-text-xs)] text-[var(--text-faint)]">
-                  {sizeLine(e, nowMs)}
-                </span>
-                <span data-testid="worktree-cleanup-status" className="text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
-                  {statusLine(e, nowMs)}
-                </span>
-              </div>
-              {e.keep?.kind === 'probably_integrated' && (
-                <button
-                  type="button"
-                  className={`btn ${BTN_GHOST}`}
-                  data-testid="worktree-cleanup-remove"
-                  disabled={busy}
-                  onClick={() => onRemove(e.path)}
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        {confirming && (
-          <ConfirmModal
-            title="CLEAN MERGED WORKTREES"
-            message={cleanNowConfirm(entries)}
-            confirmLabel="Remove"
-            onConfirm={() => {
-              setConfirming(false)
-              onCleanNow(removablePaths(entries))
-            }}
-            onCancel={() => setConfirming(false)}
-          />
-        )}
-      </>
-    )
-  }
+  const columns: TableColumn<WorktreeCleanupRow>[] = [
+    {
+      key: 'state' as const,
+      header: 'Status',
+      width: '6rem',
+      render: (_state, row) =>
+        <StatusLabel status={row.state === 'ready' ? 'Ready' : row.state === 'stale' ? 'Stale' : 'Kept'} size="small" />
+    },
+    {
+      key: 'branch' as const,
+      header: 'Worktree',
+      render: (_branch, row) => (
+        <span>
+          <Caption variant="code">{row.branch}{row.pr !== null && ` #${row.pr}`}</Caption>
+          <br />
+          <Caption tone="faint" variant="code">{row.path}</Caption>
+          <br />
+          <Caption tone="faint">{row.reason}</Caption>
+        </span>
+      )
+    },
+    {
+      key: 'sizeBytes' as const,
+      header: 'Size',
+      numeric: true,
+      width: '6.5rem',
+      render: (_sizeBytes, row) => row.sizeBytes === null ? 'Not measured' : formatBytes(row.sizeBytes)
+    }
+  ]
 
   return (
-    <div
-      data-testid="worktree-cleanup"
-      className="flex flex-col gap-2 p-2.5 rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--content-bg)]"
-    >
-      <div className={FIELD_LABEL}>Created by Houston</div>
-      {body}
-    </div>
+    <Card tone="inset" padding="md" className="grid gap-[var(--space-2)]" data-testid="worktree-cleanup">
+      <SectionHead
+        title="Created by Houston"
+        action={view.status === 'ready' ? (
+          <>
+            <Button variant="ghost" size="sm" data-testid="worktree-cleanup-check" disabled={busy} onClick={onCheck}>Check</Button>
+            <Button variant="ghost" size="sm" data-testid="worktree-cleanup-run" disabled={busy || readyCount === 0} onClick={() => setConfirmingClean(true)}>Clean now</Button>
+          </>
+        ) : undefined}
+      />
+      {view.status === 'pending' ? (
+        <Caption>Checking worktrees…</Caption>
+      ) : view.status === 'refused' ? (
+        <div role="alert" data-testid="worktree-cleanup-error"><Caption>{view.message}</Caption></div>
+      ) : rows.length === 0 ? (
+        <Caption>No worktrees created by Houston here</Caption>
+      ) : (
+        <Table
+          aria-label="Worktrees created by Houston"
+          columns={columns}
+          rows={rows}
+          getRowId={(row) => row.path}
+          rowTone={(row) => row.state === 'kept' ? 'muted' : 'default'}
+          rowAction={(row) => row.state === 'stale' ? (
+            <Button variant="ghost" size="sm" data-testid="worktree-cleanup-remove" disabled={busy} onClick={() => setConfirmingStale(row)}>Remove…</Button>
+          ) : null}
+          density="compact"
+          variant="framed"
+          className="w-full"
+        />
+      )}
+      {confirmingClean && (
+        <ConfirmModal
+          title="Clean ready worktrees"
+          message={cleanNowConfirm(readyEntries)}
+          confirmLabel="Remove"
+          onConfirm={() => {
+            setConfirmingClean(false)
+            onCleanNow(removablePaths(readyEntries))
+          }}
+          onCancel={() => setConfirmingClean(false)}
+        />
+      )}
+      {confirmingStale && (
+        <ConfirmModal
+          title="Remove stale worktree"
+          message={`Remove ${confirmingStale.branch} at ${confirmingStale.path}? Its branch is kept, and no unpushed work is lost.`}
+          confirmLabel="Remove"
+          onConfirm={() => {
+            onRemoveStale(confirmingStale.path)
+            setConfirmingStale(null)
+          }}
+          onCancel={() => setConfirmingStale(null)}
+        />
+      )}
+    </Card>
   )
 }

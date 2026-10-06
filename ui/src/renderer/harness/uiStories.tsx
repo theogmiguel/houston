@@ -64,6 +64,9 @@ import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
 import { AnimOut } from '../src/components/AnimOut'
+import { WorktreeCleanupSection } from '../src/components/git/WorktreeCleanupSection'
+import type { ManagedWorktreeInfo } from '../src/houston/generated/ManagedWorktreeInfo'
+import type { WorktreeCleanupRow } from '../src/components/git/worktreeCleanupRows'
 
 const noop = (): void => {}
 
@@ -579,6 +582,36 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
         </SpecimenGroup>
       </div>
+    </div>
+  )
+}
+
+export function StaleWorktreesStory(): React.JSX.Element {
+  const section = React.useRef<HTMLDivElement>(null)
+  const now = Date.now()
+  const entries: ManagedWorktreeInfo[] = [
+    { path: '/home/theo/.houston/worktrees/issue-80', branch: 'fix/issue-80-ui', pr: 80, keep: null, bytes: 8_400_000_000, measured_at_ms: now - 60_000, checked_at_ms: now },
+    { path: '/home/theo/.houston/worktrees/old-branch', branch: 'chore/old-branch', pr: null, keep: { kind: 'dirty', files: 1 }, bytes: 2_100_000_000, measured_at_ms: now - 3 * 60_000, checked_at_ms: now }
+  ]
+  const staleRows: WorktreeCleanupRow[] = [
+    { path: '/home/theo/.houston/worktrees/docs-refresh', branch: 'docs/refresh', state: 'stale', reason: 'Idle 20 days · removed in 10 days', sizeBytes: 4_700_000_000, pr: 72 }
+  ]
+
+  React.useEffect(() => {
+    section.current?.querySelector<HTMLButtonElement>('[data-testid="worktree-cleanup-remove"]')?.click()
+  }, [])
+
+  return (
+    <div ref={section} style={{ maxWidth: 900, margin: '0 auto', padding: 24, background: 'var(--content-bg)', color: 'var(--text-primary)' }}>
+      <WorktreeCleanupSection
+        view={{ status: 'ready', entries }}
+        staleRows={staleRows}
+        busy={false}
+        nowMs={now}
+        onCheck={() => {}}
+        onCleanNow={() => {}}
+        onRemoveStale={() => {}}
+      />
     </div>
   )
 }

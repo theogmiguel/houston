@@ -104,7 +104,7 @@ import { AddPanePopover } from '../src/components/AddPanePopover'
 import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
-import { UiPrimitivesStory } from './uiStories'
+import { StaleWorktreesStory, UiPrimitivesStory } from './uiStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
@@ -238,6 +238,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/update': () => <LegacyUpdateStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
+  'git/worktree-stale': () => <StaleWorktreesStory />,
   'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,
   'connections/slack-reconnecting': () => <SlackConnectionsStory state="reconnecting" />,
   'connections/slack-off': () => <SlackConnectionsStory state="off" />,

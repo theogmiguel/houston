@@ -73,19 +73,20 @@ workspace:
   than the snapshot is lost unless it is committed); Delete removes the snapshot and
   touches no file. A checkpoint is stored as a hidden git ref in the repository itself.
 
-### Cleaning up merged worktrees
+### Cleaning up worktrees
 
 Worktrees Houston created — from this dialog, or for an agent through `pane_spawn`'s
 `worktree` — are listed under **Created by Houston** with their size and what, if
 anything, keeps each one. A worktree you made yourself is never removed by Houston.
 
-One can go when it is still on the branch Houston created it with, that branch's PR is
-merged on GitHub, it has no uncommitted or untracked files, it has no ignored file that
-a build would not recreate, its branch has no commit the PR does not contain, no pane is
-working inside it, and the grace period after the merge has passed. **Check** finds out
-which worktrees can go and measures them. **Clean now** lists those worktrees and the
-space they free, and asks once; it then removes only the ones it listed, together with
-their branches.
+One can go when it is still on the branch Houston created it with, its PR is merged or
+its commits are integrated into the branch it came from, it has no uncommitted or
+untracked files, it has no ignored file that a build would not recreate, no commit is
+missing from the remote, no pane is working inside it, and the grace period has passed.
+**Check** finds out
+which worktrees can go and measures them. **Clean now** lists only Ready worktrees and
+the space they free, and asks once; it then removes only the ones it listed, together
+with their branches.
 
 Removing a worktree deletes its ignored files too. A directory that is ignored as a whole,
 such as `target/` or `node_modules/`, is treated as build output and goes with it. A
@@ -100,16 +101,27 @@ upstream was deleted, as of your own last `git fetch --prune`, reads "probably
 integrated": Houston cannot tell a merge from a closed PR, so it offers **Remove** and
 leaves the choice to you.
 
-To remove merged worktrees on its own, turn on **Remove merged worktrees automatically**
-under Settings ▸ Workspaces (off by default) and set **Grace after merge** (1 to 720
-hours, 24 by default). The daemon then checks at start and every 6 hours; while the
-setting is off it checks only when you press **Check** or **Clean now**.
+To remove merged or idle worktrees on its own, turn on **Remove worktrees automatically**
+under Settings ▸ Workspaces (off by default). Merged or integrated worktrees are removed
+after **Grace after merge** (1 to 720 hours, 24 by default); idle worktrees are removed
+after **Remove idle worktrees after** (1 to 365 days, 30 by default). Idle cleanup keeps
+the branch. The daemon then checks at start and every 6 hours; while the setting is off
+it checks only when you press **Check** or **Clean now**.
 
 Each check runs `gh pr view` once per recorded worktree, which sends that branch's name
 to GitHub through your own `gh`. When the PR's head commit is not in your repository, it
 also fetches that one ref, `refs/pull/<number>/head`, from the remote whose URL is the
 PR's repository, using your own git credentials. Without `gh`, a check sends nothing and
 fetches nothing.
+
+### Idle worktrees
+
+Clean worktrees with no unpushed commits or active panes are marked **Stale** halfway to
+the idle-removal threshold. Each Stale row can be removed early; its confirmation keeps
+the branch. When **Remove worktrees automatically** is on, Houston removes idle worktrees
+after the threshold and keeps their branches. Set the threshold in Settings → Workspaces
+→ **Remove idle worktrees after** (1–365 days; default 30). Worktrees with uncommitted
+changes, unpushed commits or a pane inside them stay.
 
 ## Fetching and pulling
 
