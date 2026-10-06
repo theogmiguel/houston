@@ -15,7 +15,6 @@ BASELINE=(
   "ui/src/renderer/src/components/git/PullRequestTab.tsx 0"
   "ui/src/renderer/src/components/git/WorktreeCleanupSection.tsx 30"
   "ui/src/renderer/src/components/git/WorktreesDialog.tsx 47"
-  "ui/src/renderer/src/components/headBadge.ts 5"
   "ui/src/renderer/src/components/nav/McpSurface.tsx 0"
   "ui/src/renderer/src/components/nav/RoutinesSurface.tsx 0"
   "ui/src/renderer/src/main.tsx 0"

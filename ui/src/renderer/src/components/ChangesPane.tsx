@@ -66,7 +66,7 @@ import {
   GitPrSummaryLabel
 } from './ui'
 import { Segmented } from './ui/SegmentedControl'
-import { SplitButton } from './SplitButton'
+import { SplitButton } from './ui/SplitButton'
 import { ChangesFileList } from './git/ChangesFileList'
 import { BranchCommits } from './git/BranchCommits'
 import { changeListKeyDown } from './git/changeListKeyboard'

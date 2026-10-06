@@ -51,6 +51,11 @@ export function PaneHeadButton({
   return <button {...rest} className={`${HEAD_BUTTON_BASE} ${ladder ? HEAD_BUTTON_LADDER : ''} ${HEAD_BUTTON_TONE[tone]} ${className}`.trim()} />
 }
 
+/** A label-sized note in a session header, such as the protocol mode or account profile. */
+export function PaneHeadBadge(props: Omit<HTMLAttributes<HTMLSpanElement>, 'className'>): React.JSX.Element {
+  return <span {...props} className="inline-flex items-center text-[var(--text-secondary)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] flex-none whitespace-nowrap cursor-default" />
+}
+
 const STATUS_PULSE = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'
 
 function statusDotClass(status: AgentStatus): string {

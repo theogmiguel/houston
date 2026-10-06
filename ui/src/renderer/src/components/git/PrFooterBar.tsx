@@ -11,7 +11,7 @@ import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 import { Icon } from '../ui/Icon'
 import { IconExternal } from '../icons'
 import { Select, type SelectOption } from '../ui/Select'
-import { SplitButton } from '../SplitButton'
+import { SplitButton } from '../ui/SplitButton'
 import { Tooltip } from '../ui/Tooltip'
 import {
   actionDisabledReason,

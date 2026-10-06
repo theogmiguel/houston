@@ -441,6 +441,7 @@
   --sz-tag-swatch-menu: 9px;
   --sz-tag-swatch-row: 8px;
   --space-tag-chip-gap: 5px;
+  --space-status-note-gap: 5px;
   --space-tag-chip-padding: 5px;
   --space-tag-picker-gap: 7px;
   --space-tag-form-gap: 5px;
@@ -932,6 +933,7 @@
   --sz-tag-swatch-menu: 9px;
   --sz-tag-swatch-row: 8px;
   --space-tag-chip-gap: 5px;
+  --space-status-note-gap: 5px;
   --space-tag-chip-padding: 5px;
   --space-tag-picker-gap: 7px;
   --space-tag-form-gap: 5px;

@@ -290,7 +290,8 @@ import { ConfirmDialog } from '../src/components/ui/ConfirmDialog'
 import { PaneFrame } from '../src/components/ui/PaneFrame'
 import { PaneHeader } from '../src/components/ui/PaneHeader'
 import { PaneTitle } from '../src/components/ui/PaneTitle'
-import { PaneHeadActions, PaneHeadButton } from '../src/components/ui/PaneControls'
+import { PaneHeadActions, PaneHeadBadge, PaneHeadButton } from '../src/components/ui/PaneControls'
+import { BackdropLayerSpecimen, ContextMeterSpecimen, SaveStateMarkSpecimen, SplitButtonSpecimen, StatusNoteSpecimen } from '../src/components/ui'
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
 import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelSwitch, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
@@ -353,6 +354,7 @@ function SkillsChromeSpecimen(): React.JSX.Element {
           <Text tone="muted" className="flex-none"><Icon glyph={IconTerminal} role="ui" /></Text>
           <PaneTitle>Skills</PaneTitle>
           <PaneHeadActions><PaneHeadButton ladder={false} tone="danger" aria-label="Close"><IconClose /></PaneHeadButton></PaneHeadActions>
+          <PaneHeadBadge>acp</PaneHeadBadge>
         </PaneHeader>
         <PaneViewRoot>
           <PaneViewBar variant="title"><div className="flex items-center gap-2"><PaneViewBadge><Icon glyph={IconTerminal} role="ui" /></PaneViewBadge><Text as="h2" size="ui" weight="semibold" flush>Skills</Text><PaneViewCount>3</PaneViewCount></div></PaneViewBar>
@@ -811,6 +813,26 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Task surface">
           <div className="w-[460px]"><TaskSurfaceSpecimen /></div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Split button">
+          <SplitButtonSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Context meter">
+          <ContextMeterSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Status note">
+          <StatusNoteSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Save state">
+          <SaveStateMarkSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Backdrop layer">
+          <BackdropLayerSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Task run cards">

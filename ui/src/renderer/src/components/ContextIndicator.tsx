@@ -1,12 +1,7 @@
 import type { SessionContext } from '../houston/generated/SessionContext'
 import { useContextIndicatorVisible } from '../contextIndicatorPref'
-import { RING_ACCENT_ICON } from './ui/shadowChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { HIT_TARGET_28 } from './hitTarget'
+import { ContextMeterButton, type ContextMeterTone } from './ui/ContextMeter'
 import { Tooltip } from './ui/Tooltip'
-
-const RADIUS = 5
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
 function human(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
@@ -31,10 +26,10 @@ function tooltipLabel(context: SessionContext): string {
   return [summary, tokens, stateLabel(context)].filter(Boolean).join('\n')
 }
 
-function tone(context: SessionContext): string {
-  if (context.used_percent != null && context.used_percent >= 95) return 'text-[var(--danger)]'
-  if (context.state === 'near_limit') return 'text-[var(--warn)]'
-  return 'text-[var(--text-primary)]'
+function tone(context: SessionContext): ContextMeterTone {
+  if (context.used_percent != null && context.used_percent >= 95) return 'danger'
+  if (context.state === 'near_limit') return 'warn'
+  return 'normal'
 }
 
 export function ContextIndicator({
@@ -50,45 +45,13 @@ export function ContextIndicator({
 
   return (
     <Tooltip label={label} side="bottom" openOnClick>
-      <button
-        type="button"
+      <ContextMeterButton
         data-pane-head-control
         data-testid="context-indicator"
         aria-label={label.replaceAll('\n', ' ')}
-        className={`inline-flex ${CONTROL_SIZE_SQUARE_CLS.mini} ${HIT_TARGET_28} flex-none items-center justify-center rounded-[var(--tr-radius-sm)] cursor-pointer hover:bg-[var(--hover-fill)] focus-visible:bg-[var(--hover-fill)] outline-none focus-visible:shadow-[${RING_ACCENT_ICON}] ${tone(context)}`}
-      >
-        <svg
-          data-testid="context-meter"
-          viewBox="0 0 14 14"
-          width="14"
-          height="14"
-          aria-hidden="true"
-        >
-          <circle
-            cx="7"
-            cy="7"
-            r={RADIUS}
-            fill="none"
-            stroke="var(--text-muted)"
-            strokeWidth="1.5"
-          />
-          {percent != null && (
-            <circle
-              data-testid="context-meter-value"
-              cx="7"
-              cy="7"
-              r={RADIUS}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeDasharray={CIRCUMFERENCE}
-              strokeDashoffset={CIRCUMFERENCE * (1 - percent / 100)}
-              transform="rotate(-90 7 7)"
-            />
-          )}
-        </svg>
-      </button>
+        tone={tone(context)}
+        percent={percent}
+      />
     </Tooltip>
   )
 }

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { BTN_PRIMARY, BTN_SECONDARY } from './ui/buttonChrome'
-import { HIT_TARGET_28 } from './hitTarget'
-import { Icon } from './ui/Icon'
-import { IconChevronDown } from './icons'
-import { MATERIAL_CLS, materialAttrs } from './ui/material'
-import { Tooltip } from './ui/Tooltip'
+import { BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
+import { HIT_TARGET_28 } from '../hitTarget'
+import { Icon } from './Icon'
+import { IconChevronDown } from '../icons'
+import { MATERIAL_CLS, materialAttrs } from './material'
+import { Tooltip } from './Tooltip'
 
 export interface SplitButtonItem {
   label: string
@@ -86,5 +86,18 @@ export function SplitButton({
         </div>
       )}
     </div>
+  )
+}
+
+export function SplitButtonSpecimen(): React.JSX.Element {
+  return (
+    <SplitButton
+      label="Commit"
+      onClick={() => {}}
+      items={[
+        { label: 'Commit and push', onClick: () => {} },
+        { label: 'Amend', onClick: () => {}, disabled: true, disabledReason: 'Nothing to amend' }
+      ]}
+    />
   )
 }

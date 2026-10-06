@@ -61,7 +61,8 @@ import {
   PaneHeadIdentity,
   PaneStateChip,
   PaneStatusDot,
-  PaneSubtitle
+  PaneSubtitle,
+  PaneHeadBadge
 } from './ui/PaneControls'
 import {
   ChildrenColumn,
@@ -83,7 +84,6 @@ import {
   splitRight
 } from '../keymap'
 import { ICON_ROLE_CLS, Icon } from './ui/Icon'
-import { HEAD_BADGE_CLS } from './headBadge'
 import { HeaderDelegationBadge, type PaneRoster } from './DelegationCard'
 import {
   endedLabel,
@@ -208,13 +208,12 @@ export function OriginBadge({
 export function AcpBadge({ slug }: { slug: string }): React.JSX.Element {
   return (
     <Tooltip label={`ACP mode (${slug}) — status comes from this CLI's own protocol stream, not hooks`}>
-      <span
+      <PaneHeadBadge
         data-testid="acp-badge"
-        className={HEAD_BADGE_CLS}
         aria-label={`ACP mode: ${slug}`}
       >
         acp
-      </span>
+      </PaneHeadBadge>
     </Tooltip>
   )
 }
@@ -268,13 +267,12 @@ export function BranchChip({
 export function ProfileBadge({ label }: { label: string }): React.JSX.Element {
   return (
     <Tooltip label={`Running as account profile "${label}"`}>
-      <span
+      <PaneHeadBadge
         data-testid="profile-badge"
-        className={HEAD_BADGE_CLS}
         aria-label={`Account profile: ${label}`}
       >
         {label}
-      </span>
+      </PaneHeadBadge>
     </Tooltip>
   )
 }
