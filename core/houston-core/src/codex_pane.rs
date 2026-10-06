@@ -138,6 +138,16 @@ mod linux {
     };
 
     const RPC_TIMEOUT: Duration = Duration::from_secs(2);
+
+    /// Codex refuses an app-server socket whose parent directory other users can
+    /// write, and `tempfile` only applies the umask, so the mode is set explicitly.
+    pub fn private_socket_dir() -> std::io::Result<tempfile::TempDir> {
+        use std::os::unix::fs::PermissionsExt;
+        tempfile::Builder::new()
+            .prefix("houston-codex-")
+            .permissions(std::fs::Permissions::from_mode(0o700))
+            .tempdir_in("/tmp")
+    }
     const POLL_INTERVAL: Duration = Duration::from_millis(250);
     // Keep ownership checks responsive without a continuous 40 Hz process poll.
     const OWNER_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -532,9 +542,7 @@ mod linux {
                 }
             }
         }
-        let directory = tempfile::Builder::new()
-            .prefix("houston-codex-")
-            .tempdir_in("/tmp")?;
+        let directory = private_socket_dir()?;
         let socket = directory.path().join("app.sock");
         let mut forwarded = vec![
             socket.into_os_string(),
@@ -828,6 +836,21 @@ mod linux {
         use super::*;
 
         #[test]
+        fn socket_directory_is_private_regardless_of_umask() {
+            use std::os::unix::fs::PermissionsExt;
+            let directory = private_socket_dir().unwrap();
+            let mode = std::fs::metadata(directory.path())
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o777,
+                0o700,
+                "socket directory mode {mode:o}, expected 700"
+            );
+        }
+
+        #[test]
         fn startup_metadata_rejects_native_children_and_unresolved_directories() {
             let cwd = tempfile::tempdir().unwrap();
             let root = json!({"id":"root", "source":"cli", "cwd":cwd.path(), "agentRole":null});
@@ -844,7 +867,7 @@ mod linux {
 }
 
 #[cfg(target_os = "linux")]
-pub use linux::{observe, run, run_shell};
+pub use linux::{observe, private_socket_dir, run, run_shell};
 
 #[cfg(test)]
 mod tests {
