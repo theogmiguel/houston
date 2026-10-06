@@ -3926,7 +3926,7 @@ export function App(): React.JSX.Element {
                         if (mcp) void showItemInFolder(mcp.sourcePath);
                       }}
                       checkedAt={mcpCheckedAt}
-                      slackClient={conn.kind === "ready" ? conn.client : null}
+                      slackClient={readyClient(conn)}
                     />
                   ) : railView === "routines" ? (
                     <RoutinesSurface
