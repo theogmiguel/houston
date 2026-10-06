@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 
 export function ShortcutBindingRow({ children, inert = false, ...props }: HTMLAttributes<HTMLDivElement> & { children: ReactNode; inert?: boolean }): React.JSX.Element {
-  return <div {...props} data-inert={inert || undefined} className={`flex items-start gap-[var(--tr-space-shortcut-row-gap)] py-[var(--tr-space-shortcut-row-block)] px-[var(--tr-space-shortcut-row-inline)] [&+&]:border-t [&+&]:border-t-[var(--divider)] ${inert ? '[&_.key-chip]:opacity-45' : ''}`}>{children}</div>
+  return <div {...props} data-inert={inert || undefined} className={`flex items-start gap-[var(--space-shortcut-row-gap)] py-[var(--space-shortcut-row-block)] px-[var(--space-shortcut-row-inline)] [&+&]:border-t [&+&]:border-t-[var(--divider)] ${inert ? '[&_.key-chip]:opacity-45' : ''}`}>{children}</div>
 }
 
 export function ShortcutConflictActions({ children }: { children: ReactNode }): React.JSX.Element {

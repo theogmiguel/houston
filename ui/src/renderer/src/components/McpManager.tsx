@@ -16,7 +16,7 @@ import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
 import { Icon } from './ui/Icon'
 import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, Text, TextInput, FieldLabel, Chip, ChoiceGroup, ConfigurationDetail, ResultList, ResultRow, Footnote, type TableColumn } from './ui'
-import { CompactSwitch } from './ui/ConfigurationDetail'
+import { Switch } from './ui/Switch'
 import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
 import { ConnectionsIntegrations } from './ConnectionsIntegrations'
@@ -512,7 +512,7 @@ function McpServerForm({
           </div>
 
           <label className="flex items-center gap-[var(--space-2)]">
-            <CompactSwitch
+            <Switch size="configuration"
               on={value.enabled}
               label={value.enabled ? 'Turn this server off' : 'Turn this server on'}
               onChange={(enabled) => setValue({ ...value, enabled })}

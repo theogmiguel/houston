@@ -234,7 +234,7 @@ import {
   FeedbackBanner,
   DetailState,
   EmptyPane,
-  FieldSwitch,
+  Switch,
   IconAction,
   BackBar,
   SupportingNote,
@@ -292,7 +292,7 @@ import { PaneTitle } from '../src/components/ui/PaneTitle'
 import { PaneHeadActions, PaneHeadBadge, PaneHeadButton } from '../src/components/ui/PaneControls'
 import { BackdropLayerSpecimen, ContextMeterSpecimen, SaveStateMarkSpecimen, SplitButtonSpecimen, StatusNoteSpecimen } from '../src/components/ui'
 import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../src/components/ui/NavSurfaceFrame'
-import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelSwitch, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
+import { PanelBackBar, PanelBadge, PanelButton, PanelChoice, PanelChoiceGroup, PanelColumns, PanelDetailBody, PanelDetailFrame, PanelEmpty, PanelField, PanelFieldLabel, PanelFootnote, PanelIconButton, PanelListHead, PanelNotice, PanelSection, PanelSectionToggle, PanelStatusLine, PanelTextArea, PanelTextInput, PanelToolbarField } from '../src/components/ui/PanelControls'
 import { PaneViewBadge, PaneViewBar, PaneViewBody, PaneViewCloseButton, PaneViewCount, PaneViewInput, PaneViewNotice, PaneViewPill, PaneViewRoot, PaneViewSaveButton, PaneViewTextArea } from '../src/components/ui/PaneView'
 import logoUrl from '../src/assets/logo-chrome.svg'
 import { WorktreeCleanupSection } from '../src/components/git/WorktreeCleanupSection'
@@ -310,7 +310,7 @@ function SkillsChromeSpecimen(): React.JSX.Element {
         <PanelButton>Secondary action</PanelButton>
         <PanelButton tone="primary">Primary action</PanelButton>
         <PanelIconButton aria-label="Refresh"><IconClose /></PanelIconButton>
-        <PanelSwitch on={enabled} label="Automatic distribution" onChange={setEnabled} />
+        <Switch size="panel" on={enabled} label="Automatic distribution" onChange={setEnabled} />
         <PanelChoiceGroup>
           <PanelChoice pressed>Claude</PanelChoice>
           <PanelChoice pressed={false}>Codex</PanelChoice>
@@ -690,10 +690,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow><NumberFieldSpecimen /></SpecimenRow>
         </SpecimenGroup>
 
-        <SpecimenGroup heading="Text">
-          <SpecimenRow><Text size="heading" weight="heading" tone="primary">Section heading</Text><Text size="body" tone="secondary">Supporting copy</Text><Text size="small" tone="muted">Quiet detail</Text><Text size="label" weight="label" tone="faint">LABEL</Text></SpecimenRow>
-        </SpecimenGroup>
-
         <SpecimenGroup heading="Settings detail">
           <SettingsDetailPanelSpecimen />
         </SpecimenGroup>
@@ -774,10 +770,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Resize handle">
           <SpecimenRow><ResizeHandleSpecimen /></SpecimenRow>
-        </SpecimenGroup>
-
-        <SpecimenGroup heading="Text">
-          <SpecimenRow><Text size="empty-title" weight="display" tone="primary" leading="display">A workspace with no sessions</Text><Text as="p" flush size="ui" weight="ui" tone="muted" leading="empty">Open a terminal or browser in this workspace.</Text></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Roster surfaces">
@@ -1145,14 +1137,6 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <TextInput variant="task-number" aria-label="Task number" type="number" value={2} readOnly />
         </SpecimenGroup>
 
-        <SpecimenGroup heading="Text">
-          <SpecimenRow>
-            <Text size="ui" weight="semibold" tight tone="primary">Source control heading</Text>
-            <Text size="small" tone="muted">Supporting detail</Text>
-            <Text size="small" mono tone="faint">origin/main</Text>
-          </SpecimenRow>
-        </SpecimenGroup>
-
         <SpecimenGroup heading="EmptyState">
           <SpecimenRow>
             <div style={{ flex: '1 1 360px', padding: 24, border: '1px solid var(--divider)' }}>
@@ -1421,8 +1405,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
               <FeedbackBanner tone="error" icon={<IconAlertTriangle />}>Error message</FeedbackBanner>
             </div>
             <div className="flex items-center gap-[var(--space-3)]">
-              <FieldSwitch on label="Enabled" onChange={noop} />
-              <FieldSwitch on={false} label="Disabled" onChange={noop} />
+              <Switch size="field" on label="Enabled" onChange={noop} />
+              <Switch size="field" on={false} label="Disabled" onChange={noop} />
               <IconAction aria-label="Open"><Icon glyph={IconFolder} role="small" /></IconAction>
               <IconAction aria-label="Delete" danger><Icon glyph={IconFolder} role="small" /></IconAction>
             </div>

@@ -5,7 +5,6 @@ import { HIT_TARGET_28 } from '../hitTarget'
 import { PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
 import { Text } from './Text'
 
-const SWITCH_TRACK_CLS = 'w-[var(--w-switch-track)] h-[var(--h-switch-track)]'
 const FEEDBACK_MIN_CLS = 'min-h-[var(--h-feedback-min)]'
 const EMPTY_MIN_CLS = 'min-h-[var(--h-empty-pane-min)]'
 const BACK_BAR_CLS = 'h-[var(--h-back-bar)]'
@@ -150,45 +149,6 @@ export function SupportingNote({ children }: { children: React.ReactNode }): Rea
         {children}
       </Text>
     </div>
-  )
-}
-
-export function FieldSwitch({
-  on,
-  disabled,
-  label,
-  onChange,
-  testId
-}: {
-  on: boolean
-  disabled?: boolean
-  label: string
-  onChange: (next: boolean) => void
-  testId?: string
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      data-testid={testId ?? 'nav-switch'}
-      disabled={disabled}
-      onClick={() => onChange(!on)}
-      className={`btn relative flex-none ${SWITCH_TRACK_CLS} p-0 rounded-full border cursor-pointer [transition:border-color_0.14s_ease-out,background-color_0.14s_ease-out] disabled:cursor-default disabled:opacity-55 ${HIT_TARGET_28} ${
-        on
-          ? 'border-[color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[var(--accent)]'
-          : 'border-[var(--border)] bg-[var(--hover-fill)]'
-      }`}
-    >
-      <span
-        className={`absolute top-[var(--space-switch-thumb-inset)] left-[var(--space-switch-thumb-inset)] w-[var(--sz-switch-thumb)] h-[var(--sz-switch-thumb)] rounded-full [transition:background-color_0.14s_ease-out,transform_0.14s_cubic-bezier(0.22,1,0.36,1)] ${
-          on
-            ? 'bg-[var(--accent-ink)] translate-x-[var(--space-switch-thumb-shift)]'
-            : 'bg-[var(--text-secondary)]'
-        }`}
-      />
-    </button>
   )
 }
 

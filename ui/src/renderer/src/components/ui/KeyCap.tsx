@@ -40,7 +40,7 @@ export function KeyChip({ as: Tag = 'span', state, size = 'default', className =
     : keyState === 'armed'
       ? 'key-chip--capture armed rounded-[var(--tr-radius-input)] border-[var(--accent,var(--text-primary))] text-[var(--text-primary)]'
       : 'key-chip--capture rounded-[var(--tr-radius-input)] border-transparent text-[var(--text-muted)] hover:border-[var(--border)]'
-  const shortcutSize = size === 'shortcut' ? 'min-w-[var(--tr-width-shortcut-keycap)] px-[var(--tr-space-shortcut-keycap-inline)] py-[var(--tr-space-shortcut-keycap-block)]' : ''
+  const shortcutSize = size === 'shortcut' ? 'min-w-[var(--tr-width-shortcut-keycap)] px-[var(--space-shortcut-keycap-inline)] py-[var(--space-shortcut-keycap-block)]' : ''
   const classes = `${button ? 'btn' : ''} key-chip ${stateClasses} flex-none justify-center border bg-[var(--content-bg)] text-center font-mono font-semibold [font-size:var(--tr-text-small-size)] ${shortcutSize} ${className}`
   return button
     ? <button {...props as ButtonHTMLAttributes<HTMLButtonElement>} className={classes} />

@@ -10,7 +10,7 @@ export function TaskSettingDescription({ children }: { children: ReactNode }): R
 }
 
 export function TaskAccessSummary({ children, testId }: { children: ReactNode; testId?: string }): React.JSX.Element {
-  return <Text data-testid={testId} className="block pt-[var(--tr-space-task-access-summary)]" size="caption" tone="muted">Currently <strong className="font-semibold text-[var(--text-primary)]">{children}</strong></Text>
+  return <Text data-testid={testId} className="block pt-[var(--space-task-access-summary)]" size="caption" tone="muted">Currently <strong className="font-semibold text-[var(--text-primary)]">{children}</strong></Text>
 }
 
 export function TaskReviewRefusal({ children, testId }: { children: ReactNode; testId?: string }): React.JSX.Element {
