@@ -370,6 +370,27 @@
   --w-stack-tab-label: 110px;
   --w-tag-chip-max: 56px;
   --tr-text-tag-hint-leading: 1.55;
+  --tr-control-width-compact: 64px;
+  --tr-control-width-number: 72px;
+  --tr-control-width-medium: 200px;
+  --tr-control-width-long: 220px;
+  --tr-control-width-wide: 240px;
+  --tr-input-compact-inset-y: 5px;
+  --tr-readout-label-gap: 2px;
+  --tr-history-editor-inset-x: 14px;
+  --tr-hook-panel-inset-x: 14px;
+  --tr-hook-panel-inset-y: 11px;
+  --tr-hook-panel-following-space: 18px;
+  --tr-readout-grid-following-space: 18px;
+  --tr-hook-status-gap: 14px;
+  --tr-badge-inset-y: 2px;
+  --tr-dev-badge-inset-x: 5px;
+  --tr-license-text-max-height: 240px;
+  --tr-license-list-max-height: 360px;
+  --tr-voice-meter-width: 200px;
+  --tr-voice-meter-marker-width: 2px;
+  --tr-voice-error-copy-width: 280px;
+  --motion-meter-frame: 60ms;
 }
 
 [data-theme='paper'] {
@@ -743,6 +764,27 @@
   --w-stack-tab-label: 110px;
   --w-tag-chip-max: 56px;
   --tr-text-tag-hint-leading: 1.55;
+  --tr-control-width-compact: 64px;
+  --tr-control-width-number: 72px;
+  --tr-control-width-medium: 200px;
+  --tr-control-width-long: 220px;
+  --tr-control-width-wide: 240px;
+  --tr-input-compact-inset-y: 5px;
+  --tr-readout-label-gap: 2px;
+  --tr-history-editor-inset-x: 14px;
+  --tr-hook-panel-inset-x: 14px;
+  --tr-hook-panel-inset-y: 11px;
+  --tr-hook-panel-following-space: 18px;
+  --tr-readout-grid-following-space: 18px;
+  --tr-hook-status-gap: 14px;
+  --tr-badge-inset-y: 2px;
+  --tr-dev-badge-inset-x: 5px;
+  --tr-license-text-max-height: 240px;
+  --tr-license-list-max-height: 360px;
+  --tr-voice-meter-width: 200px;
+  --tr-voice-meter-marker-width: 2px;
+  --tr-voice-error-copy-width: 280px;
+  --motion-meter-frame: 60ms;
 }
 
 :root,

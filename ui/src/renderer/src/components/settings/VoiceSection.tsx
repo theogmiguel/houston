@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { BTN_GHOST } from '../ui/buttonChrome'
 import { dictationShortcut, effectiveLabel } from '../../keymap'
 import type { KeymapOverrides } from '../../houston/client'
 import { setSettingsSection } from '../../settingsNav'
 import { useVoicePageError } from '../../voice/store'
 import { Select } from '../ui/Select'
+import { Button, TextInput, InlineNotice, SettingsTextarea, Stack } from '../ui'
 import { Toggle } from '../ui/settingsPrimitives'
 import { VoiceLevelMeter, VoiceModelRoster } from './VoiceModelManager'
 import type { CloudStt } from '../../houston/generated/CloudStt'
@@ -93,16 +93,16 @@ function VoiceNotReadyBanner({
   voiceModelLabel: string
 }): React.JSX.Element {
   return (
-    <div
+    <InlineNotice
       data-testid="settings-voice-not-ready"
-      className="mb-[10px] rounded-[8px] border border-[var(--warning)] bg-[var(--card-bg)] px-3 py-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.45] text-[var(--warning)]"
+      tone="warn"
     >
       Dictation is on but cannot run yet:{' '}
       {voiceEngine?.kind === 'local'
         ? `the ${voiceModelLabel} model is not downloaded.`
         : 'the cloud engine has no API key.'}{' '}
       Holding the dictation key will be refused until that is fixed.
-    </div>
+    </InlineNotice>
   )
 }
 
@@ -131,13 +131,16 @@ function VoiceKeyRow({
       indent
     >
       <div
-        className="flex items-center gap-2"
+        className="flex items-center gap-[var(--space-2)]"
         data-testid="voice-key-row"
         data-keyring={voiceKeyringError ? 'unreachable' : 'ok'}
       >
-        <input
+        <TextInput
           type="password"
-          className="w-[200px] bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2"
+          width="medium"
+          radius="small"
+          density="compact"
+          font="mono"
           spellCheck={false}
           autoComplete="off"
           aria-label="Groq API key"
@@ -145,9 +148,9 @@ function VoiceKeyRow({
           value={voiceKeyDraft}
           onChange={(e) => setVoiceKeyDraft(e.target.value)}
         />
-        <button
+        <Button
           type="button"
-          className={`btn ${BTN_GHOST}`}
+          variant="legacy-ghost"
           disabled={voiceKeyDraft.trim() === ''}
           onClick={() => {
             onVoiceKeySet('groq', voiceKeyDraft.trim())
@@ -155,15 +158,15 @@ function VoiceKeyRow({
           }}
         >
           Save key
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className={`btn ${BTN_GHOST}`}
+          variant="legacy-ghost"
           disabled={!voiceCloudKeyPresent}
           onClick={() => onVoiceKeyClear('groq')}
         >
           Remove key
-        </button>
+        </Button>
       </div>
     </Row>
   )
@@ -212,7 +215,7 @@ function VoiceEngineGroup({
         desc="Local runs offline. Cloud is better at Brazilian Portuguese, but sends your audio to Groq."
       >
         <Select
-          className="w-[200px]"
+          width="medium"
           data-testid="settings-voice-engine"
           value={voiceSettings.engine.kind}
           options={[
@@ -251,7 +254,7 @@ function VoiceEngineGroup({
         desc="Original transcribes what you said; English translates in the same pass."
       >
         <Select
-          className="w-[200px]"
+          width="medium"
           data-testid="settings-voice-output"
           value={voiceSettings.output_mode}
           options={[
@@ -304,7 +307,7 @@ function VoiceCaptureGroup({
         desc={`Hold records while the key is down; Toggle uses separate presses, capped at ${VOICE_MAX_UTTERANCE_MINUTES} min.`}
       >
         <Select
-          className="w-[200px]"
+          width="medium"
           data-testid="settings-voice-capture-mode"
           value={voiceSettings.capture_mode}
           options={[
@@ -320,9 +323,9 @@ function VoiceCaptureGroup({
         title="Dictation key"
         desc={`${effectiveLabel(dictationShortcut, keymapOverrides)} while a terminal has focus. Rebind it in Shortcuts.`}
       >
-        <button type="button" className={`btn ${BTN_GHOST}`} onClick={() => setSettingsSection('shortcuts')}>
-          Open Shortcuts
-        </button>
+        <Button type="button" variant="legacy-ghost" onClick={() => setSettingsSection('shortcuts')}>
+            Open Shortcuts
+        </Button>
       </Row>
       <Row
         title="Microphone"
@@ -333,7 +336,7 @@ function VoiceCaptureGroup({
         }
       >
         <Select
-          className="w-[200px]"
+          width="medium"
           data-testid="settings-voice-mic-policy"
           value={voiceSettings.mic_policy}
           options={[
@@ -358,17 +361,17 @@ function VoiceCaptureGroup({
             : 'An unplugged device reads as unavailable, never silently swapped.'
         }
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-[var(--space-2)]">
           <Select
-            className="w-[200px]"
+            width="medium"
             data-testid="settings-voice-device"
             value={voiceSettings.input_device ?? ''}
             options={voiceDeviceOptions(voiceDevices, voiceSettings.input_device)}
             onChange={(v) => onVoiceSettingsSet({ ...voiceSettings, input_device: v === '' ? null : v })}
           />
-          <button type="button" className={`btn ${BTN_GHOST}`} onClick={onVoiceDevicesRefresh}>
+          <Button type="button" variant="legacy-ghost" onClick={onVoiceDevicesRefresh}>
             Refresh
-          </button>
+          </Button>
         </div>
       </Row>
       <Row
@@ -376,7 +379,7 @@ function VoiceCaptureGroup({
         desc="Auto-detect works; pinning a language is better for short utterances."
       >
         <Select
-          className="w-[200px]"
+          width="medium"
           data-testid="settings-voice-language"
           value={voiceSettings.input_language ?? ''}
           options={[
@@ -391,7 +394,7 @@ function VoiceCaptureGroup({
         desc="Direct pastes at the prompt; Enter stays yours. Confirm first waits for you."
       >
         <Select
-          className="w-[200px]"
+          width="medium"
           data-testid="settings-voice-insert-mode"
           value={voiceSettings.insert_mode}
           options={[
@@ -407,8 +410,11 @@ function VoiceCaptureGroup({
         title="Vocabulary"
         desc="Product names and jargon the model would otherwise mishear. Comma-separated."
       >
-        <textarea
-          className="w-[240px] bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] font-mono [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[6px] px-2 resize-y"
+        <SettingsTextarea
+          width="wide"
+          radius="small"
+          resizable
+          mono
           rows={3}
           spellCheck={false}
           aria-label="Vocabulary"
@@ -465,19 +471,16 @@ export function VoiceSection({
   }, [])
 
   return (
-    <>
+    <Stack gap="medium">
       {voiceSettings?.enabled && !voiceEngineReady && (
         <VoiceNotReadyBanner voiceEngine={voiceEngine} voiceModelLabel={voiceModelLabel} />
       )}
       {voicePageError && (
-        <div
-          data-testid="settings-voice-error"
-          className="mb-[10px] rounded-[8px] border border-[var(--danger)] bg-[var(--card-bg)] px-3 py-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.45] text-[var(--danger)]"
-        >
+        <InlineNotice data-testid="settings-voice-error" tone="danger">
           {voicePageError}
-        </div>
+        </InlineNotice>
       )}
-      <div className="">
+      <div>
         {voiceSettings === null ? (
           <Row title="Loading…" desc="Asking the daemon for the Voice settings." />
         ) : (
@@ -509,6 +512,6 @@ export function VoiceSection({
           </>
         )}
       </div>
-    </>
+    </Stack>
   )
 }

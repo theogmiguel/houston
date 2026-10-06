@@ -78,7 +78,7 @@ const DockedLaunchStory = React.forwardRef<HTMLDivElement>(function DockedLaunch
 })
 import { Sidebar } from '../src/components/Sidebar'
 import type { SessionInfo, Workspace } from '../src/houston/client'
-import { AppearancePickerStory, SettingsAbout, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsDetailStory, SettingsDiagnostics, SettingsDictation, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
+import { AppearancePickerStory, SettingsAbout, SettingsAboutAvailable, SettingsAboutInstallState, SettingsAboutNotices, SettingsAgentSetup, SettingsAgentStatusEmpty, SettingsAgentStatusLoading, SettingsAppearance, SettingsAppearanceCustom, SettingsDaemon, SettingsDaemonError, SettingsDetailStory, SettingsDiagnostics, SettingsDiagnosticsLoading, SettingsDiagnosticsOpenHooks, SettingsDictation, SettingsDictationCloud, SettingsDictationModelStates, SettingsNoticesLoaded, SettingsNotifications, SettingsOrchestration, SettingsOrchestrationEmptyRoster, SettingsOrchestrationLoading, SettingsOrchestrationNoWorkspace, SettingsPrivacy, SettingsPrivacyEditor, SettingsSearchStory, SettingsShortcuts, SettingsShortcutsArmed, SettingsShortcutsConflict, SettingsTerminal, SettingsWorkspaces } from './settingsStories'
 import {
   NoticesError,
   NoticesExiting,
@@ -345,14 +345,20 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'settings/shortcuts-armed': () => <SettingsShortcutsArmed />,
   'settings/shortcuts-conflict': () => <SettingsShortcutsConflict />,
   'settings/diagnostics': () => <SettingsDiagnostics />,
-  'settings/daemon': () => <SettingsDiagnostics />,
+  'settings/diagnostics-loading': () => <SettingsDiagnosticsLoading />,
+  'settings/diagnostics-open-hooks': () => <SettingsDiagnosticsOpenHooks />,
+  'settings/daemon': () => <SettingsDaemon />,
+  'settings/daemon-error': () => <SettingsDaemonError />,
   'settings/orchestration': () => <SettingsOrchestration />,
   'settings/orchestration-loading': () => <SettingsOrchestrationLoading />,
   'settings/orchestration-empty-roster': () => <SettingsOrchestrationEmptyRoster />,
   'settings/orchestration-no-workspace': () => <SettingsOrchestrationNoWorkspace />,
   'settings/dictation': () => <SettingsDictation />,
+  'settings/dictation-model-states': () => <SettingsDictationModelStates />,
+  'settings/dictation-cloud-error': () => <SettingsDictationCloud />,
   'settings/workspaces': () => <SettingsWorkspaces />,
   'settings/privacy': () => <SettingsPrivacy />,
+  'settings/privacy-edit': () => <SettingsPrivacyEditor />,
   'settings/about': () => <SettingsAbout />,
   'composer/controls-open': () => <ComposerControlsOpen />,
   'composer/controls-overflow': () => <ComposerControlsOverflow />,
@@ -366,6 +372,11 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell/add-pane-disabled': () => <AddPaneDisabled />,
   'banner/reconnect': () => <ReconnectBannerStory error={null} />,
   'banner/reconnect-error': () => <ReconnectBannerStory error="connection refused" />,
+  'settings/about-available': () => <SettingsAboutAvailable />,
+  'settings/about-installing': () => <SettingsAboutInstallState state={{ kind: 'downloading', downloaded: 3_200_000, total: 8_000_000 }} />,
+  'settings/about-install-failed': () => <SettingsAboutInstallState state={{ kind: 'failed', version: '1.2.3', error: 'Signature verification failed' }} />,
+  'settings/about-notices': () => <SettingsAboutNotices />,
+  'settings/notices-loaded': () => <SettingsNoticesLoaded />,
   'notices/resting': () => <NoticesResting />,
   'notices/stacked': () => <NoticesStacked />,
   'notices/error': () => <NoticesError />,

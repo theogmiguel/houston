@@ -30,7 +30,7 @@ export interface SelectProps {
   className?: string
   chrome?: string
   prefix?: React.ReactNode
-  width?: 'auto' | 'full' | 'task-setting'
+  width?: 'auto' | 'full' | 'task-setting' | 'medium'
 }
 
 // How long a type-ahead buffer survives between keystrokes. 800 ms sits between
@@ -253,7 +253,7 @@ export function Select({
             if (open) close(true)
             else openMenu()
           }}
-          className={`${chrome} ${TRIGGER_LAYOUT_CLS} ${width === 'full' ? 'w-full' : width === 'task-setting' ? 'min-w-[var(--tr-width-task-select)]' : ''} ${className}`}
+          className={`${chrome} ${TRIGGER_LAYOUT_CLS} ${width === 'full' ? 'w-full' : width === 'task-setting' ? 'min-w-[var(--tr-width-task-select)]' : width === 'medium' ? 'w-[var(--tr-control-width-medium)]' : ''} ${className}`}
         >
           {prefix && <span className="flex-none inline-flex items-center">{prefix}</span>}
           <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ''}</span>

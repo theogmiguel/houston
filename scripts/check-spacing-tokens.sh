@@ -19,10 +19,7 @@ BASELINE=(
   "ui/src/renderer/src/components/HandoffOverlay.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 2"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 0"
-  "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx 7"
   "ui/src/renderer/src/components/ui/settingsPrimitives.tsx 1"
-  "ui/src/renderer/src/components/settings/PrivacySection.tsx 2"
-  "ui/src/renderer/src/components/settings/VoiceSection.tsx 2"
   "ui/src/renderer/src/components/ShortcutSheet.tsx 0"
   "ui/src/renderer/src/pane/TerminalPane.tsx 0"
 )

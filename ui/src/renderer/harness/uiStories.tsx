@@ -60,7 +60,7 @@ import {
   FormGridSpecimen,
   FullScreenMessageSpecimen,
   FirstRunHooksStepSpecimen,
-  TextInput,
+
   IconTile,
   Icon,
   ListDetail,
@@ -144,6 +144,20 @@ import {
   SectionHead,
   Select,
   SettingsBreadcrumb,
+  TextInput,
+
+  ChangeSummary,
+  DevBadge,
+  HistoryEditor,
+  HookPanel,
+  HookStatusList,
+  LicenseText,
+  LicensePackage,
+  LicenseList,
+  InlineLink,
+  Readout,
+  ReadoutGrid,
+  InlineNotice,
   SettingsRailRow,
   SettingsScope,
   SettingsSearch,
@@ -157,12 +171,18 @@ import {
   EmptyGridHintSpecimen,
   TreeGroupHeaderSpecimen,
   WorkspaceGroupLabelSpecimen,
+  HookStatus,
+  Text,
+  SettingsTextarea,
+  VersionBadge,
+  LevelThresholdControlSpecimen,
+  Inline,
+  Stack,
   Segmented,
   SegmentedControl,
   Slider,
   StatusIcon,
   Toggle,
-  Text,
   CheckedStamp,
   STATUS_LABELS,
   StatusLabel,
@@ -543,6 +563,44 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <SettingsScope workspace={null} row scope="global" />
           </SpecimenRow>
         </SpecimenGroup>
+        <SpecimenGroup heading="Settings details">
+          <SpecimenRow>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'var(--space-2)' }}>
+              <Readout label="Channel" value="dev" />
+              <Readout label="Build" value="abc1234" mono />
+              <Readout label="Live sessions" value="7" tabular />
+            </div>
+            <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+              <Text weight="medium" size="small" tone="muted">Supporting settings copy</Text>
+              <Text weight="body" size="small" tone="muted">Body-weight settings copy</Text>
+              <InlineNotice tone="warn">Dictation is on but cannot run yet.</InlineNotice>
+              <InlineNotice tone="danger">The request could not complete.</InlineNotice>
+              <DevBadge>DEV</DevBadge>
+              <InlineLink href="https://example.invalid/project">Package repository</InlineLink>
+              <HookStatusList><HookStatus wired>Claude Code</HookStatus><HookStatus wired={false}>Codex — not wired</HookStatus></HookStatusList>
+              <Text as="div" size="small" weight="small" tone="warn" leading="tight">An unwired CLI still runs.</Text>
+              <VersionBadge>v1.0.0</VersionBadge>
+              <TextInput width="medium" value="Houston" readOnly aria-label="Settings input specimen" />
+              <TextInput width="long" density="compact" value="Filter by name or licence" readOnly aria-label="Compact settings input specimen" />
+              <SettingsTextarea value="Houston, pane, workspace" readOnly aria-label="Settings textarea specimen" />
+              <LicenseText>Package licence text specimen</LicenseText>
+              <ChangeSummary>Update release notes specimen.</ChangeSummary>
+              <HistoryEditor><SettingsTextarea value="aws configure*" readOnly aria-label="History ignore pattern specimen" /></HistoryEditor>
+              <ReadoutGrid spaceAfter><Readout label="State directory" value="/home/dev/.houston-dev" mono /><Readout label="Port" value="43153" tabular /></ReadoutGrid>
+              <HookPanel><Text weight="medium" size="small">Hooks are installed and ready.</Text></HookPanel>
+              <LicenseList><LicensePackage><Text weight="medium" size="small" tone="primary">Package · MIT</Text></LicensePackage></LicenseList>
+            </div>
+          </SpecimenRow>
+        </SpecimenGroup>
+        <SpecimenGroup heading="Layout roles">
+          <SpecimenRow>
+            <Inline gap="small" wrap align="baseline" insetTop><Text size="small">Label</Text><Text size="small" tone="muted">Value</Text></Inline>
+            <Stack gap={1}><Text size="small">First</Text><Text size="small" tone="muted">Second</Text></Stack>
+          </SpecimenRow>
+        </SpecimenGroup>
+        <SpecimenGroup heading="Level threshold control">
+          <LevelThresholdControlSpecimen />
+        </SpecimenGroup>
         <SpecimenGroup heading="Terminal palette picker">
           <SpecimenRow>
             <TerminalPalettePicker chromeTheme="graphite" value="black" onChange={noop} />
@@ -597,6 +655,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="legacy-titlebar-icon" icon={IconClose} aria-label="Titlebar action" />
             <Button variant="legacy-ghost-compact"><IconEye />Show visual fingerprint</Button>
             <Button variant="legacy-ghost-disclosure"><IconEye />Advanced</Button>
+            <Button variant="legacy-bare-ghost">Legacy bare ghost</Button>
+            <Button variant="legacy-danger-solid" contentAlign="start">Stop daemon</Button>
+            <Button variant="compact-action">Compact ghost action</Button>
+            <Button variant="label-action">Label action</Button>
             <Button variant="legacy-focus-lever"><IconEye />Focus parent</Button>
             <Button variant="legacy-roster-footer">Roster footer action</Button>
             <Button variant="accent-soft">Accent soft</Button>
@@ -1131,6 +1193,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <SpecimenRow>
             <Select value="graphite" options={options} onChange={noop} aria-label="Theme" />
             <Select value="paper" options={options} onChange={noop} aria-label="Disabled theme" disabled />
+            <Select width="medium" value="paper" options={options} onChange={noop} aria-label="Medium settings select" />
           </SpecimenRow>
         </SpecimenGroup>
 

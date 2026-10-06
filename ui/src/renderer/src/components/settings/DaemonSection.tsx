@@ -9,10 +9,11 @@ import {
   trayState,
   type TrayStateView,
 } from "../../houston/tray";
-import { BTN_DANGER_SOLID, BTN_GHOST } from "../ui/buttonChrome";
+import { Button } from "../ui";
 import { ConfirmModal } from "../ConfirmModal";
 import { pluralize, stopConfirmCopy } from "../daemonStopConfirmCopy";
 import { Toggle } from "../ui/settingsPrimitives";
+import { Readout, ReadoutGrid, Text, Stack } from "../ui";
 import { Group, Row } from "./shared";
 
 // Fallback only, used before `reap.deadline_ms` arrives — must match the
@@ -75,26 +76,7 @@ function Fact({
   numeric?: boolean;
   testId: string;
 }): React.JSX.Element {
-  return (
-    <div
-      data-testid={testId}
-      className="flex flex-col gap-[2px] rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[var(--content-bg)] px-[10px] py-[8px]"
-    >
-      <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
-        {label}
-      </div>
-      <div
-        className={`text-[var(--text-primary)] ${mono ? "font-mono [font-size:var(--tr-text-small-size)] break-all" : "[font-size:var(--tr-text-ui-size)] font-medium"} ${numeric ? "tabular-nums" : ""}`}
-      >
-        {value}
-      </div>
-      {sub && (
-        <div className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">
-          {sub}
-        </div>
-      )}
-    </div>
-  );
+  return <Readout data-testid={testId} label={label} value={value} sub={sub} mono={mono} tabular={numeric} />;
 }
 
 export function DaemonSection(): React.JSX.Element {
@@ -161,46 +143,32 @@ export function DaemonSection(): React.JSX.Element {
   return (
     <>
       {stopped ? (
-        <div
-          data-testid="daemon-section-stopped"
-          className="text-[length:var(--tr-text-ui-size)] text-[var(--text-muted)] py-[var(--space-5)] text-center"
-        >
-          Daemon stopped. Reopening Houston starts a new one.
-        </div>
+            <Text data-testid="daemon-section-stopped" as="div" tone="muted" size="ui" center>
+            Daemon stopped. Reopening Houston starts a new one.
+            </Text>
       ) : !status ? (
         error ? (
-          <div className="flex flex-col items-start gap-[var(--space-3)]">
-            <div
-              data-testid="daemon-section-error"
-              className="[font-size:var(--tr-text-ui-size)] text-[var(--danger)]"
-            >
-              {error}
-            </div>
-            <button
+          <Stack align="start" gap={3}>
+            <Text data-testid="daemon-section-error" as="div" tone="danger" size="ui">{error}</Text>
+            <Button
               type="button"
-              className={`btn ${BTN_GHOST}`}
+              variant="legacy-ghost"
               onClick={load}
               data-testid="daemon-section-retry"
             >
               Retry
-            </button>
-          </div>
+            </Button>
+          </Stack>
         ) : (
-          <div
-            data-testid="daemon-section-loading"
-            className="text-[length:var(--tr-text-ui-size)] text-[var(--text-muted)] py-[var(--space-5)] text-center"
-          >
+            <Text data-testid="daemon-section-loading" as="div" tone="muted" size="ui" center>
             Asking the daemon for its own vitals…
-          </div>
+            </Text>
         )
       ) : (
         <>
           <Group plain>
-            <div className="flex flex-col gap-[var(--space-4)]">
-              <div
-                data-testid="daemon-section-facts"
-                className="grid grid-cols-2 gap-[10px]"
-              >
+            <Stack gap={4}>
+              <ReadoutGrid data-testid="daemon-section-facts">
                 <Fact
                   testId="daemon-fact-running-since"
                   label="Running since"
@@ -231,14 +199,9 @@ export function DaemonSection(): React.JSX.Element {
                   value={String(status.clients_connected)}
                   numeric
                 />
-              </div>
-              <div
-                data-testid="daemon-section-reap"
-                className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]"
-              >
-                {reapCopy(status)}
-              </div>
-            </div>
+              </ReadoutGrid>
+              <Text data-testid="daemon-section-reap" weight="small" size="small" as="div" tone="muted">{reapCopy(status)}</Text>
+            </Stack>
           </Group>
           {tray && (
             <Group heading="Background">
@@ -263,35 +226,27 @@ export function DaemonSection(): React.JSX.Element {
             </Group>
           )}
           {trayError && (
-            <div
-              data-testid="daemon-section-tray-error"
-              className="[font-size:var(--tr-text-small-size)] text-[var(--danger)]"
-            >
-              {trayError}
-            </div>
+            <Text data-testid="daemon-section-tray-error" size="small" as="div" tone="danger">{trayError}</Text>
           )}
           <Group>
             <Row
               title="Stop daemon"
               desc="Ends every session it owns and disarms every routine, then exits. You'll need to reopen Houston."
             >
-              <button
+              <Button
                 type="button"
-                className={`btn ${BTN_DANGER_SOLID} inline-flex items-center gap-[var(--space-1-5)]`}
+                variant="legacy-danger-solid"
+                contentAlign="start"
+                className="inline-flex items-center gap-[var(--space-1-5)]"
                 onClick={() => setConfirming(true)}
                 data-testid="daemon-section-stop"
               >
                 Stop daemon
-              </button>
+              </Button>
             </Row>
           </Group>
           {error && (
-            <div
-              data-testid="daemon-section-stop-error"
-              className="[font-size:var(--tr-text-small-size)] text-[var(--danger)]"
-            >
-              {error}
-            </div>
+            <Text data-testid="daemon-section-stop-error" size="small" as="div" tone="danger">{error}</Text>
           )}
         </>
       )}

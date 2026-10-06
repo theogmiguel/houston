@@ -8,7 +8,7 @@ import { FOCUS_HALO } from './shadowChrome'
 import './button.css'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'compact-primary-action' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'accent-soft' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure' | 'roster-open' | 'compact-primary' | 'compact-secondary' | 'compact-icon-danger' | 'picker-candidate' | 'picker-apply-action' | 'picker-cancel-action' | 'picker-done-action' | 'repository-list-row' | 'repository-load-more-action' | 'file-retry-action' | 'reaction' | 'reaction-option' | 'agent-option' | 'diff-line-action' | 'compact-action' | 'mini-primary-action' | 'compact-self-start-action' | 'compact-trailing-action' | 'compact-control' | 'discussion-edit-action' | 'discussion-cancel-action' | 'discussion-reply-action' | 'discussion-submit-action' | 'pull-request-action' | 'pull-request-danger-action' | 'pull-request-primary-action' | 'pull-request-nav-action' | 'pull-request-external-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'compact-primary-action' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'accent-soft' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure' | 'roster-open' | 'compact-primary' | 'compact-secondary' | 'compact-icon-danger' | 'picker-candidate' | 'picker-apply-action' | 'picker-cancel-action' | 'picker-done-action' | 'repository-list-row' | 'repository-load-more-action' | 'file-retry-action' | 'reaction' | 'reaction-option' | 'agent-option' | 'diff-line-action' | 'compact-action' | 'label-action' | 'mini-primary-action' | 'compact-self-start-action' | 'compact-trailing-action' | 'compact-control' | 'discussion-edit-action' | 'discussion-cancel-action' | 'discussion-reply-action' | 'discussion-submit-action' | 'pull-request-action' | 'pull-request-danger-action' | 'pull-request-primary-action' | 'pull-request-nav-action' | 'pull-request-external-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip' | 'legacy-bare-ghost'
 export type ButtonSize = 'md' | 'sm' | 'lg'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
@@ -16,6 +16,7 @@ interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   armed?: boolean
   selected?: boolean
   status?: 'available' | 'failed'
+  contentAlign?: 'start' | 'center'
   iconEnd?: IconComponent
   /** Layout classes only; visual styles belong in Button variants. */
   className?: string
@@ -121,8 +122,9 @@ const buttonClasses = variants(
       'legacy-primary': `btn ${BTN_PRIMARY}`,
       'legacy-secondary': BTN_SECONDARY,
       'legacy-ghost': `btn ${BTN_GHOST}`,
+      'legacy-bare-ghost': BTN_GHOST,
       'legacy-danger': `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER}`,
-      'legacy-danger-solid': `btn ${BTN_DANGER_SOLID}`,
+      'legacy-danger-solid': BTN_DANGER_SOLID,
       'legacy-icon': `btn ${BTN_ICO}`,
       'legacy-icon-warning': `btn ${BTN_ICO} text-warning hover:text-warning`,
       'legacy-titlebar-icon': `btn ${BTN_ICO} [-webkit-app-region:no-drag]`,
@@ -130,6 +132,7 @@ const buttonClasses = variants(
       'legacy-ghost-compact': `btn ${BTN_GHOST} px-2 py-1 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] inline-flex items-center gap-1`,
       'legacy-ghost-icon': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)]`,
       'legacy-ghost-icon-danger': `btn ${BTN_GHOST} p-1 rounded-[var(--tr-radius-sm)] enabled:hover:text-[var(--danger)]`,
+      'label-action': `btn ${BTN_GHOST} px-1.5 py-0 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]`,
       'legacy-focus-lever': 'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer transition-[background,border-color] hover:bg-[var(--hover-fill)] hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]',
       'legacy-roster-footer': `btn ${BTN_GHOST} min-h-[var(--h-ctl)]`,
       'accent-soft': 'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[var(--tr-space-profile-action-inline)] py-[var(--tr-space-profile-action-block)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default',
@@ -142,7 +145,7 @@ const buttonClasses = variants(
 
 // Variants that carry their own type and padding: no button chrome, no size padding.
 const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'icon-selected', 'icon-structure', 'compact-primary-action', 'text', 'badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'compact-ghost', 'compact-danger', 'accent-soft', 'roster-open', 'picker-candidate', 'picker-apply-action', 'picker-cancel-action', 'picker-done-action', 'repository-list-row', 'repository-load-more-action', 'file-retry-action', 'reaction', 'reaction-option', 'agent-option', 'diff-line-action', 'compact-action', 'mini-primary-action', 'compact-self-start-action', 'compact-trailing-action', 'compact-control', 'discussion-edit-action', 'discussion-cancel-action', 'discussion-reply-action', 'discussion-submit-action', 'pull-request-action', 'pull-request-danger-action', 'pull-request-primary-action', 'pull-request-nav-action', 'pull-request-external-action', 'compact-primary', 'compact-secondary', 'compact-icon-danger', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'surface-large'])
-const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'compact-primary-action', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'accent-soft', 'roster-open', 'picker-candidate', 'picker-apply-action', 'picker-cancel-action', 'picker-done-action', 'repository-list-row', 'repository-load-more-action', 'file-retry-action', 'reaction', 'reaction-option', 'agent-option', 'diff-line-action', 'compact-action', 'mini-primary-action', 'compact-self-start-action', 'compact-trailing-action', 'compact-control', 'discussion-edit-action', 'discussion-cancel-action', 'discussion-reply-action', 'discussion-submit-action', 'pull-request-action', 'pull-request-danger-action', 'pull-request-primary-action', 'pull-request-nav-action', 'pull-request-external-action', 'compact-primary', 'compact-secondary', 'compact-icon-danger', 'surface-large', 'action-primary', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'])
+const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'compact-primary-action', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'accent-soft', 'roster-open', 'picker-candidate', 'picker-apply-action', 'picker-cancel-action', 'picker-done-action', 'repository-list-row', 'repository-load-more-action', 'file-retry-action', 'reaction', 'reaction-option', 'agent-option', 'diff-line-action', 'compact-action', 'mini-primary-action', 'compact-self-start-action', 'compact-trailing-action', 'compact-control', 'discussion-edit-action', 'discussion-cancel-action', 'discussion-reply-action', 'discussion-submit-action', 'pull-request-action', 'pull-request-danger-action', 'pull-request-primary-action', 'pull-request-nav-action', 'pull-request-external-action', 'compact-primary', 'compact-secondary', 'compact-icon-danger', 'surface-large', 'action-primary', 'subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'legacy-bare-ghost'])
 const isLegacy = (variant: ButtonVariant): boolean => variant.startsWith('legacy-')
 
 function buttonSize(variant: ButtonVariant, size: ButtonSize): ButtonSize | 'icon' {
@@ -160,6 +163,7 @@ export function Button(props: ButtonProps): React.JSX.Element {
     armed = false,
     selected = false,
     status = 'available',
+    contentAlign = 'center',
     icon,
     iconEnd,
     className = '',
@@ -170,13 +174,16 @@ export function Button(props: ButtonProps): React.JSX.Element {
     ...buttonProps
   } = props
   const selectedClasses = buttonClasses({ variant, size: buttonSize(variant, size) })
+  const alignedClasses = contentAlign === 'start' ? selectedClasses.replace(' justify-center', '') : selectedClasses
   const classSet = variant === 'legacy-roster-footer'
-    ? selectedClasses.replace(/^btn inline-flex items-center justify-center disabled:cursor-not-allowed /, '')
+    ? alignedClasses.replace(/^btn inline-flex items-center (?:justify-center )?disabled:cursor-not-allowed /, '')
     : variant === 'roster-open'
-      ? selectedClasses.replace(/^btn inline-flex /, 'flex ')
-      : ['subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'].includes(variant)
-        ? selectedClasses.replace(/^btn inline-flex items-center justify-center disabled:cursor-not-allowed /, '')
-        : selectedClasses
+      ? alignedClasses.replace(/^btn inline-flex /, 'flex ')
+      : ['subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip', 'legacy-bare-ghost'].includes(variant)
+        ? alignedClasses.replace(/^btn inline-flex items-center justify-center disabled:cursor-not-allowed /, '')
+        : variant === 'legacy-danger-solid'
+          ? alignedClasses.replace(/^btn inline-flex items-center disabled:cursor-not-allowed /, 'btn ')
+          : alignedClasses
   const reactionState = variant === 'reaction'
     ? selected ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--text-primary)]' : 'border-[var(--border)] bg-transparent text-[var(--text-muted)] hover:enabled:text-[var(--text-primary)]'
     : ''

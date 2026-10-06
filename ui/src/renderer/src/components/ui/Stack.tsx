@@ -6,13 +6,25 @@ const GAP = {
   1: 'gap-1',
   2: 'gap-2',
   3: 'gap-3',
+  4: 'gap-[var(--space-4)]',
+  medium: 'gap-[var(--space-2-5)]',
   field: 'gap-[var(--space-form-fields)]',
   screen: 'gap-[var(--space-fullscreen-message)]'
 } as const
 
 const ALIGN = {
   stretch: '',
+  start: 'items-start',
+  end: 'items-end',
   center: 'items-center'
+} as const
+
+const INSET = {
+  1: 'pt-[var(--space-1)]',
+  2: 'pt-[var(--space-2)]',
+  3: 'pt-[var(--space-3)]',
+  4: 'pt-[var(--space-4)]',
+  medium: 'pt-[var(--space-2-5)]'
 } as const
 
 const AXIS = {
@@ -22,6 +34,7 @@ const AXIS = {
 
 export type StackGap = keyof typeof GAP
 export type StackAxis = keyof typeof AXIS
+export type StackInset = keyof typeof INSET
 export type InsetSpace = 'preview' | 'compact-top'
 
 export type StackProps = Omit<HTMLAttributes<HTMLElement>, 'className'> & {
@@ -29,14 +42,15 @@ export type StackProps = Omit<HTMLAttributes<HTMLElement>, 'className'> & {
   gap: StackGap
   axis?: StackAxis
   align?: keyof typeof ALIGN
+  insetTop?: StackInset
   /** Layout classes only. */
   className?: string
   children?: ReactNode
 }
 
 /** A flex column (or row) with a fixed rhythm between its children. */
-export function Stack({ as: Tag = 'div', gap, axis = 'vertical', align = 'stretch', className = '', children, ...rest }: StackProps): React.JSX.Element {
-  return <Tag {...rest} className={`flex ${AXIS[axis]} ${GAP[gap]} ${ALIGN[align]} ${className}`}>{children}</Tag>
+export function Stack({ as: Tag = 'div', gap, axis = 'vertical', align = 'stretch', insetTop, className = '', children, ...rest }: StackProps): React.JSX.Element {
+  return <Tag {...rest} className={`flex ${AXIS[axis]} ${GAP[gap]} ${ALIGN[align]} ${insetTop ? INSET[insetTop] : ''} ${className}`}>{children}</Tag>
 }
 
 export function StackSpecimen(): React.JSX.Element {

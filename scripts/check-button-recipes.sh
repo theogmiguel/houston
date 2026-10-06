@@ -10,7 +10,6 @@ chrome_owner="ui/src/renderer/src/components/ui/buttonChrome.ts"
 
 PRIVATE_DECL_ALLOWLIST=()
 BARE_ALLOWLIST=(
-  "ui/src/renderer/src/components/settings/DiagnosticsSection.tsx"
 )
 
 is_allowlisted() {
