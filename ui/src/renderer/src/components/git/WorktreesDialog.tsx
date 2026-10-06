@@ -150,13 +150,11 @@ export function WorktreesDialog({
           />
         )}
 
-        <Card tone="inset" data-testid="worktrees-list">
+        <Card tone="inset" padding={worktrees.length === 0 ? 'md' : 'none'} data-testid="worktrees-list">
           {worktrees.length === 0 ? (
-            <div className="p-[var(--space-3)]">
             <Caption>
               {dir ? 'No worktrees reported.' : 'No workspace selected.'}
             </Caption>
-            </div>
           ) : (
             worktrees.map((w) => {
               const reason = worktreeActionDisabledReason(w)
@@ -165,7 +163,7 @@ export function WorktreesDialog({
                 <Card.Row
                   heading={worktreeTitle(w)}
                   meta={<Tooltip label={w.path}><Caption tone="faint" variant="code">{worktreeSubtitle(w)}</Caption></Tooltip>}
-                  status={w.dirty ? <Chip>Dirty</Chip> : undefined}
+                  status={w.dirty ? <span data-testid="worktree-dirty"><Chip variant="state" tone="warning" label="Dirty" /></span> : undefined}
                   action={
                     <>
                       <Tooltip label="Add as a Houston workspace">

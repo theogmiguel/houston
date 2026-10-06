@@ -931,13 +931,14 @@ async fn dispatch(
                 .unwrap_or_else(|e| Err(anyhow::anyhow!("worktree cleanup pass panicked: {e}")))
         }
         proto::ClientMsg::WorktreeIdleRemovalDaysGet => {
-            send_msg(
+            let _ = send_msg(
                 sink,
                 &proto::ServerMsg::WorktreeIdleRemovalDays {
                     days: daemon.worktree_idle_removal_days(),
                 },
             )
-            .await
+            .await;
+            Ok(())
         }
         proto::ClientMsg::WorktreeIdleRemovalDaysSet { days } => daemon
             .set_worktree_idle_removal_days(days)

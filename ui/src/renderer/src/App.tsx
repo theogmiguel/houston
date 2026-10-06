@@ -4153,6 +4153,10 @@ export function App(): React.JSX.Element {
                         if (conn.kind === "ready")
                           conn.client.worktreeCleanupSet(enabled, graceHours);
                       }}
+                      onWorktreeIdleRemovalDaysSet={(days) => {
+                        if (conn.kind === "ready")
+                          conn.client.worktreeIdleRemovalDaysSet(days);
+                      }}
                       onMailboxRetentionSet={(hours) => {
                         if (conn.kind === "ready")
                           conn.client.mailboxRetentionSet(hours);

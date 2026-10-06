@@ -54,11 +54,14 @@ afterEach(() => {
   host = null
 })
 
+// The daemon reports `status` alongside `keep`; derive it the same way so a fixture
+// with a keep reason is never also Ready.
 function entry(p: Partial<ManagedWorktreeInfo> = {}): ManagedWorktreeInfo {
-  return {
+  const base: ManagedWorktreeInfo = {
     path: '/repo/.houston/worktrees/demo',
     branch: 'houston/demo',
     base_branch: 'main',
+    status: 'kept',
     pr: 36,
     keep: null,
     bytes: 23_000_000_000,
@@ -66,6 +69,8 @@ function entry(p: Partial<ManagedWorktreeInfo> = {}): ManagedWorktreeInfo {
     checked_at_ms: NOW - 2 * HOUR,
     ...p
   }
+  const ready = base.checked_at_ms !== null && base.keep === null
+  return { ...base, status: p.status ?? (ready ? 'ready' : 'kept') }
 }
 
 function staleEntry(path: string): ManagedWorktreeInfo {
@@ -106,7 +111,7 @@ describe('WorktreesDialog cleanup section', () => {
     expect(first.textContent).toContain('#36')
     expect(first.textContent).toContain('23.0 GB')
     expect(first.textContent).toContain('can be removed')
-    expect(second.textContent).toContain('not measured yet')
+    expect(second.textContent).toContain('Not measured')
   })
 
   it('every keep reason has its own line', () => {
@@ -116,7 +121,7 @@ describe('WorktreesDialog cleanup section', () => {
       [{ kind: 'dirty', files: 3 }, 'Kept: 3 uncommitted files'],
       [{ kind: 'ignored_files', files: 1 }, 'Kept: 1 ignored file removal would delete'],
       [{ kind: 'commits_outside_pr', count: 2, pr: 36 }, 'Kept: 2 commits not in PR #36'],
-      [{ kind: 'not_integrated' }, 'Kept: one or more commits are not integrated into the base branch'],
+      [{ kind: 'not_integrated' }, 'Kept: not integrated into main'],
       [{ kind: 'pr_head_unavailable', pr: 36 }, 'Kept: the head of PR #36 could not be fetched'],
       [{ kind: 'in_use', session: 12 }, 'Kept: in use by pane 12'],
       [{ kind: 'grace', until_ms: NOW + 3 * HOUR }, 'Kept: merged, removable in 3 h'],
@@ -163,7 +168,7 @@ describe('WorktreesDialog cleanup section', () => {
     const confirm = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Remove')
     click(confirm)
     expect(onCleanNow).toHaveBeenCalledTimes(1)
-    expect(onCleanNow).toHaveBeenCalledWith(['/repo/.houston/worktrees/a', '/repo/.houston/worktrees/b'])
+    expect(onCleanNow).toHaveBeenCalledWith(['/repo/.houston/worktrees/b', '/repo/.houston/worktrees/a'])
   })
 
   it('check asks for a pass even when nothing is removable yet', () => {

@@ -589,8 +589,8 @@ export function StaleWorktreesStory(): React.JSX.Element {
   const section = React.useRef<HTMLDivElement>(null)
   const now = Date.now()
   const entries: ManagedWorktreeInfo[] = [
-    { path: '/home/theo/.houston/worktrees/issue-80', branch: 'fix/issue-80-ui', pr: 80, keep: null, bytes: 8_400_000_000, measured_at_ms: now - 60_000, checked_at_ms: now },
-    { path: '/home/theo/.houston/worktrees/old-branch', branch: 'chore/old-branch', pr: null, keep: { kind: 'dirty', files: 1 }, bytes: 2_100_000_000, measured_at_ms: now - 3 * 60_000, checked_at_ms: now },
+    { path: '/home/theo/.houston/worktrees/issue-80', branch: 'fix/issue-80-ui', base_branch: 'main', status: 'ready', pr: 80, keep: null, bytes: 8_400_000_000, measured_at_ms: now - 60_000, checked_at_ms: now },
+    { path: '/home/theo/.houston/worktrees/old-branch', branch: 'chore/old-branch', base_branch: 'main', status: 'kept', pr: null, keep: { kind: 'dirty', files: 1 }, bytes: 2_100_000_000, measured_at_ms: now - 3 * 60_000, checked_at_ms: now },
     {
       path: '/home/theo/.houston/worktrees/docs-refresh',
       branch: 'docs/refresh',

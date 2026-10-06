@@ -1,13 +1,16 @@
-import { useState } from 'react'
-import { RESTORE_BUDGET_MAX, WORKTREE_CLEANUP_GRACE_HOURS_MAX } from '../../houston/generated/DEFAULTS'
+import {
+  RESTORE_BUDGET_MAX,
+  WORKTREE_CLEANUP_GRACE_HOURS_MAX,
+  WORKTREE_IDLE_REMOVAL_DAYS_MAX,
+  WORKTREE_IDLE_REMOVAL_DAYS_MIN
+} from '../../houston/generated/DEFAULTS'
+import { Caption } from '../ui/Caption'
 import { SettingsList, Toggle } from '../settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
 import { SettingsScope } from '../ui/SettingsScope'
 import { NumberSetting, Row, SubHead } from './shared'
 
-const DEFAULT_WORKTREE_IDLE_REMOVAL_DAYS = 30
-const WORKTREE_IDLE_REMOVAL_DAYS_MAX = 365
 
 function globalDescription(description: string): React.JSX.Element {
   return <><SettingsScope workspace={null} row scope="global" />{description}</>
@@ -17,7 +20,7 @@ export interface WorkspaceDefaultsSectionProps {
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
   onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
-  onWorktreeIdleRemovalDaysSet?: (days: number) => void
+  onWorktreeIdleRemovalDaysSet: (days: number) => void
   openLinksInPane: boolean
   onOpenLinksInPane: (on: boolean) => void
   hostInfo: HostInfo | null
@@ -36,11 +39,6 @@ export function WorkspaceDefaultsSection({
   sessionPolicy,
   onSessionPolicy
 }: WorkspaceDefaultsSectionProps): React.JSX.Element {
-  const [localWorktreeIdleRemovalDays, setLocalWorktreeIdleRemovalDays] = useState(DEFAULT_WORKTREE_IDLE_REMOVAL_DAYS)
-  const daemonIdleRemovalDays = (hostInfo as (HostInfo & { worktree_idle_removal_days?: number }) | null)?.worktree_idle_removal_days
-  const idleRemovalDays = onWorktreeIdleRemovalDaysSet
-    ? daemonIdleRemovalDays ?? localWorktreeIdleRemovalDays
-    : localWorktreeIdleRemovalDays
   return (
     <>
       <SubHead>Restoring</SubHead>
@@ -107,19 +105,20 @@ export function WorkspaceDefaultsSection({
         </Row>
         <Row
           title="Remove idle worktrees after"
-          desc={globalDescription('Automatic removal must survive a long pause; 30 days matches comparable tools’ idle cleanup. Stale worktrees are listed halfway to this threshold (15 days by default). 1 to 365 days.')}
+          desc={globalDescription(`A clean worktree with every commit on a remote and no pane inside is removed once nobody has touched it for this long; its branch is kept. It shows as Stale from halfway there. Needs automatic removal on. 1 to ${WORKTREE_IDLE_REMOVAL_DAYS_MAX} days.`)}
         >
-          <NumberSetting
-            value={idleRemovalDays}
-            min={1}
-            max={WORKTREE_IDLE_REMOVAL_DAYS_MAX}
-            unit="days"
-            testId="settings-worktree-idle-removal-days"
-            onCommit={(days) => {
-              if (onWorktreeIdleRemovalDaysSet) onWorktreeIdleRemovalDaysSet(days)
-              else setLocalWorktreeIdleRemovalDays(days)
-            }}
-          />
+          {!hostInfo ? (
+            <Caption>Asking the daemon…</Caption>
+          ) : (
+            <NumberSetting
+              value={hostInfo.worktree_idle_removal_days}
+              min={WORKTREE_IDLE_REMOVAL_DAYS_MIN}
+              max={WORKTREE_IDLE_REMOVAL_DAYS_MAX}
+              unit="days"
+              testId="settings-worktree-idle-removal-days"
+              onCommit={onWorktreeIdleRemovalDaysSet}
+            />
+          )}
         </Row>
       </SettingsList>
       <SubHead>Background sessions</SubHead>

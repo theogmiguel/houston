@@ -79,6 +79,7 @@ function baseProps(overrides: {
     onRestoreBudgetSet: () => {},
     onRestoreResumeSet: () => {},
     onWorktreeCleanupSet: () => {},
+    onWorktreeIdleRemovalDaysSet: () => {},
     sessionPolicy: null,
     onSessionPolicy: () => {},
     orchestrationEnabled: true,

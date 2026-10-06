@@ -142,6 +142,7 @@ export interface Props {
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
   onWorktreeCleanupSet: (enabled: boolean, graceHours: number) => void
+  onWorktreeIdleRemovalDaysSet: (days: number) => void
   sessionPolicy: SessionPolicy | null
   onSessionPolicy: (next: SessionPolicy) => void
 
@@ -234,6 +235,7 @@ function SectionDispatch({
   onRestoreBudgetSet,
   onRestoreResumeSet,
   onWorktreeCleanupSet,
+  onWorktreeIdleRemovalDaysSet,
   sessionPolicy,
   onSessionPolicy,
   orchestrationEnabled,
@@ -394,6 +396,7 @@ function SectionDispatch({
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
             onWorktreeCleanupSet={onWorktreeCleanupSet}
+            onWorktreeIdleRemovalDaysSet={onWorktreeIdleRemovalDaysSet}
             openLinksInPane={openLinksInPane}
             onOpenLinksInPane={onOpenLinksInPane}
             hostInfo={hostInfo}

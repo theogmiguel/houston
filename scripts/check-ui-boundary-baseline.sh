@@ -95,8 +95,6 @@ BASELINE=(
   "ui/src/renderer/src/components/git/PrSummary.tsx 2"
   "ui/src/renderer/src/components/git/PullRequestTab.tsx 54"
   "ui/src/renderer/src/components/git/ReviewProviderModal.tsx 16"
-  "ui/src/renderer/src/components/git/WorktreeCleanupSection.tsx 0"
-  "ui/src/renderer/src/components/git/WorktreesDialog.tsx 0"
   "ui/src/renderer/src/components/git/scmChrome.ts 17"
   "ui/src/renderer/src/components/headBadge.ts 5"
   "ui/src/renderer/src/components/markdownPipeline.tsx 42"
