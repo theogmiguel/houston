@@ -1026,6 +1026,16 @@ impl Daemon {
         if let Some(id) = id {
             self.task_agent_writable(workspace, id, operation)?;
         }
+        if patch.status == Some(proto::TaskStatus::Done) {
+            return Ok(Self::task_invalid(
+                id,
+                operation,
+                "an agent cannot set status done: Done stays the user's decision, and a merged \
+                 pull request or the user closes the task (expected backlog, todo, in_progress, \
+                 in_review or canceled; hand the work back with task_handback)"
+                    .to_string(),
+            ));
+        }
         if let Some(Some(assigned)) = &patch.workspace {
             if assigned != workspace {
                 return Ok(Self::task_invalid(id, operation, format!("workspace {assigned:?}: tasks of another workspace are read-only to agents (expected {workspace:?} or unassigned)")));

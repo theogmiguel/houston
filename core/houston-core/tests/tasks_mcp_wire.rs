@@ -852,3 +852,38 @@ async fn agents_write_blockers_by_key() {
     assert!(text.contains("cycle"), "{text}");
 }
 
+#[tokio::test]
+async fn agents_cannot_mark_a_task_done() {
+    let r = rig().await;
+    let pane = r.pane();
+    let token = r.token_for(pane);
+    let created = ok_call(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "Endpoint" }),
+    )
+    .await;
+    let text = refused(
+        r.addr,
+        &token,
+        "task_update",
+        json!({ "id": "HOU-1", "expected_revision": created["revision"], "status": "done" }),
+    )
+    .await;
+    assert!(
+        text.contains("task_update refused") && text.contains("status done"),
+        "the refusal names the operation and the rule: {text}"
+    );
+    let text = refused(
+        r.addr,
+        &token,
+        "task_create",
+        json!({ "title": "Already done", "status": "done" }),
+    )
+    .await;
+    assert!(text.contains("task_create refused"), "{text}");
+
+    let (task, _, _) = task_detail(r.daemon.task_get(1).unwrap());
+    assert_eq!(task.status, proto::TaskStatus::Backlog);
+}
