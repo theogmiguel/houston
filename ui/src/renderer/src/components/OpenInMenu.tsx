@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { listEditors, openInEditor, type EditorTarget } from '../houston/bridge'
 import { IconChevronRight } from './icons'
-import { Icon } from './Icon'
-import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
+import { Icon } from './ui/Icon'
+import { POP_ORIGIN_CLS, popOriginStyle } from './ui/overlayChrome'
 
 export const LAST_EDITOR_KEY = 'tr-external-editor'
 

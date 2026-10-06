@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BTN_GHOST } from '../buttonChrome'
+import { BTN_GHOST } from '../ui/buttonChrome'
 import {
   chordFromEvent,
   effectiveLabel,
@@ -11,8 +11,8 @@ import {
 import type { Chord, ShortcutCategory, ShortcutEntry } from '../../keymap'
 import type { KeymapOverrides } from '../../houston/client'
 import { setPassKeysToTerminal, usePassKeysToTerminal } from '../../paneCaps'
-import { Tooltip } from '../Tooltip'
-import { Toggle } from '../settingsPrimitives'
+import { Tooltip } from '../ui/Tooltip'
+import { Toggle } from '../ui/settingsPrimitives'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
 import { TextInput } from '../ui/TextInput'

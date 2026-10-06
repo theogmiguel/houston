@@ -2,11 +2,11 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Chip } from './Chip'
-import { Segmented } from './Segmented'
-import { Disclosure } from './Disclosure'
+import { Chip } from './ui/Chip'
+import { Segmented } from './ui/SegmentedControl'
+import { Disclosure } from './ui/Disclosure'
 import { NavSwitch } from './nav/navChrome'
-import { Toggle } from './settingsPrimitives'
+import { Toggle } from './ui/settingsPrimitives'
 import { HIT_TARGET_28 } from './hitTarget'
 
 describe('hit targets — charter §10 density floor', () => {

@@ -1,7 +1,7 @@
 import { HIT_TARGET_28 } from './hitTarget'
 import { IconAlertTriangle, IconCheck, IconClose, IconInfo, type IconComponent } from './icons'
 import { MAX_NOTICES, type NoticeKind, type NoticeStore } from '../notices'
-import { ICON_ROLE_CLS } from './Icon'
+import { ICON_ROLE_CLS } from './ui/Icon'
 import { OrchestrationNotice } from './ui/OrchestrationNotice'
 
 export type NoticeAnchor = 'workspace-top' | 'workspace-top-right' | 'pane-corner'

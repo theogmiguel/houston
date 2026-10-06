@@ -64,7 +64,7 @@ if [ "$fail" -ne 0 ]; then
   echo "      variant) with no focus-visible: declaration that paints" >&2
   echo "      something (shadow-, ring-, border, bg-, or a real outline)." >&2
   echo "      Give the control a visible focus state -- FOCUS_HALO in" >&2
-  echo "      components/shadowChrome.ts for a rounded or capsule control." >&2
+  echo "      components/ui/shadowChrome.ts for a rounded or capsule control." >&2
   exit 1
 fi
 

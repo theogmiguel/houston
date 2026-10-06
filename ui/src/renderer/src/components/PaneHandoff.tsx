@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentKind } from '../houston/client'
 import { Button, DialogBackdrop, DialogPanel } from './ui'
 import { useFocusTrap } from './dialogFocus'
-import { Icon, ICON_ROLE_CLS } from './Icon'
+import { Icon, ICON_ROLE_CLS } from './ui/Icon'
 import { IconAgent, IconCheck, IconClose } from './icons'
 import { AGENT_LABEL, COMPOSER_AGENTS } from './sessionPresets'
 import { engineGlyphColor } from './SessionPane'
@@ -12,7 +12,7 @@ import {
   TILE_BASE,
   TILE_IDLE,
   TILE_SELECTED
-} from './pickerChrome'
+} from './ui/pickerChrome'
 import {
   buildHandoffPacket,
   handoffCharCount,

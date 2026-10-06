@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import type { WindowButtonKind, WindowButtonLayout } from '../windowButtonLayout'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 
 interface WindowControlsProps {
   layout: WindowButtonLayout

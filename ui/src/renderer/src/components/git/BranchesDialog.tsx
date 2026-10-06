@@ -10,12 +10,12 @@ import {
   switchBranchDisabledReason
 } from './branches'
 import { ConfirmModal } from '../ConfirmModal'
-import { Select } from '../Select'
-import { Toggle } from '../settingsPrimitives'
+import { Select } from '../ui/Select'
+import { Toggle } from '../ui/settingsPrimitives'
 import { FIELD_INPUT, FIELD_LABEL } from '../nav/navChrome'
 import { IconGitBranch, IconPencil, IconRefresh, IconTrash } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
 import { Button, Notice } from '../ui'
 
 export interface BranchesDialogProps {

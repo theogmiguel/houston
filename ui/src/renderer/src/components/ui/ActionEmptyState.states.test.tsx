@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { EmptyState } from './EmptyState'
+import { EmptyState } from './ActionEmptyState'
 
 describe('EmptyState — state matrix', () => {
   let container: HTMLDivElement

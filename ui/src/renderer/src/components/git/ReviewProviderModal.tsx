@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { AgentKind } from '../../houston/client'
-import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
-import { Icon, ICON_ROLE_CLS } from '../Icon'
+import { BTN_GHOST, BTN_PRIMARY } from '../ui/buttonChrome'
+import { Icon, ICON_ROLE_CLS } from '../ui/Icon'
 import { IconAgent, IconCheck } from '../icons'
 import {
   PICKER_LABEL_CLS,
@@ -9,7 +9,7 @@ import {
   TILE_BASE,
   TILE_IDLE,
   TILE_SELECTED
-} from '../pickerChrome'
+} from '../ui/pickerChrome'
 import { AGENT_LABEL, COMPOSER_AGENTS } from '../sessionPresets'
 import { engineGlyphColor } from '../SessionPane'
 import { GitDialogShell } from './GitDialogShell'

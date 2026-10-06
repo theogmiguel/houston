@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SRC = __dirname
-const SHARED_CONSTANTS = [join(SRC, 'components/buttonChrome.ts'), join(SRC, 'editor/editorChrome.ts')]
+const SHARED_CONSTANTS = [join(SRC, 'components/ui/buttonChrome.ts'), join(SRC, 'editor/editorChrome.ts')]
 
 function tsxFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

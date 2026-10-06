@@ -1,6 +1,6 @@
-import { IconClose } from './icons'
+import { IconClose } from '../icons'
 import { FOCUS_HALO } from './shadowChrome'
-import { HIT_TARGET_28 } from './hitTarget'
+import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 

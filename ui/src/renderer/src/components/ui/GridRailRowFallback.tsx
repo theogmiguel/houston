@@ -1,4 +1,4 @@
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconClose, IconGrid } from '../icons'
 
 export function GridRailRowFallback({ name, selected, jumpNumber, onSelect, onContextMenu, onRemove }: {

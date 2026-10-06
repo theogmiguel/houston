@@ -1,6 +1,6 @@
 import type { FormHTMLAttributes, HTMLAttributes, ReactNode, Ref } from 'react'
-import { MATERIAL_CLS, materialAttrs } from '../material'
-import { MODAL_SCRIM_CLS } from '../overlayChrome'
+import { MATERIAL_CLS, materialAttrs } from './material'
+import { MODAL_SCRIM_CLS } from './overlayChrome'
 import { Button } from './Button'
 import { variants } from './variants'
 

@@ -1,4 +1,4 @@
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import { IconAlertTriangle, IconInfo } from '../icons'
 
 export type ScmNoticeTone = 'info' | 'warn' | 'danger'

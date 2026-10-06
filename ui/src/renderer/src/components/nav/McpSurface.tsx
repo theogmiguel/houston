@@ -4,7 +4,7 @@ import type { McpServer } from '../../houston/generated/McpServer'
 import type { McpSyncResult } from '../../houston/generated/McpSyncResult'
 import type { McpToolState } from '../../houston/generated/McpToolState'
 import { lazy, Suspense } from 'react'
-import { MATERIAL_CLS, materialAttrs } from '../material'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 import type { HoustonClient } from '../../houston/client'
 
 const McpManager = lazy(() =>

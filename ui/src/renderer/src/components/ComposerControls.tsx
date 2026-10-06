@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react'
-import { FOCUS_HALO } from './shadowChrome'
-import { BTN_PRIMARY } from './buttonChrome'
-import { Select } from './Select'
-import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
+import { FOCUS_HALO } from './ui/shadowChrome'
+import { BTN_PRIMARY } from './ui/buttonChrome'
+import { Select } from './ui/Select'
+import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './ui/overlayChrome'
 import { IconChevronDown } from './icons'
-import { Icon } from './Icon'
-import { Tooltip } from './Tooltip'
+import { Icon } from './ui/Icon'
+import { Tooltip } from './ui/Tooltip'
 
 export interface ComposerChipOption {
   value: string

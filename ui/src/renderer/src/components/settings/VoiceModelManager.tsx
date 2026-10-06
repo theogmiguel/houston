@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Row } from '../settingsPrimitives'
-import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from '../buttonChrome'
+import { Row } from '../ui/settingsPrimitives'
+import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from '../ui/buttonChrome'
 import { useVoiceLevel } from '../../voice/store'
 import { DEFAULT_RMS_FLOOR } from '../../houston/generated/DEFAULTS'
 import type { VoiceModelState } from '../../houston/generated/VoiceModelState'

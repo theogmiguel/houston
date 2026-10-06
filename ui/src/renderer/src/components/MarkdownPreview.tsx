@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconEye, IconPencil } from './icons'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import {
   EMD_PAGE_CLS,
   EMD_TOGGLE_CLS,
@@ -10,7 +10,7 @@ import {
   EPREVIEW_WRAP_CLS,
   MD_TOGGLE_COPY
 } from '../editor/editorChrome'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 
 const CHAT_STATUS_WRAP_CLS = 'flex flex-col items-start gap-1.5 text-left'
 

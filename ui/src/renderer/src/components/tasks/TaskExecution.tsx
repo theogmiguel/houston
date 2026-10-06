@@ -7,12 +7,12 @@ import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStartSettings } from '../../houston/useTasks'
 import { Button, TaskDrawerExecutionPanel } from '../ui'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
+import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../ui/buttonChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import { IconAgent, IconGitBranch, IconInfo, IconPlay } from '../icons'
-import { Select, type SelectOption } from '../Select'
-import { Tooltip } from '../Tooltip'
+import { Select, type SelectOption } from '../ui/Select'
+import { Tooltip } from '../ui/Tooltip'
 import {
   READ_ONLY_REASON,
   TASK_AGENTS,

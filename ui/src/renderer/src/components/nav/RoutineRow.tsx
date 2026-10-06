@@ -13,8 +13,8 @@ import {
 import type { Routine, RoutineRun, RoutineWorkspaceOption } from '../../houston/routineTypes'
 import type { RoutineOutcome } from '../../houston/generated/RoutineOutcome'
 import type { RoutineRunStatus } from '../../houston/generated/RoutineRunStatus'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
 
 const OUTCOME_CHIP: Record<RoutineOutcome, { label: string; tone: string }> = {
   ok: { label: 'Ok', tone: 'var(--ok)' },

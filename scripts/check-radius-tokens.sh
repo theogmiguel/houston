@@ -29,7 +29,7 @@ BASELINE=(
   "ui/src/renderer/src/components/McpManager.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 2"
   "ui/src/renderer/src/components/NewSessionComposer.tsx 1"
-  "ui/src/renderer/src/components/panelChrome.ts 1"
+  "ui/src/renderer/src/components/ui/panelChrome.ts 1"
   "ui/src/renderer/src/components/QuestionCard.tsx 1"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 1"
   "ui/src/renderer/src/components/settings/AppearanceSection.tsx 1"

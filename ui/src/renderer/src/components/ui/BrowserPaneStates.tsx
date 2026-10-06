@@ -1,7 +1,7 @@
 import { Button } from './Button'
 import { variants } from './variants'
 import { IconGlobe, IconHistory, IconPlug, IconPlus, IconRefresh, IconServer } from '../icons'
-import { IconTile } from '../IconTile'
+import { IconTile } from './IconTile'
 import type { LocalServer } from '../../houston/generated/LocalServer'
 import { clearRecents, faviconInitial, hostLabel } from '../browserTabs'
 import type { Dispatch, RefObject, SetStateAction } from 'react'

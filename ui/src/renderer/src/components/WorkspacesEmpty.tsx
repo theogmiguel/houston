@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
-import { EmptyState } from './EmptyState'
+import { EmptyState } from './ui/ActionEmptyState'
 import { IconFolderOpen } from './icons'
 import { effectiveLabel, settingsShortcut, shortcutSheetShortcut, toggleSidebar } from '../keymap'
 import type { KeymapOverrides } from '../houston/client'
-import { Icon } from './Icon'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { Icon } from './ui/Icon'
+import { MATERIAL_CLS, materialAttrs } from './ui/material'
 
 const FOOTER_HINTS = [
   { entry: toggleSidebar, label: 'Toggle sidebar' },

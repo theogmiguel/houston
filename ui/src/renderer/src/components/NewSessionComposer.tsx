@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { HoustonClient } from '../houston/client'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { RoleRoute } from '../houston/generated/RoleRoute'
-import { BTN_PRIMARY } from './buttonChrome'
+import { BTN_PRIMARY } from './ui/buttonChrome'
 import {
   AGENT_LABEL,
   COMPOSER_AGENTS,
@@ -15,9 +15,9 @@ import {
   type SessionSlot
 } from './sessionPresets'
 import type { SlotOverrides } from './sessionPresets'
-import { PICKER_LABEL_CLS } from './pickerChrome'
-import { Select } from './Select'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { PICKER_LABEL_CLS } from './ui/pickerChrome'
+import { Select } from './ui/Select'
+import { MATERIAL_CLS, materialAttrs } from './ui/material'
 import { Chip, LaunchComposerHeader, LaunchPresetCard, LaunchSlotCard, Segmented } from './ui'
 
 export interface NewSessionComposerProps {

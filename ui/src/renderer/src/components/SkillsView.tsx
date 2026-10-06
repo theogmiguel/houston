@@ -21,15 +21,15 @@ import {
   IconTrash,
   IconZap
 } from './icons'
-import { RVIEW_CLS } from './panelChrome'
+import { RVIEW_CLS } from './ui/panelChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { BTN_DANGER_SOLID, BTN_GHOST } from './buttonChrome'
+import { BTN_DANGER_SOLID, BTN_GHOST } from './ui/buttonChrome'
 import { SkillItemDistribution } from './SkillDistribution'
 import { SkillInstallDialog } from './SkillInstallDialog'
 import { useCopyFeedback } from './useCopyFeedback'
-import { Tooltip } from './Tooltip'
-import { SettingsList, SettingsRow as Row, SubHead } from './settingsPrimitives'
-import { StatusIcon, STATUS_ICON_WORD, type StatusIconState } from './StatusIcon'
+import { Tooltip } from './ui/Tooltip'
+import { SettingsList, SettingsRow as Row, SubHead } from './ui/settingsPrimitives'
+import { StatusIcon, STATUS_ICON_WORD, type StatusIconState } from './ui/StatusIcon'
 import { ListDetail, type ListDetailItem } from './nav/ListDetail'
 import {
   BLOCK,
@@ -49,7 +49,7 @@ import {
   SECONDARY_BUTTON,
   chipClass
 } from './nav/navChrome'
-import { ICON_ROLE_CLS, Icon } from './Icon'
+import { ICON_ROLE_CLS, Icon } from './ui/Icon'
 import { Button } from './ui/Button'
 import { Caption } from './ui/Caption'
 import { Card } from './ui/Card'

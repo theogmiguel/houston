@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
-import { IconCheck, IconChevronDown } from './icons'
+import { useNativeOverlaySuppression } from '../../layout/nativeSuppression'
+import { IconCheck, IconChevronDown } from '../icons'
 import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
 import { SELECT_CLS } from './selectChrome'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { AnimOut } from './AnimOut'
-import { anchorPopoverStart } from './ui/popoverMotion'
+import { anchorPopoverStart } from './popoverMotion'
 
 const TRIGGER_LAYOUT_CLS =
   'inline-flex items-center justify-between gap-[var(--space-2)] ' +

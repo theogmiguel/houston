@@ -2,10 +2,10 @@ import { useContext } from 'react'
 import type { TagInfo } from '../houston/generated/TagInfo'
 import { MAX_TAGS_PER_SESSION } from '../houston/generated/DEFAULTS'
 import { TagsContext } from '../layout/tagsContext'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { IconCheck } from './icons'
 import { TagChipRow } from './tags'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 
 function resolve(registry: TagInfo[], ids: number[]): TagInfo[] {
   return ids

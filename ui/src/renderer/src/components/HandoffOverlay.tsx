@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { BTN_GHOST, BTN_GHOST_DANGER_HOVER } from './buttonChrome'
+import { BTN_GHOST, BTN_GHOST_DANGER_HOVER } from './ui/buttonChrome'
 import { IconAlertTriangle, IconCheck } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { DialogBackdrop, DialogPanel } from './ui'
 
 export interface HandoffUiState {

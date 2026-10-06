@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Toggle } from './settingsPrimitives'
+import { Toggle } from './ui/settingsPrimitives'
 import {
   type ActKind,
   fetchActScreenshot,
   respondToAct,
   type ConfirmRequest
 } from '../houston/browserConfirm'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import { DialogBackdrop, DialogPanel } from './ui'
 
 function originOf(url: string | null): string {

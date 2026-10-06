@@ -1,7 +1,7 @@
-import { BTN_ICO } from './buttonChrome'
-import { Icon } from './Icon'
+import { BTN_ICO } from './ui/buttonChrome'
+import { Icon } from './ui/Icon'
 import { IconPanelRight } from './icons'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 
 export interface SourceControlToggleProps {
   open: boolean

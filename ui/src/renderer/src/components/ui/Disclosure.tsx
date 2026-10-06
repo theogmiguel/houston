@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { FOCUS_HALO } from './shadowChrome'
-import { IconChevronDown } from './icons'
-import { HIT_TARGET_28 } from './hitTarget'
+import { IconChevronDown } from '../icons'
+import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 

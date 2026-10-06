@@ -1,6 +1,6 @@
 import { IconTile } from './IconTile'
 import { FOCUS_HALO } from './shadowChrome'
-import { HIT_TARGET_28 } from './hitTarget'
+import { HIT_TARGET_28 } from '../hitTarget'
 import { Tooltip } from './Tooltip'
 
 export interface DefinitionRow {

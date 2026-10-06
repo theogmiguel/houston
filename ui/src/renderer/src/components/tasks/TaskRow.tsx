@@ -1,8 +1,8 @@
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import { IconAgent } from '../icons'
-import { Chip } from '../Chip'
-import { Tooltip } from '../Tooltip'
+import { Chip } from '../ui/Chip'
+import { Tooltip } from '../ui/Tooltip'
 import { formatAge, runStateLabel, runStateTone, taskAgentLabel } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 

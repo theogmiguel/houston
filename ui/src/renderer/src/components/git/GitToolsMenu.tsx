@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { SPIN_CLASS } from './DiffBody'
-import { BTN_SECONDARY } from '../buttonChrome'
+import { BTN_SECONDARY } from '../ui/buttonChrome'
 import { IconEllipsis, IconGitBranch, IconGitFork, IconHistory, IconRefresh, IconArrowDown } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
 
 export interface GitToolsMenuProps {
   disabled: boolean

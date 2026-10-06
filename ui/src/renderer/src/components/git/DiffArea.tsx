@@ -2,9 +2,9 @@ import { DiffBody, DIFF_EMPTY_CLASS, SPIN_CLASS } from './DiffBody'
 import type { ChangeRow } from './changes'
 import type { DiffState } from './useGitStatusSubscription'
 import { IconLoaderCircle, IconShieldAlert } from '../icons'
-import { Icon } from '../Icon'
-import { BTN_SECONDARY } from '../buttonChrome'
-import { EmptyState } from '../EmptyState'
+import { Icon } from '../ui/Icon'
+import { BTN_SECONDARY } from '../ui/buttonChrome'
+import { EmptyState } from '../ui/ActionEmptyState'
 import { Button } from '../ui/Button'
 
 const TAG_CLASS: Record<string, string> = {

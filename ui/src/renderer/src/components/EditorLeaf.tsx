@@ -1,5 +1,5 @@
 import { lazy, Suspense, useContext } from 'react'
-import { BORDER_HAIRLINE_INSET_TRANSPARENT, RING_ACCENT_ICON } from './shadowChrome'
+import { BORDER_HAIRLINE_INSET_TRANSPARENT, RING_ACCENT_ICON } from './ui/shadowChrome'
 import type { EditorNode, PaneKey, SplitSide } from '../layout/tree'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import {
@@ -19,12 +19,12 @@ import {
   IconPanelBottom,
   IconPanelRight
 } from './icons'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import { ECTX_ITEM_CLS as EDITOR_CTX_ITEM_CLS, ECTX_SEP_CLS as EDITOR_CTX_SEP_CLS, EDOT_CLS, EHOST_WRAP_CLS } from '../editor/editorChrome'
-import { BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { MarkdownPreviewToggle } from './MarkdownPreview'
-import { ICON_ROLE_CLS, Icon } from './Icon'
+import { ICON_ROLE_CLS, Icon } from './ui/Icon'
 
 // Dynamic import: CodeMirror plus its grammars is a large chunk that has no
 // business loading before an editor pane actually opens. This keeps this

@@ -6,7 +6,7 @@ import type { HarnessModelOption } from '../../houston/generated/HarnessModelOpt
 import type { Routine } from '../../houston/generated/Routine'
 import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
-import { Select } from '../Select'
+import { Select } from '../ui/Select'
 import { BarSparkline, Button, Caption, Card, Field, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
 import { engineLabel } from '../engineLabel'
 import { HarnessFindings } from './HarnessFindings'

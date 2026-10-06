@@ -9,12 +9,12 @@ import {
   BTN_GHOST_DANGER_ARM,
   BTN_GHOST_DANGER_HOVER
 } from './buttonChrome'
-import { SaveDiscardModal } from './SaveDiscardModal'
-import { HostKeyModal } from './HostKeyModal'
+import { SaveDiscardModal } from '../SaveDiscardModal'
+import { HostKeyModal } from '../HostKeyModal'
 
 describe('BTN_GHOST resets the base border (design critique P1)', () => {
   it('carries a border reset, not just a background/text override', () => {
-    const rule = readFileSync(join(__dirname, '..', 'base.css'), 'utf8').match(
+    const rule = readFileSync(join(__dirname, '..', '..', 'base.css'), 'utf8').match(
       new RegExp(`\\.${BTN_GHOST}\\s*\\{([^}]*)\\}`)
     )?.[1]
     expect(rule).toMatch(/border:\s*none/)

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNativeSuppression } from '../layout/nativeSuppression'
 import { isTauri } from '../houston/host'
 import { IconChevronLeft, IconChevronRight, IconClose, IconRefresh } from './icons'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import {
   FS_BACKDROP_CLS,
   FS_CHROME_CLS,
@@ -15,7 +15,7 @@ import {
   FS_URL_INPUT_CLS,
   FS_URL_WRAP_CLS
 } from './browserFullscreenChrome'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 
 export interface BrowserFullscreenProps {
   active: boolean

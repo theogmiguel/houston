@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Segmented } from './ui/Segmented'
+import { Segmented } from './Segmented'
 
 const OPTIONS = [
   { value: 'grid', label: 'Grid' },

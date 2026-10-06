@@ -12,7 +12,7 @@ import {
   IconGitBranch,
   type IconComponent
 } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import type { TextRole } from './Text'
 
 export type FileTreeIconKind =

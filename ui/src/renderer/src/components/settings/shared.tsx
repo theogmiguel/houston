@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export { SectionHead, SubHead, Group, SettingsRow as Row } from '../settingsPrimitives'
+export { SectionHead, SubHead, Group, SettingsRow as Row } from '../ui/settingsPrimitives'
 
 // Deliberately does not clamp the typed value before sending — the daemon is
 // the authority on this limit and its refusal already names it; clamping

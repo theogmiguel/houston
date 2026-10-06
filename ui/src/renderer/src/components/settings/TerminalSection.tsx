@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { BTN_GHOST } from '../buttonChrome'
+import { BTN_GHOST } from '../ui/buttonChrome'
 import { TERMINAL_FONTS, terminalFontStack } from '../../pane/terminalFonts'
 import { THEMES, type ChromeTheme, type TerminalPaletteChoice } from '../../theme'
 import { Button } from '../ui/Button'
-import { Select } from '../Select'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { Select } from '../ui/Select'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { TerminalPalettePicker } from '../ui/TerminalPalettePicker'
 import {
   TERMINAL_LINE_HEIGHT_MAX,

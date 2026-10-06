@@ -1,7 +1,7 @@
 import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { HarnessReviewStatus } from '../../houston/generated/HarnessReviewStatus'
-import { Chip, type ChipTone } from '../Chip'
-import { DataTable } from '../DataTable'
+import { Chip, type ChipTone } from '../ui/Chip'
+import { DataTable } from '../ui/DataTable'
 import { SECONDARY_BUTTON } from './navChrome'
 import { REVIEW_STATUS_LABEL, formatDay, formatWindow } from './harnessFormat'
 

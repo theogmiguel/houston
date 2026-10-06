@@ -1,4 +1,4 @@
-import { FOCUS_HALO, GLOW_ACCENT } from './shadowChrome'
+import { FOCUS_HALO, GLOW_ACCENT } from './ui/shadowChrome'
 
 export const PICKER_HINT_CLS =
   'flex items-center gap-2 pt-1.5 pr-1.5 pb-1.5 pl-2.5 min-h-[32px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] ' +

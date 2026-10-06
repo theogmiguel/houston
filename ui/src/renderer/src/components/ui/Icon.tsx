@@ -1,5 +1,5 @@
-import { TIGHT_ICON_MAP, type IconComponent } from './icons'
-import type { TextRole } from './Text'
+import { TIGHT_ICON_MAP, type IconComponent } from '../icons'
+import type { TextRole } from '../Text'
 
 const TIGHT_ROLES: ReadonlySet<TextRole> = new Set(['label', 'small', 'ui'])
 

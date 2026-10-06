@@ -6,7 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 ui_src="ui/src"
-select_owner="ui/src/renderer/src/components/Select.tsx"
+select_owner="ui/src/renderer/src/components/ui/Select.tsx"
 
 mapfile -t offenders < <(
   find "$ui_src" \( -name '*.tsx' -o -name '*.ts' \) \
@@ -22,7 +22,7 @@ for f in "${offenders[@]}"; do
   if printf '%s' "$stripped" | grep -qE '<select[[:space:]/>]'; then
     if [ "$fail" -eq 0 ]; then
       echo "FAIL: native <select> in the renderer — its open popup is a GTK window, not page content." >&2
-      echo "      Use <Select> from components/Select.tsx (it composes the same SELECT_CLS chrome)." >&2
+      echo "      Use <Select> from components/ui/Select.tsx (it composes the same SELECT_CLS chrome)." >&2
       fail=1
     fi
     printf '  %s\n' "$f" >&2

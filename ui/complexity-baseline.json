@@ -39,12 +39,12 @@
       "worst": 19,
       "over": 0
     },
-    "src/renderer/src/components/Chip.tsx": {
+    "src/renderer/src/components/ui/Chip.tsx": {
       "total": 36,
       "worst": 32,
       "over": 1
     },
-    "src/renderer/src/components/Disclosure.tsx": {
+    "src/renderer/src/components/ui/Disclosure.tsx": {
       "total": 33,
       "worst": 30,
       "over": 1
@@ -59,7 +59,7 @@
       "worst": 23,
       "over": 1
     },
-    "src/renderer/src/components/IconTile.tsx": {
+    "src/renderer/src/components/ui/IconTile.tsx": {
       "total": 25,
       "worst": 23,
       "over": 1

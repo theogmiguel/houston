@@ -4,7 +4,7 @@ import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import type { GitFileStatus, HoustonClient } from '../houston/client'
 import { FILE_REFERENCE_MIME, copyFilePath, fileActionDirectory, fileReference, gitTreeStatus, relativeFilePath } from './files/fileActions'
 import { lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BORDER_HAIRLINE_INSET, RING_ACCENT_ICON } from './shadowChrome'
+import { BORDER_HAIRLINE_INSET, RING_ACCENT_ICON } from './ui/shadowChrome'
 import type { DirEntry } from '../env'
 import type { FilesNode, PaneKey } from '../layout/tree'
 import { readDir, showItemInFolder, createFile, createDirectory, renameFile, trashFile } from '../houston/bridge'
@@ -22,7 +22,7 @@ import {
   EDOT_CLS,
   EHOST_WRAP_CLS
 } from '../editor/editorChrome'
-import { BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import { HIT_TARGET_28 } from './hitTarget'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { classifyFileTreeEntry, FileTreeIcon } from './fileTreeIcons'
@@ -43,14 +43,14 @@ import {
   IconRefresh,
   IconSave
 } from './icons'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import { MarkdownPreviewToggle } from './MarkdownPreview'
-import { AnimOut, MenuLayer } from './AnimOut'
+import { AnimOut, MenuLayer } from './ui/AnimOut'
 import { OpenInMenu } from './OpenInMenu'
 import { SaveDiscardModal } from './SaveDiscardModal'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { Button, MenuItem } from './ui'
-import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
+import { POP_ORIGIN_CLS, popOriginStyle } from './ui/overlayChrome'
 
 const ICO_HEAD_BASE =
   `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`

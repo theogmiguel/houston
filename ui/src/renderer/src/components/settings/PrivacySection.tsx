@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from '../buttonChrome'
+import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from '../ui/buttonChrome'
 import { isTauri } from '../../houston/host'
 import {
   COMMAND_HISTORY_IGNORE_GLOBS_MAX,
   COMMAND_HISTORY_IGNORE_GLOB_LEN_MAX
 } from '../../houston/generated/DEFAULTS'
-import { SettingsList } from '../settingsPrimitives'
+import { SettingsList } from '../ui/settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import { Row, SubHead } from './shared'
 

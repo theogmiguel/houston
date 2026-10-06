@@ -1,9 +1,9 @@
 import type { SessionContext } from '../houston/generated/SessionContext'
 import { useContextIndicatorVisible } from '../contextIndicatorPref'
-import { RING_ACCENT_ICON } from './shadowChrome'
+import { RING_ACCENT_ICON } from './ui/shadowChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { HIT_TARGET_28 } from './hitTarget'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 
 const RADIUS = 5
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS

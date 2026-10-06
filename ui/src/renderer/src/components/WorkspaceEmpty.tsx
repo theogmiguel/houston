@@ -1,6 +1,6 @@
-import { BTN_PRIMARY } from './buttonChrome'
+import { BTN_PRIMARY } from './ui/buttonChrome'
 import { IconGlobe, IconSparkles, IconSquareTerminal } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { WorkspaceActions } from './ui/WorkspaceActions'
 import type { WorkspaceAction } from '../houston/client'
 import type { KeymapOverrides } from '../houston/client'

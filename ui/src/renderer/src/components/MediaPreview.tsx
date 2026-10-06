@@ -14,7 +14,7 @@ import {
   EPREVIEW_TITLE_CLS
 } from '../editor/editorChrome'
 import { EditorPreviewBlock } from './EditorPreviewBlock'
-import { BTN_GHOST } from './buttonChrome'
+import { BTN_GHOST } from './ui/buttonChrome'
 
 type LoadState =
   | { status: 'loading' }

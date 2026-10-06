@@ -5,13 +5,13 @@ import type {
   PrUpdateMethod,
   PullRequestLink
 } from '../../houston/client'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { MATERIAL_CLS, materialAttrs } from '../material'
-import { Icon } from '../Icon'
+import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../ui/buttonChrome'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
+import { Icon } from '../ui/Icon'
 import { IconExternal } from '../icons'
-import { Select, type SelectOption } from '../Select'
+import { Select, type SelectOption } from '../ui/Select'
 import { SplitButton } from '../SplitButton'
-import { Tooltip } from '../Tooltip'
+import { Tooltip } from '../ui/Tooltip'
 import {
   actionDisabledReason,
   stackMergeHeads,

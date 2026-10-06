@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Sidebar } from './Sidebar'
-import { MATERIAL_CLS } from './material'
+import { MATERIAL_CLS } from './ui/material'
 import { setSettingsNavForTests } from '../settingsNav'
 import { setBackgroundStateForTests } from '../backgroundMode'
 

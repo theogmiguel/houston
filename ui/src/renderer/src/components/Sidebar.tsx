@@ -3,7 +3,7 @@ import type { TagInfo } from "../houston/generated/TagInfo";
 import { MAX_TAGS_PER_GRID } from "../layout/tree";
 import type { TagUsage } from "./TagManager";
 import type { TagEditorState } from "./tagEditing";
-import { FOCUS_HALO } from "./shadowChrome";
+import { FOCUS_HALO } from "./ui/shadowChrome";
 import {
   Fragment,
   Suspense,
@@ -70,11 +70,11 @@ import {
   IconClock,
   type IconProps,
 } from "./icons";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "./ui/Tooltip";
 import logoUrl from "../assets/logo-chrome.svg";
 import { openExternal, showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
-import { Icon } from "./Icon";
+import { Icon } from "./ui/Icon";
 import { Count } from "./ui/Count";
 import {
   RAIL_VIEWS,
@@ -85,9 +85,9 @@ import {
   useRailView,
   type RailView,
 } from "../railView";
-import { MATERIAL_CLS, materialAttrs } from "./material";
+import { MATERIAL_CLS, materialAttrs } from "./ui/material";
 import { HIT_TARGET_28 } from "./hitTarget";
-import { BTN_ICO_STRUCTURE } from "./buttonChrome";
+import { BTN_ICO_STRUCTURE } from "./ui/buttonChrome";
 import { openUpdateModal } from "../updateModal";
 import { isUpdateInstallRunning, useUpdateInstall, type UpdateInstallState } from "../updateInstall";
 import { CONTROL_SIZE_SQUARE_CLS } from "./controlSize";

@@ -6,18 +6,18 @@ import type { HoustonClient } from '../houston/client'
 import type { ReviewDiffsData } from '../git/review'
 import { branchChipLabel } from './git/changes'
 import type { ChangesReview, ChangesSummary } from './ChangesPane'
-import { BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import {
   SEG_ITEM_CLS,
   SEG_ITEM_OFF_CLS,
   SEG_ITEM_ON_CLS,
   SEG_TRACK_CLS
-} from './segmentedChrome'
+} from './ui/segmentedChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { IconGitBranch, IconRefresh } from './icons'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
+import { MATERIAL_CLS, materialAttrs } from './ui/material'
 import {
   SCM_WIDTH_MIN,
   clampScmWidth,

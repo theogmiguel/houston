@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { thirdPartyLicenses } from '../../houston/bridge'
-import { BTN_GHOST } from '../buttonChrome'
+import { BTN_GHOST } from '../ui/buttonChrome'
 import { Row } from './shared'
 
 export interface ThirdPartyLicensePackage {

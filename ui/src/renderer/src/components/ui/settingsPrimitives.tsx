@@ -1,5 +1,5 @@
 import { Tooltip } from './Tooltip'
-import { HIT_TARGET_28 } from './hitTarget'
+import { HIT_TARGET_28 } from '../hitTarget'
 
 export function Toggle({
   on,

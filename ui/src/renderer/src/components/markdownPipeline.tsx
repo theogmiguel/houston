@@ -5,9 +5,9 @@ import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import { openExternal, saveImageFromUrl } from '../houston/bridge'
 import { EMD_BODY_CLS } from '../editor/editorChrome'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import { IconArrowUpRight, IconFileDown } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 
 const CHAT_MD_BODY_CLS = [
   '[font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-[1.62] text-[var(--text-primary)]',

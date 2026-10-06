@@ -4,9 +4,9 @@ import { createPortal } from 'react-dom'
 import type { DelegationInfo } from '../houston/generated/DelegationInfo'
 import type { SessionInfo } from '../houston/client'
 import { isLive } from '../houston/client'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { IconCornerDownRight, IconGitFork } from './icons'
-import { HOVER_DELAY_MS, Tooltip } from './Tooltip'
+import { HOVER_DELAY_MS, Tooltip } from './ui/Tooltip'
 import { Button, Caption } from './ui'
 
 const DelegationPanel = lazy(() => import('./DelegationPanel'))

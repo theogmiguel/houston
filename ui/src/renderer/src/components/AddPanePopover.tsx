@@ -16,9 +16,9 @@ import {
   IconSplitDown,
   IconSquareTerminal
 } from './icons'
-import { ICON_ROLE_CLS, Icon } from './Icon'
-import { Tooltip } from './Tooltip'
-import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle } from './overlayChrome'
+import { ICON_ROLE_CLS, Icon } from './ui/Icon'
+import { Tooltip } from './ui/Tooltip'
+import { OVERLAY_GLASS_OVERLAY_ATTRS, OVERLAY_GLASS_OVERLAY_CLS, popOriginStyle } from './ui/overlayChrome'
 
 // Only the agents spawnable via `hs-pane`/handoff today, not the full
 // `AgentKind` union (shell/custom/ssh/the ACP long tail are not offered here).

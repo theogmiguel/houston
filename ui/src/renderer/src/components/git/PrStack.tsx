@@ -1,6 +1,6 @@
 import type { PrStack } from '../../houston/client'
-import { BTN_GHOST } from '../buttonChrome'
-import { Icon } from '../Icon'
+import { BTN_GHOST } from '../ui/buttonChrome'
+import { Icon } from '../ui/Icon'
 import { IconLoaderCircle } from '../icons'
 import { SPIN_CLASS } from './DiffBody'
 import { META_ROW_CLS } from './scmChrome'

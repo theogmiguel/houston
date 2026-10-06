@@ -1,6 +1,6 @@
-import { Disclosure } from './Disclosure'
+import { Disclosure } from './ui/Disclosure'
 import { IconCheck } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 
 export interface TimelineStep {
   id: string

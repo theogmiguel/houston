@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconMoreHorizontal } from '../icons'
 import { Button } from './Button'
-import { AnimOut } from '../AnimOut'
-import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from '../overlayChrome'
+import { AnimOut } from './AnimOut'
+import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
 
 export interface ActionMenuItem {
   label: string

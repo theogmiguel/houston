@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { TagInfo } from "../houston/generated/TagInfo";
 import { MAX_TAG_NAME_LEN, TAG_PALETTE } from "../houston/generated/DEFAULTS";
-import { BTN_GHOST, BTN_PRIMARY } from "./buttonChrome";
+import { BTN_GHOST, BTN_PRIMARY } from "./ui/buttonChrome";
 import { CONTROL_SIZE_SQUARE_CLS } from "./controlSize";
 import { TagChip } from "./tags";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "./ui/Tooltip";
 
 export function TagColorPicker({
   color,

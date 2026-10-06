@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
-import { HIT_TARGET_28 } from './hitTarget'
+import { HIT_TARGET_28 } from '../hitTarget'
 import { FOCUS_HALO } from './shadowChrome'
 import { Tooltip } from './Tooltip'
 import {

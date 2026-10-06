@@ -1,4 +1,4 @@
-import { MATERIAL_CLS, materialAttrs } from '../material'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 export const SECTION_HEAD_CLS =
   'flex items-center gap-[var(--space-2)] h-[var(--h-row)] px-[var(--space-3)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tracking-[0.1em] uppercase text-[var(--text-muted)]'

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from './buttonChrome'
 
-const SRC = join(__dirname, '..')
+const SRC = join(__dirname, '..', '..')
 const baseCss = readFileSync(join(SRC, 'base.css'), 'utf8')
 const tailwindCss = readFileSync(join(SRC, 'tailwind.css'), 'utf8')
 

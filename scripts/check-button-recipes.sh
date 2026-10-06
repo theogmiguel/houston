@@ -6,7 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 ui_src="ui/src"
-chrome_owner="ui/src/renderer/src/components/buttonChrome.ts"
+chrome_owner="ui/src/renderer/src/components/ui/buttonChrome.ts"
 
 PRIVATE_DECL_ALLOWLIST=()
 BARE_ALLOWLIST=(
@@ -91,7 +91,7 @@ if [ -n "$report" ]; then
     fail=1
     echo "FAIL: private BTN_* declarations outside buttonChrome.ts:" >&2
     printf '  %s\n' "${new_shadow[@]}" >&2
-    echo "      Import the shared constant from components/buttonChrome.ts instead." >&2
+    echo "      Import the shared constant from components/ui/buttonChrome.ts instead." >&2
   fi
 
   if [ "${#new_bare[@]}" -gt 0 ]; then

@@ -1,5 +1,5 @@
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO } from './ui/shadowChrome'
 
 export const FS_BACKDROP_CLS =
   'fixed inset-0 z-[var(--z-tooltip)] flex ' +

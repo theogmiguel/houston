@@ -9,11 +9,11 @@ import { IconRefresh } from '../icons'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { CHROME_BUTTON, NavFootnote, NavSwitch } from './navChrome'
 import { PageFrame } from '../ui/PageFrame'
-import { CheckedStamp } from '../CheckedStamp'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
-import { Row, SettingsList, SubHead } from '../settingsPrimitives'
-import { MATERIAL_CLS, materialAttrs } from '../material'
+import { CheckedStamp } from '../ui/CheckedStamp'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
+import { Row, SettingsList, SubHead } from '../ui/settingsPrimitives'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 const SkillsView = lazy(() =>
   import('../SkillsView').then((m) => ({ default: m.SkillsView }))

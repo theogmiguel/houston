@@ -1,6 +1,6 @@
 import type { IconComponent } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from './Icon'
+import { Tooltip } from './Tooltip'
 
 const ROW_CLS = 'flex items-center gap-2.5 px-3 min-h-[var(--h-ctl)] w-full text-left bg-transparent border-none [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:hover:bg-transparent'
 

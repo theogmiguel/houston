@@ -2,8 +2,8 @@
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-vi.mock('../houston/host', () => ({ isTauri: () => true }))
-import { assertNativeSuppression, releaseNativeSuppression, suppressedReasons, setSuppressionSink, __resetNativeSuppressionForTests } from '../layout/nativeSuppression'
+vi.mock('../../houston/host', () => ({ isTauri: () => true }))
+import { assertNativeSuppression, releaseNativeSuppression, suppressedReasons, setSuppressionSink, __resetNativeSuppressionForTests } from '../../layout/nativeSuppression'
 import { HOVER_DELAY_MS, Tooltip } from './Tooltip'
 
 function bubble(): HTMLElement | null {

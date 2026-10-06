@@ -1,6 +1,6 @@
 import { IconCheck, IconClose, IconMic } from '../components/icons'
 import { insertVoiceText, setVoiceIndicator, showVoiceNotice, useVoiceIndicator } from './store'
-import { Icon } from '../components/Icon'
+import { Icon } from '../components/ui/Icon'
 
 export function DictationIndicator({ session }: { session: number }): React.JSX.Element | null {
   const indicator = useVoiceIndicator(session)

@@ -1,13 +1,13 @@
 import type { ComponentProps } from 'react'
 import type { HoustonClient } from '../houston/client'
 import type { PaneKey, SkillsNode } from '../layout/tree'
-import { RING_ACCENT_ICON } from './shadowChrome'
+import { RING_ACCENT_ICON } from './ui/shadowChrome'
 import { lazy, Suspense, useEffect } from 'react'
 import { IconClose, IconMaximize, IconMinimize, IconWrench } from './icons'
-import { BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
 
 const SkillsView = lazy(() =>
   import('./SkillsView').then((m) => ({ default: m.SkillsView }))

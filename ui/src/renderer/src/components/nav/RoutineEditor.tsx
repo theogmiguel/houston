@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Select } from '../Select'
-import { Segmented } from '../Segmented'
-import { Toggle } from '../settingsPrimitives'
+import { Select } from '../ui/Select'
+import { Segmented } from '../ui/SegmentedControl'
+import { Toggle } from '../ui/settingsPrimitives'
 import {
   FIELD_INPUT,
   FIELD_LABEL,

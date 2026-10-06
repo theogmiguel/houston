@@ -4,10 +4,14 @@ import {
   BrowserBlankState,
   BrowserUnreachableState,
   ActionMenu,
+  ActionEmptyState,
   Button,
   Card,
   Caption as UiCaption,
   ContentSection,
+  DataTable,
+  DefinitionTable,
+  Disclosure,
   IntegrationCard,
   Chip,
   Count,
@@ -21,6 +25,7 @@ import {
   FirstRunHooksStepSpecimen,
   TextInput,
   IconTile,
+  Icon,
   ListDetail,
   LaunchGridPreviewSpecimen,
   LaunchComposerHeaderSpecimen,
@@ -38,6 +43,11 @@ import {
   SettingsScope,
   SettingsSearch,
   Segmented,
+  SegmentedControl,
+  Slider,
+  StatusIcon,
+  Toggle,
+  CheckedStamp,
   STATUS_LABELS,
   StatusLabel,
   RoutineDetail,
@@ -61,9 +71,10 @@ import {
 } from '../src/components/ui'
 import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
-import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
+import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/ui/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
-import { AnimOut } from '../src/components/AnimOut'
+import { AnimOut } from '../src/components/ui/AnimOut'
+import { TILE_AGENT_CLS, TILE_IDLE, URL_INPUT_CLS } from '../src/components/ui'
 
 const noop = (): void => {}
 
@@ -438,6 +449,40 @@ export function UiPrimitivesStory(): React.JSX.Element {
               <EmptyState icon={IconPlus} heading="No workspace" description="Choose a workspace to get started." variant="window" />
             </div>
           </SpecimenRow>
+          <SpecimenRow>
+            <ActionEmptyState headline="No sessions yet" description="Start a session to see it here." action={{ label: 'New session', onClick: noop }} size="compact" />
+          </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="DataTable and Disclosure">
+          <DataTable aria-label="Provider coverage" rows={[{ name: 'Claude Code', state: 'Available' }, { name: 'Codex', state: 'Available' }]} getRowId={(row) => row.name} columns={[{ key: 'name', header: 'Provider', render: (row) => row.name }, { key: 'state', header: 'State', render: (row) => row.state }]} />
+          <DefinitionTable rows={[{ label: 'Workspace', value: 'houston' }, { label: 'Account ID', value: '118273645' }, { label: 'Secret', value: 'secret-value', mask: true }]} />
+          <Disclosure summary="Recent checks" count={2} defaultOpen>
+            <div>Settings synchronized</div>
+            <div>Hooks installed</div>
+          </Disclosure>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Settings primitives">
+          <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+            <Toggle on aria-label="Enabled setting" onChange={noop} />
+            <Toggle on={false} aria-label="Disabled setting" onChange={noop} />
+          </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Slider">
+          <div style={{ maxWidth: 420 }}><Slider aria-label="Opacity" value={72} min={0} max={100} step={1} onChange={noop} formatValue={(value) => `${value}%`} resetValue={100} onReset={noop} /></div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Icon and status">
+          <SpecimenRow><Icon glyph={IconCheck} role="ui" label="Ready" />{(['ok', 'differs', 'off', 'absent'] as const).map((state) => <StatusIcon key={state} state={state} label={state} />)}<CheckedStamp at={Date.now() - 60_000} /></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Picker and browser chrome">
+          <SpecimenRow>
+            <button type="button" className={`${TILE_AGENT_CLS} ${TILE_IDLE}`}>Claude Code</button>
+            <input aria-label="Address" className={URL_INPUT_CLS} value="https://example.com" readOnly />
+          </SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="PaneHeaderButton">
@@ -458,6 +503,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Segmented aria-label="Loading choice" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" loading />
           </SpecimenRow>
           <Segmented aria-label="Error choice" options={[]} error={{ message: 'Could not load options.', onRetry: noop }} />
+          <SegmentedControl aria-label="Base segmented control" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" onChange={noop} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Table — Usage breakdown">

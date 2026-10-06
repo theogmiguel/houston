@@ -1,5 +1,5 @@
 import type { TagInfo } from "../houston/generated/TagInfo";
-import { Tooltip } from "./Tooltip";
+import { Tooltip } from "./ui/Tooltip";
 
 export function TagChip({
   tag,

@@ -34,7 +34,7 @@ import {
 } from '../layout/tree'
 import { isDetachable, type DetachPayload, type PaneType } from '../layout/paneDetach'
 import { StackTabs } from './StackTabs'
-import { materialAttrs } from './material'
+import { materialAttrs } from './ui/material'
 import type { SessionSlot } from './sessionPresets'
 
 const LaunchGridPreview = lazy(() => import('./ui/LaunchGridPreview').then((m) => ({ default: m.LaunchGridPreview })))

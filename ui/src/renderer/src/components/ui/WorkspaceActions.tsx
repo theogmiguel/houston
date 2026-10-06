@@ -5,9 +5,9 @@ import { ActionMenu } from './ActionMenu'
 import { Button } from './Button'
 import { Field } from './Field'
 import { TextInput } from './TextInput'
-import { MODAL_SCRIM_CLS } from '../overlayChrome'
+import { MODAL_SCRIM_CLS } from './overlayChrome'
 import { ConfirmModal } from '../ConfirmModal'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconPlay, IconPlus } from '../icons'
 
 interface Props {

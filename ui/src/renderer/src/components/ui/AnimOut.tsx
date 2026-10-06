@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { useNativeSuppression, useNativeOverlaySuppression, type NativeSuppressionReason } from '../layout/nativeSuppression'
+import { useNativeSuppression, useNativeOverlaySuppression, type NativeSuppressionReason } from '../../layout/nativeSuppression'
 
 const EXIT_MS = 120 // Matches the Fast token so the menu unmount follows its exit animation.
 

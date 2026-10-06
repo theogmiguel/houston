@@ -39,7 +39,7 @@ import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
 import type { UsageSummaryMsg } from './UsageSection'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { MATERIAL_CLS, materialAttrs } from './ui/material'
 
 export interface AgentProfileState {
   profiles: AgentProfile[]

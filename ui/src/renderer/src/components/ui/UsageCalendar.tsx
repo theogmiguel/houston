@@ -1,5 +1,5 @@
 import type { UsageActivityDay } from '../../houston/generated/UsageActivityDay'
-import { Tooltip } from '../Tooltip'
+import { Tooltip } from './Tooltip'
 
 const LEVELS = [
   'bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)]',

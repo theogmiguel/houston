@@ -42,7 +42,7 @@ import {
   IconImage,
   IconLoaderCircle
 } from '../components/icons'
-import { BTN_ICO } from '../components/buttonChrome'
+import { BTN_ICO } from '../components/ui/buttonChrome'
 
 const DROPZONE_FILE_ICON = resolveTightGlyph(IconFileDown, 'ui')
 import { registerVoiceInsert, registerVoiceNotice } from '../voice/store'
@@ -63,8 +63,8 @@ import { NoticeStack } from '../components/NoticeStack'
 import { findUrls, rangesOverlap, joinWrappedLine, mapJoinedOffset } from './webLinks'
 import { matchTaskKeys, taskIdForKey } from '../houston/taskLinks'
 import { passKeysToTerminal } from '../paneCaps'
-import { ICON_ROLE_CLS, Icon, resolveTightGlyph } from '../components/Icon'
-import { Tooltip } from '../components/Tooltip'
+import { ICON_ROLE_CLS, Icon, resolveTightGlyph } from '../components/ui/Icon'
+import { Tooltip } from '../components/ui/Tooltip'
 
 export interface TerminalTuning {
   readonly lineHeight: number

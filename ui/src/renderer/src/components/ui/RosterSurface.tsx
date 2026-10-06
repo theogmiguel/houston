@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from 'react'
-import { MATERIAL_CLS } from '../material'
+import { MATERIAL_CLS } from './material'
 
 export function EndedStatusDot(): React.JSX.Element {
   return <span className="agent-dot w-[7px] h-[7px] rounded-full flex-none bg-[var(--info)]" role="img" aria-label="Ended" />

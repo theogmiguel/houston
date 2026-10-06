@@ -9,7 +9,7 @@ import { TaskComposer } from '../tasks/TaskComposer'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { formatAge, queueActionOf, queueGroupOf, queueGroups, taskAgentLabel } from '../tasks/format'
 import type { InboxRow } from '../../houston/generated/InboxRow'
-import { MATERIAL_CLS, materialAttrs } from '../material'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 export function TasksSurface({
   client,

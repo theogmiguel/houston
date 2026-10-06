@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import type { RoleRoute } from '../../houston/generated/RoleRoute'
-import { BTN_GHOST } from '../buttonChrome'
-import { Select } from '../Select'
+import { BTN_GHOST } from '../ui/buttonChrome'
+import { Select } from '../ui/Select'
 import { Table } from '../ui/Table'
 
 type RouteRow = RoleRoute & { rowId: string }

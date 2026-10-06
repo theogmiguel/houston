@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { HarnessReport, HarnessReportError } from '../../houston/useHarness'
 import { MarkdownPreview } from '../MarkdownPreview'
-import { Select } from '../Select'
+import { Select } from '../ui/Select'
 import { NavDetailState, NavFeedback, SECONDARY_BUTTON } from './navChrome'
 import { formatDay, formatWindow } from './harnessFormat'
 

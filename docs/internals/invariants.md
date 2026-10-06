@@ -319,7 +319,7 @@ on the session row and metadata validation never drives status.
   `eval_script_with_callback` takes a blocking path and the watchdog supervisor can block
   on the event loop it is watching; the suspend classifier is defined on `boot − mono`, so
   wall-clock reads anywhere else corrupt it.
-- **No native `<select>`** outside `components/Select.tsx` — its open popup is an unstyled
+- **No native `<select>`** outside `components/ui/Select.tsx` — its open popup is an unstyled
   GTK window under WebKitGTK. **Enforced by** `check-native-select.sh`.
 - **No raw `lucide-react` imports** outside `components/icons.tsx`. **Enforced by**
   `check-icon-imports.sh`.

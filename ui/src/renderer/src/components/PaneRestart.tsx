@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import type { HoustonClient, SessionInfo } from '../houston/client'
 import { ConfirmModal } from './ConfirmModal'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { IconClose, IconHistory, IconRespawn, type IconComponent } from './icons'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 
 export type RestartMode = 'restart' | 'resume' | 'fresh'
 

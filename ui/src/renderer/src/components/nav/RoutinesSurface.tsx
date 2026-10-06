@@ -12,7 +12,7 @@ import type {
   RoutineWorkspaceOption
 } from '../../houston/routineTypes'
 import { ROUTINE_RUNS_CONCURRENT } from '../../houston/generated/DEFAULTS'
-import { MATERIAL_CLS, materialAttrs } from '../material'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 const RoutineDetail = lazy(() => import('../ui/RoutineDetail').then((module) => ({ default: module.RoutineDetail })))
 

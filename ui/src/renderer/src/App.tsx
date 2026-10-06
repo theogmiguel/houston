@@ -107,7 +107,7 @@ import {
 } from "./usePreferences";
 import { Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
-import { MATERIAL_CLS, materialAttrs } from "./components/material";
+import { MATERIAL_CLS, materialAttrs } from "./components/ui/material";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
 import { canUseSkillInFocusedPane } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
@@ -119,14 +119,14 @@ import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes
 import { engineLabel } from "./components/engineLabel";
 import { LayoutView } from "./components/LayoutView";
 import { AddPanePopover } from "./components/AddPanePopover";
-import { Tooltip } from "./components/Tooltip";
+import { Tooltip } from "./components/ui/Tooltip";
 import { tabsStorageKey } from "./components/browserTabsKey";
 import { recordAndReload } from "./reloadBudget";
-import { AnimOut } from "./components/AnimOut";
+import { AnimOut } from "./components/ui/AnimOut";
 import {
   BTN_ICO,
   BTN_PRIMARY,
-} from "./components/buttonChrome";
+} from "./components/ui/buttonChrome";
 import { SurfaceBoundary } from "./components/SurfaceBoundary";
 import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
@@ -321,7 +321,7 @@ import {
 } from "./windowButtonLayout";
 import { stackCapacity } from "./paneCaps";
 import { changedEntries } from "./layout/changedEntries";
-import { Icon } from "./components/Icon";
+import { Icon } from "./components/ui/Icon";
 
 // lazy() keeps Settings (and everything below) out of the boot chunk
 // WebKitGTK parses before the grid can paint — `bundle-budget.json`'s

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { GLOW_DANGER } from './shadowChrome'
+import { GLOW_DANGER } from './ui/shadowChrome'
 import { isTauri } from '../houston/host'
 import { usePickerEvent, type PickerSelection } from '../houston/browserPicker'
 import {
@@ -16,9 +16,9 @@ import {
   PICKER_SUBMIT_CLS,
   PICKER_TAG_CLS
 } from './browserPickerChrome'
-import { Select } from './Select'
+import { Select } from './ui/Select'
 import { IconClose } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { HIT_TARGET_28 } from './hitTarget'
 
 export const PICKER_AGENTS: { id: string; name: string; description: string }[] = [

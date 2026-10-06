@@ -1,5 +1,5 @@
 import type { AgentKind } from '../../houston/generated/AgentKind'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { Button } from './Button'
 import type { FirstRunHookRow } from '../firstRunHooks'
 import { IconAgent, IconCheck, IconSquareTerminal } from '../icons'

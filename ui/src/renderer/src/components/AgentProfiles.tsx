@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { Tooltip } from './Tooltip'
-import { Select } from './Select'
+import { Tooltip } from './ui/Tooltip'
+import { Select } from './ui/Select'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
 import type { AgentProfileActive } from '../houston/generated/AgentProfileActive'

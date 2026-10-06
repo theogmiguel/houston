@@ -9,10 +9,10 @@ import {
   trayState,
   type TrayStateView,
 } from "../../houston/tray";
-import { BTN_DANGER_SOLID, BTN_GHOST } from "../buttonChrome";
+import { BTN_DANGER_SOLID, BTN_GHOST } from "../ui/buttonChrome";
 import { ConfirmModal } from "../ConfirmModal";
 import { pluralize, stopConfirmCopy } from "../daemonStopConfirmCopy";
-import { Toggle } from "../settingsPrimitives";
+import { Toggle } from "../ui/settingsPrimitives";
 import { Group, Row } from "./shared";
 
 // Fallback only, used before `reap.deadline_ms` arrives — must match the

@@ -1,6 +1,6 @@
 import type { SessionTask } from '../../houston/generated/SessionTask'
 import { openSideTasks } from '../../sidePanel'
-import { Tooltip } from '../Tooltip'
+import { Tooltip } from '../ui/Tooltip'
 import { runStateLabel } from './format'
 import { TaskStatusGlyph } from './glyphs'
 

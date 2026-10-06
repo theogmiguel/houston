@@ -1,5 +1,5 @@
 import React from 'react'
-import { BTN_GHOST } from './buttonChrome'
+import { BTN_GHOST } from './ui/buttonChrome'
 import { SURFACE_CRASH_GUARANTEE } from './crashCopy'
 
 interface Props {

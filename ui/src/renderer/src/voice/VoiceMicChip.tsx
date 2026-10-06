@@ -1,9 +1,9 @@
 import { CONTROL_SIZE_SQUARE_CLS } from '../components/controlSize'
 import { IconMic } from '../components/icons'
-import { Tooltip } from '../components/Tooltip'
+import { Tooltip } from '../components/ui/Tooltip'
 import { dictationShortcut } from '../keymap'
 import { useVoiceActivity } from './store'
-import { Icon } from '../components/Icon'
+import { Icon } from '../components/ui/Icon'
 
 export function VoiceMicChip({
   paneTitle

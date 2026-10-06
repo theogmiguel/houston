@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BTN_GHOST_BG } from './buttonChrome'
+import { BTN_GHOST_BG } from './ui/buttonChrome'
 
 function ReconnectAge({ since }: { since: number }): React.JSX.Element {
   const [now, setNow] = useState(Date.now)

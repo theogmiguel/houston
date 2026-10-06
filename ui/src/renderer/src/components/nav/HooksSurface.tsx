@@ -2,7 +2,7 @@ import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import { AgentStatusSection } from '../settings/AgentStatusSection'
 import { NavColumn } from './navChrome'
-import { MATERIAL_CLS, materialAttrs } from '../material'
+import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 export function HooksSurface(props: {
   providers: AgentHookState[] | null

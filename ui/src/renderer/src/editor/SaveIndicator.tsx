@@ -1,7 +1,7 @@
 import type { SaveState } from './useEditorSurface'
 import { SPIN_CLASS } from '../components/git/DiffBody'
 import { IconCheck, IconLoaderCircle } from '../components/icons'
-import { ICON_ROLE_CLS } from '../components/Icon'
+import { ICON_ROLE_CLS } from '../components/ui/Icon'
 
 export function SaveIndicator({ state }: { state: SaveState }): React.JSX.Element {
   if (state === 'saving') {

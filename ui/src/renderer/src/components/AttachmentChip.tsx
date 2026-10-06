@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO } from './ui/shadowChrome'
 import { IconClose } from './icons'
 import { HIT_TARGET_28 } from './hitTarget'
-import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
-import { Icon } from './Icon'
+import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './ui/overlayChrome'
+import { Icon } from './ui/Icon'
 
 export interface AttachmentChipProps {
   filename: string

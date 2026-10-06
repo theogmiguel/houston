@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
+import { BTN_PRIMARY, BTN_SECONDARY } from './ui/buttonChrome'
 import { HIT_TARGET_28 } from './hitTarget'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { IconChevronDown } from './icons'
-import { MATERIAL_CLS, materialAttrs } from './material'
-import { Tooltip } from './Tooltip'
+import { MATERIAL_CLS, materialAttrs } from './ui/material'
+import { Tooltip } from './ui/Tooltip'
 
 export interface SplitButtonItem {
   label: string

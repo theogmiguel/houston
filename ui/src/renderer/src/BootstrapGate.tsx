@@ -1,8 +1,8 @@
 import React from 'react'
-import { BTN_GHOST, BTN_PRIMARY } from './components/buttonChrome'
+import { BTN_GHOST, BTN_PRIMARY } from './components/ui/buttonChrome'
 import { isTauri } from './houston/host'
 import { startDragging } from './houston/bridge'
-import { MATERIAL_CLS, materialAttrs } from './components/material'
+import { MATERIAL_CLS, materialAttrs } from './components/ui/material'
 
 const BRIDGE_LOAD_TIMEOUT_MS = 15_000
 

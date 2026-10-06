@@ -1,6 +1,6 @@
 import { Button, Field, Notice, SectionHead, Segmented, Select, StatusLabel, Table, type TableColumn } from './index'
 import { ActionMenu } from './ActionMenu'
-import { Toggle } from '../settingsPrimitives'
+import { Toggle } from './settingsPrimitives'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { Routine, RoutineRun } from '../../houston/routineTypes'
 import { ENGINE_ORDER, engineLabel } from '../engineLabel'

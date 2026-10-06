@@ -13,8 +13,8 @@ import {
   ESTATUS_ERR_CLS
 } from '../editor/editorChrome'
 import { useRef } from 'react'
-import { BTN_GHOST } from './buttonChrome'
-import { MenuLayer } from './AnimOut'
+import { BTN_GHOST } from './ui/buttonChrome'
+import { MenuLayer } from './ui/AnimOut'
 import { EditorPreviewBlock } from './EditorPreviewBlock'
 import { AudioPreview, ImagePreview, VideoPreview } from './MediaPreview'
 import { MarkdownPreview } from './MarkdownPreview'

@@ -5,10 +5,10 @@ import type {
   PrReviewer,
   PrReviewerCandidate
 } from '../../houston/client'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { Icon } from '../Icon'
+import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../ui/buttonChrome'
+import { Icon } from '../ui/Icon'
 import { IconCheck, IconClose, IconLoaderCircle, IconPlus } from '../icons'
-import { Tooltip } from '../Tooltip'
+import { Tooltip } from '../ui/Tooltip'
 import { SPIN_CLASS } from './DiffBody'
 import {
   REACTION_GLYPH,

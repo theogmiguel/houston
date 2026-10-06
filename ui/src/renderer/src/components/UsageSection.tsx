@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { IconChartArea, IconInfo, IconRefresh } from './icons'
-import { EmptyState } from './EmptyState'
-import { Segmented } from './Segmented'
+import { EmptyState } from './ui/ActionEmptyState'
+import { Segmented } from './ui/SegmentedControl'
 import { UsageChart, type UsageSeries } from './ui/UsageChart'
 import type { ServerMsg } from '../houston/generated/ServerMsg'
 import type { UsageProvider } from '../houston/generated/UsageProvider'
@@ -25,9 +25,9 @@ import {
   type UsageWindowDef,
   type UsageWindowId
 } from '../usage'
-import { Icon } from './Icon'
-import { Tooltip } from './Tooltip'
-import { Select } from './Select'
+import { Icon } from './ui/Icon'
+import { Tooltip } from './ui/Tooltip'
+import { Select } from './ui/Select'
 import { Button, Table, UsageCalendar, UsageModelCell, UsageProviderRow, UsageSectionHeading, UsageShareBar } from './ui'
 import { calendarStartMs } from './ui/UsageCalendar'
 import type { UsageActivityDay } from '../houston/generated/UsageActivityDay'

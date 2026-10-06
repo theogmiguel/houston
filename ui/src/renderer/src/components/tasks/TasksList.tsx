@@ -3,10 +3,10 @@ import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskRefusal } from '../../houston/useTasks'
-import { BTN_PRIMARY } from '../buttonChrome'
-import { EmptyState } from '../EmptyState'
+import { BTN_PRIMARY } from '../ui/buttonChrome'
+import { EmptyState } from '../ui/ActionEmptyState'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import {
   IconAlertTriangle,
   IconChevronDown,
@@ -26,7 +26,7 @@ import {
 } from './format'
 import { TaskMenu } from './TaskMenu'
 import { TaskRow } from './TaskRow'
-import { Segmented } from '../Segmented'
+import { Segmented } from '../ui/SegmentedControl'
 
 export interface TasksListProps {
   scope?: 'all' | 'workspace'

@@ -4,7 +4,7 @@ import { memo, useEffect, useContext, useRef, useState } from 'react'
 import { ChildrenRoster, ChildStatusDot, delegationAge, PEEK_KEEP_MOUNTED } from './ChildrenRoster'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { WarmContext } from '../layout/warmContext'
-import { RING_ACCENT_ICON } from './shadowChrome'
+import { RING_ACCENT_ICON } from './ui/shadowChrome'
 import type {
   AgentKind,
   AgentStatus,
@@ -17,7 +17,7 @@ import type { ThemeName } from '../theme'
 import type { SplitSide } from '../layout/tree'
 import { TerminalPane, type RegisterOutput, type TermActions } from '../pane/TerminalPane'
 import { DictationIndicator } from '../voice/DictationIndicator'
-import { AnimOut, MenuLayer } from './AnimOut'
+import { AnimOut, MenuLayer } from './ui/AnimOut'
 import {
   RestartConfirm,
   ResumeNotice,
@@ -28,7 +28,7 @@ import {
 import type { HandoffSource } from './PaneHandoff'
 import { clampConversation } from './handoffPacket'
 import { RenameTitle } from './RenameTitle'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import {
   AGENT_DOT_COLOR,
   IconAgent,
@@ -51,7 +51,7 @@ import {
   IconTextSmaller,
   type IconComponent
 } from './icons'
-import { BTN_GHOST, BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_GHOST, BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
@@ -65,7 +65,7 @@ import {
   splitDown,
   splitRight
 } from '../keymap'
-import { ICON_ROLE_CLS, Icon } from './Icon'
+import { ICON_ROLE_CLS, Icon } from './ui/Icon'
 import { HEAD_BADGE_CLS } from './headBadge'
 import { HeaderDelegationBadge, type PaneRoster } from './DelegationCard'
 import {
@@ -77,7 +77,7 @@ import {
   visiblePeek,
   withSessionFamily
 } from './sessionPaneSubscriptions'
-import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
+import { POP_ORIGIN_CLS, popOriginStyle } from './ui/overlayChrome'
 import { usePaneContextMenu } from './paneContextMenu'
 import { ContextIndicator } from './ContextIndicator'
 import { PaneTaskChip } from './tasks/PaneTaskChip'

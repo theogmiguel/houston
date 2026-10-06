@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
 import { useFocusRestore, useFocusTrap } from './dialogFocus'
 import { installSkillFromUrl, previewSkillUrl, type SkillUrlConflict } from '../houston/skillInstall'
-import { BTN_GHOST } from './buttonChrome'
+import { BTN_GHOST } from './ui/buttonChrome'
 import { FIELD_INPUT, FIELD_LABEL, PRIMARY_BUTTON, SECONDARY_BUTTON } from './nav/navChrome'
 import { IconClose, IconFileDown } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 
 type Step =
   | { kind: 'url'; value: string; error: string | null; busy: boolean }

@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { useFocusRestore, useFocusTrap } from '../dialogFocus'
 import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel } from '../ui'
 import { IconClose } from '../icons'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 
 export interface GitDialogShellProps {
   heading: string

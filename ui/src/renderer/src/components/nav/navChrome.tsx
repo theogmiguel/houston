@@ -1,8 +1,8 @@
 import { IconChevronLeft } from '../icons'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { PAGE_COLUMN_WIDE_CLS } from '../settingsPrimitives'
+import { PAGE_COLUMN_WIDE_CLS } from '../ui/settingsPrimitives'
 
 export const BLOCK =
   'overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--card-bg)]'

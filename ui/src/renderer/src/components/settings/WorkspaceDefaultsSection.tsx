@@ -1,5 +1,5 @@
 import { RESTORE_BUDGET_MAX, WORKTREE_CLEANUP_GRACE_HOURS_MAX } from '../../houston/generated/DEFAULTS'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import type { HostInfo } from '../SettingsView'
 import type { SessionPolicy } from '../../houston/generated/SessionPolicy'
 import { SettingsScope } from '../ui/SettingsScope'

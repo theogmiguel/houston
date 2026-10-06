@@ -28,7 +28,7 @@ import {
 } from '../keymap'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import { PREFIX_HINT_DELAY_MS, prefixLayer } from '../prefixLayer'
-import { MATERIAL_CLS, materialAttrs } from './material'
+import { MATERIAL_CLS, materialAttrs } from './ui/material'
 
 // What the overlay teaches, grouped the way people think about "where am I going".
 // Entries are the keymap's own, so a rebind shows its new chord automatically.

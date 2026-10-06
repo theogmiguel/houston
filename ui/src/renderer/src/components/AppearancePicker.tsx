@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO } from './ui/shadowChrome'
 import {
   THEMES,
   THEME_LABELS,
@@ -9,10 +9,10 @@ import {
   type ThemeMode,
   type ThemeName
 } from '../theme'
-import { Segmented } from './Segmented'
+import { Segmented } from './ui/SegmentedControl'
 import { IconCheck, IconSearch } from './icons'
-import { Icon } from './Icon'
-import { Tooltip } from './Tooltip'
+import { Icon } from './ui/Icon'
+import { Tooltip } from './ui/Tooltip'
 
 export interface AppearancePickerProps {
   currentTheme: ThemeName

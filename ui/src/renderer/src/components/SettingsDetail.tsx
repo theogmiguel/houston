@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FOCUS_HALO } from './shadowChrome'
+import { FOCUS_HALO } from './ui/shadowChrome'
 import { HIT_TARGET_28 } from './hitTarget'
 
 export type RowDisableState = { disabled: false } | { disabled: true; reason: string }

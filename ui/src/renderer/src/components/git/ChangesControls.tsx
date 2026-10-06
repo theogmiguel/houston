@@ -1,7 +1,7 @@
 import { IconArrowDown } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
-import { BTN_SECONDARY } from '../buttonChrome'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
+import { BTN_SECONDARY } from '../ui/buttonChrome'
 import { ScmNotice } from './ScmNotice'
 
 // The three controls ChangesPane grew for the Git tools, kept out of the pane's

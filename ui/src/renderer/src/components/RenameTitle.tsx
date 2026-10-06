@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { IconPencil } from './icons'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
 import { PANE_TITLE_INK_CLS } from '../windowFocus'
 
 const PANE_TITLE_CLS =

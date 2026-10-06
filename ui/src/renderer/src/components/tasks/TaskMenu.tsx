@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import { IconCheck, type IconComponent } from '../icons'
-import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../overlayChrome'
-import { Tooltip } from '../Tooltip'
+import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../ui/overlayChrome'
+import { Tooltip } from '../ui/Tooltip'
 
 export interface TaskMenuItem {
   id: string

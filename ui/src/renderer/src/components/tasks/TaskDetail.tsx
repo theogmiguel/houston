@@ -11,9 +11,9 @@ import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
-import { BTN_GHOST, BTN_SECONDARY } from '../buttonChrome'
+import { BTN_GHOST, BTN_SECONDARY } from '../ui/buttonChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { Icon } from '../ui/Icon'
 import {
   IconAgent,
   IconAlertTriangle,
@@ -32,8 +32,8 @@ import {
   IconUndo,
   IconUser
 } from '../icons'
-import { Select, type SelectOption } from '../Select'
-import { Tooltip } from '../Tooltip'
+import { Select, type SelectOption } from '../ui/Select'
+import { Tooltip } from '../ui/Tooltip'
 import {
   acceptanceText,
   actorLabel,

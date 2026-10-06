@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Toggle } from './settingsPrimitives'
-import { StatusIcon, type StatusIconState } from './StatusIcon'
-import { Tooltip } from './Tooltip'
+import { Toggle } from './ui/settingsPrimitives'
+import { StatusIcon, type StatusIconState } from './ui/StatusIcon'
+import { Tooltip } from './ui/Tooltip'
 import { IconFile, IconRespawn } from './icons'
 import { BLOCK, CHROME_BUTTON, NavDetailState, NavEmpty, SECONDARY_BUTTON } from './nav/navChrome'
 import type { AgentKind } from '../houston/generated/AgentKind'
@@ -9,7 +9,7 @@ import type { SkillToolState } from '../houston/generated/SkillToolState'
 import type { SkillPushRecord } from '../houston/generated/SkillPushRecord'
 import { buildSkillRows, needsPush, skillCellFor, skillCellTitle } from '../houston/skillRows'
 import { readFile } from '../houston/bridge'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 
 const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',

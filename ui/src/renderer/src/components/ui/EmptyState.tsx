@@ -1,5 +1,5 @@
 import type { IconComponent } from '../icons'
-import { IconTile } from '../IconTile'
+import { IconTile } from './IconTile'
 import { Button } from './Button'
 import { variants } from './variants'
 

@@ -1,4 +1,4 @@
-import { FOCUS_HALO, RING_ACCENT_SOLID } from '../shadowChrome'
+import { FOCUS_HALO, RING_ACCENT_SOLID } from '../ui/shadowChrome'
 import {
   CHROME_THEME_LABELS,
   CHROME_THEMES,
@@ -7,9 +7,9 @@ import {
   type ChromeTheme,
   type TerminalPaletteChoice
 } from '../../theme'
-import { Segmented } from '../Segmented'
+import { Segmented } from '../ui/SegmentedControl'
 import { Group, Row } from './shared'
-import { Toggle } from '../settingsPrimitives'
+import { Toggle } from '../ui/settingsPrimitives'
 import {
   RAIL_VIEWS,
   RAIL_VIEW_LABEL,

@@ -2,8 +2,8 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AnimOut } from './AnimOut'
-import { BTN_GHOST } from './buttonChrome'
+import { AnimOut } from './ui/AnimOut'
+import { BTN_GHOST } from './ui/buttonChrome'
 import { ConfirmModal } from './ConfirmModal'
 
 const ANIM_OUT_EXIT_MS = 170

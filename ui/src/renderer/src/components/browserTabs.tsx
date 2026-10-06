@@ -6,15 +6,15 @@ import {
   type Dispatch,
   type SetStateAction
 } from 'react'
-import { BORDER_HAIRLINE_INSET } from './shadowChrome'
+import { BORDER_HAIRLINE_INSET } from './ui/shadowChrome'
 import { normalizeUrl, type WebviewEl } from '../houston/browserUrl'
 import { useNativeOverlaySuppression } from '../layout/nativeSuppression'
 import { GridHiddenContext } from '../layout/gridHiddenContext'
 import { useBrowserOpenUrl } from '../houston/browserState'
 import { IconClose, IconPlus } from './icons'
-import { WEBVIEW_HOST_CLS } from './panelChrome'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
+import { WEBVIEW_HOST_CLS } from './ui/panelChrome'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
 import { HIT_TARGET_28 } from './hitTarget'
 
 const RECENTS_KEY = 'tr-browser-recents'

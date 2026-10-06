@@ -18,8 +18,8 @@ import {
   IconTrash,
   IconUndo
 } from '../icons'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
 import { Button, Notice } from '../ui'
 
 export interface CheckpointInspect {

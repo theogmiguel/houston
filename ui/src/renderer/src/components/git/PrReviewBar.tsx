@@ -1,8 +1,8 @@
 import type { PrDetail, PrReviewDraft, PrReviewVerdict } from '../../houston/client'
-import { BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { Disclosure } from '../Disclosure'
-import { Select, type SelectOption } from '../Select'
-import { Tooltip } from '../Tooltip'
+import { BTN_PRIMARY, BTN_SECONDARY } from '../ui/buttonChrome'
+import { Disclosure } from '../ui/Disclosure'
+import { Select, type SelectOption } from '../ui/Select'
+import { Tooltip } from '../ui/Tooltip'
 import { draftLabel } from './prDetailUi'
 
 const SMALL = 'text-[length:var(--tr-text-small-size)]'

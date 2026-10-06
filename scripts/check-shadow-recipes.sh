@@ -64,7 +64,7 @@ if [ -n "$counts" ]; then
   echo "      A violation is a shadow-[...] bracket content, or a boxShadow:" >&2
   echo "      style value, that is a hand-typed px length or colour. Use a" >&2
   echo "      token (shadow-[var(--x)])" >&2
-  echo "      or a named constant from components/shadowChrome.ts" >&2
+  echo "      or a named constant from components/ui/shadowChrome.ts" >&2
   echo "      (shadow-[\${RING_...}] / \${GLOW_...}), interpolated." >&2
   exit 1
 fi

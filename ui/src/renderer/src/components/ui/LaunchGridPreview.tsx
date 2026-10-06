@@ -2,7 +2,7 @@ import type { SessionInfo } from '../../houston/client'
 import { computeRects, launchPreviewTree, tidy, type LayoutNode } from '../../layout/tree'
 import type { SessionSlot } from '../sessionPresets'
 import { IconAgent } from '../icons'
-import { ICON_ROLE_CLS } from '../Icon'
+import { ICON_ROLE_CLS } from './Icon'
 
 const AGENT_NAMES: Record<string, string> = {
   claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor', antigravity: 'Antigravity',

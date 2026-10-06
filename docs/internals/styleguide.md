@@ -53,11 +53,11 @@ When in doubt:
 | Tailwind `--color-*` bindings (what makes `bg-surface` compile at all) | `ui/src/renderer/src/tailwind.css`, `@theme { … }` block |
 | Keyframe catalog (`menu-in`, `panel-in`, `backdrop-*`, notice entrances…) | `ui/src/renderer/src/keyframes.css` |
 | Element-level base rules (focus ring, disabled, `.btn` box) | `ui/src/renderer/src/base.css` |
-| Button chrome | `ui/src/renderer/src/components/buttonChrome.ts` |
-| The material ladder (rungs and their recipes) | `ui/src/renderer/src/components/material.ts` |
-| Overlay/elevation chrome | `ui/src/renderer/src/components/overlayChrome.ts` |
-| Select trigger chrome | `ui/src/renderer/src/components/selectChrome.ts` |
-| The only import surfaces for icons, dropdowns and hover labels | `components/{icons,Select,Tooltip}.tsx` |
+| Button chrome | `ui/src/renderer/src/components/ui/buttonChrome.ts` |
+| The material ladder (rungs and their recipes) | `ui/src/renderer/src/components/ui/material.ts` |
+| Overlay/elevation chrome | `ui/src/renderer/src/components/ui/overlayChrome.ts` |
+| Select trigger chrome | `ui/src/renderer/src/components/ui/selectChrome.ts` |
+| The only import surfaces for icons, dropdowns and hover labels | `components/{icons,ui/Select,ui/Tooltip}.tsx` |
 | Terminal palettes (separate axis from chrome) | `ui/src/renderer/src/theme.ts` |
 | Enforcement | `bun run check:css`, `scripts/check-icon-imports.sh`, `scripts/check-icon-metrics.sh`, `scripts/check-title-tooltip-guard.sh`, `scripts/check-native-select.sh` |
 
@@ -335,7 +335,7 @@ stay legal: a circle and a zero are shapes, not rungs.
 
 Surfaces are materials, not colours. Materials come as a **ladder**, so "one step
 more separated" is a step on an axis rather than a new hex. Five rungs, in
-`ui/src/renderer/src/components/material.ts`:
+`ui/src/renderer/src/components/ui/material.ts`:
 
 | Rung | Ground | Border | Shadow | For |
 |---|---|---|---|---|
@@ -512,7 +512,7 @@ statically visible literal are outside its scan. Each non-layout token reports i
 
 ### Select
 
-Every dropdown is `components/Select.tsx`. **Native `<select>` is banned** — its
+Every dropdown is `components/ui/Select.tsx`. **Native `<select>` is banned** — its
 open popup is a separate OS window that the desktop toolkit draws with its own font
 and its own selection fill, so none of our tokens reach it.
 
@@ -525,7 +525,7 @@ all implemented — extend it rather than rolling a listbox.
 
 ### Tooltip vs `title`
 
-`components/Tooltip.tsx` is the only hover label. It portals to `document.body` so no
+`components/ui/Tooltip.tsx` is the only hover label. It portals to `document.body` so no
 `overflow: hidden` ancestor clips it; 300ms hover delay, bypassed by keyboard focus;
 6px offset, 8px viewport margin; flips vertically, clamps horizontally; dismisses on
 Escape, pointerdown, scroll, resize and blur.
@@ -892,8 +892,8 @@ something no text search can count (see "A closure is not a fix").
 | `bun run check:css` | Runs a headless browser against the **built** stylesheet (`@theme`/`@layer` only resolve after a build). Re-derives the theme list and the `--color-*` → `--X` mapping from source rather than hardcoding them, then asserts every `--color-*` re-resolves under each `[data-theme]` scope. Also asserts the contrast floors above. |
 | `scripts/check-icon-imports.sh` | Bans `lucide-react` imports outside `components/icons.tsx`. Its allowlist is currently empty — the rule holds with zero live exceptions. |
 | `scripts/check-title-tooltip-guard.sh` | Flags any capitalized JSX component receiving `title=` that isn't on the visible-heading allowlist. A `title` that means "tooltip" fails. |
-| `scripts/check-native-select.sh` | Bans `<select` anywhere under `ui/src` outside `components/Select.tsx`. Strips comments first, so prose mentions don't false-positive. |
-| `scripts/check-native-input.sh` | Bans `<input type="checkbox">`/`<input type="radio">` anywhere under `ui/src`. No exemptions — `Toggle` and `Segmented` (`components/settingsPrimitives.tsx`) cover both shapes. |
+| `scripts/check-native-select.sh` | Bans `<select` anywhere under `ui/src` outside `components/ui/Select.tsx`. Strips comments first, so prose mentions don't false-positive. |
+| `scripts/check-native-input.sh` | Bans `<input type="checkbox">`/`<input type="radio">` anywhere under `ui/src`. No exemptions — `Toggle` and `Segmented` (`components/ui/settingsPrimitives.tsx`) cover both shapes. |
 | `scripts/check-menu-descriptions.sh` | A menu item's description line (the `<span>`/`<small>`/`<p>` after its `<strong>` label inside a `role="menuitem"` block) must wrap or truncate on purpose — never `whitespace-nowrap`/`truncate` with no `max-w-*` bound, never no wrapping class at all. |
 | `scripts/check-icon-metrics.sh` | Bans a `size=` or `strokeWidth=` prop on any glyph under `ui/src`, and props objects that spell one. No baseline and no allowlist: `components/icons.tsx` (whose defaults define the drawn set) and `IconTile` (a container with a named tile scale, not a glyph) are the only exemptions. |
 | `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |

@@ -1,7 +1,7 @@
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconClose } from '../icons'
-import { Tooltip } from '../Tooltip'
+import { Tooltip } from './Tooltip'
 
 export function LaunchComposerHeader({ workspaceName, workspacePath, gridName, target, onClose }: {
   workspaceName: string

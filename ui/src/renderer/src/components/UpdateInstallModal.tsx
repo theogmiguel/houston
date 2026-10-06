@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from './ui'
 import { IconAlertTriangle, IconCheck, IconRefresh } from './icons'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { useFocusRestore, useFocusTrap } from './dialogFocus'
 import { daemonStatus, type ManageHandoff } from '../houston/manage'
 import type { SessionInfo } from '../houston/generated/SessionInfo'

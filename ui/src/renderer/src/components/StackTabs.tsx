@@ -7,8 +7,8 @@ import { useStackCapacity } from '../paneCaps'
 import { StatusDot } from './SessionPane'
 import { PANE_TYPES } from '../layout/paneTypes'
 import { IconClose } from './icons'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
 
 function tabLabel(node: PaneNode, sessions: Map<number, SessionInfo>): string {
   if (node.kind === 'leaf') return sessions.get(node.session)?.title ?? 'Terminal'

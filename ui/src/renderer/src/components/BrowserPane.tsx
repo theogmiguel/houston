@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react'
-import { GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
+import { GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './ui/shadowChrome'
 import type { BrowserNode } from '../layout/tree'
 import { openExternal } from '../houston/bridge'
 import { isTauri } from '../houston/host'
@@ -22,14 +22,14 @@ import {
   IconPhone,
   IconTablet
 } from './icons'
-import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './panelChrome'
+import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './ui/panelChrome'
 
 const SURFACE_RADIUS_CLS =
   'rounded-b-[calc(var(--tr-radius-md)-1px)] [@container_(max-width:280px)]:rounded-b-[calc(var(--tr-radius-sm)-1px)]'
 import { PANE_BORDER_CLS, PANE_HEAD_BG_CLS, usePaneFocusTier } from '../windowFocus'
-import { BTN_ICO_STRUCTURE } from './buttonChrome'
+import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
 import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
-import { Tooltip } from './Tooltip'
+import { Tooltip } from './ui/Tooltip'
 import { BrowserActConfirm } from './BrowserActConfirm'
 import { useBrowserConfirm } from '../houston/browserConfirm'
 import { useBrowserPaneLoad } from '../houston/browserOpenRequest'
@@ -44,7 +44,7 @@ import {
 } from './browserTabs'
 import { useBrowserNav } from './browserNav'
 import { tabsStorageKey } from './browserTabsKey'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { browserSecurity, useBrowserDevice, type BrowserDevice } from './browserDevices'
 import type { HoustonClient } from '../houston/client'
 import { BrowserPaneStageState } from './ui/BrowserPaneStates'
