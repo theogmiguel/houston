@@ -167,10 +167,10 @@ describe('WindowControls — state matrix', () => {
     })
     const wash = container.querySelector('[data-testid="window-control-disc"]')
     const cls = wash?.className ?? ''
-    expect(cls).toContain('rounded-[6px]')
+    expect(cls).toContain('rounded-[var(--tr-radius-sm)]')
     expect(cls).not.toContain('rounded-full')
-    expect(cls).toContain('w-[calc(20px/var(--shell-zoom,1))]')
-    expect(cls).toContain('h-[calc(20px/var(--shell-zoom,1))]')
+    expect(cls).toContain('w-[calc(var(--sz-window-control-disc)/var(--shell-zoom,1))]')
+    expect(cls).toContain('h-[calc(var(--sz-window-control-disc)/var(--shell-zoom,1))]')
   })
 
   it('click handlers route to the matching prop, not any other button', () => {

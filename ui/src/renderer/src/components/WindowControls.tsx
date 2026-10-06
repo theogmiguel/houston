@@ -1,6 +1,7 @@
-import type { JSX } from 'react'
+import type { CSSProperties, JSX } from 'react'
 import type { WindowButtonKind, WindowButtonLayout } from '../windowButtonLayout'
 import { Tooltip } from './ui/Tooltip'
+import { WindowControlButton, WindowControlDisc } from './ui/WindowControl'
 
 interface WindowControlsProps {
   layout: WindowButtonLayout
@@ -74,29 +75,26 @@ export function WindowControls({
 
   return (
     <div
-      className={`flex items-center [-webkit-app-region:no-drag] ${className}`}
+      className={`flex items-center ${className}`}
+      style={{ ['-webkit-app-region' as string]: 'no-drag' } as CSSProperties}
       data-testid="window-controls"
     >
       {layout.buttons.map((kind) => (
         <Tooltip key={kind} label={buttonLabel(kind, maximized)}>
-          <button
+          <WindowControlButton
             type="button"
             aria-label={buttonLabel(kind, maximized)}
             onClick={handlers[kind]}
-            className="btn group/wc flex items-center justify-center w-[calc(30px/var(--shell-zoom,1))] h-[calc(var(--h-top)/var(--shell-zoom,1))] p-0 rounded-none border-none bg-transparent text-[var(--text-primary)] cursor-pointer [-webkit-app-region:no-drag]"
+            className="group/wc"
           >
-            <span
+            <WindowControlDisc
               aria-hidden
               data-testid="window-control-disc"
-              className={`flex items-center justify-center w-[calc(20px/var(--shell-zoom,1))] h-[calc(20px/var(--shell-zoom,1))] rounded-[6px] bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] group-focus-visible/wc:outline-[1.5px] group-focus-visible/wc:outline-[var(--focus-ring)] group-focus-visible/wc:outline-offset-1 motion-safe:transition-[background-color,color] motion-safe:duration-[var(--animate-t-fast)] ${
-                kind === 'close'
-                  ? 'group-hover/wc:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] group-hover/wc:text-[var(--danger)] group-active/wc:bg-[color-mix(in_srgb,var(--danger)_30%,transparent)]'
-                  : 'group-hover/wc:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] group-hover/wc:text-[color-mix(in_srgb,var(--accent)_75%,var(--text-primary))] group-active/wc:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)]'
-              }`}
+              tone={kind === 'close' ? 'close' : 'regular'}
             >
               <ButtonGlyph kind={kind} maximized={maximized} />
-            </span>
-          </button>
+            </WindowControlDisc>
+          </WindowControlButton>
         </Tooltip>
       ))}
     </div>

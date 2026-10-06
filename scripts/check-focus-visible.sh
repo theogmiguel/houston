@@ -8,8 +8,6 @@ cd "$repo_root"
 ui_src="ui/src"
 
 EXEMPT_COUNTS=(
-  "ui/src/renderer/src/components/agents/SelectMenu.tsx 1"
-  "ui/src/renderer/src/editor/editorChrome.ts 2"
   "ui/src/renderer/src/components/browserFullscreenChrome.ts 1"
 )
 

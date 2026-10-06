@@ -1,22 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconEye, IconPencil } from './icons'
 import { Tooltip } from './ui/Tooltip'
-import {
-  EMD_PAGE_CLS,
-  EMD_TOGGLE_CLS,
-  EMD_WRAP_CLS,
-  EPREVIEW_DETAIL_CLS,
-  EPREVIEW_TITLE_CLS,
-  EPREVIEW_WRAP_CLS,
-  MD_TOGGLE_COPY
-} from '../editor/editorChrome'
+import { MarkdownPreviewPage, MarkdownPreviewViewport, PreviewDetail, PreviewStatus, PreviewTitle } from './ui/EditorPreview'
 import { Icon } from './ui/Icon'
-
-const CHAT_STATUS_WRAP_CLS = 'flex flex-col items-start gap-1.5 text-left'
+import { MarkdownToggle } from './ui/MarkdownToggle'
+import { Text } from './ui/Text'
 
 export type MarkdownMode = 'preview' | 'edit'
 
 export const MARKDOWN_DEFAULT_MODE: MarkdownMode = 'preview'
+const MD_TOGGLE_COPY = { preview: { action: 'Edit source', label: 'Edit' }, edit: { action: 'Preview', label: 'Preview' } } as const
 
 type PipelineModule = typeof import('./markdownPipeline')
 
@@ -43,17 +36,20 @@ export function resetMarkdownPipelineForTest(): void {
 export function MarkdownPreviewToggle({
   mode,
   onToggle,
-  className
+  className,
+  size = 'inline'
 }: {
   mode: MarkdownMode
   onToggle: () => void
   className?: string
+  size?: 'inline' | 'mini'
 }): React.JSX.Element {
   const copy = MD_TOGGLE_COPY[mode]
   return (
     <Tooltip label={copy.action}>
-      <button
-        className={className ? `${EMD_TOGGLE_CLS} ${className}` : EMD_TOGGLE_CLS}
+      <MarkdownToggle
+        size={size}
+        className={className}
         data-testid="editor-markdown-toggle"
         aria-label={copy.action}
         onClick={(e) => {
@@ -62,8 +58,8 @@ export function MarkdownPreviewToggle({
         }}
       >
         {mode === 'preview' ? <Icon glyph={IconPencil} role="label" /> : <Icon glyph={IconEye} role="label" />}
-        {copy.label}
-      </button>
+        <Text as="span" size="label" weight="label" caps>{copy.label}</Text>
+      </MarkdownToggle>
     </Tooltip>
   )
 }
@@ -103,39 +99,39 @@ export function MarkdownPreview({
 
   const chat = variant === 'chat'
   return (
-    <div
-      className={chat ? '' : EMD_WRAP_CLS}
+    <MarkdownPreviewViewport
+      enabled={!chat}
       data-testid={chat ? 'chat-preview-markdown' : 'editor-preview-markdown'}
     >
       {error ? (
-        <div
-          className={chat ? CHAT_STATUS_WRAP_CLS : EPREVIEW_WRAP_CLS}
+        <PreviewStatus
+          chat={chat}
           data-testid="editor-markdown-load-error"
         >
-          <div className={EPREVIEW_TITLE_CLS}>Could not load the markdown preview</div>
-          <div className={EPREVIEW_DETAIL_CLS} data-testid="editor-markdown-load-error-detail">
+          <PreviewTitle as="div">Could not load the markdown preview</PreviewTitle>
+          <PreviewDetail as="div" data-testid="editor-markdown-load-error-detail">
             {error instanceof Error ? error.message : String(error)}
-          </div>
-          <button
-            className={`${EMD_TOGGLE_CLS} h-7`}
+          </PreviewDetail>
+          <MarkdownToggle
+            size="control"
             data-testid="editor-markdown-retry"
             onClick={() => setAttempt((n) => n + 1)}
           >
-            Retry
-          </button>
-        </div>
+            <Text as="span" size="label" weight="label" caps>Retry</Text>
+          </MarkdownToggle>
+        </PreviewStatus>
       ) : !mod ? (
-        <div
-          className={chat ? CHAT_STATUS_WRAP_CLS : EPREVIEW_WRAP_CLS}
+        <PreviewStatus
+          chat={chat}
           data-testid="editor-markdown-loading"
         >
-          <div className={EPREVIEW_DETAIL_CLS}>Loading preview…</div>
-        </div>
+          <PreviewDetail as="div">Loading preview…</PreviewDetail>
+        </PreviewStatus>
       ) : (
-        <div className={chat ? '' : EMD_PAGE_CLS}>
+        <MarkdownPreviewPage enabled={!chat}>
           <mod.MarkdownDocument source={source} variant={variant} />
-        </div>
+        </MarkdownPreviewPage>
       )}
-    </div>
+    </MarkdownPreviewViewport>
   )
 }

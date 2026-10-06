@@ -3,15 +3,9 @@ import { selectAll as cmSelectAll } from '@codemirror/commands'
 import { basename, overwriteBuffer, reloadBuffer, cleanError } from '../editor/buffers'
 import { cmCopySelection, cmCutSelection, cmPasteClipboard } from '../editor/cmClipboard'
 import type { EditorSurfaceState } from '../editor/useEditorSurface'
-import {
-  CONFLICT_MESSAGE,
-  ECTX_ITEM_CLS,
-  ECTX_MENU_CLS,
-  ECTX_SEP_CLS,
-  EHOST_CLS,
-  EHOST_WRAP_CLS,
-  ESTATUS_ERR_CLS
-} from '../editor/editorChrome'
+import { CONFLICT_MESSAGE } from '../editor/editorChrome'
+import { EditorHost, EditorStatus } from './ui/EditorSurface'
+import { EditorContextMenu, EditorContextMenuItem, EditorContextMenuSeparator } from './ui/EditorContextMenu'
 import { useRef } from 'react'
 import { BTN_GHOST } from './ui/buttonChrome'
 import { MenuLayer } from './ui/AnimOut'
@@ -48,11 +42,11 @@ export function EditorSurfaceBody({
   return (
     <>
       {error && (
-        <div
+        <EditorStatus
           role="button"
           tabIndex={0}
           aria-label="Dismiss error"
-          className={ESTATUS_ERR_CLS}
+          variant="error"
           onClick={() => setError(null)}
           onKeyDown={(e) => {
             if (e.key !== 'Enter' && e.key !== ' ') return
@@ -61,10 +55,10 @@ export function EditorSurfaceBody({
           }}
         >
           {error}
-        </div>
+        </EditorStatus>
       )}
       {buf?.conflict && (
-        <div className={ESTATUS_ERR_CLS}>
+        <EditorStatus variant="error">
           {CONFLICT_MESSAGE}{' '}
           <button
             className={BTN_GHOST}
@@ -78,13 +72,12 @@ export function EditorSurfaceBody({
           >
             Overwrite
           </button>
-        </div>
+        </EditorStatus>
       )}
-      <div className={EHOST_WRAP_CLS}>
-        <div
+      <div className="flex-1 min-w-0 min-h-0 relative overflow-hidden">
+        <EditorHost
           ref={hostRef}
           data-testid="cm-host"
-          className={EHOST_CLS}
           style={previewState || isMediaPreview || showMarkdownPreview ? { display: 'none' } : undefined}
           onContextMenu={(e) => {
             const view = viewRef.current
@@ -113,9 +106,8 @@ export function EditorSurfaceBody({
       </div>
       <MenuLayer open={cmMenu !== null} onClose={() => setCmMenu(null)} suppress="popover" menuRef={cmMenuRef}>
         {cmMenu && viewRef.current && (
-          <div
+          <EditorContextMenu
             ref={cmMenuRef}
-            className={ECTX_MENU_CLS}
             role="menu"
             tabIndex={-1}
             style={{
@@ -126,9 +118,9 @@ export function EditorSurfaceBody({
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <button
-              className={`btn ${ECTX_ITEM_CLS}`}
+            <EditorContextMenuItem
               role="menuitem"
+              shortcut="Ctrl+C"
               disabled={viewRef.current.state.selection.main.from === viewRef.current.state.selection.main.to}
               onClick={() => {
                 const view = viewRef.current as CmView
@@ -137,12 +129,12 @@ export function EditorSurfaceBody({
                 setCmMenu(null)
               }}
             >
-              Copy <span className="text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">Ctrl+C</span>
-            </button>
+              Copy
+            </EditorContextMenuItem>
             {!viewRef.current.state.readOnly && (
-              <button
-                className={`btn ${ECTX_ITEM_CLS}`}
+              <EditorContextMenuItem
                 role="menuitem"
+                shortcut="Ctrl+X"
                 disabled={
                   viewRef.current.state.selection.main.from === viewRef.current.state.selection.main.to
                 }
@@ -153,13 +145,13 @@ export function EditorSurfaceBody({
                   setCmMenu(null)
                 }}
               >
-                Cut <span className="text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">Ctrl+X</span>
-              </button>
+                Cut
+              </EditorContextMenuItem>
             )}
             {!viewRef.current.state.readOnly && (
-              <button
-                className={`btn ${ECTX_ITEM_CLS}`}
+              <EditorContextMenuItem
                 role="menuitem"
+                shortcut="Ctrl+V"
                 onClick={() => {
                   const view = viewRef.current as CmView
                   const gen = viewGenRef.current
@@ -172,13 +164,13 @@ export function EditorSurfaceBody({
                   setCmMenu(null)
                 }}
               >
-                Paste <span className="text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">Ctrl+V</span>
-              </button>
+                Paste
+              </EditorContextMenuItem>
             )}
-            <div className={ECTX_SEP_CLS} />
-            <button
-              className={`btn ${ECTX_ITEM_CLS}`}
+            <EditorContextMenuSeparator />
+            <EditorContextMenuItem
               role="menuitem"
+              shortcut="Ctrl+A"
               onClick={() => {
                 const view = viewRef.current as CmView
                 cmSelectAll(view)
@@ -186,13 +178,12 @@ export function EditorSurfaceBody({
                 setCmMenu(null)
               }}
             >
-              Select All <span className="text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">Ctrl+A</span>
-            </button>
+              Select all
+            </EditorContextMenuItem>
             {extraMenuItems}
-          </div>
+          </EditorContextMenu>
         )}
       </MenuLayer>
     </>
   )
 }
-

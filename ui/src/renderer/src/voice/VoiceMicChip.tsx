@@ -1,9 +1,9 @@
-import { CONTROL_SIZE_SQUARE_CLS } from '../components/controlSize'
 import { IconMic } from '../components/icons'
 import { Tooltip } from '../components/ui/Tooltip'
 import { dictationShortcut } from '../keymap'
 import { useVoiceActivity } from './store'
 import { Icon } from '../components/ui/Icon'
+import { MicrophoneStatus } from '../components/ui/DictationIndicator'
 
 export function VoiceMicChip({
   paneTitle
@@ -22,21 +22,16 @@ export function VoiceMicChip({
 
   return (
     <Tooltip label={label}>
-      <span
+      <MicrophoneStatus
         data-testid="voice-mic-chip"
         data-voice-state={activity.kind}
         aria-label={label}
         role="status"
         aria-live="polite"
-        className={`inline-flex ${CONTROL_SIZE_SQUARE_CLS.mini} flex-none items-center justify-center rounded-full ${
-          listening
-            ?
-              'loop-anim text-[var(--danger)] [--dot-pulse-opacity:0.4] [animation:dot-pulse_1.1s_steps(4,end)_infinite] motion-reduce:[animation:none]'
-            : 'text-[var(--text-muted)]'
-        }`}
+        listening={listening}
       >
         <Icon glyph={IconMic} role="ui" />
-      </span>
+      </MicrophoneStatus>
     </Tooltip>
   )
 }

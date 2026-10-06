@@ -108,6 +108,7 @@ const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shor
 import { UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
+import { B9EditorStory, B9LayoutStory, B9MarkdownStory, B9OpenInStory, B9PreviewStory, B9VoiceListeningStory, B9VoiceTranscribingStory, B9WindowStory } from './b9Stories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
@@ -255,6 +256,14 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'boot/failure': () => <BootFailureStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
+  'b9/markdown-preview': () => <B9MarkdownStory />,
+  'b9/editor-surface-menu': () => <B9EditorStory />,
+  'b9/editor-preview-states': () => <B9PreviewStory />,
+  'b9/dictation-listening': () => <B9VoiceListeningStory />,
+  'b9/dictation-transcribing': () => <B9VoiceTranscribingStory />,
+  'b9/window-controls-resize': () => <B9WindowStory />,
+  'b9/layout-drop-slots-splitter': () => <B9LayoutStory />,
+  'b9/open-in-submenu': () => <B9OpenInStory />,
   'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,
   'connections/slack-reconnecting': () => <SlackConnectionsStory state="reconnecting" />,
   'connections/slack-off': () => <SlackConnectionsStory state="off" />,

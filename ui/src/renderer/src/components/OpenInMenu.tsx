@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { listEditors, openInEditor, type EditorTarget } from '../houston/bridge'
-import { IconChevronRight } from './icons'
-import { Icon } from './ui/Icon'
 import { POP_ORIGIN_CLS, popOriginStyle } from './ui/overlayChrome'
-import { ExplorerMenuItem } from './ui/FileExplorer'
+import { OpenInChevron, OpenInSubmenu } from './ui/OpenInSubmenu'
+import { EditorContextMenuItem } from './ui/EditorContextMenu'
+import type { ExplorerMenuItem } from './ui/FileExplorer'
+import { Text } from './ui/Text'
 
 export const LAST_EDITOR_KEY = 'tr-external-editor'
 
@@ -38,7 +39,7 @@ export interface OpenInMenuProps {
   label?: string
   icon?: React.ReactNode
   itemClass?: string
-  itemComponent?: typeof ExplorerMenuItem
+  itemComponent?: typeof EditorContextMenuItem | typeof ExplorerMenuItem
   onDone: () => void
   onError: (message: string) => void
 }
@@ -49,12 +50,12 @@ export function OpenInMenu({
   col,
   label = 'Open in',
   icon,
-  itemClass = 'ctx-item',
+  itemClass = '',
   itemComponent,
   onDone,
   onError
 }: OpenInMenuProps): React.JSX.Element {
-  const Item = itemComponent ?? 'button'
+  const Item = itemComponent ?? EditorContextMenuItem
   const [editors, setEditors] = useState<EditorTarget[] | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -88,21 +89,21 @@ export function OpenInMenu({
     >
       <Item
         ref={rowRef}
-        className={itemComponent ? undefined : `btn border-none ${itemClass}`}
         role="menuitem"
+        className={itemClass}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
         {icon}
-        <span className="flex-1 text-left">{label}</span>
-        <Icon glyph={IconChevronRight} role="small" className="text-[var(--text-faint)] flex-none" />
+        <Text className="flex-1">{label}</Text>
+        <OpenInChevron />
       </Item>
       {open && (
-        <div
+        <OpenInSubmenu
           role="menu"
           data-testid="open-in-submenu"
-          className={`fixed min-w-[170px] flex flex-col p-1 rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--raised)] shadow-[var(--shadow-1)] z-[var(--z-context)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] ${POP_ORIGIN_CLS}`}
+          className={POP_ORIGIN_CLS}
           style={
             rect
               ? {
@@ -114,14 +115,14 @@ export function OpenInMenu({
           }
         >
           {editors && editors.length === 0 ? (
-            <Item className={itemComponent ? undefined : `btn border-none ${itemClass}`} role="menuitem" disabled>
+            <Item className={itemClass} role="menuitem" disabled>
               No editor found on PATH — {CANDIDATES_COPY}
             </Item>
           ) : (
             (editors ?? []).map((e) => (
               <Item
                 key={e.id}
-                className={itemComponent ? undefined : `btn border-none ${itemClass}`}
+                className={itemClass}
                 role="menuitem"
                 onClick={() => launch(e.id)}
               >
@@ -129,7 +130,7 @@ export function OpenInMenu({
               </Item>
             ))
           )}
-        </div>
+        </OpenInSubmenu>
       )}
     </div>
   )

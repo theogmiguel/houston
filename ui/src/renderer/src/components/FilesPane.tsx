@@ -366,7 +366,7 @@ export function FilesPane({
         {fileTabs.surface.markdownReady && (
           <MarkdownPreviewToggle
             mode={fileTabs.surface.mdMode}
-            className="h-[var(--h-ctl-mini)]"
+            size="mini"
             onToggle={fileTabs.surface.toggleMarkdownMode}
           />
         )}

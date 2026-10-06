@@ -1,5 +1,5 @@
 import { lazy, Suspense, useContext } from 'react'
-import { BORDER_HAIRLINE_INSET_TRANSPARENT, RING_ACCENT_ICON } from './ui/shadowChrome'
+import { BORDER_HAIRLINE_INSET_TRANSPARENT } from './ui/shadowChrome'
 import type { EditorNode, PaneKey, SplitSide } from '../layout/tree'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import {
@@ -18,11 +18,12 @@ import {
   IconPanelRight
 } from './icons'
 import { Tooltip } from './ui/Tooltip'
-import { ECTX_ITEM_CLS as EDITOR_CTX_ITEM_CLS, ECTX_SEP_CLS as EDITOR_CTX_SEP_CLS, EDOT_CLS, EHOST_WRAP_CLS } from '../editor/editorChrome'
-import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
+import { EditorActionGroup, EditorHeaderButton } from './ui/EditorHeaderButton'
+import { EditorDirtyIndicator } from './ui/EditorDirtyIndicator'
+import { EditorContextMenuSeparator } from './ui/EditorContextMenu'
 import { MarkdownPreviewToggle } from './MarkdownPreview'
 import { ICON_ROLE_CLS, Icon } from './ui/Icon'
+
 
 // Dynamic import: CodeMirror plus its grammars is a large chunk that has no
 // business loading before an editor pane actually opens. This keeps this
@@ -31,16 +32,6 @@ const EditorSurfaceBody = lazy(() =>
   import('./EditorSurface').then((m) => ({ default: m.EditorSurfaceBody }))
 )
 
-const ICO_HEAD_BASE =
-  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none [@container_(max-width:280px)]:w-5 [@container_(max-width:280px)]:h-5 [@container_(max-width:200px)]:w-[18px] [@container_(max-width:200px)]:h-[18px] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
-const ICO_HEAD_DANGER =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]'
-const ICO_HEAD_ACCENT =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:text-[color-mix(in_srgb,var(--accent)_75%,var(--text-primary))]'
-const ICO_HEAD_REGULAR =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] hover:text-[var(--text-primary)]'
-const ICO_HEAD_INFO =
-  'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
 const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
 interface Props {
@@ -97,20 +88,20 @@ export function EditorLeaf({
         ) : (
           buf?.dirty && (
             <Tooltip label="Unsaved changes">
-              <span className={EDOT_CLS} />
+              <EditorDirtyIndicator />
             </Tooltip>
           )
         )}
         <Tooltip label={node.path}>
           <PaneTitle>{basename(node.path)}</PaneTitle>
         </Tooltip>
-        <span className="head-actions flex items-center gap-px flex-none ml-auto">
+        <EditorActionGroup>
           {markdownReady && (
-            <MarkdownPreviewToggle mode={mdMode} className="h-[var(--h-ctl-mini)]" onToggle={toggleMarkdownMode} />
+            <MarkdownPreviewToggle mode={mdMode} size="mini" onToggle={toggleMarkdownMode} />
           )}
           <Tooltip label="Split right">
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
+            <EditorHeaderButton
+              tone="accent"
               aria-label="Split right"
               onClick={(e) => {
                 e.stopPropagation()
@@ -118,11 +109,11 @@ export function EditorLeaf({
               }}
             >
               <IconPanelRight className={HEAD_ICON_CLS} />
-            </button>
+            </EditorHeaderButton>
           </Tooltip>
           <Tooltip label="Split down (Ctrl+Shift+D)">
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_ACCENT}`}
+            <EditorHeaderButton
+              tone="accent"
               aria-label="Split down"
               onClick={(e) => {
                 e.stopPropagation()
@@ -130,12 +121,12 @@ export function EditorLeaf({
               }}
             >
               <IconPanelBottom className={HEAD_ICON_CLS} />
-            </button>
+            </EditorHeaderButton>
           </Tooltip>
           {onExpand && (
             <Tooltip label={expanded ? 'Collapse (z)' : 'Expand (z)'}>
-              <button
-                className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${expanded ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
+              <EditorHeaderButton
+                tone={expanded ? 'info' : 'regular'}
                 aria-label={expanded ? 'Collapse' : 'Expand'}
                 aria-pressed={expanded}
                 onClick={(e) => {
@@ -144,30 +135,29 @@ export function EditorLeaf({
                 }}
               >
                 {expanded ? <IconMinimize className={HEAD_ICON_CLS} /> : <IconMaximize className={HEAD_ICON_CLS} />}
-              </button>
+              </EditorHeaderButton>
             </Tooltip>
           )}
           <Tooltip label="Close">
-            <button
-              className={`${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
+            <EditorHeaderButton
+              tone="danger"
               aria-label="Close"
               onClick={onClose}
             >
               <Icon glyph={IconClose} role="ui" />
-            </button>
+            </EditorHeaderButton>
           </Tooltip>
-        </span>
+        </EditorActionGroup>
       </PaneHeader>
-      <Suspense fallback={<div className={EHOST_WRAP_CLS} />}>
+      <Suspense fallback={<div className="flex-1 min-w-0 min-h-0 relative overflow-hidden" />}>
         <EditorSurfaceBody
           surface={surface}
           extraMenuItems={
             <>
-              <div className={EDITOR_CTX_SEP_CLS} />
+              <EditorContextMenuSeparator />
               <OpenInMenu
                 path={node.path}
                 line={surface.viewRef.current?.state.doc.lineAt(surface.viewRef.current.state.selection.main.head).number}
-                itemClass={EDITOR_CTX_ITEM_CLS}
                 onDone={() => surface.setCmMenu(null)}
                 onError={(m) => surface.setError(m)}
               />

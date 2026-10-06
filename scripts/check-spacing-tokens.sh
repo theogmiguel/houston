@@ -17,7 +17,6 @@ BASELINE=(
   "ui/src/renderer/src/components/ui/ActionEmptyState.tsx 2"
   "ui/src/renderer/src/components/FirstRun.tsx 0"
   "ui/src/renderer/src/components/HandoffOverlay.tsx 2"
-  "ui/src/renderer/src/components/markdownPipeline.tsx 1"
   "ui/src/renderer/src/components/McpManager.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 8"
   "ui/src/renderer/src/components/nav/RoutineEditor.tsx 4"

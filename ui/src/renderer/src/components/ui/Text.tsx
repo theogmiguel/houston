@@ -3,7 +3,7 @@ import type { ElementType, HTMLAttributes } from 'react'
 export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
 export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
-export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description'
+export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown'
 
 const SIZE: Record<TextSize, string> = {
   display: '[font-family:var(--tr-text-display-family)] [font-size:var(--tr-text-display-size)]',
@@ -67,7 +67,9 @@ const LEADING: Record<TextLeading, string> = {
   label: 'leading-[var(--tr-text-label-leading)]',
   composer: 'leading-[var(--tr-text-task-leading)]',
   shortcut: 'leading-[var(--tr-text-shortcut-leading)]',
-  'profile-description': 'leading-[var(--tr-text-profile-description-leading)]'
+  'profile-description': 'leading-[var(--tr-text-profile-description-leading)]',
+  markdown: 'leading-relaxed',
+  chatMarkdown: 'leading-[var(--tr-leading-chat-markdown)]'
 }
 
 export interface TextProps extends HTMLAttributes<HTMLElement> {

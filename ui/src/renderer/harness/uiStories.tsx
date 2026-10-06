@@ -146,6 +146,7 @@ import {
   Tooltip,
   TextSpecimen,
   UsageCalendar,
+  Viewport,
   UsageChart,
   UsageModelCell,
   UsageProviderRow,
@@ -160,7 +161,18 @@ import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconMessag
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/ui/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
+import { EditorContextMenu, EditorContextMenuItem, EditorContextMenuSeparator } from '../src/components/ui/EditorContextMenu'
+import { EditorActionGroup, EditorHeaderButton } from '../src/components/ui/EditorHeaderButton'
+import { EditorDirtyIndicator } from '../src/components/ui/EditorDirtyIndicator'
+import { EditorStatus } from '../src/components/ui/EditorSurface'
+import { Prose } from '../src/components/ui/Prose'
+import { MarkdownToggle } from '../src/components/ui/MarkdownToggle'
+import { MarkdownImageAction, MarkdownImageCaption, MarkdownImageFigure, MarkdownImageLabel } from '../src/components/ui/MarkdownImage'
+import { MediaPreviewAudioGroup, MediaPreviewImage, MediaPreviewSurface, PreviewDetail, PreviewName, PreviewState, PreviewTitle } from '../src/components/ui/EditorPreview'
+import { PaneDropIndicator, PaneDropLabel, SplitterAffordance, PaneGridSurface, PaneDragScrim } from '../src/components/ui/PaneDropIndicator'
+import { WindowControlDisc } from '../src/components/ui/WindowControl'
 import { AnimOut } from '../src/components/ui/AnimOut'
+import { DictationAction, DictationSurface, DictationText, MicrophoneStatus } from '../src/components/ui/DictationIndicator'
 import { TILE_AGENT_CLS, TILE_IDLE, URL_INPUT_CLS } from '../src/components/ui'
 import { FileExplorerSpecimen } from '../src/components/ui/FileExplorer'
 import { InspectorBody, InspectorCard, InspectorSurface } from '../src/components/ui/InspectorHeader'
@@ -289,7 +301,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [search, setSearch] = useState('font')
   return (
-    <div
+    <Viewport
       className="ui-primitives-specimen"
       style={{ height: '100%', overflow: 'auto', color: 'var(--text-primary)', background: 'var(--content-bg)' }}
     >
@@ -928,7 +940,45 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <IconTile label="Placeholder tile" />
           </SpecimenRow>
         </SpecimenGroup>
+        <SpecimenGroup heading="Editor, markdown, voice and pane chrome">
+          <section style={{ position: 'relative', overflow: 'hidden' }}>
+            <SpecimenRow>
+              <section className="pane editor-leaf relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border rounded-[var(--tr-radius-md)] bg-[var(--pane-bg)] after:absolute after:inset-0 after:z-[var(--z-base)] after:rounded-[inherit] after:pointer-events-none after:content-['']">
+                <header className="group pane-head touch-none @container flex h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] flex-none items-center gap-2 border-b border-b-[color-mix(in_srgb,var(--divider)_55%,transparent)] pl-[10px] pr-1 text-[length:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] tracking-[-0.005em] text-[var(--text-primary)]">
+                  <EditorDirtyIndicator />
+                  <span className="pane-title min-w-[32px] max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap font-medium tracking-[-0.01em] leading-[1.4]">notes.md</span>
+                  <EditorActionGroup><EditorHeaderButton tone="accent">+</EditorHeaderButton><EditorHeaderButton tone="danger">×</EditorHeaderButton></EditorActionGroup>
+                </header>
+                <EditorStatus>Saved</EditorStatus>
+              </section>
+              <EditorStatus variant="error">File changed on disk</EditorStatus>
+              <MarkdownToggle><Text as="span" size="caption" weight="label" caps>Preview</Text></MarkdownToggle>
+              <DictationSurface><DictationText>dictated text</DictationText><DictationAction tone="insert">Insert</DictationAction></DictationSurface>
+              <MicrophoneStatus listening={false}>●</MicrophoneStatus>
+              <MicrophoneStatus listening>●</MicrophoneStatus>
+              <PaneGridSurface className="absolute inset-0" />
+              <PaneDragScrim />
+              <PaneDropIndicator className="inset-0"><PaneDropLabel>Stack</PaneDropLabel></PaneDropIndicator>
+              <SplitterAffordance className="w-2" />
+              <WindowControlDisc tone="regular">□</WindowControlDisc>
+              <WindowControlDisc tone="close">×</WindowControlDisc>
+            </SpecimenRow>
+            <SpecimenRow>
+              <Prose variant="editor"><h2>Editor prose</h2><p>Paragraph with <code>inline code</code>.</p></Prose>
+              <Prose variant="chat"><p>Chat prose with <code>inline code</code>.</p></Prose>
+              <div className="max-w-sm">
+                <EditorContextMenu><EditorContextMenuItem shortcut="Ctrl+C">Copy</EditorContextMenuItem><EditorContextMenuItem shortcut="Ctrl+V">Paste</EditorContextMenuItem><EditorContextMenuSeparator /></EditorContextMenu>
+              </div>
+            </SpecimenRow>
+            <SpecimenRow>
+              <MarkdownImageFigure className="w-80"><div className="h-32 w-full bg-[var(--tool-code-bg)]" /><MarkdownImageCaption><MarkdownImageLabel>image.png</MarkdownImageLabel><MarkdownImageAction>Open</MarkdownImageAction></MarkdownImageCaption></MarkdownImageFigure>
+              <div className="relative h-40 w-72"><PreviewState><PreviewTitle>Preview unavailable</PreviewTitle><PreviewName>diagram.png</PreviewName><PreviewDetail>Open this file externally.</PreviewDetail></PreviewState></div>
+              <div className="relative h-40 w-64"><MediaPreviewSurface><MediaPreviewImage alt="preview sample" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" /></MediaPreviewSurface></div>
+              <MediaPreviewAudioGroup><PreviewName>audio.wav</PreviewName></MediaPreviewAudioGroup>
+            </SpecimenRow>
+          </section>
+        </SpecimenGroup>
       </div>
-    </div>
+    </Viewport>
   )
 }

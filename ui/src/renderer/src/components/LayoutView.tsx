@@ -7,6 +7,7 @@ import type { HandoffSource } from './PaneHandoff'
 import { SurfaceBoundary } from './SurfaceBoundary'
 import type { RegisterOutput } from '../pane/TerminalPane'
 import { EditorLeaf } from './EditorLeaf'
+import { PaneDragScrim, PaneDropIndicator, PaneDropLabel, PaneGridSurface, PaneSlot, SplitterAffordance } from './ui/PaneDropIndicator'
 
 // Heavy panes no grid opens on launch stay behind `lazy()` to stay off the boot
 // chunk; `bundle-budget.json` names them so a static import fails with a cause.
@@ -165,34 +166,25 @@ function PaneDragOverlay({
 }): React.JSX.Element | null {
   if (source) {
     return (
-      <div
+      <PaneDragScrim
         data-testid="pane-drag-scrim"
-        className="absolute inset-0 z-[calc(var(--z-pane)+3)] pointer-events-none bg-overlay"
         aria-hidden="true"
       />
     )
   }
   if (drop === null) return null
   return (
-    <div
+    <PaneDropIndicator
       data-testid="pane-dropzone"
       data-side={drop.side}
-      className={`dropzone ${DZ_RECT[drop.side]} absolute z-[calc(var(--z-pane)+1)] flex items-center justify-center pointer-events-none border-2 border-dashed [border-color:var(--accent)] rounded-[var(--tr-radius-md)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] motion-safe:[animation:term-enter_var(--animate-t-fast)_var(--animate-ease-panel)]`}
+      className={DZ_RECT[drop.side]}
       aria-hidden="true"
     >
-      {}
-      <span
-        className="inline-flex items-center h-[var(--h-pill)] px-2 whitespace-nowrap rounded-[var(--tr-radius-sm)] bg-[var(--accent)] text-white [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] shadow-[var(--shadow-2)]"
-      >
+      <PaneDropLabel>
         {drop.stack ? 'Stack' : DZ_LABEL[drop.side]}
-      </span>
-    </div>
+      </PaneDropLabel>
+    </PaneDropIndicator>
   )
-}
-
-const SPLITTER_CLASS: Record<'row' | 'col', string> = {
-  row: 'w-2 -translate-x-1 cursor-col-resize after:w-px after:mx-auto',
-  col: 'h-2 -translate-y-1 cursor-row-resize after:h-px after:my-auto'
 }
 
 const SPLITTER_KEY_STEP = 0.04
@@ -676,9 +668,11 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
     <ExpandedContext.Provider value={props.expandedId}>
     <GridHiddenContext.Provider value={gridHidden}>
       <WarmContext.Provider value={warm}>
-    <div
+    <PaneGridSurface
       {...materialAttrs('shell')}
-      className={`layout relative flex-1 min-h-0 overflow-hidden bg-[var(--gutter-bg)] ${dragKey !== null ? 'dragging cursor-grabbing' : ''} ${resizing ? 'resizing' : ''}`}
+      dragging={dragKey !== null}
+      resizing={resizing}
+      className="relative flex-1 min-h-0 overflow-hidden"
       ref={containerRef}
     >
       {orderedLeaves.map(({ node, rect }) => {
@@ -721,10 +715,10 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
             })
           }
           return (
-            <div
+            <PaneSlot
+              column={false}
               key={node.id}
               data-testid="stack-slot"
-              className="pane-slot absolute flex flex-col overflow-hidden @container"
               style={style}
             >
               <StackTabs
@@ -759,15 +753,16 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
                 })}
               </div>
               <PaneDragOverlay drop={slotDrop} source={false} />
-            </div>
+            </PaneSlot>
           )
         }
         if (node.kind === 'browser') {
           const browserCollapsed = props.expandedId != null && !isExpandedLeaf
           return (
-            <div
+            <PaneSlot
+              column={false}
               key={node.id}
-              className={`pane-slot absolute flex overflow-hidden @container ${dragSrcCls} ${growCls}`}
+              className={`${dragSrcCls} ${growCls}`}
               style={style}
             >
               {renderPaneBody(node, {
@@ -781,14 +776,15 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
                 dropzoneActive: dragKey !== null
               })}
               <PaneDragOverlay drop={slotDrop} source={dragKey === key} />
-            </div>
+            </PaneSlot>
           )
         }
         if (node.kind === 'editor') {
           return (
-            <div
+            <PaneSlot
+              column={false}
               key={node.id}
-              className={`pane-slot absolute flex overflow-hidden @container ${dragSrcCls} ${growCls}`}
+              className={`${dragSrcCls} ${growCls}`}
               style={style}
             >
               {renderPaneBody(node, {
@@ -800,14 +796,15 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
                 }
               })}
               <PaneDragOverlay drop={slotDrop} source={dragKey === key} />
-            </div>
+            </PaneSlot>
           )
         }
         if (node.kind === 'files') {
           return (
-            <div
+            <PaneSlot
+              column={false}
               key={node.id}
-              className={`pane-slot absolute flex overflow-hidden @container ${dragSrcCls} ${growCls}`}
+              className={`${dragSrcCls} ${growCls}`}
               style={style}
             >
               {renderPaneBody(node, {
@@ -819,14 +816,14 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
                 }
               })}
               <PaneDragOverlay drop={slotDrop} source={dragKey === key} />
-            </div>
+            </PaneSlot>
           )
         }
         if (node.kind === 'skills') {
           return (
-            <div
+            <PaneSlot
               key={node.id}
-              className={`pane-slot absolute flex overflow-hidden @container ${dragSrcCls} ${growCls}`}
+              className={`${dragSrcCls} ${growCls}`}
               style={style}
             >
               {renderPaneBody(node, {
@@ -838,15 +835,16 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
                 }
               })}
               <PaneDragOverlay drop={slotDrop} source={dragKey === key} />
-            </div>
+            </PaneSlot>
           )
         }
         if (node.kind !== 'leaf') return null
         if (!sessions.get(node.session)) return null
         return (
-          <div
+          <PaneSlot
+            column={false}
             key={node.session}
-            className={`pane-slot absolute flex overflow-hidden ${dragSrcCls} ${growCls}`}
+            className={`${dragSrcCls} ${growCls}`}
             style={style}
           >
             {renderPaneBody(node, {
@@ -859,13 +857,14 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
               onSessionHeaderPointerDown: handleHeaderPointerDown
             })}
             <PaneDragOverlay drop={slotDrop} source={dragKey === key} />
-          </div>
+          </PaneSlot>
         )
       })}
       {props.expandedId == null && !gridHidden && splitters.map((sp, i) => (
-        <div
+        <SplitterAffordance
           key={`sp-${sp.path.join('.')}-${sp.index}-${i}`}
-          className={`splitter ${SPLITTER_CLASS[sp.dir]} absolute z-[var(--z-pane)] touch-none bg-transparent focus-visible:outline-none after:content-[''] after:absolute after:inset-0 after:rounded-[1px] after:bg-transparent motion-safe:after:[transition:background-color_0.1s_ease-out] focus-visible:after:bg-[var(--text-faint)] data-[dragging]:after:bg-[var(--text-faint)] ${dragKey !== null ? 'pointer-events-none' : ''}`}
+          axis={sp.dir}
+          dragging={dragKey !== null}
           style={{
             left: `${sp.rect.x}%`,
             top: `${sp.rect.y}%`,
@@ -891,7 +890,7 @@ function LayoutViewImpl(props: Props): React.JSX.Element {
           <LaunchGridPreview tree={tree} slots={props.launchPreview.slots} target={props.launchPreview.target} sessions={sessions} />
         </Suspense>
       )}
-    </div>
+    </PaneGridSurface>
       </WarmContext.Provider>
     </GridHiddenContext.Provider>
     </ExpandedContext.Provider>
