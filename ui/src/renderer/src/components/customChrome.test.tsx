@@ -120,7 +120,7 @@ describe('every chrome theme cuts its own custom ground', () => {
     expect(read('ChangesPane.tsx')).toContain('<GitChangesSurface')
     expect(read('ui/Changes.tsx')).toMatch(/function GitChangesSurface[^\n]*\n[^\n]*MATERIAL_CLS\.shell/)
     expect(MATERIAL_CLS.shell).toBe('bg-[var(--material-shell-bg)]')
-    expect(read('SessionPane.tsx')).toMatch(/<PaneFrame\n\s*kind="session"/)
+    expect(read('SessionPane.tsx')).toMatch(/<PaneFrame\s+kind="session"/)
     expect(kindGround('session')).toContain('bg-[var(--terminal-frame-bg)]')
     expect(kindGround('session')).not.toContain('bg-[var(--pane-bg)]')
   })
