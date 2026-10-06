@@ -1250,13 +1250,12 @@ export function TerminalPane({
       } catch {
       }
     }
-    paint(false)
     wakeRepaintRef.current.raf = requestAnimationFrame(() => {
       wakeRepaintRef.current.raf = null
       paint()
     })
     if (singleFrame) return
-    paint()
+    paint(false)
     wakeRepaintRef.current.timers = WAKE_REPAINT_DELAYS_MS.map((ms) => setTimeout(paint, ms))
   }
 
