@@ -324,7 +324,7 @@ function VoiceCaptureGroup({
         desc={`${effectiveLabel(dictationShortcut, keymapOverrides)} while a terminal has focus. Rebind it in Shortcuts.`}
       >
         <Button type="button" variant="legacy-ghost" onClick={() => setSettingsSection('shortcuts')}>
-            Open Shortcuts
+            Open shortcuts
         </Button>
       </Row>
       <Row

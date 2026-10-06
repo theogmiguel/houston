@@ -531,7 +531,7 @@ function WorkspaceContextMenu({
             }}
           >
             <Icon glyph={IconPlus} role="ui" />
-            <span>New Grid</span>
+            <span>New grid</span>
           </ContextMenuItem>
         )}
         <ContextMenuItem
@@ -543,7 +543,7 @@ function WorkspaceContextMenu({
           }}
         >
           <Icon glyph={IconPencil} role="ui" />
-          <span>Rename Workspace</span>
+          <span>Rename workspace</span>
           <kbd>F2</kbd>
         </ContextMenuItem>
         <ContextMenuItem
@@ -557,7 +557,7 @@ function WorkspaceContextMenu({
           }}
         >
           <Icon glyph={IconPin} role="ui" />
-          <span>{menu.pinned ? "Unpin Workspace" : "Pin Workspace"}</span>
+          <span>{menu.pinned ? "Unpin workspace" : "Pin workspace"}</span>
         </ContextMenuItem>
         <ContextMenuItem
 
@@ -573,7 +573,7 @@ function WorkspaceContextMenu({
         </ContextMenuItem>
         <OpenInMenu
           path={menu.path}
-          label="Open Workspace In"
+          label="Open workspace in"
           icon={<Icon glyph={IconCodeXml} role="ui" />}
           itemClass="ctx-item"
           onDone={onClose}
@@ -589,7 +589,7 @@ function WorkspaceContextMenu({
           }}
         >
           <Icon glyph={IconClose} role="ui" />
-          <span>Remove Workspace</span>
+          <span>Remove workspace</span>
           <kbd>Ctrl+Shift+W</kbd>
         </ContextMenuItem>
       </ContextMenuItems>

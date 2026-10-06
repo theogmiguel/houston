@@ -232,7 +232,7 @@ export function DiagnosticsSection({
                         data-testid="settings-diagnostics-open-hooks"
                         onClick={onOpenHooks}
                       >
-                        Open Agent setup
+                        Open agent setup
                       </Button>
                     </Stack>
                   </>
