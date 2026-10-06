@@ -336,10 +336,9 @@ const TASK_SUMMARY_SELECT: &str = "SELECT t.id, t.workspace, t.number, t.title, 
 /// criterion: a task with one is not ready until the item is rewritten.
 pub const OPEN_QUESTION_MARKER: &str = "[?]";
 
-/// The SQL fragment every filtered query shares, the readiness rule of
-/// `Daemon::task_readiness_gaps`: a to-do task with a workspace, at least one
-/// acceptance criterion (a Slack-filed task's triage writes its own), no open
-/// question and no unfinished blocker.
+/// The readiness rule of `Daemon::task_readiness_gaps` in SQL: to-do, a
+/// workspace, a criterion (a Slack-filed task's triage writes its own), no
+/// open question and no unfinished blocker.
 const READY_CLAUSE: &str = "t.status = 'todo' AND t.workspace IS NOT NULL
     AND NOT EXISTS (SELECT 1 FROM backlog_task_acceptance q
         WHERE q.task_id = t.id AND substr(q.text, 1, 3) = '[?]')

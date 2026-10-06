@@ -2516,10 +2516,9 @@ impl Daemon {
         })
     }
 
-    /// What the task still lacks to be ready, as phrases a refusal lists: a
-    /// workspace, an acceptance criterion, answers to its open questions
-    /// (acceptance items starting with `[?]`) and its unfinished blockers.
-    /// Empty means ready; `READY_CLAUSE` is the same rule in SQL.
+    /// What the task lacks to be ready (workspace, criterion, answers to `[?]`
+    /// items, finished blockers), as a refusal lists it; empty means ready.
+    /// `READY_CLAUSE` is the same rule in SQL.
     pub fn task_readiness_gaps(&self, row: &TaskRow, has_workspace: bool) -> Result<Vec<String>> {
         let mut gaps = Vec::new();
         if !has_workspace {
