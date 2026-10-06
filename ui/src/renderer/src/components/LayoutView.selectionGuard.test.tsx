@@ -164,7 +164,8 @@ describe('selection guard CSS', () => {
 
   it('turns user-select off for the drag class and for pane headers and the terminal host', () => {
     expect(css).toMatch(new RegExp(`html\\.${PANE_DRAG_CLASS}\\s*\\*[^{]*\\{[^}]*user-select:\\s*none\\s*!important`))
-    expect(css).toMatch(/\.pane-head[^{]*\{[^}]*user-select:\s*none/)
+    const header = readFileSync(join(__dirname, 'ui', 'PaneHeader.tsx'), 'utf8')
+    expect(header).toMatch(/className=\{`group pane-head [^`]*\bselect-none\b[^`]*\[&_input\]:select-text/)
     const chrome = readFileSync(join(__dirname, 'ui', 'TerminalHost.tsx'), 'utf8')
     const hostStyles = readFileSync(join(__dirname, 'ui', 'TerminalHost.css'), 'utf8')
     expect(chrome).toMatch(/className="term-host /)

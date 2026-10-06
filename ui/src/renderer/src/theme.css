@@ -101,6 +101,9 @@
   --w-usage-hero: 17rem;
   --w-switch-track: 30px;
   --h-switch-track: 17px;
+  --h-settings-switch: 20px;
+  --h-chip-dismiss: 16px;
+  --h-picker-row: 30px;
   --w-switch-knob: 11px;
   --space-switch-inset: 2px;
   --space-switch-travel: 13px;
@@ -593,6 +596,9 @@
   --w-usage-hero: 17rem;
   --w-switch-track: 30px;
   --h-switch-track: 17px;
+  --h-settings-switch: 20px;
+  --h-chip-dismiss: 16px;
+  --h-picker-row: 30px;
   --w-switch-knob: 11px;
   --space-switch-inset: 2px;
   --space-switch-travel: 13px;
@@ -1065,6 +1071,9 @@
   --space-footnote-top: 10px;
   --w-switch-track: 30px;
   --h-switch-track: 17px;
+  --h-settings-switch: 20px;
+  --h-chip-dismiss: 16px;
+  --h-picker-row: 30px;
   --space-switch-thumb-inset: 2px;
   --sz-switch-thumb: 11px;
   --space-switch-thumb-shift: 13px;

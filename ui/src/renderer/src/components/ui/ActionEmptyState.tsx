@@ -12,8 +12,9 @@ const SIZE = {
     description:
       'max-w-[52ch] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[1.65]',
     action:
-      'h-9 mt-[var(--space-2)] px-[var(--space-5)] [font-size:var(--tr-text-ui-size)] ' +
-      '[font-weight:var(--tr-text-ui-weight)]'
+      'h-9 px-[var(--space-5)] [font-size:var(--tr-text-ui-size)] ' +
+      '[font-weight:var(--tr-text-ui-weight)]',
+    actionInset: 'pt-[var(--space-2)]'
   },
   compact: {
     root: 'gap-[var(--space-2)] px-[var(--space-4)]',
@@ -25,8 +26,9 @@ const SIZE = {
       'max-w-[36ch] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] ' +
       'leading-[var(--tr-text-small-leading)]',
     action:
-      'h-[var(--h-ctl)] mt-[var(--space-1)] px-[var(--space-3)] [font-size:var(--tr-text-small-size)] ' +
-      '[font-weight:var(--tr-text-small-weight)]'
+      'h-[var(--h-ctl)] px-[var(--space-3)] [font-size:var(--tr-text-small-size)] ' +
+      '[font-weight:var(--tr-text-small-weight)]',
+    actionInset: 'pt-[var(--space-1)]'
   }
 } as const
 
@@ -104,7 +106,7 @@ export function EmptyState({
           {description}
         </p>
       )}
-      <Tooltip label={title} className="inline-flex">
+      <Tooltip label={title} className={`inline-flex ${step.actionInset}`}>
         <button
           type="button"
           data-testid={actionTestId}

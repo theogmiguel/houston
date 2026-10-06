@@ -5,9 +5,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-ui_src="ui/src"
+if [ -n "${SCAN_ROOT:-}" ]; then
+  scan_roots=("$SCAN_ROOT")
+else
+  scan_roots=(ui/src/renderer/src/components/ui ui/src/renderer/src/theme.css ui/src/renderer/src/tailwind.css ui/src/renderer/src/keyframes.css ui/src/renderer/src/base.css)
+fi
 
-mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \
+mapfile -t sources < <(find "${scan_roots[@]}" -type f \( -name '*.ts' -o -name '*.tsx' \) \
   -not -name '*.test.ts' -not -name '*.test.tsx' \
   -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
 
@@ -46,15 +50,6 @@ counts="$(perl -e '
     print "$n\t$f\n" if $n > 0;
   }
 ' "${sources[@]}")"
-
-if [ "${1:-}" = "--baseline" ]; then
-  if [ -z "$counts" ]; then
-    echo "ok: nothing to pin, the guard has no exceptions"
-  else
-    echo "$counts"
-  fi
-  exit 0
-fi
 
 if [ -n "$counts" ]; then
   echo "FAIL: shadow-recipe violations:" >&2

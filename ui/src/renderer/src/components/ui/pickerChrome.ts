@@ -13,4 +13,4 @@ export const TILE_SELECTED =
 export const TILE_IDLE = 'border-[var(--border)] bg-[var(--card-bg)] hover:border-[var(--text-faint)]'
 
 export const TILE_AGENT_CLS =
-  'flex h-[30px] items-center gap-[9px] rounded-[var(--tr-radius-button)] pl-[10px] pr-[8px]'
+  'flex h-[var(--h-picker-row)] items-center gap-[9px] rounded-[var(--tr-radius-button)] pl-[10px] pr-[8px]'

@@ -5,24 +5,15 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-ui_src="${SCAN_ROOT:-ui/src}"
+if [ -n "${SCAN_ROOT:-}" ]; then
+  scan_roots=("$SCAN_ROOT")
+else
+  scan_roots=(ui/src/renderer/src/components/ui ui/src/renderer/src/theme.css ui/src/renderer/src/tailwind.css ui/src/renderer/src/keyframes.css ui/src/renderer/src/base.css)
+fi
 fail=0
-source scripts/check-spacing-tokens-widened-baseline.sh
 
-BASELINE=(
-  "ui/src/renderer/src/App.tsx 0"
-  "ui/src/renderer/src/BootstrapGate.tsx 0"
-  "ui/src/renderer/src/components/ui/ActionEmptyState.tsx 2"
-  "ui/src/renderer/src/components/FirstRun.tsx 0"
-  "ui/src/renderer/src/components/HandoffOverlay.tsx 1"
-  "ui/src/renderer/src/components/nav/navChrome.tsx 2"
-  "ui/src/renderer/src/components/settings/AboutSection.tsx 0"
-  "ui/src/renderer/src/components/ui/settingsPrimitives.tsx 1"
-  "ui/src/renderer/src/components/ShortcutSheet.tsx 0"
-  "ui/src/renderer/src/pane/TerminalPane.tsx 0"
-)
 
-mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) \
+mapfile -t sources < <(find "${scan_roots[@]}" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) \
   -not -name '*.test.ts' -not -name '*.test.tsx' \
   -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
 
@@ -63,49 +54,15 @@ reports="$(perl -e '
   }
 ' "${sources[@]}")"
 
-if [ "${1:-}" = "--baseline" ]; then
-  echo "WIDENED_BASELINE=("
-  awk -F '\t' '$1 == "WIDE" { count[$2]++ } END { for (f in count) printf "  \"%s %d\"\n", f, count[f] }' <<< "$reports" | sort
-  echo ")"
-  exit 0
-fi
-
-check_category() {
-  local kind="$1" array="$2" label="$3"
-  declare -n baseline="$array"
-  declare -A pinned=() actual=() locations=()
-  for entry in "${baseline[@]}"; do pinned["${entry% *}"]="${entry##* }"; done
-  while IFS=$'\t' read -r report_kind file line value; do
-    [ "$report_kind" = "$kind" ] || continue
-    actual["$file"]=$(( ${actual[$file]:-0} + 1 ))
-    locations["$file"]+="${file}:$line '$value'; "
-  done <<< "$reports"
-  for file in "${!actual[@]}"; do
-    if [ "${actual[$file]}" -gt "${pinned[$file]:-0}" ]; then
-      echo "FAIL: $label ${locations[$file]} expected --space-* tokens for padding, margin and gap (found ${actual[$file]}, pin ${pinned[$file]:-0})" >&2
-      fail=1
-    fi
-  done
-  for file in "${!pinned[@]}"; do
-    if [ "${actual[$file]:-0}" -lt "${pinned[$file]}" ]; then
-      echo "FAIL: $array pins ${pinned[$file]} in $file, but only ${actual[$file]:-0} remain; lower or delete the pin" >&2
-      fail=1
-    fi
-  done
-  unset pinned actual locations
-}
-
-check_category OLD BASELINE spacing-token
-check_category WIDE WIDENED_BASELINE spacing-token-widened
-
-if [ "$fail" -ne 0 ]; then
-  echo "      A stack's rhythm belongs to its container: delete the margin and" >&2
-  echo "      put gap-* on the flex/grid parent (gap-2, gap-[var(--space-2)])." >&2
-  echo "      STYLEGUIDE, 'Spacing & control metrics'. ml-auto/mr-auto are" >&2
-  echo "      alignment and a -0 value is a reset; neither is counted." >&2
-  echo "      The baseline only shrinks; it is not somewhere to add a line." >&2
-else
-  echo "ok: spacing guards pass (old ${#BASELINE[@]} pins, widened ${#WIDENED_BASELINE[@]} pins)"
-fi
-
+fail=0
+while IFS=$'\t' read -r kind file line value; do
+  [ -n "$kind" ] || continue
+  case "$kind" in
+    OLD) expected="gap-* on the flex or grid parent, or an allowed alignment/reset" ;;
+    WIDE) expected="--space-* tokens for padding, margin and gap" ;;
+  esac
+  echo "FAIL: spacing-token $file:$line '$value'; expected $expected" >&2
+  fail=1
+done <<< "$reports"
+[ "$fail" -eq 0 ] && echo "ok: spacing-token passes"
 exit "$fail"

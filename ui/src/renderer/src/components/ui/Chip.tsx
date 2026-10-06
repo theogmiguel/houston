@@ -111,7 +111,7 @@ export function Chip({
                 e.stopPropagation()
                 onRemove?.()
               }}
-              className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[16px] w-[16px] rounded-full hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
+              className={`border-0 bg-transparent flex-none inline-flex items-center justify-center h-[var(--h-chip-dismiss)] w-[var(--h-chip-dismiss)] rounded-full hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed ${HIT_TARGET_28}`}
             >
               <Icon glyph={IconClose} role="label" />
             </button>

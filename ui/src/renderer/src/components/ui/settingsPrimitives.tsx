@@ -22,7 +22,7 @@ export function Toggle({
       aria-checked={on}
       disabled={disabled}
       data-testid={testId}
-      className={`btn sw relative w-[36px] h-[20px] rounded-full border-0 p-0 flex-none cursor-pointer disabled:opacity-50 disabled:cursor-default [transition:background_0.18s_ease] ${HIT_TARGET_28} ${
+      className={`btn sw relative w-[36px] h-[var(--h-settings-switch)] rounded-full border-0 p-0 flex-none cursor-pointer disabled:opacity-50 disabled:cursor-default [transition:background_0.18s_ease] ${HIT_TARGET_28} ${
         on ? 'on bg-primary' : 'bg-[var(--border)]'
       }`}
       onClick={() => onChange(!on)}
@@ -175,7 +175,7 @@ export function Row({
           <Tooltip label={variant === 'list' && typeof desc === 'string' ? desc : undefined}>
             <div
               data-testid="settings-row-desc"
-              className={`mt-[2px] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] ${
+              className={`pt-[var(--space-0-5)] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] ${
                 variant === 'list'
                   ? typeof desc === 'string'
                     ? 'max-w-[58ch] whitespace-normal break-words'

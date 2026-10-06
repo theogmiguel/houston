@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-
-TITLE_CASE_BASELINE=(
-)
-
-COUNT_BASELINE=()
-BANNED_STATUS_BASELINE=()

@@ -5,22 +5,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-ui_src="ui/src"
+ui_src="${SCAN_ROOT:-ui/src}"
 chrome_owner="ui/src/renderer/src/components/ui/buttonChrome.ts"
-
-PRIVATE_DECL_ALLOWLIST=()
-BARE_ALLOWLIST=(
-)
-
-is_allowlisted() {
-  local needle="$1"
-  shift
-  local x
-  for x in "$@"; do
-    [ "$x" = "$needle" ] && return 0
-  done
-  return 1
-}
 
 mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \
   -not -name '*.test.ts' -not -name '*.test.tsx' \
@@ -59,68 +45,13 @@ report="$(perl -e '
 ' "$chrome_owner" "${sources[@]}")"
 
 fail=0
-shadow_hit_files=()
-bare_hit_files=()
-
-if [ -n "$report" ]; then
-  shadow_lines="$(grep -P '^shadow\t' <<< "$report" || true)"
-  bare_lines="$(grep -P '^bare\t' <<< "$report" || true)"
-
-  new_shadow=()
-  while IFS=$'\t' read -r _ f name; do
-    [ -z "$f" ] && continue
-    if is_allowlisted "$f" "${PRIVATE_DECL_ALLOWLIST[@]}"; then
-      shadow_hit_files+=("$f")
-    else
-      new_shadow+=("$f -- declares its own $name")
-    fi
-  done <<< "$shadow_lines"
-
-  new_bare=()
-  while IFS=$'\t' read -r _ f name; do
-    [ -z "$f" ] && continue
-    if is_allowlisted "$f" "${BARE_ALLOWLIST[@]}"; then
-      bare_hit_files+=("$f")
-    else
-      new_bare+=("$f -- \${$name} with no 'btn' in the same class string")
-    fi
-  done <<< "$bare_lines"
-
-  if [ "${#new_shadow[@]}" -gt 0 ]; then
-    fail=1
-    echo "FAIL: private BTN_* declarations outside buttonChrome.ts:" >&2
-    printf '  %s\n' "${new_shadow[@]}" >&2
-    echo "      Import the shared constant from components/ui/buttonChrome.ts instead." >&2
-  fi
-
-  if [ "${#new_bare[@]}" -gt 0 ]; then
-    fail=1
-    echo "FAIL: overlay button constant used without the base 'btn' class:" >&2
-    printf '  %s\n' "${new_bare[@]}" >&2
-    echo "      An overlay constant (BTN_PRIMARY, BTN_DANGER_SOLID, BTN_GHOST and its" >&2
-    echo "      two danger-cue variants) is a documented overlay on '.btn' (border" >&2
-    echo "      width/style, padding, font, radius) — without it the override has" >&2
-    echo "      nothing to override. Add 'btn' to the class string." >&2
-  fi
-fi
-
-for f in "${PRIVATE_DECL_ALLOWLIST[@]}"; do
-  if ! is_allowlisted "$f" "${shadow_hit_files[@]}"; then
-    fail=1
-    echo "FAIL: stale PRIVATE_DECL_ALLOWLIST entry, no longer violates: $f" >&2
-    echo "      Remove it from scripts/check-button-recipes.sh." >&2
-  fi
-done
-for f in "${BARE_ALLOWLIST[@]}"; do
-  if ! is_allowlisted "$f" "${bare_hit_files[@]}"; then
-    fail=1
-    echo "FAIL: stale BARE_ALLOWLIST entry, no longer violates: $f" >&2
-    echo "      Remove it from scripts/check-button-recipes.sh." >&2
-  fi
-done
-
-if [ "$fail" -ne 0 ]; then
-  exit 1
-fi
-
-echo "ok: no button-recipe violations"
+while IFS=$'\t' read -r kind file name; do
+  [ -z "$kind" ] && continue
+  case "$kind" in
+    shadow) echo "FAIL: button-recipe $file declares $name; expected shared recipes from components/ui/buttonChrome.ts" >&2 ;;
+    bare) echo "FAIL: button-recipe $file uses overlay constant $name without 'btn'; expected the base class in the same class string" >&2 ;;
+  esac
+  fail=1
+done <<< "$report"
+[ "$fail" -eq 0 ] && echo "ok: no button-recipe violations"
+exit "$fail"

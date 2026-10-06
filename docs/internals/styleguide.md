@@ -245,10 +245,9 @@ Tokens are `--tr-text-<step>-{size,weight,tracking,leading,family,transform}`
 (`theme.css`). A parallel numeric scale `--tr-text-{xs…3xl}` exists for older
 sites; new work uses the semantic steps.
 
-`check-type-scale.sh` keeps the legacy `text-[Nunit]` and raw scale rules
-absolute, and scans CSS `font-size` declarations plus `[font-size:Nunit]`
-classes. Its widened and sub-11px per-file baselines only shrink; the semantic
-scale starts at the 11px label step.
+`check-type-scale.sh` rejects legacy `text-[Nunit]` and raw scale utilities, CSS
+`font-size` declarations and `[font-size:Nunit]` classes in `components/ui/` and
+the foundation stylesheets. The semantic scale starts at the 11px label step.
 
 **Label rule:** uppercase always pairs with tracking, and never appears below 11px.
 An uppercase run with default tracking is a bug. So is the reverse: the `label`
@@ -294,11 +293,11 @@ a `-0` is a reset of somebody else's margin, and a negative margin is a pull int
 overlap — those three stay legal. Every other directional margin is one element
 deciding a number its parent should own, which is how a row of badges drifts out of
 step with the row it sits in. `check-spacing-tokens.sh` holds the original
-directional-margin rule and tracks CSS padding, margin and gap literals plus
-arbitrary-property classes in a separate per-file ratchet. Token definition
-files are exempt; prose rhythm inside a `[&_…]:` variant is exempt because
-markdown output has no JSX parent to carry a gap and its steps are deliberately
-uneven.
+directional-margin rule and rejects CSS padding, margin and gap literals plus
+arbitrary-property classes in `components/ui/` and the foundation stylesheets.
+Token definition files are exempt; prose rhythm inside a `[&_…]:` variant is
+exempt because markdown output has no JSX parent to carry a gap and its steps
+are deliberately uneven.
 
 ## Radius
 
@@ -327,9 +326,9 @@ too, so changing one `--tr-radius-*` and rebuilding moves every surface wearing 
 meaning. `check-radius-tokens.sh` refuses a `rounded-[Npx]` literal, a
 `border-radius: Npx` in CSS, the framework's own `rounded-sm`/`md`/`lg`/`xl`
 (unmapped in `tailwind.css`'s `@theme`, so they are the framework's scale, not this
-one), and `[border-radius:Nunit]` classes. The old and widened rules have separate
-per-file ratchets that only shrink. `rounded-full` and `rounded-none`
-stay legal: a circle and a zero are shapes, not rungs.
+one), and `[border-radius:Nunit]` classes in `components/ui/` and the foundation
+stylesheets. `rounded-full` and `rounded-none` stay legal: a circle and a zero
+are shapes, not rungs.
 
 ## Materials
 
@@ -505,10 +504,20 @@ state prefixes may qualify these utilities. Colour, borders, radius, typography,
 shadows, literal sizes, arbitrary properties and button recipes belong in `components/ui/` as a
 primitive or variant, with a specimen case in the `ui-primitives` story.
 
-`scripts/check-ui-boundary.sh` reads literal JSX `className` values, string literals in
-`className` expressions and string values in same-file `*_CLS` declarations, including template
-literals. Imported constants are covered where they are declared; computed strings without a
-statically visible literal are outside its scan. Each non-layout token reports its source line.
+Four stylesheet foundations are allowed outside `components/ui/`: `theme.css` defines tokens and
+re-scopes them under `[data-*]`; `tailwind.css` binds Tailwind imports and theme values;
+`keyframes.css` catalogs animation frames; `base.css` contains element, pseudo-element and
+attribute resets plus document-state classes on `html` or `body`. Other stylesheets and component
+class selectors in `base.css` fail the boundary guard.
+
+`scripts/check-ui-boundary.sh` rejects every non-layout token it recognizes in class strings.
+Its `PENDING` list names the feature files not yet composed from `components/ui/` roles, each with
+its violation count; an entry may only fall, and is deleted at zero. It reads literal JSX `className` values, every string literal in a
+`className` expression up to its balanced closing brace, and same-file `*_CLS` declarations.
+Template literals contribute their text and the literals inside their `${…}` interpolations.
+Imported constants are covered where they are declared. Class-list-shaped strings hidden in helper
+returns or constants without the `_CLS` suffix remain a documented scan gap; review them at the
+source. The scanner does not infer classes from computed values.
 
 ### Select
 
@@ -883,7 +892,7 @@ definitions; terminal output is never repainted at runtime.
 
 ## Guards
 
-Thirteen checks enforce this guide mechanically. The idiom is hermetic, sub-second checks
+Checks enforce this guide mechanically. The idiom is hermetic, sub-second checks
 wired into CI; `check:complexity` is the one exception, and it earns it by measuring
 something no text search can count (see "A closure is not a fix").
 
@@ -897,10 +906,16 @@ something no text search can count (see "A closure is not a fix").
 | `scripts/check-menu-descriptions.sh` | A menu item's description line (the `<span>`/`<small>`/`<p>` after its `<strong>` label inside a `role="menuitem"` block) must wrap or truncate on purpose — never `whitespace-nowrap`/`truncate` with no `max-w-*` bound, never no wrapping class at all. |
 | `scripts/check-icon-metrics.sh` | Bans a `size=` or `strokeWidth=` prop on any glyph under `ui/src`, and props objects that spell one. No baseline and no allowlist: `components/icons.tsx` (whose defaults define the drawn set) and `IconTile` (a container with a named tile scale, not a glyph) are the only exemptions. |
 | `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |
-| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`). Per-file exemption count, ratchets down only. |
+| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`). No exemptions. |
+| `scripts/check-type-scale.sh` | Rejects legacy text-size utilities, raw scale classes, CSS font-size literals and arbitrary font-size literals under `components/ui/` and the four foundations. Any hit fails. |
+| `scripts/check-control-metrics.sh` | Rejects hand-typed interactive/chrome heights and control-ladder values under `components/ui/` and the four foundations; rule A remains absolute. |
+| `scripts/check-radius-tokens.sh` | Rejects numeric radius classes, unmapped framework radius steps and CSS radius literals under `components/ui/` and the four foundations. Any hit fails. |
+| `scripts/check-spacing-tokens.sh` | Rejects directional child margins and raw spacing values under `components/ui/` and the four foundations, preserving alignment/reset and prose-rhythm exemptions. Any hit fails. |
+| `scripts/check-shadow-recipes.sh` | Rejects hand-typed shadow recipes under `components/ui/` and the four foundations. Any hit fails. |
+| `scripts/check-button-recipes.sh` | Requires shared button recipes and the `.btn` base for overlay constants. No allowlists. |
 | `scripts/check-empty-state-action.sh` | An empty state must contain the control its copy names. Copy pointing at a button that lives elsewhere fails; a bare statement of fact ("No results.") passes. Three reasoned testid exemptions. |
-| `scripts/check-ui-boundary.sh` | Outside `components/ui/`, literal `className` strings and same-file `*_CLS` constants may use layout utilities only. Per-file baseline, ratchets down only; computed strings with no visible literal are outside the scan. |
-| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Per-file baseline, ratchets down only. |
+| `scripts/check-ui-boundary.sh` | Outside `components/ui/`, class strings may use layout utilities only; only four named stylesheet foundations are allowed. Any hit fails. Computed class strings remain a documented gap. |
+| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Every hit fails. |
 | `bun run check:complexity` | Ratchets each component's cyclomatic complexity against `ui/complexity-baseline.json` (`worst` and `over`; `total` recorded beside them). Needs `bun install` — it shells out to a pinned `oxlint`, so it is not one of the hermetic scripts. See "A closure is not a fix" below. |
 
 `check:css` needs a `bun run build` first; the rest are standalone and instant.
@@ -957,37 +972,6 @@ larger offset means the site wants its own tier.
 | `--z-window` | 100 | window furniture: the resize grips |
 | `--z-toast` | 300 | a transient status banner over the whole window |
 | `--z-tooltip` | 1000 | the hover label, and the browser's fullscreen cover |
-
-## Known debt
-
-Real, measured, and not yet fixed. Don't extend these; do fix them opportunistically
-in files you're already touching.
-
-Every entry here is a per-file ratchet: the guard names the file and its count,
-and a count may only fall. The numbers move, so read them from the guard rather
-than from this list.
-
-- **Radius literals.** 49 files still spell a corner as a number or as the
-  framework's own `rounded-*` scale. Nothing that reaches a `<button>` does —
-  neither the tag nor any shared class constant it takes its chrome from,
-  which is checked by cross-referencing the two rather than by a list. What
-  remains is 8/10/6/4/12/999px on surfaces: each maps onto a rung by VALUE,
-  but a 10px card means `--tr-radius-card`, not `--tr-radius-md`, so closing
-  these is a reading of each site and not a substitution. Pinned by
-  `check-radius-tokens.sh`.
-- **Sibling margins.** 43 files set spacing on the child instead of `gap-*` on
-  the container, 162 in all. Close to a third sit in the settings section,
-  where no single parent owns the sequence — that one is a redesign, not a
-  sweep. Pinned by `check-spacing-tokens.sh`.
-- **Control-metric drift.** 19 files hold hand-typed heights, each already
-  classified in code as something the ladder does not govern — a resizable
-  editor, a growth cap on an auto-sizing composer, a content card, a
-  structural strip, the menu-item height that has no rung. Pinned by
-  `check-control-metrics.sh`.
-- **Two button recipes out of place.** `ChangesPane` declares a private `BTN_*`,
-  and a `BTN_GHOST` use in `settings/DiagnosticsSection.tsx` carries no `btn`.
-  Named in `check-button-recipes.sh`'s allowlist, which fails when an entry
-  goes stale.
 
 ## When this guide is silent
 

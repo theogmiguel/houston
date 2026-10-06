@@ -28,7 +28,7 @@ export function PaneHeader({ divider = 'solid', transition = 'background', inset
     <header
       {...props}
       onPointerDown={onPointerDown}
-      className={`group pane-head touch-none flex items-center gap-2 pr-1 ${padding} h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b ${DIVIDER[divider]} flex-none cursor-grab active:cursor-grabbing ${dragging} ${TRANSITION[transition]} @container`}
+      className={`group pane-head touch-none select-none [&_input]:select-text flex items-center gap-2 pr-1 ${padding} h-[var(--h-pane-head)] min-h-[var(--h-pane-head)] border-b ${DIVIDER[divider]} flex-none cursor-grab active:cursor-grabbing ${dragging} ${TRANSITION[transition]} @container`}
     >
       {children}
     </header>
