@@ -13,6 +13,7 @@ interface Props {
   label?: string | null
   side?: 'top' | 'bottom'
   className?: string
+  inline?: boolean
   openOnClick?: boolean
   children: React.ReactNode
 }
@@ -22,7 +23,7 @@ interface Placement {
   left: number
 }
 
-export function Tooltip({ label, side = 'bottom', className, openOnClick = false, children }: Props): React.JSX.Element {
+export function Tooltip({ label, side = 'bottom', className, inline = false, openOnClick = false, children }: Props): React.JSX.Element {
   const id = useId()
   const wrapRef = useRef<HTMLSpanElement | null>(null)
   const bubbleRef = useRef<HTMLDivElement | null>(null)
@@ -120,7 +121,7 @@ export function Tooltip({ label, side = 'bottom', className, openOnClick = false
   return (
     <span
       ref={wrapRef}
-      className={className ?? 'contents'}
+      className={className ?? (inline ? 'inline-flex' : 'contents')}
       onPointerEnter={showAfterDelay}
       onPointerLeave={hide}
       onPointerDown={onPointerDown}

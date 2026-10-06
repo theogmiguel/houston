@@ -107,6 +107,21 @@ import {
   PopoverViews,
   ProgressStepsSpecimen,
   QuietButtonSpecimen,
+  ReviewDiffLineSpecimen,
+  MetadataRowSpecimen,
+  DiscussionEntrySpecimen,
+  PullRequestStateSpecimen,
+  PullRequestRoleSpecimen,
+  PullRequestLabelSpecimen,
+  StackLayerListSpecimen,
+  AgentOptionGridSpecimen,
+  FilePanelMessageSpecimen,
+  PullRequestDiffSpecimen,
+  OptionCandidateListSpecimen,
+  ReviewSubmissionSpecimen,
+  RepositoryBrowserSpecimen,
+  PullRequestActionsSpecimen,
+  PickerRoleSpecimen,
   SectionHead,
   Select,
   SettingsBreadcrumb,
@@ -365,6 +380,34 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <MotionThemeSpecimens theme="paper" reducedMotion />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Diff line">
+          <ReviewDiffLineSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Metadata row">
+          <MetadataRowSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Discussion entry">
+          <DiscussionEntrySpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Pull request state">
+          <PullRequestStateSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Pull request detail roles">
+          <PullRequestRoleSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Pull request labels">
+            <PullRequestLabelSpecimen />
+            <StackLayerListSpecimen />
+            <AgentOptionGridSpecimen />
+            <FilePanelMessageSpecimen />
+            <PullRequestDiffSpecimen />
+            <OptionCandidateListSpecimen />
+            <ReviewSubmissionSpecimen />
+            <RepositoryBrowserSpecimen />
+            <PullRequestActionsSpecimen />
+            <PickerRoleSpecimen />
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Content section">
           <ContentSection heading="Integrations" description="Outside services that bring work into Houston. Tokens stay in the OS keychain.">
             <IntegrationCard icon={<IconMessageSquare />} title="Slack" status="Connected" caption="to acme · last event 2m ago" actions={<Button variant="secondary">Configure</Button>} />
@@ -423,6 +466,21 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Button variant="danger-confirmation">Remove</Button>
             <Button variant="compact-ghost">Replace…</Button>
             <Button variant="compact-danger">Remove file</Button>
+            <Button variant="picker-candidate">Reviewer candidate</Button>
+            <Button variant="repository-list-row">Pull request row</Button>
+            <Button variant="compact-control">Search action</Button>
+            <Button variant="compact-action">Back</Button>
+            <Button variant="mini-primary-action">Save</Button>
+            <Button variant="compact-self-start-action">Show more</Button>
+            <Button variant="compact-trailing-action" aria-label="Edit">Edit</Button>
+            <Button variant="pull-request-action">Close</Button>
+            <Button variant="pull-request-danger-action">Revert</Button>
+            <Button variant="pull-request-primary-action">Merge</Button>
+            <Button variant="pull-request-nav-action">Open request</Button>
+            <Button variant="pull-request-external-action">Open on GitHub</Button>
+            <Button variant="reaction" aria-pressed={false}>❤ 3</Button>
+            <Button variant="reaction" selected aria-pressed={true}>❤ 4</Button>
+            <Button variant="reaction-option">Add reaction</Button>
             <Button variant="legacy-primary">Legacy primary</Button>
             <Button variant="legacy-secondary">Legacy secondary</Button>
             <Button variant="legacy-ghost">Legacy ghost</Button>
@@ -490,6 +548,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Text size="fileBreadcrumb" tone="faint">src / main.ts</Text>
             <Text size="fileStatus" tone="warn" mono>M</Text>
           </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Metadata section heading">
+          <SectionHead density="row" tone="muted" title="Status" />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Roster surfaces">
@@ -638,6 +700,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </Card>
           <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
+          <Card tone="material-inset" shape="inset" padding="md">Pull request details</Card>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Launch grid preview">
@@ -835,6 +898,9 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <div style={{ flex: '1 1 360px', padding: 24, border: '1px solid var(--divider)' }}>
               <EmptyState icon={IconPlus} heading="No workspace" description="Choose a workspace to get started." variant="window" />
             </div>
+            <div style={{ flex: '1 1 360px', minHeight: 180, border: '1px solid var(--divider)' }}>
+              <EmptyState heading="No pull request" description="Choose a request or create one to get started." fill copy="compact" descriptionWidth="compact" />
+            </div>
           </SpecimenRow>
           <SpecimenRow>
             <ActionEmptyState headline="No sessions yet" description="Start a session to see it here." action={{ label: 'New session', onClick: noop }} size="compact" />
@@ -849,6 +915,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <div>Settings synchronized</div>
             <div>Hooks installed</div>
           </Disclosure>
+          <Disclosure summary="Leave a review" variant="divided" defaultOpen={false}>
+            <div>Review composer content</div>
+          </Disclosure>
+          <Disclosure summary="Comments" variant="flush"><div>Comment content</div></Disclosure>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Settings primitives">

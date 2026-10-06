@@ -41,6 +41,13 @@
   --h-theme-preview-mark: 5px;
   --space-theme-preview-line: 3px;
 
+  --tr-agent-option-height: 30px;
+  --tr-agent-option-gap: 9px;
+  --tr-picker-label-leading: 14px;
+  --tr-diff-line-leading: 1.55;
+  --tr-picker-list-max-height: 240px;
+  --tr-stack-label-width: 92px;
+  --tr-candidate-description-max: 40%;
   color-scheme: dark;
   --rail-bg: #0f0f12;
   --content-bg: #0a0a0b;
@@ -337,6 +344,13 @@
   --h-theme-preview-mark: 5px;
   --space-theme-preview-line: 3px;
 
+  --tr-agent-option-height: 30px;
+  --tr-agent-option-gap: 9px;
+  --tr-picker-label-leading: 14px;
+  --tr-diff-line-leading: 1.55;
+  --tr-picker-list-max-height: 240px;
+  --tr-stack-label-width: 92px;
+  --tr-candidate-description-max: 40%;
   color-scheme: light;
   --rail-bg: #f1f1f3;
   --content-bg: #e8e8ea;
@@ -833,8 +847,13 @@
   --tr-radius-pill: 9999px;
   /* Corner of a file-type badge or thumbnail inside an attachment chip. */
   --tr-radius-badge: 3px;
-  --space-1: 4px;
+  --tr-empty-copy-max: 48ch;
+  --tr-empty-compact-copy-max: 46ch;
+  --tr-pr-number-width: 96px;
+  --tr-scrollbar-thin: thin;
+  --tr-check-dot-size: 7px;
   --space-0-5: 2px;
+  --space-1: 4px;
   --space-pixel: 1px;
   --space-1-5: 6px;
   --space-settings-detail-caption: 3px;

@@ -150,6 +150,7 @@ import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksSte
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
+import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
 
 const noop = (): void => {}
 
@@ -398,6 +399,18 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell-a/changes-paper': () => <InspectorChangesPaper />,
   'shell-a/pr-graphite': () => <InspectorPrGraphite />,
   'shell-a/pr-paper': () => <InspectorPrPaper />,
+  'shell-a/pr-browse': () => <PrBrowseCapture />,
+  'shell-a/pr-browse-states': () => <PrBrowseStatesCapture />,
+  'shell-a/pr-discussion': () => <PrDiscussionCapture />,
+  'shell-a/pr-comment-edit': () => <PrCommentEditCapture />,
+  'shell-a/pr-empty': () => <PrEmptyCapture />,
+  'shell-a/pr-files': () => <PrFilesCapture />,
+  'shell-a/pr-file-states': () => <PrFilesStatesCapture />,
+  'shell-a/pr-actions': () => <PrActionsCapture />,
+  'shell-a/pr-pickers': () => <PrPickerCapture />,
+  'shell-a/pr-review': () => <PrReviewCapture />,
+  'shell-a/pr-provider': () => <ReviewProviderCapture />,
+  'shell-a/pr-provider-selected': () => <ReviewProviderSelectedCapture />,
   'shell-a/files-graphite': () => <InspectorFilesGraphite />,
   'shell-a/children-graphite': () => <InspectorChildrenGraphite />,
   'shell-a/children-paper': () => <InspectorChildrenPaper />,

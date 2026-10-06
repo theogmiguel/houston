@@ -27,6 +27,7 @@ export interface DisclosureProps {
   scrollBody?: boolean
   children?: React.ReactNode
   className?: string
+  variant?: 'default' | 'divided' | 'flush'
 }
 
 function Spinner(): React.JSX.Element {
@@ -72,6 +73,7 @@ export function Disclosure({
   emptySetLabel = 'Nothing here yet',
   maxBodyHeight = 240,
   scrollBody,
+  variant = 'default',
   children,
   className = ''
 }: DisclosureProps): React.JSX.Element {
@@ -91,8 +93,8 @@ export function Disclosure({
     <div
       data-testid="disclosure"
       data-state={error ? 'error' : loading ? 'loading' : open ? 'open' : 'closed'}
-      className={`rounded-[var(--tr-radius-card)] border ${
-        error ? 'border-[var(--danger)] bg-[var(--status-blocked-bg)]' : 'border-[var(--border)] bg-[var(--surface)]'
+      className={`${variant === 'divided' ? 'rounded-none border-0 border-t border-t-[var(--divider)] bg-transparent' : variant === 'flush' ? 'rounded-none border-0 bg-transparent' : 'rounded-[var(--tr-radius-card)] border'} ${
+        error ? 'border-[var(--danger)] bg-[var(--status-blocked-bg)]' : variant === 'default' ? 'border-[var(--border)] bg-[var(--surface)]' : ''
       } ${className}`}
     >
       <Tooltip label={disabled ? disabledReason : undefined} className="flex w-full">

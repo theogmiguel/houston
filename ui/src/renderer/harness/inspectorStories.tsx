@@ -109,6 +109,7 @@ function Frame({ theme, board }: { theme: Theme; board: Board }): React.JSX.Elem
     }
   }, [theme, board])
   return <div className="inspector-story-viewport" data-story-board={board}>
+    {board === 'pr' && <style>{'[data-story-board="pr"] .loop-anim { animation: none !important; }'}</style>}
     <div className="inspector-story-grid" data-testid="side-panel-row" />
     {!closed && <SidePanel
       dir={repo}

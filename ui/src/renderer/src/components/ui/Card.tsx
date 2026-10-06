@@ -5,10 +5,11 @@ const cardClasses = variants('border', {
   tone: {
     default: 'border-[var(--divider)] bg-[var(--card-bg)]',
     inset: 'border-[var(--divider)] bg-[var(--content-bg)]',
+    'material-inset': 'border-[var(--material-inset-brd)] bg-[var(--material-inset-bg)]',
     danger: 'border-[var(--danger)] bg-[var(--status-blocked-bg)]',
     surface: 'border-[var(--border)] bg-[var(--surface)]'
   },
-  shape: { button: 'rounded-[var(--tr-radius-button)]', card: 'rounded-[var(--tr-radius-card)]' },
+  shape: { button: 'rounded-[var(--tr-radius-button)]', card: 'rounded-[var(--tr-radius-card)]', inset: 'rounded-[var(--tr-radius-sm)]' },
   padding: { none: '', md: 'p-[var(--space-3)]' },
   disabled: { false: '', true: 'opacity-50' },
   clip: { false: 'overflow-visible', true: 'overflow-hidden' }
@@ -16,10 +17,10 @@ const cardClasses = variants('border', {
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode
-  tone?: 'default' | 'inset' | 'danger' | 'surface'
+  tone?: 'default' | 'inset' | 'material-inset' | 'danger' | 'surface'
   disabled?: boolean
   clip?: boolean
-  shape?: 'button' | 'card'
+  shape?: 'button' | 'card' | 'inset'
   padding?: 'none' | 'md'
   className?: string
 }

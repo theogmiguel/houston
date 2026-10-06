@@ -2,16 +2,18 @@ import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO, BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
+import { RING_ACCENT_INSET_18 } from './shadowChrome'
 import { FOCUS_HALO } from './shadowChrome'
 import './button.css'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'compact-primary-action' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'accent-soft' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure' | 'roster-open'
+export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'compact-primary-action' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'accent-soft' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure' | 'roster-open' | 'picker-candidate' | 'picker-apply-action' | 'picker-cancel-action' | 'picker-done-action' | 'repository-list-row' | 'repository-load-more-action' | 'file-retry-action' | 'reaction' | 'reaction-option' | 'agent-option' | 'diff-line-action' | 'compact-action' | 'mini-primary-action' | 'compact-self-start-action' | 'compact-trailing-action' | 'compact-control' | 'discussion-edit-action' | 'discussion-cancel-action' | 'discussion-reply-action' | 'discussion-submit-action' | 'pull-request-action' | 'pull-request-danger-action' | 'pull-request-primary-action' | 'pull-request-nav-action' | 'pull-request-external-action'
 export type ButtonSize = 'md' | 'sm'
 
 interface ButtonBaseProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'type'> {
   size?: ButtonSize
   armed?: boolean
+  selected?: boolean
   iconEnd?: IconComponent
   /** Layout classes only; visual styles belong in Button variants. */
   className?: string
@@ -76,6 +78,31 @@ const buttonClasses = variants(
       'danger-confirmation': `h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-button)] border [font-size:var(--tr-text-ui-size)] font-medium whitespace-nowrap focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}] disabled:opacity-50 disabled:cursor-not-allowed`,
       'compact-ghost': `btn ${BTN_GHOST} px-[var(--space-2)]`,
       'compact-danger': `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER} px-[var(--space-2)]`,
+      'picker-candidate': 'w-full min-h-0 flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] bg-transparent border-0 rounded-none text-left [font-size:inherit] [font-weight:inherit] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] disabled:opacity-55 hover:enabled:bg-[var(--card-hover)] focus-visible:outline-none focus-visible:bg-[var(--card-hover)]',
+      'picker-apply-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-55`,
+      'picker-cancel-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)]`,
+      'picker-done-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] ml-auto`,
+      'repository-list-row': 'w-full min-h-0 flex flex-col items-stretch gap-[var(--space-0-5)] px-[var(--space-2-5)] py-[var(--space-2)] bg-transparent border-0 border-t border-t-[var(--divider)] first:border-t-0 rounded-none text-left [font-size:inherit] [font-weight:inherit] hover:enabled:bg-[var(--card-hover)] focus-visible:outline-none focus-visible:bg-[var(--card-hover)]',
+      'repository-load-more-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)]`,
+      'file-retry-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] justify-start`,
+      reaction: 'inline-flex items-center gap-[var(--space-1)] h-[var(--h-ctl-mini)] px-1.5 rounded-[var(--tr-radius-pill)] border text-[length:var(--tr-text-small-size)] disabled:opacity-55',
+      'reaction-option': `btn ${BTN_GHOST} inline-flex items-center justify-center h-[var(--h-ctl-mini)] px-1 leading-none disabled:opacity-55`,
+      'agent-option': 'flex h-[var(--tr-agent-option-height)] items-center gap-[var(--tr-agent-option-gap)] rounded-[var(--tr-radius-button)] border text-left px-[var(--space-2-5)] pl-[var(--space-2-5)] pr-[var(--space-2)] transition-[border-color,background-color,color] duration-150',
+      'diff-line-action': `btn ${BTN_GHOST} flex-none inline-flex items-center px-1 leading-none text-[var(--text-muted)] hover:enabled:text-[var(--text-primary)] disabled:opacity-55`,
+      'compact-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] disabled:opacity-55`,
+      'mini-primary-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] disabled:opacity-55`,
+      'compact-self-start-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] self-start px-[var(--space-1)] text-[var(--text-muted)]`,
+      'compact-trailing-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1-5)] ml-auto text-[var(--text-muted)] disabled:opacity-55`,
+      'compact-control': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl)] px-[var(--space-2)]`,
+      'discussion-edit-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-ctl-mini)] px-[var(--space-1)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)] disabled:opacity-55`,
+      'discussion-cancel-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)]`,
+      'discussion-reply-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-55`,
+      'discussion-submit-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-55`,
+      'pull-request-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-45 disabled:cursor-not-allowed`,
+      'pull-request-danger-action': `btn ${BTN_SECONDARY} inline-flex items-center gap-[var(--space-1-5)] text-[var(--danger)] border-[color-mix(in_srgb,var(--danger)_42%,var(--border))] disabled:opacity-45 disabled:cursor-not-allowed`,
+      'pull-request-primary-action': `btn ${BTN_PRIMARY} inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-45 disabled:cursor-not-allowed`,
+      'pull-request-nav-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)]`,
+      'pull-request-external-action': `btn ${BTN_GHOST} inline-flex items-center gap-[var(--space-1-5)] ml-auto`,
       'legacy-primary': `btn ${BTN_PRIMARY}`,
       'legacy-secondary': BTN_SECONDARY,
       'legacy-ghost': `btn ${BTN_GHOST}`,
@@ -99,8 +126,8 @@ const buttonClasses = variants(
 )
 
 // Variants that carry their own type and padding: no button chrome, no size padding.
-const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'icon-selected', 'icon-structure', 'compact-primary-action', 'text', 'badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'compact-ghost', 'compact-danger', 'accent-soft', 'roster-open'])
-const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'compact-primary-action', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'accent-soft', 'roster-open'])
+const SELF_SIZED: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['icon', 'icon-selected', 'icon-structure', 'compact-primary-action', 'text', 'badge', 'label', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'compact-ghost', 'compact-danger', 'accent-soft', 'roster-open', 'picker-candidate', 'picker-apply-action', 'picker-cancel-action', 'picker-done-action', 'repository-list-row', 'repository-load-more-action', 'file-retry-action', 'reaction', 'reaction-option', 'agent-option', 'diff-line-action', 'compact-action', 'mini-primary-action', 'compact-self-start-action', 'compact-trailing-action', 'compact-control', 'discussion-edit-action', 'discussion-cancel-action', 'discussion-reply-action', 'discussion-submit-action', 'pull-request-action', 'pull-request-danger-action', 'pull-request-primary-action', 'pull-request-nav-action', 'pull-request-external-action'])
+const OWN_CHROME: ReadonlySet<ButtonVariant> = new Set<ButtonVariant>(['badge', 'label', 'compact-primary-action', 'confirm-primary', 'compact-outline', 'danger-confirmation', 'accent-soft', 'roster-open', 'picker-candidate', 'picker-apply-action', 'picker-cancel-action', 'picker-done-action', 'repository-list-row', 'repository-load-more-action', 'file-retry-action', 'reaction', 'reaction-option', 'agent-option', 'diff-line-action', 'compact-action', 'mini-primary-action', 'compact-self-start-action', 'compact-trailing-action', 'compact-control', 'discussion-edit-action', 'discussion-cancel-action', 'discussion-reply-action', 'discussion-submit-action', 'pull-request-action', 'pull-request-danger-action', 'pull-request-primary-action', 'pull-request-nav-action', 'pull-request-external-action'])
 const isLegacy = (variant: ButtonVariant): boolean => variant.startsWith('legacy-')
 
 function buttonSize(variant: ButtonVariant, size: ButtonSize): ButtonSize | 'icon' {
@@ -116,6 +143,7 @@ export function Button(props: ButtonProps): React.JSX.Element {
     variant = 'secondary',
     size = 'md',
     armed = false,
+    selected = false,
     icon,
     iconEnd,
     className = '',
@@ -131,7 +159,14 @@ export function Button(props: ButtonProps): React.JSX.Element {
     : variant === 'roster-open'
       ? selectedClasses.replace(/^btn inline-flex /, 'flex ')
       : selectedClasses
-  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${variant === 'roster-open' ? 'children-open' : ''} ${buttonChrome(variant)} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
+  const reactionState = variant === 'reaction'
+    ? selected ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--text-primary)]' : 'border-[var(--border)] bg-transparent text-[var(--text-muted)] hover:enabled:text-[var(--text-primary)]'
+    : ''
+  const agentOptionState = variant === 'agent-option'
+    ? selected ? `border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,var(--card-bg))] shadow-[${RING_ACCENT_INSET_18}] text-[var(--text-primary)]` : 'border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-muted)] hover:enabled:border-[var(--text-faint)]'
+    : ''
+  const diffLineActionState = variant === 'diff-line-action' && selected ? 'text-[var(--accent)]' : ''
+  const classes = `${variant === 'badge' ? classSet.replace(/\bbtn\b/g, '') : classSet} ${variant === 'roster-open' ? 'children-open' : ''} ${buttonChrome(variant)} ${reactionState} ${agentOptionState} ${diffLineActionState} ${(variant === 'danger' || variant === 'legacy-danger') && armed ? BTN_GHOST_DANGER_ARM : ''} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
   const Icon = icon
   const EndIcon = iconEnd
 
