@@ -25,7 +25,7 @@ export function RosterColumn({ className = '', ...props }: HTMLAttributes<HTMLEl
   return (
     <aside
       {...props}
-      className={`children-column w-[var(--w-roster-column)] flex-none border-r border-r-[var(--divider)] bg-[var(--card-bg)] flex flex-col min-h-0 overflow-hidden ${SPLIT_NARROW_COLUMN_HIDDEN} [&_.tkchip]:px-[var(--space-roster-chip-inline)]! ${className}`}
+      className={`children-column w-[var(--w-roster-column)] flex-none border-r border-r-[var(--divider)] bg-[var(--card-bg)] flex flex-col min-h-0 overflow-hidden ${SPLIT_NARROW_COLUMN_HIDDEN} ${className}`}
     />
   )
 }
@@ -166,7 +166,81 @@ export function RosterPeekbar({ children }: { children: ReactNode }): React.JSX.
 }
 
 export function RosterQueuePanel({ className = '', ...props }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
-  return <div {...props} className={`queue-panel ${className}`} />
+  return <div {...props} className={`flex-1 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden ${className}`} />
+}
+
+export function RosterQueueGroup({ label, count }: { label: string; count: number }): React.JSX.Element {
+  return (
+    <div className="flex items-center justify-between px-[var(--space-3)] pt-[var(--space-3)] pb-[var(--space-1)]">
+      <Text size="label" weight="label" tone="faint" caps className="tracking-[var(--task-section-label-tracking)]!">{label}</Text>
+      <Text size="xs" weight="label" mono tone="faint" className="tracking-normal!">{count}</Text>
+    </div>
+  )
+}
+
+export function RosterQueueEmpty({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="div" size="meta" tone="faint" className="px-[var(--task-record-inset)] py-[var(--space-1-5)]">{children}</Text>
+}
+
+export function RosterQueueRow({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      {...props}
+      className="relative flex flex-col gap-0.5 mx-1.5 px-2 py-1.5 border-0 rounded-[var(--tr-radius-sm)] bg-transparent text-inherit text-left cursor-pointer hover:bg-[var(--hover-fill)]"
+    >
+      {children}
+    </button>
+  )
+}
+
+export function RosterQueueRowTop({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="span" size="row" className="flex items-center gap-[var(--task-queue-row-gap)] min-w-0">{children}</Text>
+}
+
+export function RosterQueueRowSub({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="span" size="meta" tone="muted" className="flex items-center gap-[var(--space-1-5)] pl-[var(--task-queue-sub-indent)] min-w-0">{children}</Text>
+}
+
+export function RosterQueueFoot({ children }: { children: ReactNode }): React.JSX.Element {
+  return (
+    <Text as="div" size="meta" tone="muted" className="mt-auto border-t border-[var(--divider)] p-[var(--space-2-5)] flex flex-col gap-[var(--space-2)]">
+      {children}
+    </Text>
+  )
+}
+
+export function RosterQueueMeter({ label, value, children }: { label: string; value: string; children: ReactNode }): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-2">
+      <span>{label}</span>
+      <span className="flex flex-1 h-[var(--task-meter-height)] gap-[var(--task-meter-segment-gap)] overflow-hidden rounded-[var(--tr-radius-pill)] bg-[var(--task-queue-meter-fill)]">
+        {children}
+      </span>
+      <span className="font-mono">{value}</span>
+    </div>
+  )
+}
+
+/** A bar segment sized by `weight`: the live children, or the headroom left under the cap. */
+export function RosterQueueMeterFill({ weight, live }: { weight: number; live: boolean }): React.JSX.Element {
+  return <i className={`block h-full ${live ? 'bg-[var(--info)]' : 'bg-transparent'}`} style={{ flex: weight }} />
+}
+
+export function RosterQueueNote({ children }: { children: ReactNode }): React.JSX.Element {
+  return <Text as="div" size="xs" tone="faint">{children}</Text>
+}
+
+export function RosterQueueResult({ children, ...props }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
+  return (
+    <Text as="div" {...props} size="meta" tone="secondary" className="flex flex-col gap-[var(--space-1)] [overflow-wrap:anywhere]">
+      {children}
+    </Text>
+  )
+}
+
+export function RosterQueueResultLine({ tone, children }: { tone: 'ok' | 'bad'; children: ReactNode }): React.JSX.Element {
+  return <Text as="div" tone={tone === 'ok' ? 'done' : 'failed'}>{children}</Text>
 }
 
 export function RosterOverview({ className = '', ...props }: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
@@ -216,7 +290,22 @@ export function RosterSurfaceSpecimen(): React.JSX.Element {
         </RosterStrip>
       </div>
       <EndedStatusDot />
-      <RosterQueuePanel>Ready tasks</RosterQueuePanel>
+      <RosterQueuePanel>
+        <RosterQueueGroup label="Ready" count={2} />
+        <RosterQueueRow><RosterQueueRowTop>HOU-43</RosterQueueRowTop><RosterQueueRowSub>Regression test</RosterQueueRowSub></RosterQueueRow>
+        <RosterQueueEmpty>No ready tasks.</RosterQueueEmpty>
+        <RosterQueueFoot>
+          <RosterQueueMeter label="Live children" value="2 / 4">
+            <RosterQueueMeterFill weight={2} live />
+            <RosterQueueMeterFill weight={2} live={false} />
+          </RosterQueueMeter>
+          <RosterQueueNote>Settled children (1) do not count against the cap</RosterQueueNote>
+          <RosterQueueResult>
+            <RosterQueueResultLine tone="ok">Started HOU-43</RosterQueueResultLine>
+            <RosterQueueResultLine tone="bad">HOU-47 — refused</RosterQueueResultLine>
+          </RosterQueueResult>
+        </RosterQueueFoot>
+      </RosterQueuePanel>
       <RosterOverview>Orchestrator overview</RosterOverview>
     </div>
   )

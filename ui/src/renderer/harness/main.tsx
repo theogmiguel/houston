@@ -11,7 +11,6 @@ import '../src/tailwind.css'
 import '../src/keyframes.css'
 import '../src/theme.css'
 import '../src/base.css'
-import '../src/global.css'
 import { STORIES } from './stories'
 
 const params = new URLSearchParams(window.location.search)

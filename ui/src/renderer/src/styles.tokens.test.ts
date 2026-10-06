@@ -6,8 +6,7 @@ const STYLESHEET_RELATIVE_PATHS = [
   'tailwind.css',
   'keyframes.css',
   'theme.css',
-  'base.css',
-  'global.css'
+  'base.css'
 ]
 const STYLESHEET_PATHS = STYLESHEET_RELATIVE_PATHS.map((p) => join(__dirname, p))
 

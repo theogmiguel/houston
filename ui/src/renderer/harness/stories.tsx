@@ -128,8 +128,10 @@ import {
   HarnessFindingsDismissedStory
 } from './navStories'
 import { B5bHandoffStatesStory, B5bPaneHandoffSelectedStory, B5bQuestionStatesStory, B5bDelegationPanelsStory } from './b5bStories'
-import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
+import { PaneLifecycleStory, TasksChipsStory, TasksComposerStory, TasksDetailStatesStory, TasksDetailStory, TasksListStatesStory, TasksListStory, TasksQueueEmptyStory, TasksQueueResultStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory, TasksStartStory } from './tasksStories'
 import { RenameTitleStory } from './renameTitleStories'
+
+document.documentElement.setAttribute('data-motion-paused', '')
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
@@ -456,6 +458,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'usage/empty': () => <UsagePageStory state="empty" />,
   'tasks/page': () => <TasksPageStory />,
   'tasks/detail': () => <TasksDetailStory />,
+  'tasks/start-card': () => <TasksStartStory />,
   'panes/lifecycle': () => <PaneLifecycleStory />,
   'panes/chrome-menu': () => <PaneMenuStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
@@ -465,7 +468,13 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/tags-forms': () => <TagsFormsStory />,
   'legacy/tag-editor': () => <TagEditorStory />,
   'tasks/roster': () => <TasksRosterStory />,
+  'tasks/list-states': () => <TasksListStatesStory />,
+  'tasks/composer': () => <TasksComposerStory />,
+  'tasks/detail-states': () => <TasksDetailStatesStory />,
+  'tasks/chips': () => <TasksChipsStory />,
   'tasks/queue': () => <TasksQueueStory />,
+  'tasks/queue-empty': () => <TasksQueueEmptyStory />,
+  'tasks/queue-result': () => <TasksQueueResultStory />,
   'tasks/overview-roster': () => <TasksOverviewRosterStory />,
   'shell-a/changes-graphite': () => <InspectorChangesGraphite />,
   'shell-a/changes-paper': () => <InspectorChangesPaper />,

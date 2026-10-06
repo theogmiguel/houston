@@ -23,7 +23,6 @@ import './components/ui/paneFocus.css'
 import './keyframes.css'
 import './theme.css'
 import './base.css'
-import './global.css'
 
 class RootBoundary extends React.Component<
   { children: React.ReactNode },

@@ -203,9 +203,12 @@ import {
   ChoiceTileSpecimen,
   MarkdownContentSpecimen,
   OptionButtonSpecimen,
+  TaskRunSurfaceSpecimen,
+  TaskSurfaceSpecimen,
   Table,
   SettingsDetailPanelSpecimen,
   TaskProgress,
+  TaskPropKey,
   TaskAcceptanceRow,
   TaskDetailFrame,
   TaskDrawerCard,
@@ -806,6 +809,14 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <OptionButtonSpecimen />
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Task surface">
+          <div className="w-[460px]"><TaskSurfaceSpecimen /></div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Task run cards">
+          <div className="w-[460px]"><TaskRunSurfaceSpecimen /></div>
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Dialog">
           <DialogSpecimen />
         </SpecimenGroup>
@@ -1195,6 +1206,8 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Select value="graphite" options={options} onChange={noop} aria-label="Theme" />
             <Select value="paper" options={options} onChange={noop} aria-label="Disabled theme" disabled />
             <Select width="medium" value="paper" options={options} onChange={noop} aria-label="Medium settings select" />
+            <Select value="in_progress" options={[{ value: 'in_progress', label: 'In progress' }]} onChange={noop} aria-label="Task status" prefix={<TaskPropKey>Status</TaskPropKey>} variant="property-chip" />
+            <Select value="claude" options={[{ value: 'claude', label: 'Claude Code' }]} onChange={noop} aria-label="Task agent" variant="property-field" />
           </SpecimenRow>
         </SpecimenGroup>
 

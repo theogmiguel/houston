@@ -3,6 +3,7 @@ import { useNativeOverlaySuppression } from '../../layout/nativeSuppression'
 import { IconCheck, IconChevronDown } from '../icons'
 import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
 import { SELECT_CLS } from './selectChrome'
+import { Text } from './Text'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
 import { AnimOut } from './AnimOut'
@@ -29,6 +30,7 @@ export interface SelectProps {
   'data-testid'?: string
   className?: string
   chrome?: string
+  variant?: 'default' | 'property-chip' | 'property-field'
   prefix?: React.ReactNode
   width?: 'auto' | 'full' | 'task-setting' | 'medium'
 }
@@ -60,6 +62,7 @@ export function Select({
   'data-testid': testId,
   className = '',
   chrome = SELECT_CLS,
+  variant = 'default',
   prefix,
   width = 'auto'
 }: SelectProps): React.JSX.Element {
@@ -72,6 +75,11 @@ export function Select({
   useNativeOverlaySuppression('popover', open && pos !== null, menuRef)
   const typeahead = useRef<{ buf: string; at: number }>({ buf: '', at: 0 })
   const listboxId = useId()
+  const triggerChrome = variant === 'property-chip'
+    ? 'h-[var(--task-inline-control-height)] pl-[var(--space-2)] pr-[var(--space-1-5)] gap-[var(--space-1-5)]! border border-[var(--border)]! rounded-[var(--tr-radius-button)] bg-transparent text-[var(--text-secondary)] text-[length:var(--tr-text-sm)] font-normal'
+    : variant === 'property-field'
+      ? 'h-[var(--h-ctl)] pl-[var(--space-2)] pr-[var(--space-1-5)] gap-[var(--space-1-5)]! border border-[var(--border)]! rounded-[var(--tr-radius-button)] bg-transparent text-[var(--text-secondary)] text-[length:var(--tr-text-sm)] font-normal'
+      : chrome
 
   const selectedIndex = options.findIndex((o) => o.value === value)
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined
@@ -253,10 +261,10 @@ export function Select({
             if (open) close(true)
             else openMenu()
           }}
-          className={`${chrome} ${TRIGGER_LAYOUT_CLS} ${width === 'full' ? 'w-full' : width === 'task-setting' ? 'min-w-[var(--tr-width-task-select)]' : width === 'medium' ? 'w-[var(--tr-control-width-medium)]' : ''} ${className}`}
+          className={`${triggerChrome} ${TRIGGER_LAYOUT_CLS} ${width === 'full' ? 'w-full' : width === 'task-setting' ? 'min-w-[var(--tr-width-task-select)]' : width === 'medium' ? 'w-[var(--tr-control-width-medium)]' : ''} ${className}`}
         >
-          {prefix && <span className="flex-none inline-flex items-center">{prefix}</span>}
-          <span className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ''}</span>
+          {prefix && <Text as="span" size={variant === 'default' ? undefined : 'sm'} className="flex-none inline-flex items-center">{prefix}</Text>}
+          <Text as="span" size={variant === 'default' ? undefined : 'sm'} tone={variant === 'default' ? undefined : 'secondary'} className="min-w-0 flex-1 truncate text-left">{selected?.label ?? ''}</Text>
           <Icon glyph={IconChevronDown} role="small" className="flex-none text-[var(--text-muted)]" />
         </button>
       </Tooltip>

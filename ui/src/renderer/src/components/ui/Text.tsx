@@ -1,9 +1,9 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large' | 'md' | 'empty-title'
-export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold' | 'tag-title'
-export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer' | 'quiet'
-export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint' | 'editor' | 'display' | 'empty'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large' | 'md' | 'empty-title' | 'row' | 'meta' | 'system'
+export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold' | 'tag-title' | 'bold'
+export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer' | 'quiet' | 'needs' | 'working' | 'done' | 'failed' | 'spawning'
+export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint' | 'editor' | 'display' | 'empty' | 'heading' | 'copy' | 'check' | 'activity'
 
 const SIZE: Record<TextSize, string> = {
   display: '[font-family:var(--tr-text-display-family)] [font-size:var(--tr-text-display-size)]',
@@ -28,7 +28,10 @@ const SIZE: Record<TextSize, string> = {
   large: '[font-size:var(--tr-text-lg)]',
   md: '[font-size:var(--tr-text-md)]',
   /** Display size in the sans face, for an empty screen's heading. */
-  'empty-title': '[font-family:var(--font-sans)] [font-size:var(--tr-text-display-size)] tracking-[var(--tr-text-title-tracking)]'
+  'empty-title': '[font-family:var(--font-sans)] [font-size:var(--tr-text-display-size)] tracking-[var(--tr-text-title-tracking)]',
+  row: '[font-size:var(--tr-text-row)]',
+  meta: '[font-size:var(--tr-text-meta)]',
+  system: '[font-size:var(--task-system-mark-size)]'
 }
 
 const WEIGHT: Record<TextWeight, string> = {
@@ -42,7 +45,8 @@ const WEIGHT: Record<TextWeight, string> = {
   label: '[font-weight:var(--tr-text-label-weight)]',
   medium: 'font-medium',
   semibold: 'font-semibold',
-  'tag-title': '[font-weight:var(--tr-text-tag-title-weight)]'
+  'tag-title': '[font-weight:var(--tr-text-tag-title-weight)]',
+  bold: 'font-bold'
 }
 
 const TONE: Record<TextTone, string> = {
@@ -64,7 +68,12 @@ const TONE: Record<TextTone, string> = {
   'quiet-button': 'text-[var(--quiet-button-ink)]',
   dim: 'text-[color-mix(in_srgb,var(--text-muted)_70%,transparent)]',
   dimmer: 'text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)]',
-  quiet: 'text-[var(--browser-picker-status-ink)]'
+  quiet: 'text-[var(--browser-picker-status-ink)]',
+  needs: 'text-[var(--status-todo-text)]',
+  working: 'text-[var(--status-doing-text)]',
+  done: 'text-[var(--status-done-text)]',
+  failed: 'text-[var(--status-blocked-text)]',
+  spawning: 'text-[var(--accent)]'
 }
 
 const LEADING: Record<TextLeading, string> = {
@@ -83,7 +92,11 @@ const LEADING: Record<TextLeading, string> = {
   'tag-hint': 'leading-[var(--tr-text-tag-hint-leading)]',
   editor: 'leading-[var(--tr-text-editor-leading)]',
   display: 'leading-[var(--tr-text-display-leading)]',
-  empty: 'leading-[var(--tr-text-empty-leading)]'
+  empty: 'leading-[var(--tr-text-empty-leading)]',
+  heading: 'leading-[var(--task-drawer-heading-leading)]',
+  copy: 'leading-[var(--task-copy-leading)]',
+  check: 'leading-[var(--task-check-leading)]',
+  activity: 'leading-[var(--task-activity-leading)]'
 }
 
 export interface TextProps extends HTMLAttributes<HTMLElement> {
