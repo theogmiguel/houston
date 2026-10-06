@@ -10,7 +10,7 @@ const RECIPES = {
   'compact-ghost': `btn ${BTN_GHOST} px-[var(--space-2)]`,
   'compact-danger': `btn ${BTN_GHOST} ${BTN_GHOST_DANGER_HOVER} px-[var(--space-2)]`,
   'label-action': `btn ${BTN_GHOST} px-1.5 py-0 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]`,
-  'accent-soft': 'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[var(--tr-space-profile-action-inline)] py-[var(--tr-space-profile-action-block)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default'
+  'accent-soft': 'rounded-[var(--tr-radius-sm)] border border-[var(--accent)] bg-[var(--accent-muted)] px-[var(--space-profile-action-inline)] py-[var(--space-profile-action-block)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--accent)] hover:brightness-110 disabled:opacity-40 disabled:cursor-default'
 } as const
 
 export type SettingsButtonVariant = keyof typeof RECIPES

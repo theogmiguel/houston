@@ -161,8 +161,8 @@
   --space-profile-saved-top: 8px;
   --space-profile-saved-bottom: 2px;
   --space-profile-description-bottom: 6px;
-  --tr-space-profile-action-inline: 10px;
-  --tr-space-profile-action-block: 5px;
+  --space-profile-action-inline: 10px;
+  --space-profile-action-block: 5px;
   --tr-text-profile-description-leading: 1.45;
   --space-shortcut-keycap-inline: 7px;
   --space-shortcut-keycap-block: 1px;
@@ -656,8 +656,8 @@
   --space-profile-saved-top: 8px;
   --space-profile-saved-bottom: 2px;
   --space-profile-description-bottom: 6px;
-  --tr-space-profile-action-inline: 10px;
-  --tr-space-profile-action-block: 5px;
+  --space-profile-action-inline: 10px;
+  --space-profile-action-block: 5px;
   --tr-text-profile-description-leading: 1.45;
   --space-shortcut-keycap-inline: 7px;
   --space-shortcut-keycap-block: 1px;
