@@ -29,8 +29,8 @@ const WORKSPACES = [{ path: '/project', name: 'Project' }, { path: '/other', nam
 function state() {
   return {
     snapshot: { scope: 'all', tasks: [
-      { ...TASK, acceptance_checked: 0, acceptance_total: 0 },
-      { ...TASK, id: 8, number: 8, key: 'HOU-8', workspace: '/other', acceptance_checked: 0, acceptance_total: 0 }
+      { ...TASK, acceptance_checked: 0, acceptance_total: 0, children_total: 0, children_done: 0 },
+      { ...TASK, id: 8, number: 8, key: 'HOU-8', workspace: '/other', acceptance_checked: 0, acceptance_total: 0, children_total: 0, children_done: 0 }
     ], counts: {} },
     detail: null, watched: null, access: 'off', refusal: null,
     watchTask: vi.fn(), openTask: vi.fn(), saveTask: mocks.saveTask, createTask: vi.fn(),
@@ -145,7 +145,7 @@ describe('global Tasks viewer', () => {
     const onReview = vi.fn()
     const run: TaskRun = { id: 3, task_id: 7, attempt: 1, kind: 'implementation', state: 'running', provider: 'claude', session_id: 1, initial_revision: 1, started_at_ms: 1 }
     const renderCards = (currentRun: TaskRun) => act(() => root.render(<SessionsStoreContext.Provider value={store}>
-      <TaskNowCard session={session} summary={{ ...TASK, status: 'in_progress', open_run: currentRun, acceptance_checked: 0, acceptance_total: 0 }} detail={null} onOpenSession={vi.fn()} onStop={vi.fn()} />
+      <TaskNowCard session={session} summary={{ ...TASK, status: 'in_progress', open_run: currentRun, acceptance_checked: 0, acceptance_total: 0, children_total: 0, children_done: 0 }} detail={null} onOpenSession={vi.fn()} onStop={vi.fn()} />
       <TaskDetail detail={{ task: TASK, acceptance: [], comments: [], history: [], runs: [currentRun] }} access="off" refusal={null} now={1} parentOptions={[]} sessions={sessions} startSettings={null} onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={vi.fn()} onArchive={vi.fn()} onStart={vi.fn()} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={onReview} />
     </SessionsStoreContext.Provider>))
     renderCards(run)

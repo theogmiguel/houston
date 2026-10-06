@@ -189,6 +189,8 @@ pub struct TaskSummaryRow {
     pub archived_at_ms: Option<i64>,
     pub acceptance_checked: u32,
     pub acceptance_total: u32,
+    pub children_total: u32,
+    pub children_done: u32,
 }
 
 pub struct TaskAcceptanceRow {
@@ -323,7 +325,11 @@ const TASK_SUMMARY_SELECT: &str = "SELECT t.id, t.workspace, t.number, t.title, 
     t.archived_at,
     (SELECT COUNT(*) FROM backlog_task_acceptance a WHERE a.task_id = t.id),
     (SELECT COUNT(*) FROM backlog_task_acceptance a
-       WHERE a.task_id = t.id AND a.checked_at IS NOT NULL)
+       WHERE a.task_id = t.id AND a.checked_at IS NOT NULL),
+    (SELECT COUNT(*) FROM backlog_tasks c
+       WHERE c.parent_id = t.id AND c.archived_at IS NULL AND c.status != 'canceled'),
+    (SELECT COUNT(*) FROM backlog_tasks c
+       WHERE c.parent_id = t.id AND c.archived_at IS NULL AND c.status = 'done')
     FROM backlog_tasks t";
 
 /// The acceptance-item prefix that marks an open question rather than a
@@ -513,6 +519,8 @@ fn map_summary(r: &rusqlite::Row) -> rusqlite::Result<TaskSummaryRow> {
         archived_at_ms: r.get(12)?,
         acceptance_total: r.get(13)?,
         acceptance_checked: r.get(14)?,
+        children_total: r.get(15)?,
+        children_done: r.get(16)?,
     })
 }
 
@@ -556,15 +564,9 @@ impl Db {
     /// Scoped global tasks, newest number first, capped by the caller.
     pub fn list_tasks(&self, workspace: &str, limit: u32) -> Result<Vec<TaskSummaryRow>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare(
-            "SELECT t.id, t.workspace, t.number, t.title, t.status, t.priority, t.parent_id, \
-                    t.ref_url, t.revision, t.created_by, t.created_at, t.updated_at, \
-                    t.archived_at,
-                    (SELECT COUNT(*) FROM backlog_task_acceptance a WHERE a.task_id = t.id),
-                    (SELECT COUNT(*) FROM backlog_task_acceptance a
-                       WHERE a.task_id = t.id AND a.checked_at IS NOT NULL)
-             FROM backlog_tasks t WHERE (?1 = 'all' OR (?1 = 'unassigned' AND t.workspace IS NULL) OR t.workspace = ?1) ORDER BY t.number DESC LIMIT ?2",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "{TASK_SUMMARY_SELECT} WHERE (?1 = 'all' OR (?1 = 'unassigned' AND t.workspace IS NULL) OR t.workspace = ?1) ORDER BY t.number DESC LIMIT ?2",
+        ))?;
         let rows = stmt
             .query_map(rusqlite::params![workspace, limit], map_summary)?
             .collect::<std::result::Result<Vec<_>, _>>()?;

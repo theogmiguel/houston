@@ -400,6 +400,8 @@ impl Daemon {
             archived_at_ms: row.archived_at_ms,
             acceptance_checked: row.acceptance_checked,
             acceptance_total: row.acceptance_total,
+            children_total: row.children_total,
+            children_done: row.children_done,
             intake: None,
             open_run: None,
             origin: None,

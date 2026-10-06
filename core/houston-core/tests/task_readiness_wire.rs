@@ -230,3 +230,42 @@ async fn blockers_are_written_refused_on_a_cycle_and_hold_readiness() {
     assert!(task(&mut ws, second).await.blocked_by.is_empty());
 }
 
+#[tokio::test]
+async fn a_parent_lists_how_many_children_are_done() {
+    let (mut ws, workspace, _state) = rig().await;
+    let (parent, _) = changed(
+        save(
+            &mut ws,
+            &workspace,
+            None,
+            None,
+            proto::TaskPatch {
+                title: Some("Delivery".into()),
+                ..Default::default()
+            },
+        )
+        .await,
+    );
+    let child = |title: &str, status: proto::TaskStatus| proto::TaskPatch {
+        title: Some(title.into()),
+        status: Some(status),
+        parent_id: Some(Some(parent)),
+        ..Default::default()
+    };
+    for (title, status) in [
+        ("Slice A", proto::TaskStatus::Done),
+        ("Slice B", proto::TaskStatus::InProgress),
+        ("Slice C", proto::TaskStatus::Canceled),
+    ] {
+        changed(save(&mut ws, &workspace, None, None, child(title, status)).await);
+    }
+    let (tasks, _) = snapshot(&mut ws, &workspace).await;
+    let summary = tasks.iter().find(|t| t.id == parent).unwrap();
+    assert_eq!(
+        (summary.children_done, summary.children_total),
+        (1, 2),
+        "a canceled slice leaves the count"
+    );
+    let leaf = tasks.iter().find(|t| t.title == "Slice A").unwrap();
+    assert_eq!((leaf.children_done, leaf.children_total), (0, 0));
+}

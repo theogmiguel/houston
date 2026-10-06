@@ -15,6 +15,14 @@ export type TaskSummary = { id: number, workspace?: string | null, number: numbe
  */
 key: string, title: string, status: TaskStatus, priority: TaskPriority, parent_id?: number | null, ref_url?: string | null, revision: number, created_by: string, created_at_ms: number, updated_at_ms: number, archived_at_ms?: number | null, acceptance_checked: number, acceptance_total: number,
 /**
+ * Non-archived, non-canceled child tasks: a delivery's slices.
+ */
+children_total: number,
+/**
+ * Of `children_total`, the ones that are done.
+ */
+children_done: number,
+/**
  * Where the task came from when it was not typed into Houston.
  */
 intake?: TaskIntake | null,

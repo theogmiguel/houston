@@ -49,6 +49,8 @@ function summary(
     archived_at_ms: null,
     acceptance_checked: 0,
     acceptance_total: 0,
+    children_total: 0,
+    children_done: 0,
     ...extra
   }
 }

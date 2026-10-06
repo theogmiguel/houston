@@ -17,7 +17,7 @@ function task(id: number, title: string, status: TaskSummary['status'], extra: P
     id, workspace: WORKSPACE, number: id, key: `HOU-${id}`, title, status,
     priority: 'medium', parent_id: null, ref_url: null, revision: 1, created_by: 'user',
     created_at_ms: NOW - 60 * MINUTE, updated_at_ms: NOW - 6 * MINUTE,
-    archived_at_ms: null, acceptance_checked: 0, acceptance_total: 0, ...extra
+    archived_at_ms: null, acceptance_checked: 0, acceptance_total: 0, children_total: 0, children_done: 0, ...extra
   }
 }
 

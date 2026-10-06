@@ -60,6 +60,13 @@ export function TaskRow({
       <span className="tk-key">{task.key}</span>
       <span className="tk-title">{task.title}</span>
       {showWorkspace && <Tooltip label={task.workspace ?? 'No workspace'} className="inline-flex min-w-0"><span className="chip-branch max-w-[140px]" data-testid="task-workspace-chip"><span className="truncate">{task.workspace?.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'No workspace'}</span></span></Tooltip>}
+      {task.children_total > 0 && (
+        <Tooltip label={`${task.children_done} of ${task.children_total} subtasks done`} className="inline-flex">
+          <span data-testid="task-children-progress">
+            <Chip variant="state" tone={task.children_done === task.children_total ? 'success' : 'default'} label={`${task.children_done}/${task.children_total}`} />
+          </span>
+        </Tooltip>
+      )}
       {intakeLabel(task) && (
         <span data-testid="task-intake-chip">
           <Chip variant="state" tone="info" label={intakeLabel(task) ?? undefined} />

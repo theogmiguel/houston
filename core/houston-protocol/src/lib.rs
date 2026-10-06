@@ -745,6 +745,14 @@ pub struct TaskSummary {
     pub acceptance_checked: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_total: u32,
+    /// Non-archived, non-canceled child tasks: a delivery's slices.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub children_total: u32,
+    /// Of `children_total`, the ones that are done.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub children_done: u32,
     /// Where the task came from when it was not typed into Houston.
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
