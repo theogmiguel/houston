@@ -1,3 +1,6 @@
+/* Restates tailwind.css's layer order: this sheet can load first, and a layer is placed where it is first seen. */
+@layer properties, theme, base, components, utilities;
+
 @layer base {
   .btn {
     /* An icon is display:block (Icon.tsx), so the button itself must be the

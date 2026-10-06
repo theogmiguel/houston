@@ -1,3 +1,6 @@
+/* Restates tailwind.css's layer order: this sheet can load first, and a layer is placed where it is first seen. */
+@layer properties, theme, base, components, utilities;
+
 /* Pane frame and header grounds by focus tier. Kept below `utilities` so a call site's
    utilities still win, as they did when these were classes: the narrow-container radius
    step on a pane root must override the default frame radius. */
