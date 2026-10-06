@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Chip } from './ui/Chip'
 import { Segmented } from './ui/SegmentedControl'
 import { Disclosure } from './ui/Disclosure'
-import { NavSwitch } from './nav/navChrome'
+import { FieldSwitch } from './ui/navPrimitives'
 import { Toggle } from './ui/settingsPrimitives'
 import { HIT_TARGET_28 } from './hitTarget'
 
@@ -74,11 +76,13 @@ describe('hit targets — charter §10 density floor', () => {
     expectExpandedHitArea(retry ?? null, 'h-[var(--h-ctl-mini)]')
   })
 
-  it("NavSwitch's 17px track hits the floor without growing", () => {
+  it("FieldSwitch's 17px track hits the floor without growing", () => {
     act(() => {
-      root.render(<NavSwitch on={false} label="Orchestration" onChange={() => {}} />)
+      root.render(<FieldSwitch on={false} label="Orchestration" onChange={() => {}} />)
     })
-    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[17px]')
+    const theme = readFileSync(resolve(__dirname, '..', 'theme.css'), 'utf8')
+    expect(theme).toMatch(/--h-switch-track:\s*17px;/)
+    expectExpandedHitArea(container.querySelector('button[role="switch"]'), 'h-[var(--h-switch-track)]')
   })
 
   it("Toggle's 20px track hits the floor without growing", () => {
