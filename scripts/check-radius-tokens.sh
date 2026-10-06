@@ -12,12 +12,6 @@ source scripts/check-radius-tokens-widened-baseline.sh
 
 BASELINE=(
   "ui/src/renderer/src/App.tsx 0"
-  "ui/src/renderer/src/components/BrowserActConfirm.tsx 7"
-  "ui/src/renderer/src/components/browserFullscreenChrome.ts 3"
-  "ui/src/renderer/src/components/BrowserPane.tsx 2"
-  "ui/src/renderer/src/components/browserPickerChrome.ts 3"
-  "ui/src/renderer/src/components/BrowserPicker.tsx 1"
-  "ui/src/renderer/src/components/browserTabs.tsx 3"
   "ui/src/renderer/src/components/FirstRun.tsx 0"
   "ui/src/renderer/src/components/HandoffOverlay.tsx 0"
   "ui/src/renderer/src/components/HostKeyModal.tsx 0"

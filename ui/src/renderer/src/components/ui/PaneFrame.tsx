@@ -9,7 +9,8 @@ const KIND = {
   editor: `editor-leaf bg-[var(--pane-bg)] after:content-[''] after:absolute after:inset-0 after:rounded-[inherit] after:pointer-events-none after:z-[var(--z-base)] after:shadow-[${BORDER_HAIRLINE_INSET_TRANSPARENT}]`,
   files: 'files-pane bg-[var(--pane-bg)]',
   'files-panel': 'files-pane files-panel bg-[var(--pane-bg)]',
-  skills: 'skills-leaf @container/rpanel bg-[var(--pane-bg)]'
+  skills: 'skills-leaf @container/rpanel bg-[var(--pane-bg)]',
+  browser: 'browser bg-[var(--tool-code-bg)] [transition:border-color_0.15s_ease]'
 } as const
 
 export type PaneFrameKind = keyof typeof KIND

@@ -21,3 +21,5 @@ export const RING_ACCENT_INSET_18 = 'inset_0_0_0_1px_color-mix(in_srgb,var(--acc
 export const GLOW_DANGER = '0_0_8px_color-mix(in_srgb,var(--danger)_60%,transparent)'
 export const GLOW_WARNING = '0_0_8px_color-mix(in_srgb,var(--warning)_60%,transparent)'
 export const GLOW_ACCENT = '0_0_8px_color-mix(in_srgb,var(--accent)_70%,transparent)'
+
+export const SCRIM_SPOTLIGHT = '0_0_0_9999px_color-mix(in_srgb,var(--content-bg)_62%,transparent)'

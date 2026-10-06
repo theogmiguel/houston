@@ -2,7 +2,7 @@ import type { ElementType, HTMLAttributes } from 'react'
 
 export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large' | 'md' | 'empty-title'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold' | 'tag-title'
-export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
+export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer' | 'quiet'
 export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint' | 'editor' | 'display' | 'empty'
 
 const SIZE: Record<TextSize, string> = {
@@ -63,7 +63,8 @@ const TONE: Record<TextTone, string> = {
   'key-hint': 'text-[var(--text-key-hint)]',
   'quiet-button': 'text-[var(--quiet-button-ink)]',
   dim: 'text-[color-mix(in_srgb,var(--text-muted)_70%,transparent)]',
-  dimmer: 'text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)]'
+  dimmer: 'text-[color-mix(in_srgb,var(--text-muted)_80%,transparent)]',
+  quiet: 'text-[var(--browser-picker-status-ink)]'
 }
 
 const LEADING: Record<TextLeading, string> = {

@@ -8,7 +8,6 @@ cd "$repo_root"
 ui_src="ui/src"
 
 EXEMPT_COUNTS=(
-  "ui/src/renderer/src/components/browserFullscreenChrome.ts 1"
 )
 
 mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' \) \

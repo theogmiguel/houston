@@ -9,10 +9,6 @@ ui_src="${SCAN_ROOT:-ui/src}"
 fail=0
 
 BASELINE=(
-  "ui/src/renderer/src/components/browserFullscreenChrome.ts 2"
-  "ui/src/renderer/src/components/browserPickerChrome.ts 1"
-  "ui/src/renderer/src/components/BrowserPicker.tsx 1"
-  "ui/src/renderer/src/components/browserTabs.tsx 1"
   "ui/src/renderer/src/components/ui/Chip.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 4"
   "ui/src/renderer/src/components/ui/pickerChrome.ts 1"

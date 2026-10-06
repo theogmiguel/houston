@@ -5,6 +5,7 @@ import { GitToolMenuItem, GitToolMenuSeparator, GitToolMenuSurface } from '../sr
 import { GitStatusMark } from '../src/components/ui/GitStatusMark'
 import { GitPresenceDot, SourceControlCard, SourceControlHeaderBar, SourceControlMetaRow, SourceControlSectionHeading } from '../src/components/ui/SourceControl'
 import { RepositoryNotice } from '../src/components/ui/ScmNotice'
+import { BrowserSurfaceSpecimen } from './browserSpecimens'
 import {
   BarSparkline,
   AttachmentChipFilename,
@@ -1439,6 +1440,11 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Git source control chrome">
           <div className="flex flex-col gap-[var(--space-2)]"><SourceControlSectionHeading>Changes</SourceControlSectionHeading><SourceControlCard><GitBranchRow current><span>main</span><GitBranchBadge role="current">current</GitBranchBadge><GitStatusMark status="modified">M</GitStatusMark></GitBranchRow><SourceControlMetaRow>2 files changed</SourceControlMetaRow></SourceControlCard><GitToolMenuSurface><GitToolMenuItem>Fetch</GitToolMenuItem><GitToolMenuSeparator /><GitToolMenuItem>Branches</GitToolMenuItem></GitToolMenuSurface><DiffEmptyState>No diff selected</DiffEmptyState><GitPresenceDot tone="warn" /><GitBranchDeleteMenu onDelete={() => {}} onForceDelete={() => {}} /><SourceControlHeaderBar>Source control header</SourceControlHeaderBar><RepositoryNotice tone="info" icon={<span aria-hidden>i</span>}>Repository status refreshed</RepositoryNotice></div>
         </SpecimenGroup>
+
+        <SpecimenGroup heading="Browser surface">
+          <BrowserSurfaceSpecimen />
+        </SpecimenGroup>
+
       </div>
     </Viewport>
   )

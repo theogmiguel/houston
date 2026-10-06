@@ -1,4 +1,21 @@
 import React from 'react'
+import {
+  BrowserActModalStory,
+  BrowserActOverlayStory,
+  BrowserFullscreenStory,
+  BrowserPaneFocused,
+  BrowserPaneFresh,
+  BrowserPaneInsecure,
+  BrowserPaneNarrow,
+  BrowserPanePage,
+  BrowserPanePersistError,
+  BrowserPanePhone,
+  BrowserPaneTablet,
+  BrowserPaneTabs,
+  BrowserPickerError,
+  BrowserPickerHint,
+  BrowserPickerSelected
+} from './browserStories'
 import { NewSessionComposer } from '../src/components/NewSessionComposer'
 import { LaunchGridPreview } from '../src/components/ui/LaunchGridPreview'
 import type { SessionSlot } from '../src/components/sessionPresets'
@@ -228,6 +245,21 @@ function RailWorkspacesMulti(): React.JSX.Element {
 }
 
 export const STORIES: Record<string, () => React.JSX.Element> = {
+  'browser/pane': () => <BrowserPanePage />,
+  'browser/pane-focused': () => <BrowserPaneFocused />,
+  'browser/pane-fresh': () => <BrowserPaneFresh />,
+  'browser/pane-narrow': () => <BrowserPaneNarrow />,
+  'browser/pane-insecure': () => <BrowserPaneInsecure />,
+  'browser/pane-phone': () => <BrowserPanePhone />,
+  'browser/pane-tablet': () => <BrowserPaneTablet />,
+  'browser/pane-tabs': () => <BrowserPaneTabs />,
+  'browser/pane-persist-error': () => <BrowserPanePersistError />,
+  'browser/picker-hint': () => <BrowserPickerHint />,
+  'browser/picker-selected': () => <BrowserPickerSelected />,
+  'browser/picker-error': () => <BrowserPickerError />,
+  'browser/fullscreen': () => <BrowserFullscreenStory />,
+  'browser/act-overlay': () => <BrowserActOverlayStory />,
+  'browser/act-modal': () => <BrowserActModalStory />,
   'new-session/default': () => <NewSession />,
   'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onNewBrowser={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
   'shell/workspace-empty': () => <WorkspaceEmpty onNewSession={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,

@@ -12,8 +12,6 @@ source scripts/check-spacing-tokens-widened-baseline.sh
 BASELINE=(
   "ui/src/renderer/src/App.tsx 0"
   "ui/src/renderer/src/BootstrapGate.tsx 0"
-  "ui/src/renderer/src/components/BrowserActConfirm.tsx 1"
-  "ui/src/renderer/src/components/browserTabs.tsx 1"
   "ui/src/renderer/src/components/ui/ActionEmptyState.tsx 2"
   "ui/src/renderer/src/components/FirstRun.tsx 0"
   "ui/src/renderer/src/components/HandoffOverlay.tsx 1"

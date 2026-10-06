@@ -218,7 +218,6 @@ import {
   useScmWidth,
   type ScmTab,
 } from "./scmPanel";
-import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
 import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";

@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 
 BASELINE=(
-  "ui/src/renderer/src/components/BrowserActConfirm.tsx 118"
-  "ui/src/renderer/src/components/BrowserFullscreen.tsx 2"
-  "ui/src/renderer/src/components/BrowserPane.tsx 106"
-  "ui/src/renderer/src/components/BrowserPicker.tsx 2"
   "ui/src/renderer/src/components/ConfirmModal.tsx 0"
   "ui/src/renderer/src/components/FirstRun.tsx 0"
   "ui/src/renderer/src/components/HostKeyModal.tsx 0"
@@ -14,9 +10,6 @@ BASELINE=(
   "ui/src/renderer/src/components/ShortcutSheet.tsx 0"
   "ui/src/renderer/src/components/SshConnectModal.tsx 0"
   "ui/src/renderer/src/components/UpdateInstallModal.tsx 0"
-  "ui/src/renderer/src/components/browserFullscreenChrome.ts 44"
-  "ui/src/renderer/src/components/browserPickerChrome.ts 79"
-  "ui/src/renderer/src/components/browserTabs.tsx 52"
   "ui/src/renderer/src/components/git/PrBrowse.tsx 0"
   "ui/src/renderer/src/components/git/PrPickers.tsx 0"
   "ui/src/renderer/src/components/git/PullRequestTab.tsx 0"

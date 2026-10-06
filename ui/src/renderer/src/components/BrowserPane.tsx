@@ -1,5 +1,4 @@
 import { useContext, useEffect, useRef, useState } from 'react'
-import { GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './ui/shadowChrome'
 import type { BrowserNode } from '../layout/tree'
 import { openExternal } from '../houston/bridge'
 import { isTauri } from '../houston/host'
@@ -15,22 +14,35 @@ import {
   IconCollapse,
   IconExpand,
   IconExternal,
-  IconRefresh,
   IconSearch,
   IconTarget,
   IconMonitor,
   IconPhone,
   IconTablet
 } from './icons'
-import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './ui/panelChrome'
-
-const SURFACE_RADIUS_CLS =
-  'rounded-b-[calc(var(--tr-radius-md)-1px)] [@container_(max-width:280px)]:rounded-b-[calc(var(--tr-radius-sm)-1px)]'
 import { usePaneFocusTier } from '../windowFocus'
-import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
+import {
+  DevicePresetButton,
+  PaneHeadActions,
+  BrowserNavigationButton,
+  TabCountButton,
+  TabCount,
+  UrlField,
+  BrowserCaption,
+  BrowserDeviceGroup,
+  BrowserDeviceRow,
+  AgentIndicator,
+  BrowserHeadButton,
+  BrowserLoadBar,
+  BrowserReloadGlyph,
+  BrowserSecurityBadge,
+  BrowserStage,
+  BrowserStatusBand,
+  BrowserUrlInput,
+  BrowserUrlSearchIcon
+} from './ui/BrowserSurface'
 import { Tooltip } from './ui/Tooltip'
-import { PaneHeader } from './ui'
+import { PaneFrame, PaneHeader } from './ui'
 import { BrowserActConfirm } from './BrowserActConfirm'
 import { useBrowserConfirm } from '../houston/browserConfirm'
 import { useBrowserPaneLoad } from '../houston/browserOpenRequest'
@@ -69,18 +81,6 @@ interface Props {
   focusUrlRequest?: number
   client?: HoustonClient
 }
-
-const ICO_HEAD_BASE =
-  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none [@container_(max-width:280px)]:w-5 [@container_(max-width:280px)]:h-5 [@container_(max-width:200px)]:w-[18px] [@container_(max-width:200px)]:h-[18px] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
-const ICO_HEAD_REGULAR =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] hover:text-[var(--text-primary)]'
-const ICO_HEAD_DANGER =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]'
-const ICO_HEAD_INFO =
-  'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
-
-const NAV_BTN_CLS =
-  `inline-flex items-center justify-center ${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] text-[var(--text-muted)] bg-transparent border-0 flex-none [transition:color_0.14s_ease,background_0.14s_ease,transform_0.14s_ease] enabled:hover:text-[var(--text-primary)] enabled:hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] enabled:active:scale-[0.92] disabled:opacity-[0.28] disabled:cursor-default`
 
 function seedTabs(key: string, fallbackUrl: string): { tabs: BrowserTab[]; activeTabId: number } {
   const restored = loadTabs(key)
@@ -219,12 +219,7 @@ export function BrowserPane({
   const picker = usePickerController(node.id, fresh || !onSendToTerminal || !!hiddenByExpand, onSendToTerminal)
 
   return (
-    <section
-      ref={hostRef}
-      data-pane-focus-border={focusTier}
-      className={`pane browser flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--tool-code-bg)] overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] [transition:border-color_0.15s_ease] ${paneActive ? 'focus' : ''}`}
-      data-panekey={node.id}
-    >
+    <PaneFrame kind="browser" ref={hostRef} focusTier={focusTier} active={paneActive} data-panekey={node.id}>
       <PaneHeader
         data-pane-focus-head={focusTier}
         divider="borderMuted"
@@ -232,47 +227,39 @@ export function BrowserPane({
         dragCursor
         onPointerDown={onHeaderPointerDown}
       >
-        <span className="agent-dot w-[7px] h-[7px] rounded-full flex-none bg-[var(--border-hover)]" />
+        <AgentIndicator />
         <Tooltip label="Back">
-          <button className={NAV_BTN_CLS} aria-label="Back" disabled={!active.canGoBack} onClick={goBack}>
+          <BrowserNavigationButton aria-label="Back" disabled={!active.canGoBack} onClick={goBack}>
             <Icon glyph={IconChevronLeft} role="ui" />
-          </button>
+          </BrowserNavigationButton>
         </Tooltip>
         <Tooltip label="Forward">
-          <button
-            className={NAV_BTN_CLS}
+          <BrowserNavigationButton
             aria-label="Forward"
             disabled={!active.canGoForward}
             onClick={goForward}
           >
             <Icon glyph={IconChevronRight} role="ui" />
-          </button>
+          </BrowserNavigationButton>
         </Tooltip>
         <Tooltip label="Reload — Shift+Click bypasses the cache">
-          <button
-            className={NAV_BTN_CLS}
+          <BrowserNavigationButton
             aria-label="Reload"
             disabled={fresh}
             onClick={(e) => reload(e.shiftKey)}
           >
-            <span className={active.loading ? 'loop-anim inline-flex animate-[spin_1s_linear_infinite]' : 'inline-flex'}>
-              <Icon glyph={IconRefresh} role="ui" />
-            </span>
-          </button>
+            <BrowserReloadGlyph loading={Boolean(active.loading)} />
+          </BrowserNavigationButton>
         </Tooltip>
-        <div className="browser-url relative flex-1 min-w-0 flex items-center">
-          <span
-            className={`absolute left-1.5 top-1/2 -translate-y-1/2 inline-flex pointer-events-none [transition:color_0.16s_ease] ${urlFocused ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
-            aria-hidden
-            hidden={!fresh}
-          >
+        <UrlField>
+          <BrowserUrlSearchIcon focused={urlFocused} hidden={!fresh}>
             <Icon glyph={IconSearch} role="label" />
-          </span>
-          {!fresh && <span className={`browser-security ${browserSecurity(active.url) === 'not secure' ? 'insecure' : ''}`}>{browserSecurity(active.url)}</span>}
-          <input
+          </BrowserUrlSearchIcon>
+          {!fresh && <BrowserSecurityBadge insecure={browserSecurity(active.url) === 'not secure'}>{browserSecurity(active.url)}</BrowserSecurityBadge>}
+          <BrowserUrlInput
             ref={urlRef}
             aria-label="Address and search bar"
-            className={`${URL_INPUT_CLS} ${fresh ? 'pl-[22px]' : 'browser-address'}`}
+            variant={fresh ? 'fresh' : 'address'}
             placeholder={fresh ? 'enter a url to open a new tab' : 'search or enter url'}
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
@@ -291,79 +278,36 @@ export function BrowserPane({
             autoCapitalize="off"
             autoCorrect="off"
           />
-        </div>
+        </UrlField>
         <BrowserHeadActions node={node} tabs={tabs} active={active} popover={popover} setPopover={setPopover} selectTab={selectTab} closeTab={closeTab} newTab={newTab} urlInput={urlInput} fullscreen={fullscreen} setFullscreen={setFullscreen} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} panel={panel} onSendToTerminal={onSendToTerminal} onMoveToGrid={onMoveToGrid} onClose={onClose} />
       </PaneHeader>
-      <div className="relative h-0.5 w-full overflow-hidden flex-none z-[var(--z-base)]" aria-hidden>
-        {active.loading &&
-          (active.progress != null ? (
-            <div
-              className="absolute inset-y-0 left-0 w-full origin-left opacity-80 bg-[var(--text-primary)] [transition:transform_0.12s_ease]"
-              style={{ transform: `scaleX(${Math.min(1, Math.max(0, active.progress))})` }}
-            />
-          ) : (
-            <div className="loop-anim absolute inset-0 opacity-60 motion-safe:w-2/5 motion-safe:bg-[linear-gradient(to_right,transparent,var(--text-primary)_50%,transparent)] motion-safe:[animation:rbrowser-progress-slide_1.15s_cubic-bezier(0.4,0,0.3,1)_infinite] motion-reduce:w-full motion-reduce:bg-[var(--text-primary)]" />
-          ))}
-      </div>
+      <BrowserLoadBar loading={Boolean(active.loading)} progress={active.progress} />
       {persistError && (
-        <div
-          className="flex items-center gap-2 py-[6px] pr-3 pl-4 flex-none [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[color-mix(in_srgb,var(--warning)_92%,var(--text-primary))] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] border-b border-[color-mix(in_srgb,var(--warning)_28%,transparent)] z-[var(--z-base)]"
-          role="alert"
-          data-testid="browser-pane-persist-error"
-        >
-          <span
-            className={`flex-none w-1.5 h-1.5 rounded-[999px] bg-warning shadow-[${GLOW_WARNING}]`}
-            aria-hidden
-          />
-          <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{persistError}</span>
-        </div>
+        <BrowserStatusBand tone="warning" edge="bottom" indicator data-testid="browser-pane-persist-error">
+          {persistError}
+        </BrowserStatusBand>
       )}
       {detachError && (
-        <div
-          className="flex items-center gap-2 py-[6px] pr-3 pl-4 flex-none [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[color-mix(in_srgb,var(--danger)_92%,var(--text-primary))] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] border-b border-[color-mix(in_srgb,var(--danger)_28%,transparent)] z-[var(--z-base)]"
-          role="alert"
-          data-testid={`browser-detach-error-${node.id}`}
-        >
-          <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{detachError}</span>
-          <button
-            type="button"
-            className="btn flex-none py-0.5 px-[7px] border-0 rounded-[var(--tr-radius-input)] bg-transparent text-inherit font-semibold [transition:background_0.12s_ease] hover:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)]"
-            onClick={() => setDetachError(null)}
-          >
-            Dismiss
-          </button>
-        </div>
+        <BrowserStatusBand tone="danger" edge="bottom" data-testid={`browser-detach-error-${node.id}`} action={{ label: 'Dismiss', onClick: () => setDetachError(null) }}>
+          {detachError}
+        </BrowserStatusBand>
       )}
       {surfaceMountFailed && (
-        <div
-          className="flex items-center gap-2 py-[6px] pr-3 pl-4 flex-none [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[color-mix(in_srgb,var(--danger)_92%,var(--text-primary))] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] border-b border-[color-mix(in_srgb,var(--danger)_28%,transparent)] z-[var(--z-base)]"
-          role="alert"
-          data-testid="browser-pane-mount-recovery"
-        >
-          <span className={`flex-none w-1.5 h-1.5 rounded-[999px] bg-danger shadow-[${GLOW_DANGER}]`} aria-hidden />
-          <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-            Browser webview failed to mount. Retry to recreate it.
-          </span>
-          <button
-            type="button"
-            className="btn flex-none py-0.5 px-[7px] border-0 rounded-[var(--tr-radius-input)] bg-transparent text-inherit font-semibold [transition:background_0.12s_ease] hover:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)]"
-            onClick={retryMount}
-          >
-            Retry
-          </button>
-        </div>
+        <BrowserStatusBand tone="danger" edge="bottom" indicator data-testid="browser-pane-mount-recovery" action={{ label: 'Retry', onClick: retryMount }}>
+          Browser webview failed to mount. Retry to recreate it.
+        </BrowserStatusBand>
       )}
-      <div className="browser-devrow">
+      <BrowserDeviceRow>
         <DevicePresetButtons device={device} onDevice={setDevice} refusal={deviceRefusal} ready={nativeReady} />
-        <span className="browser-caption">{size ? `${size.width} × ${size.height} · ${Math.round(zoom * 100)}%` : 'fit · 100%'}</span>
-      </div>
+        <BrowserCaption>{size ? `${size.width} × ${size.height} · ${Math.round(zoom * 100)}%` : 'fit · 100%'}</BrowserCaption>
+      </BrowserDeviceRow>
       <PickerStrip id={node.id} controller={picker} />
-      <div ref={stageRef} className="browser-stage">
+      <BrowserStage ref={stageRef}>
       {hasBrowserPage(tabs, surfaceMountFailed, failMsg) && (
         <BrowserFullscreen
           active={fullscreen}
           onExit={() => setFullscreen(false)}
-          hostClassName={`browser-device ${device}`}
+          hostDevice={device}
           hostStyle={size ? { width: size.width * zoom, height: size.height * zoom, flex: 'none' } : undefined}
           urlLabel={active.url ?? ''}
           canGoBack={Boolean(active.canGoBack)}
@@ -379,7 +323,7 @@ export function BrowserPane({
             id={node.id}
             workspaceDir={workspaceDir}
             url={(active.url ?? tabs.find((t) => t.url !== null)?.url) as string}
-            className={fullscreen ? WEBVIEW_HOST_CLS : `${WEBVIEW_HOST_CLS} ${SURFACE_RADIUS_CLS}`}
+            rounded={!fullscreen}
             style={!fullscreen && size ? { width: size.width, height: size.height, flex: 'none', transform: `scale(${zoom})`, transformOrigin: 'top left' } : undefined}
             hidden={hiddenByExpand}
             dropzoneActive={dropzoneActive || confirmingHere}
@@ -442,14 +386,14 @@ export function BrowserPane({
         reload={() => reload(false)}
         openUrl={openUrl}
       />
-      </div>
-    </section>
+      </BrowserStage>
+    </PaneFrame>
   )
 }
 
 
 function DevicePresetButtons({ device, onDevice, refusal, ready }: { device: BrowserDevice; onDevice: (device: BrowserDevice) => void; refusal: string | null; ready: boolean }): React.JSX.Element {
-  return <div className="browser-device-buttons" role="group" aria-label="Device preset">{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={refusal && value !== 'desktop' ? `${label} unavailable: ${refusal}` : label}><button className={NAV_BTN_CLS} aria-label={label} aria-pressed={device === value} disabled={value !== 'desktop' && (refusal != null || (isTauri() && !ready))} onClick={() => onDevice(value)}><Icon glyph={glyph} role="label" /></button></Tooltip>)}</div>
+  return <BrowserDeviceGroup>{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={refusal && value !== 'desktop' ? `${label} unavailable: ${refusal}` : label}><DevicePresetButton aria-label={label} aria-pressed={device === value} disabled={value !== 'desktop' && (refusal != null || (isTauri() && !ready))} onClick={() => onDevice(value)}><Icon glyph={glyph} role="label" /></DevicePresetButton></Tooltip>)}</BrowserDeviceGroup>
 }
 
 function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab, closeTab, newTab, urlInput, fullscreen, setFullscreen, detached, viewportRef, setDetachError, picker, panel, onSendToTerminal, onMoveToGrid, onClose }: {
@@ -475,21 +419,20 @@ function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab
 }): React.JSX.Element {
   const fresh = active.url === null
   return (
-        <span className="head-actions flex items-center gap-px flex-none">
-          <div className="relative flex-shrink-0">
+        <PaneHeadActions>
+          <div className="relative shrink-0">
             <Tooltip label={`${tabs.length} tab${tabs.length === 1 ? '' : 's'}`}>
-              <button
+              <TabCountButton
                 type="button"
-                className="btn inline-flex items-center gap-[3px] h-[var(--h-ctl-mini)] py-0 px-[7px] rounded-[var(--tr-radius-sm)] bg-transparent border-0 text-[var(--text-muted)] font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [transition:color_0.14s_ease,background_0.14s_ease] hover:text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] data-[open]:text-[var(--text-primary)] data-[open]:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)]"
                 data-open={popover || undefined}
                 aria-haspopup="menu"
                 aria-expanded={popover}
                 aria-label={`${tabs.length} tab${tabs.length === 1 ? '' : 's'}`}
                 onClick={() => setPopover((cur) => !cur)}
               >
-                <span className="min-w-[9px] text-center tracking-[0.01em] tabular-nums">{tabs.length}</span>
+                <TabCount>{tabs.length}</TabCount>
                 <Icon glyph={IconChevronDown} role="label" />
-              </button>
+              </TabCountButton>
             </Tooltip>
             {popover && (
               <TabsPopover
@@ -503,8 +446,7 @@ function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab
             )}
           </div>
           <Tooltip label="Open in external browser">
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_REGULAR}`}
+            <BrowserHeadButton
               aria-label="Open in external browser"
               disabled={fresh}
               onClick={() =>
@@ -514,31 +456,31 @@ function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab
               }
             >
               <Icon glyph={IconExternal} role="ui" />
-            </button>
+            </BrowserHeadButton>
           </Tooltip>
           <Tooltip label={fullscreen ? 'Exit full screen (Esc)' : 'Expand to full screen'}>
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${fullscreen ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
+            <BrowserHeadButton
+              tone={fullscreen ? 'info' : 'regular'}
               aria-label={fullscreen ? 'Exit full screen' : 'Expand browser to full screen'}
               aria-pressed={fullscreen}
               disabled={fresh}
               onClick={() => setFullscreen((cur) => !cur)}
             >
               {fullscreen ? <Icon glyph={IconCollapse} role="ui" /> : <Icon glyph={IconExpand} role="ui" />}
-            </button>
+            </BrowserHeadButton>
           </Tooltip>
           <BrowserNativeActions nodeId={node.id} fresh={fresh} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} onSendToTerminal={onSendToTerminal} />
-          {panel && <Tooltip label="Move to grid"><button className={NAV_BTN_CLS} aria-label="Move to grid" onClick={() => onMoveToGrid?.(active.url ?? '')}><Icon glyph={IconExternal} role="ui" /></button></Tooltip>}
+          {panel && <Tooltip label="Move to grid"><BrowserNavigationButton aria-label="Move to grid" onClick={() => onMoveToGrid?.(active.url ?? '')}><Icon glyph={IconExternal} role="ui" /></BrowserNavigationButton></Tooltip>}
           <Tooltip label="Close">
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
+            <BrowserHeadButton
+              tone="danger"
               aria-label="Close"
               onClick={onClose}
             >
               <Icon glyph={IconClose} role="ui" />
-            </button>
+            </BrowserHeadButton>
           </Tooltip>
-        </span>
+        </PaneHeadActions>
   )
 }
 
@@ -554,8 +496,8 @@ function BrowserNativeActions({ nodeId, fresh, detached, viewportRef, setDetachE
   return <>
           {isTauri() && (
             <Tooltip label={detached ? 'Reattach into the grid' : 'Detach into its own window'}>
-              <button
-                className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${detached ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
+              <BrowserHeadButton
+                tone={detached ? 'info' : 'regular'}
                 aria-label={detached ? 'Reattach browser into the grid' : 'Detach browser into its own window'}
                 aria-pressed={detached}
                 disabled={fresh}
@@ -574,15 +516,15 @@ function BrowserNativeActions({ nodeId, fresh, detached, viewportRef, setDetachE
                 }}
               >
                 <Icon glyph={IconExternal} role="ui" />
-              </button>
+              </BrowserHeadButton>
             </Tooltip>
           )}
           {isTauri() && (
             <Tooltip
               label={!onSendToTerminal ? 'Select element unavailable: focus a live agent pane first' : picker.enabled ? 'Stop selecting elements (Esc)' : 'Select element · click to hand it to the focused agent'}
             >
-              <button
-                className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${picker.enabled ? ICO_HEAD_INFO : ICO_HEAD_REGULAR}`}
+              <BrowserHeadButton
+                tone={picker.enabled ? 'info' : 'regular'}
                 aria-label={picker.enabled ? 'Stop selecting elements' : 'Select a page element'}
                 aria-pressed={picker.enabled}
                 disabled={fresh || !onSendToTerminal}
@@ -590,7 +532,7 @@ function BrowserNativeActions({ nodeId, fresh, detached, viewportRef, setDetachE
                 onClick={picker.toggle}
               >
                 <Icon glyph={IconTarget} role="ui" />
-              </button>
+              </BrowserHeadButton>
             </Tooltip>
           )}
   </>

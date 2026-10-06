@@ -7,6 +7,7 @@ import { clearRecents, faviconInitial, hostLabel } from '../browserTabs'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 import { unreachableHost, unreachableMessage } from './browserUnreachable'
 import { lastRunLabel } from '../nav/routineFormat'
+import { BrowserCaption } from './BrowserSurface'
 
 const groupTitle = variants(
   'inline-flex items-center gap-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-muted)]',
@@ -172,7 +173,7 @@ export function BrowserPaneStageState({
       />
     )
   }
-  if (failMsg === null) return <span className="browser-caption">Select element · click to hand it to the focused agent</span>
+  if (failMsg === null) return <BrowserCaption>Select element · click to hand it to the focused agent</BrowserCaption>
   return (
     <BrowserUnreachableState
       host={unreachableHost(url)}

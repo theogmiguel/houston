@@ -2,25 +2,28 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { useNativeSuppression } from '../layout/nativeSuppression'
 import { isTauri } from '../houston/host'
-import { IconChevronLeft, IconChevronRight, IconClose, IconRefresh } from './icons'
+import { IconChevronLeft, IconChevronRight, IconClose } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import {
-  FS_BACKDROP_CLS,
-  FS_CHROME_CLS,
-  FS_EXIT_BTN_CLS,
-  FS_MODAL_CLS,
-  FS_NAV_BTN_CLS,
-  FS_ROW_CLS,
-  FS_SLOT_CLS,
-  FS_URL_INPUT_CLS,
-  FS_URL_WRAP_CLS
-} from './browserFullscreenChrome'
+  BrowserDeviceFrame,
+  FullscreenBackdrop,
+  FullscreenToolbar,
+  FullscreenExitButton,
+  FullscreenPanel,
+  FullscreenToolbarRow,
+  FullscreenContent,
+  FullscreenUrlInput,
+  FullscreenUrlField,
+  BrowserNavigationButton,
+  BrowserReloadGlyph,
+  type BrowserDeviceKind
+} from './ui/BrowserSurface'
 import { Icon } from './ui/Icon'
 
 export interface BrowserFullscreenProps {
   active: boolean
   onExit: () => void
-  hostClassName?: string
+  hostDevice?: BrowserDeviceKind
   hostStyle?: React.CSSProperties
   urlLabel: string
   canGoBack: boolean
@@ -36,7 +39,7 @@ export interface BrowserFullscreenProps {
 export function BrowserFullscreen({
   active,
   onExit,
-  hostClassName,
+  hostDevice,
   hostStyle,
   urlLabel,
   canGoBack,
@@ -94,58 +97,51 @@ export function BrowserFullscreen({
 
   return (
     <>
-      <div ref={inlineHostRef} className={`${hostClassName ?? ''} flex`.trim()} style={hostStyle} />
+      {hostDevice ? <BrowserDeviceFrame ref={inlineHostRef} device={hostDevice} style={hostStyle} /> : <div ref={inlineHostRef} className="flex" style={hostStyle} />}
       {createPortal(children, slotNodeRef.current)}
       {active &&
         createPortal(
-          <div
-            className={FS_BACKDROP_CLS}
+          <FullscreenBackdrop
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) onExit()
             }}
           >
-            <div
-              className={FS_MODAL_CLS}
+            <FullscreenPanel
               role="dialog"
               aria-modal="true"
               aria-label="Browser — full screen"
               tabIndex={-1}
             >
-              <div className={FS_CHROME_CLS}>
-                <div className={FS_ROW_CLS}>
+              <FullscreenToolbar>
+                <FullscreenToolbarRow>
                   <Tooltip label="Back">
-                    <button
+                    <BrowserNavigationButton
                       type="button"
-                      className={FS_NAV_BTN_CLS}
                       aria-label="Back"
                       disabled={!canGoBack}
                       onClick={onBack}
                     >
                       <Icon glyph={IconChevronLeft} role="ui" />
-                    </button>
+                    </BrowserNavigationButton>
                   </Tooltip>
                   <Tooltip label="Forward">
-                    <button
+                    <BrowserNavigationButton
                       type="button"
-                      className={FS_NAV_BTN_CLS}
                       aria-label="Forward"
                       disabled={!canGoForward}
                       onClick={onForward}
                     >
                       <Icon glyph={IconChevronRight} role="ui" />
-                    </button>
+                    </BrowserNavigationButton>
                   </Tooltip>
                   <Tooltip label="Reload">
-                    <button type="button" className={FS_NAV_BTN_CLS} aria-label="Reload" onClick={onReload}>
-                      <span className={loading ? 'loop-anim inline-flex animate-[spin_1s_linear_infinite]' : 'inline-flex'}>
-                        <Icon glyph={IconRefresh} role="ui" />
-                      </span>
-                    </button>
+                    <BrowserNavigationButton type="button" aria-label="Reload" onClick={onReload}>
+                      <BrowserReloadGlyph loading={loading} />
+                    </BrowserNavigationButton>
                   </Tooltip>
-                  <span className={FS_URL_WRAP_CLS}>
-                    <input
-                      className={FS_URL_INPUT_CLS}
+                  <FullscreenUrlField>
+                    <FullscreenUrlInput
                       value={draft ?? urlLabel}
                       readOnly={!onNavigate}
                       tabIndex={onNavigate ? 0 : -1}
@@ -170,24 +166,23 @@ export function BrowserFullscreen({
                         }
                       }}
                     />
-                  </span>
+                  </FullscreenUrlField>
                   <Tooltip label="Exit full screen (Esc)">
-                    <button
+                    <FullscreenExitButton
                       type="button"
-                      className={FS_EXIT_BTN_CLS}
                       aria-label="Exit full screen"
                       aria-pressed={true}
                       data-testid="browser-fullscreen-exit"
                       onClick={onExit}
                     >
                       <Icon glyph={IconClose} role="ui" />
-                    </button>
+                    </FullscreenExitButton>
                   </Tooltip>
-                </div>
-              </div>
-              <div ref={modalSlotRef} className={FS_SLOT_CLS} data-testid="browser-fullscreen-slot" />
-            </div>
-          </div>,
+                </FullscreenToolbarRow>
+              </FullscreenToolbar>
+              <FullscreenContent ref={modalSlotRef} data-testid="browser-fullscreen-slot" />
+            </FullscreenPanel>
+          </FullscreenBackdrop>,
           document.body
         )}
     </>
