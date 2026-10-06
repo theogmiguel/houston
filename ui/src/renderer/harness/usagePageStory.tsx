@@ -93,9 +93,16 @@ function fixtureActivity(): UsageActivityDay[] {
   })
 }
 
-export function UsagePageStory(): React.JSX.Element {
+export function UsagePageStory({ state = 'normal' }: { state?: 'normal' | 'error' | 'stale' | 'empty' }): React.JSX.Element {
+  const summary = fixtureSummary()
+  if (state === 'stale') summary.since_ms = summary.until_ms - DAY
+  if (state === 'empty') {
+    summary.buckets = []
+    summary.sources = summary.sources.map((source) => ({ ...source, distinct_sessions: 0 }))
+  }
   return (
-    <div className="flex h-full min-h-0 bg-[var(--content-bg)]">
+    <div data-story-state={state} className="flex h-full min-h-0 bg-[var(--content-bg)]">
+      {state === 'stale' && <style>{'[data-story-state="stale"] [data-testid="usage-body"] { transition-duration: 0s !important; }'}</style>}
       <aside className="grid flex-none content-start gap-[var(--space-3)] px-[var(--space-2)] py-[var(--space-2)] text-[var(--text-secondary)]" style={{ width: 148, background: 'var(--rail-bg)' }}>
         <div className="px-[var(--space-2)] text-[length:var(--tr-text-small-size)] font-semibold tracking-[0.08em] text-[var(--text-faint)]">HOUSTON</div>
         <div className="grid gap-[var(--space-1)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)]">
@@ -110,10 +117,10 @@ export function UsagePageStory(): React.JSX.Element {
       </aside>
       <div className="min-h-0 min-w-0 flex-1">
         <UsageSection
-          summary={fixtureSummary()}
+          summary={summary}
           activity={fixtureActivity()}
-          loading={false}
-          error={null}
+          loading={state === 'stale'}
+          error={state === 'error' ? 'The transcript scan failed. Check the agent data directory and refresh.' : null}
           workspaces={[{ path: '/home/dev/code/houston', name: 'houston' }]}
           initialWorkspace="all"
           onRequest={() => {}}

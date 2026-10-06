@@ -107,7 +107,6 @@ import {
 } from "./usePreferences";
 import { Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
-import { MATERIAL_CLS, materialAttrs } from "./components/material";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
 import { canUseSkillInFocusedPane } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
@@ -119,14 +118,10 @@ import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes
 import { engineLabel } from "./components/engineLabel";
 import { LayoutView } from "./components/LayoutView";
 import { AddPanePopover } from "./components/AddPanePopover";
-import { Tooltip } from "./components/Tooltip";
+import { Tooltip } from "./components/ui/Tooltip";
 import { tabsStorageKey } from "./components/browserTabsKey";
 import { recordAndReload } from "./reloadBudget";
-import { AnimOut } from "./components/AnimOut";
-import {
-  BTN_ICO,
-  BTN_PRIMARY,
-} from "./components/buttonChrome";
+import { AnimOut } from "./components/ui/AnimOut";
 import { SurfaceBoundary } from "./components/SurfaceBoundary";
 import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
@@ -209,7 +204,6 @@ import type { ReviewDiffsData } from "./git/review";
 import { useNotices } from "./notices";
 import { NoticeStack } from "./components/NoticeStack";
 import {
-  IconClose,
   IconGrid,
   IconPanelLeft,
 } from "./components/icons";
@@ -224,7 +218,6 @@ import {
   useScmWidth,
   type ScmTab,
 } from "./scmPanel";
-import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
 import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";
@@ -321,7 +314,23 @@ import {
 } from "./windowButtonLayout";
 import { stackCapacity } from "./paneCaps";
 import { changedEntries } from "./layout/changedEntries";
-import { Icon } from "./components/Icon";
+import { Icon } from "./components/ui/Icon";
+import {
+  Button,
+  AppTitlebar,
+  ContentRegion,
+  ContentsSwitch,
+  EmptyGridHint,
+  FloatingBanner,
+  FullScreenMessage,
+  GridRegion,
+  GridSlot,
+  QuietButton,
+  SidePanelRow,
+  Text,
+  ToolbarActions,
+  WindowControlDock,
+} from "./components/ui";
 
 // lazy() keeps Settings (and everything below) out of the boot chunk
 // WebKitGTK parses before the grid can paint — `bundle-budget.json`'s
@@ -3210,32 +3219,29 @@ export function App(): React.JSX.Element {
 
   if (conn.kind === "connecting")
     return (
-      <div className="h-screen flex flex-col items-center justify-center gap-[14px] text-[var(--text-muted)]">
+      <FullScreenMessage tone="muted">
         connecting to houston-core…
-      </div>
+      </FullScreenMessage>
     );
   if (conn.kind === "failed")
     return (
-      <div className="h-screen flex flex-col items-center justify-center gap-[14px] text-[var(--danger)] px-[20%] text-center">
-        <p>{conn.error}</p>
-        <div className="flex gap-2">
-          <button
-            className={`btn ${BTN_PRIMARY}`}
+      <FullScreenMessage tone="danger">
+        <Text as="p">{conn.error}</Text>
+        <div className="flex gap-[var(--space-2)]">
+          <Button
+            variant="legacy-primary"
             onClick={() => {
               setConn({ kind: "connecting" });
               setRetryNonce((n) => n + 1);
             }}
           >
             Retry
-          </button>
-          <button
-            className="border-0 bg-transparent hover:bg-[var(--card-hover)]"
-            onClick={recordAndReload}
-          >
+          </Button>
+          <QuietButton variant="fill" onClick={recordAndReload}>
             Reload app
-          </button>
+          </QuietButton>
         </div>
-      </div>
+      </FullScreenMessage>
     );
   const client = conn.client;
   const connected = conn.kind === "ready";
@@ -3381,7 +3387,7 @@ export function App(): React.JSX.Element {
           />
           {!sidebarRail && (
             <Sidebar
-              className="[grid-area:rail]"
+              gridArea="rail"
               onHeadMouseDown={handleTitlebarMouseDown}
               onHeadDoubleClick={handleTitlebarDoubleClick}
               workspaces={orderedWorkspaces}
@@ -3473,32 +3479,29 @@ export function App(): React.JSX.Element {
               )}
             />
           )}
-          <header
-            data-custom={customChrome.dataCustom}
-            {...materialAttrs("shell")}
-            className={`relative [grid-area:topbar] grid grid-cols-[minmax(0,1fr)_auto] items-center h-[var(--h-top)] [-webkit-app-region:drag] select-none ${MATERIAL_CLS.shell} ${
-              customChrome.custom ? "shadow-[var(--glass-topbar-shadow)]" : ""
-            }`}
+          <AppTitlebar
+            custom={customChrome.custom}
+            dataCustom={customChrome.dataCustom}
             onMouseDown={handleTitlebarMouseDown}
             onDoubleClick={handleTitlebarDoubleClick}
           >
             <div className="flex items-center gap-1.5 min-w-0 pl-2.5">
               <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
-              {}
               {sidebarRail && (
                 <Tooltip label="Show sidebar (Ctrl+B)">
-                  <button
+                  <Button
                     type="button"
-                    className={`relative ${BTN_ICO} [-webkit-app-region:no-drag]`}
+                    variant="legacy-titlebar-icon"
+                    className="relative"
                     aria-label="Show sidebar"
                     onClick={() => setSidebarRail(false)}
                   >
                     <Icon glyph={IconPanelLeft} role="ui" />
-                  </button>
+                  </Button>
                 </Tooltip>
               )}
             </div>
-            <div className="ml-auto flex items-center gap-1 mr-1">
+            <ToolbarActions>
               <VoiceMicChip
                 paneTitle={(session) =>
                   sessionsRef.current.get(session)?.title ?? null
@@ -3511,48 +3514,51 @@ export function App(): React.JSX.Element {
                     : "Open a second pane to tidy the grid"
                 }
               >
-                <button
-                  className={`btn ${BTN_ICO} [-webkit-app-region:no-drag]`}
+                <Button
+                  variant="legacy-titlebar-icon"
                   aria-label="Tidy panes"
                   disabled={paneCount < 2}
                   onClick={tidyPanes}
                 >
                   <Icon glyph={IconGrid} role="ui" />
-                </button>
+                </Button>
               </Tooltip>
               <SourceControlToggle
                 open={scmOpen}
                 chord={effectiveLabel(toggleGit, keymapOverrides)}
                 onToggle={toggleScmPanel}
               />
-              <WindowControls
-                className="ml-[var(--space-2-5)] -mr-1"
-                layout={buttonLayout}
-                maximized={maximized}
-                onClose={() =>
-                  void windowControl("close").catch((err: unknown) => {
-                    console.warn("houston: windowControl(close) failed", err);
-                  })
-                }
-                onMinimize={() =>
-                  void windowControl("minimize").catch((err: unknown) => {
-                    console.warn(
-                      "houston: windowControl(minimize) failed",
-                      err,
-                    );
-                  })
-                }
-                onMaximize={() =>
-                  void windowControl("maximize").catch((err: unknown) => {
-                    console.warn(
-                      "houston: windowControl(maximize) failed",
-                      err,
-                    );
-                  })
-                }
-              />
-            </div>
-          </header>
+              {buttonLayout.buttons.length > 0 && (
+                <WindowControlDock>
+                  <WindowControls
+                  layout={buttonLayout}
+                  maximized={maximized}
+                  onClose={() =>
+                    void windowControl("close").catch((err: unknown) => {
+                      console.warn("houston: windowControl(close) failed", err);
+                    })
+                  }
+                  onMinimize={() =>
+                    void windowControl("minimize").catch((err: unknown) => {
+                      console.warn(
+                        "houston: windowControl(minimize) failed",
+                        err,
+                      );
+                    })
+                  }
+                  onMaximize={() =>
+                    void windowControl("maximize").catch((err: unknown) => {
+                      console.warn(
+                        "houston: windowControl(maximize) failed",
+                        err,
+                      );
+                    })
+                  }
+                />
+                </WindowControlDock>
+              )}
+            </ToolbarActions>
+          </AppTitlebar>
 
           {conn.kind === "reconnecting" && (
             <Suspense fallback={null}>
@@ -3569,9 +3575,9 @@ export function App(): React.JSX.Element {
 
           {}
           {}
-          <main
+          <GridRegion
             data-custom={customChrome.dataCustom}
-            className={`grid-region ${scmOpen ? "with-side" : ""} [grid-area:grid] min-w-0 min-h-0 flex flex-col relative overflow-hidden`}
+            withSide={scmOpen}
           >
             <NoticeStack
               anchor="workspace-top"
@@ -3584,13 +3590,13 @@ export function App(): React.JSX.Element {
               store={orchestrationNotices}
             />
 
-            <div className="side-panel-row flex-1 min-w-0 min-h-0 flex" data-testid="side-panel-row">
-              <div
+            <SidePanelRow data-testid="side-panel-row">
+              <GridSlot
                 aria-hidden={gridSurfaceHidden || undefined}
                 inert={gridSurfaceHidden}
                 onPointerDownCapture={() => setActiveSurface("grid")}
                 onFocusCapture={() => setActiveSurface("grid")}
-                className={`grid-slot contents ${gridSurfaceHidden ? "grid-hidden invisible" : ""}`}
+                concealed={gridSurfaceHidden}
               >
               {selectedWs === "all" ? (
                 currentTree ? (
@@ -3654,12 +3660,12 @@ export function App(): React.JSX.Element {
                     focusUrlRequest={focusBrowserUrl}
                   />
                 ) : (
-                  <div className="flex-1 flex items-center justify-center text-[var(--text-faint)] gap-[5px]">
+                  <EmptyGridHint>
                     No terminals here. Press{" "}
-                    <b className="text-[var(--text-muted)]">t</b> to open one,
-                    or <b className="text-[var(--text-muted)]">b</b> for a
+                    <Text as="b" tone="muted">t</Text> to open one,
+                    or <Text as="b" tone="muted">b</Text> for a
                     browser pane.
-                  </div>
+                  </EmptyGridHint>
                 )
               ) : (
                 <>
@@ -3677,9 +3683,9 @@ export function App(): React.JSX.Element {
                         ? currentTree
                         : (warmLayouts.get(key)?.tree ?? null);
                       return (
-                        <div
+                        <ContentsSwitch
                           key={key}
-                          className={gridSelected ? "contents" : "hidden"}
+                          shown={gridSelected}
                           data-testid={
                             gridSelected ? undefined : "warm-workspace-grid"
                           }
@@ -3782,13 +3788,13 @@ export function App(): React.JSX.Element {
                               )}
                             </div>
                           ) : null}
-                        </div>
+                        </ContentsSwitch>
                       );
                     });
                   })}
                 </>
               )}
-              </div>
+              </GridSlot>
               <LaunchComposerDock
                 composer={composer}
                 workspace={selectedWs}
@@ -3833,10 +3839,10 @@ export function App(): React.JSX.Element {
                   hiddenByOverlay={gridHidden}
                 />
               )}
-            </div>
+            </SidePanelRow>
 
             {settings || railView !== null ? (
-              <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
+              <ContentRegion>
                 <SurfaceBoundary label={railView ?? "Settings"}>
                   {railView === "tasks" ? (
                     <Suspense fallback={<div className="flex-1" />}>
@@ -4211,9 +4217,9 @@ export function App(): React.JSX.Element {
                   </Suspense>
                   )}
                 </SurfaceBoundary>
-              </div>
+              </ContentRegion>
             ) : firstRunOpen || workspacesEmptyOpen ? (
-              <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
+              <ContentRegion>
                 {firstRunOpen ? (
                   <FirstRun
                     workspaces={{
@@ -4247,37 +4253,26 @@ export function App(): React.JSX.Element {
                     onAdd={() => void addWorkspaceFromPicker()}
                   />
                 )}
-              </div>
+              </ContentRegion>
             ) : null}
-          </main>
+          </GridRegion>
 
           {chromeMigrationNotice && !chromeMigrationNoticeDismissed && (
-            <div
+            <FloatingBanner
               data-testid="chrome-theme-migration-notice"
-              role="status"
-              className="absolute top-3 left-1/2 -translate-x-1/2 z-[var(--z-overlay)] flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] shadow-[var(--shadow-md)] px-3.5 py-2 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)] max-w-[560px]"
+              onDismiss={() => setChromeMigrationNoticeDismissed(true)}
             >
-              <span>
-                Chrome themes went from 24 to 3. Your{" "}
-                <strong className="text-[var(--text-primary)]">
-                  {THEME_LABELS[chromeMigrationNotice]}
-                </strong>{" "}
-                pick became{" "}
-                <strong className="text-[var(--text-primary)]">
-                  {CHROME_THEME_LABELS[chromeTheme]}
-                </strong>{" "}
-                chrome — your terminal palette didn&apos;t change. Pick a
-                different chrome theme any time in Settings → Appearance.
-              </span>
-              <button
-                type="button"
-                aria-label="Dismiss"
-                onClick={() => setChromeMigrationNoticeDismissed(true)}
-                className="border-0 bg-transparent flex-none rounded-[var(--tr-radius-sm)] p-1 text-[var(--text-muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text-primary)]"
-              >
-                <Icon glyph={IconClose} role="small" />
-              </button>
-            </div>
+              Chrome themes went from 24 to 3. Your{" "}
+              <Text as="strong" tone="primary">
+                {THEME_LABELS[chromeMigrationNotice]}
+              </Text>{" "}
+              pick became{" "}
+              <Text as="strong" tone="primary">
+                {CHROME_THEME_LABELS[chromeTheme]}
+              </Text>{" "}
+              chrome — your terminal palette didn&apos;t change. Pick a
+              different chrome theme any time in Settings → Appearance.
+            </FloatingBanner>
           )}
 
           {addPanePopover && (

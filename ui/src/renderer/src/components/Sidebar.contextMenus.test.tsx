@@ -125,14 +125,14 @@ describe('Sidebar context menus — reference anatomy', () => {
     rightClick(container.querySelector('[data-testid="ws-disclosure"]')!)
     const item = document.querySelector('[data-testid="ws-new-grid"]')
     expect(item, 'the row\'s "+" is the New-session door; the grid door is here').not.toBeNull()
-    expect(item!.textContent).toContain('New Grid')
+    expect(item!.textContent).toContain('New grid')
     act(() => {
       ;(item as HTMLElement).click()
     })
     expect(onAddGrid).toHaveBeenCalledWith('/tmp/one')
   })
 
-  it('offers no New Grid item when the caller cannot create one', () => {
+  it('offers no New grid item when the caller cannot create one', () => {
     render()
     rightClick(container.querySelector('[data-testid="ws-disclosure"]')!)
     expect(document.querySelector('[data-testid="ws-new-grid"]')).toBeNull()
@@ -143,7 +143,7 @@ describe('Sidebar context menus — reference anatomy', () => {
     rightClick(container.querySelector('[data-testid="ws-disclosure"]')!)
     const danger = document.querySelector('.ctxmenu .ctx-item.danger')
     expect(danger).not.toBeNull()
-    expect(danger?.textContent).toContain('Remove Workspace')
+    expect(danger?.textContent).toContain('Remove workspace')
   })
 
   it('a grid row on a 2-grid workspace shows a hover × that calls onRemoveGrid', () => {

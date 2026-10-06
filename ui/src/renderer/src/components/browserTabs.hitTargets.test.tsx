@@ -39,6 +39,6 @@ describe('TabsPopover — density floor on the tab close glyph', () => {
     for (const token of HIT_TARGET_28.split(/\s+/)) {
       expect(cls, `missing "${token}" — hit area is not expanded`).toContain(token)
     }
-    expect(cls).toContain('h-[18px]')
+    expect(cls).toContain('h-[var(--browser-control-size)]')
   })
 })

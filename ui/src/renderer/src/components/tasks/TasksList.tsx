@@ -3,10 +3,8 @@ import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TaskSummary } from '../../houston/generated/TaskSummary'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskRefusal } from '../../houston/useTasks'
-import { BTN_PRIMARY } from '../buttonChrome'
-import { EmptyState } from '../EmptyState'
-import { HIT_TARGET_28 } from '../hitTarget'
-import { Icon } from '../Icon'
+import { EmptyState } from '../ui/ActionEmptyState'
+import { Icon } from '../ui/Icon'
 import {
   IconAlertTriangle,
   IconChevronDown,
@@ -26,7 +24,23 @@ import {
 } from './format'
 import { TaskMenu } from './TaskMenu'
 import { TaskRow } from './TaskRow'
-import { Segmented } from '../Segmented'
+import { Segmented } from '../ui/SegmentedControl'
+import {
+  TaskAddIconButton,
+  TaskBanner,
+  TaskBannerMessage,
+  TaskButton,
+  TaskGroupChevron,
+  TaskGroupCount,
+  TaskGroupHeader,
+  TaskGroupSection,
+  TaskListBody,
+  TaskPanel,
+  TaskSearchField,
+  TaskSearchIconButton,
+  TaskToolbar,
+  TaskToolbarFilter
+} from '../ui'
 
 export interface TasksListProps {
   scope?: 'all' | 'workspace'
@@ -52,7 +66,7 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
 
   if (props.refusal?.kind === 'access_off') {
     return (
-      <div className="tasks-root" data-testid="tasks-access-off">
+      <TaskPanel data-testid="tasks-access-off">
         <TasksHead {...props} searching={searching} onSearching={setSearching} query={query} onQuery={setQuery} />
         <div className="flex-1 min-h-0 flex items-center justify-center">
           <EmptyState
@@ -65,7 +79,7 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
             testId="tasks-empty"
           />
         </div>
-      </div>
+      </TaskPanel>
     )
   }
 
@@ -78,13 +92,13 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
     })
 
   return (
-    <div className="tasks-root" data-testid="tasks-list">
+    <TaskPanel data-testid="tasks-list">
       <TasksHead {...props} searching={searching} onSearching={setSearching} query={query} onQuery={setQuery} />
       {props.refusal && props.refusal.id === null && (
-        <div className="tk-banner error" data-testid="tasks-refusal">
+        <TaskBanner tone="error" data-testid="tasks-refusal">
           <Icon glyph={IconAlertTriangle} role="small" />
-          <span className="msg">{props.refusal.message}</span>
-        </div>
+          <TaskBannerMessage>{props.refusal.message}</TaskBannerMessage>
+        </TaskBanner>
       )}
       {props.nowCard}
       {groups.length === 0 ? (
@@ -104,7 +118,7 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
           />
         </div>
       ) : (
-        <div className="tk-scroll">
+        <TaskListBody>
           {groups.map((group) => (
             <TaskGroupBlock
               key={group.key}
@@ -118,9 +132,9 @@ export function TasksList(props: TasksListProps): React.JSX.Element {
               onNew={props.onNew}
             />
           ))}
-        </div>
+        </TaskListBody>
       )}
-    </div>
+    </TaskPanel>
   )
 }
 
@@ -149,43 +163,34 @@ function TasksHead({
   onQuery: (query: string) => void
 }): React.JSX.Element {
   return (
-    <div className="tk-head">
+    <TaskToolbar>
       <Segmented
         aria-label="Task scope"
         value={scope ?? 'all'}
         options={[{ value: 'all', label: 'All' }, { value: 'workspace', label: 'This workspace' }]}
         onChange={onScope}
       />
-      <span className="spacer" />
-      <span className="tk-filter">
+      <span className="flex-1" />
+      <TaskToolbarFilter>
         <Icon glyph={IconFunnel} role="small" />
         All statuses
-      </span>
+      </TaskToolbarFilter>
       {searching ? (
-        <span className="tk-search">
-          <input
-            autoFocus
-            aria-label="Search tasks"
-            placeholder="Search tasks…"
-            value={query}
-            onChange={(event) => onQuery(event.target.value)}
-            onBlur={() => {
-              if (query.trim() === '') onSearching(false)
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') onQuery('')
-            }}
-          />
-        </span>
-      ) : (
-        <button
-          type="button"
+        <TaskSearchField
+          autoFocus
           aria-label="Search tasks"
-          className={`tk-ibtn ${HIT_TARGET_28}`}
-          onClick={() => onSearching(true)}
-        >
-          <Icon glyph={IconSearch} role="small" />
-        </button>
+          placeholder="Search tasks…"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          onBlur={() => {
+            if (query.trim() === '') onSearching(false)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') onQuery('')
+          }}
+        />
+      ) : (
+        <TaskSearchIconButton aria-label="Search tasks" onClick={() => onSearching(true)} />
       )}
       <TaskMenu
         label="Tasks menu"
@@ -205,16 +210,11 @@ function TasksHead({
           }
         ]}
       />
-      <button
-        type="button"
-        className={`btn ${BTN_PRIMARY} ${HIT_TARGET_28}`}
-        data-testid="tasks-new"
-        onClick={() => onNew()}
-      >
+      <TaskButton tone="primary" density="toolbar" data-testid="tasks-new" onClick={() => onNew()}>
         <Icon glyph={IconPlus} role="small" />
         New task
-      </button>
-    </div>
+      </TaskButton>
+    </TaskToolbar>
   )
 }
 
@@ -239,9 +239,8 @@ function TaskGroupBlock({
 }): React.JSX.Element {
   const status = group.key === 'archived' ? undefined : group.key
   return (
-    <>
-      <div
-        className="tk-grp"
+    <TaskGroupSection>
+      <TaskGroupHeader
         role="button"
         tabIndex={0}
         aria-expanded={!collapsed}
@@ -254,31 +253,28 @@ function TaskGroupBlock({
           }
         }}
       >
-        <span className="chev">
+        <TaskGroupChevron>
           <Icon glyph={collapsed ? IconChevronRight : IconChevronDown} role="small" />
-        </span>
+        </TaskGroupChevron>
         {status && <TaskStatusGlyph status={status} />}
         <span>{group.label}</span>
-        <span className="n">{group.tasks.length}</span>
+        <TaskGroupCount>{group.tasks.length}</TaskGroupCount>
         {status && (
-          <button
-            type="button"
+          <TaskAddIconButton
+            reveal
             aria-label={`New task in ${group.label}`}
-            className={`tk-ibtn tk-plus ${HIT_TARGET_28}`}
             onClick={(event) => {
               event.stopPropagation()
               onNew(status)
             }}
-          >
-            <Icon glyph={IconPlus} role="small" />
-          </button>
+          />
         )}
-      </div>
+      </TaskGroupHeader>
       {!collapsed &&
         group.tasks.map((task) => (
           <TaskRow key={task.id} task={task} selected={task.id === selectedId} now={now} showWorkspace={showWorkspace} onOpen={onOpen} />
         ))}
-    </>
+    </TaskGroupSection>
   )
 }
 

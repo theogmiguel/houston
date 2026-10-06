@@ -1,5 +1,3 @@
-import { TEXT_ROLE_CLS, type TextRole } from './Text'
-
 export type ControlSize = 'regular' | 'small' | 'mini'
 
 // `mini` is a VISIBLE 22px box, not a 22px target: the density rule holds at
@@ -15,22 +13,4 @@ export const CONTROL_SIZE_SQUARE_CLS: Readonly<Record<ControlSize, string>> = Ob
   regular: 'h-[var(--h-ctl)] w-[var(--h-ctl)] p-0',
   small: 'h-[var(--h-pill)] w-[var(--h-pill)] p-0',
   mini: 'h-[var(--h-ctl-mini)] w-[var(--h-ctl-mini)] p-0'
-})
-
-export const CONTROL_SIZE_TEXT_ROLE: Readonly<Record<ControlSize, TextRole>> = Object.freeze({
-  regular: 'ui',
-  small: 'small',
-  mini: 'small'
-})
-
-export const CONTROL_SIZE_ICON_ROLE: Readonly<Record<ControlSize, TextRole>> = Object.freeze({
-  regular: 'ui',
-  small: 'small',
-  mini: 'label'
-})
-
-export const CONTROL_SIZE_TEXT_CLS: Readonly<Record<ControlSize, string>> = Object.freeze({
-  regular: TEXT_ROLE_CLS[CONTROL_SIZE_TEXT_ROLE.regular],
-  small: TEXT_ROLE_CLS[CONTROL_SIZE_TEXT_ROLE.small],
-  mini: TEXT_ROLE_CLS[CONTROL_SIZE_TEXT_ROLE.mini]
 })

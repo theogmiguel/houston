@@ -133,7 +133,7 @@ describe('Settings › Diagnostics (settings-03/-65..-69/-61)', () => {
     expect(hooks.querySelectorAll('[role="switch"]')).toHaveLength(0)
   })
 
-  it('settings-67: "Open Agent setup" opens the one integration editor', () => {
+  it('settings-67: "Open agent setup" opens the one integration editor', () => {
     const onOpenHooks = vi.fn()
     act(() => {
       root.render(
@@ -147,7 +147,7 @@ describe('Settings › Diagnostics (settings-03/-65..-69/-61)', () => {
     })
     openDiagnostics()
     const btn = container.querySelector<HTMLButtonElement>('[data-testid="settings-diagnostics-open-hooks"]')
-    if (!btn) throw new Error('no "Open Agent setup" button')
+    if (!btn) throw new Error('no "Open agent setup" button')
     act(() => btn.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onOpenHooks).toHaveBeenCalledTimes(1)
   })

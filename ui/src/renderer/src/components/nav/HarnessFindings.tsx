@@ -5,6 +5,7 @@ import type { HarnessFindingPhase } from '../../houston/generated/HarnessFinding
 import type { HarnessFindingState } from '../../houston/generated/HarnessFindingState'
 import { openSideTasks } from '../../sidePanel'
 import { Button, Caption, Card, Segmented, StatusLabel, type StatusLabelValue } from '../ui'
+import { InlineCluster } from '../ui/navText'
 import { formatHarnessDate } from './harnessFormat'
 
 export type HarnessFilter = 'active' | 'resolved' | 'dismissed'
@@ -121,7 +122,7 @@ function FindingRow({
       heading={f.title}
       meta={meta}
       status={<StatusLabel status={phaseStatus(f.phase)} size="small" />}
-      action={<span className="flex flex-wrap items-center gap-[var(--space-1-5)]">{phaseActions(f.phase).map((action) => (
+      action={<InlineCluster gap="sm">{phaseActions(f.phase).map((action) => (
         <FindingActionButton
           key={action}
           action={action}
@@ -131,8 +132,7 @@ function FindingRow({
           onCreateTask={onCreateTask}
           onVerifyNow={onVerifyNow}
         />
-      ))}</span>}
-      className="px-[var(--space-2-5)]"
+      ))}</InlineCluster>}
     />
   )
 }

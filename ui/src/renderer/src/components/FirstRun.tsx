@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { EmptyState } from './EmptyState'
+import { EmptyState } from './ui/ActionEmptyState'
+import { GlyphTile, OnboardingFooter, OnboardingStage, QuietButton, Text } from './ui'
 import { WorkspacesEmpty, type WorkspacesEmptyProps } from './WorkspacesEmpty'
-import { Icon } from './Icon'
+import { Icon } from './ui/Icon'
 import { IconGitFork } from './icons'
 import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
-import { MATERIAL_CLS, materialAttrs } from './material'
 import type { AgentHookState } from '../houston/generated/AgentHookState'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import { FirstRunHooksStep } from './ui/FirstRunHooksStep'
@@ -79,27 +79,16 @@ export function FirstRun({
   const skip = (): void => setSkipped((prev) => [...prev, current])
 
   const footer = (
-    <div
-      data-testid="first-run-footer"
-      className="mt-[var(--space-4)] flex flex-col items-center gap-[var(--space-2)]"
-    >
-      <span
-        data-testid="first-run-step"
-        className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]"
-      >
-        Step <span className="tabular-nums">{stepNumber}</span> of {FIRST_RUN_STEPS.length}
-      </span>
+    <OnboardingFooter data-testid="first-run-footer">
+      <Text size="small" weight="small" tone="muted" data-testid="first-run-step">
+        Step <Text tabular>{stepNumber}</Text> of {FIRST_RUN_STEPS.length}
+      </Text>
       {current !== 'workspace' && (
-        <button
-          type="button"
-          data-testid="first-run-skip"
-          onClick={skip}
-          className="border-0 bg-transparent cursor-pointer rounded-[var(--tr-radius-button)] px-[var(--space-2)] py-[2px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-        >
+        <QuietButton variant="text" data-testid="first-run-skip" onClick={skip}>
           Not now
-        </button>
+        </QuietButton>
       )}
-    </div>
+    </OnboardingFooter>
   )
 
   if (current === 'workspace') return <WorkspacesEmpty {...workspaces} footer={footer} />
@@ -148,23 +137,19 @@ export function FirstRun({
   if (!screen) return null
 
   return (
-    <div
-      data-testid="first-run"
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full overflow-y-auto flex flex-col items-center justify-center p-[28px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
+    <OnboardingStage data-testid="first-run">
       <EmptyState
         testId={`first-run-${current}`}
         headline={screen.headline}
         description={screen.description}
         action={screen.action}
         icon={
-          <span className="flex h-[50px] w-[50px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-secondary)]">
+          <GlyphTile>
             <Icon glyph={screen.glyph} role="title" />
-          </span>
+          </GlyphTile>
         }
       />
       {footer}
-    </div>
+    </OnboardingStage>
   )
 }

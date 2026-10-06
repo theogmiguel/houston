@@ -15,6 +15,8 @@ import { HeaderDelegationBadge } from '../src/components/DelegationCard'
 import DelegationPanel from '../src/components/DelegationPanel'
 import { UpdateInstallModal } from '../src/components/UpdateInstallModal'
 import { BrowserActConfirmModal } from '../src/components/BrowserActConfirm'
+import { ChangesPane } from '../src/components/ChangesPane'
+import { Timeline } from '../src/components/Timeline'
 
 const noop = (): void => {}
 
@@ -54,6 +56,20 @@ export function LegacyQuestionStory(): React.JSX.Element {
   return <QuestionCard questionIndex={1} questionCount={2} question="Which change should land first?" body="single-select" options={[{ id: 'tests', label: 'Add regression tests' }, { id: 'docs', label: 'Update the docs' }]} selectedId="tests" onSelectOption={noop} onSkip={noop} />
 }
 
+export function LegacyChangesIdleStory(): React.JSX.Element {
+  return <div className="w-[760px] h-[520px]"><ChangesPane client={null} dir={null} /></div>
+}
+
+export function LegacyTimelineStatesStory(): React.JSX.Element {
+  return <div className="flex flex-col gap-2 p-4 max-w-xl"><style>{'[data-testid="timeline"] [role="status"] { animation: none !important; }'}</style>
+    <Timeline steps={[{ id: 'prepare', label: 'Prepare workspace', status: 'done' }, { id: 'review', label: 'Review changes', status: 'done' }, { id: 'finish', label: 'Save review', status: 'done' }]} elapsedMs={119000} open />
+    <Timeline steps={[{ id: 'prepare', label: 'Prepare workspace', status: 'done' }, { id: 'tests', label: 'Run checks', status: 'error', detail: 'Renderer checks failed.' }]} elapsedMs={81000} failure={{ message: 'Renderer checks failed.', onRetry: noop }} open />
+    <Timeline steps={[]} emptySetLabel="No activity recorded" open />
+    <Timeline loading />
+    <Timeline steps={[{ id: 'queued', label: 'Waiting for agent', status: 'active' }]} disabled disabledReason="This pane is not active." />
+  </div>
+}
+
 export function LegacyGitShellStory(): React.JSX.Element {
   return <GitDialogShell heading="Branches" testid="legacy-git-dialog" onClose={noop}><p>Current branch: main</p></GitDialogShell>
 }
@@ -62,8 +78,33 @@ export function LegacyBranchesStory(): React.JSX.Element {
   return <BranchesDialog branches={[]} remotes={[]} defaultBranch="main" truncated={false} busy={false} error={null} onClose={noop} onRefresh={noop} onCreate={noop} onSwitch={noop} onRename={noop} onDelete={noop} />
 }
 
+export function LegacyBranchesPopulatedStory(): React.JSX.Element {
+  return <BranchesDialog branches={[
+    { name: 'main', current: true, is_default: true, is_remote: false, upstream: 'origin/main' },
+    { name: 'feature/source-control', current: false, is_default: false, is_remote: false, upstream: 'origin/feature/source-control' },
+    { name: 'held-by-worktree', current: false, is_default: false, is_remote: false, worktree_path: '/work/houston-wt' }
+  ]} remotes={[{ name: 'origin/release/0.14', current: false, is_default: false, is_remote: true, remote_name: 'origin' }]} defaultBranch="main" truncated={false} busy={false} error="Unable to refresh remote branches." onClose={noop} onRefresh={noop} onCreate={noop} onSwitch={noop} onRename={noop} onDelete={noop} />
+}
+
 export function LegacyCheckpointsStory(): React.JSX.Element {
   return <CheckpointsDialog checkpoints={[]} busy={false} error={null} inspect={null} onClose={noop} onRefresh={noop} onCreate={noop} onInspect={noop} onRestore={noop} onDelete={noop} />
+}
+
+const sampleCheckpointPatch = [
+  'diff --git a/src/app.ts b/src/app.ts',
+  'index 1111111..2222222 100644',
+  '--- a/src/app.ts',
+  '+++ b/src/app.ts',
+  '@@ -1,2 +1,3 @@',
+  ' export const ready = true',
+  "+export const label = 'source control'"
+].join('\n')
+
+export function LegacyCheckpointsPopulatedStory(): React.JSX.Element {
+  return <CheckpointsDialog checkpoints={[
+    { ref: 'refs/houston/checkpoints/2026-10-06T10:00:00Z', label: 'Before source control changes', owner: 'houston', sha: 'a1b2c3d4e5f6', created_ms: Date.now() },
+    { ref: 'refs/houston/checkpoints/2026-10-05T09:30:00Z', label: 'Known-good baseline', owner: 'houston', sha: '0f1e2d3c4b5a', created_ms: Date.now() }
+  ]} busy={false} error="Unable to read the latest checkpoint." inspect={{ ref: 'refs/houston/checkpoints/2026-10-06T10:00:00Z', patch: sampleCheckpointPatch, truncated: false, redacted: false, loading: false }} onClose={noop} onRefresh={noop} onCreate={noop} onInspect={noop} onRestore={noop} onDelete={noop} />
 }
 
 export function LegacyDelegationBadgeStory(): React.JSX.Element {

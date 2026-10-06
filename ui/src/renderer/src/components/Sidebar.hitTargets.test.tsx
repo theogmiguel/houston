@@ -39,17 +39,6 @@ function baseProps(
   }
 }
 
-function expectExpandedHitArea(el: Element | null, visibleBoxClass: string): void {
-  expect(el).not.toBeNull()
-  const cls = el!.className
-  for (const token of HIT_TARGET_28.split(/\s+/)) {
-    expect(cls, `missing "${token}" — hit area is not expanded`).toContain(token)
-  }
-  expect(cls, 'visible box changed — the floor was met by resizing, not by expanding the hit area').toContain(
-    visibleBoxClass
-  )
-}
-
 describe('Sidebar — density floor on small rail actions', () => {
   let container: HTMLDivElement
   let root: Root
@@ -79,7 +68,11 @@ describe('Sidebar — density floor on small rail actions', () => {
         />
       )
     })
-    expectExpandedHitArea(container.querySelector('[data-testid="ws-chevron"]'), 'h-[18px]')
+    const chevron = container.querySelector('[data-testid="ws-chevron"]')
+    expect(chevron?.className).toContain('after:h-[var(--h-disclosure-hit)]')
+    expect(chevron?.className).toContain('after:min-w-[var(--h-disclosure-hit)]')
+    expect(chevron?.className).toContain('after:w-full')
+    expect(chevron?.className).toContain('h-[var(--sz-disclosure-icon)]')
   })
 
   it("the group header's Filter action keeps its 18px box and hit-tests to the floor", () => {
@@ -87,7 +80,7 @@ describe('Sidebar — density floor on small rail actions', () => {
       root.render(<Sidebar {...baseProps({ workspaces: [ws('/a', 'alpha')], selected: '/a' })} />)
     })
     const filter = container.querySelector('button[aria-label="Filter by tag"]')
-    expect(filter?.className).toContain('w-6 h-6')
+    expect(filter?.className).toContain('w-[var(--sz-rail-compact-action)] h-[var(--sz-rail-compact-action)]')
     expect(filter?.className).not.toContain(HIT_TARGET_28)
   })
 
@@ -98,7 +91,7 @@ describe('Sidebar — density floor on small rail actions', () => {
     for (const label of ['Filter by tag', 'Add workspace']) {
       const el = container.querySelector(`button[aria-label="${label}"]`)
       expect(el, `${label} is missing from the header`).not.toBeNull()
-      expect(el?.className, `${label} is not on the 24px box`).toContain('w-6 h-6')
+      expect(el?.className, `${label} is not on the 24px box`).toContain('w-[var(--sz-rail-compact-action)] h-[var(--sz-rail-compact-action)]')
     }
   })
 })

@@ -1,9 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { BTN_GHOST, BTN_ICO } from './buttonChrome'
 import { IconAlertTriangle, IconCheck, IconChevronDown, IconCopy, type IconComponent } from './icons'
-import { Tooltip } from './Tooltip'
-import { Icon } from './Icon'
-import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from './ui'
+import { Tooltip } from './ui/Tooltip'
+import { Icon } from './ui/Icon'
+import { Button, DangerPanel, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle, InlineText, MonoBlock, Stack, Text } from './ui'
 import { useFocusRestore, useFocusTrap } from './dialogFocus'
 import { useCopyFeedback, type CopyFeedbackState } from './useCopyFeedback'
 
@@ -120,7 +119,6 @@ export function HostKeyModal({
     trapTab(e)
   }
 
-  const field = 'flex flex-col gap-[5px]'
   const acceptDisabled = prompt.changed && countdown > 0
   const { prefix: fingerprintPrefix, digest: fingerprintDigest } = splitFingerprint(prompt.fingerprint)
   const fingerprintGroups = groupDigest(fingerprintDigest)
@@ -143,138 +141,114 @@ export function HostKeyModal({
           <span>
             Verify host key for {prompt.host}:{prompt.port}
           </span>
-          {remaining > 0 && (
-            <span className="text-text-secondary font-semibold whitespace-nowrap">
-              1 of {remaining + 1}
-            </span>
-          )}
+          {remaining > 0 && <InlineText tone="secondary" weight="semibold">1 of {remaining + 1}</InlineText>}
         </DialogTitle>
         <DialogBody id="hostkey-modal-msg">
           {prompt.changed && (
-            <div
-              className="p-3 rounded-lg bg-danger/10 border border-danger/20 [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] text-danger leading-relaxed space-y-2"
-              role="alert"
-            >
+            <DangerPanel variant="alert" role="alert">
               The host key has CHANGED since you last connected. This could indicate a
               man-in-the-middle attack.
-            </div>
+            </DangerPanel>
           )}
           {prompt.changed && prompt.previous_fingerprint && (
-            <div
-              data-testid="hostkey-previous-fingerprint"
-              className="p-3 rounded-lg bg-danger/10 border border-danger/20 space-y-1"
-            >
-              <div className="text-text-muted [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase">
-                Previously known fingerprint
-              </div>
-              <del
-                className="block font-mono [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-danger line-through break-all select-all"
+            <DangerPanel variant="detail" data-testid="hostkey-previous-fingerprint">
+              <Text as="div" size="label" weight="label" tone="muted">Previously known fingerprint</Text>
+              <MonoBlock
+                variant="struck"
                 aria-label={`Previous fingerprint, no longer trusted: ${prompt.previous_fingerprint}`}
               >
                 {prompt.previous_fingerprint}
-              </del>
-            </div>
+              </MonoBlock>
+            </DangerPanel>
           )}
-          <div className={field}>
-            <label className="block text-text-muted [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase">
-              Algorithm
-            </label>
-            <div className="font-mono [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-text-secondary break-all">{prompt.algorithm}</div>
-          </div>
-          <div className={field}>
+          <Stack gap="field">
+            <Text as="label" size="label" weight="label" tone="muted">Algorithm</Text>
+            <MonoBlock variant="algorithm">{prompt.algorithm}</MonoBlock>
+          </Stack>
+          <Stack gap="field">
             <div className="flex items-center justify-between">
-              <label className="block text-text-muted [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase">
-                Fingerprint
-              </label>
+              <Text as="label" size="label" weight="label" tone="muted">Fingerprint</Text>
               <Tooltip label={copyChrome.label}>
-                <button
+                <Button
                   type="button"
                   data-testid="hostkey-copy"
                   data-copy-state={copyState}
-                  className={`btn ${BTN_ICO} ${copyChrome.warn ? 'text-warning hover:text-warning' : ''}`}
+                  variant={copyChrome.warn ? 'legacy-icon-warning' : 'legacy-icon'}
                   aria-label={copyChrome.label}
                   onClick={handleCopyFingerprint}
                 >
                   <Icon glyph={copyChrome.icon} role="small" />
-                </button>
+                </Button>
               </Tooltip>
             </div>
-            <code
-              data-testid="hostkey-fingerprint"
-              className="block font-mono [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-text-secondary break-normal select-all"
-            >
-              <span className="text-text-muted">{fingerprintPrefix}</span>
+            <MonoBlock variant="fingerprint" data-testid="hostkey-fingerprint">
+              <Text tone="muted">{fingerprintPrefix}</Text>
               {fingerprintGroups.map((g, i) => (
                 <Fragment key={i}>
-                  <span className="whitespace-nowrap">{g}</span>
+                  <InlineText>{g}</InlineText>
                   {i < fingerprintGroups.length - 1 ? ' ' : ''}
                 </Fragment>
               ))}
-            </code>
+            </MonoBlock>
             {copyState === 'error' && (
-              <p className="text-warning [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)]">
+              <Text as="p" size="small" weight="small" tone="warning">
                 Copy failed. Select the fingerprint manually.
-              </p>
+              </Text>
             )}
-          </div>
-          <div className={field}>
+          </Stack>
+          <Stack gap="field">
             <div className="flex items-center justify-between">
-              <label className="block text-text-muted [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase">
-                Randomart
-              </label>
-              <button
+              <Text as="label" size="label" weight="label" tone="muted">Randomart</Text>
+              <Button
                 type="button"
                 data-testid="hostkey-randomart-toggle"
-                className={`btn ${BTN_GHOST} px-2 py-1 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] inline-flex items-center gap-1`}
+                variant="legacy-ghost-compact"
                 aria-expanded={showRandomart}
                 aria-controls="host-key-art"
                 onClick={() => setShowRandomart((v) => !v)}
               >
                 <Icon glyph={IconChevronDown} role="label" />
                 {showRandomart ? 'Hide' : 'Show'} visual fingerprint
-              </button>
+              </Button>
             </div>
-            <pre
+            <MonoBlock
+              variant="art"
               id="host-key-art"
               aria-label="Visual host key fingerprint"
               hidden={!showRandomart}
-              className="m-0 bg-[var(--tool-code-bg)] border border-border rounded-[var(--tr-radius-sm)] px-2.5 py-2 font-mono [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[1.1] whitespace-pre overflow-x-auto text-text-secondary"
             >
               {prompt.randomart}
-            </pre>
-          </div>
-          <div className="flex flex-col gap-2">
-            <button
+            </MonoBlock>
+          </Stack>
+          <Stack gap={2}>
+            <Button
               type="button"
               data-testid="hostkey-explainer-toggle"
-              className={`btn ${BTN_GHOST} px-2 py-1 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] inline-flex items-center gap-1`}
+              variant="legacy-ghost-compact"
+              className="self-start"
               aria-expanded={showExplainer}
               aria-controls="host-key-explainer"
               onClick={() => setShowExplainer((v) => !v)}
             >
               <Icon glyph={IconChevronDown} role="label" />
               {showExplainer ? 'Hide' : 'What is a host key?'}
-            </button>
-            <p
-              id="host-key-explainer"
-              hidden={!showExplainer}
-              className="text-text-secondary [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-relaxed"
-            >
+            </Button>
+            <DialogDescription id="host-key-explainer" hidden={!showExplainer}>
               A host key is how an SSH server proves it&apos;s the same machine you connected to
               before. The first time you connect there&apos;s no way to be fully certain, so
               accepting the key trusts this server going forward. If the key ever changes
               unexpectedly, it can mean the server was reinstalled — or it can mean someone is
               intercepting the connection, which is why a changed key gets a harder warning above.
-            </p>
-          </div>
+            </DialogDescription>
+          </Stack>
         </DialogBody>
         <DialogActions variant="stack">
           {remaining > 0 && onRejectRemaining && (
-            <button type="button" className={`btn ${BTN_GHOST} self-start`} onClick={onRejectRemaining}>
+            <Button type="button" variant="legacy-ghost" className="self-start" onClick={onRejectRemaining}>
               Reject all remaining ({remaining})
-            </button>
+            </Button>
           )}
-          <div className="flex gap-2 justify-end">
+          <div className="flex gap-[var(--space-2)] justify-end">
             <Button
               ref={rejectRef}
               type="button"
@@ -294,7 +268,7 @@ export function HostKeyModal({
             >
               {prompt.changed
                 ? acceptDisabled
-                  ? <>Accept anyway (<span className="tabular-nums">{countdown}</span>)</>
+                  ? <>Accept anyway (<Text tabular>{countdown}</Text>)</>
                   : 'Accept anyway'
                 : 'Accept'}
             </Button>

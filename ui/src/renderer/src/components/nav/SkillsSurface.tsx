@@ -7,13 +7,13 @@ import { useHarness } from '../../houston/useHarness'
 import { skillScopeLabel } from '../../houston/skillSurface'
 import { IconRefresh } from '../icons'
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { CHROME_BUTTON, NavFootnote, NavSwitch } from './navChrome'
 import { PageFrame } from '../ui/PageFrame'
-import { CheckedStamp } from '../CheckedStamp'
-import { Icon } from '../Icon'
-import { Tooltip } from '../Tooltip'
-import { Row, SettingsList, SubHead } from '../settingsPrimitives'
-import { MATERIAL_CLS, materialAttrs } from '../material'
+import { CheckedStamp } from '../ui/CheckedStamp'
+import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
+import { Row, SettingsList, SubHead } from '../ui/settingsPrimitives'
+import { NavSurfaceContent, NavSurfaceFrame, NavSurfaceSection } from '../ui'
+import { PanelFootnote, PanelIconButton, PanelSwitch } from '../ui/PanelInlineControls'
 
 const SkillsView = lazy(() =>
   import('../SkillsView').then((m) => ({ default: m.SkillsView }))
@@ -68,11 +68,7 @@ export function SkillsSurface(props: {
     ? null
     : 'Focus a live agent pane to use this skill'
   return (
-    <div
-      data-testid="nav-surface"
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
+    <NavSurfaceFrame>
       <PageFrame width="wide" className="flex-1 min-w-0">
         <Suspense fallback={<div />}>
           <SkillsView
@@ -92,41 +88,37 @@ export function SkillsSurface(props: {
             showAgentRelations
           />
         </Suspense>
-        {}
-        <section className="mt-[var(--space-5)]">
-          <SubHead>Distribution</SubHead>
-          <SettingsList>
-            <Row
-              variant="list"
-              title="Auto-push drift"
-              desc="Copy a drifted or missing skill into every tool as soon as it changes."
-            >
-              <div className="flex items-center gap-[var(--space-2)]">
-                <CheckedStamp at={checkedAt} />
-                <Tooltip label="Re-scan every tool's skills directory">
-                  <button
-                    type="button"
-                    aria-label="Refresh distribution"
-                    className={CHROME_BUTTON}
-                    onClick={onRefresh}
-                  >
-                    <Icon glyph={IconRefresh} role="small" />
-                  </button>
-                </Tooltip>
-                <NavSwitch
-                  on={autoPushEnabled}
-                  onChange={onAutoPushSet}
-                  label="Auto-push drifted or missing copies to every tool"
-                  testId="skills-auto-push"
-                />
-              </div>
-            </Row>
-          </SettingsList>
-        </section>
-        <NavFootnote>
-          Open a skill to read its instructions, copy its invocation, or manage which agents can use it.
-        </NavFootnote>
+        <NavSurfaceContent>
+          <NavSurfaceSection>
+            <SubHead>Distribution</SubHead>
+            <SettingsList>
+              <Row
+                variant="list"
+                title="Auto-push drift"
+                desc="Copy a drifted or missing skill into every tool as soon as it changes."
+              >
+                <div className="flex items-center gap-[var(--space-2)]">
+                  <CheckedStamp at={checkedAt} />
+                  <Tooltip label="Re-scan every tool's skills directory">
+                    <PanelIconButton aria-label="Refresh distribution" onClick={onRefresh}>
+                      <Icon glyph={IconRefresh} role="small" />
+                    </PanelIconButton>
+                  </Tooltip>
+                  <PanelSwitch
+                    on={autoPushEnabled}
+                    onChange={onAutoPushSet}
+                    label="Auto-push drifted or missing copies to every tool"
+                    testId="skills-auto-push"
+                  />
+                </div>
+              </Row>
+            </SettingsList>
+          </NavSurfaceSection>
+          <PanelFootnote>
+            Open a skill to read its instructions, copy its invocation, or manage which agents can use it.
+          </PanelFootnote>
+        </NavSurfaceContent>
       </PageFrame>
-    </div>
+    </NavSurfaceFrame>
   )
 }

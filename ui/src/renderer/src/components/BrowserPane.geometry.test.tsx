@@ -11,7 +11,7 @@ const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
 const { BrowserPane } = await import('./BrowserPane')
-const { WEBVIEW_HOST_CLS } = await import('./panelChrome')
+const { WEBVIEW_HOST_CLS } = await import('./ui/panelChrome')
 const { __resetNativeSuppressionForTests, setSuppressionSink } = await import(
   '../layout/nativeSuppression'
 )

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import type { HarnessReview } from '../../houston/generated/HarnessReview'
 import type { HarnessReport, HarnessReportError } from '../../houston/useHarness'
 import { MarkdownPreview } from '../MarkdownPreview'
-import { Select } from '../Select'
-import { NavDetailState, NavFeedback, SECONDARY_BUTTON } from './navChrome'
+import { Select } from '../ui/Select'
+import { DetailState, FeedbackBanner } from '../ui/navPrimitives'
+import { InlineCluster, ReportFrame, CenteredEmptyNote } from '../ui/navText'
+import { FieldActionButton } from '../ui/formPrimitives'
 import { formatDay, formatWindow } from './harnessFormat'
 
 export function HarnessReportView({
@@ -34,16 +36,14 @@ export function HarnessReportView({
 
   if (!current) {
     return (
-      <p className="py-[24px] text-center [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">
-        No report yet. A review writes its report once it publishes.
-      </p>
+      <CenteredEmptyNote>No report yet. A review writes its report once it publishes.</CenteredEmptyNote>
     )
   }
   const shown = report?.reviewId === current.id ? report : null
   const dir = current.run_dir
   return (
-    <div className="flex flex-col gap-[10px]">
-      <div className="flex flex-wrap items-center gap-[8px]">
+    <div className="grid gap-[var(--space-2-5)]">
+      <InlineCluster>
         <Select
           aria-label="Review"
           value={String(current.id)}
@@ -53,45 +53,38 @@ export function HarnessReportView({
           }))}
           onChange={(v) => setSelected(Number(v))}
         />
-        <button type="button" className={SECONDARY_BUTTON} onClick={() => onOpenFile(`${dir}/report.md`)}>
+        <FieldActionButton onClick={() => onOpenFile(`${dir}/report.md`)}>
           Open report.md
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={() => onOpenFile(`${dir}/findings.json`)}>
+        </FieldActionButton>
+        <FieldActionButton onClick={() => onOpenFile(`${dir}/findings.json`)}>
           Open findings.json
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={() => onReveal(`${dir}/report.md`)}>
+        </FieldActionButton>
+        <FieldActionButton onClick={() => onReveal(`${dir}/report.md`)}>
           Show in folder
-        </button>
-      </div>
+        </FieldActionButton>
+      </InlineCluster>
       {shown?.truncated && (
-        <NavFeedback tone="warning">
+        <FeedbackBanner tone="warning">
           This report is longer than Houston shows here; open report.md to read all of it.
-        </NavFeedback>
+        </FeedbackBanner>
       )}
       {shown ? (
-        <div
-          data-testid="harness-report"
-          className="rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--card-bg)] p-[var(--space-5)]"
-        >
+        <ReportFrame data-testid="harness-report">
           <MarkdownPreview source={shown.markdown} variant="chat" />
-        </div>
+        </ReportFrame>
       ) : reportError?.reviewId === current.id ? (
-        <NavDetailState
-          title="Could not load the report"
+        <DetailState
+          heading="Could not load the report"
           detail={reportError.message}
           tone="error"
           action={
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              onClick={() => onLoadReport(current.id)}
-            >
+            <FieldActionButton onClick={() => onLoadReport(current.id)}>
               Retry
-            </button>
+            </FieldActionButton>
           }
         />
       ) : (
-        <NavDetailState title="Loading the report" detail={`Reading ${dir}/report.md`} />
+        <DetailState heading="Loading the report" detail={`Reading ${dir}/report.md`} />
       )}
     </div>
   )

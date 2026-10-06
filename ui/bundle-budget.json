@@ -93,9 +93,18 @@
     "Re-cut against 805,719 bytes (one boot chunk) at the same ~3%: the pane",
     "header's PR watch chip and its hook, the shared popover motion helpers",
     "every menu uses, and the theme reveal are boot-path code, each needed at",
-    "first paint or on the first menu or theme click."
+    "first paint or on the first menu or theme click.",
+    "",
+    "Re-cut against 868,342 bytes (one boot chunk) at the same ~3%: visual",
+    "recipes moved out of feature files into components/ui roles, and the",
+    "roles a launch renders (Button's variant table, Text, the pane, rail and",
+    "menu roles) are boot-path code. Roles that only lazy surfaces render sit",
+    "in modules of their own (BrowserActSurface, TaskKeyChip, PanelInlineControls,",
+    "DiffLoadingMark) because a module shared with a boot importer is placed",
+    "whole in the boot chunk. Button variants used only by lazy surfaces are",
+    "the next split."
   ],
-  "maxBootBytes": 829890,
+  "maxBootBytes": 894392,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

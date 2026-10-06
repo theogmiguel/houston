@@ -1,17 +1,13 @@
+import { Button } from '../ui/Button'
+import { TextArea } from '../ui/TextArea'
+import { Text } from '../ui/Text'
+import { ReviewComposer, ReviewToolbar, ReviewDraftList, ReviewDraftRow, ReviewDraftBody, ReviewSubmitFooter, ReviewBarPanel } from '../ui/ReviewSubmission'
+
 import type { PrDetail, PrReviewDraft, PrReviewVerdict } from '../../houston/client'
-import { BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
-import { Disclosure } from '../Disclosure'
-import { Select, type SelectOption } from '../Select'
-import { Tooltip } from '../Tooltip'
+import { Disclosure } from '../ui/Disclosure'
+import { Select, type SelectOption } from '../ui/Select'
+import { Tooltip } from '../ui/Tooltip'
 import { draftLabel } from './prDetailUi'
-
-const SMALL = 'text-[length:var(--tr-text-small-size)]'
-const ACTION = 'inline-flex items-center gap-1.5'
-const TEXTAREA =
-  'w-full resize-none rounded-[var(--tr-radius-input)] border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 ' +
-  'text-[length:var(--tr-text-small-size)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)] ' +
-  'focus-visible:outline-none focus-visible:border-[var(--border-focus)]'
-
 const VERDICTS: readonly SelectOption[] = [
   { value: 'comment', label: 'Comment' },
   { value: 'approve', label: 'Approve' },
@@ -49,11 +45,11 @@ export function PrReviewBar({
   const options = didAuthor ? VERDICTS.filter((v) => v.value === 'comment') : VERDICTS
   const effective = didAuthor ? 'comment' : verdict
   const content = (
-    <div className="flex flex-col gap-[var(--space-2)] p-[var(--space-2-5)]">
-      <div className="flex items-center gap-2">
-        <span className={`${SMALL} [font-weight:var(--tr-text-small-weight)] text-[var(--text-primary)]`}>
+    <ReviewComposer>
+      <ReviewToolbar>
+        <Text size="small" weight="small" tone="primary">
           Review
-        </span>
+        </Text>
         <Tooltip
           label={didAuthor ? 'GitHub takes only comments from the author' : undefined}
           className={didAuthor ? 'inline-flex' : undefined}
@@ -69,87 +65,78 @@ export function PrReviewBar({
         </Tooltip>
         <span className="flex-1" />
         {drafts.length > 0 && (
-          <button
+          <Button variant="legacy-secondary"
             type="button"
             data-testid="pr-review-drafts-toggle"
             aria-expanded={draftsOpen}
             onClick={() => onDraftsOpenChange(!draftsOpen)}
-            className={`btn ${BTN_SECONDARY} ${ACTION} ${SMALL}`}
           >
             {drafts.length === 1 ? '1 inline comment' : `${drafts.length} inline comments`}
-          </button>
+          </Button>
         )}
-      </div>
-      <textarea
+      </ReviewToolbar>
+      <TextArea surface="content"
         data-testid="pr-review-body"
         aria-label="Review body"
         rows={3}
         value={body}
         onChange={(e) => onBodyChange(e.target.value)}
         placeholder="Say what you think"
-        className={TEXTAREA}
+
       />
       {drafts.length > 0 && draftsOpen && (
-        <div className="flex flex-col gap-1" data-testid="pr-review-drafts">
+        <ReviewDraftList data-testid="pr-review-drafts">
           {drafts.map((draft) => (
-            <div
+            <ReviewDraftRow
               key={`${draft.path}:${draft.side}:${draft.line}`}
               data-testid={`pr-review-draft-${draft.path}-${draft.side}-${draft.line}`}
-              className="flex items-start gap-2"
             >
-              <span className={`flex-1 min-w-0 font-mono ${SMALL} text-[var(--text-secondary)] break-words`}>
+              <ReviewDraftBody>
                 {draftLabel(draft)} — {draft.body}
-              </span>
-              <button
+              </ReviewDraftBody>
+              <Button variant="legacy-secondary"
                 type="button"
                 data-testid="pr-review-draft-remove"
                 disabled={busy}
                 onClick={() => onRemoveDraft(draft)}
-                className={`btn ${BTN_SECONDARY} ${ACTION} disabled:opacity-55`}
               >
                 Remove
-              </button>
-            </div>
+              </Button>
+            </ReviewDraftRow>
           ))}
-        </div>
+        </ReviewDraftList>
       )}
-      <div className="flex items-center gap-2">
-        <span className={`${SMALL} text-[var(--text-faint)]`}>
+      <ReviewSubmitFooter>
+        <Text size="small" tone="faint">
           Nothing is sent until you submit.
-        </span>
+        </Text>
         <span className="flex-1" />
-        <button
+        <Button variant="legacy-primary"
           type="button"
           data-testid="pr-review-submit"
           disabled={busy}
           onClick={() => {
             onSubmit(effective, body)
           }}
-        className={`btn ${BTN_PRIMARY} inline-flex items-center gap-1.5 disabled:opacity-55 disabled:cursor-not-allowed`}
         >
           {busy ? 'Submitting…' : 'Submit review'}
-        </button>
-      </div>
-    </div>
+        </Button>
+      </ReviewSubmitFooter>
+    </ReviewComposer>
   )
   if (disclosure) {
     return (
       <Disclosure
         summary="Leave a review"
+        variant="divided"
         count={body.trim().length > 0 || drafts.length > 0 ? 'draft' : undefined}
         scrollBody={false}
-        className="rounded-none border-0 border-t border-t-[var(--divider)] bg-transparent"
       >
         <div data-testid="pr-review-bar">{content}</div>
       </Disclosure>
     )
   }
   return (
-    <div
-      className="flex flex-none flex-col gap-[var(--space-2)] border-t border-t-[var(--border)] bg-[var(--material-shell-bg)]"
-      data-testid="pr-review-bar"
-    >
-      {content}
-    </div>
+    <ReviewBarPanel data-testid="pr-review-bar">{content}</ReviewBarPanel>
   )
 }

@@ -47,7 +47,7 @@ function readColorTokenMappings() {
 }
 
 function readMaterialRecipes() {
-  const path = join(rendererSrcDir, 'components', 'material.ts')
+  const path = join(rendererSrcDir, 'components', 'ui', 'material.ts')
   const src = readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
   const block = src.match(/export const MATERIAL_CLS[^=]*=\s*Object\.freeze\(\{([\s\S]*?)\n\}\)/)
   if (!block) {
@@ -94,9 +94,11 @@ function newestBuiltStylesheet() {
   if (!existsSync(outAssetsDir)) {
     fail(`Build output directory does not exist: ${outAssetsDir} — run "bun run build" before "bun run check:css".`)
   }
-  const cssFiles = readdirSync(outAssetsDir).filter((f) => f.endsWith('.css'))
+  // The entry sheet carries Tailwind's layers; a lazy chunk's sheet (FilesPane-*.css) holds only
+  // that chunk's own rules.
+  const cssFiles = readdirSync(outAssetsDir).filter((f) => f.startsWith('index-') && f.endsWith('.css'))
   if (cssFiles.length === 0) {
-    fail(`No .css files found in ${outAssetsDir} — run "bun run build" before "bun run check:css".`)
+    fail(`No index-*.css entry sheet found in ${outAssetsDir} — run "bun run build" before "bun run check:css".`)
   }
   const withMtime = cssFiles.map((f) => ({
     path: join(outAssetsDir, f),

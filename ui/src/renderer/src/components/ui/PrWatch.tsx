@@ -1,6 +1,6 @@
 import { Button } from './Button'
 import { StatusLabel } from './StatusLabel'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconEye } from '../icons'
 import { relativeAge, useAgeNow } from '../ageTicker'
 

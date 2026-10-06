@@ -1,5 +1,5 @@
 import React from 'react'
-import { BTN_GHOST } from './buttonChrome'
+import { SurfaceCrash } from './ui/SurfaceCrash'
 import { SURFACE_CRASH_GUARANTEE } from './crashCopy'
 
 interface Props {
@@ -28,15 +28,11 @@ export class SurfaceBoundary extends React.Component<Props, State> {
     const { error } = this.state
     if (!error) return this.props.children
     return (
-      <div className="h-full w-full flex flex-col items-center justify-center gap-2.5 p-4 text-center text-danger">
-        <p>
-          {this.props.label} crashed: {error.message}
-        </p>
-        <p className="text-[var(--text-muted)]">{SURFACE_CRASH_GUARANTEE}</p>
-        <button className={`btn ${BTN_GHOST}`} onClick={this.retry}>
-          Retry
-        </button>
-      </div>
+      <SurfaceCrash
+        message={`${this.props.label} crashed: ${error.message}`}
+        guarantee={SURFACE_CRASH_GUARANTEE}
+        onRetry={this.retry}
+      />
     )
   }
 }

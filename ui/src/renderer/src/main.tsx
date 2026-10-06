@@ -13,16 +13,16 @@ import '@fontsource/source-serif-4/500.css'
 import '@fontsource/source-serif-4/600.css'
 import { App } from './App'
 import { BootstrapGate } from './BootstrapGate'
-import { BTN_GHOST, BTN_PRIMARY } from './components/buttonChrome'
+import { Button, FullScreenMessage } from './components/ui'
 import { recordAndReload, reloadStormDetected, resetReloadBudget } from './reloadBudget'
 import { installWatchdog } from './watchdog'
 import { installNativeFileDrop } from './houston/nativeFileDrop'
 import { WindowResizeGrips } from './components/WindowResizeGrips'
 import './tailwind.css'
+import './components/ui/paneFocus.css'
 import './keyframes.css'
 import './theme.css'
 import './base.css'
-import './global.css'
 
 class RootBoundary extends React.Component<
   { children: React.ReactNode },
@@ -35,42 +35,42 @@ class RootBoundary extends React.Component<
   render(): React.ReactNode {
     if (!this.state.error) return this.props.children
     return (
-      <div className="h-screen flex flex-col items-center justify-center gap-[14px] text-[var(--text-muted)]">
+      <FullScreenMessage tone="muted">
         <p>
           {ROOT_CRASH_TITLE}: {this.state.error.message}
           <br />
           {ROOT_CRASH_GUARANTEE}
         </p>
-        <div className="flex gap-2">
-          <button className={`btn ${BTN_GHOST}`} onClick={recordAndReload}>
+        <div className="flex gap-[var(--space-2)]">
+          <Button variant="legacy-ghost" onClick={recordAndReload}>
             Reload app
-          </button>
+          </Button>
         </div>
-      </div>
+      </FullScreenMessage>
     )
   }
 }
 
 function HardHalt(): React.JSX.Element {
   return (
-    <div className="h-screen flex flex-col items-center justify-center gap-[14px] text-[var(--danger)] px-[20%] text-center">
+    <FullScreenMessage tone="danger">
       <p>
         Halted: the app reloaded 3 times in the last 10 minutes without recovering.
         Reloading again won&apos;t help — check that houston-core is running
         (or start the app from a terminal to see the crash), then try again.
       </p>
-      <div className="flex gap-2">
-        <button
-          className={`btn ${BTN_PRIMARY}`}
+      <div className="flex gap-[var(--space-2)]">
+        <Button
+          variant="legacy-primary"
           onClick={() => {
             resetReloadBudget()
             window.location.reload()
           }}
         >
           Try again
-        </button>
+        </Button>
       </div>
-    </div>
+    </FullScreenMessage>
   )
 }
 

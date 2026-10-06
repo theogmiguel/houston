@@ -1,40 +1,11 @@
-import { DiffBody, DIFF_EMPTY_CLASS, SPIN_CLASS } from './DiffBody'
+import { DiffBody } from './DiffBody'
+import { DiffBlockedMark, DiffEmptyState, DiffHeader, DiffLoadingMark, DiffPaneSurface, DiffScrollArea } from '../ui'
 import type { ChangeRow } from './changes'
 import type { DiffState } from './useGitStatusSubscription'
 import { IconLoaderCircle, IconShieldAlert } from '../icons'
-import { Icon } from '../Icon'
-import { BTN_SECONDARY } from '../buttonChrome'
-import { EmptyState } from '../EmptyState'
-import { Button } from '../ui/Button'
-
-const TAG_CLASS: Record<string, string> = {
-  staged: 'bg-[color-mix(in_srgb,var(--success)_16%,transparent)] text-[var(--success)]',
-  unstaged: 'bg-[color-mix(in_srgb,var(--text-muted)_18%,transparent)] text-[var(--text-muted)]',
-  untracked: 'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)]',
-  conflict: 'bg-[color-mix(in_srgb,var(--warning)_18%,transparent)] text-[var(--warning)]',
-  blocked: 'bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] text-[var(--danger)]'
-}
-
-const TAG_BASE =
-  'flex-none ml-auto px-1.5 rounded-[var(--tr-radius-pill)] font-mono text-[length:var(--tr-text-xs)] font-semibold leading-4'
-
-const SCROLL = 'min-h-0 overflow-y-auto [scrollbar-width:thin]'
-
-function DiffHeader({ row, onOpenInEditor }: { row: ChangeRow; onOpenInEditor?: () => void }): React.JSX.Element {
-  return (
-    <div className="flex-none flex items-center gap-2 px-2.5 py-1 border-b border-b-[var(--divider)] bg-[var(--card-bg)] font-mono text-[length:var(--tr-text-xs)] text-[var(--text-muted)]">
-      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{row.path}</span>
-      <span className={`${TAG_BASE} ml-0 ${TAG_CLASS[row.tag]}`}>{row.tag}</span>
-      {onOpenInEditor && <Button variant="link" size="sm" data-testid="changes-open-editor" onClick={onOpenInEditor}>Open in editor</Button>}
-      {!row.blocked && (row.added !== null || row.deleted !== null) && (
-        <span className="ml-auto font-medium" data-testid="changes-diff-counts">
-          {row.added !== null && <span className="text-[var(--success)]">+{row.added}</span>}{' '}
-          {row.deleted !== null && <span className="text-[var(--danger)]">−{row.deleted}</span>}
-        </span>
-      )}
-    </div>
-  )
-}
+import { Icon } from '../ui/Icon'
+import { BTN_SECONDARY } from '../ui/buttonChrome'
+import { EmptyState } from '../ui/ActionEmptyState'
 
 function DiffBodyArea({
   row,
@@ -45,27 +16,27 @@ function DiffBodyArea({
 }): React.JSX.Element {
   if (row.blocked) {
     return (
-      <div className={DIFF_EMPTY_CLASS} data-testid="changes-blocked-notice" data-tone="blocked">
-        <span className="text-[var(--danger)]">
+      <DiffEmptyState data-testid="changes-blocked-notice" data-tone="blocked">
+        <DiffBlockedMark>
           <Icon glyph={IconShieldAlert} role="heading" />
-        </span>
+        </DiffBlockedMark>
         Blocked path — {row.path} matches the sensitive-file rule, so its contents are never
         fetched or shown here.
-      </div>
+      </DiffEmptyState>
     )
   }
   if (diff === null || diff.path !== row.path) {
     return (
-      <div className={DIFF_EMPTY_CLASS} data-testid="changes-diff-loading">
-        <span className={SPIN_CLASS}>
+      <DiffEmptyState data-testid="changes-diff-loading">
+        <DiffLoadingMark>
           <Icon glyph={IconLoaderCircle} role="subhead" />
-        </span>
+        </DiffLoadingMark>
         Loading diff…
-      </div>
+      </DiffEmptyState>
     )
   }
   if (diff.patch.trim().length === 0) {
-    return <div className={DIFF_EMPTY_CLASS}>No textual diff for this file.</div>
+    return <DiffEmptyState>No textual diff for this file.</DiffEmptyState>
   }
   return <DiffBody patch={diff.patch} truncated={diff.truncated} />
 }
@@ -87,8 +58,8 @@ export function DiffArea({
 }): React.JSX.Element {
   if (row === null) {
     return (
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)]">
-        <div className={`${SCROLL} flex-1`}>
+      <DiffPaneSurface>
+        <DiffScrollArea className="flex-1">
           {emptySummary && onReview ? (
             <EmptyState
               size="compact"
@@ -98,21 +69,22 @@ export function DiffArea({
               headline={emptySummary.headline}
               description={emptySummary.description}
               action={{ label: 'Review with agent', onClick: onReview, disabled: reviewDisabledReason !== null, disabledReason: reviewDisabledReason ?? undefined }}
-              className="h-full bg-[var(--material-shell-bg)]"
+              surface="shell"
+              className="h-full"
             />
           ) : (
-            <div className={`${DIFF_EMPTY_CLASS} bg-[var(--material-shell-bg)]`}>No file diff is selected.</div>
+            <DiffEmptyState surface="shell">No file diff is selected.</DiffEmptyState>
           )}
-        </div>
-      </div>
+        </DiffScrollArea>
+      </DiffPaneSurface>
     )
   }
   return (
-    <div className="changes-diff flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--content-bg)]">
-      <DiffHeader row={row} onOpenInEditor={onOpenInEditor} />
-      <div className={`${SCROLL} flex-1 bg-[var(--tool-code-bg)]`}>
+    <DiffPaneSurface selected>
+      <DiffHeader path={row.path} tag={row.tag} added={row.added} deleted={row.deleted} blocked={row.blocked} onOpenInEditor={onOpenInEditor} />
+      <DiffScrollArea surface="tool-code" className="flex-1">
         <DiffBodyArea row={row} diff={diff} />
-      </div>
-    </div>
+      </DiffScrollArea>
+    </DiffPaneSurface>
   )
 }

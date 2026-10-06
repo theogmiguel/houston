@@ -1,13 +1,15 @@
 import type { HoustonClient } from '../../houston/client'
 import { RoutingSettings } from './RoutingSettings'
 import { useEffect, useState } from 'react'
-import { BTN_GHOST } from '../buttonChrome'
 import { MAILBOX_RETENTION_HOURS_MAX, ORCHESTRATION_CAP_MAX } from '../../houston/generated/DEFAULTS'
 import type { OrchestrationCaps } from '../../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../../houston/generated/AcpAgentInfo'
-import { Tooltip } from '../Tooltip'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { Tooltip } from '../ui/Tooltip'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { Button } from '../ui/Button'
+import { Text } from '../ui/Text'
+import { TextInput } from '../ui/TextInput'
+import { ProtocolDescription, SettingsActionRow, SettingsSectionBreak } from '../ui/SettingsProtocol'
 import type { HostInfo, OrchestrationStateView } from '../SettingsView'
 import { NumberSetting, Row, SubHead } from './shared'
 
@@ -35,10 +37,10 @@ function OrchestrationCapsEditor({
         title="Max child panes per agent"
         desc={`How many panes one agent may have live at once. Up to ${ORCHESTRATION_CAP_MAX}.`}
       >
-        <div className="flex items-center gap-2">
-          <input
+        <div className="flex items-center gap-[var(--space-2)]">
+          <TextInput
+            variant="setting-number"
             type="number"
-            className="w-[64px] bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2 text-right"
             min={1}
             max={ORCHESTRATION_CAP_MAX}
             step={1}
@@ -46,17 +48,17 @@ function OrchestrationCapsEditor({
             data-testid="settings-orchestration-cap-children"
             onChange={(e) => setChildren(e.target.value)}
           />
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">panes</span>
+          <Text size="small" weight="small" tone="muted">panes</Text>
         </div>
       </Row>
       <Row
         title="Max nesting depth"
         desc={`An agent spawned by an agent spawned by you sits at depth 3. Up to ${ORCHESTRATION_CAP_MAX}.`}
       >
-        <div className="flex items-center gap-2">
-          <input
+        <div className="flex items-center gap-[var(--space-2)]">
+          <TextInput
+            variant="setting-number"
             type="number"
-            className="w-[64px] bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] py-[5px] px-2 text-right"
             min={1}
             max={ORCHESTRATION_CAP_MAX}
             step={1}
@@ -64,13 +66,13 @@ function OrchestrationCapsEditor({
             data-testid="settings-orchestration-cap-depth"
             onChange={(e) => setDepth(e.target.value)}
           />
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">levels</span>
+          <Text size="small" weight="small" tone="muted">levels</Text>
         </div>
       </Row>
-      <div className="flex items-center justify-between gap-4 py-[11px] px-[14px] border-t border-t-[var(--divider)]">
-        <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
+      <SettingsActionRow>
+        <Text as="div" size="small" weight="small" tone="muted">
           {dirty ? 'Both limits save together, as one change.' : 'Matches what the daemon has stored.'}
-        </div>
+        </Text>
         <div className="flex items-center gap-[var(--space-2)]">
         <Button
           variant="ghost"
@@ -88,7 +90,7 @@ function OrchestrationCapsEditor({
           Save
         </Button>
         </div>
-      </div>
+      </SettingsActionRow>
     </>
   )
 }
@@ -103,7 +105,7 @@ function PermissionGroup({
   onOrchestrationEnabled: (v: boolean) => void
 }): React.JSX.Element {
   return (
-    <SettingsList className="mb-[18px]">
+    <SettingsList spaceAfter>
       <Row
         title="Enable orchestration"
         desc={
@@ -137,7 +139,7 @@ function CapsGroup({
   onMailboxRetentionSet: (hours: number) => void
 }): React.JSX.Element {
   return (
-    <SettingsList className="mb-[18px]">
+    <SettingsList spaceAfter>
       {orchestrationState === null ? (
         <Row title="Loading…" desc="Asking the daemon for its spawn caps." />
       ) : (
@@ -148,7 +150,7 @@ function CapsGroup({
         desc={`How long a delivered mailbox file survives before it is swept. Up to ${MAILBOX_RETENTION_HOURS_MAX} h.`}
       >
         {!hostInfo ? (
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">Asking the daemon…</span>
+          <Text size="small" weight="small" tone="muted">Asking the daemon…</Text>
         ) : (
           <NumberSetting
             value={hostInfo.mailbox_retention_hours}
@@ -193,14 +195,14 @@ function AcpRoster({
             }
             className={historyWorkspace === null ? 'inline-flex' : undefined}
           >
-            <button
-              className={`btn ${BTN_GHOST}`}
+            <Button
+              variant="legacy-ghost"
               data-testid={`settings-acp-open-${a.slug}`}
               disabled={historyWorkspace === null}
               onClick={() => onOpenAcpPane(a)}
             >
               Open pane
-            </button>
+            </Button>
           </Tooltip>
         </Row>
       ))}
@@ -255,14 +257,14 @@ export function OrchestrationSection({
       <SubHead>Workspace routing</SubHead>
       <RoutingSettings client={client} workspace={historyWorkspace} />
 
-      <div className="mt-[var(--space-5)]">
+      <SettingsSectionBreak>
         <SubHead>ACP panes</SubHead>
-        <div className="mb-[var(--space-3)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
+        <ProtocolDescription>
           CLIs that speak the Agent Client Protocol can run in a pane that reports its
           status over that protocol rather than through hooks. Opens in the workspace
           selected in the sidebar.
-        </div>
-      </div>
+        </ProtocolDescription>
+      </SettingsSectionBreak>
       <div data-testid="settings-acp-roster" className="">
         <AcpRoster
           orchestrationState={orchestrationState}

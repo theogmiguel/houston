@@ -104,7 +104,7 @@ describe('Sidebar rail head — state matrix', () => {
     const btn = container.querySelector('aside > div button[aria-label="Hide sidebar"]') as HTMLElement | null
     expect(btn).not.toBeNull()
     expect(btn?.className).toContain('hover:bg-[var(--card-hover)]')
-    expect(btn?.className).toContain('ml-auto')
+    expect(btn?.parentElement?.parentElement?.className).toContain('ml-auto')
     render({ onHideRail: undefined })
     expect(container.querySelector('aside > div button[aria-label="Hide sidebar"]')).toBeNull()
   })

@@ -1,4 +1,4 @@
-import { AnimOut } from './AnimOut'
+import { AnimOut } from './ui/AnimOut'
 import { UpdateInstallModal } from './UpdateInstallModal'
 import { isLive } from '../houston/client'
 import { dismissUpdate } from '../updateDismissal'

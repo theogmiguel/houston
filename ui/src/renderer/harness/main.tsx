@@ -11,7 +11,6 @@ import '../src/tailwind.css'
 import '../src/keyframes.css'
 import '../src/theme.css'
 import '../src/base.css'
-import '../src/global.css'
 import { STORIES } from './stories'
 
 const params = new URLSearchParams(window.location.search)
@@ -36,15 +35,39 @@ function Index(): React.JSX.Element {
   )
 }
 
-const Story = STORIES[story]
+const Story = STORIES[story] as React.ComponentType | undefined
+const staticVisualStory = story.startsWith('browser/') || story === 'legacy/browser-act' || story === 'ui-primitives'
+
+function CapturedStory(): React.JSX.Element {
+  React.useEffect(() => {
+    if (story !== 'ui-primitives') return
+    const resetScroll = (): void => {
+      const specimen = document.querySelector<HTMLElement>('.ui-primitives-specimen')
+      if (!specimen) {
+        window.requestAnimationFrame(resetScroll)
+        return
+      }
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+      specimen.scrollTop = 0
+    }
+    window.requestAnimationFrame(resetScroll)
+  }, [])
+  return Story ? <Story /> : <></>
+}
+
 const root = document.getElementById('root')
 if (!root) throw new Error('harness: #root missing from index.html')
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
     {Story ? (
-      <div style={{ width: '100vw', height: '100vh', background: 'var(--background)', overflow: 'hidden' }}>
-        <Story />
-      </div>
+      <>
+        {staticVisualStory && (
+          <style>{`[data-static-visual] *, [data-static-visual] *::before, [data-static-visual] *::after { animation: none !important; transition: none !important; }`}</style>
+        )}
+        <div data-static-visual={staticVisualStory || undefined} style={{ width: '100vw', height: '100vh', background: 'var(--background)', overflow: 'hidden' }}>
+          <CapturedStory />
+        </div>
+      </>
     ) : (
       <Index />
     )}

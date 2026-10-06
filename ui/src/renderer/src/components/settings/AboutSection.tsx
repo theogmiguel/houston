@@ -1,6 +1,5 @@
-import { BTN_GHOST, BTN_PRIMARY } from '../buttonChrome'
-import { Chip } from '../Chip'
-import { Toggle } from '../settingsPrimitives'
+import { Button, Chip, ChangeSummary, VersionBadge } from '../ui'
+import { Toggle } from '../ui/settingsPrimitives'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
 import { Group, Row } from './shared'
 import type { HostInfo } from '../SettingsView'
@@ -140,33 +139,33 @@ function ReleaseNotesButton({
   onOpenExternal: (url: string) => void
 }): React.JSX.Element {
   return (
-    <button
-      className={`btn ${BTN_GHOST}`}
+    <Button
+      variant="legacy-ghost"
       data-testid="update-release-notes"
       onClick={() => onOpenExternal(url)}
     >
       Release notes
-    </button>
+    </Button>
   )
 }
 
 function CheckNowButton({ onCheckNow }: { onCheckNow: () => void }): React.JSX.Element {
   return (
-    <button className={`btn ${BTN_GHOST}`} data-testid="update-check-now" onClick={onCheckNow}>
+    <Button variant="legacy-ghost" data-testid="update-check-now" onClick={onCheckNow}>
       Check now
-    </button>
+    </Button>
   )
 }
 
 function LaterButton({ version, waved }: { version: string; waved: boolean }): React.JSX.Element {
   return (
-    <button
-      className={`btn ${BTN_GHOST}`}
+    <Button
+      variant="legacy-ghost"
       data-testid="update-later"
       onClick={() => (waved ? restoreUpdate() : dismissUpdate(version))}
     >
       {waved ? 'Show again' : 'Later'}
-    </button>
+    </Button>
   )
 }
 
@@ -180,13 +179,13 @@ function updateControls(
 ): React.JSX.Element {
   if (state.kind !== 'available') {
     return (
-      <button
-        className={`btn ${BTN_GHOST}`}
+      <Button
+        variant="legacy-ghost"
         data-testid={state.kind === 'disabled' ? 'update-check-once' : 'update-check-now'}
         onClick={onCheckNow}
       >
         {state.kind === 'disabled' ? 'Check once' : 'Check now'}
-      </button>
+      </Button>
     )
   }
   const version = state.release.version
@@ -195,13 +194,13 @@ function updateControls(
     return (
       <div className="flex items-center gap-[var(--space-2)]">
         {notes}
-        <button
-          className={`btn ${BTN_GHOST}`}
+        <Button
+          variant="legacy-ghost"
           data-testid="update-install-progress"
           onClick={openUpdateModal}
         >
           {progressLabel(install)}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -217,13 +216,13 @@ function updateControls(
     return (
       <div className="flex items-center gap-[var(--space-2)]">
         {notes}
-        <button
-          className={`btn ${BTN_PRIMARY}`}
+        <Button
+          variant="legacy-primary"
           data-testid="update-retry"
           onClick={openUpdateModal}
         >
           Try again
-        </button>
+        </Button>
         <LaterButton version={version} waved={waved} />
       </div>
     )
@@ -254,13 +253,13 @@ function updateControls(
           />
         </span>
       )}
-      <button
-        className={`btn ${BTN_PRIMARY}`}
+      <Button
+        variant="legacy-primary"
         data-testid="update-install"
         onClick={openUpdateModal}
       >
         Install update…
-      </button>
+      </Button>
     </div>
   )
 }
@@ -291,12 +290,9 @@ function UpdateOfferRow({
         {updateControls(state, waved, install, onCheckNow, onOpenExternal, liveSessionCount)}
       </Row>
       {summary !== null && (
-        <div
-          data-testid="update-release-summary"
-          className="border-t border-t-[var(--divider)] py-[var(--space-3)] px-[var(--space-4)] [font-size:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-secondary)] whitespace-pre-wrap break-words"
-        >
+        <ChangeSummary data-testid="update-release-summary">
           {summary}
-        </div>
+        </ChangeSummary>
       )}
     </>
   )
@@ -328,22 +324,22 @@ export function AboutSection({
 
   return (
     <>
-      <div className="">
+      <div>
         <Row title="Houston" desc={houstonDesc}>
-          <span className="text-[var(--text-muted)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] font-mono py-[2px] px-[6px] border border-[color-mix(in_srgb,var(--border)_60%,transparent)] bg-[color-mix(in_srgb,var(--content-bg)_60%,transparent)] rounded-sm">v{__APP_VERSION__}</span>
+          <VersionBadge>v{__APP_VERSION__}</VersionBadge>
         </Row>
         <Row title="Contact" desc="Open a new issue on GitHub — bug reports, feature requests, questions">
-          <button className={`btn ${BTN_GHOST}`} onClick={onContact}>
+          <Button variant="legacy-ghost" onClick={onContact}>
             Contact
-          </button>
+          </Button>
         </Row>
         <Row
           title="License"
           desc="Apache-2.0, and the notices for the code Houston vendors (NOTICE)"
         >
-          <button className={`btn ${BTN_GHOST}`} onClick={onOpenLicense}>
+          <Button variant="legacy-ghost" onClick={onOpenLicense}>
             View
-          </button>
+          </Button>
         </Row>
         <ThirdPartyNotices />
       </div>

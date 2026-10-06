@@ -96,7 +96,7 @@ describe('BootstrapGate under Tauri', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1)
     })
-    expect(container.textContent).toContain('Bridge Not Ready')
+    expect(container.textContent).toContain('Bridge not ready')
     expect(container.textContent).toContain('Houston failed to start')
     expect(container.textContent).toContain(
       'The desktop bridge is taking longer than 15s to load. The renderer may be wedged after a sleep/wake cycle.'

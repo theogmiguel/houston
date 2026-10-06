@@ -7,41 +7,15 @@ trap 'rm -rf "$tmp"' EXIT
 
 mkdir -p "$tmp/work/scripts" "$tmp/work/ui"
 cp "$root/scripts/check-ratchets-only-tighten.sh" "$tmp/work/scripts/"
-
-cat > "$tmp/work/scripts/check-radius-tokens.sh" <<'EOF'
-BASELINE=(
-  "ui/src/A.tsx 4"
-  "ui/src/B.tsx 2"
-)
-EOF
-for stub in check-control-metrics check-spacing-tokens; do
-  printf 'BASELINE=(\n  "ui/src/A.tsx 1"\n)\n' > "$tmp/work/scripts/$stub.sh"
-done
-cat > "$tmp/work/scripts/check-type-scale-widened-baseline.sh" <<'EOF'
-WIDENED_BASELINE=(
-  "ui/src/A.tsx 2"
-)
-FLOOR_BASELINE=(
-  "ui/src/A.tsx 1"
-)
-EOF
-printf 'WIDENED_BASELINE=()\n' > "$tmp/work/scripts/check-radius-tokens-widened-baseline.sh"
-printf 'WIDENED_BASELINE=()\n' > "$tmp/work/scripts/check-spacing-tokens-widened-baseline.sh"
-printf 'BASELINE=(\n  "ui/src/A.tsx 1"\n)\n' > "$tmp/work/scripts/check-ui-boundary-baseline.sh"
-cat > "$tmp/work/scripts/check-copy-baseline.sh" <<'EOF'
-TITLE_CASE_BASELINE=("ui/src/A.tsx 1")
-COUNT_BASELINE=()
-BANNED_STATUS_BASELINE=()
-EOF
-printf 'EXEMPT_COUNTS=(\n  "ui/src/A.tsx 1"\n)\n' > "$tmp/work/scripts/check-focus-visible.sh"
-cat > "$tmp/work/ui/complexity-baseline.json" <<'EOF'
+cat > "$tmp/work/ui/complexity-baseline.json" <<'JSON'
 {
   "max": 20,
   "files": {
-    "src/A.tsx": { "count": 1, "worst": 30 }
+    "src/A.tsx": { "count": 1, "worst": 30 },
+    "src/B.tsx": { "count": 1, "worst": 25 }
   }
 }
-EOF
+JSON
 
 cd "$tmp/work"
 git init -q .
@@ -74,19 +48,22 @@ expect() {
   cp -rf "$tmp/pristine/scripts" "$tmp/pristine/ui" "$tmp/work/"
 }
 
-sed -i 's|"ui/src/A.tsx 4"|"ui/src/A.tsx 5"|' scripts/check-radius-tokens.sh
-expect fail "a raised bash pin must be refused"
-
-sed -i 's|"ui/src/B.tsx 2"|"ui/src/B.tsx 2"\n  "ui/src/C.tsx 9"|' scripts/check-radius-tokens.sh
-expect fail "a brand-new bash pin must be refused"
-
 sed -i 's|"worst": 30|"worst": 31|' ui/complexity-baseline.json
-expect fail "a raised json pin must be refused"
+expect fail "a raised pin must be refused"
 
-sed -i 's|"ui/src/A.tsx 4"|"ui/src/A.tsx 3"|' scripts/check-radius-tokens.sh
+sed -i 's|"src/B.tsx": { "count": 1, "worst": 25 }|"src/B.tsx": { "count": 1, "worst": 25 },\n    "src/C.tsx": { "count": 1, "worst": 40 }|' ui/complexity-baseline.json
+expect fail "a brand-new pin must be refused"
+
+sed -i 's|"src/B.tsx"|"src/D.tsx"|' ui/complexity-baseline.json
+expect pass "a rename that keeps the value is a move"
+
+sed -i 's|"worst": 30|"worst": 29|' ui/complexity-baseline.json
 expect pass "a lowered pin is the ratchet working"
 
-sed -i 's|^BASELINE=(|BASELINE_RENAMED=(|' scripts/check-radius-tokens.sh
+sed -i 's|"files": {|"modules": {|' ui/complexity-baseline.json
 expect fail "a baseline block that no longer parses must be refused"
+
+rm ui/complexity-baseline.json
+expect fail "a listed ratchet whose baseline is gone must be refused"
 
 exit "$fails"

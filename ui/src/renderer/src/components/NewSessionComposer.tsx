@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import type { HoustonClient } from '../houston/client'
 import type { AgentKind } from '../houston/generated/AgentKind'
 import type { RoleRoute } from '../houston/generated/RoleRoute'
-import { BTN_PRIMARY } from './buttonChrome'
 import {
   AGENT_LABEL,
   COMPOSER_AGENTS,
@@ -15,10 +14,34 @@ import {
   type SessionSlot
 } from './sessionPresets'
 import type { SlotOverrides } from './sessionPresets'
-import { PICKER_LABEL_CLS } from './pickerChrome'
-import { Select } from './Select'
-import { MATERIAL_CLS, materialAttrs } from './material'
-import { Chip, LaunchComposerHeader, LaunchPresetCard, LaunchSlotCard, Segmented } from './ui'
+import { Select } from './ui/Select'
+import {
+  Chip,
+  InlineControlRow,
+  PrimaryAction,
+  ScrollableFormBody,
+  LabeledControl,
+  OptionFieldset,
+  ActionFooter,
+  LaunchComposerHeader,
+  DockedFormPanel,
+  FormSection,
+  InlineSummary,
+  CountStepper,
+  FieldCounter,
+  FieldError,
+  FieldGroup,
+  FormLabel,
+  LaunchPresetCard,
+  PresetGrid,
+  RouteList,
+  RouteNote,
+  SectionHeading,
+  LaunchSlotCard,
+  SlotList,
+  TaskInput,
+  Segmented
+} from './ui'
 
 export interface NewSessionComposerProps {
   workspaceName: string
@@ -30,8 +53,6 @@ export interface NewSessionComposerProps {
   onLaunch: (slots: SessionSlot[], target: 'this-grid' | 'new-grid') => void
   onCancel: () => void
 }
-
-const LABEL_CLS = PICKER_LABEL_CLS
 
 export function NewSessionComposer({
   workspaceName,
@@ -109,126 +130,99 @@ export function NewSessionComposer({
   const sessionWord = count === 1 ? 'session' : 'sessions'
 
   return (
-    <div
-      data-testid="new-session-composer"
-      {...materialAttrs('base')}
-      className={`flex-none min-w-0 h-full w-[560px] max-w-[48vw] grid grid-rows-[44px_minmax(0,1fr)_56px] rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
+    <DockedFormPanel data-testid="new-session-composer">
       <LaunchComposerHeader workspaceName={workspaceName} workspacePath={workspacePath} gridName={gridName} target={target} onClose={onCancel} />
 
-      <div className="min-h-0 overflow-y-auto px-5">
-        <div className="mx-auto flex w-full max-w-[556px] flex-col gap-[var(--space-3)] pb-8 pt-[14px]">
-          <Segmented aria-label="Launch target" leadingLabel="Launch into" value={target} onChange={setTarget} options={[
-              { value: 'this-grid', label: 'This grid', testId: 'launch-target-this-grid' },
-              { value: 'new-grid', label: 'New grid', testId: 'launch-target-new-grid' }
-            ]} className="w-full" />
-          <fieldset className="m-0 flex flex-col gap-[var(--space-2)] border-0 p-0">
-            <legend className={`${LABEL_CLS} p-0`}>Preset</legend>
-            <div className="grid grid-cols-4 gap-[7px]">
-              {SESSION_PRESETS.map((p) => {
-                const selected = presetId === p.id
-                return (
-                  <LaunchPresetCard
-                    key={p.id}
-                    id={p.id}
-                    name={p.name}
-                    blurb={p.blurb}
-                    count={p.count}
-                    selected={selected}
-                    onSelect={() => choosePreset(p)}
-                    onPreviewStart={() => setHoveredPreset(p.id)}
-                    onPreviewEnd={() => setHoveredPreset(null)}
-                  />
-                )
-              })}
-            </div>
-          </fieldset>
+      <ScrollableFormBody>
+        <Segmented aria-label="Launch target" leadingLabel="Launch into" value={target} onChange={setTarget} options={[
+            { value: 'this-grid', label: 'This grid', testId: 'launch-target-this-grid' },
+            { value: 'new-grid', label: 'New grid', testId: 'launch-target-new-grid' }
+          ]} className="w-full" />
+        <OptionFieldset legend="Preset">
+          <PresetGrid>
+            {SESSION_PRESETS.map((p) => {
+              const selected = presetId === p.id
+              return (
+                <LaunchPresetCard
+                  key={p.id}
+                  id={p.id}
+                  name={p.name}
+                  blurb={p.blurb}
+                  count={p.count}
+                  selected={selected}
+                  onSelect={() => choosePreset(p)}
+                  onPreviewStart={() => setHoveredPreset(p.id)}
+                  onPreviewEnd={() => setHoveredPreset(null)}
+                />
+              )
+            })}
+          </PresetGrid>
+        </OptionFieldset>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-[var(--space-3)]">
-            <label className="flex min-w-0 flex-col gap-[var(--space-1)]">
-              <span className={LABEL_CLS}>Default agent</span>
-              <Select aria-label="Default agent" value={agent} options={COMPOSER_AGENTS.map((value) => ({ value, label: AGENT_LABEL[value] ?? value }))}
-                onChange={(value) => { setAgent(value as AgentKind); setAgentOverridden(true) }} />
-            </label>
-            <div className="flex flex-col gap-[var(--space-1)]">
-              <span className={LABEL_CLS}>How many</span>
-              <div className="flex h-[var(--h-ctl)] items-center rounded-[var(--tr-radius-sm)] border border-[var(--border)]">
-                <button type="button" aria-label="Fewer" disabled={count <= 1} onClick={() => setCount((value) => Math.max(1, value - 1))} className="h-full w-[26px] border-0 bg-transparent text-[var(--text-secondary)] disabled:opacity-40">−</button>
-                <span data-testid="new-session-count" className="min-w-[22px] text-center tabular-nums [font-size:var(--tr-text-small-size)]">{count}</span>
-                <button type="button" aria-label="More" disabled={count >= MAX_COUNT} onClick={() => setCount((value) => Math.min(MAX_COUNT, value + 1))} className="h-full w-[26px] border-0 bg-transparent text-[var(--text-secondary)] disabled:opacity-40">+</button>
-              </div>
-            </div>
+        <InlineControlRow>
+          <LabeledControl as="label" label="Default agent" className="min-w-0">
+            <Select aria-label="Default agent" value={agent} options={COMPOSER_AGENTS.map((value) => ({ value, label: AGENT_LABEL[value] ?? value }))}
+              onChange={(value) => { setAgent(value as AgentKind); setAgentOverridden(true) }} />
+          </LabeledControl>
+          <LabeledControl as="group" label="How many">
+            <CountStepper value={count} min={1} max={MAX_COUNT} onChange={setCount} />
+          </LabeledControl>
+        </InlineControlRow>
+
+        <FormSection>
+          <SectionHeading>Slots</SectionHeading>
+          <SlotList data-testid="new-session-preview">
+            {slots.map((s) => (
+              <LaunchSlotCard key={s.index} slot={s} workspaceName={workspaceName} override={overrides[s.index] ?? {}}
+                onAgentChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], agent: value } }))}
+                onModelChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], model: value } }))}
+                onEffortChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], effort: value } }))}
+                onReset={() => setOverrides((current) => { const next = { ...current }; delete next[s.index]; return next })} />
+            ))}
+          </SlotList>
+        </FormSection>
+
+        <FieldGroup>
+          <FormLabel htmlFor="new-session-task">
+            Task — goes to every agent, optional
+          </FormLabel>
+          <TaskInput
+            id="new-session-task"
+            data-testid="new-session-task"
+            rows={1}
+            value={task}
+            onChange={(e) => setTask(e.target.value)}
+            placeholder={count === 1 ? 'What should it work on?' : 'What should they work on?'}
+          />
+          {overLimit && (
+            <FieldError role="alert" data-testid="new-session-task-error">
+              {overLimit}
+            </FieldError>
+          )}
+          <FieldCounter>
+            {taskByteLength(task).toLocaleString('en-US')} / 8,192 bytes
+          </FieldCounter>
+        </FieldGroup>
+
+        <FormSection aria-label="Workspace routing">
+          <div className="flex items-center justify-between gap-[var(--space-2)]">
+            <SectionHeading>Workspace routing</SectionHeading>
+            <Chip variant="state" label="Houston" />
           </div>
+          {routes.length === 0
+            ? <RouteNote>No routes · agents use their defaults</RouteNote>
+            : <RouteList>{routes.map((route, index) => <RouteNote key={`${route.pattern}-${index}`}>{route.pattern} → {route.model}{route.effort ? ` · ${route.effort}` : ''}</RouteNote>)}</RouteList>}
+        </FormSection>
+      </ScrollableFormBody>
 
-          <section className="flex flex-col gap-[var(--space-2)]">
-            <h2 className={`${LABEL_CLS} m-0`}>Slots</h2>
-            <div className="grid grid-cols-1 gap-[7px]" data-testid="new-session-preview">
-              {slots.map((s) => (
-                <LaunchSlotCard key={s.index} slot={s} workspaceName={workspaceName} override={overrides[s.index] ?? {}}
-                  onAgentChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], agent: value } }))}
-                  onModelChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], model: value } }))}
-                  onEffortChange={(value) => setOverrides((current) => ({ ...current, [s.index]: { ...current[s.index], effort: value } }))}
-                  onReset={() => setOverrides((current) => { const next = { ...current }; delete next[s.index]; return next })} />
-              ))}
-            </div>
-          </section>
-
-          <div className="flex flex-col gap-[var(--space-1-5)]">
-            <label className={LABEL_CLS} htmlFor="new-session-task">
-              Task — goes to every agent, optional
-            </label>
-            <textarea
-              id="new-session-task"
-              data-testid="new-session-task"
-              rows={1}
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
-              placeholder={count === 1 ? 'What should it work on?' : 'What should they work on?'}
-              className="block w-full min-h-[44px] max-h-[160px] resize-y rounded-[8px] border border-[var(--border)] bg-[var(--card-bg)] px-[12px] py-[11px] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[18px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:[border-color:var(--accent)] focus:outline-none focus-visible:[border-color:var(--accent)]"
-            />
-            {overLimit && (
-              <p
-                role="alert"
-                data-testid="new-session-task-error"
-                className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--danger)]"
-              >
-                {overLimit}
-              </p>
-            )}
-            <span className="self-end font-mono [font-size:var(--tr-text-label-size)] text-[var(--text-faint)]">
-              {taskByteLength(task).toLocaleString('en-US')} / 8,192 bytes
-            </span>
-          </div>
-
-          <section aria-label="Workspace routing" className="flex flex-col gap-[var(--space-2)]">
-            <div className="flex items-center justify-between gap-[var(--space-2)]">
-              <h2 className={`${LABEL_CLS} m-0`}>Workspace routing</h2>
-              <Chip variant="state" label="Houston" />
-            </div>
-            {routes.length === 0
-              ? <span className="[font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">No routes · agents use their defaults</span>
-              : <div className="flex flex-wrap gap-[var(--space-2)]">{routes.map((route, index) => <span key={`${route.pattern}-${index}`} className="[font-size:var(--tr-text-small-size)] text-[var(--text-muted)]">{route.pattern} → {route.model}{route.effort ? ` · ${route.effort}` : ''}</span>)}</div>}
-          </section>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-[10px] border-t border-[var(--border)] px-[14px]">
-        <span
-          data-testid="new-session-summary"
-          className="flex-1 min-w-0 truncate [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]"
-        >
+      <ActionFooter>
+        <InlineSummary data-testid="new-session-summary">
           {preset?.name ?? 'Custom'} · {count} {sessionWord} in {workspaceName}
-        </span>
-        <button
-          type="button"
-          data-testid="new-session-launch"
-          disabled={!canLaunch}
-          onClick={() => onLaunch(slots, target)}
-          className={`btn ${BTN_PRIMARY} inline-flex h-8 items-center rounded-[var(--tr-radius-button)] px-[var(--space-5)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] disabled:opacity-40 disabled:cursor-not-allowed`}
-        >
+        </InlineSummary>
+        <PrimaryAction data-testid="new-session-launch" disabled={!canLaunch} onClick={() => onLaunch(slots, target)}>
           Launch {slots.length} {sessionWord} <small>Ctrl ↵</small>
-        </button>
-      </div>
-    </div>
+        </PrimaryAction>
+      </ActionFooter>
+    </DockedFormPanel>
   )
 }

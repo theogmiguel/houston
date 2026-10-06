@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FilesPane } from './FilesPane'
+import { InspectorCard } from './ui/InspectorHeader'
 import { toggleFilesTree, GLOBAL_SHORTCUTS } from '../keymap'
 const mocks = vi.hoisted(() => ({ readDir: vi.fn(), pin: vi.fn(), activePath: '/ws/src/main.ts', tabs: [{ path: '/ws/src/main.ts', preview: false, missing: false }] }))
 vi.mock('../houston/bridge', () => ({ readDir: mocks.readDir }))
@@ -9,7 +10,7 @@ vi.mock('./EditorSurface', () => ({ EditorSurfaceBody: () => <div data-testid="t
 vi.mock('./files/useFileTabs', () => ({ useFileTabs: () => ({ activePath: mocks.activePath, tabs: mocks.tabs, pinFile: mocks.pin, previewFile: vi.fn(), surface: { markdownReady: false, setError: vi.fn() }, dirty: false, markMissing: vi.fn(), labelFor: (path: string) => path.split('/').at(-1) }) }))
 let observers: { callback: ResizeObserverCallback; target: Element }[]
 const entry = (path: string, dir = false) => ({ name: path.split('/').at(-1), path, dir, ignored: false })
-const mount = () => render(<div className="side-card"><FilesPane panel node={{ kind: 'files', id: 'files', root: '/ws' }} workspaceDir="/ws" onClose={vi.fn()} onHeaderPointerDown={vi.fn()} /></div>)
+const mount = () => render(<InspectorCard><FilesPane panel node={{ kind: 'files', id: 'files', root: '/ws' }} workspaceDir="/ws" onClose={vi.fn()} onHeaderPointerDown={vi.fn()} /></InspectorCard>)
 function resize(width: number) {
   act(() => { for (const observer of observers) if (observer.target.matches('[data-testid="files-pane"]')) observer.callback([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver) })
 }

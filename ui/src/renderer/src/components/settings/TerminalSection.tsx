@@ -1,10 +1,9 @@
 import { useState } from 'react'
-import { BTN_GHOST } from '../buttonChrome'
 import { TERMINAL_FONTS, terminalFontStack } from '../../pane/terminalFonts'
 import { THEMES, type ChromeTheme, type TerminalPaletteChoice } from '../../theme'
-import { Button } from '../ui/Button'
-import { Select } from '../Select'
-import { SettingsList, Toggle } from '../settingsPrimitives'
+import { Button, FontSizeControl } from '../ui'
+import { Select } from '../ui/Select'
+import { SettingsList, Toggle } from '../ui/settingsPrimitives'
 import { TerminalPalettePicker } from '../ui/TerminalPalettePicker'
 import {
   TERMINAL_LINE_HEIGHT_MAX,
@@ -117,37 +116,7 @@ export function TerminalSection({
           title="Font size"
           desc="Applies to every pane. Ctrl +/− does the same."
         >
-          <div className="flex items-center gap-2">
-            <div
-              className="px-2 py-[3px] rounded-md border border-[var(--border)] bg-[var(--content-bg)] text-[var(--text-primary)] leading-none overflow-hidden whitespace-nowrap"
-              style={{ fontFamily: terminalFontStack(fontFamilyId), fontSize: `${fontSize}px` }}
-              data-testid="settings-font-preview"
-            >
-              Il1O0
-            </div>
-            <input
-              type="number"
-              className="w-[64px] bg-[var(--content-bg)] border border-[var(--border)] rounded-md text-[var(--text-primary)] [font-style:inherit] [font-variant:inherit] [font-weight:inherit] [font-stretch:inherit] [line-height:inherit] [font-family:inherit] [font-size:var(--tr-text-small-size)] py-[5px] px-2 text-right"
-              min={fontMin}
-              max={fontMax}
-              step={1}
-              value={fontSize}
-              data-testid="settings-font-size"
-              onChange={(e) => {
-                const n = Math.trunc(Number(e.target.value))
-                if (!Number.isFinite(n)) return
-                onFontSize(Math.min(fontMax, Math.max(fontMin, n)))
-              }}
-            />
-            <button
-              type="button"
-              className={`btn ${BTN_GHOST}`}
-              disabled={fontSize === fontDefault}
-              onClick={() => onFontSize(fontDefault)}
-            >
-              Reset
-            </button>
-          </div>
+          <FontSizeControl value={fontSize} min={fontMin} max={fontMax} defaultValue={fontDefault} family={terminalFontStack(fontFamilyId)} onChange={onFontSize} testId="settings-font-size" />
         </Row>
         <Row title="Line height" desc="A multiplier of font size. Below 1.0 clips descenders.">
           <ClampedNumberSetting

@@ -22,7 +22,7 @@ for f in "${offenders[@]}"; do
   if printf '%s' "$stripped" | grep -qE "$pattern"; then
     if [ "$fail" -eq 0 ]; then
       echo "FAIL: native checkbox/radio in the renderer — its box is drawn by the OS theme, never ours." >&2
-      echo "      Use Toggle for a binary and Segmented for a radio group (both in components/settingsPrimitives.tsx)." >&2
+      echo "      Use Toggle for a binary and Segmented for a radio group (components/ui/settingsPrimitives.tsx)." >&2
       fail=1
     fi
     printf '  %s\n' "$f" >&2

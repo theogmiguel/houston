@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Icon } from '../Icon'
+import { Icon } from './Icon'
 import { IconAlertTriangle, IconInfo } from '../icons'
 import { Button } from './Button'
 

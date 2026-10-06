@@ -1,11 +1,9 @@
 import { useRef, useState } from 'react'
-import { FOCUS_HALO } from './shadowChrome'
-import { BTN_PRIMARY } from './buttonChrome'
-import { Select } from './Select'
-import { OVERLAY_RAISED_CLS, OVERLAY_RAISED_ATTRS } from './overlayChrome'
+import { Select } from './ui/Select'
 import { IconChevronDown } from './icons'
-import { Icon } from './Icon'
-import { Tooltip } from './Tooltip'
+import { Icon } from './ui/Icon'
+import { Tooltip } from './ui/Tooltip'
+import { ComposerBar, ComposerPill, ComposerPillCount, ComposerPillField, ComposerPillMenu, ComposerPillOption, ComposerSendButton } from './ui/ComposerPill'
 
 export interface ComposerChipOption {
   value: string
@@ -34,16 +32,6 @@ export interface ComposerControlsProps {
 
 const VISIBLE_CHIP_BUDGET = 3
 
-function Spinner(): React.JSX.Element {
-  return (
-    <span
-      role="status"
-      aria-label="Loading"
-      className="inline-block h-[12px] w-[12px] animate-spin rounded-full border-2 border-current border-t-transparent opacity-70"
-    />
-  )
-}
-
 function DropdownChip({
   chip,
   open,
@@ -67,8 +55,8 @@ function DropdownChip({
       }}
     >
       <Tooltip label={title} className="inline-flex">
-        <button
-          type="button"
+        <ComposerPill
+          variant="dropdown"
           data-testid="composer-chip"
           data-chip-id={chip.id}
           disabled={chip.disabled}
@@ -78,49 +66,34 @@ function DropdownChip({
           onKeyDown={(e) => {
             if (e.key === 'Escape') onClose()
           }}
-          className={`inline-flex items-center gap-[var(--space-1-5)] h-[var(--h-pill)] max-w-full px-[var(--space-2)] border border-[var(--border)] bg-[var(--surface)] rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-small-size)] font-medium leading-[var(--tr-text-small-leading)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`}
         >
           {chip.icon && (
             <span aria-hidden className="flex-none">
               {chip.icon}
             </span>
           )}
-          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{chip.label}</span>
+          <span className="min-w-0 truncate">{chip.label}</span>
           <span aria-hidden className="flex-none">
             <Icon glyph={IconChevronDown} role="label" />
           </span>
-        </button>
+        </ComposerPill>
       </Tooltip>
       {open && (
-        <div
-          data-testid="composer-chip-menu"
-          role="listbox"
-          aria-label={chip.label}
-          {...OVERLAY_RAISED_ATTRS}
-
-          className={`${OVERLAY_RAISED_CLS} absolute left-0 top-[calc(100%+4px)] z-[var(--z-sticky)] flex flex-col gap-0.5 py-1 min-w-[160px]`}
-        >
+        <ComposerPillMenu variant="options" data-testid="composer-chip-menu" role="listbox" aria-label={chip.label}>
           {chip.options.map((opt) => (
-            <button
+            <ComposerPillOption
               key={opt.value}
-              type="button"
-              role="option"
-              aria-selected={opt.value === chip.value}
+              selected={opt.value === chip.value}
               data-testid="composer-chip-option"
               onClick={() => {
                 chip.onChange(opt.value)
                 onClose()
               }}
-              className={`flex items-center px-[var(--space-3)] min-h-[var(--h-ctl)] text-left bg-transparent border-none text-[length:var(--tr-text-small-size)] hover:bg-[var(--surface-hover)] ${
-                opt.value === chip.value
-                  ? 'text-[var(--text-primary)] font-semibold'
-                  : 'text-[var(--text-secondary)] font-medium'
-              }`}
             >
               {opt.label}
-            </button>
+            </ComposerPillOption>
           ))}
-        </div>
+        </ComposerPillMenu>
       )}
     </div>
   )
@@ -146,28 +119,13 @@ function OverflowChip({
         if (!wrapRef.current?.contains(e.relatedTarget as Node | null)) onClose()
       }}
     >
-      <button
-        type="button"
-        data-testid="composer-chip-overflow"
-        aria-haspopup="true"
-        aria-expanded={open}
-        onClick={onToggle}
-        className={`inline-flex items-center h-[var(--h-pill)] px-[var(--space-2)] border border-[var(--border)] bg-[var(--surface)] rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-small-size)] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:shadow-[${FOCUS_HALO}]`}
-      >
-        +<span className="tabular-nums">{chips.length}</span>
-      </button>
+      <ComposerPill variant="count" data-testid="composer-chip-overflow" aria-haspopup="true" aria-expanded={open} onClick={onToggle}>
+        +<ComposerPillCount>{chips.length}</ComposerPillCount>
+      </ComposerPill>
       {open && (
-        <div
-          data-testid="composer-chip-overflow-menu"
-          {...OVERLAY_RAISED_ATTRS}
-
-          className={`${OVERLAY_RAISED_CLS} absolute right-0 top-[calc(100%+4px)] z-[var(--z-sticky)] flex flex-col gap-[var(--space-2)] p-[var(--space-2)] min-w-[200px]`}
-        >
+        <ComposerPillMenu variant="fields" data-testid="composer-chip-overflow-menu">
           {chips.map((chip) => (
-            <label
-              key={chip.id}
-              className="flex items-center justify-between gap-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-secondary)]"
-            >
+            <ComposerPillField key={chip.id}>
               <span className="flex-none">{chip.label.split(' · ')[0]}</span>
               <Select
                 data-testid="composer-chip-overflow-select"
@@ -177,9 +135,9 @@ function OverflowChip({
                 title={chip.disabled ? chip.disabledReason : undefined}
                 onChange={chip.onChange}
               />
-            </label>
+            </ComposerPillField>
           ))}
-        </div>
+        </ComposerPillMenu>
       )}
     </div>
   )
@@ -198,10 +156,7 @@ export function ComposerControls({
   const overflow = chips.slice(VISIBLE_CHIP_BUDGET)
 
   return (
-    <div
-      data-testid="composer-controls"
-      className={`flex items-center gap-[var(--space-1-5)] flex-wrap ${className}`}
-    >
+    <ComposerBar data-testid="composer-controls" className={className}>
       {visible.map((chip) => (
         <DropdownChip
           key={chip.id}
@@ -219,17 +174,9 @@ export function ComposerControls({
           onClose={() => setOpenId((cur) => (cur === '__overflow__' ? null : cur))}
         />
       )}
-      <button
-        type="button"
-        data-testid="composer-send"
-        disabled={sendDisabled || loading}
-        aria-busy={loading || undefined}
-        onClick={onSend}
-        className={`btn ${BTN_PRIMARY} ml-auto h-[var(--h-pill)] px-[var(--space-3)] rounded-[var(--tr-radius-pill)] text-[length:var(--tr-text-small-size)] inline-flex items-center gap-[var(--space-1-5)] disabled:opacity-40 disabled:cursor-not-allowed`}
-      >
-        {loading && <Spinner />}
+      <ComposerSendButton data-testid="composer-send" disabled={sendDisabled} loading={loading} onClick={onSend}>
         {sendLabel}
-      </button>
-    </div>
+      </ComposerSendButton>
+    </ComposerBar>
   )
 }
