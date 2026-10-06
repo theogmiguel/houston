@@ -15,3 +15,8 @@ export type LazyLegacyButtonVariant = keyof typeof RECIPES
 export function LazyLegacyButton({ variant, ...props }: ButtonRecipeProps & { variant: LazyLegacyButtonVariant }): React.JSX.Element {
   return <ButtonRecipe {...props} recipe={RECIPES[variant]} recipeVariant={variant} dropHead={variant === 'legacy-bare-ghost'} />
 }
+
+/** The pull request summary's trailing Open action. */
+export function GitPrOpenAction(props: ButtonRecipeProps): React.JSX.Element {
+  return <LazyLegacyButton {...props} variant="legacy-secondary" className="ml-auto" />
+}

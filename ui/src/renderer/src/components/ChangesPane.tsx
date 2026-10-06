@@ -1,4 +1,4 @@
-import { LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
+import { GitPrOpenAction, LazyLegacyButton } from './ui/LazyLegacyButtonRoles'
 import { DiffLoadingMark } from './ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -325,16 +325,14 @@ function PrLine({
         PR #{pr.pr.number} · {checks}
         {decision ? ` · ${decision}` : ''}
       </GitPrSummaryLabel>
-      <LazyLegacyButton
-        variant="legacy-secondary"
-        className="ml-auto"
+      <GitPrOpenAction
         data-testid="changes-pr-open"
         disabled={!onOpenUrlInPane}
         onClick={() => onOpenUrlInPane?.(pr.pr!.url)}
       >
         <Icon glyph={IconExternal} role="small" />
         Open
-      </LazyLegacyButton>
+      </GitPrOpenAction>
     </GitPrSummaryLine>
   )
 }
