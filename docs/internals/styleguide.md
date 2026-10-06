@@ -698,10 +698,12 @@ chips only for multi-select filters.
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
 Needs input, Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Result staged,
-Pending delivery, Paused, In sync, Differs, Off, Missing, Open, Fixing, Not seen, Ready,
-Watching and Verified. The dot variant keeps an accessible status name when a row already
+Pending delivery, Paused, In sync, Differs, Off, Connected, Reconnecting, Missing, Open,
+Fixing, Not seen, Ready, Watching and Verified. The dot variant keeps an accessible status
+name when a row already
 identifies its state in a tooltip. Do not rely on colour alone. Idle, Paused, Off, Missing
-and Not seen use a hollow ring. “Ok” and
+and Not seen use a hollow ring. Connected uses the ok dot; Reconnecting uses the warn dot.
+“Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
 

@@ -7,6 +7,8 @@ import {
   Button,
   Card,
   Caption as UiCaption,
+  ContentSection,
+  IntegrationCard,
   Chip,
   Count,
   ConnectionCell,
@@ -57,7 +59,7 @@ import {
   UsageSectionHeading,
   UsageShareBar
 } from '../src/components/ui'
-import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
@@ -206,6 +208,12 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <MotionThemeSpecimens theme="graphite" reducedMotion />
           <MotionThemeSpecimens theme="paper" reducedMotion={false} />
           <MotionThemeSpecimens theme="paper" reducedMotion />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Content section">
+          <ContentSection heading="Integrations" description="Outside services that bring work into Houston. Tokens stay in the OS keychain.">
+            <IntegrationCard icon={<IconMessageSquare />} title="Slack" status="Connected" caption="to acme · last event 2m ago" actions={<Button variant="secondary">Configure</Button>} />
+          </ContentSection>
         </SpecimenGroup>
 
         <SpecimenGroup heading="New pane menu rows">

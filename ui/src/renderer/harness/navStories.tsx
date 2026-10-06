@@ -291,7 +291,7 @@ function mcpColumn(tool: McpToolState['tool'], servers: McpServer[], detected = 
   return { tool, path: `/home/dev/.${tool}/config.json`, detected, servers, error: null }
 }
 
-export function NavMcp(): React.JSX.Element {
+export function NavMcp({ slackClient = null }: { slackClient?: HoustonClient | null } = {}): React.JSX.Element {
   return (
     <Frame active="Connections">
       <McpSurface
@@ -313,6 +313,7 @@ export function NavMcp(): React.JSX.Element {
         onRemoveServer={noop}
         onTest={noop}
         onOpenSource={noop}
+        slackClient={slackClient}
       />
     </Frame>
   )

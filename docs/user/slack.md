@@ -45,7 +45,7 @@ A workspace that requires app approval sends the install to an admin first.
 
 ## Connect Houston
 
-Open **Settings ▸ Accounts ▸ Slack**:
+Open **Connections › Integrations** and choose **Connect** or **Configure**:
 
 - **Tokens**: paste both tokens and choose **Connect**. They go to the OS keychain, never to
   Houston's database or logs; the fields stay empty afterwards. **Disconnect** turns the
@@ -57,6 +57,11 @@ Open **Settings ▸ Accounts ▸ Slack**:
   chosen. Houston writes its own Slack text in it, and the agent is asked to write the
   question and the hand-back for the requester in it. A run reads it when it starts, so a
   change reaches the next run, not one already working.
+
+The **Integrations** section on Connections shows the Slack connection state, team, last
+event and mapped workspaces when that information is available. Choose **Configure** to
+edit the owner, language and channel mappings. Choose **Disconnect** to turn intake off and
+remove its saved tokens.
 
 The status line shows whether the connection is up, the Slack team and the last event. An
 error stays visible until the next successful connection. A message Slack refuses to lay out

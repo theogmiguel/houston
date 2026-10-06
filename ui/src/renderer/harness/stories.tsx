@@ -128,6 +128,7 @@ import {
 import { GridRailRow } from '../src/components/ui/GridRailRow'
 import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
+import { SlackConnectionsStory } from './integrationStories'
 
 const noop = (): void => {}
 
@@ -237,6 +238,10 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'legacy/update': () => <LegacyUpdateStory />,
   'legacy/browser-act': () => <LegacyBrowserActStory />,
   'ui-primitives': () => <UiPrimitivesStory />,
+  'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,
+  'connections/slack-reconnecting': () => <SlackConnectionsStory state="reconnecting" />,
+  'connections/slack-off': () => <SlackConnectionsStory state="off" />,
+  'connections/slack-configure': () => <SlackConnectionsStory state="connected" openDrawer />,
   'firstrun/hooks': () => (
     <div className="flex h-full bg-[var(--content-bg)] text-[var(--text-primary)]">
       <aside className="flex w-[240px] flex-none flex-col border-r border-[var(--border)] bg-[var(--rail-bg)]">

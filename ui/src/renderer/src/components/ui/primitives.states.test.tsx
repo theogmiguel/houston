@@ -126,6 +126,8 @@ describe('components/ui primitives', () => {
       }
       unmount()
     }
+    expect(STATUS_LABELS).toContain('Connected')
+    expect(STATUS_LABELS).toContain('Reconnecting')
   })
 
   it('shows connection state and a test failure inline, with a working cell action', () => {

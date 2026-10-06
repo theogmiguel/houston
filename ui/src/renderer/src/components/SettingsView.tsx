@@ -24,7 +24,6 @@ import { AppearanceSection } from './settings/AppearanceSection'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
 import { DaemonSection } from './settings/DaemonSection'
-import { SlackAccount } from './settings/SlackAccount'
 import { AgentStatusSection } from './settings/AgentStatusSection'
 import { PrivacySection } from './settings/PrivacySection'
 import { VoiceSection } from './settings/VoiceSection'
@@ -331,7 +330,6 @@ function SectionDispatch({
               onAgentProfileDelete={onAgentProfileDelete}
               onAgentProfileSetActive={onAgentProfileSetActive}
             />
-            <SlackAccount client={daemonClient ?? null} />
           </>
         )}
 

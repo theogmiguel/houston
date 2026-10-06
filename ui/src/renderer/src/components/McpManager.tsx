@@ -24,12 +24,14 @@ import type { McpConnectionCheck } from '../houston/generated/McpConnectionCheck
 import type { McpServer } from '../houston/generated/McpServer'
 import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import type { McpToolState } from '../houston/generated/McpToolState'
+import type { HoustonClient } from '../houston/client'
 import type { McpTransport } from '../houston/generated/McpTransport'
 import { buildRows, cellFor, maskSecret, type MatrixRow } from '../houston/mcpRows'
 import { Icon } from './Icon'
 import { Button, Caption, Card, ConnectionCell, Drawer, PageFrame, PageHeader, Table, type TableColumn } from './ui'
 import { ActionMenu } from './ui/ActionMenu'
 import { TASK_AGENTS } from './tasks/format'
+import { ConnectionsIntegrations } from './ConnectionsIntegrations'
 
 const TOOL_LABEL: Partial<Record<AgentKind, string>> = {
   claude: 'Claude Code',
@@ -97,7 +99,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
   const unmanaged = TASK_AGENTS.filter((agent) => !DESTINATIONS.includes(agent)).reverse().map(label).join(', ')
 
   if (!props.loaded) {
-    return <PageFrame width="wide" className="flex-1 min-w-0" data-testid="mcp-manager"><PageHeader heading="Connections" description="MCP servers your agents can use. Houston writes them into each agent's own config." /><p role="status">Opening servers…</p></PageFrame>
+    return <PageFrame width="wide" className="flex-1 min-w-0" data-testid="mcp-manager"><PageHeader heading="Connections" description="MCP servers your agents can use. Houston writes them into each agent's own config." /><p role="status">Opening servers…</p><ConnectionsIntegrations client={props.slackClient ?? null} /></PageFrame>
   }
 
   return (
@@ -134,6 +136,7 @@ function McpConnectionsView({ props, rows }: { props: McpManagerProps; rows: Mat
         {DESTINATIONS.filter((tool) => selectedDiff.byTool[tool] && selectedDiff.byTool[tool]!.fingerprint !== selectedDiff.source!.fingerprint).map((tool) => <DetailCard key={tool} title={label(tool)} server={selectedDiff.byTool[tool]!} />)}
       </Card></section>}
       <Caption tone="faint">Not managed here: {unmanaged}.{listed.length > 0 ? ' Click a cell to turn a server on or off for that agent.' : ''}</Caption>
+      <ConnectionsIntegrations client={props.slackClient ?? null} />
       <Drawer open={form !== null} heading={form?.previousName ? `Edit ${form.previousName}` : 'Add server'} onClose={() => setForm(null)}>
         {form && <McpServerForm
           previousName={form.previousName}
@@ -620,6 +623,7 @@ export interface McpManagerProps {
   onOpenSource: () => void
   sourcePath?: string | null
   checkedAt?: number | null
+  slackClient?: HoustonClient | null
 }
 
 export function McpManager(props: McpManagerProps): React.JSX.Element {
