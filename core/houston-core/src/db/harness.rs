@@ -55,9 +55,56 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
             key TEXT NOT NULL,
             state TEXT NOT NULL,
             decided_at_ms INTEGER NOT NULL,
+            decided_by TEXT NOT NULL DEFAULT 'user',
             PRIMARY KEY (workspace, key)
         );",
     )?;
+    add_column_if_missing(
+        conn,
+        "harness_decisions",
+        "decided_by",
+        "decided_by TEXT NOT NULL DEFAULT 'user'",
+    )?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS harness_finding_tasks (
+            workspace TEXT NOT NULL,
+            key TEXT NOT NULL,
+            task_id INTEGER NOT NULL,
+            review_id INTEGER NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            PRIMARY KEY (workspace, key, task_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_harness_finding_tasks_task
+            ON harness_finding_tasks(task_id);
+        CREATE INDEX IF NOT EXISTS idx_harness_finding_tasks_finding
+            ON harness_finding_tasks(workspace, key, created_at_ms DESC);
+        CREATE TABLE IF NOT EXISTS harness_verifications (
+            review_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            task_id INTEGER NOT NULL,
+            verdict TEXT NOT NULL,
+            sessions_after INTEGER NOT NULL,
+            evidence TEXT NOT NULL,
+            PRIMARY KEY (review_id, key, task_id)
+        );",
+    )?;
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    column_def: &str,
+) -> Result<()> {
+    let present: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+        rusqlite::params![table, column],
+        |r| r.get::<_, i64>(0).map(|count| count > 0),
+    )?;
+    if !present {
+        conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column_def}"), [])?;
+    }
     Ok(())
 }
 
@@ -102,8 +149,43 @@ pub struct HarnessPublication<'a> {
     pub cost_usd: Option<f64>,
     pub summary: &'a str,
     pub findings: &'a [HarnessFindingWrite],
+    pub verifications: &'a [HarnessVerificationWrite],
 }
 
+#[derive(Debug)]
+pub struct HarnessVerificationWrite {
+    pub key: String,
+    pub task_id: i64,
+    pub verdict: proto::HarnessVerdict,
+    pub sessions_after: u32,
+    pub evidence: Vec<String>,
+}
+
+pub struct HarnessTaskRow {
+    pub task_id: i64,
+    pub key: String,
+    pub status: proto::TaskStatus,
+    pub landed_at_ms: Option<i64>,
+    pub review_id: u32,
+    pub created_at_ms: i64,
+}
+
+pub struct HarnessVerificationRow {
+    pub review_id: u32,
+    pub review_ended_at_ms: i64,
+    pub task_id: i64,
+    pub verdict: proto::HarnessVerdict,
+    pub sessions_after: u32,
+    pub evidence: Vec<String>,
+}
+
+pub struct HarnessDecisionDetailRow {
+    pub state: proto::HarnessFindingState,
+    pub decided_at_ms: i64,
+    pub decided_by: String,
+}
+
+#[derive(Debug)]
 pub struct HarnessFindingWrite {
     pub key: String,
     pub title: String,
@@ -129,6 +211,17 @@ pub struct HarnessDecisionRow {
     pub key: String,
     pub state: proto::HarnessFindingState,
     pub decided_at_ms: i64,
+    pub decided_by: String,
+}
+
+pub struct HarnessFindingTaskRow {
+    pub task_id: i64,
+    pub task_number: u32,
+    pub status: proto::TaskStatus,
+    pub created_at_ms: i64,
+    pub landed_at_ms: Option<i64>,
+    pub review_id: u32,
+    pub sessions_since_landed: u32,
 }
 
 const REVIEW_SELECT: &str = "SELECT r.id, r.workspace, r.routine_id, r.run_id, r.session_id, \
@@ -353,6 +446,50 @@ impl Db {
                 ],
             )?;
         }
+        tx.execute(
+            "DELETE FROM harness_verifications WHERE review_id = ?1",
+            rusqlite::params![review_id],
+        )?;
+        let workspace: String = tx.query_row(
+            "SELECT workspace FROM harness_reviews WHERE id = ?1",
+            rusqlite::params![review_id],
+            |r| r.get(0),
+        )?;
+        for v in p.verifications {
+            let verdict = wire_name(&v.verdict)?;
+            tx.execute(
+                "INSERT INTO harness_verifications \
+                 (review_id, key, task_id, verdict, sessions_after, evidence) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    review_id,
+                    v.key,
+                    v.task_id,
+                    verdict,
+                    v.sessions_after,
+                    serde_json::to_string(&v.evidence)?,
+                ],
+            )?;
+            match v.verdict {
+                proto::HarnessVerdict::Gone => {
+                    tx.execute(
+                        "INSERT INTO harness_decisions \
+                         (workspace, key, state, decided_at_ms, decided_by) \
+                         VALUES (?1, ?2, 'resolved', ?3, ?4) \
+                         ON CONFLICT(workspace, key) DO UPDATE SET state = excluded.state, \
+                         decided_at_ms = excluded.decided_at_ms, decided_by = excluded.decided_by",
+                        rusqlite::params![workspace, v.key, now_ms, format!("review:{review_id}")],
+                    )?;
+                }
+                proto::HarnessVerdict::StillPresent => {
+                    tx.execute(
+                        "DELETE FROM harness_decisions WHERE workspace = ?1 AND key = ?2",
+                        rusqlite::params![workspace, v.key],
+                    )?;
+                }
+                proto::HarnessVerdict::Inconclusive => {}
+            }
+        }
         tx.commit()?;
         Ok(())
     }
@@ -426,7 +563,7 @@ impl Db {
     pub fn harness_decisions(&self, workspace: &str) -> Result<Vec<HarnessDecisionRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
-            "SELECT key, state, decided_at_ms FROM harness_decisions WHERE workspace = ?1 \
+            "SELECT key, state, decided_at_ms, decided_by FROM harness_decisions WHERE workspace = ?1 \
              ORDER BY key",
         )?;
         let rows = stmt
@@ -448,6 +585,7 @@ impl Db {
                     key,
                     state,
                     decided_at_ms: r.get(2)?,
+                    decided_by: r.get(3)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -462,6 +600,17 @@ impl Db {
         state: proto::HarnessFindingState,
         now_ms: i64,
     ) -> Result<()> {
+        self.set_harness_decision_by(workspace, key, state, now_ms, "user")
+    }
+
+    pub fn set_harness_decision_by(
+        &self,
+        workspace: &str,
+        key: &str,
+        state: proto::HarnessFindingState,
+        now_ms: i64,
+        decided_by: &str,
+    ) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         if state == proto::HarnessFindingState::Open {
             conn.execute(
@@ -470,12 +619,207 @@ impl Db {
             )?;
         } else {
             conn.execute(
-                "INSERT INTO harness_decisions (workspace, key, state, decided_at_ms) \
-                 VALUES (?1, ?2, ?3, ?4) ON CONFLICT(workspace, key) DO UPDATE SET \
-                 state = excluded.state, decided_at_ms = excluded.decided_at_ms",
-                rusqlite::params![workspace, key, wire_name(&state)?, now_ms],
+                "INSERT INTO harness_decisions (workspace, key, state, decided_at_ms, decided_by) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(workspace, key) DO UPDATE SET \
+                 state = excluded.state, decided_at_ms = excluded.decided_at_ms, \
+                 decided_by = excluded.decided_by",
+                rusqlite::params![workspace, key, wire_name(&state)?, now_ms, decided_by],
             )?;
         }
         Ok(())
+    }
+
+    pub fn latest_published_harness_review(&self, workspace: &str) -> Result<Option<u32>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT MAX(id) FROM harness_reviews WHERE workspace = ?1 AND status = 'published'",
+            rusqlite::params![workspace],
+            |r| r.get(0),
+        )?)
+    }
+
+    pub fn harness_workspaces(&self) -> Result<Vec<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt =
+            conn.prepare("SELECT DISTINCT workspace FROM harness_reviews ORDER BY workspace")?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    pub fn harness_seen_review_id(&self, workspace: &str) -> Result<u32> {
+        let key = format!("harness_seen:{workspace}");
+        let conn = self.conn.lock().expect("db lock");
+        let raw: Option<String> = conn
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        Ok(raw.and_then(|value| value.parse().ok()).unwrap_or(0))
+    }
+
+    pub fn advance_harness_seen_review_id(&self, workspace: &str, review_id: u32) -> Result<u32> {
+        let key = format!("harness_seen:{workspace}");
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE \
+             SET value = CAST(MAX(CAST(settings.value AS INTEGER), CAST(excluded.value AS INTEGER)) AS TEXT)",
+            rusqlite::params![key, review_id],
+        )?;
+        let value = conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+            r.get::<_, String>(0)
+        })?;
+        Ok(value.parse().unwrap_or(0))
+    }
+
+    pub fn harness_finding_tasks(
+        &self,
+        workspace: &str,
+        key: &str,
+    ) -> Result<Vec<HarnessFindingTaskRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.number, t.status, l.created_at_ms, l.review_id, \
+             COALESCE((SELECT MAX(h.created_at) FROM backlog_task_history h \
+                       WHERE h.task_id = t.id AND h.action = 'pr_merged'), \
+                      CASE WHEN t.status = 'done' THEN t.updated_at END), \
+             (SELECT COUNT(*) FROM sessions s WHERE \
+                (t.status = 'done' OR EXISTS (SELECT 1 FROM backlog_task_history h \
+                                              WHERE h.task_id = t.id AND h.action = 'pr_merged')) \
+                AND s.created_at > COALESCE((SELECT MAX(h.created_at) FROM backlog_task_history h \
+                                         WHERE h.task_id = t.id AND h.action = 'pr_merged'), t.updated_at) \
+                AND s.agent IN ('claude', 'codex') \
+                AND (s.project_dir = ?1 OR substr(s.project_dir, 1, length(?1) + 1) = ?1 || '/') \
+                AND NOT EXISTS (SELECT 1 FROM backlog_task_runs tr \
+                                WHERE tr.task_id = t.id AND tr.session_id = s.id) \
+                AND NOT EXISTS (SELECT 1 FROM harness_reviews hr WHERE hr.session_id = s.id)) \
+             FROM harness_finding_tasks l JOIN backlog_tasks t ON t.id = l.task_id \
+             WHERE l.workspace = ?1 AND l.key = ?2 ORDER BY l.created_at_ms DESC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![workspace, key], |r| {
+            let task_id: i64 = r.get(0)?;
+            let status_raw: String = r.get(2)?;
+            let status = from_wire::<proto::TaskStatus>(&status_raw).ok_or_else(|| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    2,
+                    rusqlite::types::Type::Text,
+                    format!("task {task_id} has unknown status {status_raw:?} (expected TaskStatus)").into(),
+                )
+            })?;
+            Ok(HarnessFindingTaskRow {
+                task_id,
+                task_number: r.get(1)?,
+                status,
+                created_at_ms: r.get(3)?,
+                review_id: r.get(4)?,
+                landed_at_ms: r.get(5)?,
+                sessions_since_landed: r.get(6)?,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn harness_task_origin(&self, task_id: i64) -> Result<Option<proto::TaskOrigin>> {
+        let conn = self.conn.lock().expect("db lock");
+        let row = conn
+            .query_row(
+                "SELECT workspace, key, review_id FROM harness_finding_tasks \
+             WHERE task_id = ?1 ORDER BY created_at_ms LIMIT 1",
+                rusqlite::params![task_id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, u32>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        Ok(row.map(
+            |(workspace, key, review_id)| proto::TaskOrigin::HarnessFinding {
+                workspace,
+                key,
+                review_id,
+            },
+        ))
+    }
+
+    pub fn harness_task_origins(
+        &self,
+    ) -> Result<std::collections::HashMap<i64, proto::TaskOrigin>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT l.task_id, l.workspace, l.key, l.review_id FROM harness_finding_tasks l \
+             WHERE l.created_at_ms = (SELECT MAX(newer.created_at_ms) \
+               FROM harness_finding_tasks newer WHERE newer.task_id = l.task_id)",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                proto::TaskOrigin::HarnessFinding {
+                    workspace: r.get(1)?,
+                    key: r.get(2)?,
+                    review_id: r.get(3)?,
+                },
+            ))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn latest_harness_verification(
+        &self,
+        workspace: &str,
+        key: &str,
+    ) -> Result<Option<HarnessVerificationRow>> {
+        let conn = self.conn.lock().expect("db lock");
+        let row = conn.query_row(
+            "SELECT v.review_id, r.ended_at_ms, v.task_id, v.verdict, v.sessions_after, v.evidence \
+             FROM harness_verifications v JOIN harness_reviews r ON r.id = v.review_id \
+             WHERE r.workspace = ?1 AND v.key = ?2 ORDER BY v.review_id DESC LIMIT 1",
+            rusqlite::params![workspace, key],
+            |r| {
+                let raw: String = r.get(3)?;
+                let verdict = from_wire::<proto::HarnessVerdict>(&raw).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text,
+                        format!("verification has unknown verdict {raw:?} (expected gone, still_present or inconclusive)").into())
+                })?;
+                Ok(HarnessVerificationRow {
+                    review_id: r.get(0)?,
+                    review_ended_at_ms: r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                    task_id: r.get(2)?, verdict,
+                    sessions_after: r.get(4)?, evidence: json_list(&r.get::<_, String>(5)?),
+                })
+            },
+        ).optional()?;
+        Ok(row)
+    }
+
+    pub fn harness_unread_session_counts(
+        &self,
+        workspace: &str,
+        since_ms: i64,
+        until_ms: i64,
+    ) -> Result<Vec<(proto::AgentKind, u32)>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT agent, COUNT(*) FROM sessions WHERE \
+             (project_dir = ?1 OR substr(project_dir, 1, length(?1) + 1) = ?1 || '/') \
+             AND created_at >= ?2 \
+             AND created_at < ?3 AND agent IN ('opencode', 'cursor', 'grok', 'antigravity') \
+             GROUP BY agent ORDER BY agent",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![workspace, since_ms, until_ms], |r| {
+            let raw: String = r.get(0)?;
+            let agent = from_wire::<proto::AgentKind>(&raw).ok_or_else(|| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    format!("sessions has unknown agent {raw:?} (expected AgentKind)").into(),
+                )
+            })?;
+            Ok((agent, r.get(1)?))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 }

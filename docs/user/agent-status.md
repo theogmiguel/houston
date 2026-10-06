@@ -52,7 +52,7 @@ remain supported. Codex delays its startup hook until the first turn; on these f
 paths, inspect the pane and send the first prompt directly. Queued delivery waits for
 reported Idle. Houston does not read prompt text to infer readiness.
 
-## Settings ▸ Agent setup
+## Settings ▸ Agents
 
 This screen lists every CLI Houston knows how to wire, and what each row means:
 

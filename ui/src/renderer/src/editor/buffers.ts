@@ -90,7 +90,15 @@ const langCompartment = new Compartment()
 const wrapCompartment = new Compartment()
 
 const PROSE_EXT = new Set(['md', 'markdown', 'mdx', 'txt', 'text', 'rst'])
+const WRAP_PREFERENCE_KEY = 'tr-files-word-wrap'
+
 function defaultWrapFor(path: string): boolean {
+  try {
+    const preference = localStorage.getItem(WRAP_PREFERENCE_KEY)
+    if (preference !== null) return preference === 'true'
+  } catch {
+    // Storage can be unavailable in embedded browser contexts.
+  }
   return PROSE_EXT.has(basename(path).split('.').pop()?.toLowerCase() ?? '')
 }
 
@@ -244,6 +252,11 @@ export function setBufferWrap(workspaceDir: string, path: string, wrap: boolean)
     state: e.buf.state.update({
       effects: wrapCompartment.reconfigure(wrap ? CmView.lineWrapping : [])
     }).state
+  }
+  try {
+    localStorage.setItem(WRAP_PREFERENCE_KEY, String(wrap))
+  } catch {
+    // Storage can be unavailable in embedded browser contexts.
   }
   notify(key)
 }

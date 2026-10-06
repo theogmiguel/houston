@@ -5,17 +5,20 @@ export function Toggle({
   on,
   disabled,
   onChange,
+  'aria-label': ariaLabel,
   'data-testid': testId
 }: {
   on: boolean
   disabled?: boolean
   onChange: (v: boolean) => void
+  'aria-label'?: string
   'data-testid'?: string
 }): React.JSX.Element {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={ariaLabel}
       aria-checked={on}
       disabled={disabled}
       data-testid={testId}
@@ -70,12 +73,12 @@ export function SectionHead({
   return (
     <header className="pb-[var(--space-5)] flex flex-col gap-[var(--space-1-5)]">
       <div className="flex items-center justify-between gap-[var(--space-4)]">
-        <h1
+        <h2
           data-testid="settings-section-title"
           className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)] m-0"
         >
           {title}
-        </h1>
+        </h2>
         {actions && (
           <div className="flex-none flex items-center gap-[var(--space-2)] h-[var(--h-ctl)]">{actions}</div>
         )}
@@ -89,14 +92,21 @@ export function SectionHead({
   )
 }
 
-export function SubHead({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
+export function SubHead({ children, actions }: { children: React.ReactNode; actions?: React.ReactNode }): React.JSX.Element {
+  const heading = (
     <h2
       data-testid="settings-subhead"
-      className="flex items-center gap-[var(--space-2)] pt-[var(--space-5)] pb-[var(--space-2)] pl-[2px] text-[length:var(--tr-text-label-size)] font-[var(--tr-text-label-weight)] tracking-[var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)] text-[var(--text-faint)] [&:first-of-type]:pt-0"
+      className={`m-0 flex min-h-[var(--h-ctl)] items-center gap-[var(--space-2)] px-[var(--space-4)] text-[length:var(--tr-text-ui-size)] font-normal text-[var(--text-secondary)] ${actions ? 'flex-1' : 'pt-[var(--space-5)] pb-[var(--space-2-5)] [&:first-child]:pt-0'}`}
     >
       {children}
     </h2>
+  )
+  if (!actions) return heading
+  return (
+    <div data-testid="settings-subhead-row" className="flex items-center justify-between gap-[var(--space-4)] pt-[var(--space-5)] pb-[var(--space-2-5)] pr-[var(--space-4)] [&:first-child]:pt-0">
+      {heading}
+      <div className="flex flex-none items-center gap-[var(--space-1-5)]">{actions}</div>
+    </div>
   )
 }
 
@@ -165,7 +175,7 @@ export function Row({
               className={`mt-[2px] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)] ${
                 variant === 'list'
                   ? typeof desc === 'string'
-                    ? 'max-w-[58ch] overflow-hidden text-ellipsis whitespace-nowrap'
+                    ? 'max-w-[58ch] whitespace-normal break-words'
                     : ''
                   : variant === 'flush'
                     ? 'max-w-[62ch]'

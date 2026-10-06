@@ -1,7 +1,11 @@
+import { useState } from 'react'
 import { BTN_GHOST } from '../buttonChrome'
 import { TERMINAL_FONTS, terminalFontStack } from '../../pane/terminalFonts'
+import { THEMES, type ChromeTheme, type TerminalPaletteChoice } from '../../theme'
+import { Button } from '../ui/Button'
 import { Select } from '../Select'
 import { SettingsList, Toggle } from '../settingsPrimitives'
+import { TerminalPalettePicker } from '../ui/TerminalPalettePicker'
 import {
   TERMINAL_LINE_HEIGHT_MAX,
   TERMINAL_LINE_HEIGHT_MIN,
@@ -23,6 +27,9 @@ import {
 import { ClampedNumberSetting, Row, SubHead } from './shared'
 
 export interface TerminalSectionProps {
+  chromeTheme: ChromeTheme
+  theme: TerminalPaletteChoice
+  onTheme: (theme: TerminalPaletteChoice) => void
   fontSize: number
   onFontSize: (px: number) => void
   fontMin: number
@@ -49,6 +56,9 @@ export interface TerminalSectionProps {
 }
 
 export function TerminalSection({
+  chromeTheme,
+  theme,
+  onTheme,
   fontSize,
   onFontSize,
   fontMin,
@@ -73,19 +83,36 @@ export function TerminalSection({
   stripBoxGlyphs,
   onStripBoxGlyphs
 }: TerminalSectionProps): React.JSX.Element {
+  const [allPalettes, setAllPalettes] = useState(false)
   const stackCap = useStackCapacity()
   const idleQuiet = useIdleQuietMsDefault()
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Terminal</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          Most changes reach open panes immediately. Shell integration and clipboard
-          access apply to new terminals only.
-        </div>
+      <SubHead actions={<Button variant="ghost" size="sm" aria-expanded={allPalettes} onClick={() => setAllPalettes((open) => !open)}>{allPalettes ? 'Fewer palettes' : `All ${THEMES.length} palettes`}</Button>}>Palette</SubHead>
+      <div data-settings-row-name="Palette">
+        <TerminalPalettePicker
+          chromeTheme={chromeTheme}
+          value={theme}
+          onChange={onTheme}
+          expanded={allPalettes}
+        />
       </div>
       <SubHead>Type</SubHead>
       <SettingsList>
+        <Row
+          title="Font family"
+          desc={
+            TERMINAL_FONTS.find((f) => f.id === fontFamilyId)?.note ??
+            'Applies to every terminal pane immediately'
+          }
+        >
+          <Select
+            value={fontFamilyId}
+            data-testid="settings-font-family"
+            options={TERMINAL_FONTS.map((f) => ({ value: f.id, label: f.label }))}
+            onChange={onFontFamilyId}
+          />
+        </Row>
         <Row
           title="Font size"
           desc="Applies to every pane. Ctrl +/− does the same."
@@ -121,20 +148,6 @@ export function TerminalSection({
               Reset
             </button>
           </div>
-        </Row>
-        <Row
-          title="Font family"
-          desc={
-            TERMINAL_FONTS.find((f) => f.id === fontFamilyId)?.note ??
-            'Applies to every terminal pane immediately'
-          }
-        >
-          <Select
-            value={fontFamilyId}
-            data-testid="settings-font-family"
-            options={TERMINAL_FONTS.map((f) => ({ value: f.id, label: f.label }))}
-            onChange={onFontFamilyId}
-          />
         </Row>
         <Row title="Line height" desc="A multiplier of font size. Below 1.0 clips descenders.">
           <ClampedNumberSetting

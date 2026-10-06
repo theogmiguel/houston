@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { BTN_DANGER_SOLID, BTN_GHOST } from './buttonChrome'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
+import { Button, DialogActions, DialogBackdrop, DialogBody, DialogDescription, DialogPanel, DialogTitle } from './ui'
 import { IconAlertTriangle } from './icons'
 import { Icon } from './Icon'
 
@@ -51,46 +50,24 @@ export function ConfirmModal({
   }
 
   return (
-    <div
-      className={MODAL_SCRIM_CLS}
-      onMouseDown={onCancel}
-    >
-      <div
+    <DialogBackdrop onMouseDown={onCancel}>
+      <DialogPanel
         ref={rootRef}
-        className="pop w-[380px] max-w-[92vw] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
         role="alertdialog"
         aria-modal="true"
         aria-describedby="confirm-modal-msg"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <div className="px-3.5 py-[11px] border-b border-border [font-size:var(--tr-text-subhead-size)] [font-weight:var(--tr-text-subhead-weight)] [letter-spacing:var(--tr-text-subhead-tracking)] text-text-primary">
-          {title}
-        </div>
-        <div className="p-5 space-y-4">
-          <div
-            id="confirm-modal-msg"
-            className="text-text-secondary [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] leading-relaxed"
-          >
-            {message}
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 px-5 pb-5">
-          <div className="flex gap-2 justify-end">
-            <button ref={cancelRef} className={`btn ${BTN_GHOST}`} onClick={onCancel}>
-              Cancel
-            </button>
-            <button
-              ref={confirmRef}
-              className={`btn ${BTN_DANGER_SOLID} inline-flex items-center gap-[var(--space-1-5)]`}
-              onClick={onConfirm}
-            >
-              <Icon glyph={IconAlertTriangle} role="ui" />
-              {confirmLabel}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogBody>
+          <DialogDescription id="confirm-modal-msg">{message}</DialogDescription>
+        </DialogBody>
+        <DialogActions>
+          <Button ref={cancelRef} variant="legacy-ghost" onClick={onCancel}>Cancel</Button>
+          <Button ref={confirmRef} variant="legacy-danger-solid" onClick={onConfirm}><Icon glyph={IconAlertTriangle} role="ui" />{confirmLabel}</Button>
+        </DialogActions>
+      </DialogPanel>
+    </DialogBackdrop>
   )
 }

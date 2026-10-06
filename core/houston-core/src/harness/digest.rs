@@ -826,7 +826,7 @@ fn session_value(s: &Session, prompts: &[Prompt], dropped: usize) -> Value {
     if chrome > 0 {
         machine.insert("chrome_mcp_errors".into(), json!(chrome));
     }
-    json!({
+    let mut value = json!({
         "v": 1,
         "provider": s.provider,
         "id": s.id,
@@ -873,7 +873,25 @@ fn session_value(s: &Session, prompts: &[Prompt], dropped: usize) -> Value {
         "automatic_answered_with_text": s.automatic_answered,
         "automatic_reply_samples": s.automatic_reply_samples,
         "denied": s.denied,
+    });
+    if let Some(task) = s
+        .prompts
+        .first()
+        .and_then(|prompt| task_key_from_prompt(&prompt.text))
+    {
+        value["task"] = json!(task);
+    }
+    value
+}
+
+fn task_key_from_prompt(prompt: &str) -> Option<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?m)^Houston task (HOU-[0-9]+)\b").expect("task key pattern is valid")
     })
+    .captures(prompt)
+    .and_then(|capture| capture.get(1))
+    .map(|key| key.as_str().to_string())
 }
 
 /// Drops middle prompts until the line fits, keeping the opening ask and the
@@ -1196,6 +1214,19 @@ mod tests {
             v["prompts_dropped"].as_u64().unwrap() as usize + kept.len(),
             300
         );
+    }
+
+    #[test]
+    fn task_sessions_are_labelled_from_the_task_brief() {
+        let s = Session {
+            provider: "claude",
+            id: "s".into(),
+            prompts: vec![prompt("Houston task HOU-42 (id 9): update parser")],
+            ..Default::default()
+        };
+        let value = session_value(&s, &s.prompts, 0);
+        assert_eq!(value["task"], "HOU-42");
+        assert_eq!(task_key_from_prompt("ordinary user prompt"), None);
     }
 
     #[test]

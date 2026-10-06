@@ -214,7 +214,7 @@ describe('SettingsView Shortcuts section (P4 #16)', () => {
     pressKey({ code: 'KeyB', ctrlKey: true, key: 'b' })
 
     expect(onKeymapOverrides).not.toHaveBeenCalled()
-    expect(row.textContent).toContain('Already bound to')
+    expect(row.textContent).toContain('Conflicts with')
     expect(row.textContent).toContain('toggle the sidebar')
   })
 

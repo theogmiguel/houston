@@ -795,6 +795,13 @@
   border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
 }
 
+.exec[data-presentation="drawer"] {
+  background: var(--card-bg);
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: var(--space-3);
+}
+
 .exec .h {
   display: flex;
   align-items: center;
@@ -807,6 +814,25 @@
 
 .exec .h b {
   font-weight: 600;
+}
+
+.exec[data-presentation="drawer"] .h {
+  height: auto;
+  min-height: 30px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--space-1-5);
+  border-bottom: 0;
+}
+
+.exec[data-presentation="drawer"] [data-task-drawer-run-meta] {
+  color: var(--text-muted);
+}
+
+.exec[data-presentation="drawer"] [data-task-drawer-run-reuse] {
+  padding: 0 var(--space-2-5) var(--space-2);
+  color: var(--text-faint);
+  font-size: var(--tr-text-label-size);
 }
 
 .exec .r {

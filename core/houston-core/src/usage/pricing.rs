@@ -1,11 +1,16 @@
 use houston_protocol as proto;
 
-use crate::model_catalog::ModelTable;
+use crate::model_catalog::{ModelRate, ModelTable, SpeedRate};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PricedUsage {
     pub cost_usd: f64,
     pub cost_source: proto::UsageCostSource,
+    pub category_cost_usd: proto::UsageCategoryCost,
+    pub fast_cost_usd: f64,
+    pub ultrafast_cost_usd: f64,
+    pub speed_premium_usd: f64,
+    pub speed_rate_available: bool,
 }
 
 /// `reasoning_tokens` is deliberately not charged: it is already inside
@@ -15,25 +20,140 @@ pub fn price_usage(
     model: &str,
     totals: &proto::UsageTokenTotals,
     reported_cost_usd: Option<f64>,
+    speed: super::transcripts::UsageSpeed,
 ) -> PricedUsage {
-    if let Some(cost) = reported_cost_usd.filter(|c| c.is_finite()) {
-        return PricedUsage {
-            cost_usd: cost,
-            cost_source: proto::UsageCostSource::ProviderReported,
-        };
-    }
     let Some(rate) = table.rate(model) else {
+        let reported = reported_cost_usd.filter(|c| c.is_finite());
         return PricedUsage {
-            cost_usd: 0.0,
-            cost_source: proto::UsageCostSource::Unpriced,
+            cost_usd: reported.unwrap_or(0.0),
+            cost_source: if reported.is_some() {
+                proto::UsageCostSource::ProviderReported
+            } else {
+                proto::UsageCostSource::Unpriced
+            },
+            category_cost_usd: proto::UsageCategoryCost {
+                other_usd: reported.unwrap_or(0.0),
+                ..proto::UsageCategoryCost::default()
+            },
+            fast_cost_usd: if speed == super::transcripts::UsageSpeed::Fast {
+                reported.unwrap_or(0.0)
+            } else {
+                0.0
+            },
+            ultrafast_cost_usd: if speed == super::transcripts::UsageSpeed::Ultrafast {
+                reported.unwrap_or(0.0)
+            } else {
+                0.0
+            },
+            speed_premium_usd: 0.0,
+            speed_rate_available: !matches!(speed, super::transcripts::UsageSpeed::Standard),
         };
     };
+    let standard_categories = category_cost(totals, &rate.into());
+    let standard_cost = category_total(standard_categories);
+    let reported = reported_cost_usd.filter(|c| c.is_finite());
+    let tier = match speed {
+        super::transcripts::UsageSpeed::Standard => Some(SpeedRate::from(rate)),
+        super::transcripts::UsageSpeed::Fast => rate.priority.or_else(|| {
+            rate.fast_multiplier
+                .map(|multiplier| multiply(SpeedRate::from(rate), multiplier))
+        }),
+        super::transcripts::UsageSpeed::Ultrafast => rate.ultrafast,
+    };
+    let speed_rate_available =
+        matches!(speed, super::transcripts::UsageSpeed::Standard) || tier.is_some();
+    let tier_categories = tier.map(|tier| category_cost(totals, &tier));
+    let priced_categories = scale_categories(
+        tier_categories.unwrap_or(standard_categories),
+        reported.unwrap_or_else(|| category_total(tier_categories.unwrap_or(standard_categories))),
+    );
+    let cost_usd = reported.unwrap_or_else(|| category_total(priced_categories));
+    let priced_categories = if category_total(priced_categories) == 0.0 && cost_usd > 0.0 {
+        proto::UsageCategoryCost {
+            other_usd: cost_usd,
+            ..priced_categories
+        }
+    } else {
+        priced_categories
+    };
+    let standard_estimate = standard_cost;
+    let tier_estimate = tier_categories
+        .map(category_total)
+        .unwrap_or(standard_estimate);
+    let premium = if speed_rate_available {
+        (tier_estimate - standard_estimate).max(0.0)
+    } else {
+        0.0
+    };
     PricedUsage {
-        cost_usd: totals.uncached_input_tokens as f64 * rate.input_cost_per_token
-            + totals.cached_input_tokens as f64 * rate.cache_read_cost_per_token
-            + totals.cache_creation_tokens as f64 * rate.cache_creation_cost_per_token
-            + totals.output_tokens as f64 * rate.output_cost_per_token,
-        cost_source: proto::UsageCostSource::ModelPriced,
+        cost_usd,
+        cost_source: if reported.is_some() {
+            proto::UsageCostSource::ProviderReported
+        } else {
+            proto::UsageCostSource::ModelPriced
+        },
+        category_cost_usd: priced_categories,
+        fast_cost_usd: if speed == super::transcripts::UsageSpeed::Fast {
+            cost_usd
+        } else {
+            0.0
+        },
+        ultrafast_cost_usd: if speed == super::transcripts::UsageSpeed::Ultrafast {
+            cost_usd
+        } else {
+            0.0
+        },
+        speed_premium_usd: premium,
+        speed_rate_available,
+    }
+}
+
+fn category_cost(totals: &proto::UsageTokenTotals, rate: &SpeedRate) -> proto::UsageCategoryCost {
+    proto::UsageCategoryCost {
+        input_usd: totals.uncached_input_tokens as f64 * rate.input_cost_per_token,
+        cache_read_usd: totals.cached_input_tokens as f64 * rate.cache_read_cost_per_token,
+        cache_write_usd: totals.cache_creation_tokens as f64 * rate.cache_creation_cost_per_token,
+        output_usd: totals.output_tokens as f64 * rate.output_cost_per_token,
+        ..proto::UsageCategoryCost::default()
+    }
+}
+
+fn category_total(cost: proto::UsageCategoryCost) -> f64 {
+    cost.input_usd + cost.cache_read_usd + cost.cache_write_usd + cost.output_usd + cost.other_usd
+}
+
+fn scale_categories(cost: proto::UsageCategoryCost, total: f64) -> proto::UsageCategoryCost {
+    let estimate = category_total(cost);
+    if estimate <= 0.0 {
+        return cost;
+    }
+    let scale = total / estimate;
+    proto::UsageCategoryCost {
+        input_usd: cost.input_usd * scale,
+        cache_read_usd: cost.cache_read_usd * scale,
+        cache_write_usd: cost.cache_write_usd * scale,
+        output_usd: cost.output_usd * scale,
+        other_usd: cost.other_usd * scale,
+    }
+}
+
+fn multiply(rate: SpeedRate, by: f64) -> SpeedRate {
+    SpeedRate {
+        input_cost_per_token: rate.input_cost_per_token * by,
+        output_cost_per_token: rate.output_cost_per_token * by,
+        cache_read_cost_per_token: rate.cache_read_cost_per_token * by,
+        cache_creation_cost_per_token: rate.cache_creation_cost_per_token * by,
+    }
+}
+
+impl From<ModelRate> for SpeedRate {
+    fn from(rate: ModelRate) -> Self {
+        Self {
+            input_cost_per_token: rate.input_cost_per_token,
+            output_cost_per_token: rate.output_cost_per_token,
+            cache_read_cost_per_token: rate.cache_read_cost_per_token,
+            cache_creation_cost_per_token: rate.cache_creation_cost_per_token,
+        }
     }
 }
 
@@ -115,7 +235,13 @@ mod tests {
             output_tokens: 500,
             reasoning_tokens: 100,
         };
-        let priced = price_usage(&table(), "claude-opus-5", &totals, None);
+        let priced = price_usage(
+            &table(),
+            "claude-opus-5",
+            &totals,
+            None,
+            super::super::transcripts::UsageSpeed::Standard,
+        );
         assert_eq!(priced.cost_source, proto::UsageCostSource::ModelPriced);
         let expected =
             1_000.0 * 0.000015 + 10_000.0 * 0.0000015 + 2_000.0 * 0.00001875 + 500.0 * 0.000075;
@@ -129,6 +255,7 @@ mod tests {
             "claude-opus-5",
             &proto::UsageTokenTotals::default(),
             Some(0.42),
+            super::super::transcripts::UsageSpeed::Standard,
         );
         assert_eq!(priced.cost_usd, 0.42);
         assert_eq!(priced.cost_source, proto::UsageCostSource::ProviderReported);
@@ -144,6 +271,7 @@ mod tests {
                 ..Default::default()
             },
             None,
+            super::super::transcripts::UsageSpeed::Standard,
         );
         assert_eq!(priced.cost_source, proto::UsageCostSource::Unpriced);
         assert_eq!(priced.cost_usd, 0.0);
@@ -169,6 +297,7 @@ mod tests {
             "claude-opus-5",
             &proto::UsageTokenTotals::default(),
             None,
+            super::super::transcripts::UsageSpeed::Standard,
         );
         assert_eq!(priced.cost_source, proto::UsageCostSource::Unpriced);
     }

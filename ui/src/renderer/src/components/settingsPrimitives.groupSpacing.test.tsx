@@ -36,7 +36,7 @@ describe('settings groups keep their rhythm', () => {
     expect(groups).toHaveLength(2)
     for (const g of groups) expect(g.className).toContain('[&+&]:pt-[var(--space-5)]')
     for (const h of container.querySelectorAll('[data-testid="settings-subhead"]')) {
-      expect(h.className).toContain('[&:first-of-type]:pt-0')
+      expect(h.className).toContain('[&:first-child]:pt-0')
     }
   })
 })

@@ -25,19 +25,19 @@
   "max": 20,
   "files": {
     "src/renderer/src/App.tsx": {
-      "total": 959,
-      "worst": 87,
+      "total": 983,
+      "worst": 84,
       "over": 3
     },
     "src/renderer/src/components/BrowserPane.tsx": {
-      "total": 125,
-      "worst": 37,
+      "total": 118,
+      "worst": 33,
       "over": 1
     },
     "src/renderer/src/components/ChangesPane.tsx": {
-      "total": 192,
-      "worst": 26,
-      "over": 1
+      "total": 155,
+      "worst": 19,
+      "over": 0
     },
     "src/renderer/src/components/Chip.tsx": {
       "total": 36,
@@ -55,8 +55,8 @@
       "over": 1
     },
     "src/renderer/src/components/FilesPane.tsx": {
-      "total": 257,
-      "worst": 24,
+      "total": 247,
+      "worst": 23,
       "over": 1
     },
     "src/renderer/src/components/IconTile.tsx": {
@@ -70,8 +70,8 @@
       "over": 1
     },
     "src/renderer/src/components/QuestionCard.tsx": {
-      "total": 56,
-      "worst": 29,
+      "total": 55,
+      "worst": 28,
       "over": 1
     },
     "src/renderer/src/pane/TerminalPane.tsx": {

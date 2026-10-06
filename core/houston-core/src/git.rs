@@ -3,6 +3,8 @@ use houston_protocol as proto;
 use std::path::{Path, PathBuf};
 
 const PATCH_CAP_BYTES: usize = 512 * 1024;
+/// Five hundred entries bound a commit-list reply while covering long-lived branches.
+pub const GIT_BRANCH_COMMITS_CAP: usize = 500;
 
 fn is_sensitive_path(path: &str) -> bool {
     let lower = path.to_lowercase();
@@ -501,6 +503,58 @@ pub fn sync(dir: &Path) -> SyncStatus {
         }
     }
     s
+}
+
+pub fn branch_commits(dir: &Path) -> Result<(Vec<proto::GitBranchCommit>, u64, bool)> {
+    ensure_repo(dir)?;
+    let range = "@{upstream}..HEAD";
+    let total = run_git(dir, &["rev-list", "--count", range])
+        .with_context(|| {
+            format!(
+                "listing branch commits in {:?}: expected the current branch to have an upstream",
+                dir.display().to_string()
+            )
+        })?
+        .trim()
+        .parse::<u64>()
+        .context(
+            "git rev-list returned an invalid commit count; expected a non-negative integer",
+        )?;
+    let truncated = total > GIT_BRANCH_COMMITS_CAP as u64;
+    let limit = GIT_BRANCH_COMMITS_CAP.to_string();
+    let raw = run_git(
+        dir,
+        &[
+            "log",
+            "-z",
+            "--format=%h%x00%s%x00%at",
+            &format!("--max-count={limit}"),
+            range,
+        ],
+    )?;
+    let mut fields: Vec<_> = raw.split('\0').collect();
+    if fields.last() == Some(&"") {
+        fields.pop();
+    }
+    let mut commits = Vec::with_capacity(fields.len() / 3);
+    for record in fields.as_chunks::<3>().0 {
+        let seconds = record[2].parse::<u64>().with_context(|| {
+            format!(
+                "git log returned author time {:?}; expected Unix epoch seconds",
+                record[2]
+            )
+        })?;
+        commits.push(proto::GitBranchCommit {
+            sha: record[0].to_string(),
+            subject: record[1].to_string(),
+            author_time_ms: seconds.saturating_mul(1000),
+        });
+    }
+    anyhow::ensure!(
+        fields.len().is_multiple_of(3),
+        "git log returned an incomplete branch commit record; expected sha, subject, and author time"
+    );
+    Ok((commits, total, truncated))
 }
 
 pub fn stage(dir: &Path, paths: &[String]) -> Result<()> {

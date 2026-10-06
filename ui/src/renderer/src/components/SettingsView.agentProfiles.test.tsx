@@ -6,11 +6,23 @@ import { SettingsView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
 import { pickOption, selectTrigger, selectValue } from '../test/selectHarness'
 import type { KeymapOverrides } from '../houston/client'
+import type { AgentHookState } from '../houston/generated/AgentHookState'
 import type { AgentProfileState } from './SettingsView'
 
 ;(globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = '0.0.0-test'
 
 function baseProps(): React.ComponentProps<typeof SettingsView> {
+  const agentHooks: AgentHookState[] = ['claude', 'codex'].map((provider) => ({
+    provider: provider as AgentHookState['provider'],
+    path: `~/.${provider}/settings.json`,
+    scope: 'workspace' as const,
+    enabled: false,
+    installed: false,
+    error: null,
+    present: true,
+    version: '1.0.0',
+    trust: null
+  }))
   return {
     update: null,
     onUpdateCheckNow: () => {},
@@ -85,7 +97,7 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
     onOrchestrationCapsSet: () => {},
     onMailboxRetentionSet: () => {},
     hostInfo: null,
-    agentHooks: null,
+    agentHooks,
     onOpenHooks: () => {},
     onAgentHooksSet: () => {},
     onAgentHooksRefresh: () => {},
@@ -95,8 +107,12 @@ function baseProps(): React.ComponentProps<typeof SettingsView> {
   }
 }
 
-function openAgentProfiles(_container: HTMLDivElement): void {
+function openAgentProfiles(container: HTMLDivElement): void {
   act(() => setSettingsNavForTests({ section: 'accounts' }))
+  const claude = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]'))
+    .find((button) => button.textContent?.includes('Claude Code'))
+  if (!claude) throw new Error('expected Claude Code in the Agents list')
+  act(() => claude.click())
 }
 
 function stateWithOneClaudeProfile(): AgentProfileState {
@@ -138,7 +154,12 @@ describe('Settings › Accounts — CLAUDE_CONFIG_DIR/CODEX_HOME isolation (row 
     openAgentProfiles(container)
     const text = container.textContent ?? ''
     expect(text).toContain('CLAUDE_CONFIG_DIR')
-    expect(text).toContain('CODEX_HOME')
+    const codex = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]'))
+      .find((button) => button.textContent?.includes('Codex'))
+    if (!codex) throw new Error('expected Codex in the Agents list')
+    act(() => codex.click())
+    const codexText = container.textContent ?? ''
+    expect(codexText).toContain('CODEX_HOME')
   })
 
   it('renders a saved profile and marks it active in its select', () => {

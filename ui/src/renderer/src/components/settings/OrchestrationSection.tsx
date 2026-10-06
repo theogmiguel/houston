@@ -7,6 +7,7 @@ import type { OrchestrationCaps } from '../../houston/generated/OrchestrationCap
 import type { AcpAgentInfo } from '../../houston/generated/AcpAgentInfo'
 import { Tooltip } from '../Tooltip'
 import { SettingsList, Toggle } from '../settingsPrimitives'
+import { Button } from '../ui/Button'
 import type { HostInfo, OrchestrationStateView } from '../SettingsView'
 import { NumberSetting, Row, SubHead } from './shared'
 
@@ -70,15 +71,23 @@ function OrchestrationCapsEditor({
         <div className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]">
           {dirty ? 'Both limits save together, as one change.' : 'Matches what the daemon has stored.'}
         </div>
-        <button
-          type="button"
-          className={`btn ${BTN_GHOST}`}
+        <div className="flex items-center gap-[var(--space-2)]">
+        <Button
+          variant="ghost"
+          disabled={!dirty}
+          onClick={() => { setChildren(String(caps.max_live_children)); setDepth(String(caps.max_spawn_depth)) }}
+        >
+          Discard
+        </Button>
+        <Button
+          variant="primary"
           disabled={!dirty}
           data-testid="settings-orchestration-caps-save"
           onClick={() => valid && onSave(childrenN, depthN)}
         >
           Save
-        </button>
+        </Button>
+        </div>
       </div>
     </>
   )
@@ -227,15 +236,6 @@ export function OrchestrationSection({
 }: OrchestrationSectionProps): React.JSX.Element {
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">Orchestration</div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
-          Agents spawning agents. Every limit here is one a running agent can actually hit,
-          so every one of them is visible — and when it trips, the refusal names the limit,
-          the value and what was asked for.
-        </div>
-      </div>
-
       <SubHead>Permission</SubHead>
       <PermissionGroup
         orchestrationState={orchestrationState}
@@ -255,11 +255,9 @@ export function OrchestrationSection({
       <SubHead>Workspace routing</SubHead>
       <RoutingSettings client={client} workspace={historyWorkspace} />
 
-      <div className="mt-[22px] mb-[14px]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">
-          ACP panes
-        </div>
-        <div className="mt-[var(--space-1-5)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
+      <div className="mt-[var(--space-5)]">
+        <SubHead>ACP panes</SubHead>
+        <div className="mb-[var(--space-3)] text-[length:var(--tr-text-base)] leading-[1.6] text-[var(--text-muted)] max-w-[72ch]">
           CLIs that speak the Agent Client Protocol can run in a pane that reports its
           status over that protocol rather than through hooks. Opens in the workspace
           selected in the sidebar.

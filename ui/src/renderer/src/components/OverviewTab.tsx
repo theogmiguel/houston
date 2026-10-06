@@ -12,7 +12,7 @@ import { ChildStatusDot, childGroup, childStateWord, DelegationAge } from './Chi
 import { pendingDeliveryStatus, sessionIdentity } from './DelegationCard'
 import { IconAgent, IconEye, IconGitBranch, IconStopCircle, IconRespawn, IconCornerDownRight } from './icons'
 import { StatusDot } from './SessionPane'
-import { BTN_GHOST, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
+import { Button, RosterOverview } from './ui'
 import { StatusLabel } from './ui/StatusLabel'
 
 export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
@@ -64,15 +64,15 @@ export function OverviewTab({ parentId, sessions, client, onClose, onReview }: {
   const done = children.filter((child) => !isLive(child.state) && child.delegation?.state !== 'failed').length
   const failed = children.filter((child) => !isLive(child.state) && child.delegation?.state === 'failed').length
   const ordered = [...children].sort((a, b) => groupBy === 'worktree' ? (a.worktree?.path ?? a.checkout_root ?? a.project_dir).localeCompare(b.worktree?.path ?? b.checkout_root ?? b.project_dir) : ['Needs you', 'Working', 'Settled'].indexOf(childGroup(a)) - ['Needs you', 'Working', 'Settled'].indexOf(childGroup(b)))
-  const action = (label: string, onClick: () => void): React.JSX.Element => <button className={`btn ${BTN_GHOST}`} onClick={onClick}>{label}</button>
-  return <div className="overview">
+  const action = (label: string, onClick: () => void): React.JSX.Element => <Button variant="legacy-ghost" onClick={onClick}>{label}</Button>
+  return <RosterOverview>
     <header className="overview-head"><StatusDot live={!!parent && isLive(parent.state)} status={parent?.status} />{parent && <IconAgent brand agent={parent.detected_agent ?? parent.agent} className="w-3.5 h-3.5 flex-none" />}<strong>{parent?.title ?? `Orchestrator ${parentId}`}</strong><span className="font-mono text-[var(--text-faint)]">pane {parentId}</span>{parent && <CompactionCount parent={parent} />}{action('Show terminal', () => selectOverviewChild(parentId, null))}</header>
     {(!parent || !isLive(parent.state)) && <div className="overview-summary">Orchestrator ended.{action('Close', onClose)}</div>}
     <div className="overview-summary"><strong className={children.some((child) => childGroup(child) === 'Needs you') ? 'text-[var(--warn)]' : undefined}>{children.length}</strong><span className="truncate">children · {children.filter((child) => childGroup(child) === 'Needs you').length} needs you · {children.filter((child) => childGroup(child) === 'Working').length} working · {done} done · {failed} failed</span><span className="flex-1" /><Segmented aria-label="Group children" className="overview-grouping" value={groupBy} onChange={setGroupBy} options={[{ value: 'status', label: 'Status' }, { value: 'worktree', label: 'Worktree' }]} /></div>
     <div className="overview-bar">{(['Needs you', 'Working', 'Done', 'Failed'] as const).map((group) => <i key={group} data-group={group} style={{ flex: group === 'Done' ? done : group === 'Failed' ? failed : children.filter((child) => childGroup(child) === group).length }} />)}</div>
     <div className="overview-cards">{ordered.map((child) => <OverviewChildCard key={child.id} child={child} parent={parent} parentId={parentId} children={children} result={results.find((result) => result.child === child.id)} counts={counts} client={client} onReview={onReview} />)}</div>
     {addressed.length > 0 && <section aria-label="Addressed to you"><h3 className="overview-summary">Addressed to you</h3>{addressed.map((row) => <article key={String(row.id)} className="overview-child"><div className="overview-task">{row.summary || row.body}</div><div className="overview-actions">{action('Acknowledge', () => client.inboxAck(row.id))}{action('Resolve', () => client.inboxResolve(row.id))}</div></article>)}</section>}
-  </div>
+  </RosterOverview>
 }
 
 function CompactionCount({ parent }: { parent: SessionInfo }): React.JSX.Element | null {
@@ -99,7 +99,7 @@ function OverviewChildCard({ child, parent, parentId, children, result, counts, 
   client: HoustonClient
   onReview: (child: SessionInfo) => void
 }): React.JSX.Element {
-  const cardAction = (label: string, glyph: typeof IconEye, onClick: () => void): React.JSX.Element => <Tooltip label={label}><button className={BTN_ICO} aria-label={label} onClick={onClick}><Icon glyph={glyph} role="label" /></button></Tooltip>
+  const cardAction = (label: string, glyph: typeof IconEye, onClick: () => void): React.JSX.Element => <Tooltip label={label}><Button variant="legacy-icon" aria-label={label} onClick={onClick}><Icon glyph={glyph} role="label" /></Button></Tooltip>
       const needs = childGroup(child) === 'Needs you'
       const settled = childGroup(child) === 'Settled'
       const deliveryStatus = pendingDeliveryStatus(child.delegation)
@@ -111,7 +111,7 @@ function OverviewChildCard({ child, parent, parentId, children, result, counts, 
         <CheckoutChips child={child} parent={parent} shared={shared} count={counts.get(child.worktree?.path ?? child.project_dir)} />
         <div className="overview-actions">{cardAction('Select', IconEye, () => selectOverviewChild(parentId, child.id))}{cardAction('Review changes', IconGitBranch, () => onReview(child))}{settled ? cardAction('Continue', IconRespawn, () => client.respawnSession(child.id, undefined, null, undefined, undefined, false)) : cardAction('Stop', IconStopCircle, () => client.closeSession(child.id))}</div>
         {deliveryStatus != null && <StatusLabel status={deliveryStatus} />}
-        <div className="overview-result">{needs && <Icon glyph={IconCornerDownRight} role="label" />}<span>{childResultExcerpt(child, result, needs)}</span>{needs && <button className={`btn border ${BTN_PRIMARY}`} onClick={() => selectOverviewChild(parentId, child.id)}>Answer</button>}</div>
+        <div className="overview-result">{needs && <Icon glyph={IconCornerDownRight} role="label" />}<span>{childResultExcerpt(child, result, needs)}</span>{needs && <Button variant="legacy-primary" onClick={() => selectOverviewChild(parentId, child.id)}>Answer</Button>}</div>
       </article>
 }
 

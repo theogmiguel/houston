@@ -433,7 +433,7 @@ There is no status bar row — diagnostics live in Settings.
 | **Stack tabs** | 26px strip on `--card-bg` with a `--divider` bottom border. Each tab: status dot + truncated label (110px cap) + optional 6px `--warn` needs-input badge + a hover/focus-revealed close button. Active tab drops to `--content-bg`; inactive is muted with a neutral hover wash. A `n/cap` indicator appears at the stack's cap. |
 | **Source control** | A workspace panel beside the grid, with Changes and Pull request tabs. Preferred width 480px, compact minimum 340px; expansion is bounded by the main content width, reserving 360px for terminals when space permits. Smaller windows clamp the rendered width without replacing the remembered preference. Its divider uses the terminal splitter's hit area and neutral drag line. |
 | **Changes tab** | Responds to **container queries, not viewport breakpoints**. Wide (`@container (min-width: 720px)`): file list beside the diff. Narrow: stacked, tree capped at 45% height. It has no pane header, drag affordance or independent grid cell. |
-| **Settings** | One scrollable column; section nav lives **in the rail**, not inside the view. Column max-width **720px**, and **1040px** for the data-dense Usage section only. Rows are grouped into one bordered card per group with internal hairline dividers, so a group reads as a single object with internal divisions. |
+| **Settings** | One scrollable column; section nav lives **in the rail**, not inside the view. Column max-width **720px**. Rows are grouped into one bordered card per group with internal hairline dividers, so a group reads as a single object with internal divisions. Usage is a separate wide rail page. |
 | **Notices** | Two anchors. `workspace-top`: centred, `min(560px, 100% - 24px)`, **no enter or exit animation**. `pane-corner`: bottom-right, `max-w-[min(300px, 100% - 24px)]`, enters from its own corner and exits by unmounting. Rows are ≥30px with a kind glyph, title, optional mono body, and one action or a dismiss. |
 | **Command palette** | Mounted only while open. Full-viewport scrim, panel `min(560px, 86vw)` at `max-h-[70vh]`, overlay glass, `--tr-radius-md`. 46px search header; `role="listbox"` with 32px option rows grouped under uppercase 11px headers. |
 
@@ -458,6 +458,7 @@ differences as a variant in the registry.
 | `danger` | Ghost with the danger tint on hover; `armed` adds its standing danger cue |
 | `danger-solid` | `BTN_DANGER_SOLID`; always paired with a warning icon |
 | `icon` | `BTN_ICO`'s box and hover |
+| `text` | A title link inside an interactive content row; no control box or padding |
 
 Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
 `SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY` is flagged for removal:
@@ -488,6 +489,10 @@ signal through fill + text, never a border.
 **Cancel, Dismiss, Close and Discard are not destructive.** They back the user out
 and stay quiet: `BTN_GHOST`, no colour. Save the weight for the
 affirmative action.
+
+Use `ActionMenu` as the single trailing control when a row has secondary actions.
+Keep destructive removal in its menu; choose one contextual trigger label or the
+ellipsis trigger rather than placing every row action beside one another.
 
 ### Component boundary
 
@@ -561,7 +566,8 @@ an accent border.
 
 A 28px track at `--tr-radius-button` over a 4%-mixed background; 22px items, 54px
 minimum width, 12px label. Selection **cross-fades colour and background; it does not
-slide a thumb.**
+slide a thumb.** A count may follow the label in muted ink. The track sizes to its
+options unless its parent deliberately gives it a wider layout.
 
 ### Tables
 
@@ -667,7 +673,8 @@ Use `SectionHead` with `Count` immediately after its label on the same line, wit
 a 6px gap, tabular
 numerals, the label's size and one softer ink step. Do not use parentheses, a
 middle dot, monospace numerals or right alignment; the right end of a heading is
-for its action. Omit zero in tabs and headings; disable an action instead of
+for its action. Use its inset option when a group heading sits beside a colored rail.
+Omit zero in tabs and headings; disable an action instead of
 showing `(0)`. Put phrases such as “1 routine” in descriptions. Keep `Chip` counts
 for metrics.
 
@@ -690,10 +697,13 @@ chips only for multi-select filters.
 
 Use `StatusLabel` once per row. Its 6px dot carries the status colour and its word
 uses `--text-secondary`. Choose one status word from this vocabulary: Working,
-Needs input, Idle, Done, Failed, Stalled, Result staged, Pending delivery, Paused,
-In sync, Ended and Missing. The dot variant keeps an accessible status name when a row
-already identifies its state in a tooltip. Do not rely on colour
-alone. Idle, Paused and Missing use a hollow ring. “Ok” and
+Needs input, Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Result staged,
+Pending delivery, Paused, In sync, Differs, Off, Connected, Reconnecting, Missing, Open,
+Fixing, Not seen, Ready, Watching and Verified. The dot variant keeps an accessible status
+name when a row already
+identifies its state in a tooltip. Do not rely on colour alone. Idle, Paused, Off, Missing
+and Not seen use a hollow ring. Connected uses the ok dot; Reconnecting uses the warn dot.
+“Ok” and
 “Not there” are not status words. A PR that introduces a status word adds it to
 this list.
 
@@ -708,7 +718,16 @@ states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
 ### Grouped rows
 
 Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
-places its title and metadata on the left and status or action on the right.
+places its title and metadata on the left and status or action on the right. Its
+`compact` variant keeps history rows on one line. `Card.Group` spans its heading and
+rows with a New, Still there or Gone warn, stop or ok rule. Keep the rule to this
+primitive; feature files supply the group content. Use `Card.Content` for a
+padded, vertically grouped set of section rows.
+
+`BarSparkline` shows a short sequence of comparable values with an accessible text
+summary. `Caption` carries supporting information in the small, secondary text step.
+Use the `accent` Count source for attention totals in navigation. Use the `link` Button
+variant for inline actions that open related content, such as a linked task key.
 
 ### List and detail
 
@@ -718,6 +737,11 @@ one side at a time with a back button. Pass `selectedId` and `onSelect` when sel
 must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
 new selection.
 
+Use `RoutineDetail` for the selected routine's schedule, unattended provider and run history;
+Edit and Delete live in its trailing action menu beside Run now and the enabled switch.
+`ConnectionCell` keeps an MCP destination's state and any failure reason together inside its
+matrix cell; the cell action updates that server's destination and syncs the matching CLI.
+
 ### Drawer
 
 Use `Drawer` for a detail panel over the current page. It has a right-aligned 720px
@@ -725,10 +749,15 @@ maximum width, a labelled title row and a close button. It traps Tab focus, clos
 Escape or a backdrop press, and returns focus to the opener. Entry uses the panel and
 scrim motion tokens and is disabled by reduced-motion preferences.
 
+Task details keep a page gutter around the header, execution card, acceptance section
+and origin chip. Use `TaskProgress` for the four task lifecycle stages. Its current
+stage follows the task status; the component owns the line, ink and spacing.
+
 ### Inline notice
 
 Use `Notice` for a single inline info, warn or danger sentence, with an optional
-`Button` action. A concurrency limit names the limit, current value and settings path,
+`Button` action. Set `indicator="dot"` when it represents an event, such as a newly
+published Harness review. A concurrency limit names the limit, current value and settings path,
 for example: “3 of 3 running. Routines run 3 at a time (Settings › Routines)”.
 
 ### Pane header actions
@@ -770,6 +799,7 @@ should reach past them for a new site.
 | Menu | 160ms | `cubic-bezier(.16, 1, .3, 1)` | Menus, dropdowns, popovers |
 | Panel | 240ms | `cubic-bezier(.32, .72, 0, 1)` | Panels sliding from an edge |
 | Scrim | 90ms | `linear` | Backdrops — always the fastest thing on screen |
+| Reveal | 400ms | Panel easing | Chrome theme changes revealed from the clicked control with a View Transition snapshot and a WAAPI `clip-path` circle. This is the named exception to rule 1. Changes without a click, under reduced motion, or without runtime `startViewTransition` support are instant. The native browser pane is a separate webview and switches instantly. |
 
 The `--animate-*` names are back-compat aliases; each points at whichever curve its
 site's *purpose* is, not at whatever its old literal happened to compute to.
@@ -791,6 +821,13 @@ The rules:
 7. **No animation library.** Interruptible springs, layout tracking and gesture
    physics are exactly what rules 1–4 forbid; there is no Framer/Motion dependency.
 8. **Panes get no drop shadow, no per-pane accent hue, and no animated entry.**
+
+Popover anchors use the trigger's start edge and clamp only to the viewport; a trigger label
+changing width never recentres an open menu. Houston does not use RTL. A popover with multiple
+views keeps the largest view's bounds and crossfades the outgoing view in Fast (120ms) before
+the incoming view in Menu (160ms). Its container enters in Menu with `menu-in`; header and body
+rise 4px with opacity, 40ms apart. The complete popover exits once with `menu-out` in Fast.
+Reduced motion removes the stagger and view crossfade and shows each settled state immediately.
 
 Keyframes live in `keyframes.css` — global and unlayered by necessity, since Tailwind
 utilities name them directly.
@@ -840,6 +877,9 @@ never seams against its canvas:
 
 Any palette pairs with any chrome theme, so never assume the terminal background
 matches a chrome token — that is why the active-pane ring is achromatic.
+The shipped foreground and twelve chromatic ANSI colours in every palette keep at
+least 3:1 contrast against that palette's own background. This is a property of the
+definitions; terminal output is never repainted at runtime.
 
 ## Guards
 

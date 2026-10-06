@@ -36,13 +36,25 @@ function bucket(over: Partial<UsageBucket> & { hour_start_ms: number }): UsageBu
     records: 1,
     unpriced_records: 0,
     sessions: 1,
+    workspace_path: null,
+    category_cost_usd: { input_usd: 0, cache_read_usd: 0, cache_write_usd: 0, output_usd: 0, other_usd: 0 },
+    fast_cost_usd: 0,
+    ultrafast_cost_usd: 0,
+    speed_premium_usd: 0,
+    speed_rate_available: true,
     ...over
   }
 }
 
 describe('formatting', () => {
-  it('keeps three significant digits so two models stay comparable', () => {
-    expect(formatTokens(3_340_000_000)).toBe('3.34B')
+  it('uses compact two-significant-digit tokens for every usage value', () => {
+    expect(formatTokens(4_610_000_000)).toBe('4.6B')
+    expect(formatTokens(4_300_000_000)).toBe('4.3B')
+    expect(formatTokens(61_000_000)).toBe('61M')
+    expect(formatTokens(9_800_000)).toBe('9.8M')
+    expect(formatTokens(2_900_000_000)).toBe('2.9B')
+    expect(formatTokens(1_200_000_000)).toBe('1.2B')
+    expect(formatTokens(14_000_000)).toBe('14M')
     expect(formatTokens(148_000_000)).toBe('148M')
     expect(formatTokens(10_700_000)).toBe('10.7M')
     expect(formatTokens(234_000)).toBe('234K')
@@ -54,6 +66,8 @@ describe('formatting', () => {
 
   it('prints money to the cent, with separators', () => {
     expect(formatUsd(12_101.15)).toBe('$12,101.15')
+    expect(formatUsd(1_021.70)).toBe('$1,021.70')
+    expect(formatUsd(2_301.10)).toBe('$2,301.10')
     expect(formatUsd(0)).toBe('$0.00')
   })
 
@@ -128,6 +142,23 @@ describe('foldSeries', () => {
     )
     expect(points[0].byProvider.claude.cost).toBe(5)
     expect(points[0].byProvider.codex.cost).toBe(7)
+  })
+
+  it('keeps daily slots aligned to the selected timezone across UTC midnight', () => {
+    const points = foldSeries(
+      [
+        bucket({ hour_start_ms: Date.parse('2026-10-01T05:00:00Z'), cost_usd: 2 }),
+        bucket({ hour_start_ms: Date.parse('2026-10-02T02:00:00Z'), cost_usd: 3 })
+      ],
+      {
+        sinceMs: Date.parse('2026-10-01T03:00:00Z'),
+        untilMs: Date.parse('2026-10-02T02:59:59Z'),
+        hourly: false,
+        timeZone: 'America/Sao_Paulo'
+      }
+    )
+    expect(points.map((point) => point.key)).toEqual(['2026-10-01'])
+    expect(points[0].byProvider.claude.cost).toBe(5)
   })
 
   it('plots hours when the window is hourly', () => {

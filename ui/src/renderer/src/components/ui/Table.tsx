@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from 'react'
-import { IconDatabase } from '../icons'
+import { IconDatabase, type IconComponent } from '../icons'
 import { Notice } from './Notice'
 import { EmptyState } from './EmptyState'
 
@@ -7,6 +7,7 @@ export interface TableColumn<T, K extends keyof T = keyof T> {
   key: K
   header: string
   numeric?: boolean
+  weight?: 'default' | 'regular'
   tone?: TableCellTone
   width?: string
   render?: (value: T[K], row: T) => ReactNode
@@ -26,10 +27,12 @@ export interface TableProps<T, K extends keyof T = keyof T> {
   'aria-label': string
   rowAction?: (row: T) => ReactNode
   onRowClick?: (row: T) => void
-  empty?: { heading: string; description: string }
+  empty?: { heading: string; description: string; icon?: IconComponent }
   error?: TableError
   variant?: 'plain' | 'framed'
   className?: string
+  density?: 'default' | 'compact'
+  layout?: 'auto' | 'fixed'
 }
 
 const TABLE_CLS = 'w-full border-collapse text-[length:var(--tr-text-ui-size)]'
@@ -63,10 +66,13 @@ export function Table<T, K extends keyof T = keyof T>({
   error,
   variant = 'plain',
   className = '',
+  density = 'default',
+  layout = 'auto',
   ...rest
 }: TableProps<T, K>): React.JSX.Element {
   const ariaLabel = rest['aria-label']
   const look = VARIANT_CLS[variant]
+  const cellClass = density === 'compact' ? 'px-[var(--space-1-5)] py-[var(--space-1)]' : CELL_CLS
   const handleRowKeyDown = (row: T) => (event: KeyboardEvent<HTMLTableRowElement>): void => {
     if (!onRowClick || isInteractiveTarget(event.target)) return
     if (event.key === 'Enter' || event.key === ' ') {
@@ -79,17 +85,18 @@ export function Table<T, K extends keyof T = keyof T>({
     return <Notice tone="danger" action={error.onRetry ? { label: 'Try again', onClick: error.onRetry } : undefined} className={className}>{error.message}</Notice>
   }
 
-  if (rows.length === 0) {
-    return <div className={`py-[var(--space-5)] ${className}`}><EmptyState icon={IconDatabase} {...empty} /></div>
+  const emptyState = <EmptyState icon={empty.icon ?? IconDatabase} heading={empty.heading} description={empty.description} />
+  if (rows.length === 0 && variant !== 'framed') {
+    return <div className={`py-[var(--space-5)] ${className}`}>{emptyState}</div>
   }
 
   return (
     <div data-testid="table-frame" className={`overflow-x-auto ${look.frame} ${className}`}>
-      <table aria-label={ariaLabel} className={TABLE_CLS}>
+      <table aria-label={ariaLabel} className={`${TABLE_CLS} ${layout === 'fixed' ? 'table-fixed' : ''}`}>
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={String(column.key)} scope="col" style={column.width ? { width: column.width } : undefined} className={`${HEADER_CLS} ${look.edge} ${look.header} ${column.numeric ? 'text-right' : ''}`}>
+              <th key={String(column.key)} scope="col" style={column.width ? { width: column.width } : undefined} className={`${HEADER_CLS} ${density === 'compact' ? 'pb-[var(--space-1)]' : ''} ${look.edge} ${look.header} ${column.numeric ? 'text-right' : ''}`}>
                 {column.header}
               </th>
             ))}
@@ -97,6 +104,7 @@ export function Table<T, K extends keyof T = keyof T>({
           </tr>
         </thead>
         <tbody>
+          {rows.length === 0 && <tr><td colSpan={columns.length + (rowAction ? 1 : 0)} className="py-[var(--space-5)]">{emptyState}</td></tr>}
           {rows.map((row) => (
             <tr
               key={getRowId(row)}
@@ -109,12 +117,12 @@ export function Table<T, K extends keyof T = keyof T>({
               {columns.map((column) => {
                 const value = row[column.key]
                 return (
-                  <td key={String(column.key)} className={`${CELL_CLS} ${look.edge} ${TONE_CLS[column.tone ?? 'primary']} ${column.numeric ? 'text-right tabular-nums' : ''}`}>
+                  <td key={String(column.key)} className={`${cellClass} ${look.edge} ${TONE_CLS[column.tone ?? 'primary']} ${column.weight === 'regular' ? 'font-normal' : ''} ${column.numeric ? 'text-right tabular-nums' : ''}`}>
                     {column.render ? column.render(value, row) : String(value ?? '')}
                   </td>
                 )
               })}
-              {rowAction && <td className={`${CELL_CLS} ${look.edge} text-right`}>{rowAction(row)}</td>}
+              {rowAction && <td className={`${cellClass} ${look.edge} text-right`}>{rowAction(row)}</td>}
             </tr>
           ))}
         </tbody>

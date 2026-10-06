@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Select, type SelectOption } from './Select'
 import { openSelect, selectTrigger, selectValue } from '../test/selectHarness'
 
@@ -57,6 +57,7 @@ describe('Select', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    vi.useRealTimers()
   })
 
   it('Filled — the closed trigger shows the current value, and nothing else is in the DOM', () => {
@@ -78,6 +79,7 @@ describe('Select', () => {
   })
 
   it('arrows step, Home/End jump, and none of it commits until Enter', () => {
+    vi.useFakeTimers()
     render()
     openSelect(container, 's')
     key('ArrowDown')
@@ -93,15 +95,18 @@ describe('Select', () => {
     key('ArrowDown')
     key('Enter')
     expect(picked).toEqual(['jetbrains'])
+    act(() => vi.advanceTimersByTime(120))
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(0)
   })
 
   it('Escape closes and commits nothing, leaving the value where it was', () => {
+    vi.useFakeTimers()
     render()
     openSelect(container, 's')
     key('ArrowDown')
     key('Escape')
     expect(picked).toEqual([])
+    act(() => vi.advanceTimersByTime(120))
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(0)
     expect(selectValue(container, 's')).toBe('Nerd Font (recommended)')
   })

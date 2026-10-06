@@ -46,6 +46,38 @@ describe('Changes pane — state matrix (§14)', () => {
     expect(q('[data-testid="changes-list"]')!.textContent).toContain('+9')
   })
 
+  it('renders status marks by kind and keeps added and removed totals in their semantic tones', () => {
+    const h = mount({ compact: true })
+    h.status([
+      file({ path: 'src/changed.ts', status: 'modified', added: 64, deleted: 12 }),
+      file({ path: 'src/new.ts', status: 'added', added: 3, deleted: 0 }),
+      file({ path: 'src/old.ts', status: 'deleted', added: 0, deleted: 4 })
+    ])
+    const marks = qa<HTMLElement>('.changes-file-mark')
+    expect(marks.map((mark) => mark.className)).toEqual([
+      expect.stringContaining('text-[var(--warn)]'),
+      expect.stringContaining('text-[var(--ok)]'),
+      expect.stringContaining('text-[var(--stop)]')
+    ])
+    expect(q('.changes-group-head')?.textContent).toContain('UNCOMMITTED · 3 FILES')
+    expect(q('.changes-group-head')?.textContent).toContain('+67')
+    expect(q('.changes-group-head')?.textContent).toContain('−16')
+  })
+
+  it('shows the checkout target beside the embedded commit actions', () => {
+    const h = mount({ compact: true, checkoutLabel: 'wt/inbox-api' })
+    h.status([file({ staged: true })])
+    expect(q('[data-testid="changes-commit-target"]')?.textContent).toBe('to wt/inbox-api')
+  })
+
+  it('counts only staged files for commit and keeps the PR link out of Changes', () => {
+    const h = mount({ compact: true })
+    h.status([file({ path: 'src/a.ts', staged: true }), file({ path: 'src/b.ts', staged: true })])
+    expect(q('[data-testid="changes-commit"]')?.textContent).toContain('Commit 2 files')
+    h.prStatus()
+    expect(q('[data-testid="changes-pr-line"]')?.hasAttribute('hidden')).toBe(true)
+  })
+
   it('error: a generic status failure names the message and offers a working Retry', () => {
     const h = mount({})
     const before = h.client.gitStatusCalls.length

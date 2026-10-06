@@ -28,7 +28,7 @@ function column(tool: McpToolState['tool']): McpToolState {
   return { tool, path: `/home/dev/.${tool}/config`, detected: true, servers: [server('context7')], error: null }
 }
 
-describe('McpSurface — servers, not the skills library', () => {
+describe('McpSurface — managed MCP connections', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -67,59 +67,42 @@ describe('McpSurface — servers, not the skills library', () => {
   }
 
   async function settleManager(): Promise<void> {
-    for (let i = 0; i < 60; i++) {
-      if (
-        container.querySelector('[data-testid="mcp-manager"]') ||
-        container.querySelector('[data-testid="mcp-loading"]')
-      ) {
-        return
-      }
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 5))
-      })
+    await act(async () => { await import('../McpManager') })
+    for (let i = 0; i < 100; i++) {
+      if (container.querySelector('[data-testid="mcp-manager"]')) return
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)) })
     }
-    throw new Error('McpManager never left its Suspense fallback')
+    throw new Error(`McpManager never left its Suspense fallback: ${container.textContent}`)
   }
 
-  it('renders something real with zero servers and no tools loaded', async () => {
+  it('shows the loading state and then a useful empty page', async () => {
     render({ loaded: false })
     await settleManager()
-    expect(container.textContent).toContain('Asking the daemon what each tool has')
+    expect(container.textContent).toContain('Opening servers…')
 
     render({ loaded: true })
     await settleManager()
-    expect(container.textContent).toContain('No MCP servers anywhere yet')
+    expect(container.textContent).toContain('No MCP servers')
+    expect(container.textContent).not.toContain('from the list below')
   })
 
-  it('renders the server list and never the skills matrix', async () => {
+  it('renders managed CLI columns and server rows instead of a skills matrix', async () => {
     render({ source: [server('context7')], tools: [column('claude')] })
     await settleManager()
-    expect(container.querySelector('[data-testid="list-detail-item"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="status-icon"]')).not.toBeNull()
+    expect(container.textContent).toContain('context7')
+    expect(container.querySelector('[data-testid="table-frame"]')).not.toBeNull()
+    expect(container.textContent).toContain('Claude Code')
+    expect(container.textContent).toContain('Codex')
     expect(container.querySelector('[data-skill-cell]')).toBeNull()
     expect(container.textContent).not.toContain('What skills each CLI can see')
   })
 
-  it('a list with nothing in it says what to do, not just a count of zero', async () => {
-    render({ source: [], tools: [column('claude')] })
+  it('offers the page Add server action for an empty state', async () => {
+    render({ source: [], tools: [], loaded: true })
     await settleManager()
-    const empty = container.querySelector('[data-testid="mcp-list-empty"]')
-    expect(empty).not.toBeNull()
-    expect(empty!.textContent).toContain('No servers yet')
-    expect(empty!.textContent).toContain(
-      'Add one, or import a server one of your tools already has from the list below.'
-    )
-    expect(container.querySelector('[data-testid="list-detail-item"]')).toBeNull()
-  })
-
-  it('refreshes from the head, and keeps Sync all beside it', async () => {
-    let refreshed = 0
-    render({ source: [server('context7')], tools: [column('claude')], onRefresh: () => (refreshed += 1) })
-    await settleManager()
-    const buttons = Array.from(container.querySelectorAll('button'))
-    const refresh = buttons.find((b) => b.getAttribute('aria-label') === 'Refresh')!
-    act(() => refresh.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(refreshed).toBe(1)
-    expect(buttons.map((b) => b.textContent)).toContain('Sync all')
+    const add = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Add server')
+    expect(add).toBeTruthy()
+    act(() => add!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
   })
 })

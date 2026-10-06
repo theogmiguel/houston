@@ -1,81 +1,120 @@
-import { useSessions } from '../sessionsStore'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { SessionInfo } from '../houston/client'
-import { clampScmWidth, defaultScmWidth } from '../scmPanel'
-import { loadSideState, saveSideState, selectOverviewChild, moveBrowserToGrid, type SideOpen } from '../sidePanel'
+import type { ChangesSummary } from './ChangesPane'
+import { clampScmWidth, defaultScmWidth, type ScmTab } from '../scmPanel'
+import { selectOverviewChild, type SideOpen } from '../sidePanel'
 import { requestReveal } from '../editor/bufferStore'
 import { SourceControlPanel, ScmResizeHandle, type SourceControlPanelProps } from './SourceControlPanel'
-import { Icon } from './Icon'
-import { IconClose, IconFolder, IconGitBranch, IconGrid, IconGlobe, IconPlus, IconExpand, IconCollapse, IconTasks } from './icons'
-import { Tooltip } from './Tooltip'
+import { InspectorHeader } from './ui/InspectorHeader'
+import { IconAgent } from './icons'
 import './sidePanel.css'
-// Loaded with the panel rather than lazily with the tab: Vite emits one CSS
-// chunk per dynamic import, and the CSS-scoping gate expects the renderer's
-// layer stack in every emitted sheet.
 import './tasks/tasks.css'
 
-const BrowserPane = lazy(() => import('./BrowserPane').then((module) => ({ default: module.BrowserPane })))
 const FilesPane = lazy(() => import('./FilesPane').then((module) => ({ default: module.FilesPane })))
 const OverviewTab = lazy(() => import('./OverviewTab').then((module) => ({ default: module.OverviewTab })))
-const TasksTab = lazy(() => import('./tasks/TasksTab').then((module) => ({ default: module.TasksTab })))
 
-export function SidePanel(props: SourceControlPanelProps & {
+type InspectorTab = ScmTab | 'files' | 'overview'
+type SidePanelProps = SourceControlPanelProps & {
   workspace: string
   workspaces?: { path: string; name: string }[]
-  expanded?: boolean
-  onExpanded?: (expanded: boolean) => void
   focused?: boolean
   closed?: boolean
   onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
   sessions: ReadonlyMap<number, SessionInfo>
-  /// The focused pane, so its task can drive the Tasks tab's Now card.
   activeSessionId?: number | null
   request: SideOpen | null
   onReviewChild: (child: SessionInfo) => void
-  onTaskStartRequested?: (taskId: number, workspace: string) => void
-  onFocusPane?: (id: number) => void
   onMoveFile: (root: string, path: string) => void
   onFocusSide: () => void
   onFocusGrid: () => void
+}
+
+function hasChildren(session: SessionInfo | undefined, sessions: ReadonlyMap<number, SessionInfo>): boolean {
+  return session != null && [...sessions.values()].some((item) => item.spawned_by === session.id)
+}
+
+function InspectorContent({ props, tab, focused, isOrchestrator, filesRoot, openFile, setTab, setSummary }: {
+  props: SidePanelProps
+  tab: InspectorTab
+  focused: SessionInfo | undefined
+  isOrchestrator: boolean
+  filesRoot: string
+  openFile: { path: string; line?: number; col?: number } | null
+  setTab: (tab: InspectorTab) => void
+  setSummary: (summary: ChangesSummary) => void
+}): React.JSX.Element | null {
+  if (tab === 'changes' || tab === 'pull-request') {
+    const checkoutLabel = focused?.worktree?.path
+      ? `wt/${focused.worktree.path.split(/[\\/]/).filter(Boolean).at(-1)}`
+      : focused?.checkout_root ?? props.dir ?? ''
+    return <div className="side-card"><SourceControlPanel {...props} key={`${props.dir ?? 'none'}:${props.activeSessionId ?? 'none'}`} session={props.activeSessionId} tab={tab} hideHeader onSummaryChange={setSummary} embedded checkoutLabel={checkoutLabel} /></div>
+  }
+  if (tab === 'files') {
+    return <Suspense fallback={<div className="flex-1" />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'inspector-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} onSendToTerminal={props.onSendToTerminal} sendToTerminalLabel={props.sendToTerminalLabel} /></Suspense>
+  }
+  if (tab === 'overview' && isOrchestrator && props.client && focused) {
+    return <Suspense fallback={<div className="flex-1" />}><OverviewTab parentId={focused.id} sessions={props.sessions} client={props.client} onClose={() => setTab('changes')} onReview={(child) => { props.onReviewChild(child); setTab('changes') }} /></Suspense>
+  }
+  return null
+}
+
+function PaneInspectorHeader({ props, focused, tab, summary, onTab }: {
+  props: SidePanelProps
+  focused: SessionInfo | undefined
+  tab: InspectorTab
+  summary: ChangesSummary | null
+  onTab: (tab: string) => void
 }): React.JSX.Element {
-  const [state, setState] = useState(() => loadSideState(props.workspace))
-  const [changedCount, setChangedCount] = useState(0)
-  const root = useRef<HTMLElement>(null)
-  const [hostWidth, setHostWidth] = useState(0)
+  const checkout = focused?.worktree?.path
+    ? `wt/${focused.worktree.path.split(/[\\/]/).filter(Boolean).at(-1)}`
+    : summary?.branch ?? focused?.checkout_root ?? props.dir ?? ''
+  const tabs = [
+    { id: 'changes', label: 'Changes', count: summary?.changed },
+    { id: 'pull-request', label: 'PR', count: summary?.prNumber, countPrefix: '#' },
+    { id: 'files', label: 'Files' }
+  ]
+  return <InspectorHeader tabs={tabs} active={tab} onSelect={onTab} icon={focused ? <IconAgent brand agent={focused.detected_agent ?? focused.agent} /> : null} title={focused?.title ?? 'No focused pane'} checkout={checkout} ahead={summary?.ahead} branch={summary?.branch} />
+}
+
+export function SidePanel(props: SidePanelProps): React.JSX.Element {
+  const tabStorageKey = `tr-inspector-tab:${props.workspace}`
+  const [activeTab, setActiveTab] = useState<InspectorTab>(() => {
+    const stored = localStorage.getItem(tabStorageKey)
+    return stored === 'changes' || stored === 'pull-request' || stored === 'files' ? stored : props.tab
+  })
+  const [summary, setSummary] = useState<ChangesSummary | null>(null)
   const [openFile, setOpenFile] = useState<{ path: string; line?: number; col?: number } | null>(null)
-  useEffect(() => saveSideState(props.workspace, state), [props.workspace, state])
+  const [filesRoot, setFilesRoot] = useState(props.dir ?? props.workspace)
+  const [hostWidth, setHostWidth] = useState(0)
+  const initialTabSync = useRef(true)
+  // Clicking chrome outside a pane hands the keyboard back to the app; the inspector keeps the last pane it described.
+  const [lastFocusedId, setLastFocusedId] = useState(props.activeSessionId)
+  if (props.activeSessionId != null && props.activeSessionId !== lastFocusedId) setLastFocusedId(props.activeSessionId)
+  const subjectId = props.activeSessionId ?? lastFocusedId
+  const focused = subjectId == null ? undefined : props.sessions.get(subjectId)
+  const isOrchestrator = hasChildren(focused, props.sessions)
+  useEffect(() => {
+    if (initialTabSync.current) { initialTabSync.current = false; return }
+    setActiveTab(props.tab)
+  }, [props.tab])
+  useEffect(() => { localStorage.setItem(tabStorageKey, activeTab) }, [activeTab, tabStorageKey])
+  useEffect(() => { setFilesRoot(props.dir ?? props.workspace); setOpenFile(null) }, [props.activeSessionId, props.dir, props.workspace])
   useEffect(() => {
     const request = props.request
-    if (!request) return
-    setState((current) => {
-      const tabs = [...current.tabs]
-      if (request.kind === 'files') {
-        tabs[1] = { kind: 'files', root: request.root }
-        return { tabs, active: 1 }
-      }
-      if (request.kind === 'browser') {
-        let active = tabs.findIndex((tab) => tab.kind === 'browser' && tab.id === request.id)
-        if (active === -1) { active = tabs.length; tabs.push({ kind: 'browser', id: request.id, url: request.url }) }
-        return { tabs, active }
-      }
-      if (request.kind === 'tasks') {
-        const active = tabs.findIndex((tab) => tab.kind === 'tasks')
-        if (request.compose) tabs[active] = { kind: 'tasks', compose: true }
-        else if (request.openId !== undefined) tabs[active] = { kind: 'tasks', openId: request.openId }
-        else if (request.create !== undefined) tabs[active] = { kind: 'tasks', create: request.create }
-        return { tabs, active: active === -1 ? 0 : active }
-      }
-      let active = tabs.findIndex((tab) => tab.kind === 'overview' && tab.orchestrator === request.orchestrator)
-      if (active === -1) { active = tabs.length; tabs.push(request) }
-      return { tabs, active }
-    })
-    if (request.kind === 'files') {
+    if (request?.kind === 'overview' && request.orchestrator === props.activeSessionId && isOrchestrator) setActiveTab('overview')
+    if (request?.kind === 'files') {
+      setFilesRoot(request.root)
       setOpenFile(request)
+      setActiveTab('files')
       if (request.line !== undefined) requestReveal(request.root, request.path, request.line, request.col)
     }
-  }, [props.request])
+  }, [props.request, props.activeSessionId, isOrchestrator])
   useEffect(() => {
-    const host = root.current?.parentElement
+    if (activeTab === 'overview' && !isOrchestrator) setActiveTab('changes')
+  }, [activeTab, isOrchestrator])
+  useEffect(() => {
+    const host = document.querySelector<HTMLElement>('[data-testid="side-panel-row"]')
     if (!host || typeof ResizeObserver === 'undefined') return
     const measure = (): void => setHostWidth(host.clientWidth)
     measure()
@@ -83,50 +122,34 @@ export function SidePanel(props: SourceControlPanelProps & {
     observer.observe(host)
     return () => observer.disconnect()
   }, [])
-  const requested = localStorage.getItem("tr-scm-width") === null ? defaultScmWidth(window.innerWidth) : props.width
+
+  const requested = localStorage.getItem('tr-scm-width') === null ? defaultScmWidth(window.innerWidth) : props.width
   const rendered = clampScmWidth(requested, hostWidth)
-  const active = state.tabs[state.active]
-  const close = (index: number): void => setState((current) => ({ tabs: current.tabs.filter((_, i) => i !== index), active: current.active === index ? 0 : current.active > index ? current.active - 1 : current.active }))
-  const filesRoot = state.tabs.find((tab) => tab.kind === 'files')?.root ?? props.workspace
-  return <aside ref={root} aria-label="Side panel" data-testid="side-panel" data-dir={props.dir ?? undefined} className={`side-panel ${props.expanded ? 'expanded' : ''} ${props.hiddenByOverlay ? 'invisible' : ''}`} style={{ width: props.expanded ? '100%' : rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={(event) => {
-    if (event.key === 'Escape' && !(event.target as HTMLElement).closest('[role="dialog"], .ctx-menu')) { event.stopPropagation(); if (props.expanded) props.onExpanded?.(false); else props.onFocusGrid() }
-  }}>
-    {!props.expanded && <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />}
-    <div className="side-tabs" role="tablist" aria-label="Side panel tabs">
-      {state.tabs.map((tab, index) => {
-        const label = tab.kind === 'scm' ? 'Source control' : tab.kind === 'files' ? 'Files' : tab.kind === 'tasks' ? 'Tasks' : tab.kind === 'overview' ? props.sessions.get(tab.orchestrator)?.title ?? `Orchestrator ${tab.orchestrator}` : tab.url
-        return <Tooltip key={tab.kind === 'overview' ? `overview-${tab.orchestrator}` : tab.kind === 'browser' ? tab.id : tab.kind} label={label} className={`side-tab-wrap ${index < 3 ? 'pinned' : ''}`}><div className={`side-tab ${state.active === index ? 'selected' : ''}`}>
-          <button role="tab" aria-selected={state.active === index} onClick={() => setState((current) => ({ ...current, active: index }))} onKeyDown={(event) => {
-            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-            event.preventDefault()
-            const next = (index + (event.key === 'ArrowRight' ? 1 : state.tabs.length - 1)) % state.tabs.length
-            setState((current) => ({ ...current, active: next }))
-            root.current?.querySelectorAll<HTMLButtonElement>('.side-tab [role="tab"]')[next]?.focus()
-          }}><Icon glyph={tab.kind === 'scm' ? IconGitBranch : tab.kind === 'files' ? IconFolder : tab.kind === 'tasks' ? IconTasks : tab.kind === 'browser' ? IconGlobe : IconGrid} role="label" /><span className="side-label">{label}</span><SideTabCount tab={tab} sessions={props.sessions} changed={changedCount} /></button>
-          {index >= 3 && <button aria-label={`Close ${label}`} onClick={() => close(index)}><Icon glyph={IconClose} role="label" /></button>}
-        </div></Tooltip>
-      })}
-      <span className="side-tab-spacer" /><Tooltip className="side-tab-action" label="New browser tab"><button aria-label="New browser tab" onClick={() => setState((current) => ({ tabs: [...current.tabs, { kind: 'browser', id: `b${Date.now()}-${crypto.randomUUID()}`, url: '' }], active: current.tabs.length }))}><Icon glyph={IconPlus} role="label" /></button></Tooltip>
-      <Tooltip className="side-tab-action" label={props.expanded ? 'Restore side panel (Esc)' : 'Expand side panel'}><button aria-label="Expand side panel" aria-pressed={!!props.expanded} onClick={() => props.onExpanded?.(!props.expanded)}><Icon glyph={props.expanded ? IconCollapse : IconExpand} role="label" /></button></Tooltip>
-    </div>
-    <div className="side-card">
-      <div className={`flex-1 min-h-0 flex-col ${active.kind === 'scm' ? 'flex' : 'hidden'}`}><SourceControlPanel {...props} embedded onChangedCount={setChangedCount} /></div>
-      {active.kind === 'files' && <Suspense fallback={<div />}><FilesPane key={filesRoot} node={{ kind: 'files', id: 'side-files', root: filesRoot }} workspaceDir={filesRoot} active onClose={props.onFocusGrid} onHeaderPointerDown={() => {}} panel openFile={openFile} onMoveToEditor={(path) => props.onMoveFile(filesRoot, path)} client={props.client} /></Suspense>}
-      {active.kind === 'overview' && props.client && <Suspense fallback={<div />}><OverviewTab parentId={active.orchestrator} sessions={props.sessions} client={props.client} onClose={() => close(state.active)} onReview={(child) => { props.onReviewChild(child); setState((current) => ({ ...current, active: 0 })) }} /></Suspense>}
-      {active.kind === 'tasks' && <Suspense fallback={<div />}><TasksTab client={props.client} workspace={props.workspace === 'all' ? '' : props.workspace} workspaces={props.workspaces} boundSession={props.activeSessionId != null ? props.sessions.get(props.activeSessionId) ?? null : null} sessions={props.sessions} onFocusPane={props.onFocusPane} onReviewChild={props.onReviewChild} onStartRequested={props.onTaskStartRequested} compose={active.compose} onComposeHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} openTaskId={active.openId} onOpenTaskHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} createDraft={active.create} onCreateDraftHandled={() => setState((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.kind === 'tasks' ? { kind: 'tasks' } : tab)) }))} /></Suspense>}
-      {state.tabs.map((tab, index) => tab.kind === 'browser' && <div key={tab.id} className={`side-browser ${state.active === index ? 'flex' : 'hidden'}`}><Suspense fallback={<div />}><BrowserPane node={{ kind: 'browser', id: tab.id, url: tab.url }} workspaceDir={props.workspace} loadRequest={props.request?.kind === 'browser' && !props.request.revealOnly && props.request.id === tab.id ? props.request : undefined} active={state.active === index && !props.closed && props.focused !== false} hiddenByExpand={props.closed || state.active !== index || props.hiddenByOverlay} panel onNavigate={(url) => setState((current) => ({ ...current, tabs: current.tabs.map((item) => item.kind === 'browser' && item.id === tab.id ? { ...item, url } : item) }))} onClose={() => close(index)} onMoveToGrid={(url) => { moveBrowserToGrid(tab.id, url, props.workspace); close(index) }} onHeaderPointerDown={() => {}} onSendToTerminal={props.onSendToTerminal} /></Suspense></div>)}
-    </div>
+  const selectTab = (tab: string): void => {
+    const selected = tab as InspectorTab
+    setActiveTab(selected)
+    if (selected === 'changes' || selected === 'pull-request') props.onTab(selected)
+  }
+  const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
+    if (event.key !== 'Escape' || (event.target as HTMLElement).closest('[role="dialog"], .ctx-menu')) return
+    event.stopPropagation()
+    props.onFocusGrid()
+  }
+
+  return <aside aria-label="Pane inspector" data-testid="side-panel" data-dir={props.dir ?? undefined} className={`pane-inspector ${props.hiddenByOverlay ? 'invisible' : ''}`} style={{ width: rendered, maxWidth: '100%', display: props.closed ? 'none' : undefined }} inert={props.hiddenByOverlay} onFocusCapture={props.onFocusSide} onPointerDownCapture={props.onFocusSide} onKeyDown={onKeyDown}>
+    <ScmResizeHandle requested={requested} rendered={rendered} hostWidth={hostWidth} onWidth={props.onWidth} onReset={props.onResetWidth} />
+    <PaneInspectorHeader props={props} focused={focused} tab={activeTab} summary={summary} onTab={selectTab} />
+    <div className="pane-inspector-content"><InspectorContent props={props} tab={activeTab} focused={focused} isOrchestrator={isOrchestrator} filesRoot={filesRoot} openFile={openFile} setTab={setActiveTab} setSummary={setSummary} /></div>
   </aside>
 }
 
 export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: sessionsProp, request, reviewChild, onSurface, onFocusPane, onRevealWorkspace, onOpenEditor, onReviewChild, ...props }: SourceControlPanelProps & {
   selectedWorkspace: string
   workspaces?: { path: string; name: string }[]
-  expanded?: boolean
-  onExpanded?: (expanded: boolean) => void
   focused?: boolean
   closed?: boolean
   onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
   activeId: number | null
   sessions: ReadonlyMap<number, SessionInfo>
   request: SideOpen | null
@@ -136,19 +159,10 @@ export function SidePanelIntegration({ selectedWorkspace, activeId, sessions: se
   onRevealWorkspace: (root: string) => void
   onOpenEditor: (root: string, path: string, anchor: null) => void
   onReviewChild: (child: SessionInfo) => void
-  onTaskStartRequested?: (taskId: number, workspace: string) => void
 }): React.JSX.Element {
-  const sessions = useSessions(sessionsProp)
-  const workspace = selectedWorkspace === 'all' ? sessions.get(activeId ?? -1)?.project_dir ?? 'all' : selectedWorkspace
-  return <SidePanel {...props} key={workspace} workspace={workspace} sessions={sessions} request={request} activeSessionId={activeId} onFocusPane={onFocusPane} reviewTarget={reviewChild?.id} onReviewChild={onReviewChild}
+  const workspace = selectedWorkspace === 'all' ? sessionsProp.get(activeId ?? -1)?.project_dir ?? 'all' : selectedWorkspace
+  return <SidePanel {...props} key={workspace} workspace={workspace} sessions={sessionsProp} request={request} activeSessionId={activeId} reviewTarget={reviewChild?.id} onReviewChild={onReviewChild}
     onFocusSide={() => onSurface('side')}
     onFocusGrid={() => { onSurface('grid'); if (activeId !== null) { onFocusPane(activeId); selectOverviewChild(activeId, null) } }}
     onMoveFile={(root, path) => { onRevealWorkspace(root); onOpenEditor(root, path, null); onSurface('grid') }} />
-}
-
-function SideTabCount({ tab, sessions, changed }: { tab: import('../sidePanel').SideTab; sessions: ReadonlyMap<number, SessionInfo>; changed: number }): React.JSX.Element | null {
-  if (tab.kind === 'scm') return changed > 0 ? <span className="side-count">{changed}</span> : null
-  if (tab.kind !== 'overview') return null
-  const count = [...sessions.values()].filter((child) => child.spawned_by === tab.orchestrator && child.status === 'needs-input').length
-  return count > 0 ? <span className="side-needs">{count}</span> : null
 }

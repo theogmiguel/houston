@@ -161,6 +161,7 @@ export interface Harness {
   client: FakeClient
   container: HTMLDivElement
   status(files: GitFileStatus[], extra?: Record<string, unknown>): void
+  prStatus(pr?: { number: number; url: string; state: string; checks: string; review_decision: string | null }): void
   unmount(): void
 }
 
@@ -186,6 +187,7 @@ export function mount(
     review?: ChangesReview | null
     onSummary?: (s: never) => void
     compact?: boolean
+    checkoutLabel?: string
     refreshSignal?: number
   } = {}
 ): Harness {
@@ -205,6 +207,7 @@ export function mount(
         review={opts.review ?? null}
         onSummary={opts.onSummary as never}
         compact={opts.compact}
+        checkoutLabel={opts.checkoutLabel}
         refreshSignal={opts.refreshSignal ?? 0}
       />
     )
@@ -227,6 +230,11 @@ export function mount(
           default_base: 'main',
           ...extra
         })
+      })
+    },
+    prStatus(pr = { number: 419, url: 'https://github.com/acme/houston/pull/419', state: 'open', checks: 'passing', review_decision: null }) {
+      act(() => {
+        ;(client as FakeClient).emit({ type: 'pr_status', dir: dir as string, gh: 'ready', has_upstream: true, pr, hint: null })
       })
     },
     unmount: teardown

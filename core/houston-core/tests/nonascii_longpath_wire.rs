@@ -30,6 +30,8 @@ fn create_shell_msg(dir: &std::path::Path) -> String {
         acp: None,
         profile: None,
         prompt: None,
+        model: None,
+        effort: None,
     })
     .unwrap()
 }

@@ -38,6 +38,8 @@ async fn issue67_shell_hooks_select_the_provider_for_waits_and_result_delivery()
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     apply_drop(
@@ -389,6 +391,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("fixture pane spawns")
     }
@@ -411,6 +415,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("fixture pane spawns")
     }
@@ -2575,6 +2581,8 @@ async fn an_operator_spawned_pane_can_find_hs_pane() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .expect("probe pane spawns");
     let bin_dir = r.ws_dir.join(".houston/orchestration/bin");

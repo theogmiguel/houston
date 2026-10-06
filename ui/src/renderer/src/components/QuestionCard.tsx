@@ -5,6 +5,7 @@ import { IconCheck } from './icons'
 import { HIT_TARGET_28 } from './hitTarget'
 import { Icon } from './Icon'
 import { Tooltip } from './Tooltip'
+import { Card } from './ui'
 
 export type QuestionCardBody = 'free-text' | 'multi-select' | 'single-select'
 
@@ -94,14 +95,15 @@ export function QuestionCard({
   }, [interactive, options, body, escapeHatchNumber, onToggleOption, onSelectOption, onTypeInstead])
 
   return (
-    <div
+    <Card
       data-testid="question-card"
       data-state={error ? 'error' : loading ? 'loading' : 'filled'}
-      className={`flex flex-col gap-[var(--space-3)] rounded-[var(--tr-radius-card)] border p-[var(--space-3)] ${
-        error
-          ? 'border-[var(--danger)] bg-[var(--status-blocked-bg)]'
-          : 'border-[var(--border)] bg-[var(--surface)]'
-      } ${disabled ? 'opacity-50' : ''} ${className}`}
+      tone={error ? 'danger' : 'surface'}
+      shape="card"
+      padding="md"
+      clip={false}
+      disabled={disabled}
+      className={`flex flex-col gap-[var(--space-3)] ${className}`}
     >
       <div className="flex items-center justify-between text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">
         <span data-testid="question-card-pager" className="tabular-nums">
@@ -227,6 +229,6 @@ export function QuestionCard({
           </Tooltip>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

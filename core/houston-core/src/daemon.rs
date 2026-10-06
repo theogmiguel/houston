@@ -484,6 +484,7 @@ pub struct Session {
     vt_refused: AtomicBool,
     last_output: AtomicU64,
     status: Mutex<Option<proto::AgentStatus>>,
+    status_since_ms: Mutex<Option<u64>>,
     context: Mutex<Option<proto::SessionContext>>,
     removed: AtomicBool,
     backend_exited: AtomicBool,
@@ -1008,6 +1009,7 @@ impl Session {
         info.project_dir = self.project_dir.lock().expect("project_dir lock").clone();
         info.detected_agent = *self.detected.lock().expect("detected lock");
         info.status = *self.status.lock().expect("status lock");
+        info.status_since_ms = *self.status_since_ms.lock().expect("status since lock");
         info.context = *self.context.lock().expect("context lock");
         info.tags = self.tags.lock().expect("tags lock").clone();
         info
@@ -1838,6 +1840,8 @@ pub struct CreateParams {
     pub acp: Option<String>,
     pub profile: Option<proto::ProfileChoice>,
     pub prompt: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<proto::ChatEffort>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -3930,6 +3934,7 @@ impl Daemon {
             ssh_host: None,
             restore_deferred: None,
             status: m.status,
+            status_since_ms: m.status.map(|_| now_ms()),
             context: None,
             swarm_agent: m.swarm_agent,
             spawned_by: None,
@@ -3976,6 +3981,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(0),
             status: Mutex::new(m.status),
+            status_since_ms: Mutex::new(info.status_since_ms),
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
@@ -5673,6 +5679,8 @@ impl Daemon {
                 acp: None,
                 profile: None,
                 prompt: Some(row.prompt.clone()),
+                model: None,
+                effort: None,
             },
             vec![(crate::harness::RUN_ENV.to_string(), run_id.to_string())],
             Vec::new(),
@@ -6370,6 +6378,8 @@ impl Daemon {
                         false
                     } else {
                         *current = Some(status);
+                        *session.status_since_ms.lock().expect("status since lock") =
+                            Some(now_ms());
                         true
                     }
                 }
@@ -6642,6 +6652,7 @@ impl Daemon {
                 false
             } else {
                 *current = Some(ev.status());
+                *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
                 true
             }
         };
@@ -6839,6 +6850,59 @@ impl Daemon {
         self.db.list_workspaces()
     }
 
+    pub fn workspace_local_servers(&self, workspace: String) -> proto::ServerMsg {
+        #[cfg(target_os = "linux")]
+        {
+            let roots: Vec<_> = self
+                .sessions
+                .lock()
+                .expect("sessions lock")
+                .values()
+                .filter(|session| {
+                    session.state.lock().expect("state lock").is_live()
+                        && *session.project_dir.lock().expect("project dir lock") == workspace
+                })
+                .map(|session| session.info.id)
+                .collect();
+            let mut ids = roots.clone();
+            for root in roots {
+                ids.extend(self.descendants_of(root));
+            }
+            ids.sort_unstable();
+            ids.dedup();
+            let processes: Vec<_> = {
+                let sessions = self.sessions.lock().expect("sessions lock");
+                ids.into_iter()
+                    .filter_map(|id| {
+                        let session = sessions.get(&id)?;
+                        if !session.state.lock().expect("state lock").is_live()
+                            || *session.project_dir.lock().expect("project dir lock") != workspace
+                        {
+                            return None;
+                        }
+                        Some((session.pid?, id, session.snapshot_info().title))
+                    })
+                    .collect()
+            };
+            let (servers, truncated) = crate::browser_servers::detect(&processes);
+            proto::ServerMsg::WorkspaceLocalServers {
+                workspace,
+                servers,
+                unsupported: None,
+                truncated,
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            proto::ServerMsg::WorkspaceLocalServers {
+                workspace,
+                servers: Vec::new(),
+                unsupported: Some(std::env::consts::OS.to_owned()),
+                truncated: false,
+            }
+        }
+    }
+
     pub fn workspace_rename(&self, path: &str, name: &str) -> Result<Vec<proto::Workspace>> {
         let name = name.trim();
         let len = name.chars().count();
@@ -6978,34 +7042,41 @@ impl Daemon {
         let title = self.next_codename();
         let prompt = p.prompt.as_deref().unwrap_or("");
         let prompt_label = prompt_label.unwrap_or_else(|| format!("session-{id}"));
-        let mut extra_args = if !prompt.trim().is_empty() {
-            let prompts_dir = init_prompts_dir(&p.project_dir)?;
-            let (args, prompt_file) = crate::launch::launch_args(
+        if p.auto_approve && crate::launch::auto_approve_args(p.agent).is_none() {
+            bail!(
+                "agent {:?} has no approval-bypass flag, so auto_approve cannot be honoured \
+                 (expected claude, codex, antigravity, opencode, cursor or grok)",
+                p.agent
+            );
+        }
+        // A bare session (shell or agent with nothing to pass) takes no launch arguments;
+        // `launch_args` refuses kinds that are not agent CLIs.
+        let bare = prompt.trim().is_empty() && p.model.is_none() && !p.auto_approve;
+        let (mut extra_args, prompt_file) = if bare {
+            (Vec::new(), None)
+        } else {
+            let prompts_dir = if prompt.trim().is_empty() {
+                None
+            } else {
+                Some(init_prompts_dir(&p.project_dir)?)
+            };
+            crate::launch::launch_args(
                 p.agent,
                 p.auto_approve,
                 false,
-                None,
+                p.model.as_deref(),
                 prompt,
-                Some(&prompts_dir),
+                prompts_dir.as_deref(),
                 &prompt_label,
-            )?;
-            if let Some((path, contents)) = prompt_file {
-                std::fs::write(&path, contents)
-                    .with_context(|| format!("writing prompt file {}", path.display()))?;
-            }
-            args
-        } else if p.auto_approve {
-            match crate::launch::auto_approve_args(p.agent) {
-                Some(args) => args,
-                None => bail!(
-                    "agent {:?} has no approval-bypass flag, so auto_approve cannot be honoured \
-                     (expected claude, codex, antigravity, opencode, cursor or grok)",
-                    p.agent
-                ),
-            }
-        } else {
-            Vec::new()
+            )?
         };
+        if let Some((path, contents)) = prompt_file {
+            std::fs::write(&path, contents)
+                .with_context(|| format!("writing prompt file {}", path.display()))?;
+        }
+        if let Some(effort) = p.effort {
+            extra_args.extend(crate::launch::effort_args(p.agent, effort)?);
+        }
         extra_args.extend(spawn_args);
         if let Some(slug) = p.acp.as_deref() {
             let known = crate::acp::find_known_acp_agent(slug).ok_or_else(|| {
@@ -8404,6 +8475,7 @@ impl Daemon {
 
         let reports_status = acp.is_some() || crate::agent_events::has_event_mapping(agent);
         let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
+        let status_since_ms = initial_status.map(|_| now_ms());
         let mut info = proto::SessionInfo {
             id,
             agent,
@@ -8417,6 +8489,7 @@ impl Daemon {
             ssh_host: None,
             restore_deferred: None,
             status: initial_status,
+            status_since_ms,
             context: None,
             swarm_agent,
             spawned_by,
@@ -8473,6 +8546,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
             status: Mutex::new(initial_status),
+            status_since_ms: Mutex::new(status_since_ms),
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
@@ -8813,6 +8887,7 @@ impl Daemon {
             ssh_host: Some(display),
             restore_deferred: None,
             status: None,
+            status_since_ms: None,
             context: None,
             swarm_agent: None,
             spawned_by: None,
@@ -8857,6 +8932,7 @@ impl Daemon {
             vt_refused: AtomicBool::new(false),
             last_output: AtomicU64::new(self.started.elapsed().as_millis() as u64),
             status: Mutex::new(None),
+            status_since_ms: Mutex::new(None),
             context: Mutex::new(None),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
@@ -9555,6 +9631,10 @@ impl Daemon {
 
     pub fn write_stdin_from_renderer(&self, id: u32, data: &[u8]) -> Result<()> {
         let Ok(session) = self.get(id) else {
+            // Bytes the renderer had in flight when the operator closed the pane.
+            if self.db.session_is_closed(id)? {
+                return Ok(());
+            }
             return self.write_stdin(id, data);
         };
         if !session.state.lock().expect("state lock").is_live() {
@@ -9602,6 +9682,7 @@ impl Daemon {
         self.forget_resume_handle(id);
         self.cancel_delegation(id);
         *session.state.lock().expect("state lock") = proto::SessionState::Killed;
+        *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
         self.db
             .update_session_state(id, proto::SessionState::Killed, None)?;
         self.reap_reevaluate();
@@ -11916,6 +11997,82 @@ impl Daemon {
         Ok(())
     }
 
+    pub fn workspace_actions(&self, workspace: &str) -> Result<Vec<proto::WorkspaceAction>> {
+        self.db.workspace_actions(workspace)
+    }
+
+    pub fn set_workspace_action(
+        &self,
+        workspace: &str,
+        action: proto::WorkspaceAction,
+    ) -> Result<proto::ServerMsg> {
+        const ACTION_LIMIT: usize = 24;
+        const COMMAND_LIMIT: usize = 4096;
+        if !self
+            .workspace_list()?
+            .iter()
+            .any(|item| item.path == workspace)
+        {
+            bail!("workspace action: {workspace:?} must be a registered workspace");
+        }
+        let mut actions = self.db.workspace_actions(workspace)?;
+        if action.command.len() > COMMAND_LIMIT {
+            return Ok(proto::ServerMsg::WorkspaceActionRefused {
+                workspace: workspace.to_owned(),
+                reason: format!(
+                    "command length {} exceeds the {COMMAND_LIMIT}-byte limit for saving an action",
+                    action.command.len()
+                ),
+                limit: COMMAND_LIMIT as u32,
+                actual: action.command.len() as u32,
+                requested: action.command.len() as u32,
+            });
+        }
+        if action.name.trim().is_empty() || action.command.trim().is_empty() {
+            anyhow::bail!("workspace action name and command must not be empty");
+        }
+        let name_len = action.name.chars().count();
+        if name_len > 64
+            || action.id.len() > 128
+            || action.shortcut.as_ref().is_some_and(|s| s.len() > 128)
+        {
+            bail!("invalid workspace action: name must be 1..=64 characters; id and shortcut must be at most 128 bytes (got name {name_len}, id {}, shortcut {})", action.id.len(), action.shortcut.as_ref().map_or(0, String::len));
+        }
+        let is_new = !actions.iter().any(|item| item.id == action.id);
+        if is_new && actions.len() >= ACTION_LIMIT {
+            return Ok(proto::ServerMsg::WorkspaceActionRefused {
+                workspace: workspace.to_owned(),
+                reason: format!(
+                    "workspace has {} actions; the {ACTION_LIMIT}-action limit refuses another action",
+                    actions.len()
+                ),
+                limit: ACTION_LIMIT as u32,
+                actual: actions.len() as u32,
+                requested: (actions.len() + 1) as u32,
+            });
+        }
+        if let Some(existing) = actions.iter_mut().find(|item| item.id == action.id) {
+            *existing = action;
+        } else {
+            actions.push(action);
+        }
+        self.db.set_workspace_actions(workspace, &actions)?;
+        Ok(proto::ServerMsg::WorkspaceActions {
+            workspace: workspace.to_owned(),
+            actions,
+        })
+    }
+
+    pub fn delete_workspace_action(&self, workspace: &str, id: &str) -> Result<proto::ServerMsg> {
+        let mut actions = self.db.workspace_actions(workspace)?;
+        actions.retain(|action| action.id != id);
+        self.db.set_workspace_actions(workspace, &actions)?;
+        Ok(proto::ServerMsg::WorkspaceActions {
+            workspace: workspace.to_owned(),
+            actions,
+        })
+    }
+
     pub fn orchestration_max_live_children(&self) -> u32 {
         match self.db.get_setting(ORCHESTRATION_MAX_LIVE_CHILDREN_KEY) {
             Ok(Some(v)) => v.parse().unwrap_or(orchestrate::MAX_LIVE_CHILDREN),
@@ -12017,6 +12174,16 @@ impl Daemon {
         until_ms: i64,
         refresh_pricing: bool,
     ) -> Result<proto::ServerMsg> {
+        self.usage_summary_filtered(since_ms, until_ms, refresh_pricing, None)
+    }
+
+    pub fn usage_summary_filtered(
+        &self,
+        since_ms: i64,
+        until_ms: i64,
+        refresh_pricing: bool,
+        workspace: Option<String>,
+    ) -> Result<proto::ServerMsg> {
         if until_ms <= since_ms {
             bail!(
                 "{} empty window: asked for [{since_ms}, {until_ms}) ms, \
@@ -12036,6 +12203,13 @@ impl Daemon {
             );
         }
 
+        let workspaces = self
+            .db
+            .list_workspaces()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|workspace| workspace.path)
+            .collect::<Vec<_>>();
         let outcome = crate::usage::scan(&crate::usage::ScanRequest {
             since_ms,
             until_ms,
@@ -12044,7 +12218,12 @@ impl Daemon {
                 .load(self.update_policy().check, refresh_pricing),
             state_dir: self.state_dir.clone(),
             sources: self.usage_sources(),
+            workspaces,
+            workspace_filter: workspace,
         });
+        if let Err(e) = self.db.usage_daily_rollup_upsert(&outcome.rollups) {
+            tracing::warn!("persisting usage daily rollups failed: {e:#}");
+        }
         tracing::debug!(
             "usage scan: {} buckets from {} source(s) in {}ms \
              ({} duplicate record(s) dropped, {} outside the window)",
@@ -12064,6 +12243,40 @@ impl Daemon {
             pricing: outcome.pricing,
             untracked_agents: crate::usage::untracked_agents(),
             scan_duration_ms: outcome.scan_duration_ms,
+        })
+    }
+
+    pub fn usage_activity_summary(
+        &self,
+        since_ms: i64,
+        until_ms: i64,
+        workspace: Option<String>,
+    ) -> Result<proto::ServerMsg> {
+        if until_ms <= since_ms {
+            bail!(
+                "{} empty activity window: asked for [{since_ms}, {until_ms}) ms",
+                proto::USAGE_WINDOW_REFUSED
+            );
+        }
+        let since_day = crate::usage::time::local_date_from_ms(since_ms);
+        let until_day = crate::usage::time::local_date_from_ms(until_ms - 1);
+        let day_span = crate::usage::time::local_day_ordinal_from_ms(until_ms - 1)
+            - crate::usage::time::local_day_ordinal_from_ms(since_ms)
+            + 1;
+        if day_span > i64::from(proto::USAGE_ACTIVITY_MAX_DAYS) {
+            bail!(
+                "{} asked for {day_span} calendar days, limit is {}",
+                proto::USAGE_WINDOW_REFUSED,
+                proto::USAGE_ACTIVITY_MAX_DAYS
+            );
+        }
+        let days = self
+            .db
+            .usage_activity_summary(&since_day, &until_day, workspace.as_deref())?;
+        Ok(proto::ServerMsg::UsageActivitySummary {
+            since_ms,
+            until_ms,
+            days,
         })
     }
 
@@ -16242,6 +16455,7 @@ impl Daemon {
                 return None;
             }
             *session.state.lock().expect("state lock") = proto::SessionState::Exited;
+            *session.status_since_ms.lock().expect("status since lock") = Some(now_ms());
             session.remove_shell_token_file();
             self.mcp_creds.revoke_session(child);
             self.mcp_notify.close_session(child);
@@ -17297,6 +17511,21 @@ impl Daemon {
         now: u64,
     ) {
         let child = row.child_session;
+        if self
+            .db
+            .pr_watch_list(Some(child))
+            .is_ok_and(|watches| !watches.is_empty())
+        {
+            if row.stalled
+                && self
+                    .db
+                    .delegation_set_stalled(child, false, now_ms())
+                    .is_ok()
+            {
+                self.broadcast_delegation(child);
+            }
+            return;
+        }
         if self
             .permission_episodes
             .lock()
@@ -18496,6 +18725,106 @@ mod hook_state_registry_tests {
         let healed = crate::hook_state::read_scopes(state.path());
         assert_eq!(healed.len(), 1, "boot must rebuild wholesale: {healed:?}");
         assert_eq!(healed[0].swarm, id);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod pr_watch_stall_tests {
+    use super::*;
+
+    #[test]
+    fn an_idle_watched_child_is_not_marked_stalled() {
+        let state = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(DaemonConfig {
+            token: "pr-watch-test".into(),
+            db_path: state.path().join("test.db"),
+        })
+        .unwrap();
+        let workspace = state.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        daemon
+            .workspace_add(&workspace.display().to_string())
+            .unwrap();
+        let make_pane = || {
+            daemon
+                .create_session(CreateParams {
+                    agent: proto::AgentKind::Custom,
+                    project_dir: workspace.clone(),
+                    cmd: Some(vec!["/bin/sh".into(), "-c".into(), "exec cat".into()]),
+                    cols: 80,
+                    rows: 24,
+                    cwd_from: None,
+                    shell_integration: false,
+                    auto_approve: false,
+                    acp: None,
+                    profile: None,
+                    prompt: None,
+                    model: None,
+                    effort: None,
+                })
+                .unwrap()
+        };
+        let parent = make_pane();
+        let child = make_pane();
+        daemon
+            .db
+            .delegation_create(parent.id, child.id, Some("review"), "Review the PR", 1)
+            .unwrap();
+        daemon
+            .db
+            .delegation_set_state(child.id, "running", 1)
+            .unwrap();
+        let link = proto::PullRequestLink {
+            host: "GitHub".into(),
+            repository: "owner/repo".into(),
+            number: 7,
+            url: "https://github.com/owner/repo/pull/7".into(),
+            state: proto::PullRequestState::Open,
+            source: proto::PullRequestLinkSource::Agent,
+            title: Some("Review".into()),
+            is_draft: false,
+            additions: 0,
+            deletions: 0,
+            changed_files: 0,
+            checks: None,
+            review_decision: None,
+            linked_at: 1,
+            merged_at: None,
+            closed_at: None,
+            synced_at: None,
+        };
+        daemon
+            .db
+            .pr_watch_set(
+                child.id,
+                &link,
+                &crate::pull_requests::watch::State {
+                    started_at: 1,
+                    last_checked_at_ms: None,
+                    head_sha: "abc".into(),
+                    failed_checks: Default::default(),
+                    passed: false,
+                    comments_through: 1,
+                    comment_ids: Default::default(),
+                    conflicting: false,
+                    comment_only_wakes: 0,
+                    read_failures: 0,
+                    own_login: None,
+                },
+            )
+            .unwrap();
+
+        let row = daemon.db.delegation_for_child(child.id).unwrap().unwrap();
+        let session = daemon.get(child.id).unwrap();
+        session.last_output.store(0, Ordering::Relaxed);
+        daemon.delegation_stall_pass(&row, &session, false, u64::MAX);
+
+        assert!(!daemon.delegation_of(child.id).unwrap().stalled);
+        assert!(daemon.inbox_rows_for_test(parent.id).is_empty());
+        for id in [child.id, parent.id] {
+            let _ = daemon.kill(id);
+            let _ = daemon.close(id);
+        }
     }
 }
 
@@ -19723,6 +20052,8 @@ mod idle_profile_tests {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
             .id
@@ -19954,6 +20285,8 @@ mod idle_profile_tests {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
             .id;

@@ -155,3 +155,45 @@ export function NoticesPaneCorner(): React.JSX.Element {
     </Ground>
   )
 }
+
+export function NoticesOrchestration(): React.JSX.Element {
+  return (
+    <div className="grid h-full grid-cols-2 gap-2 bg-[var(--content-bg)] p-2">
+      <div className="flex min-w-0 flex-col overflow-hidden rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--pane-bg)]">
+        <header className="flex h-[var(--h-pane-head)] flex-none items-center border-b border-[var(--divider)] bg-[var(--pane-head)] px-2 text-[length:var(--tr-text-label-size)] text-[var(--text-secondary)]">
+          <span className="truncate text-[var(--text-primary)]">eagle-api</span>
+          <span className="ml-auto font-mono text-[length:var(--tr-text-label-size)] text-[var(--text-muted)]">project_eagle › Review</span>
+        </header>
+        <div className="relative min-h-0 flex-1 overflow-hidden p-2 font-mono text-[length:var(--tr-text-label-size)] leading-relaxed text-[var(--text-muted)]">
+          <div>$ cargo test -p houston-core</div>
+          <div className="text-[var(--warn)]">test result: 1 failed</div>
+          <NoticeStack
+            anchor="pane-corner"
+            label="Agent notifications"
+            store={store([
+              rec({
+                code: 'agent-2',
+                kind: 'warning',
+                presentation: 'orchestration',
+                title: 'eagle-api needs your input',
+                body: 'Claude Code · project_eagle › Review',
+                durationMs: null,
+                action: { label: 'Open pane', onClick: () => {} }
+              }, 1),
+              rec({
+                code: 'agent-1',
+                kind: 'success',
+                presentation: 'orchestration',
+                title: 'auth-refactor finished',
+                body: 'Claude Code · Houston › Tasks backlog',
+                durationMs: 5_000,
+                action: { label: 'Open pane', onClick: () => {} }
+              }, 2)
+            ])}
+          />
+        </div>
+      </div>
+      <div className="rounded-[var(--tr-radius-md)] border border-[var(--border)] bg-[var(--pane-bg)]" />
+    </div>
+  )
+}

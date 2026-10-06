@@ -364,6 +364,19 @@ describe('HoustonClient subscribe/subscribeAll dispatch (Phase 6 seam)', () => {
   })
 })
 
+describe('HoustonClient branch commits request', () => {
+  it('sends the branch commit listing request for the selected checkout', async () => {
+    const { client, ws } = await connectFakeClient()
+
+    client.gitBranchCommits('/tmp/project')
+
+    expect(JSON.parse(ws.sent.at(-1) as string)).toEqual({
+      type: 'git_branch_commits',
+      dir: '/tmp/project'
+    })
+  })
+})
+
 describe('HoustonClient gap resync (item 10b)', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -1279,6 +1292,18 @@ describe('HoustonClient SSH connection', () => {
     client.sshConnect({ request: 1, host: 'edge', user: '', auth: { kind: 'ssh_config' }, default_dir: '~/app folder' })
     const messages = ws.sent.filter((message): message is string => typeof message === 'string').map((message) => JSON.parse(message))
     expect(messages.find((message) => message.type === 'ssh_connect')).toMatchObject({ default_dir: '~/app folder', user: '' })
+    client.close()
+  })
+})
+
+describe('HoustonClient usage filters', () => {
+  it('sends the workspace on both usage summary requests', async () => {
+    const { client, ws } = await connectFakeClient()
+    client.usageSummaryGet(10, 20, false, '/work/project')
+    client.usageActivitySummaryGet(30, 40, '/work/project')
+    const messages = ws.sent.filter((message): message is string => typeof message === 'string').map((message) => JSON.parse(message))
+    expect(messages).toContainEqual({ type: 'usage_summary_get', since_ms: 10, until_ms: 20, refresh_pricing: false, workspace: '/work/project' })
+    expect(messages).toContainEqual({ type: 'usage_activity_summary_get', since_ms: 30, until_ms: 40, workspace: '/work/project' })
     client.close()
   })
 })

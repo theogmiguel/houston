@@ -1220,6 +1220,7 @@ export function TerminalPane({
 
   const warmRef = useRef(warm)
   warmRef.current = warm
+  const prevHiddenRef = useRef(hiddenByExpand)
   const attachedRef = useRef(false)
   const hibernateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hibernatedRef = useRef(false)
@@ -1236,7 +1237,7 @@ export function TerminalPane({
     state.timers = []
   }
 
-  const runWakeRepaint = (): void => {
+  const runWakeRepaint = (singleFrame = false): void => {
     cancelWakeRepaint()
     const paint = (refit = true): void => {
       const term = termRef.current
@@ -1249,11 +1250,12 @@ export function TerminalPane({
       } catch {
       }
     }
-    paint(false)
     wakeRepaintRef.current.raf = requestAnimationFrame(() => {
       wakeRepaintRef.current.raf = null
       paint()
     })
+    if (singleFrame) return
+    paint(false)
     wakeRepaintRef.current.timers = WAKE_REPAINT_DELAYS_MS.map((ms) => setTimeout(paint, ms))
   }
 
@@ -1300,7 +1302,7 @@ export function TerminalPane({
       }
       if (hibernatedRef.current) {
         hibernatedRef.current = false
-        runWakeRepaint()
+        if (!prevHiddenRef.current) runWakeRepaint()
       }
       return
     }
@@ -1322,14 +1324,13 @@ export function TerminalPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warm, documentHidden])
 
-  const prevHiddenRef = useRef(hiddenByExpand)
   useEffect(() => {
     const wasHidden = prevHiddenRef.current
     prevHiddenRef.current = hiddenByExpand
     termRef.current?.setPaused(hiddenByExpand)
     if (wasHidden && !hiddenByExpand) {
       syncSizeRef.current()
-      runWakeRepaint()
+      runWakeRepaint(true)
     }
   }, [hiddenByExpand])
 

@@ -12,6 +12,17 @@ pub struct UsageRecord {
     pub totals: proto::UsageTokenTotals,
     pub reported_cost_usd: Option<f64>,
     pub dedupe_key: Option<u64>,
+    pub speed: UsageSpeed,
+    pub cwd: Option<String>,
+    pub workspace_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum UsageSpeed {
+    #[default]
+    Standard,
+    Fast,
+    Ultrafast,
 }
 
 fn count(v: Option<&Value>) -> u64 {
@@ -98,6 +109,19 @@ pub fn parse_claude_line(line: &str) -> Option<UsageRecord> {
             .and_then(Value::as_f64)
             .filter(|c| c.is_finite()),
         dedupe_key,
+        speed: if record
+            .get("speed")
+            .or_else(|| message.get("speed"))
+            .and_then(Value::as_str)
+            .is_some_and(|speed| speed.eq_ignore_ascii_case("fast"))
+            || message.get("fastMode").and_then(Value::as_bool) == Some(true)
+        {
+            UsageSpeed::Fast
+        } else {
+            UsageSpeed::Standard
+        },
+        cwd: text(record.get("cwd")).map(ToOwned::to_owned),
+        workspace_path: None,
     })
 }
 
@@ -114,6 +138,8 @@ pub struct CodexScanState {
     saw_session_meta: bool,
     suppressing_fork_copies: bool,
     fork_copy_anchor_ms: i64,
+    cwd: Option<String>,
+    speed: UsageSpeed,
 }
 
 impl CodexScanState {
@@ -159,6 +185,7 @@ pub fn parse_codex_line(line: &str, state: &mut CodexScanState) -> Option<UsageR
         if let Some(id) = text(payload.get("id")).or_else(|| text(payload.get("session_id"))) {
             state.session_id = id.to_string();
         }
+        state.cwd = text(payload.get("cwd")).map(ToOwned::to_owned);
         if let Some(meta_ms) = text(record.get("timestamp")).and_then(parse_rfc3339_ms) {
             if is_forked_session_meta(payload) {
                 state.suppressing_fork_copies = true;
@@ -180,6 +207,14 @@ pub fn parse_codex_line(line: &str, state: &mut CodexScanState) -> Option<UsageR
     }
     let last = payload.get("info")?.as_object()?.get("last_token_usage")?;
     let last_map = last.as_object()?;
+    let service_tier = text(payload.get("service_tier"))
+        .or_else(|| text(last_map.get("service_tier")))
+        .unwrap_or_default();
+    state.speed = match service_tier.to_ascii_lowercase().as_str() {
+        "priority" | "fast" => UsageSpeed::Fast,
+        "ultrafast" => UsageSpeed::Ultrafast,
+        _ => UsageSpeed::Standard,
+    };
 
     let timestamp_ms = parse_rfc3339_ms(text(record.get("timestamp"))?)?;
     if state.model.is_empty() {
@@ -227,6 +262,9 @@ pub fn parse_codex_line(line: &str, state: &mut CodexScanState) -> Option<UsageR
         totals,
         reported_cost_usd: None,
         dedupe_key: None,
+        speed: state.speed,
+        cwd: state.cwd.clone(),
+        workspace_path: None,
     })
 }
 
@@ -373,6 +411,23 @@ mod tests {
         assert_eq!(r.totals.reasoning_tokens, 10);
         assert_eq!(r.model, "gpt-5-codex");
         assert_eq!(r.session_id, "sess_1");
+    }
+
+    #[test]
+    fn codex_service_tier_and_session_directory_are_carried_into_usage() {
+        let mut state = CodexScanState::new();
+        parse_codex_line(
+            r#"{"type":"session_meta","timestamp":"2026-08-27T10:00:00Z","payload":{"id":"sess_1","cwd":"/tmp/workspace"}}"#,
+            &mut state,
+        );
+        parse_codex_line(&codex_turn_context("gpt-5-codex"), &mut state);
+        let line = codex_tokens("2026-08-27T10:00:05Z", 1000, 900, 200).replace(
+            "\"type\":\"token_count\"",
+            "\"type\":\"token_count\",\"service_tier\":\"ultrafast\"",
+        );
+        let record = parse_codex_line(&line, &mut state).expect("usage record");
+        assert_eq!(record.speed, UsageSpeed::Ultrafast);
+        assert_eq!(record.cwd.as_deref(), Some("/tmp/workspace"));
     }
 
     #[test]

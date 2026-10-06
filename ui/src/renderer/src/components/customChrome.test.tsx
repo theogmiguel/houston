@@ -210,7 +210,7 @@ describe('every chrome theme cuts its own custom ground', () => {
     expect(THEME_CSS).not.toContain('.agents-region')
     const app = readFileSync(resolve(__dirname, '..', 'App.tsx'), 'utf8')
     const wrappers = app.match(/className="(?:content-region )?absolute inset-0 flex z-\[var\(--z-leaf\)\]"/g) ?? []
-    expect(wrappers.length).toBeGreaterThanOrEqual(3)
+    expect(wrappers.length).toBeGreaterThanOrEqual(2)
     for (const w of wrappers) expect(w).toContain('content-region')
   })
 

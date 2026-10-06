@@ -2,9 +2,9 @@ import { FILES_TREE_MIN, FILES_TREE_MAX, useFilesSplit } from './files/useFilesS
 import { filesTreeToggleMatches } from '../keymap'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import type { GitFileStatus, HoustonClient } from '../houston/client'
-import { FILE_REFERENCE_MIME, fileReference, gitTreeStatus } from './files/fileActions'
+import { FILE_REFERENCE_MIME, copyFilePath, fileActionDirectory, fileReference, gitTreeStatus, relativeFilePath } from './files/fileActions'
 import { lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { RING_ACCENT_ICON } from './shadowChrome'
+import { BORDER_HAIRLINE_INSET, RING_ACCENT_ICON } from './shadowChrome'
 import type { DirEntry } from '../env'
 import type { FilesNode, PaneKey } from '../layout/tree'
 import { readDir, showItemInFolder, createFile, createDirectory, renameFile, trashFile } from '../houston/bridge'
@@ -49,6 +49,7 @@ import { AnimOut, MenuLayer } from './AnimOut'
 import { OpenInMenu } from './OpenInMenu'
 import { SaveDiscardModal } from './SaveDiscardModal'
 import { Icon } from './Icon'
+import { Button, MenuItem } from './ui'
 import { POP_ORIGIN_CLS, popOriginStyle } from './overlayChrome'
 
 const ICO_HEAD_BASE =
@@ -111,6 +112,8 @@ export interface FilesPaneProps {
   expanded?: boolean
   onExpand?: (key: PaneKey) => void
   onError?: (message: string) => void
+  onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel?: string
 }
 
 export function FilesPane({
@@ -125,7 +128,9 @@ export function FilesPane({
   active = false,
   expanded = false,
   onExpand,
-  onError
+  onError,
+  onSendToTerminal,
+  sendToTerminalLabel = 'focused pane'
 }: FilesPaneProps): React.JSX.Element {
   const focusTier = usePaneFocusTier(active)
   const keymapOverrides = useContext(KeymapOverridesContext)
@@ -552,59 +557,7 @@ export function FilesPane({
         {split.split && !split.collapsed && <FilesTreeSash width={split.width} onResize={split.resize} onReset={split.reset} />}
         <FilesEditorColumn panel={panel} split={split} fileTabs={fileTabs} root={root} workspaceDir={workspaceDir} gitFiles={gitFiles} tabsOverflow={tabsOverflow} tabScrollRef={tabScrollRef} tabRefs={tabRefs} onMoveToEditor={onMoveToEditor} onTabMenu={(x, y, path) => setTabMenu({ x, y, path })} onOverflowMenu={(x, y) => setOverflowMenu({ x, y })} revealInTree={revealInTree} reportError={reportError} />
       </div>
-      <MenuLayer open={menu !== null} onClose={() => setMenu(null)} suppress="popover" menuRef={menuRef}>
-        {menu && (
-          <div
-            ref={menuRef}
-            role="menu"
-            tabIndex={-1}
-            data-testid="files-row-menu"
-            className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[180px] flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`}
-            style={(() => {
-              const left = Math.min(menu.x, window.innerWidth - 200)
-              const top = Math.max(8, Math.min(menu.y, window.innerHeight - 160))
-              return { left, top, ...popOriginStyle(`${menu.x - left}px`, `${menu.y - top}px`) }
-            })()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {(['file', 'directory', 'rename'] as const).map((kind) => <button key={kind} role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { setMutation({ kind, path: kind === 'rename' || menu.dir ? menu.path : parentDir(menu.path), name: kind === 'rename' ? basename(menu.path) : '' }); setMenu(null) }}>{kind === 'file' ? 'New file' : kind === 'directory' ? 'New folder' : 'Rename'}</button>)}
-            <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { void removeEntry(menu.path); setMenu(null) }}>Move to trash</button>
-            <OpenInMenu
-              path={menu.path}
-              label={menu.dir ? 'Open folder in' : 'Open in'}
-              itemClass={EDITOR_CTX_ITEM_CLS}
-              onDone={() => setMenu(null)}
-              onError={reportError}
-            />
-            <button
-              className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`}
-              role="menuitem"
-              onClick={() => {
-                const target = menu.dir ? menu.path : parentDir(menu.path)
-                setMenu(null)
-                void showItemInFolder(target).then((res) => {
-                  if (!res.ok) reportError(res.error ?? `could not reveal ${target}`)
-                })
-              }}
-            >
-              Reveal in file manager
-            </button>
-            <button
-              className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`}
-              role="menuitem"
-              onClick={() => {
-                const p = menu.path
-                setMenu(null)
-                void navigator.clipboard
-                  ?.writeText(p)
-                  .catch((e: unknown) => reportError(String((e as Error)?.message ?? e)))
-              }}
-            >
-              Copy path
-            </button>
-          </div>
-        )}
-      </MenuLayer>
+      <FilesTreeContextMenu menu={menu} menuRef={menuRef} root={root} onClose={() => setMenu(null)} onError={reportError} onSendToTerminal={onSendToTerminal} sendToTerminalLabel={sendToTerminalLabel} onRename={(path) => setMutation({ kind: 'rename', path, name: basename(path) })} onDelete={(path) => void removeEntry(path)} onCreate={(kind, path) => setMutation({ kind, path, name: '' })} />
       <MenuLayer open={tabMenu !== null} onClose={() => setTabMenu(null)} suppress="popover" menuRef={tabMenuRef}>
         <FileTabContextMenu
           menuRef={tabMenuRef}
@@ -643,6 +596,55 @@ export function FilesPane({
         )}
       </AnimOut>
     </section>
+  )
+}
+
+function FilesTreeContextMenu({ menu, menuRef, root, onClose, onError, onSendToTerminal, sendToTerminalLabel, onRename, onDelete, onCreate }: {
+  menu: { x: number; y: number; path: string; dir: boolean } | null
+  menuRef: React.RefObject<HTMLDivElement | null>
+  root: string
+  onClose: () => void
+  onError: (message: string) => void
+  onSendToTerminal?: (text: string) => void
+  sendToTerminalLabel: string
+  onRename: (path: string) => void
+  onDelete: (path: string) => void
+  onCreate: (kind: 'file' | 'directory', path: string) => void
+}): React.JSX.Element {
+  return (
+    <MenuLayer open={menu !== null} onClose={onClose} suppress="popover" menuRef={menuRef}>
+      {menu && (
+        <div
+          ref={menuRef}
+          role="menu"
+          tabIndex={-1}
+          data-testid="files-row-menu"
+          className={`ctx-menu fixed z-[var(--z-overlay)] min-w-[220px] max-h-[calc(100dvh-var(--space-4))] overflow-y-auto flex flex-col p-1 bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-1)] focus:outline-none focus-visible:shadow-[${BORDER_HAIRLINE_INSET}] motion-safe:animate-[menu-in_var(--animate-t-panel)_var(--animate-ease-menu)] [.anim-out_&]:motion-safe:animate-[menu-out_var(--animate-t-fast)_var(--animate-ease-menu)_forwards] ${POP_ORIGIN_CLS}`}
+          style={(() => {
+            const left = Math.min(menu.x, window.innerWidth - 200)
+            const top = Math.max(8, Math.min(menu.y, window.innerHeight - 220))
+            return { left, top, ...popOriginStyle(`${menu.x - left}px`, `${menu.y - top}px`) }
+          })()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <OpenInMenu path={menu.path} label={menu.dir ? 'Open folder in' : 'Open in'} itemClass={EDITOR_CTX_ITEM_CLS} onDone={onClose} onError={onError} />
+          <MenuItem onClick={() => { onClose(); copyFilePath(menu.path, onError) }}>Copy path</MenuItem>
+          <MenuItem onClick={() => { onClose(); copyFilePath(relativeFilePath(root, menu.path), onError) }}>Copy relative path</MenuItem>
+          <MenuItem aria-label={`Send path to ${sendToTerminalLabel}`} disabled={!onSendToTerminal} disabledReason="Focus a live agent pane first" onClick={() => { onSendToTerminal!(menu.path); onClose() }}>{`Send path to ${sendToTerminalLabel}`}</MenuItem>
+          <div className={EDITOR_CTX_SEP_CLS} />
+          <MenuItem shortcut="F2" onClick={() => { onRename(menu.path); onClose() }}>Rename</MenuItem>
+          <MenuItem shortcut="Del" onClick={() => { onDelete(menu.path); onClose() }}>Delete</MenuItem>
+          <div className={EDITOR_CTX_SEP_CLS} />
+          <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { onCreate('file', fileActionDirectory(menu.path, menu.dir)); onClose() }}>New file</button>
+          <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => { onCreate('directory', fileActionDirectory(menu.path, menu.dir)); onClose() }}>New folder</button>
+          <button role="menuitem" className={`btn border-none ${EDITOR_CTX_ITEM_CLS}`} onClick={() => {
+            const target = fileActionDirectory(menu.path, menu.dir)
+            onClose()
+            void showItemInFolder(target).then((res) => { if (!res.ok) onError(res.error ?? `could not reveal ${target}`) })
+          }}>Reveal in file manager</button>
+        </div>
+      )}
+    </MenuLayer>
   )
 }
 
@@ -1108,9 +1110,10 @@ function FilesEditorColumn({ panel, split, fileTabs, root, workspaceDir, gitFile
           </Suspense>
           <div
             data-testid="files-status-strip"
-            className="flex-none flex items-center h-[20px] border-t border-[color-mix(in_srgb,var(--divider)_55%,transparent)] bg-[color-mix(in_srgb,var(--card-bg)_45%,transparent)]"
+            className="flex-none flex items-center min-h-[var(--h-ctl-mini)] border-t border-[color-mix(in_srgb,var(--divider)_55%,transparent)] bg-[color-mix(in_srgb,var(--card-bg)_45%,transparent)]"
           >
             <span className={STRIP_CELL}>{fileTabs.langLabel}</span>
+            <FilesWordWrapToggle fileTabs={fileTabs} workspaceDir={workspaceDir} />
             <span className={`${STRIP_CELL} ml-auto font-mono`} data-testid="files-caret">
               {fileTabs.caret ?? ''}
             </span>
@@ -1127,6 +1130,29 @@ function FilesEditorColumn({ panel, split, fileTabs, root, workspaceDir, gitFile
         </div>
       )}
     </div>
+  )
+}
+
+function FilesWordWrapToggle({ fileTabs, workspaceDir }: { fileTabs: FileTabsState; workspaceDir: string }): React.JSX.Element {
+  const buffer = fileTabs.activeBuf
+  return (
+    <Tooltip label="Toggle word wrap">
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label="Word wrap"
+        aria-pressed={Boolean(buffer?.wrap)}
+        disabled={!buffer}
+        data-testid="files-word-wrap"
+        onClick={() => {
+          void import('../editor/buffers').then(({ setBufferWrap }) =>
+            setBufferWrap(workspaceDir, fileTabs.activePath!, !buffer!.wrap)
+          )
+        }}
+      >
+        Wrap
+      </Button>
+    </Tooltip>
   )
 }
 

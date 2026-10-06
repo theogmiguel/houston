@@ -82,6 +82,7 @@ describe('DaemonSection', () => {
     expect(daemonStatusMock).toHaveBeenCalledTimes(1)
   })
 
+
   it('shows an error with a retry, never an endless spinner, when the first fetch fails', async () => {
     daemonStatusMock.mockRejectedValueOnce(new Error('refused: unknown management contract'))
     act(() => {

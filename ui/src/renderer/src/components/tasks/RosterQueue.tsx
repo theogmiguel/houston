@@ -1,11 +1,10 @@
 import type { HoustonClient } from '../../houston/client'
 import { useTaskQueue, type TaskQueueResult } from '../../houston/useTasks'
 import { openSideTasks } from '../../sidePanel'
-import { BTN_PRIMARY } from '../buttonChrome'
-import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from '../Icon'
 import { IconPlay } from '../icons'
 import { Tooltip } from '../Tooltip'
+import { Button, RosterQueuePanel } from '../ui'
 import { queuePreview, runNextCount, runNextDisabledReason } from './format'
 import { TaskPriorityGlyph, TaskStatusGlyph } from './glyphs'
 import './tasks.css'
@@ -34,7 +33,7 @@ export function RosterQueue({
   const runCount = runNextCount(ready, live, cap)
   const disabledReason = runNextDisabledReason(ready, live, cap)
   return (
-    <div className="queue-panel" data-testid="roster-queue">
+    <RosterQueuePanel data-testid="roster-queue">
       <div className="queue-group"><span>Ready</span><span className="n">{ready}</span></div>
       {pool.length === 0 ? (
         <div className="queue-empty">No ready tasks.</div>
@@ -69,16 +68,16 @@ export function RosterQueue({
         <div className="queue-note">Settled children ({settled}) do not count against the cap</div>
         <div className="queue-actions">
           <Tooltip label={disabledReason ?? undefined} className="inline-flex">
-            <button
+            <Button
               type="button"
-              className={`btn ${BTN_PRIMARY} ${HIT_TARGET_28}`}
+              variant="legacy-primary"
               data-testid="queue-run-next"
               disabled={runCount === 0}
               onClick={() => queue.run(parentId, runCount)}
             >
               <Icon glyph={IconPlay} role="small" />
               Run next {runCount}
-            </button>
+            </Button>
           </Tooltip>
         </div>
         {queue.refusal !== null && (
@@ -86,7 +85,7 @@ export function RosterQueue({
         )}
         {queue.result !== null && <QueueResult result={queue.result} />}
       </div>
-    </div>
+    </RosterQueuePanel>
   )
 }
 

@@ -306,6 +306,17 @@ export function IconGitBranch(p: IconProps): React.JSX.Element {
   )
 }
 
+export function IconGitPullRequest(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <circle cx="18" cy="18" r="3" />
+      <circle cx="6" cy="6" r="3" />
+      <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+      <line x1="6" y1="9" x2="6" y2="21" />
+    </Svg>
+  )
+}
+
 export function IconUser(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>
@@ -542,6 +553,16 @@ export function IconServer(p: IconProps): React.JSX.Element {
       <rect x="3" y="14" width="18" height="6" rx="2" />
       <path d="M7 8h.01" />
       <path d="M7 17h.01" />
+    </Svg>
+  )
+}
+
+export function IconPlug(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M12 22v-5" />
+      <path d="M9 8V2M15 8V2" />
+      <path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
     </Svg>
   )
 }
@@ -1243,6 +1264,15 @@ export function IconTasks(p: IconProps): React.JSX.Element {
       <path d="M13 6h8" />
       <path d="M13 12h8" />
       <path d="M13 18h8" />
+    </Svg>
+  )
+}
+
+export function IconTag(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+      <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
     </Svg>
   )
 }

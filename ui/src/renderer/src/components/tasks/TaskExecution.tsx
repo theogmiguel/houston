@@ -6,6 +6,7 @@ import type { Task } from '../../houston/generated/Task'
 import type { TaskRun } from '../../houston/generated/TaskRun'
 import type { TaskRunAction } from '../../houston/generated/TaskRunAction'
 import type { TaskStartSettings } from '../../houston/useTasks'
+import { Button, TaskDrawerExecutionPanel } from '../ui'
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from '../buttonChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
 import { Icon } from '../Icon'
@@ -74,18 +75,25 @@ function RunControlButton({
   testId,
   label,
   primary,
+  presentation,
   readOnly,
   onClick
 }: {
   testId: string
   label: string
   primary: boolean
+  presentation: 'default' | 'drawer'
   readOnly: boolean
   onClick: () => void
 }): React.JSX.Element {
   return (
     <Tooltip label={readOnly ? READ_ONLY_REASON : undefined} className="inline-flex">
-      <button
+      {presentation === 'drawer' ? <Button
+        variant="secondary"
+        data-testid={testId}
+        disabled={readOnly}
+        onClick={onClick}
+      >{label}</Button> : <button
         type="button"
         className={`btn ${primary ? BTN_PRIMARY : BTN_GHOST} ${HIT_TARGET_28}`}
         data-testid={testId}
@@ -93,7 +101,7 @@ function RunControlButton({
         onClick={onClick}
       >
         {label}
-      </button>
+      </button>}
     </Tooltip>
   )
 }
@@ -105,7 +113,8 @@ function ExecutionActions({
   readOnly,
   onOpenSession,
   onReview,
-  onRunControl
+  onRunControl,
+  presentation
 }: {
   run: TaskRun
   session: SessionInfo | undefined
@@ -114,10 +123,21 @@ function ExecutionActions({
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
   onRunControl: (runId: number, action: TaskRunAction) => void
+  presentation: 'default' | 'drawer'
 }): React.JSX.Element {
   return (
     <div className="f">
-      {session && (
+      {presentation === 'drawer' && run.state === 'cancelled' && (
+        <RunControlButton
+          testId="task-run-start-again"
+          label="Start again"
+          primary
+          presentation={presentation}
+          readOnly={readOnly}
+          onClick={() => onRunControl(run.id, 'resume')}
+        />
+      )}
+      {session && presentation !== 'drawer' && (
         <button
           type="button"
           className={`btn ${BTN_PRIMARY} ${HIT_TARGET_28}`}
@@ -128,7 +148,11 @@ function ExecutionActions({
         </button>
       )}
       {session && (
-        <button
+        presentation === 'drawer' ? <Button
+          variant="secondary"
+          data-testid="task-run-review"
+          onClick={() => onReview(session)}
+        >Review changes</Button> : <button
           type="button"
           className={`btn ${BTN_SECONDARY} ${HIT_TARGET_28}`}
           data-testid="task-run-review"
@@ -143,6 +167,7 @@ function ExecutionActions({
           testId="task-run-retry"
           label="Retry with findings"
           primary
+          presentation={presentation}
           readOnly={readOnly}
           onClick={() => onRunControl(retryRunId, 'retry')}
         />
@@ -152,6 +177,7 @@ function ExecutionActions({
           testId="task-run-stop"
           label="Stop"
           primary={false}
+          presentation={presentation}
           readOnly={readOnly}
           onClick={() => onRunControl(run.id, 'stop')}
         />
@@ -161,6 +187,17 @@ function ExecutionActions({
           testId="task-run-resume"
           label="Resume"
           primary
+          presentation={presentation}
+          readOnly={readOnly}
+          onClick={() => onRunControl(run.id, 'resume')}
+        />
+      )}
+      {run.state === 'cancelled' && presentation !== 'drawer' && (
+        <RunControlButton
+          testId="task-run-start-again"
+          label="Start again"
+          primary
+          presentation={presentation}
           readOnly={readOnly}
           onClick={() => onRunControl(run.id, 'resume')}
         />
@@ -180,7 +217,10 @@ export function TaskExecutionCard({
   review,
   onOpenSession,
   onReview,
-  onRunControl
+  onRunControl,
+  presentation = 'default',
+  branchReuse,
+  pullRequestUrl
 }: {
   run: TaskRun
   sessions: ReadonlyMap<number, SessionInfo>
@@ -190,6 +230,9 @@ export function TaskExecutionCard({
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
   onRunControl: (runId: number, action: TaskRunAction) => void
+  presentation?: 'default' | 'drawer'
+  branchReuse?: string | null
+  pullRequestUrl?: string | null
 }): React.JSX.Element {
   const tone = runStateTone(run.state)
   const session = useSession(run.session_id ?? -1, run.session_id != null ? sessions.get(run.session_id) : undefined)
@@ -197,9 +240,25 @@ export function TaskExecutionCard({
   const outcome = review ?? null
   const retryRunId = outcome?.retryRunId ?? null
 
+  if (presentation === 'drawer') return <TaskDrawerExecution
+    run={run}
+    session={session}
+    now={now}
+    readOnly={readOnly}
+    outcome={outcome}
+    reason={reason}
+    retryRunId={retryRunId}
+    branchReuse={branchReuse}
+    pullRequestUrl={pullRequestUrl}
+    onOpenSession={onOpenSession}
+    onReview={onReview}
+    onRunControl={onRunControl}
+  />
+
   return (
     <div
       className={`exec ${run.state === 'waiting_for_input' ? 'needs' : ''}`}
+      data-presentation={presentation}
       data-testid="task-execution"
       style={{ marginTop: 10 }}
     >
@@ -208,9 +267,7 @@ export function TaskExecutionCard({
         <b>Execution · Attempt {run.attempt}</b>
         <span className={`tk-st ${tone}`}>{runStateLabel(run.state, run.kind)}</span>
         <span className="flex-1" />
-        <span className="font-mono text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">
-          {formatAge(run.started_at_ms, now)}
-        </span>
+        <span className="font-mono text-[length:var(--tr-text-label-size)] text-[var(--text-faint)]">{formatAge(run.started_at_ms, now)}</span>
       </div>
       <div className="r">
         {run.branch != null && run.branch !== '' && (
@@ -235,9 +292,67 @@ export function TaskExecutionCard({
         onOpenSession={onOpenSession}
         onReview={onReview}
         onRunControl={onRunControl}
+        presentation="default"
       />
     </div>
   )
+}
+
+function TaskDrawerExecution({
+  run,
+  session,
+  now,
+  readOnly,
+  outcome,
+  reason,
+  retryRunId,
+  branchReuse,
+  pullRequestUrl,
+  onOpenSession,
+  onReview,
+  onRunControl
+}: {
+  run: TaskRun
+  session: SessionInfo | undefined
+  now: number
+  readOnly: boolean
+  outcome: TaskReviewOutcome | null
+  reason: string | null
+  retryRunId: number | null
+  branchReuse?: string | null
+  pullRequestUrl?: string | null
+  onOpenSession: (sessionId: number) => void
+  onReview: (session: SessionInfo) => void
+  onRunControl: (runId: number, action: TaskRunAction) => void
+}): React.JSX.Element {
+  const branch = branchReuse ? `Reuses ${branchReuse}` : run.branch ? `Reuses ${run.branch}` : 'Reuses task worktree'
+  const pullRequest = pullRequestUrl ? pullRequestNumber(pullRequestUrl) : null
+  const age = runIsOpen(run.state) ? formatAge(run.started_at_ms, now) : `Stopped ${formatAge(run.ended_at_ms ?? run.started_at_ms, now)} ago`
+  const status = runIsOpen(run.state) ? runStateLabel(run.state, run.kind) : 'Idle'
+
+  return <TaskDrawerExecutionPanel
+    tone={run.state === 'waiting_for_input' ? 'needs' : runStateTone(run.state)}
+    status={status}
+    metadata={`${age} · Attempt ${run.attempt} · ${run.provider === 'claude' ? 'Claude Code' : taskAgentLabel(run.provider)}`}
+    reuse={`${branch} · ${pullRequest ? `pull request #${pullRequest}` : 'no pull request yet'}`}
+  >
+    {outcome !== null && <ReviewFindings outcome={outcome} />}
+    {reason !== null && reason !== '' && <RunReason reason={reason} />}
+    <ExecutionActions
+      run={run}
+      session={session}
+      retryRunId={retryRunId}
+      readOnly={readOnly}
+      onOpenSession={onOpenSession}
+      onReview={onReview}
+      onRunControl={onRunControl}
+      presentation="drawer"
+    />
+  </TaskDrawerExecutionPanel>
+}
+
+function pullRequestNumber(url: string): string | null {
+  return url.match(/\/pull\/(\d+)(?:\/|[?#]|$)/)?.[1] ?? null
 }
 
 // The execution card's slot for a task no run has opened. The mock has no

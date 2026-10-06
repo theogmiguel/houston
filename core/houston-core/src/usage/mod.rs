@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use houston_protocol as proto;
+use transcripts::UsageRecord;
 
 /// The base [`untracked_agents`] subtracts the covered providers from, so the
 /// section's "not tracked" list stays derived rather than hand-copied.
@@ -52,6 +53,8 @@ pub struct ScanRequest {
     pub catalog: crate::model_catalog::CatalogSnapshot,
     pub state_dir: PathBuf,
     pub sources: Vec<SourceSpec>,
+    pub workspaces: Vec<String>,
+    pub workspace_filter: Option<String>,
 }
 
 #[derive(Debug)]
@@ -62,6 +65,17 @@ pub struct ScanOutcome {
     pub scan_duration_ms: u64,
     pub duplicates_dropped: u64,
     pub out_of_window: u64,
+    pub rollups: Vec<UsageRollupPoint>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UsageRollupPoint {
+    pub day: String,
+    pub workspace_path: Option<String>,
+    pub provider: proto::UsageProvider,
+    pub model: String,
+    pub totals: proto::UsageTokenTotals,
+    pub cost_usd: f64,
 }
 
 pub fn default_root(provider: proto::UsageProvider, home: &Path) -> PathBuf {
@@ -115,7 +129,8 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
             let records = match cache.lookup(&key, file.size, file.mtime_ms, spec.provider) {
                 Some(records) => records,
                 None => match scan::read_records(&file.path, spec.provider) {
-                    Some(records) => {
+                    Some(mut records) => {
+                        attribute_workspaces(&mut records, &request.workspaces);
                         cache.store(&key, file.size, file.mtime_ms, spec.provider, &records);
                         cache_dirty = true;
                         records
@@ -155,13 +170,69 @@ pub fn scan(request: &ScanRequest) -> ScanOutcome {
     cache.flush();
 
     let result = aggregator.finish();
+    let mut daily = std::collections::HashMap::<
+        (String, Option<String>, proto::UsageProvider, String),
+        UsageRollupPoint,
+    >::new();
+    for bucket in &result.buckets {
+        let day = time::local_date_from_ms(bucket.hour_start_ms);
+        let key = (
+            day.clone(),
+            bucket.workspace_path.clone(),
+            bucket.provider,
+            bucket.model.clone(),
+        );
+        let entry = daily.entry(key).or_insert_with(|| UsageRollupPoint {
+            day,
+            workspace_path: bucket.workspace_path.clone(),
+            provider: bucket.provider,
+            model: bucket.model.clone(),
+            totals: proto::UsageTokenTotals::default(),
+            cost_usd: 0.0,
+        });
+        entry.totals.add(&bucket.totals);
+        entry.cost_usd += bucket.cost_usd;
+    }
+    let rollups = daily.into_values().collect();
+    let buckets = result
+        .buckets
+        .into_iter()
+        .filter(|bucket| {
+            request
+                .workspace_filter
+                .as_ref()
+                .is_none_or(|workspace| bucket.workspace_path.as_ref() == Some(workspace))
+        })
+        .collect();
     ScanOutcome {
-        buckets: result.buckets,
+        buckets,
         sources,
         pricing,
         scan_duration_ms: started.elapsed().as_millis() as u64,
         duplicates_dropped: result.duplicates_dropped,
         out_of_window: result.out_of_window,
+        rollups,
+    }
+}
+
+fn attribute_workspaces(records: &mut [UsageRecord], workspaces: &[String]) {
+    for record in records {
+        record.workspace_path = record.cwd.take().as_deref().and_then(|cwd| {
+            let cwd_path = Path::new(cwd);
+            let cwd_path =
+                std::fs::canonicalize(cwd_path).unwrap_or_else(|_| cwd_path.to_path_buf());
+            workspaces
+                .iter()
+                .filter_map(|workspace| {
+                    let path = Path::new(workspace);
+                    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                    cwd_path
+                        .starts_with(&path)
+                        .then_some((path.components().count(), workspace))
+                })
+                .max_by_key(|(depth, _)| *depth)
+                .map(|(_, workspace)| workspace.clone())
+        });
     }
 }
 
@@ -228,6 +299,8 @@ mod tests {
             catalog: crate::model_catalog::ModelCatalog::new(dir).load(false, false),
             state_dir: dir.to_path_buf(),
             sources,
+            workspaces: Vec::new(),
+            workspace_filter: None,
         }
     }
 

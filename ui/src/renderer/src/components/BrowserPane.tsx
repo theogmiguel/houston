@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } from './shadowChrome'
 import type { BrowserNode } from '../layout/tree'
-import { openSideBrowser } from '../sidePanel'
 import { openExternal } from '../houston/bridge'
 import { isTauri } from '../houston/host'
 import { nativeCommandErrorMessage } from '../houston/browserHost'
@@ -16,9 +15,6 @@ import {
   IconCollapse,
   IconExpand,
   IconExternal,
-  IconGlobe,
-  IconHistory,
-  IconPlus,
   IconRefresh,
   IconSearch,
   IconTarget,
@@ -41,9 +37,6 @@ import {
   type BrowserTab,
   TabWebview,
   TabsPopover,
-  clearRecents,
-  faviconInitial,
-  hostLabel,
   loadRecents,
   loadTabs,
   toNavUrl,
@@ -53,6 +46,10 @@ import { useBrowserNav } from './browserNav'
 import { tabsStorageKey } from './browserTabsKey'
 import { Icon } from './Icon'
 import { browserSecurity, useBrowserDevice, type BrowserDevice } from './browserDevices'
+import type { HoustonClient } from '../houston/client'
+import { BrowserPaneStageState } from './ui/BrowserPaneStates'
+import { hasBrowserPage, tabFailureHandler, useBrowserPaneLocalServers } from './browserPaneLocalServers'
+import { GridHiddenContext } from '../layout/gridHiddenContext'
 
 interface Props {
   node: BrowserNode
@@ -69,6 +66,7 @@ interface Props {
   panel?: boolean
   onMoveToGrid?: (url: string) => void
   focusUrlRequest?: number
+  client?: HoustonClient
 }
 
 const ICO_HEAD_BASE =
@@ -106,7 +104,8 @@ export function BrowserPane({
   loadRequest,
   panel = false,
   onMoveToGrid,
-  focusUrlRequest = 0
+  focusUrlRequest = 0,
+  client
 }: Props): React.JSX.Element {
   const stageRef = useRef<HTMLDivElement>(null)
   const [stage, setStage] = useState({ width: 0, height: 0 })
@@ -132,6 +131,10 @@ export function BrowserPane({
   const [urlFocused, setUrlFocused] = useState(false)
   const [popover, setPopover] = useState(false)
   const [failMsg, setFailMsg] = useState<string | null>(null)
+  const [failureAttempts, setFailureAttempts] = useState(0)
+  const [lastFailureAt, setLastFailureAt] = useState<number | null>(null)
+  const [showFailureDetails, setShowFailureDetails] = useState(false)
+  const gridHidden = useContext(GridHiddenContext)
   const [recents, setRecents] = useState<string[]>(loadRecents)
   const hostRef = useRef<HTMLDivElement>(null)
   const urlRef = useRef<HTMLInputElement>(null)
@@ -161,10 +164,21 @@ export function BrowserPane({
     { hiddenByExpand, onNativeError, setUrlInput, setFailMsg }
   )
 
+  const recordFailureAttempt: React.Dispatch<React.SetStateAction<number>> = (update) => {
+    setLastFailureAt(Date.now())
+    setFailureAttempts(update)
+  }
+
   const onNavigateRef = useRef(onNavigate)
   onNavigateRef.current = onNavigate
   useEffect(() => {
     if (active.url) onNavigateRef.current(active.url)
+    if (active.url) {
+      setFailMsg(null)
+      setFailureAttempts(0)
+      setLastFailureAt(null)
+      setShowFailureDetails(false)
+    }
   }, [active.url])
 
   const { browserState, goBack, goForward, reload, openUrl } = useBrowserNav(
@@ -196,6 +210,7 @@ export function BrowserPane({
   }, [fullscreen, surfaceMountFailed, tabs])
 
   const fresh = active.url === null
+  const localServers = useBrowserPaneLocalServers(client, workspaceDir, fresh, hiddenByExpand, gridHidden)
 
   useEffect(() => {
     if (hiddenByExpand) { setPopover(false); setFullscreen(false) }
@@ -272,7 +287,7 @@ export function BrowserPane({
             autoCorrect="off"
           />
         </div>
-        <BrowserHeadActions node={node} tabs={tabs} active={active} popover={popover} setPopover={setPopover} selectTab={selectTab} closeTab={closeTab} newTab={newTab} urlInput={urlInput} fullscreen={fullscreen} setFullscreen={setFullscreen} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} panel={panel} workspaceDir={workspaceDir} onSendToTerminal={onSendToTerminal} onMoveToGrid={onMoveToGrid} onClose={onClose} />
+        <BrowserHeadActions node={node} tabs={tabs} active={active} popover={popover} setPopover={setPopover} selectTab={selectTab} closeTab={closeTab} newTab={newTab} urlInput={urlInput} fullscreen={fullscreen} setFullscreen={setFullscreen} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} panel={panel} onSendToTerminal={onSendToTerminal} onMoveToGrid={onMoveToGrid} onClose={onClose} />
       </header>
       <div className="relative h-0.5 w-full overflow-hidden flex-none z-[var(--z-base)]" aria-hidden>
         {active.loading &&
@@ -314,25 +329,6 @@ export function BrowserPane({
           </button>
         </div>
       )}
-      {failMsg && (
-        <div
-          className="flex items-center gap-2 py-[6px] pr-3 pl-4 flex-none [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[color-mix(in_srgb,var(--danger)_92%,var(--text-primary))] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] border-b border-[color-mix(in_srgb,var(--danger)_28%,transparent)] z-[var(--z-base)]"
-          role="alert"
-        >
-          <span className={`flex-none w-1.5 h-1.5 rounded-[999px] bg-danger shadow-[${GLOW_DANGER}]`} aria-hidden />
-          <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{failMsg}</span>
-          <button
-            type="button"
-            className="btn flex-none py-0.5 px-[7px] border-0 rounded-[var(--tr-radius-input)] bg-transparent text-inherit font-semibold [transition:background_0.12s_ease] hover:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)]"
-            onClick={() => {
-              setFailMsg(null)
-              reload(false)
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      )}
       {surfaceMountFailed && (
         <div
           className="flex items-center gap-2 py-[6px] pr-3 pl-4 flex-none [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[color-mix(in_srgb,var(--danger)_92%,var(--text-primary))] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] border-b border-[color-mix(in_srgb,var(--danger)_28%,transparent)] z-[var(--z-base)]"
@@ -358,7 +354,7 @@ export function BrowserPane({
       </div>
       <PickerStrip id={node.id} controller={picker} />
       <div ref={stageRef} className="browser-stage">
-      {tabs.some((t) => t.url !== null) && !surfaceMountFailed && (
+      {hasBrowserPage(tabs, surfaceMountFailed, failMsg) && (
         <BrowserFullscreen
           active={fullscreen}
           onExit={() => setFullscreen(false)}
@@ -399,6 +395,8 @@ export function BrowserPane({
               const text = nativeCommandErrorMessage(context, surfaceId, err)
               console.error(text)
               setFailMsg(text)
+              recordFailureAttempt((count) => count + 1)
+              setShowFailureDetails(true)
               onNativeError?.(text)
             }}
             onDetachedChange={setDetached}
@@ -417,89 +415,28 @@ export function BrowserPane({
                   }}
                   onMeta={(meta) => patchTab(t.id, meta)}
                   onLoading={(loading) => patchTab(t.id, { loading })}
-                  onFail={(desc) => {
-                    if (t.id === active.id) setFailMsg(desc)
-                  }}
+                  onFail={tabFailureHandler(t.id, active.id, setFailMsg, recordFailureAttempt, setShowFailureDetails)}
                 />
               ))}
           </BrowserViewport>
         </BrowserFullscreen>
       )}
-      {!fresh && <span className="browser-caption">Select element · click to hand it to the focused agent</span>}
-      {fresh && (
-        <div className="h-full w-full flex items-center justify-center py-6 px-4 overflow-y-auto">
-          <div className="w-full max-w-[300px] flex flex-col items-start gap-3">
-            <div
-              className="inline-flex items-center justify-center w-8 h-8 rounded-[8px] bg-surface border border-border text-text-secondary"
-              aria-hidden
-            >
-              <Icon glyph={IconGlobe} role="heading" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <h2 className="m-0 [font-size:var(--tr-text-ui-size)] font-semibold tracking-[-0.01em] text-text-primary leading-[1.2]">
-                Browser
-              </h2>
-              <p className="m-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.5] text-text-muted">
-                Enter a URL, or pick a recent one below.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn inline-flex items-center gap-1.5 py-1 px-2.5 rounded-[var(--tr-radius-sm)] bg-surface text-text-primary border border-border [font-size:var(--tr-text-small-size)] font-medium [transition:background_0.14s_ease,border-color_0.14s_ease] hover:bg-[color-mix(in_srgb,var(--card-bg)_100%,var(--text-primary)_6%)] hover:border-[color-mix(in_srgb,var(--border)_100%,var(--text-primary)_15%)] active:scale-[0.98]"
-              data-testid="browser-pane-open-cta"
-              onClick={() => urlRef.current?.focus()}
-            >
-              <Icon glyph={IconPlus} role="label" />
-              <span>Open a page</span>
-            </button>
-            {recents.length > 0 && (
-              <div className="w-full flex flex-col gap-1.5">
-                <div className="flex items-center gap-[5px] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-text-muted">
-                  <Icon glyph={IconHistory} role="label" />
-                  Recently opened
-                  <button
-                    type="button"
-                    className="btn ml-auto py-px px-1.5 rounded-[var(--tr-radius-input)] bg-transparent border-0 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-text-muted [transition:color_0.12s_ease,background_0.12s_ease] hover:text-text-primary hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]"
-                    data-testid="browser-pane-clear-recents"
-                    onClick={() => {
-                      clearRecents()
-                      setRecents([])
-                    }}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <div className="flex flex-col gap-px">
-                  {recents.map((u) => (
-                    <Tooltip key={u} label={u}>
-                      <button
-                        type="button"
-                        className="btn group flex items-center gap-2.5 py-[6px] px-2 rounded-[var(--tr-radius-sm)] bg-transparent border-0 text-text-secondary text-left w-full [transition:background_0.12s_ease,color_0.12s_ease] hover:bg-[color-mix(in_srgb,var(--card-bg)_80%,transparent)] hover:text-text-primary active:bg-surface"
-                        onClick={() => openUrl(u)}
-                      >
-                        <span
-                          className="inline-flex items-center justify-center w-5 h-5 rounded-[var(--tr-radius-sm)] flex-none text-text-muted bg-surface border border-border font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase group-hover:text-text-secondary"
-                          aria-hidden
-                        >
-                          {faviconInitial(u)}
-                        </span>
-                        <span className="flex flex-col gap-px min-w-0 flex-1">
-                          <span className="[font-size:var(--tr-text-small-size)] font-medium text-inherit whitespace-nowrap overflow-hidden text-ellipsis">
-                            {hostLabel(u)}
-                          </span>
-                          <span className="[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] text-text-muted whitespace-nowrap overflow-hidden text-ellipsis">
-                            {u}
-                          </span>
-                        </span>
-                      </button>
-                    </Tooltip>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <BrowserPaneStageState
+        fresh={fresh}
+        failMsg={failMsg}
+        url={active.url ?? ''}
+        attempts={failureAttempts}
+        lastFailureAt={lastFailureAt}
+        details={showFailureDetails}
+        recents={recents}
+        setRecents={setRecents}
+        {...localServers}
+        urlRef={urlRef}
+        setFailMsg={setFailMsg}
+        setDetails={setShowFailureDetails}
+        reload={() => reload(false)}
+        openUrl={openUrl}
+      />
       </div>
     </section>
   )
@@ -510,7 +447,7 @@ function DevicePresetButtons({ device, onDevice, refusal, ready }: { device: Bro
   return <div className="browser-device-buttons" role="group" aria-label="Device preset">{([['desktop', 'Desktop', IconMonitor], ['phone', 'Phone 393 × 852', IconPhone], ['tablet', 'Tablet 820 × 1180', IconTablet]] as const).map(([value, label, glyph]) => <Tooltip key={value} label={refusal && value !== 'desktop' ? `${label} unavailable: ${refusal}` : label}><button className={NAV_BTN_CLS} aria-label={label} aria-pressed={device === value} disabled={value !== 'desktop' && (refusal != null || (isTauri() && !ready))} onClick={() => onDevice(value)}><Icon glyph={glyph} role="label" /></button></Tooltip>)}</div>
 }
 
-function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab, closeTab, newTab, urlInput, fullscreen, setFullscreen, detached, viewportRef, setDetachError, picker, panel, workspaceDir, onSendToTerminal, onMoveToGrid, onClose }: {
+function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab, closeTab, newTab, urlInput, fullscreen, setFullscreen, detached, viewportRef, setDetachError, picker, panel, onSendToTerminal, onMoveToGrid, onClose }: {
   node: BrowserNode
   tabs: ReturnType<typeof useBrowserTabs>['tabs']
   active: ReturnType<typeof useBrowserTabs>['active']
@@ -527,7 +464,6 @@ function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab
   setDetachError: React.Dispatch<React.SetStateAction<string | null>>
   picker: ReturnType<typeof usePickerController>
   panel: boolean
-  workspaceDir: string
   onSendToTerminal?: (text: string) => void
   onMoveToGrid?: (url: string) => void
   onClose: () => void
@@ -587,7 +523,7 @@ function BrowserHeadActions({ node, tabs, active, popover, setPopover, selectTab
             </button>
           </Tooltip>
           <BrowserNativeActions nodeId={node.id} fresh={fresh} detached={detached} viewportRef={viewportRef} setDetachError={setDetachError} picker={picker} onSendToTerminal={onSendToTerminal} />
-          <Tooltip label={panel ? 'Move to grid' : 'Move to side panel'}><button className={`${NAV_BTN_CLS}`} aria-label={panel ? 'Move to grid' : 'Move to side panel'} onClick={() => { if (panel) onMoveToGrid?.(active.url ?? ''); else { openSideBrowser(node.id, active.url ?? '', workspaceDir); onClose() } }}><Icon glyph={IconExternal} role="ui" /></button></Tooltip>
+          {panel && <Tooltip label="Move to grid"><button className={NAV_BTN_CLS} aria-label="Move to grid" onClick={() => onMoveToGrid?.(active.url ?? '')}><Icon glyph={IconExternal} role="ui" /></button></Tooltip>}
           <Tooltip label="Close">
             <button
               className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}

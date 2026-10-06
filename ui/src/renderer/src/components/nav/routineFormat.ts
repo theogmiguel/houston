@@ -60,9 +60,15 @@ export function lastRunLabel(lastRunAtMs: number, nowMs: number): string {
 }
 
 export function formatRunTime(startedAtMs: number, nowMs: number): string {
-  const d = new Date(startedAtMs)
-  const time = clockLabel(d.getHours(), d.getMinutes())
-  return `${time} · ${deltaLabel(nowMs - startedAtMs)} ago`
+  const started = new Date(startedAtMs)
+  const today = new Date(nowMs)
+  const startDay = Date.UTC(started.getFullYear(), started.getMonth(), started.getDate())
+  const todayDay = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  const daysAgo = Math.round((todayDay - startDay) / 86_400_000)
+  const time = clockLabel(started.getHours(), started.getMinutes())
+  if (daysAgo === 0) return `Today ${time}`
+  if (daysAgo === 1) return `Yesterday ${time}`
+  return `${MONTH_ABBR[started.getMonth()]} ${started.getDate()} ${time}`
 }
 
 export function nextUpBucket(nextRunAtMs: number, nowMs: number): 'today' | 'week' | 'later' {

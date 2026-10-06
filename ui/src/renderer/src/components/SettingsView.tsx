@@ -17,27 +17,27 @@ import type { McpSyncResult } from '../houston/generated/McpSyncResult'
 import { useSettingsSection } from '../settingsNav'
 import type { SettingsSectionId } from '../settingsSections'
 import { consumeSettingsRowJump } from '../settingsRowJump'
-import { PAGE_COLUMN_CLS, PAGE_COLUMN_WIDE_CLS } from './settingsPrimitives'
+import { PageFrame } from './ui/PageFrame'
 import { AboutSection } from './settings/AboutSection'
 import { WorkspaceDefaultsSection } from './settings/WorkspaceDefaultsSection'
-import { UsageTabSection } from './settings/UsageTabSection'
 import { AppearanceSection } from './settings/AppearanceSection'
 import { TerminalSection } from './settings/TerminalSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
 import { DaemonSection } from './settings/DaemonSection'
-import { AccountsSection } from './settings/AccountsSection'
 import { AgentStatusSection } from './settings/AgentStatusSection'
 import { PrivacySection } from './settings/PrivacySection'
 import { VoiceSection } from './settings/VoiceSection'
 import { ShortcutsSection } from './settings/ShortcutsSection'
 import { OrchestrationSection } from './settings/OrchestrationSection'
 import { TasksSection } from './settings/TasksSection'
-import type { UsageSummaryMsg } from './UsageSection'
+import { NotificationsSection } from './settings/NotificationsSection'
+import type { DesktopNotificationMode } from '../usePreferences'
 import type { AgentProfile } from '../houston/generated/AgentProfile'
 import type { AgentProfileActive } from '../houston/generated/AgentProfileActive'
 import type { SessionPolicy } from '../houston/generated/SessionPolicy'
 import type { OrchestrationCaps } from '../houston/generated/OrchestrationCaps'
 import type { AcpAgentInfo } from '../houston/generated/AcpAgentInfo'
+import type { UsageSummaryMsg } from './UsageSection'
 import { TERMINAL_LINE_HEIGHT_DEFAULT, TERMINAL_SCROLLBACK_DEFAULT } from '../usePreferences'
 import { MATERIAL_CLS, materialAttrs } from './material'
 
@@ -62,11 +62,11 @@ export interface McpStateView {
   checks: Extract<ServerMsg, { type: 'mcp_state' }>['checks']
 }
 
-interface Props {
+export interface Props {
   daemonClient?: HoustonClient | null
 
   chromeTheme: ChromeTheme
-  onChromeTheme: (t: ChromeTheme) => void
+  onChromeTheme: (t: ChromeTheme, origin: HTMLElement) => void
   theme: TerminalPaletteChoice
   onTheme: (t: TerminalPaletteChoice) => void
   shellIntegration: boolean
@@ -133,6 +133,11 @@ interface Props {
   onUpdatePolicySet: (policy: UpdatePolicy) => void
   onOpenExternal: (url: string) => void
   liveSessionCount?: number
+  desktopNotificationMode?: DesktopNotificationMode
+  onDesktopNotificationMode?: (mode: DesktopNotificationMode) => void
+  inAppNotifications?: boolean
+  onInAppNotifications?: (enabled: boolean) => void
+  desktopNotificationDelivery?: { allowed: boolean; error?: string } | null
 
   onRestoreBudgetSet: (n: number) => void
   onRestoreResumeSet: (on: boolean) => void
@@ -146,16 +151,16 @@ interface Props {
   onMailboxRetentionSet: (hours: number) => void
 
   hostInfo: HostInfo | null
+  usage: UsageSummaryMsg | null
+  usageLoading: boolean
+  usageError: string | null
+  onUsageRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
   agentHooks: AgentHookState[] | null
   agentHooksCheckedAt?: number | null
   onAgentHooksSet: (provider: AgentKind, enabled: boolean) => void
   onAgentHooksRefresh: () => void
   onOpenHooks: () => void
   onRevealSessionDb: () => void
-  usage: UsageSummaryMsg | null
-  usageLoading: boolean
-  usageError: string | null
-  onUsageRequest: (sinceMs: number, untilMs: number, refreshPricing: boolean) => void
 }
 
 function SectionDispatch({
@@ -242,10 +247,11 @@ function SectionDispatch({
   onAgentHooksRefresh,
   onOpenHooks,
   onRevealSessionDb,
-  usage,
-  usageLoading,
-  usageError,
-  onUsageRequest
+  desktopNotificationMode,
+  onDesktopNotificationMode,
+  inAppNotifications,
+  onInAppNotifications,
+  desktopNotificationDelivery
 }: SectionDispatchProps): React.JSX.Element {
   return (
     <>
@@ -254,7 +260,6 @@ function SectionDispatch({
             chromeTheme={chromeTheme}
             onChromeTheme={onChromeTheme}
             theme={theme}
-            onTheme={onTheme}
             uiZoom={uiZoom}
             onUiZoom={onUiZoom}
           />
@@ -262,6 +267,9 @@ function SectionDispatch({
 
         {section === 'terminal' && (
           <TerminalSection
+            chromeTheme={chromeTheme}
+            theme={theme}
+            onTheme={onTheme}
             fontSize={fontSize}
             onFontSize={onFontSize}
             fontMin={fontMin}
@@ -292,7 +300,7 @@ function SectionDispatch({
           <ShortcutsSection keymapOverrides={keymapOverrides} onKeymapOverrides={onKeymapOverrides} />
         )}
 
-        {section === 'voice' && (
+        {section === 'dictation' && (
           <VoiceSection
             voiceSettings={voiceSettings}
             voiceCloudKeyPresent={voiceCloudKeyPresent}
@@ -310,23 +318,19 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'agent-setup' && (
-          <AgentStatusSection
-            providers={agentHooks}
-            onSet={onAgentHooksSet}
-            onRefresh={onAgentHooksRefresh}
-            checkedAt={agentHooksCheckedAt}
-          />
-        )}
-
-        {section === 'accounts' && (
-          <AccountsSection
-            client={daemonClient ?? null}
-            agentProfiles={agentProfiles}
-            onAgentProfileUpsert={onAgentProfileUpsert}
-            onAgentProfileDelete={onAgentProfileDelete}
-            onAgentProfileSetActive={onAgentProfileSetActive}
-          />
+        {section === 'agents' && (
+          <>
+            <AgentStatusSection
+              providers={agentHooks}
+              onSet={onAgentHooksSet}
+              onRefresh={onAgentHooksRefresh}
+              checkedAt={agentHooksCheckedAt}
+              agentProfiles={agentProfiles}
+              onAgentProfileUpsert={onAgentProfileUpsert}
+              onAgentProfileDelete={onAgentProfileDelete}
+              onAgentProfileSetActive={onAgentProfileSetActive}
+            />
+          </>
         )}
 
         {section === 'orchestration' && (
@@ -363,6 +367,15 @@ function SectionDispatch({
           />
         )}
 
+        <NotificationsSlot
+          section={section}
+          desktopNotificationMode={desktopNotificationMode}
+          onDesktopNotificationMode={onDesktopNotificationMode}
+          inAppNotifications={inAppNotifications}
+          onInAppNotifications={onInAppNotifications}
+          desktopNotificationDelivery={desktopNotificationDelivery}
+        />
+
         {section === 'about' && (
           <AboutSection
             onContact={onContact}
@@ -376,40 +389,30 @@ function SectionDispatch({
           />
         )}
 
-        {section === 'workspace-defaults' && (
+        {section === 'workspaces' && (
           <WorkspaceDefaultsSection
             onRestoreBudgetSet={onRestoreBudgetSet}
             onRestoreResumeSet={onRestoreResumeSet}
             onWorktreeCleanupSet={onWorktreeCleanupSet}
             openLinksInPane={openLinksInPane}
             onOpenLinksInPane={onOpenLinksInPane}
-            historyWorkspace={historyWorkspace}
-            historyWorkspaceName={historyWorkspaceName}
             hostInfo={hostInfo}
             sessionPolicy={sessionPolicy}
             onSessionPolicy={onSessionPolicy}
           />
         )}
 
-        {section === 'usage' && (
-          <UsageTabSection
-            usage={usage}
-            usageLoading={usageLoading}
-            usageError={usageError}
-            onUsageRequest={onUsageRequest}
-          />
+        {section === 'daemon' && (
+          <>
+            <DiagnosticsSection
+              hostInfo={hostInfo}
+              agentHooks={agentHooks}
+              onOpenHooks={onOpenHooks}
+              onOpenLogsFolder={onOpenLogsFolder}
+            />
+            <DaemonSection />
+          </>
         )}
-
-        {section === 'diagnostics' && (
-          <DiagnosticsSection
-            hostInfo={hostInfo}
-            agentHooks={agentHooks}
-            onOpenHooks={onOpenHooks}
-            onOpenLogsFolder={onOpenLogsFolder}
-          />
-        )}
-
-        {section === 'daemon' && <DaemonSection />}
     </>
   )
 }
@@ -427,6 +430,21 @@ type SectionDispatchProps = Omit<Props, keyof ResolvedTuningProps> &
   ResolvedTuningProps & { section: SettingsSectionId }
 
 const NOOP = (): void => {}
+
+type NotificationsSlotProps = Pick<Props, 'desktopNotificationMode' | 'onDesktopNotificationMode' | 'inAppNotifications' | 'onInAppNotifications' | 'desktopNotificationDelivery'> & { section: SettingsSectionId }
+
+function NotificationsSlot(props: NotificationsSlotProps): React.JSX.Element | null {
+  if (props.section !== 'notifications') return null
+  return (
+    <NotificationsSection
+      desktopMode={props.desktopNotificationMode ?? 'off'}
+      onDesktopMode={props.onDesktopNotificationMode ?? NOOP}
+      inApp={props.inAppNotifications ?? false}
+      onInApp={props.onInAppNotifications ?? NOOP}
+      delivery={props.desktopNotificationDelivery ?? null}
+    />
+  )
+}
 
 export function SettingsView(props: Props): React.JSX.Element {
   const section = useSettingsSection()
@@ -461,13 +479,7 @@ export function SettingsView(props: Props): React.JSX.Element {
       className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
       {}
-      <div
-        className={`w-full min-w-0 mx-auto px-[var(--space-6)] pt-[var(--space-6)] pb-[60px] ${
-          section === 'usage' || section === 'agent-setup'
-            ? PAGE_COLUMN_WIDE_CLS
-            : PAGE_COLUMN_CLS
-        }`}
-      >
+      <PageFrame width={section === 'agents' ? 'settingsWide' : 'settings'} scroll={false} padding="settings">
         <SectionDispatch
           {...props}
           section={section}
@@ -478,7 +490,7 @@ export function SettingsView(props: Props): React.JSX.Element {
           terminalScrollbackLines={terminalScrollbackLines}
           onTerminalScrollbackLines={onTerminalScrollbackLines}
         />
-      </div>
+      </PageFrame>
     </div>
   )
 }

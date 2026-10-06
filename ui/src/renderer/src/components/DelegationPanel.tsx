@@ -5,7 +5,8 @@ import { isLive } from '../houston/client'
 import { Icon } from './Icon'
 import { IconEye, IconGitFork } from './icons'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS, popOriginStyle } from './overlayChrome'
-import { BTN_GHOST } from './buttonChrome'
+import { Button } from './ui'
+import { StatusLabel } from './ui'
 import { Tooltip } from './Tooltip'
 import { ProvisionalMarker, sessionCodename, sessionIdentity, sessionTaskLabel, needsHumanInput, stateWord, type BadgeKind, type PaneRoster } from './DelegationCard'
 
@@ -25,21 +26,12 @@ function stateTone(d: DelegationInfo): string {
   return 'text-[var(--text-muted)]'
 }
 
-const PILL_CLS =
-  'inline-flex items-center h-[17px] px-2 rounded-[var(--tr-radius-sm)] flex-none ' +
-  '[font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] ' +
-  '[letter-spacing:var(--tr-text-label-tracking)] uppercase'
-
-function pillCls(d: DelegationInfo): string {
-  if (isWaiting(d) || (d.stalled && d.state === 'working'))
-    return `${PILL_CLS} bg-[var(--status-todo-bg)] text-[var(--status-todo-text)]`
-  if (d.state === 'failed')
-    return `${PILL_CLS} bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)]`
-  if (d.state === 'done')
-    return `${PILL_CLS} bg-[var(--status-done-bg)] text-[var(--status-done-text)]`
-  if (d.state === 'working' || d.state === 'spawning')
-    return `${PILL_CLS} bg-[var(--status-doing-bg)] text-[var(--status-doing-text)]`
-  return `${PILL_CLS} bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] text-[var(--text-muted)]`
+function pillTone(d: DelegationInfo): 'waiting' | 'failed' | 'done' | 'working' | 'unknown' {
+  if (isWaiting(d) || (d.stalled && d.state === 'working')) return 'waiting'
+  if (d.state === 'failed') return 'failed'
+  if (d.state === 'done') return 'done'
+  if (d.state === 'working' || d.state === 'spawning') return 'working'
+  return 'unknown'
 }
 
 function agoLabel(endedAt: number): string {
@@ -175,13 +167,14 @@ function RecordBody({
                 <span className="flex flex-col gap-1">
                   <span>{d.hold_reason}</span>
                   {parentId != null && onDeliverNow != null && (
-                    <button
+                    <Button
                       type="button"
-                      className={`btn ${BTN_GHOST} self-start px-1.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]`}
+                      variant="ghost"
+                      className="self-start px-1.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)]"
                       onClick={() => onDeliverNow(parentId)}
                     >
                       Deliver now
-                    </button>
+                    </Button>
                   )}
                 </span>
               </CardRow>
@@ -255,9 +248,10 @@ function RosterBody({
               (value): value is string => value != null
             )
             return (
-              <button
+              <Button
                 key={c.id}
                 type="button"
+                variant="text"
                 className={CREW_ROW_CLS}
                 onClick={() => onFocusPane?.(c.id)}
               >
@@ -280,7 +274,7 @@ function RosterBody({
                 >
                   {d ? stateWord(d) : 'no record'}
                 </span>
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -288,14 +282,6 @@ function RosterBody({
     </>
   )
 }
-
-const LEVER_CLS =
-  'h-[var(--h-pill)] px-2.5 inline-flex items-center gap-1.5 border border-[var(--border)] ' +
-  'rounded-[var(--tr-radius-button)] bg-[var(--surface)] text-[var(--text-secondary)] ' +
-  'font-[inherit] [font-size:var(--tr-text-xs)] cursor-pointer ' +
-  'transition-[background,border-color] hover:bg-[var(--hover-fill)] ' +
-  'hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] ' +
-  'focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:[outline-offset:1px]'
 
 const OFFSET_PX = 6
 const VIEWPORT_MARGIN_PX = 8
@@ -335,9 +321,9 @@ function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React
         </span>
         <span className="ml-auto" />
         {waiting > 0 && (
-          <span className={`${PILL_CLS} bg-[var(--status-todo-bg)] text-[var(--status-todo-text)]`}>
+          <StatusLabel status="Needs input" variant="pill" tone="waiting">
             {waiting} waiting
-          </span>
+          </StatusLabel>
         )}
       </div>
     )
@@ -352,7 +338,9 @@ function CardHead({ kind, info }: { kind: BadgeKind; info: SessionInfo }): React
       )}
       <span className="ml-auto" />
       {d && (
-        <span className={pillCls(d)}>{stateWord(d)}</span>
+        <StatusLabel status="Working" variant="pill" tone={pillTone(d)}>
+          {stateWord(d)}
+        </StatusLabel>
       )}
     </div>
   )
@@ -372,9 +360,9 @@ function FocusLever({
 }): React.JSX.Element {
   return (
     <div className={SECTION_CLS}>
-      <button
+      <Button
         type="button"
-        className={LEVER_CLS}
+        variant="legacy-focus-lever"
         onClick={() => {
           onDone()
           onFocusPane(target)
@@ -382,7 +370,7 @@ function FocusLever({
       >
         <Icon glyph={IconEye} role="label" />
         Focus parent
-      </button>
+      </Button>
     </div>
   )
 }
@@ -481,4 +469,3 @@ export default function DelegationPanel({
     </div>
   )
 }
-

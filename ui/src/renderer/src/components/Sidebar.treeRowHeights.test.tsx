@@ -80,14 +80,14 @@ describe('Sidebar — D9 workspace-tree row heights, copied from the carve', () 
     expect(row?.className).not.toContain('h-[38px]')
   })
 
-  it('a grid (tab) child row sits on --h-row, not its own h-8 step', () => {
+  it('a two-line grid row is at least one rail-row tall', () => {
     render({
       workspaces: [ws('/a', 'alpha')],
       selected: '/a',
       gridsByWorkspace: { '/a': [{ id: 'g1', name: 'Main' }] }
     })
     const grid = container.querySelector<HTMLButtonElement>('[data-testid="grid-row"]')
-    expect(grid?.className).toContain(ROW)
+    expect(grid?.className).toContain('min-h-[var(--h-row)]')
     expect(grid?.className).not.toContain('h-8')
   })
 

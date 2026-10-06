@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
 import type { AgentKind } from '../houston/client'
-import { effectiveLabel, newTerminal } from '../keymap'
+import { effectiveLabel, newBrowserPane, newTerminal } from '../keymap'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentProfileState } from './SettingsView'
 import type { ProfileChoice } from '../houston/generated/ProfileChoice'
+import type { WorkspaceAction } from '../houston/client'
+import { PaneMenuRow } from './ui/PaneMenuRow'
+import { WorkspaceActions } from './ui/WorkspaceActions'
 import {
   AGENT_DOT_COLOR,
   IconAgent,
   IconChevronRight,
+  IconGlobe,
   IconGrid,
   IconSplitDown,
   IconSquareTerminal
@@ -31,10 +35,15 @@ export interface AddPanePopoverProps {
   keymapOverrides: KeymapOverrides
   onClose: () => void
   onNewTerminal: () => void
+  onNewBrowser: () => void
   onSpawnAgent: (agent: AgentKind, profile?: ProfileChoice) => void
   onSplitDown?: () => void
   onNewGrid: () => void
   agentProfiles: AgentProfileState | null
+  workspaceActions?: WorkspaceAction[]
+  onRunWorkspaceAction?: (action: WorkspaceAction) => void
+  onSaveWorkspaceAction?: (action: WorkspaceAction) => void
+  onDeleteWorkspaceAction?: (id: string) => void
 }
 
 export function AddPanePopover({
@@ -44,10 +53,15 @@ export function AddPanePopover({
   keymapOverrides,
   onClose,
   onNewTerminal,
+  onNewBrowser,
   onSpawnAgent,
   onSplitDown,
   onNewGrid,
-  agentProfiles
+  agentProfiles,
+  workspaceActions = [],
+  onRunWorkspaceAction = () => {},
+  onSaveWorkspaceAction = () => {},
+  onDeleteWorkspaceAction = () => {}
 }: AddPanePopoverProps): React.JSX.Element {
   const [expandedProfileAgent, setExpandedProfileAgent] = useState<AgentKind | null>(null)
 
@@ -79,19 +93,36 @@ export function AddPanePopover({
       <div className="px-3 pt-1 pb-0.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
         New pane
       </div>
-      <button
-        className="flex items-center gap-2.5 px-3 min-h-[var(--h-ctl)] text-left bg-transparent border-none [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)]"
+      <PaneMenuRow
+        icon={IconSquareTerminal}
+        label="Terminal"
+        shortcut={effectiveLabel(newTerminal, keymapOverrides)}
         onClick={() => {
           onClose()
           onNewTerminal()
         }}
-      >
-        <Icon glyph={IconSquareTerminal} role="ui" className="text-[var(--text-muted)] flex-none" />
-        <span className="flex-1">Terminal</span>
-        <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] font-mono text-[var(--text-faint)]">
-          {effectiveLabel(newTerminal, keymapOverrides)}
-        </span>
-      </button>
+      />
+      <PaneMenuRow
+        data-testid="add-pane-browser"
+        icon={IconGlobe}
+        label="Browser"
+        shortcut={effectiveLabel(newBrowserPane, keymapOverrides)}
+        disabledReason={hasWorkspace ? undefined : 'Open a workspace to open a browser'}
+        onClick={() => {
+          onClose()
+          onNewBrowser()
+        }}
+      />
+      {hasWorkspace && (
+        <WorkspaceActions
+          variant="menu"
+          actions={workspaceActions}
+          keymapOverrides={keymapOverrides}
+          onRun={(action) => { onClose(); onRunWorkspaceAction(action) }}
+          onSave={onSaveWorkspaceAction}
+          onDelete={onDeleteWorkspaceAction}
+        />
+      )}
       <div className="h-px my-1 mx-0 bg-[var(--glass-brd)]" />
       <div className="px-3 pt-1 pb-0.5 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
         Agent

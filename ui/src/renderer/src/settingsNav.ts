@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { NAVIGABLE_SETTINGS_SECTIONS, type SettingsSectionId } from './settingsSections'
+import { LEGACY_SETTINGS_SECTION, NAVIGABLE_SETTINGS_SECTIONS, type SettingsSectionId } from './settingsSections'
 
 const SECTION_KEY = 'tr-settings-section'
 
@@ -9,10 +9,16 @@ function isNavigable(v: unknown): v is SettingsSectionId {
   return NAVIGABLE_SETTINGS_SECTIONS.some((s) => s.id === v)
 }
 
+function canonical(v: unknown): SettingsSectionId | null {
+  if (isNavigable(v)) return v
+  if (typeof v === 'string') return LEGACY_SETTINGS_SECTION[v] ?? null
+  return null
+}
+
 function load(): SettingsSectionId {
   try {
     const raw = localStorage.getItem(SECTION_KEY)
-    return isNavigable(raw) ? raw : DEFAULT_SECTION
+    return canonical(raw) ?? DEFAULT_SECTION
   } catch {
     return DEFAULT_SECTION
   }
@@ -48,14 +54,27 @@ export function isSettingsOpen(): boolean {
   return open
 }
 
-export function setSettingsSection(next: SettingsSectionId): void {
-  if (!isNavigable(next) || next === section) return
-  section = next
+export function setSettingsSection(next: SettingsSectionId | string): void {
+  const target = canonical(next)
+  if (!target || target === section) return
+  section = target
   try {
-    localStorage.setItem(SECTION_KEY, next)
+    localStorage.setItem(SECTION_KEY, target)
   } catch {
   }
   emit()
+}
+
+export function settingsSectionLabel(): string {
+  return NAVIGABLE_SETTINGS_SECTIONS.find((item) => item.id === section)?.label ?? ''
+}
+
+export function shouldIgnoreInputKey(target: HTMLElement, event: KeyboardEvent, settingsOpen: boolean): boolean {
+  return (
+    ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) &&
+    event.key !== 'Escape' &&
+    !(settingsOpen && event.ctrlKey && event.key === ',')
+  )
 }
 
 export function openSettings(at?: SettingsSectionId): void {
@@ -69,10 +88,10 @@ export function closeSettings(): void {
 
 export function setSettingsNavForTests(next: {
   open?: boolean
-  section?: SettingsSectionId
+  section?: SettingsSectionId | string
 }): void {
   if (next.open !== undefined) open = next.open
-  if (next.section !== undefined && isNavigable(next.section)) section = next.section
+  if (next.section !== undefined) section = canonical(next.section) ?? section
   emit()
 }
 

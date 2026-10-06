@@ -53,6 +53,15 @@ async function openRoutines(container: Element): Promise<void> {
   act(() => (row as HTMLElement).click())
 }
 
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const { act } = await import('react')
+  for (let i = 0; i < 100; i++) {
+    if (predicate()) return
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)) })
+  }
+  throw new Error('Timed out waiting for the routine surface to update')
+}
+
 describe('App — Routines wiring', () => {
   let harness: AppHarness | null = null
 
@@ -69,39 +78,38 @@ describe('App — Routines wiring', () => {
     expect(currentClient().routineList).toHaveBeenCalled()
   })
 
-  it('a delivered roster renders on the "Next up" surface with its create affordance', async () => {
+  it('a delivered roster renders in the Routines list-detail page', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
     act(() => deliverControl({ type: 'routines', running: [], routines: [routine()] }))
+    await waitFor(() => container.querySelector('[data-testid="routine-run-now"]') !== null)
     expect(container.textContent).toContain('Inbox triage')
     expect(container.querySelector('[data-testid="routine-create"]')).toBeTruthy()
-    expect(container.querySelector('[data-testid="routine-run-now"]')).toBeTruthy()
+    expect(container.textContent).toContain('Schedule')
   })
 
-  it('a run in flight reads as Running rather than as a next time', async () => {
+  it('a run in flight shows the Working status', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
     act(() => deliverControl({ type: 'routines', running: [1], routines: [routine()] }))
-    expect(container.textContent).toContain('Running')
+    await waitFor(() => container.textContent?.includes('Working') ?? false)
+    expect(container.textContent).toContain('Working')
   })
 
-  it('opening a routine\'s history asks for its runs and renders the delivered record', async () => {
+  it('loads a routine\'s history and opens the delivered run pane', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
     await openRoutines(container)
     act(() => deliverControl({ type: 'routines', running: [], routines: [routine()] }))
-    act(() =>
-      (container.querySelector('[data-testid="routine-history-toggle"]') as HTMLElement).click()
-    )
+    await waitFor(() => container.textContent?.includes('Loading runs…') ?? false)
     expect(currentClient().routineRuns).toHaveBeenCalledWith(1)
     act(() => deliverControl({ type: 'routine_runs', runs: [run()] }))
-    const row = container.querySelector('[data-testid="routine-run-row"]')
-    expect(row?.textContent).toContain('Ok')
+    await waitFor(() => container.querySelector('[data-testid="routine-run-open"]') !== null)
     expect(container.querySelector('[data-testid="routine-run-open"]')).toBeTruthy()
   })
 
@@ -111,18 +119,17 @@ describe('App — Routines wiring', () => {
     const { act } = await import('react')
     await openRoutines(container)
     act(() => deliverControl({ type: 'routines', running: [], routines: [routine()] }))
-    act(() =>
-      (container.querySelector('[data-testid="routine-history-toggle"]') as HTMLElement).click()
-    )
+    await waitFor(() => container.textContent?.includes('Loading runs…') ?? false)
     act(() => deliverControl({ type: 'routine_runs', runs: [] }))
+    await waitFor(() => container.textContent?.includes('No runs yet') ?? false)
     act(() =>
       deliverControl({
         type: 'routine_run_event',
         run: run({ id: 6, status: 'running', ended_at_ms: null })
       })
     )
-    const rows = container.querySelectorAll('[data-testid="routine-run-row"]')
-    expect(rows).toHaveLength(1)
-    expect(rows[0].textContent).toContain('Running')
+    await waitFor(() => container.textContent?.includes('Working') ?? false)
+    expect(container.querySelectorAll('[data-testid="table-row"]')).toHaveLength(1)
+    expect(container.textContent).toContain('Working')
   })
 })

@@ -98,6 +98,15 @@ for five minutes. This is a diagnostic heuristic, not a request for human input.
 when a matching tool completion, a new user prompt or authoritative turn end/interruption arrives. Houston
 does not send keys or a desktop notification in response to it.
 
+## Watch a pull request
+
+From an agent pane, ask the agent to watch an open GitHub pull request. The agent calls
+`pane_pr_watch` with a pull request number or URL, then ends its turn. Houston checks the pull
+request once a minute and wakes that pane when a check fails, all reported checks pass, a new
+review or comment arrives, or the branch becomes conflicted with its base. A watch stops when the
+pull request is merged or closed, after repeated read failures, or after ten comment-only wakes.
+Use `pane_pr_unwatch` when updates are no longer needed.
+
 ## Workspaces and child lifetime
 
 By default, a child starts in the parent's current directory when it is inside the
@@ -257,7 +266,8 @@ children are Working; an interrupted mission is not reported as successful.
 Children report results, requests for input and delivery problems to their parent
 orchestrator. The orchestrator answers the child or asks you for a decision. Spawn
 warnings return to the orchestrator; they do not appear in "Addressed to you".
-Only a top-level pane waiting for your input triggers a desktop notification.
+With Settings › Notifications enabled, a top-level pane can trigger a desktop notification
+or an in-app notice when it finishes or needs your input. Child panes report to their parent.
 The "Addressed to you" group is hidden when empty.
 
 Provider usage limits and API failures reported by Claude, Grok or OpenCode leave

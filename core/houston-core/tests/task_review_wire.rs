@@ -111,6 +111,8 @@ impl Rig {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .expect("fixture pane spawns")
             .id
@@ -574,6 +576,7 @@ fn seed_session(db: &Db, id: u32, dir: &Path, agent: proto::AgentKind, spawned_b
         ssh_host: None,
         restore_deferred: None,
         status: None,
+        status_since_ms: None,
         context: None,
         swarm_agent: None,
         spawned_by,

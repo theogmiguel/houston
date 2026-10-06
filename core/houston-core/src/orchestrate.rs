@@ -2249,6 +2249,8 @@ workaround for the other.
 | block until settled | `pane_wait` | `hs-pane wait` |
 | end it | `pane_kill` | `hs-pane kill` |
 | hand back a result | `pane_submit` | `hs-pane submit` |
+| watch a pull request | `pane_pr_watch` | `hs-pane pr-watch` |
+| stop pull request watches | `pane_pr_unwatch` | `hs-pane pr-unwatch` |
 
 Everything below is written with the CLI's spelling; read the table across
 for the tool call.
@@ -2260,7 +2262,7 @@ This file does not repeat the flags on purpose: it ships once and the binary
 changes, so the binary is the authority.
 
 The verbs: `whoami`, `spawn`, `list`, `get`, `prompt`, `keys`, `wait`,
-`read`, `kill`, `submit`. Output is JSON (`read` prints plain lines).
+`read`, `kill`, `submit`, `pr-watch`, `pr-unwatch`. Output is JSON (`read` prints plain lines).
 
 ## Reading a pane
 
@@ -2653,7 +2655,9 @@ hs-pane — a Houston pane controlling sibling agent panes
   hs-pane submit <result text…> [--summary \"…\"] [--artifacts A,B]
                                          (worker → parent handoff; wakes your
                                           parent. --artifacts is a comma-separated
-                                          list of files inside this workspace)";
+                                          list of files inside this workspace)
+  hs-pane pr-watch <PR URL|number>      (watch this GitHub PR, then end your turn)
+  hs-pane pr-unwatch                    (stop every PR watch for this pane)";
 
 pub fn run_pane_cli(args: &[String]) -> i32 {
     match pane_cli_inner(args) {
@@ -2745,6 +2749,15 @@ fn pane_cli_inner(args: &[String]) -> anyhow::Result<()> {
     };
 
     match cmd.as_str() {
+        "pr-watch" => {
+            let target = join_rest(&positional, "PR URL or number")?;
+            let v = call("POST", "/orchestrate/pr-watch", Some(json!({"pr": target})))?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        "pr-unwatch" => {
+            let v = call("POST", "/orchestrate/pr-unwatch", Some(json!({})))?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
         "whoami" => {
             let v = call("GET", "/orchestrate/whoami", None)?;
             println!("{}", serde_json::to_string_pretty(&v)?);

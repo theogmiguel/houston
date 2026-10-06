@@ -9,6 +9,7 @@ import type { SettingsSectionId } from '../settingsSections'
 import { baseSettingsViewProps, hostInfoFixture } from './settingsViewTestFixtures'
 import type { VoiceSettings } from '../houston/generated/VoiceSettings'
 import type { KeymapOverrides } from '../houston/client'
+import type { AgentHookState } from '../houston/generated/AgentHookState'
 
 const { daemonStatusMock } = vi.hoisted(() => ({ daemonStatusMock: vi.fn() }))
 vi.mock('../houston/manage', async () => {
@@ -58,12 +59,16 @@ function orchestrationStateFixture(): OrchestrationStateView {
 const SECTION_OVERRIDES: Partial<
   Record<SettingsSectionId, Partial<React.ComponentProps<typeof SettingsView>>>
 > = {
+  agents: {
+    agentHooks: (['claude', 'codex', 'opencode', 'cursor', 'grok'] as const).map((provider) => ({ provider, path: `~/.${provider}/settings.json`, scope: 'workspace', enabled: true, installed: true, error: null, present: true, version: '1.0.0', trust: null })) as AgentHookState[],
+    agentProfiles: { profiles: [], active: [] }
+  },
   orchestration: {
     orchestrationState: orchestrationStateFixture(),
     hostInfo: hostInfoFixture()
   },
-  voice: { voiceSettings: voiceSettingsFixture() },
-  diagnostics: { hostInfo: hostInfoFixture() }
+  dictation: { voiceSettings: voiceSettingsFixture() },
+  daemon: { hostInfo: hostInfoFixture() }
 }
 
 describe('settingsRowRegistry — every registered title actually renders', () => {
@@ -117,6 +122,12 @@ describe('settingsRowRegistry — every registered title actually renders', () =
         )
       })
       await flush()
+
+      if (section === 'agents') {
+        const claude = host.querySelector<HTMLButtonElement>('[data-testid="list-detail-item"]')
+        expect(claude?.textContent).toContain('Claude Code')
+        act(() => claude?.click())
+      }
 
       for (const title of titles) {
         const row = Array.from(

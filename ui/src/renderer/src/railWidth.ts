@@ -14,8 +14,8 @@ export const RAIL_MAX = 420;
 // A drag under this collapses the rail; the stored width is what the expand button restores.
 export const RAIL_COLLAPSE_AT = 160;
 
-// Below this a chip's name never fits beside its dot, so rail rows go dot-only.
-export const RAIL_TAG_DOT_AT = 240;
+// Grid rows show their tag mark from this width; narrower, the branch name needs every pixel.
+export const RAIL_TAG_MARK_AT = 240;
 
 export function clampRailWidth(px: number): number {
   return Math.min(RAIL_MAX, Math.max(RAIL_MIN, Math.round(px)));

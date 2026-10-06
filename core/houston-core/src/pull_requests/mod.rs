@@ -1,4 +1,5 @@
 pub(crate) mod github;
+pub(crate) mod watch;
 
 use anyhow::{bail, Result};
 use houston_protocol as proto;

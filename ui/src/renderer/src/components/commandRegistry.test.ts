@@ -76,7 +76,7 @@ describe('commandRegistry — buildCommands', () => {
     expect(editor?.enabled).toBe(false)
     expect(editor?.disabledReason).toMatch(/no blank state/i)
     expect(skills?.enabled).toBe(false)
-    expect(skills?.disabledReason).toMatch(/settings/i)
+    expect(skills?.disabledReason).toBe('Open Skills from the navigation rail')
     expect(commands.find((c) => c.id === 'panes.new-review')).toBeUndefined()
   })
 
@@ -197,10 +197,14 @@ describe('commandRegistry — buildCommands', () => {
     const commands = buildCommands({ actions: makeActions({ selectNavRow }), hasWorkspace: true, workspaces: [] })
     const rows = commands.filter((c) => c.id.startsWith('go-to.nav.'))
     expect(rows.map((r) => r.id).sort()).toEqual(
-      ['go-to.nav.routines', 'go-to.nav.skills', 'go-to.nav.mcp'].sort()
+      ['go-to.nav.routines', 'go-to.nav.skills', 'go-to.nav.harness', 'go-to.nav.mcp', 'go-to.nav.usage'].sort()
     )
     rows.find((r) => r.id === 'go-to.nav.mcp')?.run()
     expect(selectNavRow).toHaveBeenCalledWith('mcp')
+    rows.find((r) => r.id === 'go-to.nav.harness')?.run()
+    expect(selectNavRow).toHaveBeenCalledWith('harness')
+    rows.find((r) => r.id === 'go-to.nav.usage')?.run()
+    expect(selectNavRow).toHaveBeenCalledWith('usage')
   })
 
   it('any pending Settings section is offered but disabled, with a reason', () => {
@@ -222,12 +226,12 @@ describe('commandRegistry — buildCommands', () => {
   it('D2: a "Section › Row" entry opens Settings on that section and stages a row jump', () => {
     setSettingsNavForTests({ open: false })
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: [] })
-    const cmd = commands.find((c) => c.id === 'go-to.settings-row.appearance.Palette')
+    const cmd = commands.find((c) => c.id === 'go-to.settings-row.terminal.Palette')
     expect(cmd).toBeDefined()
-    expect(cmd?.title).toBe('Appearance › Palette')
+    expect(cmd?.title).toBe('Terminal › Palette')
     cmd?.run()
     expect(isSettingsOpen()).toBe(true)
-    expect(consumeSettingsRowJump('appearance')).toBe('Palette')
+    expect(consumeSettingsRowJump('terminal')).toBe('Palette')
     expect(consumeSettingsRowJump('appearance')).toBeNull()
   })
 

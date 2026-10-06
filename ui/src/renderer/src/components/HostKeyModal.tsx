@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO } from './buttonChrome'
+import { BTN_GHOST, BTN_ICO } from './buttonChrome'
 import { IconAlertTriangle, IconCheck, IconChevronDown, IconCopy, type IconComponent } from './icons'
 import { Tooltip } from './Tooltip'
 import { Icon } from './Icon'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
+import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from './ui'
 import { useFocusRestore, useFocusTrap } from './dialogFocus'
 import { useCopyFeedback, type CopyFeedbackState } from './useCopyFeedback'
 
@@ -127,13 +127,11 @@ export function HostKeyModal({
   const copyChrome = copyButtonChrome(copyState)
 
   return (
-    <div
-      className={MODAL_SCRIM_CLS}
-      onMouseDown={() => onAnswer(false)}
-    >
-      <div
+    <DialogBackdrop onMouseDown={() => onAnswer(false)}>
+      <DialogPanel
+        size="hostKey"
         ref={dialogRef}
-        className="pop w-[460px] max-w-[92vw] bg-[var(--raised)] border border-[var(--border)] rounded-[var(--tr-radius-md)] shadow-[var(--shadow-2,0_24px_64px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.4))] motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)] [.anim-out_&]:motion-safe:animate-[panel-out_var(--animate-t-fast)_var(--animate-ease-panel)_forwards]"
+        surface="raised"
         role={prompt.changed ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby="hostkey-modal-h"
@@ -141,10 +139,7 @@ export function HostKeyModal({
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <div
-          className="flex items-baseline justify-between gap-2 px-3.5 py-[11px] border-b border-border [font-size:var(--tr-text-subhead-size)] [font-weight:var(--tr-text-subhead-weight)] [letter-spacing:var(--tr-text-subhead-tracking)] text-text-primary"
-          id="hostkey-modal-h"
-        >
+        <DialogTitle id="hostkey-modal-h" layout="baseline-between">
           <span>
             Verify host key for {prompt.host}:{prompt.port}
           </span>
@@ -153,8 +148,8 @@ export function HostKeyModal({
               1 of {remaining + 1}
             </span>
           )}
-        </div>
-        <div className="p-5 space-y-4" id="hostkey-modal-msg">
+        </DialogTitle>
+        <DialogBody id="hostkey-modal-msg">
           {prompt.changed && (
             <div
               className="p-3 rounded-lg bg-danger/10 border border-danger/20 [font-size:var(--tr-text-body-size)] [font-weight:var(--tr-text-body-weight)] text-danger leading-relaxed space-y-2"
@@ -272,27 +267,28 @@ export function HostKeyModal({
               intercepting the connection, which is why a changed key gets a harder warning above.
             </p>
           </div>
-        </div>
-        <div className="flex flex-col gap-2 px-5 pb-5">
+        </DialogBody>
+        <DialogActions variant="stack">
           {remaining > 0 && onRejectRemaining && (
             <button type="button" className={`btn ${BTN_GHOST} self-start`} onClick={onRejectRemaining}>
               Reject all remaining ({remaining})
             </button>
           )}
           <div className="flex gap-2 justify-end">
-            <button
+            <Button
               ref={rejectRef}
               type="button"
-              className={`btn ${BTN_GHOST}`}
+              variant="legacy-ghost"
               data-testid="hostkey-reject"
               onClick={() => onAnswer(false)}
             >
               Reject
-            </button>
-            <button
+            </Button>
+            <Button
               ref={acceptRef}
               type="button"
-              className={`btn ${BTN_GHOST} ${prompt.changed ? `${BTN_GHOST_DANGER_HOVER} ${BTN_GHOST_DANGER_ARM}` : ''}`}
+              variant={prompt.changed ? 'legacy-danger' : 'legacy-ghost'}
+              armed={prompt.changed}
               disabled={acceptDisabled}
               onClick={() => onAnswer(true)}
             >
@@ -301,11 +297,11 @@ export function HostKeyModal({
                   ? <>Accept anyway (<span className="tabular-nums">{countdown}</span>)</>
                   : 'Accept anyway'
                 : 'Accept'}
-            </button>
+            </Button>
           </div>
-        </div>
-      </div>
-    </div>
+        </DialogActions>
+      </DialogPanel>
+    </DialogBackdrop>
   )
 }
 

@@ -11,7 +11,7 @@ import type { CloudStt } from '../../houston/generated/CloudStt'
 import type { VoiceDevice } from '../../houston/generated/VoiceDevice'
 import type { VoiceModelState } from '../../houston/generated/VoiceModelState'
 import type { VoiceSettings } from '../../houston/generated/VoiceSettings'
-import { Row, SectionHead, SubHead } from './shared'
+import { Row, SubHead } from './shared'
 
 const DEFAULT_VOICE_MODEL_ID = 'ggml-small'
 
@@ -466,16 +466,6 @@ export function VoiceSection({
 
   return (
     <>
-      <SectionHead
-        title="Dictation"
-        lede={
-          <>
-            Hold a key, speak, release — the text lands at the focused pane&apos;s prompt with a
-            trailing space and is never submitted for you. Transcription runs on this machine by
-            default; the cloud engine is opt-in and needs a key.
-          </>
-        }
-      />
       {voiceSettings?.enabled && !voiceEngineReady && (
         <VoiceNotReadyBanner voiceEngine={voiceEngine} voiceModelLabel={voiceModelLabel} />
       )}

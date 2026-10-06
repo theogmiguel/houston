@@ -4,8 +4,8 @@ import type { McpServer } from '../../houston/generated/McpServer'
 import type { McpSyncResult } from '../../houston/generated/McpSyncResult'
 import type { McpToolState } from '../../houston/generated/McpToolState'
 import { lazy, Suspense } from 'react'
-import { NavColumn } from './navChrome'
 import { MATERIAL_CLS, materialAttrs } from '../material'
+import type { HoustonClient } from '../../houston/client'
 
 const McpManager = lazy(() =>
   import('../McpManager').then((m) => ({ default: m.McpManager }))
@@ -27,6 +27,7 @@ export function McpSurface(props: {
   onOpenSource: () => void
   sourcePath?: string | null
   checkedAt?: number | null
+  slackClient?: HoustonClient | null
 }): React.JSX.Element {
   const {
     source,
@@ -43,17 +44,13 @@ export function McpSurface(props: {
     onTest,
     onOpenSource,
     sourcePath,
-    checkedAt = null
+    checkedAt = null,
+    slackClient = null
   } = props
   return (
-    <div
-      data-testid="nav-surface"
-      {...materialAttrs('base')}
-      className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
-    >
-      <NavColumn wide>
-        <Suspense fallback={<div className="[font-size:var(--tr-text-small-size)] text-[var(--text-faint)]">Loading…</div>}>
-          <McpManager
+    <div data-testid="nav-surface" {...materialAttrs('base')} className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}>
+      <Suspense fallback={<div role="status">Loading…</div>}>
+        <McpManager
             source={source}
             tools={tools}
             results={results}
@@ -69,9 +66,9 @@ export function McpSurface(props: {
             onOpenSource={onOpenSource}
             sourcePath={sourcePath}
             checkedAt={checkedAt}
-          />
-        </Suspense>
-      </NavColumn>
+            slackClient={slackClient}
+        />
+      </Suspense>
     </div>
   )
 }

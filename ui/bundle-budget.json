@@ -88,9 +88,14 @@
     "grew a hand-over to the manager and pushed the payload past the ceiling:",
     "the name/colour editor and its palette are no more a launch path than the",
     "manager is, and both lazy surfaces now import them from there. tags.tsx is",
-    "what is left \u2014 the chips a sidebar row actually renders."
+    "what is left \u2014 the chips a sidebar row actually renders.",
+    "",
+    "Re-cut against 805,719 bytes (one boot chunk) at the same ~3%: the pane",
+    "header's PR watch chip and its hook, the shared popover motion helpers",
+    "every menu uses, and the theme reveal are boot-path code, each needed at",
+    "first paint or on the first menu or theme click."
   ],
-  "maxBootBytes": 804287,
+  "maxBootBytes": 829890,
   "forbiddenBootPackages": [
     "@codemirror/lang-*",
     "@codemirror/legacy-modes",

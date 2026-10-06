@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   expandSlots,
+  resolveSlots,
   MAX_COUNT,
   SESSION_PRESETS,
   TASK_MAX_BYTES,
@@ -32,7 +33,10 @@ describe('the reference catalog, verbatim', () => {
 describe('expandSlots', () => {
   it('Solo — one slot, the picked agent, the raw task as its prompt', () => {
     expect(expandSlots(byId('solo'), 'codex', 1, 'Fix the parser')).toEqual([
-      { index: 0, agent: 'codex', roleLabel: null, prompt: 'Fix the parser' }
+      {
+        index: 0, agent: 'codex', roleLabel: null, prompt: 'Fix the parser', model: null,
+        effort: null, modelSource: 'agent default', effortSource: 'agent default', agentSource: 'preset', headerSource: 'preset', skippedRoute: null, invalidReason: null
+      }
     ])
   })
 
@@ -76,6 +80,49 @@ describe('expandSlots', () => {
       ['grok', null, 'hi'],
       ['grok', null, 'hi']
     ])
+  })
+
+  it('resolves preset, profile, workspace and user values with their source', () => {
+    const preset = { ...byId('solo'), roles: [{ label: 'builder', model: 'preset-model', effort: 'low' as const }] }
+    const slots = resolveSlots(preset, 'claude', 1, '', {
+      routes: [{ pattern: 'builder', model: 'workspace-model', effort: 'medium' }],
+      profileDefaults: { claude: { model: 'profile-model', effort: 'high' } },
+      overrides: { 0: { model: 'user-model' } }
+    })
+    expect(slots[0]).toMatchObject({
+      model: 'user-model', modelSource: 'user override', effort: 'medium', effortSource: 'workspace setting'
+    })
+  })
+
+  it('uses profile and preset values when a workspace route does not match', () => {
+    const preset = { ...byId('solo'), roles: [{ label: 'builder', model: 'preset-model', effort: 'low' as const }] }
+    expect(resolveSlots(preset, 'claude', 1, '', {
+      routes: [{ pattern: 'reviewer', model: 'workspace-model' }],
+      profileDefaults: { claude: { model: 'profile-model', effort: 'high' } }
+    })[0]).toMatchObject({ model: 'profile-model', modelSource: 'profile', effort: 'high', effortSource: 'profile' })
+    expect(resolveSlots(preset, 'claude', 1, '')[0]).toMatchObject({
+      model: 'preset-model', modelSource: 'preset', effort: 'low', effortSource: 'preset'
+    })
+  })
+
+  it('shows a workspace route skipped for Codex when its local model list is unavailable', () => {
+    const preset = { ...byId('pair') }
+    expect(resolveSlots(preset, 'codex', 2, '', {
+      routes: [{ pattern: 'reviewer', model: 'sonnet', effort: 'high' }]
+    })[1]).toMatchObject({
+      model: null,
+      modelSource: 'agent default',
+      skippedRoute: 'reviewer → sonnet skipped: the Codex local model list is not available to verify this route'
+    })
+  })
+
+  it('skips a workspace route whose effort the selected provider cannot apply', () => {
+    const pair = byId('pair')
+    expect(resolveSlots(pair, 'cursor', 2, '', {
+      routes: [{ pattern: 'reviewer', model: 'review-model', effort: 'high' }]
+    })[1]).toMatchObject({
+      model: null, effort: null, modelSource: 'agent default', skippedRoute: 'reviewer requires high effort, unsupported by cursor'
+    })
   })
 })
 

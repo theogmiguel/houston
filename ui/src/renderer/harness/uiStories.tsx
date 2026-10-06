@@ -1,28 +1,69 @@
 import React, { useState } from 'react'
 import {
+  BarSparkline,
+  BrowserBlankState,
+  BrowserUnreachableState,
+  ActionMenu,
   Button,
   Card,
+  Caption as UiCaption,
+  ContentSection,
+  IntegrationCard,
   Chip,
   Count,
+  ConnectionCell,
+  DoneDisclosure,
   Drawer,
+  DialogSpecimen,
   EmptyState,
   Field,
+  FieldLabel,
+  FirstRunHooksStepSpecimen,
   TextInput,
   IconTile,
   ListDetail,
+  LaunchGridPreviewSpecimen,
+  LaunchComposerHeaderSpecimen,
+  LaunchPresetOutlineSpecimen,
+  LaunchSlotCardSpecimen,
   Notice,
   PageFrame,
   PageHeader,
   PaneHeaderButton,
+  PopoverViews,
   SectionHead,
   Select,
+  SettingsBreadcrumb,
+  SettingsRailRow,
+  SettingsScope,
+  SettingsSearch,
   Segmented,
   STATUS_LABELS,
   StatusLabel,
+  RoutineDetail,
+  RosterSurfaceSpecimen,
   Table,
-  Tooltip
+  TaskProgress,
+  TaskAcceptanceRow,
+  TaskDetailFrame,
+  TaskDrawerCard,
+  TaskDrawerExecutionPanel,
+  TaskDrawerHeader,
+  TaskDrawerOrigin,
+  TerminalPalettePicker,
+  Tooltip,
+  UsageCalendar,
+  UsageChart,
+  UsageModelCell,
+  UsageProviderRow,
+  UsageSectionHeading,
+  UsageShareBar
 } from '../src/components/ui'
-import { IconAlertTriangle, IconCheck, IconClose, IconPlus, IconSearch } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
+import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
+import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/overlayChrome'
+import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
+import { AnimOut } from '../src/components/AnimOut'
 
 const noop = (): void => {}
 
@@ -62,15 +103,97 @@ function Caption({ children }: { children: React.ReactNode }): React.JSX.Element
   return <span style={{ color: 'var(--text-muted)', fontSize: 'var(--tr-text-small-size)' }}>{children}</span>
 }
 
+function MotionSpecimens({ reducedMotion }: { reducedMotion: boolean }): React.JSX.Element {
+  const [model, setModel] = useState('codex')
+  const [view, setView] = useState('profile')
+  const [entryOpen, setEntryOpen] = useState(false)
+  const [profile, setProfile] = useState(2)
+  const views = [
+    { id: 'profile', bounds: { width: 320, height: 148 }, content: (
+      <div className="grid gap-[var(--space-2)]">
+        <div className="inline-flex w-fit gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] p-[2px]">
+          <button type="button" onClick={() => setView('profile')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'profile' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Profile</button>
+          <button type="button" onClick={() => setView('specific')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'specific' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Specific model</button>
+        </div>
+        <div className={`grid grid-cols-2 gap-[var(--space-1)] ${POPOVER_BODY_CLS}`}>
+          {[
+            ['Daily · Normal', 'sonnet · medium'], ['Daily · Heavy', 'sonnet · high'],
+            ['Geeky · Normal', 'opus · high'], ['Geeky · Heavy', 'opus · max']
+          ].map(([name, detail], index) => (
+            <button key={name} type="button" onClick={() => setProfile(index)} className={`grid gap-[2px] rounded-[var(--tr-radius-sm)] border border-[var(--border)] p-[var(--space-2)] text-left text-[length:var(--tr-text-small-size)] ${profile === index ? 'border-[var(--accent)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
+              <span>{name}</span><small className="font-mono text-[var(--text-muted)]">{detail}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+    ) },
+    { id: 'specific', bounds: { width: 320, height: 148 }, content: (
+      <div className="grid gap-[var(--space-2)]">
+        <div className="inline-flex w-fit gap-[var(--space-1)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] p-[2px]">
+          <button type="button" onClick={() => setView('profile')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'profile' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Profile</button>
+          <button type="button" onClick={() => setView('specific')} className={`rounded-[var(--tr-radius-sm)] px-[var(--space-2)] text-[length:var(--tr-text-small-size)] ${view === 'specific' ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>Specific model</button>
+        </div>
+        <div className="grid gap-[var(--space-1)]">
+          <input aria-label="Search models" placeholder="Search models…" className="h-[var(--h-ctl)] rounded-[var(--tr-radius-sm)] border border-[var(--border-focus)] bg-transparent px-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-primary)]" />
+          {['Haiku 4.5 · low', 'Sonnet 4.6 · medium', 'Opus 4.6 · high'].map((name, index) => <button key={name} type="button" className={`flex items-center justify-between rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] text-[length:var(--tr-text-small-size)] ${index === 1 ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}><span>{name.split(' · ')[0]}</span><small className="font-mono text-[var(--text-muted)]">{name.split(' · ')[1]}</small></button>)}
+        </div>
+      </div>
+    ) }
+  ]
+  const modelOptions = [
+    { value: 'codex', label: 'Codex' },
+    { value: 'claude', label: 'Claude Code · Sonnet profile' }
+  ]
+  return (
+    <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+      <SpecimenRow>
+        <Select value={model} options={modelOptions} onChange={setModel} aria-label="Model" />
+        <Button size="sm" onClick={() => setModel(model === 'codex' ? 'claude' : 'codex')}>Change trigger label</Button>
+        <Caption>Open the menu, then change its label. Its left edge stays anchored.</Caption>
+      </SpecimenRow>
+      <SpecimenRow>
+        <Button size="sm" onClick={() => setView(view === 'profile' ? 'specific' : 'profile')}>Switch view</Button>
+        <div {...OVERLAY_RAISED_ATTRS} className={`${OVERLAY_RAISED_CLS} overflow-hidden p-[var(--space-2)]`}>
+          <PopoverViews activeId={view} reducedMotion={reducedMotion} views={views} />
+        </div>
+      </SpecimenRow>
+      <SpecimenRow>
+        <Button size="sm" onClick={() => setEntryOpen((open) => !open)}>{entryOpen ? 'Close entry sample' : 'Show entry sample'}</Button>
+        <AnimOut open={entryOpen}>
+          <div {...OVERLAY_RAISED_ATTRS} className={`${OVERLAY_RAISED_CLS} grid w-[236px] gap-[var(--space-2)] p-[var(--space-2)]`}>
+            <strong className={POPOVER_HEADER_CLS}>Model · Houston</strong>
+            <div className={`${POPOVER_BODY_CLS} grid gap-[var(--space-2)]`}>
+              <div className="grid gap-[var(--space-1)]">
+                {['Haiku 4.5 · low', 'Sonnet 4.6 · medium', 'Opus 4.6 · high', 'Fable 5.1 · max'].map((name, index) => <div key={name} className={`flex justify-between rounded-[var(--tr-radius-sm)] px-[var(--space-2)] py-[var(--space-1)] text-[length:var(--tr-text-small-size)] ${index === 1 ? 'bg-[var(--card-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}><span>{name.split(' · ')[0]}</span><small className="font-mono text-[var(--text-muted)]">{name.split(' · ')[1]}</small></div>)}
+              </div>
+              <span className="border-t border-[var(--border)] pt-[var(--space-2)] text-[length:var(--tr-text-small-size)] text-[var(--text-muted)]">Routing: builder → opus · high</span>
+            </div>
+          </div>
+        </AnimOut>
+      </SpecimenRow>
+    </div>
+  )
+}
+
+function MotionThemeSpecimens({ theme, reducedMotion }: { theme: 'graphite' | 'paper'; reducedMotion: boolean }): React.JSX.Element {
+  return (
+    <section data-theme={theme} data-motion={reducedMotion ? 'reduced' : 'full'} style={{ display: 'grid', gap: 'var(--space-3)', padding: 'var(--space-3)', border: '1px solid var(--border)', borderRadius: 'var(--tr-radius-md)', background: 'var(--content-bg)', color: 'var(--text-primary)' }}>
+      <h3 style={{ margin: 0 }}>{theme === 'graphite' ? 'Graphite' : 'Paper'} · {reducedMotion ? 'reduced motion' : 'full motion'}</h3>
+      <MotionSpecimens reducedMotion={reducedMotion} />
+    </section>
+  )
+}
+
 export function UiPrimitivesStory(): React.JSX.Element {
   const [selectedRoutine, setSelectedRoutine] = useState<string | null>('nightly')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [search, setSearch] = useState('font')
   return (
     <div
       className="ui-primitives-specimen"
       style={{ height: '100%', overflow: 'auto', color: 'var(--text-primary)', background: 'var(--content-bg)' }}
     >
-      <style>{'@media (prefers-reduced-motion: reduce) { .ui-primitives-specimen *, .ui-primitives-specimen *::before, .ui-primitives-specimen *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; } }'}</style>
+      <style>{'@media (prefers-reduced-motion: reduce) { .ui-primitives-specimen *, .ui-primitives-specimen *::before, .ui-primitives-specimen *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; } } [data-motion="reduced"] *, [data-motion="reduced"] *::before, [data-motion="reduced"] *::after { animation: none !important; transition: none !important; }'}</style>
       <div style={{ display: 'grid', gap: 'var(--space-5)', maxWidth: 1180, margin: '0 auto', padding: 24 }}>
         <header style={{ display: 'grid', gap: 'var(--space-1)' }}>
           <h1 style={{ margin: 0, fontSize: 'var(--tr-text-title-size)' }}>UI primitives</h1>
@@ -80,15 +203,68 @@ export function UiPrimitivesStory(): React.JSX.Element {
           <Caption>Motion preference: {window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'}</Caption>
         </header>
 
+        <SpecimenGroup heading="Popover motion">
+          <MotionThemeSpecimens theme="graphite" reducedMotion={false} />
+          <MotionThemeSpecimens theme="graphite" reducedMotion />
+          <MotionThemeSpecimens theme="paper" reducedMotion={false} />
+          <MotionThemeSpecimens theme="paper" reducedMotion />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Content section">
+          <ContentSection heading="Integrations" description="Outside services that bring work into Houston. Tokens stay in the OS keychain.">
+            <IntegrationCard icon={<IconMessageSquare />} title="Slack" status="Connected" caption="to acme · last event 2m ago" actions={<Button variant="secondary">Configure</Button>} />
+          </ContentSection>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="New pane menu rows">
+          <SpecimenRow>
+            <div className="w-56">
+              <PaneMenuRow icon={IconTerminal} label="Terminal" shortcut="t" onClick={noop} />
+              <PaneMenuRow icon={IconGlobe} label="Browser" shortcut="b" disabledReason="Open a workspace to open a browser" onClick={noop} />
+            </div>
+          </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Settings navigation and scope">
+          <SpecimenRow>
+            <SettingsRailRow kind="section" icon={IconTerminal} label="Terminal" selected />
+            <SettingsRailRow kind="search" icon={IconSearch} label="Font family" subtitle="Terminal" />
+            <div className="w-72"><SettingsSearch inputRef={React.createRef<HTMLInputElement>()} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={noop} /></div>
+          </SpecimenRow>
+          <SpecimenRow>
+            <SettingsBreadcrumb open section="Terminal" />
+            <SettingsScope workspace="houston" />
+            <SettingsScope workspace="houston" row />
+            <SettingsScope workspace={null} row scope="global" />
+          </SpecimenRow>
+        </SpecimenGroup>
+        <SpecimenGroup heading="Terminal palette picker">
+          <SpecimenRow>
+            <TerminalPalettePicker chromeTheme="graphite" value="black" onChange={noop} />
+          </SpecimenRow>
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Button">
           <SpecimenRow>
             <Button variant="primary" icon={IconPlus}>Primary</Button>
             <Button variant="secondary">Secondary</Button>
+            <Button variant="field">Field</Button>
+            <Button variant="outline">Outline</Button>
             <Button variant="ghost">Ghost</Button>
+            <Button variant="label">Label action</Button>
+            <Button variant="link">Link</Button>
             <Button variant="danger">Danger</Button>
             <Button variant="danger" armed icon={IconAlertTriangle}>Armed</Button>
             <Button variant="danger-solid" icon={IconAlertTriangle}>Danger solid</Button>
             <Button variant="icon" icon={IconClose} aria-label="Close" />
+            <Button variant="text">Task row title</Button>
+            <Button variant="badge">Orchestrator</Button>
+            <Button variant="ghost-icon"><IconClose /></Button>
+            <Button variant="legacy-primary">Legacy primary</Button>
+            <Button variant="legacy-secondary">Legacy secondary</Button>
+            <Button variant="legacy-ghost">Legacy ghost</Button>
+            <Button variant="legacy-focus-lever"><IconEye />Focus parent</Button>
+            <Button variant="legacy-roster-footer">Roster footer action</Button>
           </SpecimenRow>
           <SpecimenRow>
             <Button variant="primary" size="sm">Primary small</Button>
@@ -106,22 +282,125 @@ export function UiPrimitivesStory(): React.JSX.Element {
           </SpecimenRow>
         </SpecimenGroup>
 
+        <SpecimenGroup heading="Roster surfaces">
+          <RosterSurfaceSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Dialog">
+          <DialogSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Browser pane states">
+          <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+            {(['graphite', 'paper'] as const).map((theme) => (
+              <section key={theme} data-theme={theme} style={{ display: 'grid', gap: 'var(--space-3)', background: 'color-mix(in srgb, var(--content-bg) 70%, var(--rail-bg))', border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                <h3 style={{ margin: 0 }}>{theme === 'graphite' ? 'Graphite' : 'Paper'}</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(300px, 1fr)', gap: 'var(--space-4)' }}>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserBlankState recents={[{ url: 'http://localhost:6006/?path=/story/ui-primitives--all', onOpen: () => {} }, { url: 'https://docs.rs/portable-pty/latest/portable_pty/', onOpen: () => {} }]} servers={[{ port: 5173, process: 'vite', session: 8, pane_title: 'dev-server pane' }, { port: 3000, process: 'node', session: 9, pane_title: 'shell pane' }]} unsupported={null} truncated={false} onClear={() => {}} onOpenPage={() => {}} onOpenServer={() => {}} />
+                  </div>
+                  <div style={{ minHeight: 460, border: '1px solid var(--border)', padding: 'var(--space-4)' }}>
+                    <BrowserUnreachableState host="localhost:8080" message="Nothing is listening on port 8080. Start the server, then retry." rawError="ERR_CONNECTION_REFUSED" url="http://localhost:8080/" attempts={2} lastFailureAt={Date.now() - 12_000} details onRetry={() => {}} onToggleDetails={() => {}} />
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        </SpecimenGroup>
+
         <SpecimenGroup heading="Card and Card.Row">
+          <Card tone="danger" shape="card" padding="md">Question card error state</Card>
+          <Card disabled>Disabled card</Card>
           <Card>
             <Card.Row heading="Default card" meta="Heading and supporting detail" status={<StatusLabel status="Working" />} action={<Button size="sm">Open</Button>} />
             <Card.Row heading="Second row" meta="Rows keep their shared structure" />
+            <Card.Row density="compact" heading="Compact queue row" meta="HOU-45 · Claude Code needs input" status={<StatusLabel status="Ready" />} action={<Button size="sm">Review changes</Button>} />
           </Card>
+          <Card>
+            <Card.Group rail="new"><SectionHead title="New" count={1} /><Card.Row heading="New review group" meta="Amber rule" /></Card.Group>
+            <Card.Group rail="still"><SectionHead title="Still there" count={1} /><Card.Row heading="Still there group" meta="Stop rule" /></Card.Group>
+            <Card.Group rail="gone"><SectionHead title="Gone" count={1} /><Card.Row heading="Gone review group" meta="Ok rule" /></Card.Group>
+            <Card.Row compact rail="new" heading="Compact history row" meta="One line for recent history" />
+          </Card>
+          <Card><Card.Content><Card.Row heading="Grouped content" meta="Card.Content owns the section spacing" /></Card.Content></Card>
           <Card tone="inset"><Card.Row heading="Inset card" meta="Alternate surface tone" /></Card>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Launch grid preview">
+          <LaunchGridPreviewSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Launch composer header">
+          <LaunchComposerHeaderSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="First run hooks step">
+          <div className="h-[700px] border border-[var(--border)]"><FirstRunHooksStepSpecimen /></div>
+        </SpecimenGroup>
+        <SpecimenGroup heading="Launch preset outline">
+          <LaunchPresetOutlineSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Launch slot card">
+          <LaunchSlotCardSpecimen />
+          <FieldLabel size="compact">Compact field label</FieldLabel>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="BarSparkline">
+          <SpecimenRow><BarSparkline values={[41, 33, 25, 18]} label="Repeated mistakes per 100 sessions: 41 to 18" /><Caption>Trend across reviews</Caption></SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Caption">
+          <UiCaption>Supporting text and coverage details.</UiCaption>
+          <UiCaption tone="faint">Quiet supporting footnote.</UiCaption>
+          <UiCaption variant="provisional">May be corrected</UiCaption>
+          <UiCaption tone="faint" variant="code">2.1.263</UiCaption>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Task progress">
+          <div style={{ maxWidth: 560 }}><TaskProgress status="in_progress" /></div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Task page primitives">
+          <TaskDetailFrame>
+            <TaskDrawerHeader taskKey="HOU-42" workspace="houston" heading="Block bun test in agent settings" status="in_progress" actions={<Button variant="icon" icon={IconClose} aria-label="Task actions" />} />
+            <TaskDrawerCard><TaskAcceptanceRow checked text="bun test is denied in .claude/settings.json" onToggle={noop} /><TaskAcceptanceRow checked={false} text="AGENTS.md points to bun run test" onToggle={noop} /></TaskDrawerCard>
+          </TaskDetailFrame>
+          <TaskDrawerOrigin><Chip variant="compound" label="From Harness finding · bun-test" /></TaskDrawerOrigin>
+          <DoneDisclosure count={3}><Card><Card.Row heading="Completed task" meta="HOU-41 · From Harness" /></Card></DoneDisclosure>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Count">
           <SpecimenRow><span>Tasks<Count value={12} /></span><span>Zero omitted<Count value={0} /></span><span>Zero shown<Count value={0} showZero /></span></SpecimenRow>
-          <SpecimenRow><span>Primary ink<Count value={4} from="primary" /></span><span>Secondary ink<Count value={4} from="secondary" /></span></SpecimenRow>
+          <SpecimenRow><span>Primary ink<Count value={4} from="primary" /></span><span>Secondary ink<Count value={4} from="secondary" /></span><span>Attention<Count value={4} from="accent" /></span></SpecimenRow>
         </SpecimenGroup>
 
         <SpecimenGroup heading="StatusLabel">
           <SpecimenRow>{STATUS_LABELS.map((status) => <StatusLabel key={status} status={status} />)}</SpecimenRow>
+          <SpecimenRow><StatusLabel status="Open" size="small" /><StatusLabel status="Fixing" size="small" /><StatusLabel status="Not seen" size="small" /></SpecimenRow>
+          <SpecimenRow><StatusLabel status="Needs input" variant="pill" tone="waiting" /><StatusLabel status="Failed" variant="pill" tone="failed" /><StatusLabel status="Working" variant="pill" tone="working">stalled</StatusLabel></SpecimenRow>
           <SpecimenRow>{STATUS_LABELS.map((status) => <Tooltip key={status} label={status}><StatusLabel status={status} variant="dot" /></Tooltip>)}</SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="RoutineDetail and ConnectionCell">
+          <SpecimenRow>
+            <ConnectionCell status="Failed" reason="npx was not found on PATH" server="github" agent="Claude Code" onClick={noop} />
+            <ConnectionCell status="Differs" server="postgres-local" agent="OpenCode" onClick={noop} />
+            <ConnectionCell status="Off" server="linear" agent="Cursor" onClick={noop} />
+          </SpecimenRow>
+          <RoutineDetail
+            routine={{ id: 1, name: 'Nightly dependency check', prompt: 'Check packages', cadence: { type: 'clock', hour: 2, minute: 0, weekdays: null }, enabled: true, engine: 'claude', next_run_at_ms: Date.now(), last_run_at_ms: null, permission_mode: 'accept_edits', isolate: false, revision: 'specimen' }}
+            runs={[]}
+            runsLoading={false}
+            now={Date.now()}
+            running={false}
+            pending={false}
+            atLimit={{ running: 3, limit: 3 }}
+            onRunNow={noop}
+            onToggleEnabled={noop}
+            onEdit={noop}
+            onDelete={noop}
+            onUpdateSchedule={noop}
+            onUpdateEngine={noop}
+            onOpenSession={noop}
+          />
         </SpecimenGroup>
 
         <SpecimenGroup heading="PageFrame, PageHeader and SectionHead">
@@ -140,11 +419,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <Field label="Workspace" hint="Choose a project folder."><input value="/home/dev/code/houston" readOnly /></Field>
             <Field label="Required field" error="A value is required."><input value="" readOnly aria-invalid="true" /></Field>
             <Field label="Disabled field" hint="This value is managed elsewhere."><input value="Managed" readOnly disabled /></Field>
+            <Field label="Command" size="compact" align="start"><TextInput surface="card" font="mono" value="bun run test" readOnly /></Field>
+            <Field label="Shortcut" size="compact" align="start"><Button variant="field">Press shortcut</Button></Field>
           </div>
         </SpecimenGroup>
         <SpecimenGroup heading="TextInput">
-          <Field label="Owner's member ID" hint="A plain text field."><TextInput value="U012ABCDEF" mono readOnly /></Field>
-          <Field label="Bot token" hint="A secret: the value is never shown back."><TextInput type="password" mono placeholder="xoxb-…" /></Field>
+          <Field label="Owner's member ID" hint="A plain text field."><TextInput value="U012ABCDEF" font="mono" width="md" readOnly /></Field>
+          <Field label="Bot token" hint="A secret: the value is never shown back."><TextInput type="password" font="mono" width="md" placeholder="xoxb-…" /></Field>
           <Field label="Search"><TextInput width="full" placeholder="Filter by name" /></Field>
         </SpecimenGroup>
 
@@ -172,7 +453,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Segmented">
           <SpecimenRow>
-            <Segmented aria-label="Filter" options={[{ value: 'active', label: 'Active' }, { value: 'resolved', label: 'Resolved' }, { value: 'dismissed', label: 'Dismissed' }]} value="active" onChange={noop} />
+            <Segmented aria-label="Filter" options={[{ value: 'active', label: 'Active', count: 4 }, { value: 'resolved', label: 'Resolved', count: 1 }, { value: 'dismissed', label: 'Dismissed' }]} value="active" onChange={noop} />
             <Segmented aria-label="Disabled choice" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two', disabled: true }]} value="two" />
             <Segmented aria-label="Loading choice" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} value="one" loading />
           </SpecimenRow>
@@ -182,21 +463,31 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Table — Usage breakdown">
           <Table
             aria-label="Usage breakdown by model"
+            layout="fixed"
             rows={breakdownRows}
             getRowId={(row) => row.model}
             columns={[
               { key: 'rank', header: '#', tone: 'faint', width: 'var(--space-5)' },
-              { key: 'model', header: 'Model', render: (value, row) => (
-                <span className="grid gap-[var(--space-1)]">
-                  <span>{value}</span>
-                  <span aria-hidden="true" className="h-0.5 rounded-full bg-[var(--text-primary)]" style={{ width: `${row.bar}%`, maxWidth: 220 }} />
-                </span>
-              ) },
+              { key: 'model', header: 'Model', render: (value, row) => <UsageModelCell mark="◎" name={String(value)} share={row.bar / 100} color="var(--text-primary)" /> },
               { key: 'cost', header: 'Cost', numeric: true, width: '100px' },
               { key: 'share', header: 'Share', numeric: true, tone: 'muted', width: '64px' },
               { key: 'tokens', header: 'Tokens', numeric: true, tone: 'muted', width: '64px' }
             ]}
           />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Usage chart, calendar and shares">
+          <UsageSectionHeading fullWidth aside="Premium $121.40">Cost by speed</UsageSectionHeading>
+          <UsageProviderRow mark="✳" label="Claude Code" sessions={172} amount="$2,071.40" note="83.3% of cost · 4.1B tokens" color="var(--claude)" />
+          <div style={{ maxWidth: 900 }}><UsageChart metric="cost" points={[
+            { startMs: 0, key: 'Mon', byProvider: { claude: { cost: 120, tokens: 0 }, codex: { cost: 45, tokens: 0 } } },
+            { startMs: 1, key: 'Tue', byProvider: { claude: { cost: 180, tokens: 0 }, codex: { cost: 90, tokens: 0 } } },
+            { startMs: 2, key: 'Wed', byProvider: { claude: { cost: 130, tokens: 0 }, codex: { cost: 60, tokens: 0 } } },
+            { startMs: 3, key: 'Thu', byProvider: { claude: { cost: 230, tokens: 0 }, codex: { cost: 110, tokens: 0 } } }
+          ]} series={[{ provider: 'claude', label: 'Claude Code', color: 'var(--accent)' }, { provider: 'codex', label: 'Codex', color: 'var(--text-primary)' }]} labelFor={(point) => point.key} /></div>
+          <UsageCalendar days={[]} metric="cost" selectedDay={null} onSelect={noop} />
+          <UsageShareBar heading="Cost by type" segments={[{ id: 'input', label: 'Input', value: 58 }, { id: 'cache-read', label: 'Cache read', value: 24 }, { id: 'output', label: 'Output', value: 18 }]} />
+          <ActionMenu label="Routine actions" iconOnly items={[{ label: 'Edit', onSelect: noop }, { label: 'Delete', onSelect: noop, tone: 'danger' }]} />
         </SpecimenGroup>
 
         <SpecimenGroup heading="ListDetail — Routines">
@@ -217,7 +508,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
                     <div><Caption>Runs on</Caption><Select aria-label="Runs on" value="claude" options={[{ value: 'claude', label: 'Claude Code' }]} onChange={noop} /></div>
                   </div>
                   <SectionHead title="Runs" count={30} />
-                  <Table variant="framed" aria-label="Routine run history" rows={[{ started: 'Today 02:00', result: 'Waiting for a slot', took: '—', cost: '—' }, { started: 'Yesterday 02:00', result: 'Done', took: '4m', cost: '$0.71' }, { started: 'Oct 1 02:00', result: 'Failed', took: '1m', cost: '$0.12' }]} getRowId={(row) => row.started} columns={[{ key: 'started', header: 'Started' }, { key: 'result', header: 'Result' }, { key: 'took', header: 'Took', numeric: true }, { key: 'cost', header: 'Cost', numeric: true }]} />
+                  <Table density="compact" variant="framed" aria-label="Routine run history" rows={[{ started: 'Today 02:00', result: 'Working', took: '—' }, { started: 'Yesterday 02:00', result: 'Done', took: '4m' }, { started: 'Oct 1 02:00', result: 'Failed', took: '1m' }]} getRowId={(row) => row.started} columns={[{ key: 'started', header: 'Started' }, { key: 'result', header: 'Result' }, { key: 'took', header: 'Took', numeric: true }]} />
                   <Notice tone="warn">3 of 3 running. Routines run 3 at a time (Settings › Routines).</Notice>
                 </div>
               )}
@@ -227,20 +518,23 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Drawer — Tasks detail">
           <SpecimenRow><Button variant="secondary" onClick={() => setDrawerOpen(true)}>Open task detail</Button></SpecimenRow>
-          <Drawer open={drawerOpen} heading="Block bun test in agent settings" onClose={() => setDrawerOpen(false)}>
+          <Drawer open={drawerOpen} heading="Task details" onClose={() => setDrawerOpen(false)} hideHeader tone="content">
             <div className="grid gap-[var(--space-3)]">
-              <Caption>HOU-42 · houston</Caption>
-              <p className="m-0 text-[length:var(--tr-text-ui-size)] text-[var(--text-secondary)]">Idle · stopped 14m ago · Attempt 1 · Claude Code</p>
-              <SpecimenRow><Button>Start again</Button><Button variant="secondary">Review changes</Button></SpecimenRow>
+              <TaskDrawerHeader taskKey="HOU-42" workspace="houston" heading="Block bun test in agent settings" status="in_progress" actions={<Button variant="icon" icon={IconClose} aria-label="Close task details" onClick={() => setDrawerOpen(false)} />} />
+              <TaskDrawerExecutionPanel tone="idle" status="Idle" metadata="Stopped 14m ago · Attempt 1 · Claude Code" reuse="Reuses houston/task/hou-42-bun-test · no pull request yet">
+                <SpecimenRow><Button variant="secondary">Start again</Button><Button variant="secondary">Review changes</Button></SpecimenRow>
+              </TaskDrawerExecutionPanel>
               <SectionHead title="Acceptance" count={2} />
-              <Card><Card.Row heading="bun test is denied in .claude/settings.json" /><Card.Row heading="AGENTS.md points to bun run test" /></Card>
+              <TaskDrawerCard><TaskAcceptanceRow checked text="bun test is denied in .claude/settings.json" onToggle={noop} /><TaskAcceptanceRow checked={false} text="AGENTS.md points to bun run test" onToggle={noop} /></TaskDrawerCard>
             </div>
           </Drawer>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Notice — Harness provider coverage">
           <Notice tone="info">Not read: 4 OpenCode sessions in this window.</Notice>
+          <Notice tone="info" indicator="dot" action={{ label: 'Dismiss', onClick: noop }}>Review #13 found one new thing to fix and confirmed one fix worked.</Notice>
           <Notice tone="danger" action={{ label: 'Open settings', onClick: noop }}>Limits are unavailable until a quota reader is configured.</Notice>
+          <Notice tone="danger" variant="callout">The action could not be completed.</Notice>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Tooltip">
@@ -272,7 +566,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
           {(['sm', 'md', 'lg'] as const).map((size) => (
             <div key={size} style={{ display: 'grid', gap: 'var(--space-2)' }}>
               <Caption>{size}</Caption>
-              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'muted'] as const).map((tone) => (
+              <SpecimenRow>{(['default', 'accent', 'success', 'warning', 'danger', 'danger-outline', 'muted'] as const).map((tone) => (
                 <IconTile key={`${size}-${tone}`} size={size} tone={tone} icon={<IconCheck role="ui" />} label={`${size} ${tone}`} />
               ))}</SpecimenRow>
             </div>

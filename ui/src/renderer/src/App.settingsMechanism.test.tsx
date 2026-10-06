@@ -55,7 +55,7 @@ describe('Settings covers the main pane, and only the main pane', () => {
     expect(rows.every((b) => !(b as HTMLButtonElement).disabled)).toBe(true)
   })
 
-  it('a library view REPLACES Settings — the two are peers, and the rail shows the tree again', async () => {
+  it('a library view opened from Settings by its shortcut REPLACES Settings, and the rail shows the tree again', async () => {
     harness = await renderReadyApp()
     const { container } = harness
     const { act } = await import('react')
@@ -63,11 +63,17 @@ describe('Settings covers the main pane, and only the main pane', () => {
     act(() => toggleSettings())
     expect(container.querySelector('[aria-label="Settings sections"]')).not.toBeNull()
 
-    const skills = container.querySelector('[data-testid="rail-nav-row"][data-view="skills"]')
-    if (!(skills instanceof HTMLButtonElement)) throw new Error('no Skills nav row')
-    act(() => skills.click())
+    expect(container.querySelector('[data-testid="rail-nav-row"]')).toBeNull()
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', ctrlKey: true, bubbles: true }))
+    })
 
     expect(container.querySelector('[aria-label="Settings sections"]')).toBeNull()
+    for (let i = 0; i < 40 && container.querySelector('[data-testid="nav-surface"]') === null; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 5))
+      })
+    }
     expect(container.querySelector('[data-testid="nav-surface"]')).not.toBeNull()
   })
 })

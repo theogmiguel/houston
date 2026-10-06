@@ -81,6 +81,8 @@ fn a_pane(daemon: &std::sync::Arc<Daemon>) -> (proto::SessionInfo, tempfile::Tem
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     (info, dir)
@@ -103,6 +105,8 @@ async fn a_correlation_hook_cannot_leave_a_pane_spawning_forever() {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     assert_eq!(
@@ -158,6 +162,8 @@ async fn a_late_session_start_cannot_end_an_active_turn() {
                 acp: None,
                 profile: None,
                 prompt: None,
+                model: None,
+                effort: None,
             })
             .unwrap()
     };
@@ -249,6 +255,8 @@ async fn close_terminates_a_hup_ignoring_foreground_tree_and_revokes_its_token()
         acp: None,
         profile: None,
         prompt: None,
+        model: None,
+        effort: None,
     }).unwrap();
     let token = daemon.mcp_creds.issue(houston_core::mcp_creds::McpScope {
         session_id: info.id,

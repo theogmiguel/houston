@@ -22,6 +22,8 @@ fn create_shell_session(daemon: &Arc<Daemon>, dir: &std::path::Path, integration
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap()
         .id

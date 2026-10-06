@@ -168,6 +168,7 @@ async fn the_reply_goes_only_to_the_asking_client_never_as_a_broadcast() {
                 since_ms,
                 until_ms,
                 refresh_pricing: false,
+                workspace: None,
             })
             .unwrap(),
         ))
@@ -205,6 +206,7 @@ async fn a_refused_window_travels_back_as_an_error_not_an_empty_summary() {
             since_ms: now,
             until_ms: now - 1,
             refresh_pricing: false,
+            workspace: None,
         })
         .unwrap(),
     ))

@@ -35,8 +35,8 @@ describe('SettingsView — command-palette row jump', () => {
 
   it('scrolls the named row into view and flashes it, then clears the flash', () => {
     vi.useFakeTimers()
-    requestSettingsRowJump('appearance', 'Palette')
-    act(() => setSettingsNavForTests({ section: 'appearance' }))
+    requestSettingsRowJump('terminal', 'Palette')
+    act(() => setSettingsNavForTests({ section: 'terminal' }))
     act(() => {
       root.render(<SettingsView {...baseSettingsViewProps()} />)
     })
@@ -52,8 +52,8 @@ describe('SettingsView — command-palette row jump', () => {
   })
 
   it('a pending jump for a different section never fires here', () => {
-    requestSettingsRowJump('terminal', 'Font size')
-    act(() => setSettingsNavForTests({ section: 'appearance' }))
+    requestSettingsRowJump('appearance', 'App zoom')
+    act(() => setSettingsNavForTests({ section: 'terminal' }))
     act(() => {
       root.render(<SettingsView {...baseSettingsViewProps()} />)
     })
@@ -62,7 +62,7 @@ describe('SettingsView — command-palette row jump', () => {
   })
 
   it('with no pending jump, rows render plainly', () => {
-    act(() => setSettingsNavForTests({ section: 'appearance' }))
+    act(() => setSettingsNavForTests({ section: 'terminal' }))
     act(() => {
       root.render(<SettingsView {...baseSettingsViewProps()} />)
     })

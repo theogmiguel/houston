@@ -10,6 +10,17 @@ Each row carries a priority glyph, the task key (`HOU-1`), its title and the tim
 last changed. The **Done** and **Canceled** groups start collapsed; click a group header to
 fold or unfold it. **Archived** tasks sit in a final collapsed group.
 
+## Tasks page
+
+Choose **Tasks** in the rail to see the queue. **Your turn** contains runs waiting for input
+and tasks handed back for review; **Agents working** contains live runs; **Stopped** contains
+interrupted or stopped work; **Up next** contains ready tasks. Done and archived tasks stay
+folded below the queue. The count beside Tasks is the number in **Your turn**. A ready task
+shows its pull request number, and a waiting run shows the agent's question when Houston has
+received one. Select a task to open its detail in a drawer over the queue. The drawer keeps
+acceptance items toggleable; its **…** menu includes **Open session** and task actions. The
+Tasks side panel remains available as a shortcut.
+
 ## Creating and editing
 
 Ctrl/Cmd-click a task key (`HOU-3`) in a terminal to open that task in the Tasks tab. The
@@ -27,6 +38,10 @@ The acceptance list holds the checks the work must satisfy. Open a task to edit 
 these; changes save when a field loses focus. Only one revision is saved at a time, so if the
 task changed elsewhere first, a **This task changed elsewhere** banner appears with **Reload**
 before you overwrite anything.
+
+A task created from a Harness finding keeps its source finding key and review. Tasks made from
+Harness show that origin in their details and list rows. A finding can have several linked fix
+tasks over time; only one linked task may remain open at once.
 
 Tick an acceptance item to check it. Comments appear in the same chronological activity feed
 as the recorded changes, with a composer below. The task menu in the detail header archives

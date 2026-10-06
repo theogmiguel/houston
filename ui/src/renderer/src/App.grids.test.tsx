@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_GRID_ID, gridStorageKey, preorderSessions } from './layout/tree'
 import {
   type AppHarness,
@@ -96,6 +96,13 @@ describe('grids (step 05, driven from the rail)', () => {
         new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })
       )
       await Promise.resolve()
+    })
+    await vi.waitFor(() => expect(harness!.container.querySelector('[data-testid="command-palette"]')).not.toBeNull())
+    const search = harness!.container.querySelector<HTMLInputElement>('[data-testid="command-palette-search"]')!
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    await act(async () => {
+      setter.call(search, 'All workspaces')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
     })
     const all = [...harness.container.querySelectorAll('[data-testid="command-palette-row"]')]
       .find((row) => row.textContent?.includes('All workspaces'))

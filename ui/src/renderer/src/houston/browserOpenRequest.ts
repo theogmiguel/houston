@@ -1,4 +1,3 @@
-import { loadSideState, openSideBrowser } from '../sidePanel'
 import { useEffect, useRef } from 'react'
 import { isTauri } from './host'
 
@@ -57,16 +56,10 @@ export function useBrowserPaneLoad(paneId: string, onLoad: (url: string) => void
 }
 
 export function reuseSideBrowser(workspace: string, url: string, surfaceId?: string): boolean {
-  const tab = loadSideState(workspace).tabs.find((tab) => tab.kind === 'browser' && (surfaceId === undefined || tab.id === surfaceId))
-  if (tab?.kind !== 'browser') return false
-  if (surfaceId !== undefined) {
-    // The native caller navigates only after this surface acknowledges visibility.
-    openSideBrowser(tab.id, tab.url, workspace, true)
-  } else {
-    openSideBrowser(tab.id, url, workspace)
-    requestBrowserPaneLoad(tab.id, url)
-  }
-  return true
+  void workspace
+  void url
+  void surfaceId
+  return false
 }
 
 export function routeBrowserOpenRequest(workspace: string, url: string, surfaceId: string | undefined, revealGrid: (workspace: string, surfaceId: string) => boolean, open: (workspace: string, url: string) => void): void {

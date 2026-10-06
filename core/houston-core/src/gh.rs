@@ -31,6 +31,14 @@ pub fn hint_for(state: proto::GhState) -> Option<String> {
     }
 }
 
+pub fn viewer_login(dir: &Path) -> Result<Option<String>> {
+    let out = run(dir, &["api", "user", "--jq", ".login"])?;
+    if !out.ok {
+        return Ok(None);
+    }
+    Ok((!out.stdout.trim().is_empty()).then(|| out.stdout.trim().to_string()))
+}
+
 pub struct PrStatus {
     pub gh: proto::GhState,
     pub has_upstream: bool,

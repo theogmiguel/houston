@@ -1,5 +1,8 @@
 import { createSessionsStore, SessionsStoreContext, useLayoutSessions, useSessions } from './sessionsStore';
 import { useOrchestrationNotifications } from './orchestrationNotifications';
+import type { OrchestrationNotificationContext } from './orchestrationNotifications';
+import type { NoticeInput } from './notices';
+import { setTaskbarAttentionCount } from './houston/taskbarCount';
 import { registerOwned } from './pane/registration';
 import {
   lazy,
@@ -63,6 +66,7 @@ import {
 } from "./houston/client";
 import { USAGE_WINDOW_REFUSED } from "./houston/generated/DEFAULTS";
 import type { UsageSummaryMsg } from "./components/UsageSection";
+import type { UsageActivityDay } from "./houston/generated/UsageActivityDay";
 import { daemonShutdown, daemonStatus } from "./houston/manage";
 import { appQuit } from "./houston/tray";
 import { useTrayBridge } from "./houston/useTray";
@@ -90,6 +94,7 @@ import { BrowserActConfirmModal } from "./components/BrowserActConfirm";
 import { useBrowserConfirm } from "./houston/browserConfirm";
 import { TerminalTuningContext, type OutputSink } from "./pane/TerminalPane";
 import { CHROME_THEME_LABELS, THEME_LABELS } from "./theme";
+import { revealThemeFromClick } from "./themeReveal";
 import {
   FONT_DEFAULT,
   FONT_MIN,
@@ -98,15 +103,18 @@ import {
   ZOOM_MAX,
   ZOOM_STEP,
   usePreferences,
+  type DesktopNotificationMode,
 } from "./usePreferences";
 import { Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { MATERIAL_CLS, materialAttrs } from "./components/material";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
+import { canUseSkillInFocusedPane } from "./houston/skillSurface";
 import { McpSurface } from "./components/nav/McpSurface";
-import { setSettingsSection, useSettingsSection } from "./settingsNav";
+import { setSettingsSection, settingsSectionLabel, shouldIgnoreInputKey, useSettingsSection } from "./settingsNav";
 import { RoutinesSurface } from "./components/nav/RoutinesSurface";
 import { HarnessView, useHarnessActions } from "./components/nav/HarnessView";
+import { useHarnessSignals } from "./houston/useHarnessSignals";
 import type { Routine, RoutineRefusal, RoutineRun } from "./houston/routineTypes";
 import { engineLabel } from "./components/engineLabel";
 import { LayoutView } from "./components/LayoutView";
@@ -124,9 +132,10 @@ import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
 import type { HandoffSource } from "./components/PaneHandoff";
-import { NewSessionComposer } from "./components/NewSessionComposer";
 import type { SessionSlot } from "./components/sessionPresets";
+import { LaunchComposerDock, visibleLaunchPreview, type LaunchPreview } from "./components/LaunchComposerDock";
 import { WorkspaceEmpty } from "./components/WorkspaceEmpty";
+import { useWorkspaceActions } from "./houston/useWorkspaceActions";
 import { WorkspacesEmpty } from "./components/WorkspacesEmpty";
 import { FirstRun } from "./components/FirstRun";
 import { workspaceRefusal } from "./components/workspaceEligibility";
@@ -175,6 +184,7 @@ import {
   wsPrev,
   selectPane,
   settingsShortcut,
+  usageShortcut,
   shortcutSheetShortcut,
   toggleGit,
   togglePanel,
@@ -185,7 +195,6 @@ import {
 } from "./keymap";
 import { prefixLayer } from "./prefixLayer";
 import { PrefixHint } from "./components/PrefixHint";
-import { CommandPalette } from "./components/CommandPalette";
 import {
   paletteNavActions,
   type GridTarget,
@@ -218,11 +227,12 @@ import {
 import "./components/browserPane.css";
 import { SidePanelIntegration } from "./components/SidePanel";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, openSideBrowser, openSideTasks, loadSideState } from "./sidePanel";
+import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";
 import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
 import { useDismissedUpdate } from "./updateDismissal";
+import { SettingsBreadcrumb } from "./components/ui/SettingsBreadcrumb";
 import { liveSessionCount, UpdateInstallHost } from "./components/UpdateInstallHost";
 import { useCheckoutFacts } from "./useCheckoutFacts";
 import {
@@ -239,7 +249,6 @@ import {
   leaf,
   loadGrids,
   loadLayout,
-  migrateSavedGitLeaves,
   moveLeaf,
   preorderLeaves,
   preorderNonSessionPanes,
@@ -299,6 +308,10 @@ export type Conn =
     }
   | { kind: "failed"; error: string };
 
+function readyClient(conn: Conn): HoustonClient | null {
+  return conn.kind === "ready" ? conn.client : null;
+}
+
 import { isTitlebarDragEligible, isBareTitlebarTarget } from "./titlebar";
 import { WindowControls } from "./components/WindowControls";
 import {
@@ -318,6 +331,12 @@ const SettingsView = lazy(() =>
     default: m.SettingsView,
   })),
 );
+const UsageSection = lazy(() =>
+  import("./components/UsageSection").then((m) => ({ default: m.UsageSection })),
+);
+const CommandPalette = lazy(() =>
+  import("./components/ui/CommandPalette").then((m) => ({ default: m.CommandPalette })),
+);
 
 const SshConnectModal = lazy(() =>
   import("./components/SshConnectModal").then((m) => ({
@@ -326,6 +345,9 @@ const SshConnectModal = lazy(() =>
 );
 const PaneHandoff = lazy(() =>
   import("./components/PaneHandoff").then((m) => ({ default: m.PaneHandoff })),
+);
+const LaunchGridPreview = lazy(() =>
+  import("./components/ui/LaunchGridPreview").then((m) => ({ default: m.LaunchGridPreview })),
 );
 export { isTitlebarDragEligible, isBareTitlebarTarget };
 
@@ -483,6 +505,7 @@ function offeredUpdate(
 
 const RECONNECT_MS = 1000;
 const ReconnectBanner = lazy(() => import('./components/ReconnectBanner').then((module) => ({ default: module.ReconnectBanner })))
+const TasksSurface = lazy(() => import('./components/nav/TasksSurface').then((module) => ({ default: module.TasksSurface })))
 
 // Connections before its first `mcp_state` shows empty lists, not a missing view.
 function mcpSurfaceLists(mcp: McpStateView | null) {
@@ -502,13 +525,67 @@ function focusedSurfaceOwnsKey(surface: "grid" | "side", event: KeyboardEvent, a
   return focusedPaneOwnsKey(event);
 }
 
-function SessionEffects({ connection, workspaces, onFocusPane }: {
+const ZOOM_STEPS: readonly (readonly [typeof zoomIn, "zoom" | "font", -1 | 0 | 1])[] = [
+  [zoomIn, "zoom", 1],
+  [zoomOut, "zoom", -1],
+  [zoomReset, "zoom", 0],
+  [fontZoomIn, "font", 1],
+  [fontZoomOut, "font", -1],
+  [fontZoomReset, "font", 0],
+];
+
+function matchZoomStep(e: KeyboardEvent, overrides: KeymapOverrides): { target: "zoom" | "font"; step: -1 | 0 | 1 } | null {
+  for (const [entry, target, step] of ZOOM_STEPS) {
+    if (resolveGlobalMatch(entry, overrides)(e)) return { target, step };
+  }
+  return null;
+}
+
+function harnessAttentionFor(overview: readonly { workspace: string; attention: number }[], workspace: string): number {
+  if (workspace === "all") return overview.reduce((total, row) => total + row.attention, 0);
+  return overview.find((row) => row.workspace === workspace)?.attention ?? 0;
+}
+
+function sessionLabel(sessions: ReadonlyMap<number, { title?: string | null }>, id: number | null): string | undefined {
+  if (id === null) return undefined;
+  return sessions.get(id)?.title ?? `Session ${id}`;
+}
+
+function SessionEffects({
+  connection,
+  workspaces,
+  onFocusPane,
+  rosterRevision,
+  desktopNotificationMode,
+  inAppNotifications,
+  visiblePaneIds,
+  getNotificationContext,
+  pushNotificationNotice,
+  onDesktopDelivery
+}: {
   connection: Parameters<typeof useTrayBridge>[0]["connection"];
   workspaces: Workspace[];
   onFocusPane: (id: number) => void;
+  rosterRevision: number;
+  desktopNotificationMode: DesktopNotificationMode;
+  inAppNotifications: boolean;
+  visiblePaneIds: ReadonlySet<number>;
+  getNotificationContext: (session: SessionInfo) => OrchestrationNotificationContext;
+  pushNotificationNotice: (notice: NoticeInput) => void;
+  onDesktopDelivery: (allowed: boolean, error?: string) => void;
 }): null {
   const sessions = useSessions();
-  useOrchestrationNotifications(sessions);
+  useOrchestrationNotifications({
+    sessions,
+    rosterRevision,
+    desktopMode: desktopNotificationMode,
+    inAppEnabled: inAppNotifications,
+    visiblePaneIds,
+    getContext: getNotificationContext,
+    onFocusPane,
+    pushNotice: pushNotificationNotice,
+    onDesktopDelivery
+  });
   useTrayBridge({ connection, sessions, workspaces, onFocusPane });
   return null;
 }
@@ -565,10 +642,17 @@ export function App(): React.JSX.Element {
   const [sessionsStore] = useState(createSessionsStore);
   const sessions = useLayoutSessions(sessionsStore);
   const setSessions = sessionsStore.set;
+  const [rosterRevision, setRosterRevision] = useState(0);
+  const [openedAttention, setOpenedAttention] = useState<ReadonlySet<number>>(() => new Set());
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const appNotices = useNotices();
+  const orchestrationNotices = useNotices();
+  const [desktopNotificationDelivery, setDesktopNotificationDelivery] = useState<{ allowed: boolean; error?: string } | null>(null);
   const [selectedWs, setSelectedWs] = useState("all");
+  const harnessOverview = useHarnessSignals(conn.kind === "ready" ? conn.client : null);
+  const harnessAttention = harnessAttentionFor(harnessOverview, selectedWs);
+  const [taskTurnCount, setTaskTurnCount] = useState(0);
   const {
     activeId,
     setActiveId,
@@ -609,6 +693,7 @@ export function App(): React.JSX.Element {
     useState<OrchestrationStateView | null>(null);
   const [hostInfo, setHostInfo] = useState<HostInfo | null>(null);
   const [usage, setUsage] = useState<UsageSummaryMsg | null>(null);
+  const [usageActivity, setUsageActivity] = useState<UsageActivityDay[]>([]);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [historyIgnoreGlobs, setHistoryIgnoreGlobs] = useState<string[] | null>(
@@ -665,12 +750,41 @@ export function App(): React.JSX.Element {
 
   const settingsSection = useSettingsSection();
   const railView = useRailView();
+  const [taskSurfaceRequest, setTaskSurfaceRequest] = useState<{ openId?: number; compose?: boolean; create?: { title: string; description: string } } | null>(null);
+  useEffect(() => {
+    const open = (event: Event): void => {
+      setTaskSurfaceRequest((event as CustomEvent<{ openId?: number; compose?: boolean; create?: { title: string; description: string } }>).detail);
+      setRailView('tasks');
+      setScmOpen(false);
+    };
+    window.addEventListener(TASKS_OPEN_EVENT, open);
+    return () => window.removeEventListener(TASKS_OPEN_EVENT, open);
+  }, []);
+  useEffect(() => {
+    if (conn.kind !== "ready") {
+      setTaskTurnCount(0);
+      return;
+    }
+    const scope = selectedWs === "all" ? "all" : selectedWs;
+    let current = true;
+    const off = conn.client.subscribe("task_snapshot", (msg) => {
+      if (msg.scope !== scope) return;
+      void import("./components/tasks/format").then(({ queueGroupOf }) => {
+        if (current) setTaskTurnCount(msg.tasks.filter((task) => queueGroupOf(task) === "your-turn").length);
+      });
+    });
+    conn.client.taskSnapshot(scope);
+    return () => {
+      current = false;
+      off();
+    };
+  }, [conn, selectedWs]);
   useEffect(() => {
     if (settings) setRailView(null);
   }, [settings]);
 
   useEffect(() => {
-    if (settings && settingsSection === "agent-setup" && conn.kind === "ready") {
+    if (settings && settingsSection === "agents" && conn.kind === "ready") {
       conn.client.agentHooks();
     }
   }, [settings, settingsSection, conn]);
@@ -687,6 +801,7 @@ export function App(): React.JSX.Element {
   const [composer, setComposer] = useState<"current-grid" | "new-grid" | null>(
     null,
   );
+  const [launchPreview, setLaunchPreview] = useState<LaunchPreview | null>(null);
   const [showLauncher, setShowLauncher] = useState(false);
   const [pickingWorkspace, setPickingWorkspace] = useState(false);
   const [workspaceRefusals, setWorkspaceRefusals] = useState<string[]>([]);
@@ -773,6 +888,10 @@ export function App(): React.JSX.Element {
     setCopyOnSelect,
     stripBoxGlyphs,
     setStripBoxGlyphs,
+    desktopNotificationMode,
+    setDesktopNotificationMode,
+    inAppNotifications,
+    setInAppNotifications,
     changeFont,
     changeZoom,
   } = usePreferences();
@@ -787,13 +906,11 @@ export function App(): React.JSX.Element {
   // Migrate saved trees before any layout read, so a legacy Changes leaf can
   // never cost a browser/editor/terminal leaf; a workspace that had the pane
   // comes back with the panel already open.
-  const [scmOpen, setScmOpen] = useState<boolean>(() =>
-    migrateSavedGitLeaves().length > 0 ? true : loadScmOpen(),
-  );
+  const [scmOpen, setScmOpen] = useState<boolean>(() => loadScmOpen());
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
   const scmWidth = useScmWidth();
-  const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview, sideExpanded, setSideExpanded } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
-  const gridSurfaceHidden = gridHidden || sideExpanded;
+  const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
+  const gridSurfaceHidden = gridHidden;
   const [wsRenaming, setWsRenaming] = useState<string | null>(null);
   // Keyed by `gridStorageKey(path, gridId)` for a real workspace, never the
   // bare path — 'all' is the one exception, bypassing grids entirely.
@@ -939,6 +1056,27 @@ export function App(): React.JSX.Element {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const sessionsRef = useMemo(() => ({ get current() { return sessionsStore.getSnapshot(); } }), [sessionsStore]);
+  const taskbarAttentionCount = useMemo(() => [...sessions.values()].filter((session) =>
+    session.state === 'running' && session.status === 'needs-input' &&
+    session.spawned_by == null && !session.hidden && !openedAttention.has(session.id)
+  ).length, [sessions, openedAttention]);
+  useEffect(() => {
+    void setTaskbarAttentionCount(taskbarAttentionCount).catch(() => {});
+  }, [taskbarAttentionCount]);
+  useEffect(() => {
+    setOpenedAttention((current) => {
+      const next = new Set(current);
+      for (const id of current) {
+        const session = sessions.get(id);
+        if (!session || session.status !== 'needs-input') next.delete(id);
+      }
+      return next.size === current.size ? current : next;
+    });
+  }, [sessions]);
+  useEffect(() => {
+    if (activeId === null || sessions.get(activeId)?.status !== 'needs-input') return;
+    setOpenedAttention((current) => new Set(current).add(activeId));
+  }, [activeId, sessions]);
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
   const savedLayoutsRef = useRef(layouts);
@@ -956,6 +1094,9 @@ export function App(): React.JSX.Element {
   const focusPane = (session: number): void => {
     const target = sessionsRef.current.get(session);
     if (!target) return;
+    if (target.status === 'needs-input') {
+      setOpenedAttention((current) => new Set(current).add(session));
+    }
     for (const w of workspacesRef.current) {
       for (const g of gridsFor(w.path)) {
         const key = gridStorageKey(w.path, g.id);
@@ -1004,6 +1145,16 @@ export function App(): React.JSX.Element {
     [pushNotice],
   );
 
+  const workspaceActionState = useWorkspaceActions({
+    client: readyClient(conn),
+    workspace: selectedWs,
+    shellIntegration,
+    keymapOverrides,
+    setExpandedId,
+    onError: pushError,
+  });
+  const { actions: workspaceActions } = workspaceActionState;
+  const workspaceActionsFor = (path: string) => workspaceActionState.byWorkspace[path] ?? [];
   const onBackgroundUnavailable = useCallback(
     (reason: string) => {
       pushError(`The window background could not be loaded (${reason}).`);
@@ -1019,7 +1170,7 @@ export function App(): React.JSX.Element {
       setSessions((prev) => {
         const next = new Map(prev);
         const s = next.get(msg.session);
-        if (s) next.set(msg.session, { ...s, state: msg.state });
+        if (s) next.set(msg.session, { ...s, state: msg.state, status_since_ms: Date.now() });
         return next;
       });
       if (!isLive(msg.state)) {
@@ -1052,6 +1203,7 @@ export function App(): React.JSX.Element {
             client.snapshotFormatVersion = msg.snapshot_format_version;
             reconcileGridTags(msg.tags);
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            setRosterRevision((revision) => revision + 1);
             setWorkspaces(msg.workspaces);
             setTags(msg.tags);
             // Facts and pending asks belong to the connection that made them:
@@ -1068,6 +1220,7 @@ export function App(): React.JSX.Element {
             break;
           case "session_list":
             setSessions(new Map(msg.sessions.map((s) => [s.id, s])));
+            setRosterRevision((revision) => revision + 1);
             break;
           case "session_created": {
             setSessions((prev) => new Map(prev).set(msg.info.id, msg.info));
@@ -1164,7 +1317,7 @@ export function App(): React.JSX.Element {
             setSessions((prev) => {
               const s = prev.get(msg.session);
               if (!s || s.status === msg.status) return prev;
-              return new Map(prev).set(msg.session, { ...s, status: msg.status });
+              return new Map(prev).set(msg.session, { ...s, status: msg.status, status_since_ms: Date.now() });
             });
             break;
           case "session_context":
@@ -1256,6 +1409,9 @@ export function App(): React.JSX.Element {
             setUsage(msg);
             setUsageLoading(false);
             setUsageError(null);
+            break;
+          case "usage_activity_summary":
+            setUsageActivity(msg.days);
             break;
           case "command_history_ignore_globs":
             setHistoryIgnoreGlobs(msg.globs);
@@ -1721,14 +1877,19 @@ export function App(): React.JSX.Element {
   // reads transcript files Houston does not own, and a repeat window would
   // re-read gigabytes for a number that moves on human timescales.
   const requestUsage = useCallback(
-    (sinceMs: number, untilMs: number, refreshPricing: boolean) => {
+    (sinceMs: number, untilMs: number, refreshPricing: boolean, workspace: string | null = null) => {
       if (conn.kind !== "ready") return;
       setUsageLoading(true);
       setUsageError(null);
-      conn.client.usageSummaryGet(sinceMs, untilMs, refreshPricing);
+      conn.client.usageSummaryGet(sinceMs, untilMs, refreshPricing, workspace);
     },
     [conn],
   );
+
+  const requestUsageActivity = useCallback((sinceMs: number, untilMs: number, workspace: string | null) => {
+    if (conn.kind !== "ready") return;
+    conn.client.usageActivitySummaryGet(sinceMs, untilMs, workspace);
+  }, [conn]);
 
   useEffect(() => {
     if (selectedWs !== "all") localStorage.setItem(SELECTED_WS_KEY, selectedWs);
@@ -1875,22 +2036,31 @@ export function App(): React.JSX.Element {
     );
   }, []);
   const launchSessions = useCallback(
-    (slots: SessionSlot[]): void => {
+    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
       if (conn.kind !== "ready" || selectedWs === "all") return;
       setExpandedId(null);
-      if (composer === "new-grid") handleAddGrid(selectedWs);
+      if (target === "new-grid") handleAddGrid(selectedWs);
       for (const slot of slots) {
         conn.client.createSession({
           agent: slot.agent,
           project_dir: selectedWs,
           shell_integration: shellIntegration,
+          model: slot.model,
+          effort: slot.effort,
           prompt:
             slot.agent === "shell" || slot.prompt === "" ? null : slot.prompt,
         });
       }
       setComposer(null);
+      setLaunchPreview(null);
     },
-    [conn, selectedWs, shellIntegration, composer, handleAddGrid],
+    [conn, selectedWs, shellIntegration, handleAddGrid],
+  );
+  const handleLaunchPreview = useCallback(
+    (slots: SessionSlot[], target: "this-grid" | "new-grid"): void => {
+      setLaunchPreview({ slots, target });
+    },
+    [],
   );
 
   const handleRenameGrid = useCallback(
@@ -2162,10 +2332,6 @@ export function App(): React.JSX.Element {
   const openBrowserPane = useCallback(
     (workspaceDir: string, anchor: PaneKey | null, url = ""): void => {
       setExpandedId(null);
-      if (anchor === null) {
-        openSideBrowser(`b${Date.now()}-${++browserLeafSeq.current}`, url, workspaceDir);
-        return;
-      }
       const key = keyForRef(workspaceDir);
       setLayouts((prev) => {
         const cur = prev.get(key) ?? loadLayout(key);
@@ -2203,6 +2369,7 @@ export function App(): React.JSX.Element {
     if (!cur.client.sendStdin(target, text)) pushError("connection lost — selected element was not delivered");
   }, [pushError]);
   const pickerAvailable = pickerTarget.current !== null && isLive(sessions.get(pickerTarget.current)?.state ?? "exited");
+  const pickerTargetLabel = sessionLabel(sessions, pickerTarget.current);
 
   const openFilesPaneAt = useCallback(
     (workspaceDir: string, root: string, anchor: PaneKey | null): void => {
@@ -2291,6 +2458,13 @@ export function App(): React.JSX.Element {
     },
     [openEditorFile],
   );
+  const openRailInspector = useCallback((paneId: number, tab: ScmTab): void => {
+    setActiveId(paneId);
+    setSideReview(null);
+    setScmTab(tab);
+    setScmOpen(true);
+    setActiveSurface("side");
+  }, [setActiveId, setActiveSurface, setSideReview]);
   const openTerminalDir = useCallback(
     (path: string, session?: number): void => {
       const root = session == null ? selectedWs : sessionsRef.current.get(session)?.project_dir ?? selectedWs;
@@ -2312,10 +2486,12 @@ export function App(): React.JSX.Element {
     [openEditorFile],
   );
 
-  // The panel reviews the focused pane's workspace in All view, and the
-  // selected workspace otherwise — never a session's dir left over from
-  // another workspace, which would point the panel at the wrong repo.
+  // In All view the focused pane supplies its checkout; within a workspace the
+  // selected workspace stays authoritative when a stale pane has focus.
   const scmDir = reviewCheckoutDir(sideReview) ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
+  useEffect(() => {
+    setSideReview((current) => current?.id === activeId ? current : null);
+  }, [activeId, sideReview, setSideReview]);
   // Editing or browsing from the panel must land where the user can see it:
   // in All view the focused pane's repo has no visible grid, so reveal it
   // first rather than inserting into a hidden tree.
@@ -2733,12 +2909,15 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onDown = (e: PointerEvent): void => {
       const t = e.target as HTMLElement;
-      if (!t.closest(".side-panel")) setActiveSurface("grid");
+      const inspector = t.closest(".pane-inspector");
       const paneEl = t.closest(".pane");
       const paneKeyAttr = paneEl?.getAttribute("data-panekey") ?? null;
       const sessionPane = paneKeyAttr !== null && /^\d+$/.test(paneKeyAttr);
-      if (!sessionPane) setActiveId(null);
-      setActiveLeaf(paneEl && !sessionPane ? paneKeyAttr : null);
+      if (!inspector) {
+        setActiveSurface("grid");
+        if (!sessionPane) setActiveId(null);
+        setActiveLeaf(paneEl && !sessionPane ? paneKeyAttr : null);
+      }
       if (!t.closest(".add-pane-popover")) setAddPanePopover(null);
     };
     window.addEventListener("pointerdown", onDown, true);
@@ -2746,8 +2925,6 @@ export function App(): React.JSX.Element {
   }, []);
 
   useBrowserFocus((id) => {
-    const tab = loadSideState(sideWorkspace).tabs.find((tab) => tab.kind === "browser" && tab.id === id);
-    if (tab?.kind === "browser") { setActiveSurface("side"); setActiveId(null); return; }
     setActiveSurface("grid");
     setActiveId(null);
     const tree = currentTreeRef.current;
@@ -2762,7 +2939,6 @@ export function App(): React.JSX.Element {
       handleSelectGrid(workspace, grid.id);
       const stack = findStackContaining(tree, surfaceId);
       if (stack) setLayouts((current) => new Map(current).set(key, { ...layout, tree: setActiveStackTab(tree, stack.id, surfaceId) }));
-      setSideExpanded(false);
       setExpandedId(null);
       setActiveLeaf(surfaceId);
       setActiveSurface("grid");
@@ -2799,11 +2975,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement;
-      if (
-        ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName) &&
-        e.key !== "Escape"
-      )
-        return;
+      if (shouldIgnoreInputKey(target, e, settings)) return;
       if (target.isContentEditable) return;
       if (paletteOpen) return;
       // Prefix layer: one-shot. Whatever key follows the prefix resolves once, then
@@ -2828,34 +3000,10 @@ export function App(): React.JSX.Element {
         setPaneHandoff(null);
         return;
       }
-      if (resolveGlobalMatch(zoomIn, keymapOverrides)(e)) {
+      const zoomStep = matchZoomStep(e, keymapOverrides);
+      if (zoomStep) {
         e.preventDefault();
-        changeZoom(1);
-        return;
-      }
-      if (resolveGlobalMatch(zoomOut, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeZoom(-1);
-        return;
-      }
-      if (resolveGlobalMatch(zoomReset, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeZoom(0);
-        return;
-      }
-      if (resolveGlobalMatch(fontZoomIn, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeFont(1);
-        return;
-      }
-      if (resolveGlobalMatch(fontZoomOut, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeFont(-1);
-        return;
-      }
-      if (resolveGlobalMatch(fontZoomReset, keymapOverrides)(e)) {
-        e.preventDefault();
-        changeFont(0);
+        (zoomStep.target === "zoom" ? changeZoom : changeFont)(zoomStep.step);
         return;
       }
       if (focusedSurfaceOwnsKey(activeSurface, e, activeId, layerArmed)) return;
@@ -2872,6 +3020,12 @@ export function App(): React.JSX.Element {
       if (resolveGlobalMatch(settingsShortcut, keymapOverrides)(e)) {
         e.preventDefault();
         setSettings((cur) => !cur);
+        return;
+      }
+      if (resolveGlobalMatch(usageShortcut, keymapOverrides)(e)) {
+        e.preventDefault();
+        setSettings(false);
+        setRailView("usage");
         return;
       }
       if (
@@ -3037,6 +3191,23 @@ export function App(): React.JSX.Element {
     stepGrid,
   ]);
 
+  const visiblePaneIds = useMemo(() => new Set(preorderSessions(currentTree)), [currentTree]);
+  const getNotificationContext = useCallback((session: SessionInfo): OrchestrationNotificationContext => {
+    const workspace = workspaces.find((entry) => entry.path === session.project_dir);
+    const grid = gridsFor(session.project_dir).find((entry) => {
+      const key = gridStorageKey(session.project_dir, entry.id);
+      const tree = layouts.get(key)?.tree ?? warmLayouts.get(key)?.tree ?? loadLayout(key).tree;
+      return preorderSessions(tree).includes(session.id);
+    });
+    const agent = session.detected_agent ?? session.agent;
+    const agentName = agent === 'claude' ? 'Claude Code' : agent === 'opencode' ? 'OpenCode' : agent[0].toUpperCase() + agent.slice(1);
+    return {
+      agent: agentName,
+      workspace: workspace?.name ?? session.project_dir,
+      grid: grid?.name ?? 'Main grid'
+    };
+  }, [gridsFor, layouts, warmLayouts, workspaces]);
+
   if (conn.kind === "connecting")
     return (
       <div className="h-screen flex flex-col items-center justify-center gap-[14px] text-[var(--text-muted)]">
@@ -3068,6 +3239,7 @@ export function App(): React.JSX.Element {
     );
   const client = conn.client;
   const connected = conn.kind === "ready";
+  const activeLaunchPreview = visibleLaunchPreview(composer, launchPreview);
 
   const renameWorkspaceSubmit = (path: string, name: string): void => {
     setWsRenaming(null);
@@ -3101,6 +3273,8 @@ export function App(): React.JSX.Element {
   };
 
   const paletteActions: PaletteActions = {
+    workspaceActions,
+    runWorkspaceAction: workspaceActionState.run,
     newTerminal,
     insertPane: (kind) => {
       if (kind === "browser" && selectedWs !== "all")
@@ -3163,6 +3337,8 @@ export function App(): React.JSX.Element {
       setShowLauncher(false);
     },
     switchGrid: handleSelectGrid,
+    focusPane,
+    restartPane: (id) => client.respawnSession(id, undefined, null, undefined, undefined, false),
     ...paletteNavActions({
       workspaceCount: orderedWorkspaces.length,
       lastWorkspace: lastWorkspace(),
@@ -3176,7 +3352,18 @@ export function App(): React.JSX.Element {
 
   return (
     <SessionsStoreContext.Provider value={sessionsStore}>
-      <SessionEffects connection={conn.kind} workspaces={workspaces} onFocusPane={focusPane} />
+      <SessionEffects
+        connection={conn.kind}
+        workspaces={workspaces}
+        onFocusPane={focusPane}
+        rosterRevision={rosterRevision}
+        desktopNotificationMode={desktopNotificationMode}
+        inAppNotifications={inAppNotifications}
+        visiblePaneIds={visiblePaneIds}
+        getNotificationContext={getNotificationContext}
+        pushNotificationNotice={orchestrationNotices.push}
+        onDesktopDelivery={(allowed, error) => setDesktopNotificationDelivery({ allowed, error })}
+      />
     <TerminalTuningContext.Provider value={terminalTuning}>
       <KeymapOverridesContext.Provider value={keymapOverrides}>
       <TagsContext.Provider value={tags}>
@@ -3224,10 +3411,14 @@ export function App(): React.JSX.Element {
                 void addWorkspaceFromPicker();
               }}
               chromeTheme={chromeTheme}
-              onToggleChromeTheme={() =>
-                setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite")
+              onToggleChromeTheme={(origin) =>
+                revealThemeFromClick(origin, () =>
+                  setChromeTheme(chromeTheme === "graphite" ? "paper" : "graphite"),
+                )
               }
               updateVersion={offeredUpdate(update, dismissedUpdate)}
+              harnessAttention={harnessAttention}
+              taskTurnCount={taskTurnCount}
               onRemoveWorkspace={removeWorkspace}
               onOpenExternalError={pushError}
               onRenameStart={(path) => {
@@ -3240,6 +3431,9 @@ export function App(): React.JSX.Element {
                 setWsColors((prev) => ({ ...prev, [path]: color }))
               }
               onSshConnect={openSshConnect}
+              railClient={conn.kind === "ready" ? conn.client : null}
+              checkoutBranches={checkout.chips}
+              onOpenInspector={openRailInspector}
               gridsByWorkspace={gridsByWorkspace}
               tags={tags}
               onSetGridTags={(path, gridId, tagIds) =>
@@ -3289,6 +3483,7 @@ export function App(): React.JSX.Element {
             onDoubleClick={handleTitlebarDoubleClick}
           >
             <div className="flex items-center gap-1.5 min-w-0 pl-2.5">
+              <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
               {}
               {sidebarRail && (
                 <Tooltip label="Show sidebar (Ctrl+B)">
@@ -3383,8 +3578,13 @@ export function App(): React.JSX.Element {
               label="Workspace notices"
               store={appNotices}
             />
+            <NoticeStack
+              anchor="workspace-top-right"
+              label="Agent notifications"
+              store={orchestrationNotices}
+            />
 
-            <div className="side-panel-row flex-1 min-w-0 min-h-0 flex">
+            <div className="side-panel-row flex-1 min-w-0 min-h-0 flex" data-testid="side-panel-row">
               <div
                 aria-hidden={gridSurfaceHidden || undefined}
                 inert={gridSurfaceHidden}
@@ -3445,6 +3645,7 @@ export function App(): React.JSX.Element {
                     onOpenFile={openTerminalFile}
                     onOpenDir={openTerminalDir}
                     onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                    sendToTerminalLabel={pickerTargetLabel}
                     onNativeError={pushError}
                     onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3551,6 +3752,7 @@ export function App(): React.JSX.Element {
                               onOpenFile={openTerminalFile}
                               onOpenDir={openTerminalDir}
                               onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                              sendToTerminalLabel={pickerTargetLabel}
                               onNativeError={pushError}
                               onRunSkill={canRunSkill ? runSkill : undefined}
                     skillDistribution={skillDistribution}
@@ -3559,13 +3761,26 @@ export function App(): React.JSX.Element {
                               focusUrlRequest={
                                 gridSelected ? focusBrowserUrl : undefined
                               }
+                              launchPreview={gridSelected ? activeLaunchPreview : undefined}
                             />
                           ) : gridSelected ? (
-                            <WorkspaceEmpty
-                              onNewSession={() => setComposer("current-grid")}
-                              onTerminal={newTerminal}
-                              onBrowser={() => openBrowserPane(w.path, null)}
-                            />
+                            <div className="relative flex-1 min-w-0 min-h-0">
+                              <WorkspaceEmpty
+                                onNewSession={() => setComposer("current-grid")}
+                                onTerminal={newTerminal}
+                                onBrowser={() => openBrowserPane(w.path, null)}
+                                actions={workspaceActionsFor(w.path)}
+                                keymapOverrides={keymapOverrides}
+                                onRunAction={workspaceActionState.run}
+                                onSaveAction={workspaceActionState.save}
+                                onDeleteAction={workspaceActionState.remove}
+                              />
+                              {activeLaunchPreview && (
+                                <Suspense fallback={null}>
+                                  <LaunchGridPreview tree={null} slots={activeLaunchPreview.slots} target={activeLaunchPreview.target} sessions={sessions} />
+                                </Suspense>
+                              )}
+                            </div>
                           ) : null}
                         </div>
                       );
@@ -3574,13 +3789,25 @@ export function App(): React.JSX.Element {
                 </>
               )}
               </div>
+              <LaunchComposerDock
+                composer={composer}
+                workspace={selectedWs}
+                settingsOpen={Boolean(settings)}
+                railOpen={railView !== null}
+                workspaceName={basename(selectedWs)}
+                gridName={() => gridsFor(selectedWs).find((grid) => grid.id === activeGridId(selectedWs))?.name}
+                client={client}
+                connected={connected}
+                onPreviewChange={handleLaunchPreview}
+                onLaunch={launchSessions}
+                onClose={() => { setComposer(null); setLaunchPreview(null) }}
+              />
               {(scmOpen || loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")) && (
                 <SidePanelIntegration
-                  expanded={sideExpanded}
-                  onExpanded={setSideExpanded}
                   focused={activeSurface === "side"}
                   closed={!scmOpen}
                   onSendToTerminal={pickerAvailable ? sendPickerToAgent : undefined}
+                  sendToTerminalLabel={pickerTargetLabel}
                   selectedWorkspace={sideWorkspace}
                   activeId={activeId}
                   sessions={sessions}
@@ -3590,8 +3817,7 @@ export function App(): React.JSX.Element {
                   onFocusPane={focusPane}
                   onRevealWorkspace={revealWorkspace}
                   onOpenEditor={openEditorFile}
-                  onReviewChild={(child) => { setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
-                  onTaskStartRequested={handleTaskStartRequested}
+                  onReviewChild={(child) => { setActiveId(child.id); setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
                   workspaces={workspaces}
                   dir={scmProps.dir}
                   client={scmProps.client}
@@ -3612,8 +3838,45 @@ export function App(): React.JSX.Element {
             {settings || railView !== null ? (
               <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
                 <SurfaceBoundary label={railView ?? "Settings"}>
-                  {railView === "skills" ? (
+                  {railView === "tasks" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
+                      <TasksSurface
+                        client={conn.kind === "ready" ? conn.client : null}
+                        workspace={selectedWs}
+                        workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
+                        sessions={sessions}
+                        now={Date.now()}
+                        openTaskId={taskSurfaceRequest?.openId}
+                        compose={taskSurfaceRequest?.compose}
+                        createDraft={taskSurfaceRequest?.create}
+                        onOpenTaskHandled={() => setTaskSurfaceRequest(null)}
+                        onCreateHandled={() => setTaskSurfaceRequest(null)}
+                        onStartRequested={handleTaskStartRequested}
+                        onOpenSession={(sessionId) => {
+                          setRailView(null);
+                          focusPane(sessionId);
+                        }}
+                        onReview={(session) => {
+                          setRailView(null);
+                          setSideReview(session);
+                          setScmTab("changes");
+                          setSideRequest(null);
+                        }}
+                        onOpenExternal={(url) => void openExternal(url)}
+                      />
+                    </Suspense>
+                  ) : railView === "skills" ? (
                     <SkillsSurface
+                      client={conn.kind === "ready" ? conn.client : null}
+                      workspace={selectedWs === "all" ? null : selectedWs}
+                      focusedPaneName={activeId === null ? null : sessions.get(activeId)?.title ?? null}
+                      canRunSkillInFocusedPane={canUseSkillInFocusedPane(
+                        sessions,
+                        activeId,
+                        selectedWs,
+                        conn.kind
+                      )}
+                      onRunSkill={runSkill}
                       tools={skills}
                       pushes={skillPushes}
                       autoPushEnabled={skillAutoPush}
@@ -3663,6 +3926,7 @@ export function App(): React.JSX.Element {
                         if (mcp) void showItemInFolder(mcp.sourcePath);
                       }}
                       checkedAt={mcpCheckedAt}
+                      slackClient={readyClient(conn)}
                     />
                   ) : railView === "routines" ? (
                     <RoutinesSurface
@@ -3715,21 +3979,31 @@ export function App(): React.JSX.Element {
                       }))}
                       selectedWorkspace={selectedWs}
                       routinesRunning={routinesRunning}
-                      liveSessions={sessions}
-                      onOpenSession={(sessionId) => {
-                        setRailView(null);
-                        focusPane(sessionId);
-                      }}
                       onOpenFile={harness.openFile}
                       onReveal={harness.reveal}
-                      onPrepareFix={harness.spawnFix}
+                      attentionRows={harnessOverview}
                     />
+                  ) : railView === "usage" ? (
+                    <Suspense fallback={<div className="flex-1" />}>
+                      <UsageSection
+                        summary={usage}
+                        activity={usageActivity}
+                        loading={usageLoading}
+                        error={usageError}
+                        workspaces={workspaces.map((workspace) => ({ path: workspace.path, name: workspace.name }))}
+                        initialWorkspace="all"
+                        onRequest={requestUsage}
+                        onActivityRequest={requestUsageActivity}
+                      />
+                    </Suspense>
                   ) : (
                   <Suspense fallback={<div className="flex-1" />}>
                     <SettingsView
                       daemonClient={scmProps.client}
                       chromeTheme={chromeTheme}
-                      onChromeTheme={setChromeTheme}
+                      onChromeTheme={(theme, origin) =>
+                        revealThemeFromClick(origin, () => setChromeTheme(theme))
+                      }
                       theme={themeChoice}
                       onTheme={setTheme}
                       shellIntegration={shellIntegration}
@@ -3928,19 +4202,15 @@ export function App(): React.JSX.Element {
                         if (hostInfo)
                           void openExternal(`file://${hostInfo.state_dir}`);
                       }}
+                      desktopNotificationMode={desktopNotificationMode}
+                      onDesktopNotificationMode={setDesktopNotificationMode}
+                      inAppNotifications={inAppNotifications}
+                      onInAppNotifications={setInAppNotifications}
+                      desktopNotificationDelivery={desktopNotificationDelivery}
                     />
                   </Suspense>
                   )}
                 </SurfaceBoundary>
-              </div>
-            ) : composer && selectedWs !== "all" ? (
-              <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
-                <NewSessionComposer
-                  workspaceName={basename(selectedWs)}
-                  workspacePath={selectedWs}
-                  onLaunch={launchSessions}
-                  onCancel={() => setComposer(null)}
-                />
               </div>
             ) : firstRunOpen || workspacesEmptyOpen ? (
               <div className="content-region absolute inset-0 flex z-[var(--z-leaf)]">
@@ -3962,10 +4232,9 @@ export function App(): React.JSX.Element {
                         conn.client.orchestrationSet(true);
                     }}
                     hooksInstalled={firstRunHooksInstalled}
-                    onOpenHooks={() => {
-                      setFirstRunOpen(false);
-                      setSettingsSection("agent-setup");
-                      setSettings(true);
+                    agentHooks={agentHooks}
+                    onAgentHooksSet={(provider, enabled) => {
+                      if (conn.kind === "ready") conn.client.agentHooksSet(provider, enabled);
                     }}
                     onDone={closeFirstRun}
                   />
@@ -4019,8 +4288,15 @@ export function App(): React.JSX.Element {
               keymapOverrides={keymapOverrides}
               onClose={() => setAddPanePopover(null)}
               onNewTerminal={newTerminal}
+              onNewBrowser={() => {
+                if (selectedWs !== "all") openBrowserPane(selectedWs, null);
+              }}
               onSpawnAgent={spawnAgentPane}
               agentProfiles={agentProfiles}
+              workspaceActions={workspaceActions}
+              onRunWorkspaceAction={workspaceActionState.run}
+              onSaveWorkspaceAction={workspaceActionState.save}
+              onDeleteWorkspaceAction={workspaceActionState.remove}
               onSplitDown={
                 typeof addPanePopover.anchor === "number"
                   ? () =>
@@ -4042,18 +4318,22 @@ export function App(): React.JSX.Element {
 
           <AnimOut open={paletteOpen} suppress="modal">
             {paletteOpen && (
-              <CommandPalette
-                onClose={() => setPaletteOpen(false)}
-                actions={paletteActions}
-                hasWorkspace={selectedWs !== "all"}
-                workspaces={orderedWorkspaces}
-                grids={paletteGrids}
-                appearance={{
-                  currentTheme: theme,
-                  onPreview: setTheme,
-                  onCommit: setTheme,
-                }}
-              />
+              <Suspense fallback={null}>
+                <CommandPalette
+                  onClose={() => setPaletteOpen(false)}
+                  actions={paletteActions}
+                  hasWorkspace={selectedWs !== "all"}
+                  workspaces={orderedWorkspaces}
+                  grids={paletteGrids}
+                  sessions={[...sessions.values()]}
+                  activeSessionId={activeId}
+                  appearance={{
+                    currentTheme: theme,
+                    onPreview: setTheme,
+                    onCommit: setTheme,
+                  }}
+                />
+              </Suspense>
             )}
           </AnimOut>
 

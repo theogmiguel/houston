@@ -55,6 +55,8 @@ jobs:
         run: bash scripts/check-kill-guard.sh
       - name: check-protocol-sync.sh (daemon/UI/doc wire version agree)
         run: bash scripts/check-protocol-sync.sh
+      - name: check-case-collisions.sh (paths unique on case-insensitive filesystems)
+        run: bash scripts/check-case-collisions.sh
       - name: check-loop-spawn-sync.sh (both daemon hosts call the loop-spawn helper)
         run: bash scripts/check-loop-spawn-sync.sh
       - name: check-title-tooltip-guard.sh (title= component-prop vs Tooltip conversion)

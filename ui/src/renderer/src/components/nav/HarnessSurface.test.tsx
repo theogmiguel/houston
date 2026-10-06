@@ -71,6 +71,10 @@ function finding(overrides: Partial<HarnessFinding> = {}): HarnessFinding {
     state: 'open',
     decided_at_ms: null,
     recurred: false,
+    phase: 'open',
+    task: null,
+    verification: null,
+    last_seen_review_id: 3,
     ...overrides
   }
 }
@@ -83,8 +87,9 @@ function harnessState(overrides: Partial<HarnessState> = {}): HarnessState {
     reviews: [review()],
     findings: [
       finding(),
-      finding({ key: 'stale-rule', title: 'A rule that never loads', state: 'dismissed', decided_at_ms: 1 })
+      finding({ key: 'stale-rule', title: 'A rule that never loads', state: 'dismissed', phase: 'dismissed', decided_at_ms: 1 })
     ],
+    providerCoverage: [],
     ...overrides
   }
 }
@@ -108,16 +113,15 @@ describe('HarnessSurface', () => {
       state: harnessState(),
       report: null,
       running: false,
-      liveSessions: new Set([40]),
       onCreateRoutine: vi.fn(),
-      onUpdateRoutine: vi.fn(),
       onRunNow: vi.fn(),
       onDecide: vi.fn(),
+      attention: null,
+      onSeen: vi.fn(),
+      onCreateTask: vi.fn(),
       onLoadReport: vi.fn(),
-      onOpenSession: vi.fn(),
       onOpenFile: vi.fn(),
-      onReveal: vi.fn(),
-      onPrepareFix: vi.fn()
+      onReveal: vi.fn()
     }
   })
 
@@ -144,17 +148,9 @@ describe('HarnessSurface', () => {
     act(() => el.click())
   }
 
-  function openFinding(title: string): void {
-    const item = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="list-detail-item"]')).find(
-      (b) => b.textContent?.includes(title)
-    )
-    if (!item) throw new Error(`no finding "${title}" in the list`)
-    click(item)
-  }
-
   it('asks for a workspace when none is chosen, and switching one reports it', () => {
     render({ workspace: null, state: null })
-    expect(container.textContent).toContain('Choose the workspace whose agent sessions and harness to review')
+    expect(container.textContent).toContain('Choose a workspace to see its Harness reviews')
     expect(container.querySelector('[data-testid="harness-run"]')).toBeNull()
     pickOption(container, 'harness-workspace', '/home/dev/other')
     expect(props.onWorkspace).toHaveBeenCalledWith('/home/dev/other')
@@ -168,6 +164,7 @@ describe('HarnessSurface', () => {
     pickOption(container, 'harness-provider', 'codex')
     pickOption(container, 'harness-model', 'gpt-test')
     click(button('Mondays 09:00'))
+    expect(button('Run first review').closest('header')).not.toBeNull()
     click(button('Run first review'))
     expect(props.onCreateRoutine).toHaveBeenCalledWith({
       engine: 'codex',
@@ -184,6 +181,12 @@ describe('HarnessSurface', () => {
     expect(props.onRunNow).toHaveBeenCalledTimes(1)
   })
 
+  it('a routine without a published review shows no 0 → 0 trend line', () => {
+    render({ state: harnessState({ routine: routine({ id: 9 }), reviews: [], findings: [] }) })
+    expect(container.textContent).not.toContain('Repeated mistakes per 100 sessions')
+    expect(container.textContent).toContain('No published reviews yet.')
+  })
+
   it('filters catalog models by provider and resets the model when the provider changes', () => {
     render({ state: harnessState({ routine: null }) })
     pickOption(container, 'harness-model', 'claude-sonnet-test')
@@ -194,15 +197,7 @@ describe('HarnessSurface', () => {
     expect(container.querySelector('[data-testid="harness-model"]')?.textContent).toContain("The provider's default")
   })
 
-  it('keeps an existing model when it is absent from the current catalog', () => {
-    render({ state: harnessState({ routine: routine({ model: 'claude-custom' }), models: [] }) })
-    click(button('Schedule'))
-    expect(container.querySelector('[data-testid="harness-model"]')?.textContent).toContain('claude-custom')
-    click(button('Save schedule'))
-    expect(props.onUpdateRoutine).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-custom' }))
-  })
-
-  it('a running review disables Run review and names why', () => {
+  it('a running review disables Run review now', () => {
     render({ running: true })
     const run = container.querySelector<HTMLButtonElement>('[data-testid="harness-run"]')!
     expect(run.disabled).toBe(true)
@@ -212,75 +207,23 @@ describe('HarnessSurface', () => {
     expect(props.onRunNow).toHaveBeenCalledWith(7)
   })
 
-  it('lists open findings with their evidence and target, and decisions are reversible', () => {
+  it('shows one actionable row per active phase and sends task and decision callbacks', () => {
     render()
-    expect(button('Open · 1')).toBeTruthy()
-    expect(button('Dismissed · 1')).toBeTruthy()
-    openFinding('Repeated permission denials')
-    const detail = container.querySelector('[data-testid="harness-finding-detail"]')!
-    expect(detail.textContent).toContain('Observed in 6 sessions')
-    expect(detail.textContent).toContain('Confidence: high')
-    expect(detail.textContent).toContain('why was the push denied again')
-    expect(detail.textContent).toContain('Sessions: abc123, def456')
-    click(button('Open file'))
-    expect(props.onOpenFile).toHaveBeenCalledWith(`${WS}/.claude/settings.json`)
+    expect(container.textContent).toContain('Active1')
+    expect(button('Create task')).toBeTruthy()
     click(button('Dismiss'))
     expect(props.onDecide).toHaveBeenCalledWith('denied-push', 'dismissed')
-
-    click(button('Dismissed · 1'))
-    openFinding('A rule that never loads')
-    click(button('Reopen'))
-    expect(props.onDecide).toHaveBeenLastCalledWith('stale-rule', 'open')
   })
 
-  it('a finding raised again after a decision says so', () => {
-    render({ state: harnessState({ findings: [finding({ recurred: true })] }) })
-    openFinding('Repeated permission denials')
-    expect(container.textContent).toContain('Raised again after a decision')
-  })
-
-  it('preparing a fix opens a pane with the edited prompt and leaves the finding open', () => {
+  it('creates a linked task from the finding prompt', () => {
     render()
-    openFinding('Repeated permission denials')
-    click(button('Prepare fix'))
-    const area = container.querySelector<HTMLTextAreaElement>('[data-testid="harness-prepare-fix"] textarea')!
-    expect(area.value).toBe('Add Bash(git push fork:*) to permissions.allow')
-    act(() => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
-      setter.call(area, 'Add the allow rule, then run the tests')
-      area.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    pickOption(container, 'harness-fix-engine', 'codex')
-    expect(container.textContent).toContain('does not mark this finding resolved')
-    click(button('Open pane'))
-    expect(props.onPrepareFix).toHaveBeenCalledWith('codex', 'Add the allow rule, then run the tests')
-    expect(props.onDecide).not.toHaveBeenCalled()
+    click(button('Create task'))
+    expect(props.onCreateTask).toHaveBeenCalledWith('denied-push', 'claude', 'Add Bash(git push fork:*) to permissions.allow')
   })
 
-  it('run history shows each run, and a pane link only while the pane lives', () => {
-    render({
-      state: harnessState({
-        reviews: [
-          review({ id: 5, run_id: 12, session_id: 41, status: 'failed', error: 'the run ended without publishing' }),
-          review()
-        ]
-      })
-    })
-    click(container.querySelector<HTMLButtonElement>('[data-testid="harness-tab-history"]')!)
-    const text = container.textContent ?? ''
-    expect(text).toContain('Failed')
-    expect(text).toContain('the run ended without publishing')
-    expect(text).toContain('2026-09-01 to 2026-09-15')
-    expect(text).toContain('does not mean the findings are resolved')
-    const open = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent === 'Open pane')
-    expect(open).toHaveLength(1)
-    click(open[0])
-    expect(props.onOpenSession).toHaveBeenCalledWith(40)
-  })
-
-  it('the full report loads the latest published review and opens its files', () => {
+  it('opens the full report for the review from its history row', () => {
     render({ state: harnessState({ reviews: [review({ id: 8, status: 'running' }), review()] }) })
-    click(container.querySelector<HTMLButtonElement>('[data-testid="harness-tab-report"]')!)
+    click(button('Full report'))
     expect(props.onLoadReport).toHaveBeenCalledWith(3)
     click(button('Open findings.json'))
     expect(props.onOpenFile).toHaveBeenCalledWith(`${WS}/.houston/harness/r11/findings.json`)
@@ -290,20 +233,16 @@ describe('HarnessSurface', () => {
     expect(container.textContent).toContain('open report.md to read all of it')
   })
 
-  it('the schedule saves provider, model and cadence onto the review routine', () => {
-    render()
-    expect(container.textContent).toContain('Only when I run it')
-    click(button('Schedule'))
-    click(button('Daily 09:00'))
-    click(button('Save schedule'))
-    expect(props.onUpdateRoutine).toHaveBeenCalledWith({
-      id: 7,
-      expected_revision: 'rev-1',
-      engine: 'claude',
-      model: null,
-      cadence: { type: 'clock', hour: 9, minute: 0, weekdays: null },
-      enabled: true
+  it('renders the harness story trend and compact older-review delta', () => {
+    const latest = review({ id: 13, sessions: 38, finding_count: 7 })
+    const older = review({ id: 12, sessions: 41, finding_count: 10 })
+    render({
+      state: harnessState({ reviews: [latest, older] }),
+      trendValues: [41, 33, 25, 18],
+      trendReviewCount: 4,
+      historyDeltaOverrides: { 12: { new: 2, gone: 1 } }
     })
-    expect(container.querySelector('[data-testid="harness-schedule"]')).toBeNull()
+    expect(container.textContent).toContain('Repeated mistakes per 100 sessions: 41 → 18 over 4 reviews')
+    expect(container.textContent).toContain('41 sessions · 2 new · 1 gone')
   })
 })

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { Card, EmptyState, Field, PageFrame, PageHeader, PaneHeaderButton, SectionHead, Segmented, Select, StatusLabel } from './index'
+import { Card, EmptyState, Field, PageFrame, PageHeader, PaneHeaderButton, PrWatchChip, PrWatchRow, PrWatchStack, SectionHead, Segmented, Select, StatusLabel } from './index'
 import { IconClose, IconSearch } from '../icons'
 
 // @ts-expect-error pane header icon buttons require an accessible name
@@ -72,8 +72,30 @@ describe('page and content primitives', () => {
     expect(screen.getByLabelText('Idle').firstElementChild?.getAttribute('style')).toContain('transparent')
   })
 
+  it('spans a review group heading and its rows with one status rail', () => {
+    const { container } = render(<Card><Card.Group rail="gone"><SectionHead title="Gone" count={1} /><Card.Row heading="Fixed issue" /></Card.Group></Card>)
+    const group = container.querySelector('section')
+    const row = container.querySelector('.overflow-hidden > section > div')
+    expect(group?.className).toContain('before:bg-[var(--ok)]')
+    expect(row?.className).not.toContain('before:')
+    expect(screen.getByRole('heading', { name: 'Gone1' })).toBeTruthy()
+  })
+
   it('requires and forwards the pane header button accessible name', () => {
     render(<PaneHeaderButton icon={IconClose} aria-label="Close pane" />)
     expect(screen.getByRole('button', { name: 'Close pane' }).className).toContain("after:h-[28px]")
+  })
+
+  it('renders PR watch status, stop action and GitHub action', () => {
+    const onStop = vi.fn()
+    const onOpen = vi.fn()
+    render(<><PrWatchChip number={61} /><PrWatchStack><PrWatchRow number={61} lastCheckedAtMs={Date.now() - 40_000} onStop={onStop} onOpen={onOpen} /></PrWatchStack></>)
+    expect(screen.getByTestId('pr-watch-chip').textContent).toContain('#61')
+    expect(screen.getByTestId('pr-watch-stack').className).toContain('flex-col')
+    expect(screen.getByTestId('pr-watch-row').textContent).toContain('checked 40s ago')
+    screen.getByRole('button', { name: 'Stop watching' }).click()
+    screen.getByRole('button', { name: 'Open on GitHub' }).click()
+    expect(onStop).toHaveBeenCalledOnce()
+    expect(onOpen).toHaveBeenCalledOnce()
   })
 })

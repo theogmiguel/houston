@@ -113,8 +113,17 @@ describe('source control panel — shell integration', () => {
 
   // The palette runs the HIGHLIGHTED row, and a click only moves the
   // highlight — hover the row first, then click it, as a pointer would.
-  function runPaletteRow(match: string): void {
+  async function runPaletteRow(match: string): Promise<void> {
     pressCtrlK()
+    for (let i = 0; i < 240 && !harness!.container.querySelector('[data-testid="command-palette"]'); i++) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)) })
+    }
+    const search = harness!.container.querySelector<HTMLInputElement>('[data-testid="command-palette-search"]')!
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(search, match)
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
     const row = Array.from(
       harness!.container.querySelectorAll<HTMLElement>('[data-testid="command-palette-row"]')
     ).find((r) => r.textContent?.includes(match))
@@ -127,8 +136,8 @@ describe('source control panel — shell integration', () => {
     })
   }
 
-  function switchToAll(): void {
-    runPaletteRow('All workspaces')
+  async function switchToAll(): Promise<void> {
+    await runPaletteRow('All workspaces')
   }
 
   it('`g` opens the panel without writing a git leaf into the saved grid', async () => {
@@ -180,7 +189,7 @@ describe('source control panel — shell integration', () => {
     expect(panel()!.style.width).toBe('612px')
   })
 
-  it('migrates a saved git leaf before layouts load: the panel opens and no leaf is lost', async () => {
+  it('loads a saved grid with a legacy git leaf while the inspector stays closed by default', async () => {
     const saved: LayoutNode = {
       kind: 'split',
       dir: 'col',
@@ -196,6 +205,8 @@ describe('source control panel — shell integration', () => {
 
     await boot([1, 2])
 
+    expect(panel()).toBeNull()
+    press('g')
     expect(panel()).not.toBeNull()
     await settlePanel()
     const tree = storedTree()
@@ -204,7 +215,7 @@ describe('source control panel — shell integration', () => {
     expect(sessionsIn(loadLayout(GRID_KEY).tree).sort()).toEqual([1, 2])
   })
 
-  it('scopes to the selected workspace even when a stale pane in another workspace was focused', async () => {
+  it('keeps the selected workspace scoped when a stale pane is focused', async () => {
     harness = await renderReadyApp()
     deliverHelloOk({
       sessions: [
@@ -240,7 +251,7 @@ describe('source control panel — shell integration', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    switchToAll()
+    await switchToAll()
     press('g')
     await settlePanel()
     expect(panel()).not.toBeNull()
@@ -263,7 +274,7 @@ describe('source control panel — shell integration', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    switchToAll()
+    await switchToAll()
 
     const toggle = (): HTMLButtonElement =>
       harness!.container.querySelector<HTMLButtonElement>('[data-testid="scm-toggle"]')!
@@ -295,7 +306,7 @@ describe('source control panel — shell integration', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    switchToAll()
+    await switchToAll()
     press('g')
     await settlePanel()
     act(() => {
@@ -349,25 +360,24 @@ describe('source control panel — shell integration', () => {
     expect(JSON.stringify(storedTree('all'))).not.toContain('"editor"')
   })
 
-  it('expands the side panel without destroying the grid and restores it with Escape', async () => {
+  it('keeps inspector controls in the top bar and preserves panes while open', async () => {
     await boot([1])
     press('g')
     await settlePanel()
     const grid = harness!.container.querySelector<HTMLElement>('.grid-slot')!
     const before = engineCounts()
-    act(() => { panel()!.querySelector<HTMLButtonElement>('[aria-label="Expand side panel"]')!.click() })
-    expect(panel()!.classList.contains('expanded')).toBe(true)
-    expect(grid.getAttribute('aria-hidden')).toBe('true')
-    expect(engineCounts()).toEqual(before)
-    act(() => { panel()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
-    expect(panel()!.classList.contains('expanded')).toBe(false)
+    expect(panel()!.querySelector('[aria-label="Expand side panel"]')).toBeNull()
+    expect(panel()!.querySelector('[aria-label="Close side panel"]')).toBeNull()
     expect(grid.getAttribute('aria-hidden')).toBeNull()
+    expect(engineCounts()).toEqual(before)
+    press('g')
+    expect(panel()).toBeNull()
     expect(engineCounts()).toEqual(before)
   })
 
   it('the palette row still toggles the panel through the old command id', async () => {
     await boot([1])
-    runPaletteRow('side panel')
+    await runPaletteRow('side panel')
     await settlePanel()
     expect(panel()).not.toBeNull()
   })

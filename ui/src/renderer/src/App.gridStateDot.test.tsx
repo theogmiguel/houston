@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from './houston/client'
 import {
   type AppHarness,
@@ -32,6 +32,13 @@ describe("grid-row state dot follows the grid's live sessions", () => {
     deliverHelloOk({ sessions, workspaces: [makeWorkspace({ path: WS })] })
     await act(async () => {
       await Promise.resolve()
+    })
+    // The rail row is lazy; its Suspense fallback carries no status to assert on.
+    await vi.waitFor(() => {
+      const state = harness!.container.querySelector<HTMLElement>(
+        '[data-testid="grid-row"] [data-testid="grid-state-dot"]'
+      )?.dataset.state
+      if (state === undefined || state === 'loading') throw new Error(`grid row still loading: ${state}`)
     })
   }
 

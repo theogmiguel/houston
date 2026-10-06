@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 125;
+pub const PROTOCOL_VERSION: u32 = 126;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -384,6 +384,49 @@ pub enum HarnessFindingState {
     Resolved,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessFindingPhase {
+    Open,
+    Fixing,
+    AwaitingVerification,
+    NotSeen,
+    Resolved,
+    Dismissed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessVerdict {
+    Gone,
+    StillPresent,
+    Inconclusive,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessFindingTask {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub task_id: i64,
+    pub key: String,
+    pub status: TaskStatus,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub landed_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessVerification {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub review_id: u32,
+    pub verdict: HarnessVerdict,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub sessions_after: u32,
+    pub quotes: Vec<String>,
+}
+
 /// A finding as its most recent review recorded it. `state` is the operator's
 /// decision, unless a later review raised the finding again after it
 /// (`recurred`), which reopens it.
@@ -408,6 +451,57 @@ pub struct HarnessFinding {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub decided_at_ms: Option<i64>,
     pub recurred: bool,
+    pub phase: HarnessFindingPhase,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub task: Option<HarnessFindingTask>,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub verification: Option<HarnessVerification>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub last_seen_review_id: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessAttention {
+    pub workspace: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub open: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub fixing: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub awaiting_verification: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub not_seen: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub resolved: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub dismissed: u32,
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub latest_published_review_id: Option<u32>,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub seen_review_id: u32,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub attention: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct HarnessProviderCoverage {
+    pub agent: AgentKind,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub sessions: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaskOrigin {
+    HarnessFinding {
+        workspace: String,
+        key: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        review_id: u32,
+    },
 }
 
 /// A task's workflow state. Archiving is orthogonal: an archived task keeps
@@ -658,6 +752,9 @@ pub struct TaskSummary {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub open_run: Option<TaskRun>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub origin: Option<TaskOrigin>,
 }
 
 /// One task with its full text. Every mutation bumps `revision`, so a client
@@ -690,6 +787,9 @@ pub struct Task {
     pub updated_at_ms: i64,
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub archived_at_ms: Option<i64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub origin: Option<TaskOrigin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1778,6 +1878,9 @@ pub struct SessionInfo {
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub status: Option<AgentStatus>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub status_since_ms: Option<u64>,
+    #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub context: Option<SessionContext>,
     #[serde(default)]
@@ -1828,6 +1931,24 @@ pub struct SessionInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct PrWatchInfo {
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub number: u32,
+    pub url: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub last_checked_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionPrWatches {
+    pub session: u32,
+    pub watches: Vec<PrWatchInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TagInfo {
     pub id: u32,
     pub name: String,
@@ -1848,6 +1969,24 @@ pub const MAX_TAGS_PER_SESSION: usize = 5;
 pub struct Workspace {
     pub path: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct WorkspaceAction {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub shortcut: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct LocalServer {
+    pub port: u16,
+    pub process: String,
+    pub session: u32,
+    pub pane_title: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1915,6 +2054,15 @@ pub struct GitBranchInfo {
     /// holds the branch, so it cannot be switched to or deleted here.
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub worktree_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct GitBranchCommit {
+    pub sha: String,
+    pub subject: String,
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub author_time_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2681,6 +2829,12 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         prompt: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        model: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        effort: Option<ChatEffort>,
     },
     SessionKill {
         session: u32,
@@ -2713,6 +2867,7 @@ pub enum ClientMsg {
         rows: u16,
     },
     SessionList,
+    PrWatchList,
     SessionAttach {
         session: u32,
         #[serde(default)]
@@ -2754,6 +2909,9 @@ pub enum ClientMsg {
         name: String,
     },
     WorkspaceList,
+    WorkspaceLocalServers {
+        workspace: String,
+    },
     SessionClose {
         session: u32,
         #[serde(default)]
@@ -2800,6 +2958,9 @@ pub enum ClientMsg {
         base: Option<String>,
     },
     GitBranch {
+        dir: String,
+    },
+    GitBranchCommits {
         dir: String,
     },
     GitStage {
@@ -3013,6 +3174,10 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         merge_method: Option<PrMergeMethod>,
         request: u32,
+    },
+    PrWatchUnwatch {
+        session: u32,
+        number: u32,
     },
     GitReviewDiffs {
         dir: String,
@@ -3387,6 +3552,26 @@ pub enum ClientMsg {
         key: String,
         state: HarnessFindingState,
     },
+    /// Creates and links a backlog task from a finding as one database write.
+    HarnessFixTask {
+        workspace: String,
+        key: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        agent: Option<AgentKind>,
+        #[serde(default)]
+        start: bool,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        prompt: Option<String>,
+    },
+    /// Gets Harness attention counts for all workspaces known to Harness.
+    HarnessOverviewGet,
+    /// Advances a workspace's seen review cursor. The value never moves back.
+    HarnessSeen {
+        workspace: String,
+        review_id: u32,
+    },
     /// Global task summaries scoped to all, unassigned or a workspace path.
     TaskSnapshot {
         scope: String,
@@ -3558,6 +3743,17 @@ pub enum ClientMsg {
         workspace: String,
         routes: Vec<RoleRoute>,
     },
+    WorkspaceActionsGet {
+        workspace: String,
+    },
+    WorkspaceActionSet {
+        workspace: String,
+        action: WorkspaceAction,
+    },
+    WorkspaceActionDelete {
+        workspace: String,
+        id: String,
+    },
     OrchestrationCapsSet {
         max_live_children: u32,
         max_spawn_depth: u32,
@@ -3573,6 +3769,20 @@ pub enum ClientMsg {
         until_ms: i64,
         #[serde(default)]
         refresh_pricing: bool,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
+    },
+    UsageActivitySummaryGet {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        since_ms: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+        #[serde(default)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        workspace: Option<String>,
     },
     BrowserToolResult {
         request_id: u64,
@@ -3618,6 +3828,9 @@ pub enum ServerMsg {
     SessionList {
         sessions: Vec<SessionInfo>,
     },
+    PrWatchList {
+        watches: Vec<SessionPrWatches>,
+    },
     SessionRemoved {
         session: u32,
     },
@@ -3643,6 +3856,12 @@ pub enum ServerMsg {
     WorkspaceList {
         workspaces: Vec<Workspace>,
     },
+    WorkspaceLocalServers {
+        workspace: String,
+        servers: Vec<LocalServer>,
+        unsupported: Option<String>,
+        truncated: bool,
+    },
     SessionResized {
         session: u32,
         cols: u16,
@@ -3659,6 +3878,10 @@ pub enum ServerMsg {
     SessionResumable {
         session: u32,
         resumable: bool,
+    },
+    PrWatchChanged {
+        session: u32,
+        watches: Vec<PrWatchInfo>,
     },
     TagList {
         tags: Vec<TagInfo>,
@@ -3683,6 +3906,17 @@ pub enum ServerMsg {
     WorkspaceRouting {
         workspace: String,
         routes: Vec<RoleRoute>,
+    },
+    WorkspaceActions {
+        workspace: String,
+        actions: Vec<WorkspaceAction>,
+    },
+    WorkspaceActionRefused {
+        workspace: String,
+        reason: String,
+        limit: u32,
+        actual: u32,
+        requested: u32,
     },
     DelegationResults {
         parent: u32,
@@ -3734,6 +3968,13 @@ pub enum ServerMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         common_dir: Option<String>,
+    },
+    GitBranchCommits {
+        dir: String,
+        commits: Vec<GitBranchCommit>,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        total: u64,
+        truncated: bool,
     },
     GitCommit {
         dir: String,
@@ -4073,6 +4314,10 @@ pub enum ServerMsg {
         reviews: Vec<HarnessReview>,
         findings: Vec<HarnessFinding>,
         models: Vec<HarnessModelOption>,
+        provider_coverage: Vec<HarnessProviderCoverage>,
+    },
+    HarnessOverview {
+        rows: Vec<HarnessAttention>,
     },
     HarnessReport {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -4236,6 +4481,13 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         scan_duration_ms: u64,
     },
+    UsageActivitySummary {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        since_ms: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        until_ms: i64,
+        days: Vec<UsageActivityDay>,
+    },
     Error {
         message: String,
         context: Option<String>,
@@ -4324,6 +4576,32 @@ pub struct UsageBucket {
     pub records: u32,
     pub unpriced_records: u32,
     pub sessions: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub workspace_path: Option<String>,
+    pub category_cost_usd: UsageCategoryCost,
+    pub fast_cost_usd: f64,
+    pub ultrafast_cost_usd: f64,
+    pub speed_premium_usd: f64,
+    pub speed_rate_available: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageCategoryCost {
+    pub input_usd: f64,
+    pub cache_read_usd: f64,
+    pub cache_write_usd: f64,
+    pub output_usd: f64,
+    pub other_usd: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct UsageActivityDay {
+    pub day: String,
+    pub cost_usd: f64,
+    pub totals: UsageTokenTotals,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4378,6 +4656,9 @@ pub struct UsagePricing {
 }
 
 pub const USAGE_MAX_WINDOW_DAYS: u32 = 90;
+
+/// The calendar is one row per day; bounding it here keeps an activity reply small.
+pub const USAGE_ACTIVITY_MAX_DAYS: u32 = 365;
 
 pub const USAGE_WINDOW_REFUSED: &str = "usage_window_refused:";
 

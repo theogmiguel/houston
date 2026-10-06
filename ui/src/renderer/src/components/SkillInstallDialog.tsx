@@ -80,7 +80,7 @@ export function SkillInstallDialog({
           if (event.key === 'Escape') onClose()
           trapTab(event)
         }}
-        className="w-[560px] max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_4rem)] rounded-[var(--tr-radius-panel)] border border-[var(--border)] bg-[var(--card-bg)] shadow-[var(--shadow-lg)] overflow-hidden flex flex-col"
+        className="w-[560px] max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_4rem)] rounded-[var(--tr-radius-card)] border border-[var(--border)] bg-[var(--card-bg)] shadow-[var(--shadow-lg)] overflow-hidden flex flex-col"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 py-3.5 px-5 border-b border-[var(--divider)] flex-none">

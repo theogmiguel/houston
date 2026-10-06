@@ -8,13 +8,12 @@ import type { TaskSummary } from '../src/houston/generated/TaskSummary'
 import type { TasksAccess } from '../src/houston/generated/TasksAccess'
 import type { TaskDetailData } from '../src/houston/useTasks'
 import { ChildrenRoster } from '../src/components/ChildrenRoster'
+import { OverviewTab } from '../src/components/OverviewTab'
 import { SessionPane } from '../src/components/SessionPane'
 import type { OutputSink } from '../src/pane/TerminalPane'
 import { TaskDetail } from '../src/components/tasks/TaskDetail'
 import { TasksList } from '../src/components/tasks/TasksList'
-import { SettingsView } from '../src/components/SettingsView'
-import { baseSettingsViewProps } from '../src/components/settingsViewTestFixtures'
-import { setSettingsNavForTests } from '../src/settingsNav'
+import { SettingsScreen } from './settingsStories'
 import '../src/components/tasks/tasks.css'
 import '../src/components/sidePanel.css'
 
@@ -288,17 +287,11 @@ function tasksAccessClient(initial: TasksAccess): HoustonClient {
 }
 
 export function TasksSettingsStory(): React.JSX.Element {
-  setSettingsNavForTests({ open: true, section: 'tasks' })
-  return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--content-bg)' }}>
-      <SettingsView
-        {...baseSettingsViewProps()}
-        daemonClient={tasksAccessClient('write')}
-        historyWorkspace="/home/dev/code/houston"
-        historyWorkspaceName="houston"
-      />
-    </div>
-  )
+  return <SettingsScreen section="tasks" props={{
+    daemonClient: tasksAccessClient('write'),
+    historyWorkspace: '/home/dev/code/houston',
+    historyWorkspaceName: 'houston'
+  }} />
 }
 
 const ROSTER_WORKSPACE = '/home/dev/code/houston'
@@ -377,6 +370,27 @@ const ROSTER_SESSIONS: ReadonlyMap<number, SessionInfo> = new Map(
     rosterChild(435, 'lock', 'idle', 45)
   ].map((child) => [child.id, child])
 )
+
+function OverviewRosterStory(): React.JSX.Element {
+  const client = React.useMemo(() => new Proxy({
+    subscribe: () => () => {},
+    delegationResultsList: noop,
+    inboxList: noop,
+    gitStatus: noop
+  }, {
+    get(target, prop, receiver) {
+      if (prop in target) return Reflect.get(target, prop, receiver)
+      if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined
+      return noop
+    }
+  }) as unknown as HoustonClient, [])
+  const sessions = new Map([[ROSTER_PARENT.id, ROSTER_PARENT], ...ROSTER_SESSIONS])
+  return <div style={{ height: '100%', overflow: 'auto', background: 'var(--content-bg)' }}><OverviewTab parentId={ROSTER_PARENT.id} sessions={sessions} client={client} onClose={noop} onReview={noop} /></div>
+}
+
+export function TasksOverviewRosterStory(): React.JSX.Element {
+  return <OverviewRosterStory />
+}
 
 function rosterClient(): HoustonClient {
   const handlers = new Set<(msg: ServerMsg) => void>()

@@ -1,10 +1,10 @@
 import { useId } from 'react'
 
-import type { UsageProvider } from '../houston/generated/UsageProvider'
-import { formatAxisUsd, formatTokens, type SeriesPoint } from '../usage'
+import type { UsageProvider } from '../../houston/generated/UsageProvider'
+import { formatAxisUsd, formatTokens, type SeriesPoint } from '../../usage'
 
 const VIEW_W = 600
-const VIEW_H = 170
+const VIEW_H = 210
 
 export interface UsageSeries {
   provider: UsageProvider
@@ -56,7 +56,7 @@ export function monotonePath(xs: number[], ys: number[]): string {
 export function niceScale(max: number): { top: number; ticks: number[] } {
   if (!Number.isFinite(max) || max <= 0) return { top: 1, ticks: [0, 1] }
   const pow = 10 ** Math.floor(Math.log10(max))
-  const step = [1, 2, 2.5, 5, 10].find((s) => max / (s * pow) <= 3) ?? 10
+  const step = [1, 2, 2.5, 5, 10].find((s) => max / (s * pow) <= 4) ?? 10
   const size = step * pow
   const top = Number((Math.ceil(max / size) * size).toFixed(10))
   const ticks: number[] = []
@@ -92,18 +92,16 @@ export function UsageChart({
   const last = points[points.length - 1]
 
   return (
-    <div data-testid="usage-chart" className="min-w-0">
-      <div className="flex min-w-0">
-        {}
+    <div data-testid="usage-chart" className="grid min-w-0 grid-cols-[54px_minmax(0,1fr)] grid-rows-[210px_20px]">
         <div
-          className="relative w-[54px] shrink-0 text-right"
+          className="relative row-start-1 text-right"
           style={{ height: VIEW_H }}
           aria-hidden="true"
         >
           {ticks.map((t) => (
             <span
               key={t}
-              className="absolute right-[8px] -translate-y-1/2 [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tabular-nums text-[var(--text-faint)]"
+              className="absolute right-[8px] -translate-y-1/2 font-mono [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tabular-nums text-[var(--text-faint)]"
               style={{ top: `${(yAt(t) / VIEW_H) * 100}%` }}
             >
               {format(t)}
@@ -111,14 +109,15 @@ export function UsageChart({
           ))}
         </div>
 
+        <div className="relative col-start-2 row-start-1 min-w-0" style={{ height: VIEW_H }}>
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           width="100%"
           height={VIEW_H}
           preserveAspectRatio="none"
           role="img"
-          aria-label={`${metric === 'cost' ? 'Cost' : 'Tokens'} over ${points.length} points`}
-          className="block min-w-0 flex-1"
+          aria-label={metric === 'cost' ? 'Daily cost by provider' : 'Daily processed tokens by provider'}
+          className="block min-w-0 w-full"
         >
           <defs>
             {series.map((s) => (
@@ -130,8 +129,8 @@ export function UsageChart({
                 x2="0"
                 y2="1"
               >
-                <stop offset="0%" stopColor={s.color} stopOpacity="0.32" />
-                <stop offset="100%" stopColor={s.color} stopOpacity="0.02" />
+                <stop offset="0%" stopColor={s.color} stopOpacity={s.provider === 'claude' ? 0.14 : 0.12} />
+                <stop offset="100%" stopColor={s.color} stopOpacity="0.01" />
               </linearGradient>
             ))}
           </defs>
@@ -171,14 +170,12 @@ export function UsageChart({
             )
           })}
         </svg>
-      </div>
-
-      {}
-      <div className="ml-[54px] mt-[6px] flex justify-between [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
-        <span>{first ? labelFor(first) : ''}</span>
-        <span>{middle && middle !== first && middle !== last ? labelFor(middle) : ''}</span>
-        <span>{last && last !== first ? labelFor(last) : ''}</span>
-      </div>
+        </div>
+        <div className="col-start-2 row-start-2 flex justify-between px-[var(--space-1)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase text-[var(--text-faint)]">
+          <span>{first ? labelFor(first) : ''}</span>
+          <span>{middle && middle !== first && middle !== last ? labelFor(middle) : ''}</span>
+          <span>{last && last !== first ? labelFor(last) : ''}</span>
+        </div>
     </div>
   )
 }

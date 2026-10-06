@@ -107,7 +107,8 @@ const PANE_ROUTING: &str = concat!(
     "`workspace_info` lists registered target workspaces; `target_workspace` accepts only one \
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
-    "`pane_send_keys`, `pane_kill`, `pane_submit`. ",
+    "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_pr_watch`, `pane_pr_unwatch`. ",
+    "Call `pane_pr_watch` with a PR URL or number and end your turn; do not poll. Use `pane_pr_unwatch` when updates are no longer needed. ",
     "A pane that needs input will not take a `pane_prompt` — read it, then answer it with ",
     "`pane_send_keys` (esc enter up down tab ctrl+c y n), or escalate to the user when their decision is required. Child needs-input belongs to its parent and does not notify the desktop. ",
     "Scale the spawn to the work: do it yourself when the task is smaller than the brief it would ",
@@ -259,6 +260,40 @@ impl ToolProvider for OrchestrationTools {
             let daemon = self.daemon()?;
             let caller = scope.session_id;
             match name {
+                "pane_pr_watch" => {
+                    let target = match args.get("pr") {
+                        Some(Value::String(value)) => value.clone(),
+                        Some(Value::Number(value)) => value.to_string(),
+                        Some(value) => {
+                            return Err(ToolError(format!(
+                                "pr must be a pull request URL or number; got {value}"
+                            )))
+                        }
+                        None => {
+                            return Err(ToolError(
+                                "pr is required and must be a pull request URL or number".into(),
+                            ))
+                        }
+                    };
+                    let start_target = target.clone();
+                    tokio::task::spawn_blocking(move || {
+                        daemon.pr_watch_start(caller, &start_target)
+                    })
+                    .await
+                    .map_err(|e| ToolError(format!("PR watch task panicked: {e}")))?
+                    .map_err(refused)?;
+                    Ok(ToolOutput::structured(
+                        json!({"watching": true, "pr": target, "note": "End your turn now. Houston checks for changes and wakes this pane; do not poll."}),
+                    ))
+                }
+                "pane_pr_unwatch" => {
+                    let count =
+                        tokio::task::spawn_blocking(move || daemon.pr_watch_stop_all(caller))
+                            .await
+                            .map_err(|e| ToolError(format!("PR unwatch task panicked: {e}")))?
+                            .map_err(refused)?;
+                    Ok(ToolOutput::structured(json!({"stopped": count})))
+                }
                 "pane_spawn" => {
                     let request: orchestrate::SpawnRequest =
                         serde_json::from_value(args.clone())
@@ -603,6 +638,20 @@ impl OrchestrationTools {
             "Spawn a child with prompt, output_format and boundaries; returns session id. Child slot/depth caps apply. Top-level handoff creates an independent pane without a child slot. Size model to separable work.",
         );
         let mut out = vec![
+            ToolSpec {
+                name: "pane_pr_watch".into(),
+                title: "Watch a PR".into(),
+                description: "Watch a GitHub PR; Houston checks each minute and wakes you on a failed check, all reported checks passing, a new review or comment, or a new conflict. Call it last, end your turn, do not poll.".into(),
+                input_schema: json!({"type":"object","properties":{"pr":{"type":["string","integer"],"description":"PR URL or number in this repository."}},"required":["pr"],"additionalProperties":false}),
+                annotations: local(Annotations::local_write()),
+            },
+            ToolSpec {
+                name: "pane_pr_unwatch".into(),
+                title: "Stop PR watches".into(),
+                description: "Stop this pane's PR watches.".into(),
+                input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
+                annotations: local(Annotations::local_write()),
+            },
             ToolSpec {
                 name: "pane_spawn".into(),
                 title: "Spawn an agent pane".into(),
@@ -951,6 +1000,8 @@ mod tests {
         assert_eq!(
             names,
             vec![
+                "pane_pr_watch",
+                "pane_pr_unwatch",
                 "pane_spawn",
                 "pane_list",
                 "pane_get",
@@ -1019,7 +1070,10 @@ mod tests {
             );
             // pane_submit is neither: a local additive write, not a read and not
             // destructive (it only appends a row to the parent's own inbox).
-            let local_write = spec.name == "pane_submit";
+            let local_write = matches!(
+                spec.name.as_str(),
+                "pane_submit" | "pane_pr_watch" | "pane_pr_unwatch"
+            );
             assert_eq!(
                 spec.annotations.read_only, readonly,
                 "{} read_only annotation",

@@ -38,7 +38,9 @@ export type { SessionState } from './generated/SessionState'
 export type { SessionInfo } from './generated/SessionInfo'
 export type { AgentStatus } from './generated/AgentStatus'
 export type { Workspace } from './generated/Workspace'
+export type { WorkspaceAction } from './generated/WorkspaceAction'
 export type { GitFileState } from './generated/GitFileState'
+export type { GitBranchCommit } from './generated/GitBranchCommit'
 export type { GitFileStatus } from './generated/GitFileStatus'
 export type { GhState } from './generated/GhState'
 export type { PrChecks } from './generated/PrChecks'
@@ -659,6 +661,10 @@ export class HoustonClient {
     this.send({ type: 'git_status', dir, base: base ?? null })
   }
 
+  gitBranchCommits(dir: string): void {
+    this.send({ type: 'git_branch_commits', dir })
+  }
+
   gitDiff(dir: string, path?: string, base?: string | null): void {
     this.send({ type: 'git_diff', dir, path: path ?? null, base: base ?? null })
   }
@@ -669,6 +675,10 @@ export class HoustonClient {
 
   removeWorkspace(path: string): void {
     this.send({ type: 'workspace_remove', path })
+  }
+
+  workspaceLocalServers(workspace: string): void {
+    this.send({ type: 'workspace_local_servers', workspace })
   }
 
   renameWorkspace(path: string, name: string): void {
@@ -1268,13 +1278,18 @@ export class HoustonClient {
     this.send({ type: 'restore_resume_set', enabled })
   }
 
-  usageSummaryGet(sinceMs: number, untilMs: number, refreshPricing = false): void {
+  usageSummaryGet(sinceMs: number, untilMs: number, refreshPricing = false, workspace?: string | null): void {
     this.send({
       type: 'usage_summary_get',
       since_ms: sinceMs,
       until_ms: untilMs,
-      refresh_pricing: refreshPricing
+      refresh_pricing: refreshPricing,
+      workspace: workspace ?? null
     })
+  }
+
+  usageActivitySummaryGet(sinceMs: number, untilMs: number, workspace?: string | null): void {
+    this.send({ type: 'usage_activity_summary_get', since_ms: sinceMs, until_ms: untilMs, workspace: workspace ?? null })
   }
 
   settledRetentionSet(hours: number): void {
@@ -1432,6 +1447,18 @@ export class HoustonClient {
     this.send({ type: 'harness_decide', workspace, key, state })
   }
 
+  harnessFixTask(workspace: string, key: string, agent: AgentKind, prompt: string): void {
+    this.send({ type: 'harness_fix_task', workspace, key, agent, start: false, prompt })
+  }
+
+  harnessOverviewGet(): void {
+    this.send({ type: 'harness_overview_get' })
+  }
+
+  harnessSeen(workspace: string, reviewId: number): void {
+    this.send({ type: 'harness_seen', workspace, review_id: reviewId })
+  }
+
   taskSnapshot(scope: string): void {
     this.send({ type: 'task_snapshot', scope })
   }
@@ -1486,6 +1513,25 @@ export class HoustonClient {
 
   taskReviewSettingsSet(workspace: string, reviewer: AgentKind | null, reworkRounds: number): void {
     this.send({ type: 'task_review_settings_set', workspace, reviewer, rework_rounds: reworkRounds })
+  }
+
+  workspaceActionsGet(workspace: string): void {
+    this.send({ type: 'workspace_actions_get', workspace })
+  }
+
+  workspaceActionSet(workspace: string, action: import('./generated/WorkspaceAction').WorkspaceAction): void {
+    this.send({ type: 'workspace_action_set', workspace, action })
+  }
+
+  workspaceActionDelete(workspace: string, id: string): void {
+    this.send({ type: 'workspace_action_delete', workspace, id })
+  }
+
+  runWorkspaceAction(action: import('./generated/WorkspaceAction').WorkspaceAction, workspace: string, shellIntegration: boolean): Promise<void> {
+    return this.terminals.create({ agent: 'shell', project_dir: workspace, shell_integration: shellIntegration })
+      .then((session) => {
+        if (!this.sendStdin(session.id, `${action.command}\r`)) throw new Error(`Could not send action ${action.name} to shell pane ${session.id}`)
+      })
   }
 
   taskQueueRun(orchestratorSession: number, count: number, agent: AgentKind | null = null): void {

@@ -3,10 +3,9 @@ import type { SshAuth, SshConfigHost, SshProfile } from '../houston/client'
 import { pickFile } from '../houston/bridge'
 import { IconChevronRight } from './icons'
 import { Icon } from './Icon'
-import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY } from './buttonChrome'
 import { Tooltip } from './Tooltip'
 import { Toggle } from './settingsPrimitives'
-import { MODAL_SCRIM_CLS } from './overlayChrome'
+import { Button, DialogBackdrop, DialogForm } from './ui'
 import { useFocusTrap } from './dialogFocus'
 
 export interface SshConnectParams {
@@ -102,10 +101,10 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
   const textInput = 'w-full min-w-0 h-[30px] px-2.5 bg-background border border-border rounded-[6px] text-text-primary text-[length:var(--tr-text-base)]'
   const labelClass = 'text-right text-[length:var(--tr-text-base)] text-text-primary'
   return (
-    <div className={MODAL_SCRIM_CLS} onMouseDown={() => { if (!busyRef.current) onClose() }}>
-      <form
+    <DialogBackdrop onMouseDown={() => { if (!busyRef.current) onClose() }}>
+      <DialogForm
         ref={dialogRef}
-        className="pop w-[min(440px,calc(100vw-32px))] p-6 flex flex-col gap-4 bg-[var(--card-bg)] border border-border rounded-[14px] shadow-[var(--shadow-2)] max-h-[calc(100vh-32px)] overflow-y-auto motion-safe:animate-[panel-in_var(--animate-t-panel)_var(--animate-ease-panel)]"
+        className="rounded-[14px]"
         role="dialog" aria-modal="true" aria-labelledby="ssh-connect-title" aria-describedby="ssh-connect-description"
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => { event.preventDefault(); void submit() }}
@@ -131,9 +130,9 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
           <input id="ssh-user" className={textInput} value={user} onChange={(event) => edit(setUser, event.target.value)} placeholder="Use SSH configuration" autoComplete="off" spellCheck={false} disabled={busy} />
           <label className={labelClass} htmlFor="ssh-folder">Folder</label>
           <input id="ssh-folder" className={textInput} value={folder} onChange={(event) => edit(setFolder, event.target.value)} placeholder="~/projects/app" spellCheck={false} disabled={busy} />
-          <button type="button" className={`btn ${BTN_GHOST} col-start-2 justify-self-start -ml-2.5 flex items-center gap-1 text-[length:var(--tr-text-base)]`} aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
+          <Button type="button" variant="legacy-ghost" className="col-start-2 justify-self-start -ml-2.5 flex items-center gap-1 text-[length:var(--tr-text-base)]" aria-expanded={advanced} aria-controls="ssh-advanced" onClick={() => setAdvanced(!advanced)}>
             <span className={advanced ? 'rotate-90' : ''}><Icon glyph={IconChevronRight} role="ui" /></span>Advanced
-          </button>
+          </Button>
           {advanced && <div id="ssh-advanced" className="contents">
             <label className={labelClass} htmlFor="ssh-port">Port</label>
             <input id="ssh-port" className={`${textInput} w-[88px] tabular-nums`} value={port} onChange={(event) => edit(setPort, event.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric" maxLength={5} disabled={busy} />
@@ -146,11 +145,11 @@ export function SshConnectModal({ initial, configHosts, onConnect, onLoadConfigH
           {error && <p role="alert" className="col-span-2 m-0 text-[length:var(--tr-text-sm)] text-danger">{error}</p>}
         </div>
         <footer className="flex items-center gap-2">
-          <button type="button" className={BTN_SECONDARY} disabled={busy} onClick={onClose}>Cancel</button>
+          <Button type="button" variant="legacy-secondary" disabled={busy} onClick={onClose}>Cancel</Button>
           <span className="flex-1" />
-          <button type="submit" className={`btn ${BTN_PRIMARY}`} disabled={host === '' || busy}>{busy ? 'Connecting…' : 'Connect'}</button>
+          <Button type="submit" variant="legacy-primary" disabled={host === '' || busy}>{busy ? 'Connecting…' : 'Connect'}</Button>
         </footer>
-      </form>
-    </div>
+      </DialogForm>
+    </DialogBackdrop>
   )
 }

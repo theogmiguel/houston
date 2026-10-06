@@ -328,9 +328,6 @@ export function AboutSection({
 
   return (
     <>
-      <div className="mb-[var(--space-5)]">
-        <div className="text-[length:var(--tr-text-heading-size)] font-[var(--tr-text-heading-weight)] tracking-[var(--tr-text-heading-tracking)] leading-[1.25] text-[var(--text-primary)]">About</div>
-      </div>
       <div className="">
         <Row title="Houston" desc={houstonDesc}>
           <span className="text-[var(--text-muted)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] font-mono py-[2px] px-[6px] border border-[color-mix(in_srgb,var(--border)_60%,transparent)] bg-[color-mix(in_srgb,var(--content-bg)_60%,transparent)] rounded-sm">v{__APP_VERSION__}</span>

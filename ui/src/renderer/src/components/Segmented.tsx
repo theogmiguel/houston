@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import type { ReactNode } from 'react'
 import { HIT_TARGET_28 } from './hitTarget'
 import { FOCUS_HALO } from './shadowChrome'
 import { Tooltip } from './Tooltip'
@@ -11,7 +12,7 @@ import {
 
 export interface SegmentedOption<T extends string = string> {
   value: T
-  label: string
+  label: ReactNode
   compactLabel?: string
   icon?: React.ReactNode
   disabled?: boolean
@@ -27,6 +28,7 @@ export interface SegmentedProps<T extends string = string> {
   error?: { message: string; onRetry: () => void }
   'aria-label': string
   className?: string
+  leadingLabel?: ReactNode
 }
 
 function Spinner(): React.JSX.Element {
@@ -46,6 +48,7 @@ export function Segmented<T extends string = string>({
   loading = false,
   error,
   className = '',
+  leadingLabel,
   ...rest
 }: SegmentedProps<T>): React.JSX.Element {
   const ariaLabel = rest['aria-label']
@@ -152,6 +155,7 @@ export function Segmented<T extends string = string>({
         loading ? 'opacity-60' : ''
       } ${className}`}
     >
+      {leadingLabel}
       {options.map((opt, index) => {
         const selected = opt.value === value
         const disabled = loading || opt.disabled
