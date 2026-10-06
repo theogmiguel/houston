@@ -326,9 +326,21 @@ const TASK_SUMMARY_SELECT: &str = "SELECT t.id, t.workspace, t.number, t.title, 
        WHERE a.task_id = t.id AND a.checked_at IS NOT NULL)
     FROM backlog_tasks t";
 
-/// The SQL fragment every filtered query shares: `?1` is the workspace. A
-/// task is ready when it is to-do and no blocker of it is still unfinished.
-const READY_CLAUSE: &str = "t.status = 'todo' AND NOT EXISTS (
+/// The acceptance-item prefix that marks an open question rather than a
+/// criterion: a task with one is not ready until the item is rewritten.
+pub const OPEN_QUESTION_MARKER: &str = "[?]";
+
+/// The SQL fragment every filtered query shares, the readiness rule of
+/// `Daemon::task_readiness_gaps`: a to-do task with a workspace, at least one
+/// acceptance criterion (a Slack-filed task's triage writes its own), no open
+/// question and no unfinished blocker.
+const READY_CLAUSE: &str = "t.status = 'todo' AND t.workspace IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM backlog_task_acceptance q
+        WHERE q.task_id = t.id AND substr(q.text, 1, 3) = '[?]')
+    AND (EXISTS (SELECT 1 FROM backlog_task_acceptance a
+            WHERE a.task_id = t.id AND substr(a.text, 1, 3) != '[?]')
+        OR EXISTS (SELECT 1 FROM intake_events i WHERE i.task_id = t.id))
+    AND NOT EXISTS (
         SELECT 1 FROM backlog_task_blocks b
         JOIN backlog_tasks dep ON dep.id = b.blocked_by_id
         WHERE b.task_id = t.id AND dep.status NOT IN ('done', 'canceled'))";
@@ -670,6 +682,22 @@ impl Db {
             }
         }
         Ok(counts)
+    }
+
+    /// The display numbers of the task's blockers that are neither done nor
+    /// canceled, lowest first.
+    pub fn task_open_blockers(&self, task_id: i64) -> Result<Vec<u32>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT dep.number FROM backlog_task_blocks b \
+             JOIN backlog_tasks dep ON dep.id = b.blocked_by_id \
+             WHERE b.task_id = ?1 AND dep.status NOT IN ('done', 'canceled') \
+             ORDER BY dep.number",
+        )?;
+        let rows = stmt
+            .query_map([task_id], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn task_acceptance(&self, task_id: i64) -> Result<Vec<TaskAcceptanceRow>> {

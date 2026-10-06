@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionInfo } from '../../houston/client'
 import type { TaskAcceptanceItem } from '../../houston/generated/TaskAcceptanceItem'
@@ -70,7 +70,7 @@ export interface TaskDetailProps {
   onCheck: (id: number, item: number, checked: boolean) => void
   onComment: (id: number, body: string) => void
   onArchive: (id: number, archived: boolean, expectedRevision: number) => void
-  onStart: (id: number, agent: AgentKind, workspace?: string | null) => void
+  onStart: (id: number, agent: AgentKind, workspace?: string | null, force?: boolean) => void
   onRunControl: (runId: number, action: TaskRunAction) => void
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
@@ -89,8 +89,9 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   const reviewer = taskReviewer(detail.runs)
   const review = taskReviewOutcome(detail.runs, detail.comments)
   const drawer = props.presentation === 'drawer'
+  const startAnyway = useStartAnyway(props.onStart)
 
-  if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} />
+  if (drawer) return <TaskDetailDrawer props={{ ...props, onStart: startAnyway.start }} taskTitle={title} onStartAnyway={startAnyway.force} />
 
   return (
     <div className="tasks-root" data-testid="task-detail">
@@ -121,7 +122,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
           ]}
         />
       </div>
-      {refusal && refusal.id === task.id && <RefusalBanner refusal={refusal} onReload={props.onReload} taskId={task.id} />}
+      {refusal && refusal.id === task.id && <RefusalBanner refusal={refusal} onReload={props.onReload} taskId={task.id} onStartAnyway={startAnyway.force} />}
       <div className="tk-detail">
         <input
           className="tk-title-input"
@@ -215,7 +216,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
             onRunControl={props.onRunControl}
           />
         ) : (
-          startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={props.onStart} />
+          startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={startAnyway.start} />
         )}
         <SectionHeading
           heading="Acceptance"
@@ -235,7 +236,7 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
   )
 }
 
-function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTitle: string }): React.JSX.Element {
+function TaskDetailDrawer({ props, taskTitle, onStartAnyway }: { props: TaskDetailProps; taskTitle: string; onStartAnyway: () => void }): React.JSX.Element {
   const { detail, now } = props
   const { task } = detail
   const latestRun = detail.runs[0] ?? null
@@ -245,7 +246,7 @@ function TaskDetailDrawer({ props, taskTitle }: { props: TaskDetailProps; taskTi
   const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
 
   return <TaskDetailFrame>
-    {props.refusal && props.refusal.id === task.id && <RefusalBanner refusal={props.refusal} onReload={props.onReload} taskId={task.id} />}
+    {props.refusal && props.refusal.id === task.id && <RefusalBanner refusal={props.refusal} onReload={props.onReload} taskId={task.id} onStartAnyway={onStartAnyway} />}
     <TaskDrawerHeader
       taskKey={task.key}
       workspace={task.workspace?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'No workspace'}
@@ -316,6 +317,23 @@ function TaskLinks({ links }: { links: TaskLink[] }): React.JSX.Element | null {
   )
 }
 
+/** Remembers the last Start so a not-ready refusal can repeat it with `force`. */
+function useStartAnyway(onStart: TaskDetailProps['onStart']): {
+  start: (id: number, agent: AgentKind, workspace?: string | null) => void
+  force: () => void
+} {
+  const last = useRef<{ id: number; agent: AgentKind; workspace?: string | null } | null>(null)
+  return {
+    start: (id, agent, workspace) => {
+      last.current = { id, agent, workspace }
+      onStart(id, agent, workspace)
+    },
+    force: () => {
+      if (last.current) onStart(last.current.id, last.current.agent, last.current.workspace, true)
+    }
+  }
+}
+
 function commitTitle({ title, task, onSave, setTitle }: {
   title: string
   task: TaskDetailData['task']
@@ -366,12 +384,25 @@ function CopyKeyButton({ taskKey }: { taskKey: string }): React.JSX.Element {
 function RefusalBanner({
   refusal,
   taskId,
-  onReload
+  onReload,
+  onStartAnyway
 }: {
   refusal: TaskRefusal
   taskId: number
   onReload: (id: number) => void
+  onStartAnyway: () => void
 }): React.JSX.Element {
+  if (refusal.kind === 'not_ready') {
+    return (
+      <div className="tk-banner" data-testid="task-not-ready-banner">
+        <Icon glyph={IconAlertTriangle} role="small" />
+        <span className="msg">{refusal.message}</span>
+        <button type="button" className={`btn ${BTN_SECONDARY} ${HIT_TARGET_28}`} data-testid="task-start-anyway" onClick={onStartAnyway}>
+          Start anyway
+        </button>
+      </div>
+    )
+  }
   if (refusal.kind === 'conflict') {
     return (
       <div className="tk-banner" data-testid="task-conflict-banner">

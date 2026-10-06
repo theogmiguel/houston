@@ -569,6 +569,9 @@ pub enum TaskErrorKind {
     /// Another pane or run holds the task; `limit` and `actual` name the live
     /// run count and the message names the holder.
     Busy,
+    /// A Start of a task that is not ready; the message names what is missing.
+    /// The user may start it anyway with `task_start.force`.
+    NotReady,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -3654,6 +3657,9 @@ pub enum ClientMsg {
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         base: Option<String>,
+        /// Starts a task that is not ready: the user's explicit "start anyway".
+        #[serde(default)]
+        force: bool,
     },
     /// Stops or resumes one run. `resume` opens attempt N+1 on the same
     /// worktree and branch.

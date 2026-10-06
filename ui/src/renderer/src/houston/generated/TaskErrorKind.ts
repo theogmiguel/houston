@@ -5,4 +5,4 @@
  * revision; `Limit` carries limit and requested; `AccessOff` and `ReadOnly`
  * name Settings ▸ Tasks.
  */
-export type TaskErrorKind = "conflict" | "limit" | "not_found" | "access_off" | "read_only" | "invalid" | "cycle" | "busy";
+export type TaskErrorKind = "conflict" | "limit" | "not_found" | "access_off" | "read_only" | "invalid" | "cycle" | "busy" | "not_ready";

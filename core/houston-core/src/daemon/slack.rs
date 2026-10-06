@@ -1365,7 +1365,8 @@ impl Daemon {
         let this = self.clone();
         let ws = row.workspace.clone();
         let started = tokio::task::spawn_blocking(move || {
-            this.task_start_in(task_id, proto::AgentKind::Claude, None, Some(ws))
+            // The owner's accept is not a "start anyway": the readiness gate holds.
+            this.task_start_in(task_id, proto::AgentKind::Claude, None, Some(ws), false)
         })
         .await??;
         let now = now_unix_ms();

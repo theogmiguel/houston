@@ -1348,8 +1348,9 @@ async fn dispatch(
             agent,
             base,
             workspace,
+            force,
         } => {
-            let started = daemon.task_start_in(id, agent, base, workspace)?;
+            let started = daemon.task_start_in(id, agent, base, workspace, force)?;
             match started {
                 msg @ proto::ServerMsg::TaskRefused { .. } => {
                     let _ = send_msg(sink, &msg).await;

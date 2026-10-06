@@ -23,7 +23,7 @@ pub use task_links::{TaskLinkRow, TaskLinkWrite};
 mod tasks;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
-    TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
+    TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite, OPEN_QUESTION_MARKER,
 };
 
 // Seven days and 4096 receipts cover ordinary retries without unbounded local storage.

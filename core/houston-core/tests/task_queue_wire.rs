@@ -121,6 +121,8 @@ impl Rig {
             title: Some(title.to_string()),
             status: Some(proto::TaskStatus::Todo),
             priority: Some(priority),
+            // Ready means a workspace, a criterion and no open question.
+            acceptance: Some(vec![format!("{title} works")]),
             ..Default::default()
         };
         match self

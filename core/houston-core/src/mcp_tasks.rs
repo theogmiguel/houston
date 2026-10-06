@@ -110,7 +110,8 @@ fn write_fields() -> serde_json::Map<String, Value> {
             "type": "array",
             "items": { "type": "string" },
             "maxItems": proto::ACCEPTANCE_ITEMS_PER_TASK,
-            "description": "Replaces the whole list.",
+            "description": "Replaces the whole list. An item starting with [?] is an open \
+                            question: the task is not ready until it is rewritten.",
         }),
     );
     properties

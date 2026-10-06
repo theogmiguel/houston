@@ -152,10 +152,10 @@ export function TasksTab({
           onCheck={tasks.check}
           onComment={tasks.comment}
           onArchive={tasks.archive}
-          onStart={(id, agent, assignedWorkspace) => {
+          onStart={(id, agent, assignedWorkspace, force) => {
             const target = tasks.detail?.task.workspace ?? assignedWorkspace
             if (target) onStartRequested?.(id, target)
-            tasks.startTask(id, agent, assignedWorkspace)
+            tasks.startTask(id, agent, assignedWorkspace, force)
           }}
           onRunControl={tasks.runControl}
           onOpenSession={(sessionId) => onFocusPane?.(sessionId)}

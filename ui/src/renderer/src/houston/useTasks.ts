@@ -61,7 +61,8 @@ export interface UseTasks {
   check: (id: number, item: number, checked: boolean) => void
   archive: (id: number, archived: boolean, expectedRevision: number) => void
   setAccess: (access: TasksAccess) => void
-  startTask: (id: number, agent: AgentKind, workspace?: string | null) => void
+  /// `force` is the user's "start anyway" past the readiness gate.
+  startTask: (id: number, agent: AgentKind, workspace?: string | null, force?: boolean) => void
   runControl: (runId: number, action: TaskRunAction) => void
   /// Creates a task and opens it: the daemon's create reply is the only signal
   /// that names the new id, so the detail opens on its `task_changed`.
@@ -436,10 +437,10 @@ export function useTasks(client: HoustonClient | null, workspace: string | null,
   )
 
   const startTask = useCallback(
-    (id: number, agent: AgentKind, assignedWorkspace?: string | null) => {
+    (id: number, agent: AgentKind, assignedWorkspace?: string | null, force = false) => {
       if (!client) return
       setRefusal(null)
-      client.taskStart(id, agent, null, assignedWorkspace ?? null)
+      client.taskStart(id, agent, null, assignedWorkspace ?? null, force)
     },
     [client]
   )

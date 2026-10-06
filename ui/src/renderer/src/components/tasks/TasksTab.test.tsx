@@ -190,4 +190,19 @@ describe('global Tasks viewer', () => {
     expect(screen.getByText('From Harness finding · bun-test')).toBeTruthy()
   })
 
+  it('offers Start anyway on a not-ready refusal and repeats the Start with force', () => {
+    const onStart = vi.fn()
+    const task = { ...TASK, workspace: '/project', links: [{ provider: 'github', external_id: 'o/r#12', url: 'https://github.com/o/r/issues/12' }] }
+    const render = (refusal: Parameters<typeof TaskDetail>[0]['refusal']): void => act(() => root.render(
+      <TaskDetail detail={{ task, acceptance: [], comments: [], history: [], runs: [] }} access="write" refusal={refusal} now={1} parentOptions={[]} sessions={new Map()} startSettings={{ agent: 'codex', delivery: 'send' }} onBack={vi.fn()} onReload={vi.fn()} onSave={vi.fn()} onCheck={vi.fn()} onComment={vi.fn()} onArchive={vi.fn()} onStart={onStart} onRunControl={vi.fn()} onOpenSession={vi.fn()} onReview={vi.fn()} />
+    ))
+    render(null)
+    expect(container.querySelector('[data-testid="task-links"]')?.textContent).toBe('GitHub · o/r#12')
+    click('[data-testid="task-start"]')
+    expect(onStart).toHaveBeenLastCalledWith(7, 'codex', null)
+    render({ id: 7, kind: 'not_ready', message: 'task_start refused: task HOU-7 is not ready; it needs at least one acceptance item', expected: null, actual: null, limit: null, requested: null })
+    expect(container.querySelector('[data-testid="task-not-ready-banner"]')?.textContent).toContain('at least one acceptance item')
+    click('[data-testid="task-start-anyway"]')
+    expect(onStart).toHaveBeenLastCalledWith(7, 'codex', null, true)
+  })
 })

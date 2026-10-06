@@ -2414,6 +2414,64 @@ impl Daemon {
         })
     }
 
+    /// What the task still lacks to be ready, as phrases a refusal lists: a
+    /// workspace, an acceptance criterion, answers to its open questions
+    /// (acceptance items starting with `[?]`) and its unfinished blockers.
+    /// Empty means ready; `READY_CLAUSE` is the same rule in SQL.
+    pub fn task_readiness_gaps(&self, row: &TaskRow, has_workspace: bool) -> Result<Vec<String>> {
+        let mut gaps = Vec::new();
+        if !has_workspace {
+            gaps.push("a workspace".to_string());
+        }
+        let acceptance = self.db.task_acceptance(row.id)?;
+        let questions = acceptance
+            .iter()
+            .filter(|item| item.text.starts_with(crate::db::OPEN_QUESTION_MARKER))
+            .count();
+        // A Slack-filed request's acceptance is written by its own triage.
+        if acceptance.len() == questions && self.db.intake_for_task(row.id)?.is_none() {
+            gaps.push("at least one acceptance item".to_string());
+        }
+        if questions > 0 {
+            gaps.push(format!(
+                "an answer to {questions} open question(s) (acceptance items starting with {})",
+                crate::db::OPEN_QUESTION_MARKER
+            ));
+        }
+        let blockers = self.db.task_open_blockers(row.id)?;
+        if !blockers.is_empty() {
+            let keys: Vec<String> = blockers.into_iter().map(Self::task_key).collect();
+            gaps.push(format!("its blockers {} to finish", keys.join(", ")));
+        }
+        Ok(gaps)
+    }
+
+    fn task_not_ready_refused(
+        row: &TaskRow,
+        gaps: &[String],
+        operation: &str,
+        forceable: bool,
+    ) -> proto::ServerMsg {
+        let hint = if forceable {
+            "; start it anyway to override"
+        } else {
+            ""
+        };
+        Self::task_refused(
+            Some(row.id),
+            proto::TaskErrorKind::NotReady,
+            None,
+            None,
+            None,
+            None,
+            format!(
+                "{operation} refused: task {} is not ready; it needs {}{hint}",
+                Self::task_key(row.number),
+                gaps.join(", ")
+            ),
+        )
+    }
+
     /// One Start: validate, open (or reuse) the worktree, then run an attempt.
     pub fn task_start(
         self: &Arc<Self>,
@@ -2421,42 +2479,25 @@ impl Daemon {
         agent: proto::AgentKind,
         base: Option<String>,
     ) -> Result<proto::ServerMsg> {
-        self.task_start_in(id, agent, base, None)
+        self.task_start_in(id, agent, base, None, false)
     }
 
+    /// `force` is the user's "start anyway": it skips the readiness gate and
+    /// nothing else.
     pub fn task_start_in(
         self: &Arc<Self>,
         id: i64,
         agent: proto::AgentKind,
         base: Option<String>,
         workspace: Option<String>,
+        force: bool,
     ) -> Result<proto::ServerMsg> {
         let operation = "task_start";
         let Some(mut row) = self.db.task(id)? else {
             return Ok(Self::task_not_found(id, operation));
         };
-        if row.workspace.is_none() {
-            let Some(workspace) = workspace else {
-                return Ok(Self::task_invalid(Some(id), operation, format!("task {} has no workspace (expected task_start.workspace to name a registered workspace)", Self::task_key(row.number))));
-            };
-            if let Some(msg) = self.check_task_workspace(Some(id), Some(&workspace), operation)? {
-                return Ok(msg);
-            }
-            let assigned = self.task_update(
-                "",
-                id,
-                Some(row.revision),
-                proto::TaskPatch {
-                    workspace: Some(Some(workspace)),
-                    ..Default::default()
-                },
-                USER_ACTOR,
-                operation,
-            )?;
-            if matches!(assigned, proto::ServerMsg::TaskRefused { .. }) {
-                return Ok(assigned);
-            }
-            row = self.db.task(id)?.context("assigned task disappeared")?;
+        if row.workspace.is_none() && workspace.is_none() {
+            return Ok(Self::task_invalid(Some(id), operation, format!("task {} has no workspace (expected task_start.workspace to name a registered workspace)", Self::task_key(row.number))));
         }
         if row.archived_at_ms.is_some() {
             return Ok(Self::task_invalid(
@@ -2502,6 +2543,34 @@ impl Daemon {
                 proto::TASK_LIVE_IMPLEMENTATION_RUNS,
                 operation,
             ));
+        }
+        // The gate runs before the workspace is assigned, so a refused Start
+        // changes nothing.
+        if !force {
+            let gaps = self.task_readiness_gaps(&row, true)?;
+            if !gaps.is_empty() {
+                return Ok(Self::task_not_ready_refused(&row, &gaps, operation, true));
+            }
+        }
+        if let Some(workspace) = workspace.filter(|_| row.workspace.is_none()) {
+            if let Some(msg) = self.check_task_workspace(Some(id), Some(&workspace), operation)? {
+                return Ok(msg);
+            }
+            let assigned = self.task_update(
+                "",
+                id,
+                Some(row.revision),
+                proto::TaskPatch {
+                    workspace: Some(Some(workspace)),
+                    ..Default::default()
+                },
+                USER_ACTOR,
+                operation,
+            )?;
+            if matches!(assigned, proto::ServerMsg::TaskRefused { .. }) {
+                return Ok(assigned);
+            }
+            row = self.db.task(id)?.context("assigned task disappeared")?;
         }
         let project_dir = PathBuf::from(row.workspace.as_deref().unwrap_or(""));
         if !project_dir.is_dir() {
@@ -3074,6 +3143,14 @@ impl Daemon {
                 proto::TASK_LIVE_IMPLEMENTATION_RUNS,
                 operation,
             ));
+        }
+        // An agent's first start never overrides the readiness gate; a rework
+        // re-runs a task that already started.
+        if findings.is_none() {
+            let gaps = self.task_readiness_gaps(&row, true)?;
+            if !gaps.is_empty() {
+                return Ok(Self::task_not_ready_refused(&row, &gaps, operation, false));
+            }
         }
         if let Some(refusal) = self.task_orchestration_refusal(&row, caller, 1, operation) {
             return Ok(refusal);

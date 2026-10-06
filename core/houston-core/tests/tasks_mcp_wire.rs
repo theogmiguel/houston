@@ -426,7 +426,12 @@ async fn ready_tasks_order_by_priority_and_next_returns_the_first() {
             r.addr,
             &token,
             "task_create",
-            json!({ "title": title, "status": status, "priority": priority }),
+            json!({
+                "title": title,
+                "status": status,
+                "priority": priority,
+                "acceptance": ["It works"],
+            }),
         )
         .await;
     }

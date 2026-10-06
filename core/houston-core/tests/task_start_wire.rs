@@ -284,7 +284,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
     let r = rig("start-refusals").await;
 
     // A second live run while the first is running.
-    let first = r.create_task("Held", "", &[]);
+    let first = r.create_task("Held", "", &["It is done"]);
     r.daemon
         .task_start(first, proto::AgentKind::Grok, None)
         .unwrap();
@@ -328,7 +328,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
     assert_eq!(kind, proto::TaskErrorKind::Invalid);
     assert!(message.contains("archived"), "{message}");
 
-    let guarded = r.create_task("Guarded", "", &[]);
+    let guarded = r.create_task("Guarded", "", &["It is done"]);
     let _ = r
         .daemon
         .tasks_access_set(&r.workspace(), proto::TasksAccess::Off)
@@ -372,7 +372,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
 async fn a_restart_reuses_the_same_branch_and_worktree() {
     let _guard = SERIAL.lock().await;
     let r = rig("start-restart").await;
-    let id = r.create_task("Reuse me", "desc", &[]);
+    let id = r.create_task("Reuse me", "desc", &["It is done"]);
 
     r.daemon
         .task_start(id, proto::AgentKind::Grok, None)
@@ -408,7 +408,11 @@ async fn a_restart_reuses_the_same_branch_and_worktree() {
 async fn a_brief_over_the_cap_is_refused_before_anything_is_created() {
     let _guard = SERIAL.lock().await;
     let r = rig("start-cap").await;
-    let id = r.create_task("Too big", &"x".repeat(proto::TASK_BRIEF_MAX_BYTES), &[]);
+    let id = r.create_task(
+        "Too big",
+        &"x".repeat(proto::TASK_BRIEF_MAX_BYTES),
+        &["It is done"],
+    );
 
     let msg = r
         .daemon
@@ -443,7 +447,7 @@ async fn a_long_brief_gets_a_unique_prompt_file_per_attempt() {
     let id = r.create_task(
         "Long brief",
         &"y".repeat(proto::TASK_BRIEF_MAX_BYTES - 2_000),
-        &[],
+        &["It fits"],
     );
 
     r.daemon
@@ -590,6 +594,7 @@ async fn start_requires_workspace_and_can_assign_an_unassigned_task() {
             None,
             proto::TaskPatch {
                 title: Some("Unassigned start".to_string()),
+                acceptance: Some(vec!["It starts".to_string()]),
                 ..Default::default()
             },
         )
@@ -611,7 +616,7 @@ async fn start_requires_workspace_and_can_assign_an_unassigned_task() {
     assert!(r.runs().is_empty());
     let started = r
         .daemon
-        .task_start_in(id, proto::AgentKind::Grok, None, Some(r.workspace()))
+        .task_start_in(id, proto::AgentKind::Grok, None, Some(r.workspace()), false)
         .unwrap();
     assert!(
         matches!(started, proto::ServerMsg::TaskChanged { .. }),
@@ -663,3 +668,38 @@ async fn a_linked_tasks_brief_carries_its_links_as_data() {
     );
 }
 
+#[tokio::test]
+async fn a_task_that_is_not_ready_is_refused_by_name_until_started_anyway() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("start-gate").await;
+    let id = r.create_task("Vague", "", &["[?] Which page?"]);
+
+    let msg = r
+        .daemon
+        .task_start(id, proto::AgentKind::Grok, None)
+        .unwrap();
+    let proto::ServerMsg::TaskRefused { kind, message, .. } = msg else {
+        panic!("expected TaskRefused, got {msg:?}");
+    };
+    assert_eq!(kind, proto::TaskErrorKind::NotReady);
+    assert!(
+        message.contains("task_start")
+            && message.contains("HOU-1")
+            && message.contains("at least one acceptance item")
+            && message.contains("1 open question"),
+        "the refusal names the operation, the task and what it lacks: {message}"
+    );
+    assert!(r.runs().is_empty(), "a refused Start creates nothing");
+    assert_eq!(r.task_status(id), "backlog");
+
+    let started = r
+        .daemon
+        .task_start_in(id, proto::AgentKind::Grok, None, None, true)
+        .unwrap();
+    assert!(
+        matches!(started, proto::ServerMsg::TaskChanged { .. }),
+        "start anyway skips the gate: {started:?}"
+    );
+    let session = r.runs()[0].session_id.unwrap();
+    r.daemon.kill(session).unwrap();
+}

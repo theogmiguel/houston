@@ -904,6 +904,52 @@ async fn a_task_canceled_before_it_starts_closes_its_request() {
     r.finish();
 }
 
+#[tokio::test]
+async fn the_owners_accept_never_starts_a_task_with_an_open_question() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-gate").await;
+    r.fake.send_event(
+        "e1",
+        mention("1800000000.000100", REQUESTER, "rename the button"),
+    );
+    let tasks = r.await_tasks(1).await;
+    r.fake.await_dm("Novo pedido").await;
+    let revision: i64 = r
+        .db()
+        .query_row(
+            "SELECT revision FROM backlog_tasks WHERE id = ?1",
+            [tasks[0].0],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let saved = r
+        .daemon
+        .task_save(
+            &r.workspace(),
+            Some(tasks[0].0),
+            Some(revision),
+            proto::TaskPatch {
+                acceptance: Some(vec!["[?] Which button?".into()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(saved, proto::ServerMsg::TaskChanged { .. }),
+        "{saved:?}"
+    );
+
+    r.fake
+        .send_event("e2", check_mark("1800000000.000100", OWNER));
+    let dm = r.fake.await_dm("is not ready").await.to_string();
+    assert!(
+        dm.contains("open question"),
+        "the owner is told what is missing: {dm}"
+    );
+    assert!(r.runs().is_empty(), "the accept is not a start-anyway");
+    r.finish();
+}
+
 fn label_question() -> QuestionForm {
     QuestionForm {
         context: Some("The form's main button gets a new label.".into()),

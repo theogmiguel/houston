@@ -1491,8 +1491,8 @@ export class HoustonClient {
     this.send({ type: 'tasks_access_set', workspace, access })
   }
 
-  taskStart(id: number, agent: AgentKind, base: string | null = null, workspace: string | null = null): void {
-    this.send({ type: 'task_start', id, agent, base, workspace })
+  taskStart(id: number, agent: AgentKind, base: string | null = null, workspace: string | null = null, force = false): void {
+    this.send({ type: 'task_start', id, agent, base, workspace, force })
   }
 
   taskRunControl(runId: number, action: TaskRunAction): void {
