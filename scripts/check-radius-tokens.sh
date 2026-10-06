@@ -41,7 +41,6 @@ BASELINE=(
   "ui/src/renderer/src/components/WindowControls.tsx 1"
   "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
   "ui/src/renderer/src/editor/editorChrome.ts 1"
-  "ui/src/renderer/src/global.css 1"
   "ui/src/renderer/src/pane/TerminalPane.tsx 3"
   "ui/src/renderer/src/voice/DictationIndicator.tsx 1"
 )

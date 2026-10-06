@@ -14,7 +14,6 @@ BASELINE=(
   "ui/src/renderer/src/components/BrowserPicker.tsx 1"
   "ui/src/renderer/src/components/browserTabs.tsx 1"
   "ui/src/renderer/src/components/ui/Chip.tsx 1"
-  "ui/src/renderer/src/components/FilesPane.tsx 1"
   "ui/src/renderer/src/components/nav/navChrome.tsx 10"
   "ui/src/renderer/src/components/ui/pickerChrome.ts 1"
   "ui/src/renderer/src/components/ui/settingsPrimitives.tsx 1"

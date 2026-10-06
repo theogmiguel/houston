@@ -107,6 +107,7 @@ import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
 const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shortcut: null }, { id: 'dev', name: 'dev', command: 'bun run dev', shortcut: null }]
 import { UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
+import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
 import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
 import {
@@ -348,5 +349,14 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell-a/files-graphite': () => <InspectorFilesGraphite />,
   'shell-a/children-graphite': () => <InspectorChildrenGraphite />,
   'shell-a/children-paper': () => <InspectorChildrenPaper />,
+  'files/narrow': () => <FilesNarrowGraphite />,
+  'files/split': () => <FilesSplitGraphite />,
+  'files/split-paper': () => <FilesSplitPaper />,
+  'files/pane': () => <FilesPaneGraphite />,
+  'files/tree-menu': () => <FilesTreeMenuGraphite />,
+  'files/tab-menu': () => <FilesTabMenuGraphite />,
+  'files/rename': () => <FilesRenameGraphite />,
+  'files/empty': () => <FilesEmptyGraphite />,
+  'files/root-error': () => <FilesRootErrorGraphite />,
   'settings/tasks': () => <TasksSettingsStory />
 }

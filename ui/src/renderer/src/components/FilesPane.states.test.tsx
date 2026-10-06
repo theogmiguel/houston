@@ -477,14 +477,14 @@ describe('Files pane — state matrix (§14)', () => {
 })
 
 describe('Files pane — tab strip scrollbar (dead band regression)', () => {
-  it('global.css hides the WebKit scrollbar pseudo-element on the scrolling element itself', () => {
-    const css = readFileSync(join(__dirname, '../global.css'), 'utf8')
+  it('fileExplorer.css hides the WebKit scrollbar pseudo-element on the scrolling element itself', () => {
+    const css = readFileSync(join(__dirname, 'ui/fileExplorer.css'), 'utf8')
     const stripHidesWebkitScrollbar = /\.files-tab-scroll::-webkit-scrollbar\s*\{[^}]*display:\s*none/.test(
       css
     )
     expect(
       stripHidesWebkitScrollbar,
-      'global.css must carry a `.files-tab-scroll::-webkit-scrollbar { display: none }` rule ' +
+      'fileExplorer.css must carry a `.files-tab-scroll::-webkit-scrollbar { display: none }` rule ' +
         '(the class the SCROLLING element inside the strip carries, per `FilesPane.tsx`) — ' +
         'without it, `scrollbar-width: none` does nothing on WebKit, which ignores that ' +
         'property, and the global `::-webkit-scrollbar { width: 6px }` rule still paints a 6px ' +

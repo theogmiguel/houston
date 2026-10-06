@@ -628,7 +628,13 @@
   --h-theme-preview: 76px;
   --h-theme-preview-mark: 5px;
   --space-theme-preview-line: 3px;
+  --space-0-25: 1px;
+  --space-file-filter-tail: 2px;
+  --button-block-padding: 5px;
+  --border-width-hairline: 1px;
+  --space-1-75: 7px;
   --space-2: 8px;
+  --space-2-25: 9px;
   --space-2-5: 10px;
   --space-3: 12px;
   --space-4: 16px;
@@ -729,6 +735,9 @@
   --w-attachment-preview: 220px;
   --tr-spinner-border: 2px;
   --tr-text-xs: 11px;
+  --tr-text-file-breadcrumb: 11.5px;
+  --tr-text-file-status: 10.5px;
+  --tr-text-inspector-compact-size: 12.5px;
   --tr-text-sm: 12px;
   --tr-text-base: 13px;
   --tr-text-md: 14px;

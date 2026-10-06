@@ -4,28 +4,28 @@ import { describe, expect, it } from 'vitest'
 import { BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER } from './buttonChrome'
 
 const SRC = join(__dirname, '..', '..')
-const baseCss = readFileSync(join(SRC, 'base.css'), 'utf8')
+const buttonCss = readFileSync(join(__dirname, 'button.css'), 'utf8')
 const tailwindCss = readFileSync(join(SRC, 'tailwind.css'), 'utf8')
 
 function layerBlock(css: string, layer: string): string {
   const start = css.indexOf(`@layer ${layer} {`)
-  if (start < 0) throw new Error(`base.css has no "@layer ${layer} {" block; expected the ghost recipe in "components"`)
+  if (start < 0) throw new Error(`button.css has no "@layer ${layer} {" block; expected the ghost recipe in "components"`)
   let depth = 0
   for (let i = css.indexOf('{', start); i < css.length; i++) {
     if (css[i] === '{') depth++
     if (css[i] === '}' && --depth === 0) return css.slice(start, i + 1)
   }
-  throw new Error(`Unbalanced braces in the "@layer ${layer}" block of base.css`)
+  throw new Error(`Unbalanced braces in the "@layer ${layer}" block of button.css`)
 }
 
 function rule(css: string, selector: string): string {
   const m = css.match(new RegExp(`${selector.replace(/[.:()]/g, '\\$&')}\\s*\\{([^}]*)\\}`))
-  if (!m) throw new Error(`No "${selector}" rule found; expected it in the components layer of base.css`)
+  if (!m) throw new Error(`No "${selector}" rule found; expected it in the components layer of button.css`)
   return m[1]
 }
 
 describe('BTN_GHOST hover state', () => {
-  const components = layerBlock(baseCss, 'components')
+  const components = layerBlock(buttonCss, 'components')
 
   it('hovering a ghost button fills with --hover-fill and lifts the label to --text-primary', () => {
     const hover = rule(components, `.${BTN_GHOST}:hover:not(:disabled)`)
@@ -54,8 +54,8 @@ describe('ghost-danger hover wins over the ghost hover by layer, not class order
   })
 
   it('the ghost recipe is defined in components, not utilities', () => {
-    expect(baseCss).not.toMatch(/@layer utilities/)
-    expect(layerBlock(baseCss, 'components')).toContain(`.${BTN_GHOST}`)
+    expect(buttonCss).not.toMatch(/@layer utilities/)
+    expect(layerBlock(buttonCss, 'components')).toContain(`.${BTN_GHOST}`)
   })
 
   it('the danger hover and the armed fill are utilities, so they outrank the ghost recipe', () => {

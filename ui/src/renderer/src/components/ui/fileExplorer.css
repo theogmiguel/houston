@@ -1,0 +1,11 @@
+.files-tab-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.inspector-card .files-panel[data-split='true'] .files-columns { flex-direction: row; }
+.inspector-card .files-panel[data-split='true'] .files-tree-column { max-height: none; background: var(--card-bg); }
+.inspector-card .files-panel[data-split='true'] .editor-leaf { border-top: 0; }
+.inspector-card .files-panel[data-split='true'] .files-tab-scroll { overflow-x: auto; }
+.files-panel[data-split='true'] [data-testid='files-tab-strip'] { height: 30px; min-height: 30px; background: var(--card-bg); border-color: var(--divider); }
+.files-panel[data-split='true'] [data-testid='files-tab'] { height: 30px; gap: var(--space-1-5); padding: 0 var(--space-2) 0 var(--space-2-5); font-size: var(--tr-text-sm); border-color: var(--divider); }
+.files-panel[data-split='true'] [data-testid='files-status-strip'] { height: 24px; min-height: 24px; background: var(--card-bg); border-color: var(--divider); }

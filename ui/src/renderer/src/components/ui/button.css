@@ -1,0 +1,34 @@
+@layer base {
+  .btn {
+    /* An icon is display:block (Icon.tsx), so the button itself must be the
+       flex row or the label breaks onto its own line. */
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    border-radius: var(--tr-radius-button);
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    padding: var(--button-block-padding) var(--space-3);
+    font-size: var(--tr-text-sm);
+    font-weight: 500;
+  }
+  .btn:hover {
+    border-color: var(--border-hover);
+    background: var(--card-hover);
+  }
+}
+
+/* Ghost buttons live below `utilities` so every utility a call site adds (its
+   own text colour, a danger hover tint, an armed fill) wins by layer rather
+   than by Tailwind's alphabetical tie-break. */
+@layer components {
+  .btn-ghost {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--hover-fill);
+    color: var(--text-primary);
+  }
+}

@@ -38,7 +38,7 @@ function expand(expr: string, table: Map<string, string>, depth = 0): string {
   )
 }
 
-// `btn-ghost` is BTN_GHOST's component class and resets the border itself (base.css).
+// `btn-ghost` is BTN_GHOST's component class and resets the border itself (button.css).
 const MENTIONS_BORDER =
   /(?<![\w-])btn-ghost(?![\w-])|(?<![\w-])border(?![\w-])|(?<![\w-])border-(0|none|\[|t|r|b|l|x|y|s|e|current|transparent|solid|dashed|dotted|hidden|\d|[a-z]+-?\d*)/
 

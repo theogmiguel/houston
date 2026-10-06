@@ -3,6 +3,7 @@ import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOV
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 import { FOCUS_HALO } from './shadowChrome'
+import './button.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'outline' | 'ghost' | 'label' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'compact-ghost' | 'compact-danger' | 'legacy-primary' | 'legacy-secondary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-ghost-icon' | 'legacy-ghost-icon-danger' | 'legacy-focus-lever' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'legacy-ghost-disclosure'
 export type ButtonSize = 'md' | 'sm'

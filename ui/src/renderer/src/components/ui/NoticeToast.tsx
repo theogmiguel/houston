@@ -89,18 +89,18 @@ export function NoticeToast({ anchor, code, kind, heading, body, action, onDismi
         <KindIcon className={ICON_ROLE_CLS.ui} />
       </span>
       <div className="flex flex-col gap-[var(--space-pixel)] min-w-0 flex-1">
-        <Text size="xs" weight="label" tone="primary" className="break-words">
+        <Text size="caption" weight="label" tone="primary" className="break-words">
           {heading}
         </Text>
         {body && (
-          <Text size="xs" weight="label" tone="faint" mono breakAll>
+          <Text size="caption" weight="label" tone="faint" mono breakAll>
             {body}
           </Text>
         )}
       </div>
       {action && (
         <button type="button" onClick={action.onClick} className={ACTION_CLS}>
-          <Text size="xs" weight="label" tone={kind === 'error' ? 'primary' : 'secondary'}>{action.label}</Text>
+          <Text size="caption" weight="label" tone={kind === 'error' ? 'primary' : 'secondary'}>{action.label}</Text>
         </button>
       )}
       {onDismiss && (
@@ -120,7 +120,7 @@ export function NoticeToast({ anchor, code, kind, heading, body, action, onDismi
 /** Caption under a toast stack that says earlier toasts were dropped. */
 export function NoticeEvictionCaption({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <Text size="xs" weight="label" tone="faint" className="pointer-events-none self-center">
+    <Text size="caption" weight="label" tone="faint" className="pointer-events-none self-center">
       {children}
     </Text>
   )

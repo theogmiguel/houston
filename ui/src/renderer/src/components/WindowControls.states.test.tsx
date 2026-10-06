@@ -125,12 +125,12 @@ describe('WindowControls — state matrix', () => {
   })
 
   it('Geometry — the button neutralises every box property `.btn` sets on it', () => {
-    const baseCssPath = resolve(process.cwd(), 'src/renderer/src/base.css')
-    const baseCss = readFileSync(baseCssPath, 'utf8')
-    const rule = /(^|\})\s*\.btn\s*\{([^}]*)\}/m.exec(baseCss)?.[2]
+    const buttonCssPath = resolve(process.cwd(), 'src/renderer/src/components/ui/button.css')
+    const buttonCss = readFileSync(buttonCssPath, 'utf8')
+    const rule = /(^|\})\s*\.btn\s*\{([^}]*)\}/m.exec(buttonCss)?.[2]
     expect(
       rule,
-      'base.css no longer has a `.btn { ... }` rule — this test guards the chrome that rule supplies, so retarget it rather than deleting it'
+      'button.css must carry the `.btn { ... }` rule because this test guards the chrome that rule supplies'
     ).toBeTruthy()
 
     const NEUTRALISERS: Record<string, string> = {
@@ -150,13 +150,13 @@ describe('WindowControls — state matrix', () => {
       .split(';')
       .map((d) => d.split(':')[0]?.trim())
       .filter((name): name is string => Boolean(name) && name in NEUTRALISERS)
-    expect(setProps.length, `parsed no box properties out of base.css's .btn rule: ${rule}`)
+    expect(setProps.length, `parsed no box properties out of button.css's .btn rule: ${rule}`)
       .toBeGreaterThan(0)
 
     for (const prop of setProps) {
       expect(
         cls.split(/\s+/),
-        `base.css's \`.btn\` rule sets \`${prop}\`, so WindowControls' button must carry \`${NEUTRALISERS[prop]}\` — without it the wash inside collapses to the glyph's width (this is the 10x20 "oval" regression)`
+        `button.css's \`.btn\` rule sets \`${prop}\`, so WindowControls' button must carry \`${NEUTRALISERS[prop]}\` — without it the wash inside collapses to the glyph's width (this is the 10x20 "oval" regression)`
       ).toContain(NEUTRALISERS[prop])
     }
   })

@@ -155,6 +155,8 @@ import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/ui/o
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
 import { AnimOut } from '../src/components/ui/AnimOut'
 import { TILE_AGENT_CLS, TILE_IDLE, URL_INPUT_CLS } from '../src/components/ui'
+import { FileExplorerSpecimen } from '../src/components/ui/FileExplorer'
+import { InspectorBody, InspectorCard, InspectorSurface } from '../src/components/ui/InspectorHeader'
 
 const noop = (): void => {}
 
@@ -403,6 +405,25 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Background field preview">
           <BackgroundFieldSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="File explorer roles">
+          <FileExplorerSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Inspector surface roles">
+          <InspectorSurface style={{ width: 320, height: 180 }}>
+            <InspectorBody><InspectorCard><div style={{ padding: 'var(--space-3)' }}>Workspace changes</div></InspectorCard></InspectorBody>
+          </InspectorSurface>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Text roles">
+          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'baseline' }}>
+            <Text size="small" weight="small" tone="primary">Workspace files</Text>
+            <Text size="xs" tone="muted" mono>UTF-8</Text>
+            <Text size="fileBreadcrumb" tone="faint">src / main.ts</Text>
+            <Text size="fileStatus" tone="warn" mono>M</Text>
+          </div>
         </SpecimenGroup>
 
         <SpecimenGroup heading="Roster surfaces">

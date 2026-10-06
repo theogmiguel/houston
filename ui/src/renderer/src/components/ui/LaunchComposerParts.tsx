@@ -126,7 +126,7 @@ export function FieldError({ children, ...rest }: NoClass<HTMLAttributes<HTMLPar
 
 /** Mono readout under a field, aligned to its end. */
 export function FieldCounter({ children }: { children: ReactNode }): React.JSX.Element {
-  return <Text size="xs" tone="faint" mono className="self-end">{children}</Text>
+  return <Text size="caption" tone="faint" mono className="self-end">{children}</Text>
 }
 
 /** Muted small text for a routing note or one route. */

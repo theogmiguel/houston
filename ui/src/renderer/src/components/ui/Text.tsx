@@ -1,8 +1,8 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
-export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'sm' | 'xl' | 'xs'
+export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus'
 export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
-export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'info' | 'success' | 'warning' | 'blocked' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
+export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
 export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer'
 
 const SIZE: Record<TextSize, string> = {
@@ -17,7 +17,11 @@ const SIZE: Record<TextSize, string> = {
   label: '[font-size:var(--tr-text-label-size)] [letter-spacing:var(--tr-text-label-tracking)] [text-transform:var(--tr-text-label-transform)]',
   sm: '[font-size:var(--tr-text-sm)]',
   xl: '[font-size:var(--tr-text-xl)]',
-  xs: '[font-size:var(--tr-text-label-size)]'
+  /** Label size without the label's tracking and case. */
+  caption: '[font-size:var(--tr-text-label-size)]',
+  xs: '[font-size:var(--tr-text-xs)]',
+  fileBreadcrumb: '[font-size:var(--tr-text-file-breadcrumb)]',
+  fileStatus: '[font-size:var(--tr-text-file-status)]'
 }
 
 const WEIGHT: Record<TextWeight, string> = {
@@ -39,8 +43,11 @@ const TONE: Record<TextTone, string> = {
   muted: 'text-[var(--text-muted)]',
   faint: 'text-[var(--text-faint)]',
   danger: 'text-[var(--danger)]',
+  stop: 'text-[var(--stop)]',
   info: 'text-[var(--info)]',
+  ok: 'text-[var(--ok)]',
   success: 'text-[var(--success)]',
+  warn: 'text-[var(--warn)]',
   warning: 'text-[var(--warning)]',
   blocked: 'text-[var(--status-blocked-text)]',
   accent: 'text-[var(--accent)]',
@@ -106,7 +113,7 @@ export function TextSpecimen(): React.JSX.Element {
       <Text size="body" tone="secondary" leading="relaxed">Body copy</Text>
       <Text size="subhead" weight="semibold" tone="primary" tight>Section heading</Text>
       <Text size="label" weight="label" tone="muted">Form label</Text>
-      <Text size="xs" weight="label" tone="secondary">Compact key description</Text>
+      <Text size="caption" weight="label" tone="secondary">Compact key description</Text>
       <Text size="ui" mono tabular tone="secondary">SHA256:0123 4567</Text>
       <Text size="ui" tone="danger">Warning text</Text>
     </div>

@@ -3,6 +3,7 @@ import { listEditors, openInEditor, type EditorTarget } from '../houston/bridge'
 import { IconChevronRight } from './icons'
 import { Icon } from './ui/Icon'
 import { POP_ORIGIN_CLS, popOriginStyle } from './ui/overlayChrome'
+import { ExplorerMenuItem } from './ui/FileExplorer'
 
 export const LAST_EDITOR_KEY = 'tr-external-editor'
 
@@ -36,7 +37,8 @@ export interface OpenInMenuProps {
   col?: number
   label?: string
   icon?: React.ReactNode
-  itemClass: string
+  itemClass?: string
+  itemComponent?: typeof ExplorerMenuItem
   onDone: () => void
   onError: (message: string) => void
 }
@@ -47,10 +49,12 @@ export function OpenInMenu({
   col,
   label = 'Open in',
   icon,
-  itemClass,
+  itemClass = 'ctx-item',
+  itemComponent,
   onDone,
   onError
 }: OpenInMenuProps): React.JSX.Element {
+  const Item = itemComponent ?? 'button'
   const [editors, setEditors] = useState<EditorTarget[] | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -82,9 +86,9 @@ export function OpenInMenu({
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <button
+      <Item
         ref={rowRef}
-        className={`btn border-none ${itemClass}`}
+        className={itemComponent ? undefined : `btn border-none ${itemClass}`}
         role="menuitem"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -93,7 +97,7 @@ export function OpenInMenu({
         {icon}
         <span className="flex-1 text-left">{label}</span>
         <Icon glyph={IconChevronRight} role="small" className="text-[var(--text-faint)] flex-none" />
-      </button>
+      </Item>
       {open && (
         <div
           role="menu"
@@ -110,19 +114,19 @@ export function OpenInMenu({
           }
         >
           {editors && editors.length === 0 ? (
-            <button className={`btn border-none ${itemClass}`} role="menuitem" disabled>
+            <Item className={itemComponent ? undefined : `btn border-none ${itemClass}`} role="menuitem" disabled>
               No editor found on PATH — {CANDIDATES_COPY}
-            </button>
+            </Item>
           ) : (
             (editors ?? []).map((e) => (
-              <button
+              <Item
                 key={e.id}
-                className={`btn border-none ${itemClass}`}
+                className={itemComponent ? undefined : `btn border-none ${itemClass}`}
                 role="menuitem"
                 onClick={() => launch(e.id)}
               >
                 {e.label}
-              </button>
+              </Item>
             ))
           )}
         </div>

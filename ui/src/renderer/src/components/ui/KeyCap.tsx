@@ -13,7 +13,7 @@ export function KeyBindingRow({ keyName, description, disabled = false }: { keyN
   return (
     <div className={`flex items-baseline gap-[var(--space-2-5)] ${disabled ? 'opacity-[var(--opacity-inactive)]' : ''}`}>
       <KeyCap>{keyName}</KeyCap>
-      <Text size="xs" weight="label" tone="secondary">{description}</Text>
+      <Text size="caption" weight="label" tone="secondary">{description}</Text>
     </div>
   )
 }

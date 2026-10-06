@@ -98,7 +98,13 @@ function Frame({ theme, board }: { theme: Theme; board: Board }): React.JSX.Elem
   const tab = board === 'pr' ? 'pull-request' : 'changes'
   const closed = board === 'children'
   const activeSessionId = board === 'pr' ? orchestratorId : sessionId
-  useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    if (board === 'pr') document.documentElement.dataset.motionPaused = ''
+    return () => {
+      if (board === 'pr') delete document.documentElement.dataset.motionPaused
+    }
+  }, [theme, board])
   return <div className="inspector-story-viewport" data-story-board={board}>
     <div className="inspector-story-grid" data-testid="side-panel-row" />
     {!closed && <SidePanel

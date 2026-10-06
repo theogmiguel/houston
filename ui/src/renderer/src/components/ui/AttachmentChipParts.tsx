@@ -30,7 +30,7 @@ export function AttachmentTypeGlyph({ extension, imageUrl }: { extension: string
   return (
     <Text
       as="span"
-      size="xs"
+      size="caption"
       weight="label"
       tone={style.tone}
       aria-hidden
