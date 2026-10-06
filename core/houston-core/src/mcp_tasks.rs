@@ -110,8 +110,7 @@ fn write_fields() -> serde_json::Map<String, Value> {
             "type": "array",
             "items": { "type": "string" },
             "maxItems": proto::ACCEPTANCE_ITEMS_PER_TASK,
-            "description": "Replaces the whole list. An item starting with [?] is an open \
-                            question: the task is not ready until it is rewritten.",
+            "description": "Replaces the list; an item starting with [?] is an open question.",
         }),
     );
     properties.insert(
@@ -120,7 +119,7 @@ fn write_fields() -> serde_json::Map<String, Value> {
             "type": "array",
             "items": { "type": "string" },
             "maxItems": proto::TASK_BLOCKERS_PER_TASK,
-            "description": "Keys (HOU-2) this task waits for; replaces the list, [] clears.",
+            "description": "Keys it waits for; replaces the list.",
         }),
     );
     properties
@@ -174,8 +173,8 @@ fn all_specs() -> Vec<ToolSpec> {
         readonly(
             "task_list",
             "List tasks",
-            "List active tasks in every workspace, newest first. Ready means todo with no \
-             unfinished blocker.",
+            "List active tasks in every workspace, newest first. Ready: todo, a workspace, a \
+             criterion, no [?] item, no unfinished blocker.",
             json!({
                 "type": "object",
                 "properties": list_properties,
