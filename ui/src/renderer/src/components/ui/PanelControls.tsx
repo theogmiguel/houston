@@ -2,6 +2,7 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, Re
 import { IconChevronDown, IconChevronLeft } from '../icons'
 import { Icon } from './Icon'
 import { Text } from './Text'
+import { TextArea } from './TextArea'
 export { PanelFootnote, PanelIconButton, type PanelIconButtonProps } from './PanelInlineControls'
 
 const BUTTON_BASE = 'btn inline-flex items-center justify-center gap-[var(--space-panel-button-gap)] min-h-[var(--h-ctl)] px-[var(--space-panel-control-x)] rounded-[var(--tr-radius-sm)] border [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
@@ -57,15 +58,13 @@ export function PanelTextInput({ height = 'field', className = '', ...props }: P
   return <input {...props} className={`${INPUT_BASE} ${height === 'control' ? 'h-[var(--h-ctl)]' : 'h-[var(--h-panel-field)]'} ${className}`} />
 }
 
-const TEXTAREA_BASE = 'w-full min-h-[var(--h-panel-textarea-min)] resize-y px-[var(--space-panel-control-x)] py-[var(--space-panel-textarea-y)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] [line-height:var(--tr-text-ui-leading)] text-[var(--text-primary)] outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[var(--panel-disabled-opacity)]'
-
 export interface PanelTextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   /** Grow to fill the flex column that holds it, in monospace. */
   fill?: boolean
 }
 
 export function PanelTextArea({ fill = false, className = '', ...props }: PanelTextAreaProps): React.JSX.Element {
-  return <textarea {...props} className={`${TEXTAREA_BASE} ${fill ? 'flex-1 min-h-0 font-mono' : ''} ${className}`} />
+  return <TextArea {...props} recipe="panel" fill={fill} className={className} />
 }
 
 /** The 42px bar that returns from a detail view to its list, with trailing actions. */

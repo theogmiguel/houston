@@ -1,12 +1,11 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { Select, type SelectProps } from './Select'
 import { Text } from './Text'
+import { TextArea } from './TextArea'
 
 // A form field is taller than a toolbar control (--h-ctl is 28px): 36px for a
 // single-line input, 88px for the shortest textarea.
 const FIELD_INPUT_HEIGHT_CLS = 'h-[var(--h-form-control)]'
-const FIELD_TEXTAREA_MIN_CLS = 'min-h-[var(--h-form-textarea-min)]'
-
 const BUTTON_BASE =
   'btn inline-flex items-center justify-center gap-[var(--space-form-button-gap)] border min-h-[var(--h-ctl)] px-[var(--space-field-control-inline)] rounded-[var(--tr-radius-sm)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] cursor-pointer disabled:cursor-default'
 const BUTTON_TONE = {
@@ -43,11 +42,8 @@ export function FieldControl({ width = 'full', className = '', ...rest }: FieldC
   return <input {...rest} className={`${FIELD_INPUT_CLS} ${FIELD_INPUT_WIDTH[width]} ${className}`} />
 }
 
-const FIELD_TEXTAREA_CLS =
-  `w-full ${FIELD_TEXTAREA_MIN_CLS} resize-y px-[var(--space-field-control-inline)] py-[var(--space-form-textarea-block)] rounded-[var(--tr-radius-sm)] border border-[var(--border)] bg-[var(--card-bg)] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[1.5] text-[var(--text-primary)] outline-0 [font-family:inherit] placeholder:text-[var(--text-secondary)] focus-visible:border-[var(--accent)] disabled:opacity-[0.72]`
-
 export function FormTextarea({ className = '', ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>): React.JSX.Element {
-  return <textarea {...rest} className={`${FIELD_TEXTAREA_CLS} ${className}`} />
+  return <TextArea {...rest} recipe="field" className={className} />
 }
 
 /** A Select used as a full-width field control. */

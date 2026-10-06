@@ -2,6 +2,7 @@ import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNo
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { RVIEW_CLS } from './panelChrome'
 import { Text } from './Text'
+import { TextArea } from './TextArea'
 
 const BAR_BASE = 'border-b border-[var(--panel-surface-border)] bg-surface flex-none'
 
@@ -84,10 +85,8 @@ export function PaneViewInput({ className = '', ...props }: InputHTMLAttributes<
   return <input {...props} className={`${FIELD_BASE} py-2 px-3 rounded-[var(--tr-radius-md)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] ${className}`} />
 }
 
-const EDITOR_MIN_HEIGHT = 'min-h-[var(--h-pane-editor)]'
-
 export function PaneViewTextArea({ className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>): React.JSX.Element {
-  return <textarea {...props} className={`${FIELD_BASE} ${EDITOR_MIN_HEIGHT} resize-y py-3 px-3 rounded-[var(--tr-radius-card)] font-mono [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] leading-[var(--tr-text-editor-leading)] ${className}`} />
+  return <TextArea {...props} recipe="pane" className={className} />
 }
 
 /** A provider choice in a pane view's form, rendered as a pill. */
