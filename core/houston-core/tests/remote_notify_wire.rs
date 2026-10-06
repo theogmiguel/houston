@@ -114,6 +114,8 @@ fn pane(daemon: &Arc<Daemon>) -> (proto::SessionInfo, tempfile::TempDir) {
             acp: None,
             profile: None,
             prompt: None,
+            model: None,
+            effort: None,
         })
         .unwrap();
     (info, dir)
