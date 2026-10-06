@@ -703,3 +703,31 @@ async fn a_task_that_is_not_ready_is_refused_by_name_until_started_anyway() {
     let session = r.runs()[0].session_id.unwrap();
     r.daemon.kill(session).unwrap();
 }
+
+#[tokio::test]
+async fn a_github_linked_tasks_brief_asks_the_pull_request_to_close_the_issue() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("start-closes").await;
+    let id = r.create_task("Issue work", "Body.", &["It works"]);
+    rusqlite::Connection::open(r.db_path())
+        .unwrap()
+        .execute(
+            "INSERT INTO backlog_task_links (task_id, provider, external_id, url, fetched_at) \
+             VALUES (?1, 'github', 'o/r#12', 'https://github.com/o/r/issues/12', 5)",
+            [id],
+        )
+        .unwrap();
+    r.daemon
+        .task_start(id, proto::AgentKind::Grok, None)
+        .unwrap();
+    let session = r.runs()[0].session_id.unwrap();
+    let out = r.await_output(session, "FIXTURE-READY").await;
+    let after_data = out
+        .rsplit("HOUSTON-TASK-DATA>>>")
+        .next()
+        .unwrap_or_default();
+    assert!(
+        after_data.contains("Closes o/r#12"),
+        "Houston's own line, outside the data block, names the closing keyword: {out:?}"
+    );
+}

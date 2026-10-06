@@ -19,7 +19,7 @@ pub use intake::{
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
 mod task_links;
-pub use task_links::{TaskLinkRow, TaskLinkWrite};
+pub use task_links::{LinkOutboxRow, TaskLinkRow, TaskLinkWrite, OUTBOX_ATTEMPTS_MAX};
 mod tasks;
 pub use tasks::{
     SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,

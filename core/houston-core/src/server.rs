@@ -633,6 +633,7 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::TasksAccessGet { .. }
             | proto::ClientMsg::TaskStartSettingsGet { .. }
             | proto::ClientMsg::TaskReviewSettingsGet { .. }
+            | proto::ClientMsg::TaskGithubGet { .. }
             | proto::ClientMsg::WorkspaceActionsGet { .. }
     )
 }
@@ -1325,6 +1326,41 @@ async fn dispatch(
                 Ok(())
             }
         },
+        proto::ClientMsg::TaskGithubGet { workspace } => {
+            let _ = send_msg(sink, &daemon.task_github_state(&workspace)).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskGithubSet {
+            workspace,
+            settings,
+        } => match daemon.task_github_set(&workspace, settings)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                if daemon.task_github_settings(&workspace).enabled {
+                    // Turning it on imports now rather than at the next poll.
+                    let worker = daemon.clone();
+                    tokio::task::spawn_blocking(move || worker.task_github_sync(&workspace));
+                }
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskGithubOpenIssue { id } => {
+            let worker = daemon.clone();
+            let reply = tokio::task::spawn_blocking(move || worker.task_github_open_issue(id))
+                .await
+                .map_err(|e| anyhow::anyhow!("task_github_open_issue panicked: {e}"))??;
+            match reply {
+                msg @ proto::ServerMsg::TaskRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                msg => daemon.broadcast_control(&msg),
+            }
+            Ok(())
+        }
         proto::ClientMsg::TaskReviewSettingsGet { workspace } => {
             let _ = send_msg(sink, &daemon.tasks_review_settings_state(&workspace)).await;
             Ok(())

@@ -1196,6 +1196,83 @@ impl Db {
             .with_context(|| format!("task {id} disappeared inside its own create transaction"))
     }
 
+    /// Creates a task and its link to an external item in one transaction;
+    /// `Ok(None)` when that item is already linked, so a re-poll files nothing.
+    /// `link.task_id` is ignored: the new task's id is used.
+    pub fn create_linked_task(
+        &self,
+        w: &TaskWrite<'_>,
+        link: &super::TaskLinkWrite<'_>,
+    ) -> Result<Option<TaskRow>> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let linked: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM backlog_task_links WHERE provider = ?1 AND external_id = ?2)",
+            rusqlite::params![link.provider, link.external_id],
+            |r| r.get(0),
+        )?;
+        if linked {
+            return Ok(None);
+        }
+        tx.execute("UPDATE backlog_task_counters SET next_number = next_number + 1 WHERE workspace = 'all'", [])?;
+        let next: i64 = tx.query_row(
+            "SELECT next_number FROM backlog_task_counters WHERE workspace = 'all'",
+            [],
+            |r| r.get(0),
+        )?;
+        let number = u32::try_from(next - 1).with_context(|| {
+            format!("global backlog ran out of task numbers at {next} (expected a value in 1..=u32::MAX)")
+        })?;
+        tx.execute(
+            "INSERT INTO backlog_tasks \
+                (workspace, number, title, description, status, priority, parent_id, ref_url, \
+                 revision, created_by, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?10)",
+            rusqlite::params![
+                w.workspace,
+                number,
+                w.title,
+                w.description,
+                wire_name(&w.status)?,
+                priority_value(w.priority),
+                w.parent_id,
+                w.ref_url,
+                w.created_by,
+                w.now_ms,
+            ],
+        )?;
+        let id = tx.last_insert_rowid();
+        for (position, text) in w.acceptance.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO backlog_task_acceptance (task_id, position, text) VALUES (?1, ?2, ?3)",
+                rusqlite::params![id, position as i64, text],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO backlog_task_history (task_id, actor, action, changes, created_at) \
+             VALUES (?1, ?2, 'create', ?3, ?4)",
+            rusqlite::params![
+                id,
+                w.created_by,
+                serde_json::json!({ "link": { "provider": link.provider, "external_id": link.external_id } })
+                    .to_string(),
+                w.now_ms
+            ],
+        )?;
+        super::task_links::insert_link(
+            &tx,
+            &super::TaskLinkWrite {
+                task_id: id,
+                ..*link
+            },
+        )?;
+        tx.commit()?;
+        drop(conn);
+        Ok(Some(self.task(id)?.with_context(|| {
+            format!("task {id} disappeared after its linked create transaction")
+        })?))
+    }
+
     /// Creates a Harness fix task and its finding link atomically. Returns the
     /// existing open task number when another fix is already in progress.
     pub fn create_harness_task(

@@ -790,6 +790,20 @@ pub struct TaskLink {
     pub synced_at_ms: Option<i64>,
 }
 
+/// A workspace's GitHub Issues connector: `label` imports the open issues
+/// carrying it (the `gh` user's assigned ones are imported either way);
+/// `open_on_create` opens an issue for every task created in Houston there.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct TaskGithubSettings {
+    pub enabled: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub open_on_create: bool,
+}
+
 /// One task with its full text. Every mutation bumps `revision`, so a client
 /// that read one can tell its edit is stale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3720,6 +3734,21 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         agent: Option<AgentKind>,
     },
+    /// Reads a workspace's GitHub Issues connector.
+    TaskGithubGet {
+        workspace: String,
+    },
+    /// Changes a workspace's GitHub Issues connector; enabling it imports at once.
+    TaskGithubSet {
+        workspace: String,
+        settings: TaskGithubSettings,
+    },
+    /// Opens a GitHub issue for a task that has none, in its workspace's
+    /// repository, and links the task to it.
+    TaskGithubOpenIssue {
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        id: i64,
+    },
     TasksAccessGet {
         workspace: String,
     },
@@ -4455,6 +4484,21 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         free_children: u32,
     },
+    /// The workspace's GitHub Issues connector with its current state: the
+    /// repository its remote names, the last sync and the last error.
+    TaskGithub {
+        workspace: String,
+        settings: TaskGithubSettings,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        repository: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+        last_sync_at_ms: Option<i64>,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        error: Option<String>,
+    },
     /// The workspace's Tasks access, after a read or a change.
     TasksAccess {
         workspace: String,
@@ -4738,6 +4782,14 @@ pub const TASK_TITLE_MAX: usize = 200;
 pub const TASK_DESCRIPTION_MAX: usize = 65_536;
 /// A comment body; keeps one task's detail reply bounded.
 pub const TASK_COMMENT_MAX: usize = 16_384;
+/// GitHub's own limit on a label name; a longer one could never match.
+pub const TASK_GITHUB_LABEL_MAX: usize = 50;
+
+/// How often the GitHub Issues connector polls while a client is connected,
+/// and while none is: an ETag'd list costs no rate limit when unchanged.
+pub const TASK_GITHUB_POLL_ACTIVE_MS: u64 = 60_000;
+pub const TASK_GITHUB_POLL_IDLE_MS: u64 = 300_000;
+
 /// Blockers one task may name; enough for a delivery's slices, small enough
 /// that the readiness check stays one indexed query.
 pub const TASK_BLOCKERS_PER_TASK: u32 = 50;

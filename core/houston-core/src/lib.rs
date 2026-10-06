@@ -23,6 +23,7 @@ pub mod frame_queue;
 pub mod fs_watch;
 pub mod gh;
 pub mod git;
+pub mod github_issues;
 pub mod handoff;
 pub mod harness;
 pub mod home_dir;

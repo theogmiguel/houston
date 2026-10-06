@@ -256,7 +256,7 @@ impl Daemon {
         }
     }
 
-    fn task_not_found(id: i64, operation: &str) -> proto::ServerMsg {
+    pub(super) fn task_not_found(id: i64, operation: &str) -> proto::ServerMsg {
         Self::task_refused(
             Some(id),
             proto::TaskErrorKind::NotFound,
@@ -268,7 +268,11 @@ impl Daemon {
         )
     }
 
-    fn task_invalid(id: Option<i64>, operation: &str, message: String) -> proto::ServerMsg {
+    pub(super) fn task_invalid(
+        id: Option<i64>,
+        operation: &str,
+        message: String,
+    ) -> proto::ServerMsg {
         Self::task_refused(
             id,
             proto::TaskErrorKind::Invalid,
@@ -313,7 +317,7 @@ impl Daemon {
 
     /// Names the operation, the limit and the actual size, so a client can
     /// show all three without parsing the field that tripped.
-    fn task_limit_refused(
+    pub(super) fn task_limit_refused(
         id: Option<i64>,
         operation: &str,
         limit: u32,
@@ -1122,6 +1126,7 @@ impl Daemon {
         if !blockers.is_empty() {
             self.db.set_task_blockers(row.id, &blockers)?;
         }
+        self.task_github_on_create(&row);
         Ok(proto::ServerMsg::TaskChanged {
             workspace: row.workspace,
             id: row.id,
@@ -2076,6 +2081,26 @@ impl Daemon {
         block
     }
 
+    /// Houston's own line for a task that mirrors GitHub issues: the pull
+    /// request's closing keyword closes them on merge.
+    fn task_closes_note(links: &[TaskLinkRow]) -> String {
+        let ids: Vec<&str> = links
+            .iter()
+            .filter(|link| link.provider == crate::github_issues::PROVIDER)
+            .map(|link| link.external_id.as_str())
+            .collect();
+        if ids.is_empty() {
+            return String::new();
+        }
+        let closes: Vec<String> = ids.iter().map(|id| format!("Closes {id}")).collect();
+        format!(
+            "\n\nThis task tracks GitHub issue {}. Put `{}` in the pull request description so \
+             merging it closes the issue.",
+            ids.join(", "),
+            closes.join(", ")
+        )
+    }
+
     /// A retry's reviewer findings, labelled as data so the next attempt reads
     /// them as a report rather than as instructions.
     fn task_findings_block(key: &str, findings: &str) -> String {
@@ -2121,6 +2146,7 @@ impl Daemon {
             row.title.trim(),
         );
         brief.push_str(&Self::task_data_block(row, acceptance, links));
+        brief.push_str(&Self::task_closes_note(links));
         if let Some(followup) = followup {
             brief.push_str(followup);
         }
@@ -2162,6 +2188,7 @@ impl Daemon {
             row.title.trim(),
         );
         brief.push_str(&Self::task_data_block(row, acceptance, links));
+        brief.push_str(&Self::task_closes_note(links));
         if let Some(findings) = findings {
             brief.push_str(&Self::task_findings_block(key, findings));
         }

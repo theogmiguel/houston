@@ -1133,6 +1133,7 @@ impl DelegationSettleSample {
     }
 }
 
+mod github_issues;
 mod harness_review;
 mod slack;
 pub(crate) mod tasks;
