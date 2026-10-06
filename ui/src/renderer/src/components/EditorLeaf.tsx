@@ -1,5 +1,5 @@
+import { PaneFrame } from './ui/PaneFrame'
 import { lazy, Suspense, useContext } from 'react'
-import { BORDER_HAIRLINE_INSET_TRANSPARENT } from './ui/shadowChrome'
 import type { EditorNode, PaneKey, SplitSide } from '../layout/tree'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import {
@@ -60,9 +60,10 @@ export function EditorLeaf({
   const surface = useEditorSurface(workspaceDir, node.path)
   const { buf, saveState, markdownReady, mdMode, toggleMarkdownMode } = surface
   return (
-    <section
-      data-pane-focus-border={focusTier}
-      className={`pane editor-leaf flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--pane-bg)] overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] after:content-[''] after:absolute after:inset-0 after:rounded-[inherit] after:pointer-events-none after:z-[var(--z-base)] after:shadow-[${BORDER_HAIRLINE_INSET_TRANSPARENT}] ${active ? 'focus' : ''}`}
+    <PaneFrame
+      kind="editor"
+      focusTier={focusTier}
+      active={active}
       data-panekey={node.id}
       onKeyDownCapture={(e) => {
         if (!keymapOverrides.shortcuts_enabled) return
@@ -165,6 +166,6 @@ export function EditorLeaf({
           }
         />
       </Suspense>
-    </section>
+    </PaneFrame>
   )
 }

@@ -1,20 +1,19 @@
+import { PaneFrame } from './ui/PaneFrame'
 import { FILES_TREE_MIN, FILES_TREE_MAX, useFilesSplit } from './files/useFilesSplit'
 import { filesTreeToggleMatches } from '../keymap'
 import { KeymapOverridesContext } from '../layout/keymapOverridesContext'
 import type { GitFileStatus, HoustonClient } from '../houston/client'
 import { FILE_REFERENCE_MIME, copyFilePath, fileActionDirectory, fileReference, gitTreeStatus, relativeFilePath } from './files/fileActions'
 import { lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { RING_ACCENT_ICON } from './ui/shadowChrome'
 import type { DirEntry } from '../env'
 import type { FilesNode, PaneKey } from '../layout/tree'
 import { readDir, showItemInFolder, createFile, createDirectory, renameFile, trashFile } from '../houston/bridge'
-import { BTN_ICO_STRUCTURE } from './ui/buttonChrome'
-import { CONTROL_SIZE_SQUARE_CLS } from './controlSize'
 import {
   usePaneFocusTier
 } from '../windowFocus'
 import { basename, getBuffer } from '../editor/bufferStore'
-import { PaneHeader, PaneTitle } from './ui'
+import { PaneHeader, PaneTitle, Text } from './ui'
+import { PaneHeadActions, PaneHeadButton } from './ui/PaneControls'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { classifyFileTreeEntry, FileTreeIcon } from './fileTreeIcons'
 import { filterTreeRows, flattenTree, treeKeyAction, visibleEntries, type TreeRow } from './files/filesTree'
@@ -59,14 +58,6 @@ const EditorSurfaceBody = lazy(() =>
 // 420px is where a 220px tree column plus a readable ~60-column editor line
 // still both fit; below it the tree collapses to a toggleable overlay instead.
 const TREE_VISIBLE = '[@container_(min-width:420px)]'
-const ICO_HEAD_BASE =
-  `${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
-const ICO_HEAD_NEUTRAL =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] hover:text-[var(--text-primary)]'
-const ICO_HEAD_DANGER =
-  'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] hover:text-[var(--danger)]'
-const ICO_HEAD_INFO =
-  'bg-[color-mix(in_srgb,var(--info)_16%,transparent)] text-[var(--info)] hover:bg-[color-mix(in_srgb,var(--info)_16%,transparent)] hover:text-[var(--info)]'
 
 export interface FilesPaneProps {
   panel?: boolean
@@ -333,24 +324,28 @@ export function FilesPane({
         onHeaderPointerDown(e)
       }}
     >
-      <span className="flex-none text-[var(--text-muted)]">
+      <Text tone="muted" className="flex-none">
         <Icon glyph={IconFolder} role="ui" />
-      </span>
+      </Text>
       <PaneTitle>Files</PaneTitle>
       <Tooltip label={root}>
-        <span
+        <Text
           data-testid="files-head-meta"
-          className="flex-none font-mono text-[length:var(--tr-text-xs)] text-[var(--text-faint)] whitespace-nowrap overflow-hidden text-ellipsis [@container_(max-width:320px)]:hidden"
+          size="xs"
+          tone="faint"
+          mono
+          className="flex-none truncate [@container_(max-width:320px)]:hidden"
         >
           {rootName}
-        </span>
+        </Text>
       </Tooltip>
-      <span className="head-actions flex items-center gap-px flex-none ml-auto">
+      <PaneHeadActions>
         <FileHeaderActions root={root} panel={panel} path={fileTabs.activePath} onCreate={() => setMutation({ kind: 'file', path: root, name: '' })} onMove={onMoveToEditor} onClose={fileTabs.transferTab} />
         <span className={`${TREE_VISIBLE}:hidden inline-flex`}>
           <Tooltip label={treeOpen ? 'Hide tree' : 'Show tree'}>
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${treeOpen ? ICO_HEAD_INFO : ICO_HEAD_NEUTRAL}`}
+            <PaneHeadButton
+              ladder={false}
+              tone={treeOpen ? 'info' : 'neutral'}
               aria-label={treeOpen ? 'Hide tree' : 'Show tree'}
               aria-pressed={treeOpen}
               onClick={(e) => {
@@ -359,7 +354,7 @@ export function FilesPane({
               }}
             >
               <Icon glyph={IconPanelLeft} role="ui" />
-            </button>
+            </PaneHeadButton>
           </Tooltip>
         </span>
         {}
@@ -371,8 +366,9 @@ export function FilesPane({
           />
         )}
         <Tooltip label="Refresh tree">
-          <button
-            className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_NEUTRAL}`}
+          <PaneHeadButton
+            ladder={false}
+            tone="neutral"
             aria-label="Refresh tree"
             onClick={(e) => {
               e.stopPropagation()
@@ -380,11 +376,12 @@ export function FilesPane({
             }}
           >
             <Icon glyph={IconRefresh} role="ui" />
-          </button>
+          </PaneHeadButton>
         </Tooltip>
         <Tooltip label={fileTabs.dirty ? 'Save (Ctrl+S)' : 'No unsaved changes'}>
-          <button
-            className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_NEUTRAL}`}
+          <PaneHeadButton
+            ladder={false}
+            tone="neutral"
             aria-label="Save"
             disabled={!fileTabs.dirty}
             onClick={(e) => {
@@ -397,12 +394,13 @@ export function FilesPane({
             ) : (
               <Icon glyph={IconSave} role="ui" />
             )}
-          </button>
+          </PaneHeadButton>
         </Tooltip>
         {onExpand && (
           <Tooltip label={expanded ? 'Collapse (z)' : 'Expand (z)'}>
-            <button
-              className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${expanded ? ICO_HEAD_INFO : ICO_HEAD_NEUTRAL}`}
+            <PaneHeadButton
+              ladder={false}
+              tone={expanded ? 'info' : 'neutral'}
               aria-label={expanded ? 'Collapse' : 'Expand'}
               aria-pressed={expanded}
               onClick={(e) => {
@@ -411,19 +409,20 @@ export function FilesPane({
               }}
             >
               {expanded ? <Icon glyph={IconMinimize} role="ui" /> : <Icon glyph={IconMaximize} role="ui" />}
-            </button>
+            </PaneHeadButton>
           </Tooltip>
         )}
         <Tooltip label="Close pane">
-          <button
-            className={`btn ${BTN_ICO_STRUCTURE} ${ICO_HEAD_BASE} ${ICO_HEAD_DANGER}`}
+          <PaneHeadButton
+            ladder={false}
+            tone="danger"
             aria-label="Close"
             onClick={onClose}
           >
             <Icon glyph={IconClose} role="ui" />
-          </button>
+          </PaneHeadButton>
         </Tooltip>
-      </span>
+      </PaneHeadActions>
     </PaneHeader>
   )
 
@@ -505,7 +504,7 @@ export function FilesPane({
 
 
   return (
-    <section
+    <PaneFrame
       ref={split.containerRef}
       data-split={split.split}
       onKeyDownCapture={(event) => {
@@ -515,8 +514,9 @@ export function FilesPane({
           split.toggle()
         }
       }}
-      data-pane-focus-border={focusTier}
-      className={`pane files-pane ${panel ? "files-panel" : ""} flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--pane-bg)] overflow-hidden [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${active ? 'focus' : ''}`}
+      kind={panel ? 'files-panel' : 'files'}
+      focusTier={focusTier}
+      active={active}
       data-panekey={node.id}
       data-testid="files-pane"
     >
@@ -564,7 +564,7 @@ export function FilesPane({
           />
         )}
       </AnimOut>
-    </section>
+    </PaneFrame>
   )
 }
 

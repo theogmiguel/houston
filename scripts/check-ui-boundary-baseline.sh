@@ -6,7 +6,6 @@ BASELINE=(
   "ui/src/renderer/src/components/BrowserPane.tsx 106"
   "ui/src/renderer/src/components/BrowserPicker.tsx 2"
   "ui/src/renderer/src/components/ConfirmModal.tsx 0"
-  "ui/src/renderer/src/components/FilesPane.tsx 10"
   "ui/src/renderer/src/components/FirstRun.tsx 0"
   "ui/src/renderer/src/components/HostKeyModal.tsx 0"
   "ui/src/renderer/src/components/RailResizeHandle.tsx 6"

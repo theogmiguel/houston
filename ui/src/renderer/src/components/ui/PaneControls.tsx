@@ -10,9 +10,14 @@ export function PaneHeadActions({ children }: { children: ReactNode }): React.JS
 }
 
 const HEAD_BUTTON_BASE =
-  `${BTN_ICO_STRUCTURE} ${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none [@container_(max-width:280px)]:w-[var(--h-pane-icon-button-compact)] [@container_(max-width:280px)]:h-[var(--h-pane-icon-button-compact)] [@container_(max-width:200px)]:w-[var(--h-pane-icon-button-narrow)] [@container_(max-width:200px)]:h-[var(--h-pane-icon-button-narrow)] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]`
+  `${BTN_ICO_STRUCTURE} ${CONTROL_SIZE_SQUARE_CLS.mini} rounded-[var(--tr-radius-sm)] [transition:background_0.16s_cubic-bezier(0.4,0,0.2,1),color_0.16s_ease,transform_0.18s_cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-px active:translate-y-0 active:scale-90 focus-visible:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] focus-visible:text-[var(--text-primary)] focus-visible:shadow-[${RING_ACCENT_ICON}] focus-visible:outline-none`
+/** Session headers shrink their buttons in narrow panes and dim them while a sibling pane holds focus. */
+const HEAD_BUTTON_LADDER =
+  '[@container_(max-width:280px)]:w-[var(--h-pane-icon-button-compact)] [@container_(max-width:280px)]:h-[var(--h-pane-icon-button-compact)] [@container_(max-width:200px)]:w-[var(--h-pane-icon-button-narrow)] [@container_(max-width:200px)]:h-[var(--h-pane-icon-button-narrow)] [body:has(.pane.focus)_.pane:not(.focus)_&]:text-[color-mix(in_srgb,var(--text-muted)_92%,var(--text-primary))]'
 
 const HEAD_BUTTON_TONE = {
+  neutral:
+    'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] hover:text-[var(--text-primary)]',
   regular:
     'bg-transparent text-[color-mix(in_srgb,var(--text-muted)_55%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--text-primary)_11%,transparent)] hover:text-[var(--text-primary)]',
   accent:
@@ -39,10 +44,11 @@ export function PaneNotice({ children, ...rest }: { children: ReactNode } & HTML
 /** An icon button in a pane header. `className` carries layout only (for example a container-query cut). */
 export function PaneHeadButton({
   tone = 'regular',
+  ladder = true,
   className = '',
   ...rest
-}: { tone?: PaneHeadButtonTone } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
-  return <button {...rest} className={`${HEAD_BUTTON_BASE} ${HEAD_BUTTON_TONE[tone]} ${className}`.trim()} />
+}: { tone?: PaneHeadButtonTone; ladder?: boolean } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
+  return <button {...rest} className={`${HEAD_BUTTON_BASE} ${ladder ? HEAD_BUTTON_LADDER : ''} ${HEAD_BUTTON_TONE[tone]} ${className}`.trim()} />
 }
 
 const STATUS_PULSE = 'loop-anim [--dot-pulse-opacity:0.35] motion-safe:animate-[dot-pulse_1.4s_steps(4,end)_infinite]'

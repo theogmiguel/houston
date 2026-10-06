@@ -1,3 +1,4 @@
+import { PaneFrame } from './ui/PaneFrame'
 import { useSession, useSessionFamily } from '../sessionsStore'
 import { openSideOverview, SIDE_SELECT_EVENT } from '../sidePanel'
 import { memo, useEffect, useContext, useRef, useState } from 'react'
@@ -416,9 +417,11 @@ function SessionPaneImpl({
 
   const glyphAgent: AgentKind = info.detected_agent ?? info.agent
   return (
-    <section
-      data-pane-focus-border={focusTier}
-      className={`pane flex-1 min-w-0 min-h-0 relative flex flex-col bg-[var(--terminal-frame-bg)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] overflow-hidden ${ended ? 'opacity-80' : ''} ${active ? 'focus' : ''}`}
+    <PaneFrame
+      kind="session"
+      focusTier={focusTier}
+      active={active}
+      dimmed={Boolean(ended)}
       data-panekey={info.id}
       onPointerDownCapture={() => onActivate(info.id)}
       onContextMenu={(e) => {
@@ -607,7 +610,7 @@ function SessionPaneImpl({
         </PaneContextMenu>
         )}
       </MenuLayer>
-    </section>
+    </PaneFrame>
   )
 }
 

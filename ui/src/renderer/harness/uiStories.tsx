@@ -155,6 +155,7 @@ import {
   SettingsStatusSpecimen,
   RoutineDetail,
   RosterSurfaceSpecimen,
+  PaneFrameSpecimen,
   PopoverPanelSpecimen,
   ChoiceTileSpecimen,
   MarkdownContentSpecimen,
@@ -570,6 +571,10 @@ export function UiPrimitivesStory(): React.JSX.Element {
 
         <SpecimenGroup heading="Roster surfaces">
           <RosterSurfaceSpecimen />
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Pane frame">
+          <PaneFrameSpecimen />
         </SpecimenGroup>
 
         <SpecimenGroup heading="Orchestrator overview">

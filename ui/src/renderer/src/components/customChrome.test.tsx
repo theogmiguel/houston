@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Sidebar } from './Sidebar'
 import { MATERIAL_CLS } from './ui/material'
+import { PaneFrame, type PaneFrameKind } from './ui/PaneFrame'
 import { setSettingsNavForTests } from '../settingsNav'
 import { setBackgroundStateForTests } from '../backgroundMode'
 
@@ -105,18 +107,25 @@ describe('every chrome theme cuts its own custom ground', () => {
   })
 
   it('the leaves that hold Houston ink read --pane-bg; only the terminal opts out', () => {
-    const LEAVES = ['ChangesPane.tsx', 'FilesPane.tsx', 'EditorLeaf.tsx', 'SkillsLeaf.tsx']
-    for (const file of LEAVES) {
-      const src = readFileSync(resolve(__dirname, file), 'utf8')
-      const ground = file === 'ChangesPane.tsx' ? 'bg-[var(--material-shell-bg)]' : 'bg-[var(--pane-bg)]'
-      expect(src, `${file} must ground its frame on its panel ground`).toContain(ground)
-      expect(src, `${file} is not a terminal and must not read the frame token`).not.toContain(
-        '--terminal-frame-bg'
-      )
+    const read = (file: string): string => readFileSync(resolve(__dirname, file), 'utf8')
+    const kindGround = (kind: PaneFrameKind): string =>
+      renderToStaticMarkup(<PaneFrame kind={kind} focusTier="none" active={false}>{null}</PaneFrame>)
+    for (const [file, kind, use] of [['FilesPane.tsx', 'files', /kind=\{[^}\n]*'files'\}/], ['EditorLeaf.tsx', 'editor', /kind="editor"/]] as const) {
+      const src = read(file)
+      expect(src, `${file} must frame itself with the pane frame role`).toContain('<PaneFrame')
+      expect(src).toMatch(use)
+      expect(kindGround(kind), `the ${kind} frame must ground on its panel ground`).toContain('bg-[var(--pane-bg)]')
+      expect(kindGround(kind), `the ${kind} frame is not a terminal`).not.toContain('--terminal-frame-bg')
     }
-    const terminal = readFileSync(resolve(__dirname, 'SessionPane.tsx'), 'utf8')
-    expect(terminal).toContain('bg-[var(--terminal-frame-bg)]')
-    expect(terminal).not.toContain('bg-[var(--pane-bg)]')
+    expect(read('ChangesPane.tsx')).toContain('<GitChangesSurface')
+    expect(read('ui/Changes.tsx')).toMatch(/function GitChangesSurface[^\n]*\n[^\n]*MATERIAL_CLS\.shell/)
+    expect(MATERIAL_CLS.shell).toBe('bg-[var(--material-shell-bg)]')
+    const skills = read('SkillsLeaf.tsx')
+    expect(skills).toContain('bg-[var(--pane-bg)]')
+    expect(skills).not.toContain('--terminal-frame-bg')
+    expect(read('SessionPane.tsx')).toMatch(/<PaneFrame\n\s*kind="session"/)
+    expect(kindGround('session')).toContain('bg-[var(--terminal-frame-bg)]')
+    expect(kindGround('session')).not.toContain('bg-[var(--pane-bg)]')
   })
 
   it('the skeleton ground is declared in BOTH blocks, never composed from the coat once', () => {
