@@ -1,16 +1,24 @@
 import { useState } from 'react'
-import { Select } from '../ui/Select'
 import { Segmented } from '../ui/SegmentedControl'
 import { Toggle } from '../ui/settingsPrimitives'
+import { FeedbackBanner } from '../ui/navPrimitives'
+import { Text } from '../ui/Text'
 import {
-  FIELD_INPUT,
-  FIELD_LABEL,
-  FIELD_TEXTAREA,
-  NavFeedback,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  chipClass
-} from './navChrome'
+  ChipGroup,
+  ChoiceChip,
+  FieldActionButton,
+  FormField,
+  FormHint,
+  FieldControl,
+  FormPanel,
+  FormPanelBody,
+  FormPanelFooter,
+  FormSelect,
+  FormSubRow,
+  FormTextarea,
+  FormToggleRow,
+  InlineLinkButton
+} from '../ui/formPrimitives'
 import type { Cadence, RoutineWorkspaceOption } from '../../houston/routineTypes'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { ChatEffort } from '../../houston/generated/ChatEffort'
@@ -36,10 +44,6 @@ const EFFORT_ENGINES: AgentKind[] = ['claude', 'codex', 'antigravity', 'grok']
 function supportsEffort(engine: AgentKind): boolean {
   return EFFORT_ENGINES.includes(engine)
 }
-
-/// One-line hint under a field in this form.
-const FIELD_HINT_CLS =
-  '-mt-[2px] mb-[8px] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] [line-height:var(--tr-text-small-leading)] text-[var(--text-faint)]'
 
 const PRESETS: { label: string; cadence: Cadence }[] = [
   { label: 'Every 15 minutes', cadence: { type: 'interval', seconds: 900 } },
@@ -89,29 +93,6 @@ function initialFormState(initial: RoutineFormValue | undefined): RoutineFormVal
   }
 }
 
-function Field({
-  label,
-  htmlFor,
-  children
-}: {
-  label: string
-  htmlFor?: string
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <div className="min-w-0 [&+&]:mt-[18px]">
-      {htmlFor ? (
-        <label className={FIELD_LABEL} htmlFor={htmlFor}>
-          {label}
-        </label>
-      ) : (
-        <span className={FIELD_LABEL}>{label}</span>
-      )}
-      {children}
-    </div>
-  )
-}
-
 function CustomCadenceEditor({
   cadence,
   onChange
@@ -120,15 +101,15 @@ function CustomCadenceEditor({
   onChange: (cadence: Cadence) => void
 }): React.JSX.Element {
   return (
-    <div className="mt-[10px] flex items-center gap-[8px]">
+    <FormSubRow>
       {cadence.type === 'interval' ? (
         <>
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">every</span>
-          <input
+          <Text size="small" weight="small" tone="secondary">every</Text>
+          <FieldControl
             type="number"
             min={1}
             aria-label="Interval in seconds"
-            className={`${FIELD_INPUT} w-[100px]`}
+            width="md"
             value={cadence.seconds}
             onChange={(e) =>
               onChange({
@@ -137,23 +118,21 @@ function CustomCadenceEditor({
               })
             }
           />
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">seconds</span>
-          <button
-            type="button"
-            className="btn ml-auto border-0 bg-transparent p-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)] underline cursor-pointer hover:text-[var(--text-primary)]"
+          <Text size="small" weight="small" tone="secondary">seconds</Text>
+          <InlineLinkButton
             onClick={() => onChange({ type: 'clock', hour: 9, minute: 0, weekdays: null })}
           >
             switch to clock
-          </button>
+          </InlineLinkButton>
         </>
       ) : (
         <>
-          <input
+          <FieldControl
             type="number"
             min={0}
             max={23}
             aria-label="Hour"
-            className={`${FIELD_INPUT} w-[68px]`}
+            width="sm"
             value={cadence.hour}
             onChange={(e) =>
               onChange({
@@ -162,13 +141,13 @@ function CustomCadenceEditor({
               })
             }
           />
-          <span className="[font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">:</span>
-          <input
+          <Text size="small" weight="small" tone="secondary">:</Text>
+          <FieldControl
             type="number"
             min={0}
             max={59}
             aria-label="Minute"
-            className={`${FIELD_INPUT} w-[68px]`}
+            width="sm"
             value={cadence.minute}
             onChange={(e) =>
               onChange({
@@ -188,16 +167,14 @@ function CustomCadenceEditor({
               { value: 'weekdays', label: 'Weekdays' }
             ]}
           />
-          <button
-            type="button"
-            className="btn ml-auto border-0 bg-transparent p-0 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)] underline cursor-pointer hover:text-[var(--text-primary)]"
+          <InlineLinkButton
             onClick={() => onChange({ type: 'interval', seconds: 900 })}
           >
             switch to interval
-          </button>
+          </InlineLinkButton>
         </>
       )}
-    </div>
+    </FormSubRow>
   )
 }
 
@@ -213,19 +190,20 @@ function RoutineEditorFooter({
   onCancel: () => void
 }): React.JSX.Element {
   return (
-    <div className="flex-none flex items-center gap-[8px] min-h-[54px] px-[16px] py-[10px] border-t border-[var(--divider)]">
-      <span className="flex-1 [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-secondary)]">
-        {mode === 'create'
+    <FormPanelFooter
+      note={
+        mode === 'create'
           ? 'Nothing is saved until you create it.'
-          : `Editing “${initialName}”. Every run is independent.`}
-      </span>
-      <button type="button" className={`${SECONDARY_BUTTON} min-w-[84px]`} onClick={onCancel}>
+          : `Editing “${initialName}”. Every run is independent.`
+      }
+    >
+      <FieldActionButton minWidth="sm" onClick={onCancel}>
         Cancel
-      </button>
-      <button type="submit" disabled={!canSubmit} className={`${PRIMARY_BUTTON} min-w-[128px]`}>
+      </FieldActionButton>
+      <FieldActionButton tone="primary" type="submit" minWidth="md" disabled={!canSubmit}>
         {mode === 'create' ? 'Create routine' : 'Save changes'}
-      </button>
-    </div>
+      </FieldActionButton>
+    </FormPanelFooter>
   )
 }
 
@@ -272,70 +250,59 @@ export function RoutineEditor(props: {
   }
 
   return (
-    <form
+    <FormPanel
       data-testid="routine-editor"
-      className="flex-1 min-h-0 flex flex-col overflow-hidden"
       onSubmit={(e) => {
         e.preventDefault()
         submit()
       }}
     >
-      <div className="flex-1 min-h-0 overflow-y-auto px-[max(22px,calc(50%-320px))] py-[22px]">
-        <Field label="Name" htmlFor="routine-name">
-          <input
+      <FormPanelBody>
+        <FormField label="Name" htmlFor="routine-name">
+          <FieldControl
             id="routine-name"
-            className={FIELD_INPUT}
             autoComplete="off"
             value={name}
             maxLength={160}
             placeholder="Leak watch"
             onChange={(e) => setName(e.target.value)}
           />
-        </Field>
+        </FormField>
 
-        <Field label="When it fires, do this" htmlFor="routine-prompt">
-          <textarea
+        <FormField label="When it fires, do this" htmlFor="routine-prompt">
+          <FormTextarea
             id="routine-prompt"
-            className={FIELD_TEXTAREA}
             value={prompt}
             maxLength={64_000}
             placeholder="What each run is told to do."
             onChange={(e) => setPrompt(e.target.value)}
           />
-        </Field>
+        </FormField>
 
-        <Field label="Cadence">
-          <div className="flex flex-wrap gap-[6px]">
+        <FormField label="Cadence">
+          <ChipGroup>
             {PRESETS.map((p, i) => (
-              <button
+              <ChoiceChip
                 key={p.label}
-                type="button"
-                aria-pressed={selectedPreset === i}
-                className={chipClass(selectedPreset === i)}
+                pressed={selectedPreset === i}
                 onClick={() => {
                   setCustomOpen(false)
                   setCadence(p.cadence)
                 }}
               >
                 {p.label}
-              </button>
+              </ChoiceChip>
             ))}
-            <button
-              type="button"
-              aria-pressed={customOpen}
-              className={chipClass(customOpen)}
-              onClick={() => setCustomOpen(true)}
-            >
+            <ChoiceChip pressed={customOpen} onClick={() => setCustomOpen(true)}>
               Custom
-            </button>
-          </div>
+            </ChoiceChip>
+          </ChipGroup>
 
           {customOpen && <CustomCadenceEditor cadence={cadence} onChange={setCadence} />}
-        </Field>
+        </FormField>
 
-        <Field label="Working directory">
-          <Select
-            className="w-full h-[36px]"
+        <FormField label="Working directory">
+          <FormSelect
             aria-label="Working directory"
             value={workspaceId ?? ''}
             options={[
@@ -344,14 +311,13 @@ export function RoutineEditor(props: {
             ]}
             onChange={(v) => setWorkspaceId(v === '' ? null : v)}
           />
-          <p className={FIELD_HINT_CLS}>
+          <FormHint>
             Where each run starts. A run with no directory is refused, not guessed at.
-          </p>
-        </Field>
+          </FormHint>
+        </FormField>
 
-        <Field label="Runs on">
-          <Select
-            className="w-full h-[36px]"
+        <FormField label="Runs on">
+          <FormSelect
             aria-label="Engine"
             value={engine}
             options={ENGINE_ORDER.map((k) => ({ value: k, label: engineLabel(k) }))}
@@ -361,37 +327,34 @@ export function RoutineEditor(props: {
               setEffort(null)
             }}
           />
-          <p className={FIELD_HINT_CLS}>
+          <FormHint>
             The provider every run executes with, as its own terminal pane.
-          </p>
-        </Field>
+          </FormHint>
+        </FormField>
 
-        <Field label="Model">
-          <input
-            className={FIELD_INPUT}
+        <FormField label="Model">
+          <FieldControl
             aria-label="Model"
             value={model ?? ''}
             placeholder="CLI default"
             onChange={(e) => setModel(e.target.value === '' ? null : e.target.value)}
           />
-          <p className={FIELD_HINT_CLS}>Optional provider model ID. Empty follows the CLI default.</p>
-        </Field>
+          <FormHint>Optional provider model ID. Empty follows the CLI default.</FormHint>
+        </FormField>
 
         {supportsEffort(engine) && (
-          <Field label="Reasoning effort">
-            <Select
-              className="w-full h-[36px]"
+          <FormField label="Reasoning effort">
+            <FormSelect
               aria-label="Reasoning effort"
               value={effort ?? ''}
               options={CHAT_EFFORTS.map((e) => ({ value: e.value ?? '', label: e.title }))}
               onChange={(v) => setEffort(v === '' ? null : (v as ChatEffort))}
             />
-          </Field>
+          </FormField>
         )}
 
-        <Field label="Access">
-          <Select
-            className="w-full h-[36px]"
+        <FormField label="Access">
+          <FormSelect
             aria-label="Access"
             value={permissionMode}
             options={[
@@ -403,17 +366,14 @@ export function RoutineEditor(props: {
             ]}
             onChange={(v) => setPermissionMode(v as ChatPermissionMode)}
           />
-          <p className={FIELD_HINT_CLS}>
+          <FormHint>
             There is no “Automatic” here: that means “every risky step asks”, and a run has
             nobody to ask. A prompt raised anyway is denied and written into the run record.
-          </p>
-        </Field>
+          </FormHint>
+        </FormField>
 
-        <Field label="Isolation">
-          <div className="flex items-center gap-[12px] min-h-[42px] px-[12px] py-[8px] rounded-[var(--tr-radius-button)] border border-[var(--border)] bg-[var(--content-bg)]">
-            <span className="flex-1 min-w-0 [font-size:var(--tr-text-small-size)] text-[var(--text-secondary)]">
-              Run in a fresh worktree of the working directory
-            </span>
+        <FormField label="Isolation">
+          <FormToggleRow label="Run in a fresh worktree of the working directory">
             <Toggle
               data-testid="routine-isolate"
               on={isolate}
@@ -425,22 +385,22 @@ export function RoutineEditor(props: {
                 }
               }}
             />
-          </div>
-          <p className={FIELD_HINT_CLS}>
+          </FormToggleRow>
+          <FormHint>
             {workspaceId === null
               ? 'Pick a working directory first — a worktree needs a git repository to branch from.'
               : 'Houston makes the worktree and lists it under the run; it never merges. Full access requires this, so a run that never asks cannot land in the tree you are editing.'}
-          </p>
-        </Field>
+          </FormHint>
+        </FormField>
 
         {error && (
-          <div className="mt-[18px]">
-            <NavFeedback tone="error" testId="routine-error">
+          <FormField>
+            <FeedbackBanner tone="error" testId="routine-error">
               {error}
-            </NavFeedback>
-          </div>
+            </FeedbackBanner>
+          </FormField>
         )}
-      </div>
+      </FormPanelBody>
 
       <RoutineEditorFooter
         mode={mode}
@@ -448,6 +408,6 @@ export function RoutineEditor(props: {
         canSubmit={canSubmit}
         onCancel={onCancel}
       />
-    </form>
+    </FormPanel>
   )
 }

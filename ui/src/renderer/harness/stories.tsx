@@ -96,7 +96,18 @@ import {
   NavRoutines,
   NavRoutinesEmpty,
   NavSkills,
-  HarnessPageStory
+  HarnessPageStory,
+  NavRoutineEditorClock,
+  NavRoutineEditorInterval,
+  NavRoutineRows,
+  NavRoutineRunOutcomes,
+  NavListDetailStates,
+  NavChromeStates,
+  HarnessReportStates,
+  HarnessHistoryStory,
+  HarnessReportLoadingStory,
+  HarnessHistoryEmptyStory,
+  HarnessFindingsDismissedStory
 } from './navStories'
 import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
 import { TasksPageStory } from './tasksPageStory'
@@ -344,6 +355,17 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'nav/routines': () => <NavRoutines />,
   'nav/routines-empty': () => <NavRoutinesEmpty />,
   'nav/routine-editor': () => <NavRoutineEditor />,
+  'nav/routine-editor-clock': () => <NavRoutineEditorClock />,
+  'nav/routine-editor-interval': () => <NavRoutineEditorInterval />,
+  'nav/routine-rows': () => <NavRoutineRows />,
+  'nav/routine-run-outcomes': () => <NavRoutineRunOutcomes />,
+  'nav/list-detail': () => <NavListDetailStates />,
+  'nav/chrome-states': () => <NavChromeStates />,
+  'harness/report': () => <HarnessReportStates />,
+  'harness/report-loading': () => <HarnessReportLoadingStory />,
+  'harness/history-empty': () => <HarnessHistoryEmptyStory />,
+  'harness/findings-dismissed': () => <HarnessFindingsDismissedStory />,
+  'harness/history': () => <HarnessHistoryStory />,
   'nav/skills': () => <NavSkills />,
   'nav/skills/graphite': () => <NavSkills />,
   'nav/skills/paper': () => <NavSkills />,

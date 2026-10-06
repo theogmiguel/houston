@@ -7,5 +7,5 @@ export function EmptyGridHint({ children }: { children: ReactNode }): React.JSX.
 }
 
 export function EmptyGridHintSpecimen(): React.JSX.Element {
-  return <div data-testid="empty-grid-hint-specimen" className="flex h-[var(--h-primitives-preview-short)]"><EmptyGridHint>No terminals here. Press <Text as="b" tone="muted">t</Text> to open one.</EmptyGridHint></div>
+  return <div data-testid="grid-hint-specimen" className="flex h-[var(--h-primitives-preview-short)]"><EmptyGridHint>No terminals here. Press <Text as="b" tone="muted">t</Text> to open one.</EmptyGridHint></div>
 }

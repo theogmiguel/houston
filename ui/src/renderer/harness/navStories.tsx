@@ -5,6 +5,13 @@ import { RoutinesSurface } from '../src/components/nav/RoutinesSurface'
 import { RoutineEditor } from '../src/components/nav/RoutineEditor'
 import { SkillsSurface } from '../src/components/nav/SkillsSurface'
 import { HarnessSurface } from '../src/components/nav/HarnessSurface'
+import { HarnessHistory } from '../src/components/nav/HarnessHistory'
+import { HarnessFindings } from '../src/components/nav/HarnessFindings'
+import { HarnessReportView } from '../src/components/nav/HarnessReportView'
+import { ListDetail } from '../src/components/nav/ListDetail'
+import { RoutineHistory, RoutineRow } from '../src/components/nav/RoutineRow'
+import { NavBack, NavDetailState, NavEmpty, NavFeedback, NavFootnote, NavSwitch } from '../src/components/nav/navChrome'
+import { IconFolder } from '../src/components/icons'
 import type { AgentHookState } from '../src/houston/generated/AgentHookState'
 import type { HarnessFinding } from '../src/houston/generated/HarnessFinding'
 import type { HarnessReview } from '../src/houston/generated/HarnessReview'
@@ -517,5 +524,206 @@ export function HarnessPageStory({ firstRun = false, noReviews = false }: { firs
         />
       </div>
     </div>
+  )
+}
+
+function editorStory(initial: React.ComponentProps<typeof RoutineEditor>['initial'], mode: 'create' | 'edit', error: string | null): React.JSX.Element {
+  return (
+    <Frame active="Routines">
+      <RoutineEditor
+        mode={mode}
+        workspaces={[{ id: '/home/dev/code/houston', name: 'houston' }]}
+        initial={initial}
+        error={error}
+        onSubmit={noop}
+        onCancel={noop}
+      />
+    </Frame>
+  )
+}
+
+export function NavRoutineEditorClock(): React.JSX.Element {
+  return editorStory({
+    engine: 'claude', model: 'opus', effort: 'high', name: 'Nightly dependency check', prompt: 'Check for outdated dependencies.',
+    cadence: { type: 'clock', hour: 2, minute: 30, weekdays: [2, 3, 4, 5, 6] }, workspaceId: '/home/dev/code/houston',
+    permissionMode: 'bypass_permissions', isolate: true
+  }, 'edit', 'A routine with that name already exists.')
+}
+
+export function NavRoutineEditorInterval(): React.JSX.Element {
+  return editorStory({
+    engine: 'opencode', model: null, effort: null, name: 'Leak watch', prompt: '',
+    cadence: { type: 'interval', seconds: 1200 }, workspaceId: null, permissionMode: 'accept_edits', isolate: false
+  }, 'edit', null)
+}
+
+export function NavRoutineRows(): React.JSX.Element {
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => ref.current?.querySelector<HTMLButtonElement>('[data-testid="routine-edit"]')?.focus(), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+  const run = (id: number, status: RoutineRun['status'], started: number, sessionId: number | null, error?: string): RoutineRun => ({
+    id, routine_id: 2, trigger: id % 2 ? 'manual' : 'schedule', status, started_at_ms: started, ended_at_ms: status === 'running' ? null : started + 4 * 60_000,
+    session_id: sessionId, error
+  })
+  const runs = [
+    run(3, 'running', NOW - 600_000, 42),
+    run(2, 'failed', NOW - 86_400_000, 41, 'npx was not found on PATH'),
+    run(1, 'ok', NOW - 2 * 86_400_000, null)
+  ]
+  const common = { workspace: { id: '/home/dev/code/houston', name: 'houston' }, now: NOW, onEdit: noop, onToggleEnabled: noop, onDelete: noop }
+  return (
+    <Frame active="Routines">
+      <div ref={ref} style={{ flex: 1, padding: 24, display: 'grid', alignContent: 'start' }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', background: 'var(--card-bg)' }}>
+          <RoutineRow {...common} routine={routine({ id: 1, last_outcome: 'ok', last_run_session_id: 9 })} onOpenSession={noop} onRunNow={noop} onToggleHistory={noop} />
+          <RoutineRow {...common} routine={routine({ id: 2, name: 'Nightly dependency check', last_error: 'engine refused to start', last_outcome: 'failed', workspace_id: null })} running historyOpen runs={runs} onOpenSession={noop} onToggleHistory={noop} />
+          <RoutineRow {...common} routine={routine({ id: 3, name: 'Flaky test sweep', enabled: false, last_outcome: 'denied' })} waitingForSlot={{ running: 2, limit: 2 }} historyOpen runs={[]} />
+          <RoutineRow {...common} routine={routine({ id: 4, name: 'Weekly changelog', last_run_at_ms: NOW - 3600_000, last_outcome: 'killed_at_cap' })} historyOpen runsLoading />
+          <RoutineRow {...common} routine={routine({ id: 5, name: 'Waiting', last_outcome: 'engine_refused' })} waitingForSlot={{ running: 2, limit: 2 }} />
+          <RoutineRow {...common} routine={routine({ id: 6, name: 'Failed dependency check', last_error: 'npx was not found on PATH', last_outcome: 'failed' })} />
+        </div>
+      </div>
+    </Frame>
+  )
+}
+
+export function NavRoutineRunOutcomes(): React.JSX.Element {
+  const statuses: RoutineRun['status'][] = ['running', 'ok', 'denied', 'killed_at_cap', 'engine_refused', 'failed']
+  const runs = statuses.map((status, index): RoutineRun => ({
+    id: index + 1,
+    routine_id: 2,
+    trigger: index % 2 ? 'schedule' : 'manual',
+    status,
+    started_at_ms: NOW - (index + 1) * 60_000,
+    ended_at_ms: status === 'running' ? null : NOW - index * 60_000,
+    session_id: index === 0 ? 42 : null,
+    error: status === 'failed' ? 'npx was not found on PATH' : undefined
+  }))
+  return (
+    <Frame active="Routines">
+      <div style={{ flex: 1, padding: 24 }}>
+        <RoutineHistory runs={runs} loading={false} now={NOW} onOpenSession={noop} />
+      </div>
+    </Frame>
+  )
+}
+
+export function NavListDetailStates(): React.JSX.Element {
+  const items = [
+    { id: 'a', title: 'Alpha skill', sub: 'user · claude', right: <span style={{ color: 'var(--text-faint)' }}>2</span> },
+    { id: 'b', title: 'Beta skill', sub: 'project · codex' },
+    { id: 'c', title: 'Gamma skill' }
+  ]
+  const detail = (item: { title: React.ReactNode } | null): React.JSX.Element => <div>{item ? item.title : 'Nothing selected'}</div>
+  return (
+    <Frame active="Skills">
+      <div style={{ flex: 1, padding: 24, display: 'grid', gap: 24, alignContent: 'start' }}>
+        <div style={{ width: 800 }}><ListDetail items={items} backLabel="Skills" renderDetail={detail} listHead={<div style={{ padding: 4 }}>Head</div>} /></div>
+        <div style={{ width: 500 }}><ListDetail items={items} backLabel="Skills" renderDetail={detail} forceDetailOpen /></div>
+        <div style={{ width: 500 }}><ListDetail items={items} backLabel="Skills" renderDetail={detail} listEmpty={<div>No items</div>} /></div>
+      </div>
+    </Frame>
+  )
+}
+
+export function NavChromeStates(): React.JSX.Element {
+  const emptyAction = <button type="button">Add one</button>
+  return (
+    <Frame active="Skills">
+      <div style={{ flex: 1, padding: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignContent: 'start' }}>
+        <div style={{ display: 'grid', gap: 16, alignContent: 'start' }}>
+          <div>
+            <NavFeedback>Neutral message</NavFeedback>
+            <NavFeedback tone="warning" icon={<IconFolder />} onDismiss={noop} testId="fb-warn">Warning message with dismiss</NavFeedback>
+            <NavFeedback tone="error" icon={<IconFolder />}>Error message</NavFeedback>
+          </div>
+          <NavFootnote>A footnote under a list.</NavFootnote>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <NavSwitch on label="on" onChange={noop} />
+            <NavSwitch on={false} label="off" onChange={noop} />
+            <NavSwitch on disabled label="on disabled" onChange={noop} />
+            <NavSwitch on={false} disabled label="off disabled" onChange={noop} />
+          </div>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 10 }}>
+            <NavBack label="Skills" onClick={noop}><span>extra</span></NavBack>
+          </div>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 10 }}>
+            <NavDetailState title="Loading the thing" detail="Reading the file from disk." />
+            <NavDetailState title="Could not load" detail="The file is gone." tone="error" action={<button type="button">Retry</button>} />
+          </div>
+        </div>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, alignSelf: 'start' }}>
+          <NavEmpty title="Nothing here" icon={<IconFolder />} action={emptyAction}>Add the first item to see it listed.</NavEmpty>
+        </div>
+      </div>
+    </Frame>
+  )
+}
+
+export function HarnessReportStates(): React.JSX.Element {
+  const reviews = [harnessReview(13, 38, 7), harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]
+  const base = { reviews, onLoadReport: noop, onOpenFile: noop, onReveal: noop }
+  return (
+    <Frame active="Routines">
+      <div style={{ flex: 1, padding: 24, display: 'grid', gap: 24, alignContent: 'start', overflow: 'auto' }}>
+        <HarnessReportView {...base} initialReviewId={13} report={{ reviewId: 13, markdown: '# Review 13\n\nTwo findings.\n\n- one\n- two', truncated: true }} reportError={null} />
+        <HarnessReportView {...base} initialReviewId={12} report={null} reportError={{ workspace: HARNESS_WS, reviewId: 12, message: 'report.md is not readable' }} />
+        <HarnessReportView {...base} reviews={[]} report={null} reportError={null} />
+      </div>
+    </Frame>
+  )
+}
+
+export function HarnessReportLoadingStory(): React.JSX.Element {
+  const reviews = [harnessReview(13, 38, 7)]
+  return (
+    <Frame active="Routines">
+      <div style={{ flex: 1, padding: 24 }}>
+        <HarnessReportView reviews={reviews} initialReviewId={13} report={null} reportError={null} onLoadReport={noop} onOpenFile={noop} onReveal={noop} />
+      </div>
+    </Frame>
+  )
+}
+
+export function HarnessHistoryEmptyStory(): React.JSX.Element {
+  return (
+    <Frame active="Routines">
+      <div style={{ flex: 1, padding: 24, minWidth: 0 }}>
+        <HarnessHistory reviews={[]} liveSessions={new Set()} onOpenSession={noop} />
+      </div>
+    </Frame>
+  )
+}
+
+export function HarnessFindingsDismissedStory(): React.JSX.Element {
+  return (
+    <Frame active="Routines">
+      <div style={{ flex: 1, padding: 24 }}>
+        <HarnessFindings
+          workspace={HARNESS_WS}
+          findings={[harnessFinding({ key: 'HOU-55', title: 'A dismissed finding', phase: 'dismissed', state: 'dismissed', review_id: 12 })]}
+          defaultEngine="claude"
+          latestReviewId={13}
+          latestReviewSessions={38}
+          onDecide={noop}
+          onCreateTask={noop}
+          onVerifyNow={noop}
+        />
+      </div>
+    </Frame>
+  )
+}
+
+export function HarnessHistoryStory(): React.JSX.Element {
+  const failed: HarnessReview = { ...harnessReview(14, 0, 0), status: 'failed', error: 'engine refused to start', summary: null, sessions: null }
+  const running: HarnessReview = { ...harnessReview(15, 0, 0), status: 'running', summary: null, sessions: null, session_id: 999 }
+  return (
+    <Frame active="Routines">
+      <div style={{ flex: 1, padding: 24, minWidth: 0 }}>
+        <HarnessHistory reviews={[running, failed, harnessReview(13, 38, 7), harnessReview(12, 41, 10, Date.UTC(2026, 8, 22, 12))]} liveSessions={new Set([513, 515])} onOpenSession={noop} />
+      </div>
+    </Frame>
   )
 }

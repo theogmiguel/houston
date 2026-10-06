@@ -7,7 +7,7 @@ import { useHarness } from '../../houston/useHarness'
 import { skillScopeLabel } from '../../houston/skillSurface'
 import { IconRefresh } from '../icons'
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { CHROME_BUTTON, NavFootnote, NavSwitch } from './navChrome'
+import { CHROME_BUTTON, SupportingNote, FieldSwitch } from './navChrome'
 import { PageFrame } from '../ui/PageFrame'
 import { CheckedStamp } from '../ui/CheckedStamp'
 import { Icon } from '../ui/Icon'
@@ -113,7 +113,7 @@ export function SkillsSurface(props: {
                     <Icon glyph={IconRefresh} role="small" />
                   </button>
                 </Tooltip>
-                <NavSwitch
+                <FieldSwitch
                   on={autoPushEnabled}
                   onChange={onAutoPushSet}
                   label="Auto-push drifted or missing copies to every tool"
@@ -123,9 +123,9 @@ export function SkillsSurface(props: {
             </Row>
           </SettingsList>
         </section>
-        <NavFootnote>
+        <SupportingNote>
           Open a skill to read its instructions, copy its invocation, or manage which agents can use it.
-        </NavFootnote>
+        </SupportingNote>
       </PageFrame>
     </div>
   )

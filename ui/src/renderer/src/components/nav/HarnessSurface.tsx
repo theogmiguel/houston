@@ -8,6 +8,7 @@ import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
 import { Select } from '../ui/Select'
 import { BarSparkline, Button, Caption, Card, Field, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
+import { BulletList, FieldGrid, SectionTitle } from '../ui/navText'
 import { engineLabel } from '../engineLabel'
 import { HarnessFindings } from './HarnessFindings'
 import { HarnessReviewHistory } from './HarnessReviewHistory'
@@ -147,7 +148,7 @@ function FirstRun({
     <div className="grid gap-[var(--space-3)]" data-testid="harness-first-run">
       <Card padding="md" className="grid gap-[var(--space-3)]">
         <div className="grid gap-[var(--space-1)]">
-          <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">No reviews yet</h2>
+          <SectionTitle>No reviews yet</SectionTitle>
           <Caption>
             A review reads this workspace&apos;s recent agent sessions, compares them with its instructions,
             rules, skills and settings, and lists what to change. It never edits them.
@@ -163,10 +164,8 @@ function FirstRun({
 function WhatARunSends(): React.JSX.Element {
   return (
     <Card tone="inset" padding="md" className="grid gap-[var(--space-1-5)]" data-testid="harness-consent">
-      <h2 className="m-0 text-[length:var(--tr-text-ui-size)] font-semibold text-[var(--text-primary)]">
-        What a review sends to its provider
-      </h2>
-      <ul className="m-0 grid list-disc gap-[var(--space-1)] pl-[var(--space-4)] text-[length:var(--tr-text-small-size)] leading-[var(--tr-text-small-leading)] text-[var(--text-muted)]">
+      <SectionTitle>What a review sends to its provider</SectionTitle>
+      <BulletList>
         <li>
           The harness files: CLAUDE.md, AGENTS.md, rules, skills, settings, hooks and MCP configuration.
         </li>
@@ -175,7 +174,7 @@ function WhatARunSends(): React.JSX.Element {
           tool failures, permission denials with secrets masked, the skills and subagents used, and each
           session&apos;s last assistant message.
         </li>
-      </ul>
+      </BulletList>
       <Caption>
         The run is an agent pane you can watch. It sends those excerpts through the chosen provider&apos;s own
         CLI, like any turn of that agent. The findings it publishes stay on this machine.
@@ -208,7 +207,7 @@ function SetupFields({
         onSubmit({ engine, model: model.trim() || null, ...scheduleFields(schedule, null) })
       }}
     >
-      <div className="grid grid-cols-1 items-start gap-[var(--space-3)] sm:grid-cols-2">
+      <FieldGrid>
         <Field label="Provider">
           <Select
             aria-label="Provider"
@@ -229,7 +228,7 @@ function SetupFields({
             <TextInput aria-label="Model" autoComplete="off" surface="card" value={model} placeholder="The provider's default" onChange={(e) => setModel(e.target.value)} />
           )}
         </Field>
-      </div>
+      </FieldGrid>
       <Field label="Schedule" hint="Every run spends tokens. A scheduled run reads from where the previous review stopped.">
         <Segmented aria-label="Schedule" value={schedule} options={SCHEDULE_OPTIONS} onChange={setSchedule} />
       </Field>

@@ -155,9 +155,40 @@ import {
   VersionTagSpecimen,
   PaneTitleSpecimen,
   PaneHeaderSpecimen,
-  InlineTextSpecimen
+  InlineTextSpecimen,
+  ResponsiveListDetail,
+  FeedbackBanner,
+  DetailState,
+  EmptyPane,
+  FieldSwitch,
+  IconAction,
+  BackBar,
+  SupportingNote,
+  ListRow,
+  ListRowTitle,
+  ListRowDetail,
+  ListRowFooter,
+  ListRowActions,
+  RunHistory,
+  StatusChip,
+  CenteredEmptyNote,
+  ReportFrame,
+  BulletList,
+  InlineCluster,
+  FormField,
+  FieldControl,
+  FormHint,
+  FormSelect,
+  FieldActionButton,
+  FormTextarea,
+  FormSubRow,
+  ChipGroup,
+  ChoiceChip,
+  FormToggleRow,
+  FormPanelFooter,
+  SingleLineText
 } from '../src/components/ui'
-import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
+import { IconAlertTriangle, IconCheck, IconClose, IconEye, IconFolder, IconGlobe, IconMessageSquare, IconPlus, IconSearch, IconTerminal } from '../src/components/icons'
 import { PaneMenuRow } from '../src/components/ui/PaneMenuRow'
 import { OVERLAY_RAISED_ATTRS, OVERLAY_RAISED_CLS } from '../src/components/ui/overlayChrome'
 import { POPOVER_BODY_CLS, POPOVER_HEADER_CLS } from '../src/components/ui/popoverMotion'
@@ -977,6 +1008,78 @@ export function UiPrimitivesStory(): React.JSX.Element {
               <MediaPreviewAudioGroup><PreviewName>audio.wav</PreviewName></MediaPreviewAudioGroup>
             </SpecimenRow>
           </section>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Nav chrome (feedback, switch, back bar, icon actions)">
+          <div className="grid gap-[var(--space-3)]" data-testid="nav-primitives-specimen">
+            <div>
+              <FeedbackBanner>Neutral message</FeedbackBanner>
+              <FeedbackBanner tone="warning" icon={<IconAlertTriangle />} onDismiss={noop}>Warning with dismiss</FeedbackBanner>
+              <FeedbackBanner tone="error" icon={<IconAlertTriangle />}>Error message</FeedbackBanner>
+            </div>
+            <div className="flex items-center gap-[var(--space-3)]">
+              <FieldSwitch on label="Enabled" onChange={noop} />
+              <FieldSwitch on={false} label="Disabled" onChange={noop} />
+              <IconAction aria-label="Open"><Icon glyph={IconFolder} role="small" /></IconAction>
+              <IconAction aria-label="Delete" danger><Icon glyph={IconFolder} role="small" /></IconAction>
+            </div>
+            <BackBar label="Back" onClick={noop} />
+            <DetailState heading="Could not load" detail="The file is gone." tone="error" />
+            <EmptyPane icon={<Icon glyph={IconFolder} role="small" />} title="Nothing here">Create a new item to get started.</EmptyPane>
+            <SupportingNote>A footnote under a list.</SupportingNote>
+          </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Nav row (title, detail, footer, run list)">
+          <div className="grid" data-testid="nav-row-specimen">
+            <ListRow>
+              <ListRowTitle>Leak watch</ListRowTitle>
+              <ListRowDetail>every 15 minutes · houston · accept edits</ListRowDetail>
+              <ListRowFooter>
+                <Text tone="info">Running</Text>
+                <ListRowActions><span>actions</span></ListRowActions>
+              </ListRowFooter>
+              <RunHistory state="empty">No runs yet.</RunHistory>
+            </ListRow>
+            <ListRow><ListRowTitle>Nightly dependency check</ListRowTitle></ListRow>
+          </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Nav text (chips, notes, report frame, lists)">
+          <div className="grid gap-[var(--space-2)]" data-testid="nav-text-specimen">
+            <InlineCluster>
+              <StatusChip tone="var(--ok)">Ok</StatusChip>
+              <StatusChip tone="var(--stop)">Failed</StatusChip>
+              <Text tone="muted" tabular>Today 11:50</Text>
+              <Text tone="warning" size="small">npx was not found</Text>
+              <SingleLineText>Single line</SingleLineText>
+            </InlineCluster>
+            <CenteredEmptyNote>No report yet.</CenteredEmptyNote>
+            <ReportFrame><Text as="h2" size="ui" weight="semibold" tone="primary" flush>Report</Text></ReportFrame>
+            <BulletList><li>One</li><li>Two</li></BulletList>
+          </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Form primitives (fields, chips, footer bar)">
+          <div className="grid gap-[var(--space-3)]" data-testid="form-specimen">
+            <FormPanelFooter note="Nothing is saved until you create it.">
+              <FieldActionButton minWidth="sm" onClick={noop}>Cancel</FieldActionButton>
+              <FieldActionButton tone="primary" minWidth="md" onClick={noop}>Create</FieldActionButton>
+            </FormPanelFooter>
+            <FormField label="Name" htmlFor="form-specimen-name"><FieldControl id="form-specimen-name" placeholder="Leak watch" /><FormHint>Shown in the list.</FormHint></FormField>
+            <FormField label="Prompt"><FormTextarea aria-label="Prompt" placeholder="What each run is told to do." /></FormField>
+            <FormField label="Cadence"><ChipGroup><ChoiceChip pressed>Hourly</ChoiceChip><ChoiceChip pressed={false}>Daily</ChoiceChip></ChipGroup><FormSubRow><FieldControl aria-label="Hour" type="number" width="sm" defaultValue={9} /></FormSubRow></FormField>
+            <FormField label="Engine"><FormSelect aria-label="Engine" value="a" options={[{ value: 'a', label: 'Claude Code' }]} onChange={noop} /></FormField>
+            <FormToggleRow label="Run in a fresh worktree"><span>switch</span></FormToggleRow>
+          </div>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Nav list detail">
+          <ResponsiveListDetail
+            items={[{ id: 'a', title: 'Alpha skill', sub: 'user · claude' }, { id: 'b', title: 'Beta skill' }]}
+            backLabel="Skills"
+            renderDetail={(item) => <span>{item ? item.title : 'Nothing selected'}</span>}
+          />
         </SpecimenGroup>
       </div>
     </Viewport>

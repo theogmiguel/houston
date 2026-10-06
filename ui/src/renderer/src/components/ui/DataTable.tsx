@@ -22,6 +22,8 @@ export interface DataTableProps<T> {
   emptySetLabel?: string
   onRowClick?: (row: T) => void
   maxBodyHeight?: number
+  /** Floor in px under which the table scrolls horizontally in its container instead of squeezing columns. */
+  minWidth?: number
   'aria-label': string
   className?: string
 }
@@ -50,6 +52,7 @@ export function DataTable<T>({
   emptySetLabel = 'Nothing here yet',
   onRowClick,
   maxBodyHeight = 360,
+  minWidth,
   className = '',
   ...rest
 }: DataTableProps<T>): React.JSX.Element {
@@ -66,6 +69,7 @@ export function DataTable<T>({
       className={`rounded-[var(--tr-radius-card)] border overflow-hidden ${
         error ? 'border-[var(--danger)]' : 'border-[var(--border)]'
       } ${className}`}
+      style={minWidth === undefined ? undefined : { minWidth }}
     >
       <div className="overflow-y-auto" style={{ maxHeight: maxBodyHeight }}>
         <table aria-label={ariaLabel} className="w-full border-collapse text-[length:var(--tr-text-ui-size)]">

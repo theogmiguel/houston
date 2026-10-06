@@ -22,7 +22,7 @@ BASELINE=(
   "ui/src/renderer/src/components/HandoffOverlay.tsx 1"
   "ui/src/renderer/src/components/HostKeyModal.tsx 0"
   "ui/src/renderer/src/components/McpManager.tsx 1"
-  "ui/src/renderer/src/components/nav/navChrome.tsx 2"
+  "ui/src/renderer/src/components/nav/navChrome.tsx 1"
   "ui/src/renderer/src/components/ui/panelChrome.ts 1"
   "ui/src/renderer/src/components/QuestionCard.tsx 1"
   "ui/src/renderer/src/components/settings/AboutSection.tsx 1"

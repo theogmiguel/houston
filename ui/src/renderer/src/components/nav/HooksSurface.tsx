@@ -1,7 +1,7 @@
 import type { AgentHookState } from '../../houston/generated/AgentHookState'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import { AgentStatusSection } from '../settings/AgentStatusSection'
-import { NavColumn } from './navChrome'
+import { ContentColumn } from './navChrome'
 import { MATERIAL_CLS, materialAttrs } from '../ui/material'
 
 export function HooksSurface(props: {
@@ -17,14 +17,14 @@ export function HooksSurface(props: {
       {...materialAttrs('base')}
       className={`flex-1 min-w-0 h-full min-h-0 overflow-y-auto rounded-tl-[var(--r-content)] rounded-bl-[var(--r-content)] ${MATERIAL_CLS.base}`}
     >
-      <NavColumn wide>
+      <ContentColumn wide>
         <AgentStatusSection
           providers={providers}
           onSet={onSet}
           onRefresh={onRefresh}
           checkedAt={checkedAt}
         />
-      </NavColumn>
+      </ContentColumn>
     </div>
   )
 }
