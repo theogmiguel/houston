@@ -48,7 +48,7 @@ export function PanelFieldLabel({ className = '', children, ...props }: LabelHTM
   return <FieldLabel as="label" size="form" {...props} className={`pb-[var(--space-panel-label-bottom)] ${className}`}>{children}</FieldLabel>
 }
 
-export interface PanelTextInputProps extends InputHTMLAttributes<HTMLInputElement> {
+export interface PanelTextInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size' | 'height'> {
   /** `control` is the 28px toolbar height; `field` is the 36px form height. */
   size?: never
   height?: 'field' | 'control'

@@ -1,7 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { Text } from './Text'
-import { Switch } from './Switch'
 import { HIT_TARGET_28 } from '../hitTarget'
 
 const ICON_BUTTON = `btn inline-flex items-center justify-center flex-none ${CONTROL_SIZE_SQUARE_CLS.mini} ${HIT_TARGET_28} rounded-[var(--tr-radius-sm)] border-0 bg-transparent text-[var(--text-secondary)] cursor-pointer [transition:color_var(--transition-panel-icon)_ease-out,background-color_var(--transition-panel-icon)_ease-out] hover:not-disabled:bg-[var(--hover-fill)] hover:not-disabled:text-[var(--text-primary)] disabled:text-[var(--text-faint)] disabled:opacity-55 disabled:cursor-default`

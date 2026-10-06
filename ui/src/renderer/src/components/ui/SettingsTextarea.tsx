@@ -1,9 +1,9 @@
 import type { TextareaHTMLAttributes } from 'react'
-import { TextArea } from './TextArea'
+import { TextArea, type TextAreaProps } from './TextArea'
 
 /** A settings-row textarea; widths match `TextInput` so a field column lines up. */
 export function SettingsTextarea({ width = 'full', surface = 'content', radius = 'input', mono = false, resizable = false, className = '', ...props }: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'cols'> & {
-  width?: keyof typeof WIDTH
+  width?: TextAreaProps['width']
   surface?: 'content' | 'card'
   radius?: 'input' | 'small'
   mono?: boolean

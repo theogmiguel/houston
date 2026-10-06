@@ -36,7 +36,6 @@ export function Switch({ on, disabled, label, onChange, testId, size = 'field' }
   const trackTone = size === 'panel'
     ? on ? 'border-[var(--panel-switch-border-on)] bg-[var(--accent)]' : 'border-[var(--border)] bg-[var(--hover-fill)]'
     : on ? 'border-[color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[var(--accent)]' : 'border-[var(--border)] bg-[var(--hover-fill)]'
-  const thumbTone = on ? 'bg-[var(--accent-ink)] translate-x-[var(--space-switch-thumb-shift)]' : 'bg-[var(--text-secondary)]'
   const thumbPosition = size === 'status'
     ? on ? 'translate-x-[var(--tr-switch-compact-travel)]' : ''
     : size === 'configuration'

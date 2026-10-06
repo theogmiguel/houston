@@ -80,7 +80,7 @@ export function PaneViewNotice({ children }: { children: ReactNode }): React.JSX
   )
 }
 
-export function PaneViewInput({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>): React.JSX.Element {
+export function PaneViewInput({ className = '', ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'width' | 'size' | 'height'>): React.JSX.Element {
   return <TextInput {...props} variant="pane" className={className} />
 }
 
