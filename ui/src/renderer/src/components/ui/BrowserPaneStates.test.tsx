@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BrowserBlankState, BrowserUnreachableState } from './BrowserPaneStates'
+
+afterEach(cleanup)
 
 const server = { port: 5173, process: 'vite', session: 8, pane_title: 'dev-server pane' }
 

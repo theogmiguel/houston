@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { cleanup, render } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import { STATUS_ICON_WORD, StatusIcon, type StatusIconState } from './StatusIcon'
+
+afterEach(cleanup)
 
 const STATES: StatusIconState[] = ['ok', 'differs', 'off', 'absent']
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { McpServer } from '../../houston/generated/McpServer'
 import type { McpToolState } from '../../houston/generated/McpToolState'
 import { McpSurface } from './McpSurface'
@@ -31,6 +31,11 @@ function column(tool: McpToolState['tool']): McpToolState {
 describe('McpSurface — managed MCP connections', () => {
   let container: HTMLDivElement
   let root: Root
+
+  // The first cold import of McpManager can outlast a test's 5 s budget on a loaded machine.
+  beforeAll(async () => {
+    await import('../McpManager')
+  }, 60_000)
 
   beforeEach(() => {
     container = document.createElement('div')
