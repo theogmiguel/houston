@@ -158,7 +158,7 @@ export function PrBrowse({
         ))}
         {list.truncated && (
           <RepositoryLoadMoreRegion>
-            <ReviewButton variant="repository-load-more-action"
+            <ReviewButton variant="secondary-action"
               type="button"
               data-testid="pr-browse-more"
               disabled={list.loadingMore}

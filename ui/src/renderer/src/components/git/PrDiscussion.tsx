@@ -64,7 +64,7 @@ function CommentRow({
                 setEditing(false)
                 if (id !== null) onEdit?.(id, draft)
               }}
-              variant="discussion-submit-action"
+              variant="primary-action"
             >
               Save
             </ReviewButton>
@@ -72,7 +72,7 @@ function CommentRow({
               type="button"
               data-testid={`pr-comment-cancel-${id}`}
               onClick={() => setEditing(false)}
-              variant="discussion-cancel-action"
+              variant="secondary-action"
             >
               Cancel
             </ReviewButton>
@@ -298,7 +298,7 @@ export function PrComments({
                 onComment(draft)
                 setDraft('')
               }}
-            variant="discussion-submit-action"
+            variant="primary-action"
             >
               Comment
             </ReviewButton>

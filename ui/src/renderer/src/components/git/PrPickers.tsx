@@ -202,7 +202,7 @@ export function PrReviewerPicker({
             </CandidateEmptyMessage>
           )}
           <CandidateActions>
-            <ReviewButton variant="picker-apply-action"
+            <ReviewButton variant="primary-action"
               type="button"
               data-testid="pr-reviewers-apply"
               disabled={busy}
@@ -210,7 +210,7 @@ export function PrReviewerPicker({
             >
               Apply
             </ReviewButton>
-            <ReviewButton variant="picker-cancel-action"
+            <ReviewButton variant="secondary-action"
               type="button"
               data-testid="pr-reviewers-cancel"
               onClick={() => setOpen(false)}

@@ -72,9 +72,9 @@ export function DiscussionEntrySpecimen(): React.JSX.Element {
       </DiscussionEntry>
       <DiscussionActionsRow>
         <ReviewButton variant="discussion-edit-action">Edit</ReviewButton>
-        <ReviewButton variant="discussion-cancel-action">Cancel</ReviewButton>
+        <ReviewButton variant="secondary-action">Cancel</ReviewButton>
         <ReviewButton variant="discussion-reply-action">Reply</ReviewButton>
-        <ReviewButton variant="discussion-submit-action">Comment</ReviewButton>
+        <ReviewButton variant="primary-action">Comment</ReviewButton>
       </DiscussionActionsRow>
     </div>
   )
