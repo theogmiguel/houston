@@ -1260,7 +1260,6 @@
   --w-roster-strip: 44px;
   --w-roster-slot: 26px;
   --w-composer-content: 620px;
-  --w-roster-split-narrow: 820px;
   --h-roster-header: 32px;
   --h-roster-peekbar: 30px;
   --h-roster-specimen: 260px;
@@ -1285,7 +1284,6 @@
   --w-panel-switch: 30px;
   --w-panel-icon: 50px;
   --w-panel-empty-copy: 430px;
-  --w-pane-narrow: 280px;
   --w-block-path: 240px;
   --w-block-label: 92px;
   --w-confirm-dialog: 420px;

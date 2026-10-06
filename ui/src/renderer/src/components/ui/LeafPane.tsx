@@ -14,7 +14,7 @@ export function LeafPane({ marker = '', className = '', ...props }: LeafPaneProp
   return (
     <section
       {...props}
-      className={`pane ${marker} @container/rpanel flex-1 min-w-0 min-h-0 relative flex flex-col border border-[var(--border)] bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:var(--w-pane-narrow))]:rounded-[var(--tr-radius-sm)] ${className}`}
+      className={`pane ${marker} @container/rpanel flex-1 min-w-0 min-h-0 relative flex flex-col border border-[var(--border)] bg-[var(--pane-bg)] overflow-hidden rounded-[var(--tr-radius-md)] [@container_(max-width:280px)]:rounded-[var(--tr-radius-sm)] ${className}`}
     />
   )
 }

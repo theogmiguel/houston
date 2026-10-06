@@ -14,8 +14,8 @@ export function EndedStatusDot(): React.JSX.Element {
 
 // Below this container width the split shows the strip instead of the column.
 const SPLIT_AUTO_STRIP_HIDDEN = '[.children-split.auto>&]:hidden'
-const SPLIT_NARROW_STRIP_SHOWN = '[@container_(max-width:var(--w-roster-split-narrow))]:[.children-split.auto>&]:flex'
-const SPLIT_NARROW_COLUMN_HIDDEN = '[@container_(max-width:var(--w-roster-split-narrow))]:[.children-split.auto>&]:hidden'
+const SPLIT_NARROW_STRIP_SHOWN = '[@container_(max-width:820px)]:[.children-split.auto>&]:flex'
+const SPLIT_NARROW_COLUMN_HIDDEN = '[@container_(max-width:820px)]:[.children-split.auto>&]:hidden'
 
 export function RosterSplit({ collapsed, children }: { collapsed: boolean; children: ReactNode }): React.JSX.Element {
   return <div className={`children-split ${collapsed ? 'collapsed' : 'auto'} flex-1 min-h-0 flex`}>{children}</div>
