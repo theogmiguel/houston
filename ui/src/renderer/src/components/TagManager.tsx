@@ -8,21 +8,21 @@ import { Tooltip } from "./ui/Tooltip";
 import { useFocusTrap } from "./dialogFocus";
 import { TagChip } from "./tags";
 import { TagColorPicker, tagRejection } from "./tagEditing";
+import {
+  TagFieldGroup,
+  TagFieldLabel,
+  TagFormActions,
+  TagFormPreview,
+  TagHint,
+  TagList,
+  TagListName,
+  TagListRow,
+  TagListUsage,
+  TagRowIconButton,
+  TagTextInput,
+} from "./ui/TagList";
+import { TagSwatchDot } from "./ui/TagSwatch";
 import { Button, DialogActions, DialogBackdrop, DialogBody, DialogPanel, DialogTitle } from "./ui";
-
-const FIELD_CLS = "flex flex-col gap-[5px]";
-const FIELD_LABEL_CLS =
-  "block text-text-muted [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] [letter-spacing:var(--tr-text-label-tracking)] uppercase";
-const TEXT_INPUT_CLS =
-  "w-full bg-background border border-border rounded-[var(--tr-radius-button)] text-text-primary [font:inherit] [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)] px-2.5 py-1.5";
-const HINT_CLS =
-  "text-[var(--text-faint)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] leading-[1.55]";
-const ROW_ICON_BTN_CLS =
-  "btn border-none bg-transparent rounded-[var(--tr-radius-input)] text-[var(--text-faint)] py-0 px-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-text-primary";
-// A tag made from the rail lands here with the manager already open; the ring
-// says which row is the new one and fades itself out, so nothing has to clear it.
-const NEW_ROW_CLS =
-  "motion-safe:animate-[tag-row-settle_1.4s_var(--animate-ease-panel)_forwards] outline outline-1 outline-[var(--accent)] -outline-offset-1";
 
 /** Both editors are the same form; only the verb on its primary button differs. */
 function TagForm({
@@ -48,11 +48,11 @@ function TagForm({
     onSubmit(name.trim(), color);
   };
   return (
-    <div className={FIELD_CLS} data-testid={testId}>
-      <label className={FIELD_LABEL_CLS}>
+    <TagFieldGroup data-testid={testId}>
+      <TagFieldLabel>
         {initial ? `Editing ${initial.name}` : "New tag"}
-      </label>
-      <input
+      </TagFieldLabel>
+      <TagTextInput
         autoFocus
         type="text"
         value={name}
@@ -64,22 +64,16 @@ function TagForm({
         aria-label="Tag name"
         placeholder="Tag name"
         spellCheck={false}
-        className={TEXT_INPUT_CLS}
       />
       <TagColorPicker color={color} onPick={setColor} />
       {reason !== null && name.trim() !== "" && (
-        <div className={HINT_CLS} role="status">
-          {reason}
-        </div>
+        <TagHint role="status">{reason}</TagHint>
       )}
-      <div className="flex items-center gap-2 pt-[2px]">
+      <TagFormActions>
         {color !== null && (
-          <span
-            className="flex items-center [--tag-chip-max:150px]"
-            data-testid="tag-form-preview"
-          >
+          <TagFormPreview>
             <TagChip tag={{ id: initial?.id ?? 0, name: name.trim() || "tag", color }} />
-          </span>
+          </TagFormPreview>
         )}
         <span className="flex-1" />
         <Button type="button" variant="legacy-ghost" onClick={onCancel}>
@@ -96,8 +90,8 @@ function TagForm({
             {submitLabel}
           </Button>
         </Tooltip>
-      </div>
-    </div>
+      </TagFormActions>
+    </TagFieldGroup>
   );
 }
 
@@ -132,46 +126,26 @@ function TagRow({
   onDelete: () => void;
 }): React.JSX.Element {
   return (
-    <div
-      className={`group flex items-center gap-2.5 px-2.5 h-[var(--h-row)] hover:bg-[var(--hover-fill)] ${isNew ? NEW_ROW_CLS : ""}`}
+    <TagListRow
+      isNew={isNew}
       data-testid="tag-manager-row"
       data-tag-id={tag.id}
       data-tag-new={isNew ? "true" : undefined}
     >
-      <span
-        aria-hidden
-        className="w-[8px] h-[8px] rounded-full flex-none"
-        style={{ background: tag.color }}
-      />
-      <span className="flex-1 min-w-0 truncate text-text-primary [font-size:var(--tr-text-ui-size)] [font-weight:var(--tr-text-ui-weight)]">
-        {tag.name}
-      </span>
-      <span className="flex-none text-[var(--text-faint)] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] tabular-nums">
-        {usageText(count)}
-      </span>
+      <TagSwatchDot color={tag.color} size="row" />
+      <TagListName>{tag.name}</TagListName>
+      <TagListUsage>{usageText(count)}</TagListUsage>
       <Tooltip label={`Rename or recolour ${tag.name}`}>
-        <button
-          type="button"
-          aria-label={`Edit ${tag.name}`}
-          data-testid="tag-edit"
-          className={ROW_ICON_BTN_CLS}
-          onClick={onEdit}
-        >
+        <TagRowIconButton aria-label={`Edit ${tag.name}`} data-testid="tag-edit" onClick={onEdit}>
           <Icon glyph={IconPencil} role="label" />
-        </button>
+        </TagRowIconButton>
       </Tooltip>
       <Tooltip label={`Delete ${tag.name}`}>
-        <button
-          type="button"
-          aria-label={`Delete ${tag.name}`}
-          data-testid="tag-delete"
-          className={`${ROW_ICON_BTN_CLS} hover:text-danger`}
-          onClick={onDelete}
-        >
+        <TagRowIconButton danger aria-label={`Delete ${tag.name}`} data-testid="tag-delete" onClick={onDelete}>
           <Icon glyph={IconTrash} role="label" />
-        </button>
+        </TagRowIconButton>
       </Tooltip>
-    </div>
+    </TagListRow>
   );
 }
 
@@ -239,22 +213,22 @@ export function TagManager({
             Tags
           </DialogTitle>
           <DialogBody variant="bounded">
-            <div className={HINT_CLS}>
+            <TagHint>
               Tags are shared across every workspace. Attach one to a tab from its
               right-click menu, then filter the rail by it with the funnel.
-            </div>
-            <div className={FIELD_CLS}>
-              <label className={FIELD_LABEL_CLS}>
+            </TagHint>
+            <TagFieldGroup>
+              <TagFieldLabel>
                 {tags.length === 0
                   ? "Your tags"
                   : `Your tags · ${tags.length}`}
-              </label>
+              </TagFieldLabel>
               {tags.length === 0 ? (
-                <div className={HINT_CLS} data-testid="tag-manager-empty">
+                <TagHint data-testid="tag-manager-empty">
                   No tags yet — code review, wait-human, whatever you need.
-                </div>
+                </TagHint>
               ) : (
-                <div className="flex flex-col rounded-[var(--tr-radius-button)] border border-border overflow-hidden [&>*+*]:border-t [&>*+*]:border-divider">
+                <TagList>
                   {tags.map((t) => (
                     <TagRow
                       key={t.id}
@@ -268,9 +242,9 @@ export function TagManager({
                       onDelete={() => setConfirmDelete(t)}
                     />
                   ))}
-                </div>
+                </TagList>
               )}
-            </div>
+            </TagFieldGroup>
             {editingTag && (
               <TagForm
                 initial={editingTag}
@@ -304,7 +278,7 @@ export function TagManager({
               data-testid="tag-manager-new"
               disabled={creating}
               variant="legacy-ghost"
-              className="mr-auto gap-[var(--space-1)]"
+              className="gap-[var(--space-1)]"
               onClick={() => {
                 setEditing(null);
                 setCreating(true);
@@ -313,6 +287,7 @@ export function TagManager({
               <Icon glyph={IconPlus} role="ui" />
               New tag
             </Button>
+            <span className="flex-1" />
             <Button
               type="button"
               data-testid="tag-manager-done"

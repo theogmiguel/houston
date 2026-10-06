@@ -31,7 +31,6 @@ BASELINE=(
   "ui/src/renderer/src/components/SkillsView.tsx 8"
   "ui/src/renderer/src/components/SshConnectModal.tsx 0"
   "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
-  "ui/src/renderer/src/pane/TerminalPane.tsx 3"
 )
 
 mapped_steps="$(perl -e '

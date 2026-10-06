@@ -4,6 +4,7 @@ import { ConfirmModal } from './ConfirmModal'
 import { Icon } from './ui/Icon'
 import { IconClose, IconHistory, IconRespawn, type IconComponent } from './icons'
 import { Tooltip } from './ui/Tooltip'
+import { PaneHeadButton, PaneNotice } from './ui/PaneControls'
 
 export type RestartMode = 'restart' | 'resume' | 'fresh'
 
@@ -101,24 +102,14 @@ export function RestartConfirm({
 }
 
 /** Why the pane started fresh instead of resuming, until the user dismisses it. */
-export function ResumeNotice({
-  notice,
-  buttonClassName
-}: {
-  notice: string | null | undefined
-  buttonClassName: string
-}): React.JSX.Element | null {
+export function ResumeNotice({ notice }: { notice: string | null | undefined }): React.JSX.Element | null {
   const [dismissed, setDismissed] = useState(false)
   if (!notice || dismissed) return null
   return (
-    <div
-      data-testid="resume-notice"
-      className="flex items-center gap-2 flex-none py-[3px] px-2 border-b border-[var(--border)] [font-size:var(--tr-text-small-size)] [font-weight:var(--tr-text-small-weight)] text-[var(--text-muted)]"
-    >
+    <PaneNotice data-testid="resume-notice">
       <span className="min-w-0 flex-1 truncate">{notice}</span>
       <Tooltip label="Dismiss">
-        <button
-          className={buttonClassName}
+        <PaneHeadButton
           aria-label="Dismiss notice"
           onClick={(e) => {
             e.stopPropagation()
@@ -126,8 +117,8 @@ export function ResumeNotice({
           }}
         >
           <Icon glyph={IconClose} role="ui" />
-        </button>
+        </PaneHeadButton>
       </Tooltip>
-    </div>
+    </PaneNotice>
   )
 }

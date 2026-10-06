@@ -3,6 +3,7 @@ import { IconPencil } from './icons'
 import { Tooltip } from './ui/Tooltip'
 import { Icon } from './ui/Icon'
 import { PaneTitle } from './ui'
+import { RenameActionButton, RenameTitleInput } from './ui/TitleEditControls'
 
 interface Props {
   title: string
@@ -28,14 +29,13 @@ export function RenameTitle({ title, onRename }: Props): React.JSX.Element {
           </PaneTitle>
         </Tooltip>
         <Tooltip label="Rename">
-          <button
-            className="btn bg-transparent border-0 py-0 px-0.5 text-[color-mix(in_srgb,var(--accent)_55%,var(--text-muted))] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer inline-flex items-center flex-none [transition:opacity_0.12s_var(--animate-ease-menu,ease)] hover:text-text-primary"
+          <RenameActionButton
             aria-label="Rename"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={startEditing}
           >
             <Icon glyph={IconPencil} role="label" />
-          </button>
+          </RenameActionButton>
         </Tooltip>
       </>
     )
@@ -48,8 +48,7 @@ export function RenameTitle({ title, onRename }: Props): React.JSX.Element {
   }
 
   return (
-    <input
-      className="[font:inherit] font-semibold bg-background border border-primary rounded-[var(--tr-radius-input)] text-text-primary px-1 py-0 min-w-0 w-[12ch]"
+    <RenameTitleInput
       autoFocus
       maxLength={40}
       value={draft}

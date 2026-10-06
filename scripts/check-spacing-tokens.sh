@@ -28,7 +28,7 @@ BASELINE=(
   "ui/src/renderer/src/components/SkillsView.tsx 4"
   "ui/src/renderer/src/components/WorkspaceEmpty.tsx 1"
   "ui/src/renderer/src/components/WorkspacesEmpty.tsx 2"
-  "ui/src/renderer/src/pane/TerminalPane.tsx 1"
+  "ui/src/renderer/src/pane/TerminalPane.tsx 0"
 )
 
 mapfile -t sources < <(find "$ui_src" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) \

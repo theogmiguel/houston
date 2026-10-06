@@ -499,10 +499,10 @@ export function PaneLifecycleStory(): React.JSX.Element {
       return noop
     },
   }) as unknown as HoustonClient, [])
-  return <div style={{ height: '100%', padding: 12, display: 'flex' }}><SessionPane
+  return <><style>{'.loop-anim{animation:none!important}'}</style><div style={{ height: '100%', padding: 12, display: 'flex' }}><SessionPane
     info={parent} client={client} roster={{ sessions: new Map([parent, ...children].map((pane) => [pane.id, pane])), maxLiveChildren: 8 }}
     gridSessionIds={new Set([parent.id])} theme="black" active connected fontSize={14} copyOnSelect={false} stripBoxGlyphs={false} showProject={false} shellIntegration={false}
     registerOutput={(id, sink) => { sinks.current.set(id, sink); return () => { sinks.current.delete(id) } }}
     onReconnectSsh={noop} onActivate={noop} onExpand={noop} onZoom={noop} onShellZoom={noop} onSplit={noop} onHeaderPointerDown={noop} onHandoff={noop} onOpenFile={noop} onOpenDir={noop}
-  /></div>
+  /></div></>
 }

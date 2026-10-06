@@ -234,6 +234,8 @@ import { PaneDropIndicator, PaneDropLabel, SplitterAffordance, PaneGridSurface, 
 import { WindowControlDisc } from '../src/components/ui/WindowControl'
 import { AnimOut } from '../src/components/ui/AnimOut'
 import { DictationAction, DictationSurface, DictationText, MicrophoneStatus } from '../src/components/ui/DictationIndicator'
+import { UiRoleSpecimen } from './uiRoleSpecimen'
+import { SurfaceCrash } from '../src/components/ui/SurfaceCrash'
 import { TILE_AGENT_CLS, TILE_IDLE, URL_INPUT_CLS } from '../src/components/ui'
 import { FileExplorerSpecimen } from '../src/components/ui/FileExplorer'
 import { InspectorBody, InspectorCard, InspectorSurface } from '../src/components/ui/InspectorHeader'
@@ -960,6 +962,13 @@ export function UiPrimitivesStory(): React.JSX.Element {
             <button type="button" className={`${TILE_AGENT_CLS} ${TILE_IDLE}`}>Claude Code</button>
             <input aria-label="Address" className={URL_INPUT_CLS} value="https://example.com" readOnly />
           </SpecimenRow>
+        </SpecimenGroup>
+
+        <SpecimenGroup heading="Pane, tag, terminal, and keymap roles">
+          <UiRoleSpecimen />
+        </SpecimenGroup>
+        <SpecimenGroup heading="Surface crash">
+          <div style={{ height: 120 }}><SurfaceCrash message="Editor crashed: specimen failure" guarantee="Your other panes are unaffected." onRetry={noop} /></div>
         </SpecimenGroup>
 
         <SpecimenGroup heading="PaneHeaderButton">

@@ -5,6 +5,8 @@ import { TagsContext } from '../layout/tagsContext'
 import { Icon } from './ui/Icon'
 import { IconCheck } from './icons'
 import { TagChipRow } from './tags'
+import { PaneContextMenuCheck, PaneContextMenuGroupLabel, PaneContextMenuRow, PaneContextMenuRowLabel, PaneContextMenuSeparator } from './ui/PaneContextMenu'
+import { TagSwatchDot } from './ui/TagSwatch'
 import { Tooltip } from './ui/Tooltip'
 
 function resolve(registry: TagInfo[], ids: number[]): TagInfo[] {
@@ -34,19 +36,16 @@ function PaneTagRow({
   tag,
   on,
   disabledReason,
-  itemCls,
   onClick
 }: {
   tag: TagInfo
   on: boolean
   disabledReason?: string
-  itemCls: string
   onClick: () => void
 }): React.JSX.Element {
   return (
     <Tooltip label={disabledReason}>
-      <button
-        className={`btn border-none ${itemCls}`}
+      <PaneContextMenuRow
         role="menuitemcheckbox"
         aria-checked={on}
         disabled={disabledReason !== undefined}
@@ -54,16 +53,16 @@ function PaneTagRow({
         data-tag={tag.id}
         onClick={onClick}
       >
-        <span className="flex items-center gap-2 min-w-0">
-          <span aria-hidden className="w-[9px] h-[9px] rounded-full flex-none" style={{ background: tag.color }} />
+        <PaneContextMenuRowLabel className="min-w-0">
+          <TagSwatchDot color={tag.color} size="menu" />
           <span className="truncate">{tag.name}</span>
-        </span>
+        </PaneContextMenuRowLabel>
         {on && (
-          <span className="text-[var(--accent)]">
+          <PaneContextMenuCheck>
             <Icon glyph={IconCheck} role="label" />
-          </span>
+          </PaneContextMenuCheck>
         )}
-      </button>
+      </PaneContextMenuRow>
     </Tooltip>
   )
 }
@@ -76,14 +75,10 @@ function capReason(count: number, tag: TagInfo): string {
 // stays open so several tags can be set in one visit.
 export function PaneTagMenu({
   tagIds,
-  onChange,
-  itemCls,
-  sepCls
+  onChange
 }: {
   tagIds?: number[]
   onChange: (tags: number[]) => void
-  itemCls: string
-  sepCls: string
 }): React.JSX.Element | null {
   const registry = useContext(TagsContext)
   if (registry.length === 0) return null
@@ -91,13 +86,8 @@ export function PaneTagMenu({
   const full = own.length >= MAX_TAGS_PER_SESSION
   return (
     <>
-      <div className={sepCls} />
-      <div
-        role="presentation"
-        className="px-2.5 pt-[3px] pb-[1px] [font-size:var(--tr-text-label-size)] [font-weight:var(--tr-text-label-weight)] uppercase tracking-[0.1em] text-[var(--text-faint)]"
-      >
-        Pane Tags
-      </div>
+      <PaneContextMenuSeparator />
+      <PaneContextMenuGroupLabel>Pane Tags</PaneContextMenuGroupLabel>
       {registry.map((t) => {
         const on = own.includes(t.id)
         return (
@@ -105,7 +95,6 @@ export function PaneTagMenu({
             key={t.id}
             tag={t}
             on={on}
-            itemCls={itemCls}
             disabledReason={!on && full ? capReason(own.length, t) : undefined}
             onClick={() => onChange(on ? own.filter((id) => id !== t.id) : [...own, t.id])}
           />

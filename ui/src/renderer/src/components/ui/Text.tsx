@@ -1,9 +1,9 @@
 import type { ElementType, HTMLAttributes } from 'react'
 
 export type TextSize = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'base' | 'ui' | 'small' | 'label' | 'caption' | 'xs' | 'sm' | 'xl' | 'fileBreadcrumb' | 'fileStatus' | 'shortcut-label' | 'rosterName' | 'rosterDetail' | 'large'
-export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold'
+export type TextWeight = 'display' | 'title' | 'heading' | 'subhead' | 'body' | 'small' | 'ui' | 'label' | 'medium' | 'semibold' | 'tag-title'
 export type TextTone = 'primary' | 'secondary' | 'muted' | 'faint' | 'danger' | 'stop' | 'info' | 'ok' | 'success' | 'warn' | 'warning' | 'blocked' | 'accent' | 'accentInk' | 'key-hint' | 'quiet-button' | 'dim' | 'dimmer'
-export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui'
+export type TextLeading = 'snug' | 'tight' | 'normal' | 'relaxed' | 'small' | 'label' | 'composer' | 'shortcut' | 'profile-description' | 'markdown' | 'chatMarkdown' | 'ui' | 'tag-hint'
 
 const SIZE: Record<TextSize, string> = {
   display: '[font-family:var(--tr-text-display-family)] [font-size:var(--tr-text-display-size)]',
@@ -38,7 +38,8 @@ const WEIGHT: Record<TextWeight, string> = {
   ui: '[font-weight:var(--tr-text-ui-weight)]',
   label: '[font-weight:var(--tr-text-label-weight)]',
   medium: 'font-medium',
-  semibold: 'font-semibold'
+  semibold: 'font-semibold',
+  'tag-title': '[font-weight:var(--tr-text-tag-title-weight)]'
 }
 
 const TONE: Record<TextTone, string> = {
@@ -74,7 +75,8 @@ const LEADING: Record<TextLeading, string> = {
   'profile-description': 'leading-[var(--tr-text-profile-description-leading)]',
   markdown: 'leading-relaxed',
   chatMarkdown: 'leading-[var(--tr-leading-chat-markdown)]',
-  ui: '[line-height:var(--tr-text-ui-leading)]'
+  ui: '[line-height:var(--tr-text-ui-leading)]',
+  'tag-hint': 'leading-[var(--tr-text-tag-hint-leading)]'
 }
 
 export interface TextProps extends HTMLAttributes<HTMLElement> {

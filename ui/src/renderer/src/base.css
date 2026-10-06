@@ -62,8 +62,7 @@ body {
      Content regions (editor, markdown, logs, errors, inputs) are not listed. The
      terminal engine owns its own selection model. */
   .pane-head,
-  .side-tabs,
-  .term-host {
+  .side-tabs {
     -webkit-user-select: none;
     user-select: none;
   }

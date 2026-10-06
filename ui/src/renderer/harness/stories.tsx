@@ -112,6 +112,7 @@ import {
 } from './navStories'
 import { B5bHandoffStatesStory, B5bPaneHandoffSelectedStory, B5bQuestionStatesStory, B5bDelegationPanelsStory } from './b5bStories'
 import { PaneLifecycleStory, TasksDetailStory, TasksListStory, TasksQueueStory, TasksRosterStory, TasksSettingsReviewRefusalStory, TasksSettingsStory, TasksOverviewRosterStory } from './tasksStories'
+import { RenameTitleStory } from './renameTitleStories'
 import { TasksPageStory } from './tasksPageStory'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
@@ -152,6 +153,7 @@ import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
+import { PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagEditorStory, TagsFormsStory } from './paneChromeStories'
 
 const noop = (): void => {}
 
@@ -397,6 +399,13 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'tasks/page': () => <TasksPageStory />,
   'tasks/detail': () => <TasksDetailStory />,
   'panes/lifecycle': () => <PaneLifecycleStory />,
+  'panes/chrome-menu': () => <PaneMenuStory />,
+  'panes/chrome-ended': () => <PaneEndedStory />,
+  'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
+  'panes/chrome-misc': () => <PaneMiscStory />,
+  'panes/title-controls': () => <RenameTitleStory />,
+  'legacy/tags-forms': () => <TagsFormsStory />,
+  'legacy/tag-editor': () => <TagEditorStory />,
   'tasks/roster': () => <TasksRosterStory />,
   'tasks/queue': () => <TasksQueueStory />,
   'tasks/overview-roster': () => <TasksOverviewRosterStory />,
