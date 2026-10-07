@@ -51,6 +51,7 @@ describe('pane activation on body pointerdown', () => {
     ghosttyMock.reset()
     onActivate = vi.fn<(id: number) => void>()
     const fakeClient = {
+      subscribe: () => () => {},
       resizeSession: vi.fn(),
       attachSession: vi.fn(),
       sessionVisibility: vi.fn(),

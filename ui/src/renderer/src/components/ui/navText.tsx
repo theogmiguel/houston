@@ -41,12 +41,16 @@ export function StatusChip({ tone, children, ...rest }: { tone: string; children
 }
 
 /** A bulleted list in small muted type. */
-export function BulletList({ children }: { children: ReactNode }): React.JSX.Element {
+export function BulletList({ children, items }: { children?: ReactNode; items?: string[] }): React.JSX.Element {
   return (
     <Text as="ul" size="small" leading="small" tone="muted" className="m-0 grid list-disc gap-[var(--space-1)] pl-[var(--space-4)]">
-      {children}
+      {items ? items.map((item, index) => <li key={index}>{item}</li>) : children}
     </Text>
   )
+}
+
+export function BulletListSpecimen(): React.JSX.Element {
+  return <BulletList items={['Readiness reasons stay scannable.', 'Acceptance items keep their order.']} />
 }
 
 /** A card or section heading. */

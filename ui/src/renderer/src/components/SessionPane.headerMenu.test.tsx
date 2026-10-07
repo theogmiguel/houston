@@ -129,10 +129,15 @@ describe('pane ··· menu', () => {
     onHandoff = vi.fn()
     onSwapAdjacent = vi.fn()
     onZoom = vi.fn()
+    deliver = () => {}
     fakeClient = {
       resizeSession: vi.fn(),
       attachSession: vi.fn(),
-      subscribeAll: vi.fn((handler: (message: ServerMsg) => void) => { deliver = handler; return () => {} }),
+      subscribe: vi.fn((kind: string, handler: (message: ServerMsg) => void) => {
+        const previous = deliver
+        deliver = (message) => { if (message.type === kind) handler(message); previous(message) }
+        return () => {}
+      }),
       sessionVisibility: vi.fn(),
       sendStdin: vi.fn().mockReturnValue(true),
       send: vi.fn(),

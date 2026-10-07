@@ -600,6 +600,36 @@ function SessionEffects({
   return null;
 }
 
+function ProjectsRailContent({
+  selected,
+  client,
+  workspace,
+  workspaces,
+  onOpenSession,
+  fallback,
+}: {
+  selected: boolean;
+  client: HoustonClient | null;
+  workspace: string;
+  workspaces: Workspace[];
+  onOpenSession: (sessionId: number) => void;
+  fallback: React.ReactNode;
+}): React.JSX.Element {
+  return selected ? (
+    <Suspense fallback={<div className="flex-1" />}>
+      <ProjectsSurface
+        client={client}
+        workspace={workspace}
+        workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
+        onOpenSession={(sessionId) => {
+          setRailView(null);
+          onOpenSession(sessionId);
+        }}
+      />
+    </Suspense>
+  ) : <>{fallback}</>;
+}
+
 export function App(): React.JSX.Element {
   const [conn, setConn] = useState<Conn>({ kind: "connecting" });
   const dismissedUpdate = useDismissedUpdate();
@@ -3845,19 +3875,14 @@ export function App(): React.JSX.Element {
             {settings || railView !== null ? (
               <ContentRegion>
                 <SurfaceBoundary label={railView ?? "Settings"}>
-                  {railView === "projects" ? (
-                    <Suspense fallback={<div className="flex-1" />}>
-                      <ProjectsSurface
-                        client={conn.kind === "ready" ? conn.client : null}
-                        workspace={selectedWs}
-                        workspaces={workspaces.map((w) => ({ path: w.path, name: w.name }))}
-                        onOpenSession={(sessionId) => {
-                          setRailView(null);
-                          focusPane(sessionId);
-                        }}
-                      />
-                    </Suspense>
-                  ) : railView === "tasks" ? (
+                  <ProjectsRailContent
+                    selected={railView === "projects"}
+                    client={readyClient(conn)}
+                    workspace={selectedWs}
+                    workspaces={workspaces}
+                    onOpenSession={focusPane}
+                    fallback={
+                    <>{railView === "tasks" ? (
                     <Suspense fallback={<div className="flex-1" />}>
                       <TasksSurface
                         client={conn.kind === "ready" ? conn.client : null}
@@ -4233,6 +4258,8 @@ export function App(): React.JSX.Element {
                     />
                   </Suspense>
                   )}
+                    </>}
+                  />
                 </SurfaceBoundary>
               </ContentRegion>
             ) : firstRunOpen || workspacesEmptyOpen ? (

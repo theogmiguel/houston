@@ -61,6 +61,7 @@ describe('SessionPane header — New pane never sheds', () => {
 
   function render(): HTMLDivElement {
     const fakeClient = {
+      subscribe: () => () => {},
       resizeSession: vi.fn(),
       attachSession: vi.fn(),
       sessionVisibility: vi.fn(),

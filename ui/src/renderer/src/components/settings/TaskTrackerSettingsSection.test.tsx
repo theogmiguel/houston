@@ -25,14 +25,14 @@ describe('workspace tracker settings', () => {
   it('edits each provider independently and keeps Notion credentials ephemeral', () => {
     const listeners = new Set<(message: ServerMsg) => void>()
     const sent: ClientMsg[] = []
-    const initial: ServerMsg = { type: 'task_tracker_settings', settings: [settings('github_issues', 'acme/app')], refusal: null }
+    let initial: ServerMsg = { type: 'task_tracker_settings', settings: [settings('github_issues', 'acme/app')], refusal: null }
     const emit = (message: ServerMsg): void => listeners.forEach((listener) => listener(message))
     const client = {
       subscribeAll: (listener: (message: ServerMsg) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
       send: (message: ClientMsg) => { sent.push(message); if (message.type === 'task_tracker_settings_get') emit(initial) }
     }
 
-    render(<TaskTrackerSettingsSection client={client} workspace={WORKSPACE} workspaceName="No projects yet" />)
+    const view = render(<TaskTrackerSettingsSection client={client} workspace={WORKSPACE} workspaceName="No projects yet" />)
     const enabled = screen.getByRole('switch', { name: 'Enable tracker sync' })
     expect(enabled.getAttribute('aria-checked')).toBe('false')
     expect((screen.getByRole('textbox', { name: 'Repository (owner/name)' }) as HTMLInputElement).value).toBe('acme/app')
@@ -69,5 +69,11 @@ describe('workspace tracker settings', () => {
     fireEvent.mouseUp(screen.getByRole('option', { name: 'Notion' }))
     expect(screen.queryByText('GitHub rate limit')).toBeNull()
     expect(screen.getByRole('textbox', { name: 'Project title property ID' })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Notion integration token'), { target: { value: 'unsaved-workspace-token' } })
+    const otherWorkspace = '/work/other'
+    initial = { type: 'task_tracker_settings', settings: [{ ...settings('notion', null), workspace: otherWorkspace }], refusal: null }
+    view.rerender(<TaskTrackerSettingsSection client={client} workspace={otherWorkspace} workspaceName="Other project" />)
+    expect((screen.getByLabelText('Notion integration token') as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('button', { name: 'Save token' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '../../houston/generated/AgentKind'
 import type { SessionInfo } from '../../houston/client'
 import type { TaskAcceptanceItem } from '../../houston/generated/TaskAcceptanceItem'
@@ -12,7 +12,7 @@ import type { TaskStatus } from '../../houston/generated/TaskStatus'
 import type { TasksAccess } from '../../houston/generated/TasksAccess'
 import type { TaskDetailData, TaskRefusal, TaskStartSettings } from '../../houston/useTasks'
 import type { HoustonClient } from '../../houston/client'
-import { isPullRequestUrl, linkIsPullRequest, sendTaskWire, type TaskTrackerLink } from '../../houston/taskDomain'
+import { isPullRequestUrl, linkIsPullRequest, sendTaskWire, type TaskProject, type TaskTrackerLink } from '../../houston/taskDomain'
 import { Icon } from '../ui/Icon'
 import {
   IconAlertTriangle,
@@ -114,38 +114,54 @@ export interface TaskDetailProps {
   onOpenSession: (sessionId: number) => void
   onReview: (session: SessionInfo) => void
   presentation?: 'side' | 'drawer'
-  client?: HoustonClient | null
+  client?: Pick<HoustonClient, 'subscribeAll' | 'taskSnapshot' | 'taskSave' | 'send'> | null
   onStartRequested?: (taskId: number, workspace: string) => void
 }
 
 export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
-  const { detail, refusal, now } = props
+  const { detail, refusal } = props
   const { task } = detail
   const readOnly = false
   const [title, setTitle] = useServerDraft(task.title, task.revision)
   const [description, setDescription] = useServerDraft(task.description, task.revision)
   const archived = task.archived_at_ms != null
-  const latestRun = detail.runs[0] ?? null
-  const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
-  const reviewer = taskReviewer(detail.runs)
-  const review = taskReviewOutcome(detail.runs, detail.comments)
   const drawer = props.presentation === 'drawer'
   const [trackerLinks, setTrackerLinks] = useState<TaskTrackerLink[]>([])
+  const [trackerProject, setTrackerProject] = useState<TaskProject | null>(null)
+  const trackerProjectId = useRef<number | null>(null)
+  const trackerProjectMinRevision = useRef(0)
 
   useEffect(() => {
     setTrackerLinks([])
-    if (!props.client) return
-    const off = props.client.subscribeAll((message) => {
+    setTrackerProject(null)
+    trackerProjectId.current = null
+    trackerProjectMinRevision.current = 0
+    const client = props.client
+    if (!client) return
+    const off = client.subscribeAll((message) => {
       if (message.type === 'task_tracker_links' && message.task_id === task.id) setTrackerLinks(message.links)
+      if (message.type === 'task_domain_state' && message.domain.task_id === task.id) {
+        trackerProjectId.current = message.domain.project_id ?? null
+        trackerProjectMinRevision.current = 0
+        setTrackerProject(null)
+        if (message.domain.project_id != null) sendTaskWire(client, { type: 'task_project_get', id: message.domain.project_id })
+      }
+      if (message.type === 'task_project_state' && message.project?.id === trackerProjectId.current && message.project.revision >= trackerProjectMinRevision.current) setTrackerProject(message.project)
+      if (message.type === 'task_project_changed' && message.id === trackerProjectId.current && message.workspace === task.workspace) {
+        trackerProjectMinRevision.current = message.revision
+        setTrackerProject(null)
+        sendTaskWire(client, { type: 'task_project_get', id: message.id })
+      }
       if (message.type === 'task_tracker_conflict_resolved' && message.task_id === task.id) {
         setTrackerLinks((current) => current.map((link) => link.provider === message.link.provider && link.external_id === message.link.external_id ? message.link : link))
       }
     })
-    sendTaskWire(props.client, { type: 'task_tracker_links_get', task_id: task.id })
+    sendTaskWire(client, { type: 'task_tracker_links_get', task_id: task.id })
+    sendTaskWire(client, { type: 'task_domain_get', id: task.id })
     return off
-  }, [props.client, task.id])
+  }, [props.client, task.id, task.workspace])
 
-  if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} trackerLinks={trackerLinks} />
+  if (drawer) return <TaskDetailDrawer props={props} taskTitle={title} trackerLinks={trackerLinks} trackerProject={trackerProject} />
 
   return (
     <TaskPanel data-testid="task-detail">
@@ -177,120 +193,138 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
         />
       </TaskToolbar>
       {refusal && refusal.id === task.id && <RefusalBanner refusal={refusal} onReload={props.onReload} taskId={task.id} />}
-      <TaskRecordBody>
-        <TaskTitleField
-          aria-label="Task title"
-          value={title}
-          disabled={readOnly}
-          onChange={(event) => setTitle(event.target.value)}
-          onBlur={() => commitTitle({ title, task, onSave: props.onSave, setTitle })}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur()
-            if (event.key === 'Escape') setTitle(task.title)
-          }}
-        />
-        <TaskMetaLine>
-          <span>created by {task.created_by === 'user' ? 'you' : task.created_by}</span>
-          <span>·</span>
-          <span>{formatAgo(task.created_at_ms, now)}</span>
-          <span>·</span>
-          <TaskMono>revision {task.revision}</TaskMono>
-          {archived && (
-            <>
-              <span>·</span>
-              <span>archived {formatAgo(task.archived_at_ms ?? task.updated_at_ms, now)}</span>
-            </>
-          )}
-        </TaskMetaLine>
-        <TaskPropRow>
-          <Select aria-label="Workspace" data-testid="task-workspace" value={task.workspace ?? ''} options={[{ value: '', label: 'No workspace' }, ...(props.workspaceOptions ?? [])]} disabled={readOnly} prefix={<span>Workspace</span>} variant="property-chip" onChange={(value) => props.onSave(task.id, task.revision, { workspace: value || null })} />
-          <Select
-            aria-label="Status"
-            data-testid="task-status"
-            value={task.status}
-            options={STATUS_OPTIONS}
-            disabled={readOnly}
-            prefix={<TaskStatusGlyph status={task.status} />}
-            variant="property-chip"
-            onChange={(value) => props.onSave(task.id, task.revision, { status: value as TaskStatus })}
-          />
-          <Select
-            aria-label="Priority"
-            data-testid="task-priority"
-            value={task.priority}
-            options={PRIORITY_OPTIONS}
-            disabled={readOnly}
-            prefix={<TaskPriorityGlyph priority={task.priority} />}
-            variant="property-chip"
-            onChange={(value) => props.onSave(task.id, task.revision, { priority: value as TaskPriority })}
-          />
-          <Select
-            aria-label="Parent"
-            data-testid="task-parent"
-            value={task.parent_id == null ? '' : String(task.parent_id)}
-            options={[{ value: '', label: 'None' }, ...props.parentOptions]}
-            disabled={readOnly}
-            prefix={<span>Parent</span>}
-            variant="property-chip"
-            onChange={(value) => props.onSave(task.id, task.revision, { parent_id: value === '' ? null : Number(value) })}
-          />
-          {reviewer !== null && (
-            <TaskProp data-testid="task-reviewer-prop">
-              <TaskPropKey>Reviewer</TaskPropKey>
-              <TaskAgentIcon agent={reviewer} />
-              {taskAgentLabel(reviewer)}
-            </TaskProp>
-          )}
-        </TaskPropRow>
-        <TaskSectionLabel heading="Description" />
-        <TaskDescriptionField
-          aria-label="Task description"
-          rows={Math.max(2, description.split('\n').length)}
-          placeholder="No description."
-          value={description}
-          disabled={readOnly}
-          onChange={(event) => setDescription(event.target.value)}
-          onBlur={() => {
-            if (description !== task.description) props.onSave(task.id, task.revision, { description })
-          }}
-        />
-
-        {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
-
-        {latestRun ? (
-          <TaskExecutionCard
-            run={latestRun}
-            sessions={props.sessions}
-            now={now}
-            readOnly={readOnly}
-            review={review}
-            onOpenSession={props.onOpenSession}
-            onReview={props.onReview}
-            onRunControl={props.onRunControl}
-          />
-        ) : (
-          startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={props.onStart} />
-        )}
-        <TaskSectionLabel
-          heading="Acceptance"
-          trailing={acceptanceText(detail.acceptance.filter((item) => item.checked_at_ms != null).length, detail.acceptance.length)}
-        />
-        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
-        <AcceptanceList
-          items={detail.acceptance}
-          readOnly={readOnly}
-          presentation="side"
-          onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
-        />
-          <TaskSectionLabel heading="Activity" />
-          <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
-          <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
-      </TaskRecordBody>
+      <TaskDetailRecord props={props} title={title} setTitle={setTitle} description={description} setDescription={setDescription} trackerLinks={trackerLinks} trackerProject={trackerProject} />
     </TaskPanel>
   )
 }
 
-function TaskTrackerLinks({ client, taskId, sourceUrl, links }: { client?: Pick<HoustonClient, 'send'> | null; taskId: number; sourceUrl: string | null; links: TaskTrackerLink[] }): React.JSX.Element | null {
+function TaskDetailRecord({ props, title, setTitle, description, setDescription, trackerLinks, trackerProject }: {
+  props: TaskDetailProps
+  title: string
+  setTitle: (value: string) => void
+  description: string
+  setDescription: (value: string) => void
+  trackerLinks: TaskTrackerLink[]
+  trackerProject: TaskProject | null
+}): React.JSX.Element {
+  const { detail, now } = props
+  const { task } = detail
+  const readOnly = false
+  const archived = task.archived_at_ms != null
+  const latestRun = detail.runs[0] ?? null
+  const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
+  const reviewer = taskReviewer(detail.runs)
+  const review = taskReviewOutcome(detail.runs, detail.comments)
+  return <TaskRecordBody>
+    <TaskTitleField
+      aria-label="Task title"
+      value={title}
+      disabled={readOnly}
+      onChange={(event) => setTitle(event.target.value)}
+      onBlur={() => commitTitle({ title, task, onSave: props.onSave, setTitle })}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') setTitle(task.title)
+      }}
+    />
+    <TaskMetaLine>
+      <span>created by {task.created_by === 'user' ? 'you' : task.created_by}</span>
+      <span>·</span>
+      <span>{formatAgo(task.created_at_ms, now)}</span>
+      <span>·</span>
+      <TaskMono>revision {task.revision}</TaskMono>
+      {archived && (
+        <>
+          <span>·</span>
+          <span>archived {formatAgo(task.archived_at_ms ?? task.updated_at_ms, now)}</span>
+        </>
+      )}
+    </TaskMetaLine>
+    <TaskPropRow>
+      <Select aria-label="Workspace" data-testid="task-workspace" value={task.workspace ?? ''} options={[{ value: '', label: 'No workspace' }, ...(props.workspaceOptions ?? [])]} disabled={readOnly} prefix={<span>Workspace</span>} variant="property-chip" onChange={(value) => props.onSave(task.id, task.revision, { workspace: value || null })} />
+      <Select
+        aria-label="Status"
+        data-testid="task-status"
+        value={task.status}
+        options={STATUS_OPTIONS}
+        disabled={readOnly}
+        prefix={<TaskStatusGlyph status={task.status} />}
+        variant="property-chip"
+        onChange={(value) => props.onSave(task.id, task.revision, { status: value as TaskStatus })}
+      />
+      <Select
+        aria-label="Priority"
+        data-testid="task-priority"
+        value={task.priority}
+        options={PRIORITY_OPTIONS}
+        disabled={readOnly}
+        prefix={<TaskPriorityGlyph priority={task.priority} />}
+        variant="property-chip"
+        onChange={(value) => props.onSave(task.id, task.revision, { priority: value as TaskPriority })}
+      />
+      <Select
+        aria-label="Parent"
+        data-testid="task-parent"
+        value={task.parent_id == null ? '' : String(task.parent_id)}
+        options={[{ value: '', label: 'None' }, ...props.parentOptions]}
+        disabled={readOnly}
+        prefix={<span>Parent</span>}
+        variant="property-chip"
+        onChange={(value) => props.onSave(task.id, task.revision, { parent_id: value === '' ? null : Number(value) })}
+      />
+      {reviewer !== null && (
+        <TaskProp data-testid="task-reviewer-prop">
+          <TaskPropKey>Reviewer</TaskPropKey>
+          <TaskAgentIcon agent={reviewer} />
+          {taskAgentLabel(reviewer)}
+        </TaskProp>
+      )}
+    </TaskPropRow>
+    <TaskSectionLabel heading="Description" />
+    <TaskDescriptionField
+      aria-label="Task description"
+      rows={Math.max(2, description.split('\n').length)}
+      placeholder="No description."
+      value={description}
+      disabled={readOnly}
+      onChange={(event) => setDescription(event.target.value)}
+      onBlur={() => {
+        if (description !== task.description) props.onSave(task.id, task.revision, { description })
+      }}
+    />
+    {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
+    {latestRun ? (
+      <TaskExecutionCard
+        run={latestRun}
+        sessions={props.sessions}
+        now={now}
+        readOnly={readOnly}
+        review={review}
+        onOpenSession={props.onOpenSession}
+        onReview={props.onReview}
+        onRunControl={props.onRunControl}
+      />
+    ) : (
+      startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={readOnly} onStart={props.onStart} />
+    )}
+    <TaskSectionLabel
+      heading="Acceptance"
+      trailing={acceptanceText(detail.acceptance.filter((item) => item.checked_at_ms != null).length, detail.acceptance.length)}
+    />
+    <TaskTrackerLinks client={props.client} taskId={task.id} taskRevision={task.revision} projectRevision={trackerProject?.revision ?? null} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
+    <AcceptanceList
+      items={detail.acceptance}
+      readOnly={readOnly}
+      presentation="side"
+      onCheck={(item, checked) => props.onCheck(task.id, item, checked)}
+    />
+    <TaskSectionLabel heading="Activity" />
+    <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
+    <CommentComposer readOnly={readOnly} onSubmit={(body) => props.onComment(task.id, body)} />
+  </TaskRecordBody>
+}
+
+function TaskTrackerLinks({ client, taskId, taskRevision, projectRevision, sourceUrl, links }: { client?: Pick<HoustonClient, 'send'> | null; taskId: number; taskRevision: number; projectRevision: number | null; sourceUrl: string | null; links: TaskTrackerLink[] }): React.JSX.Element | null {
   if (!client && !sourceUrl) return null
   return <section className="grid gap-[var(--space-2)]" aria-label="Task tracker links">
     <TaskSectionLabel heading="Tracker links" />
@@ -300,35 +334,36 @@ function TaskTrackerLinks({ client, taskId, sourceUrl, links }: { client?: Pick<
       <TaskBody>{link.sync_state.state === 'error' ? `Sync error: ${link.sync_state.message}` : link.sync_state.state === 'diverged' ? 'Tracker data diverged' : link.sync_state.state === 'pending' ? 'Sync pending' : 'In sync'}</TaskBody>
       {link.snapshot.project && <TaskBody>Imported project context — unverified. {link.snapshot.project.title}: {link.snapshot.project.description}</TaskBody>}
       {!link.snapshot.project && link.snapshot.project_external_id && <TaskBody>External project ID {link.snapshot.project_external_id} has not been matched to a local project.</TaskBody>}
-      {client && link.snapshot.conflicts.map((conflict) => <TrackerConflict key={conflict.field} client={client} taskId={taskId} link={link} field={conflict.field} base={conflict.base} local={conflict.local} remote={conflict.remote} />)}
+      {client && link.snapshot.conflicts.map((conflict) => <TrackerConflict key={conflict.field} client={client} taskId={taskId} taskRevision={taskRevision} projectRevision={projectRevision} link={link} field={conflict.field} base={conflict.base} local={conflict.local} remote={conflict.remote} />)}
       {link.sync_state.state === 'diverged' && link.snapshot.conflicts.length === 0 && <TaskBody>Tracker data diverged; no field conflict needs resolution.</TaskBody>}
       {link.sync_state.state === 'error' && <TaskBody>{link.sync_state.message}</TaskBody>}
     </Card>)}
   </section>
 }
 
-function TrackerConflict({ client, taskId, link, field, base, local, remote }: { client: Pick<HoustonClient, 'send'>; taskId: number; link: TaskTrackerLink; field: string; base: string; local: string; remote: string }): React.JSX.Element {
+function TrackerConflict({ client, taskId, taskRevision, projectRevision, link, field, base, local, remote }: { client: Pick<HoustonClient, 'send'>; taskId: number; taskRevision: number; projectRevision: number | null; link: TaskTrackerLink; field: string; base: string; local: string; remote: string }): React.JSX.Element {
   const [custom, setCustom] = useState('')
+  const projectField = field.startsWith('project.')
+  const projectKnown = projectRevision != null
   const resolve = (resolution: { kind: 'local' | 'remote' } | { kind: 'custom'; value: string }): void => sendTaskWire(client, {
     type: 'task_tracker_conflict_resolve', task_id: taskId, provider: link.provider,
-    external_id: link.external_id, field, expected_revision: link.snapshot.revision, resolution
+    external_id: link.external_id, field, expected_revision: link.snapshot.revision,
+    expected_task_revision: taskRevision, expected_project_revision: projectField ? projectRevision : null, resolution
   })
   return <Card tone="inset" padding="sm" className="grid gap-[var(--space-1)]">
     <Text weight="semibold">{field} differs between Houston and the tracker</Text>
     <Text>Previous shared value: {base || '—'}</Text><Text>Houston value: {local || '—'}</Text><Text>Tracker value: {remote || '—'}</Text>
-    <Inline wrap gap="small"><Button variant="secondary" onClick={() => resolve({ kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" onClick={() => resolve({ kind: 'remote' })}>Use tracker value</Button></Inline>
-    <div className="flex gap-[var(--space-2)]"><TextInput aria-label={`Custom ${field} value`} value={custom} onChange={(event) => setCustom(event.target.value)} /><Button variant="secondary" disabled={!custom.trim()} onClick={() => resolve({ kind: 'custom', value: custom })}>Use custom value</Button></div>
+    {projectField && !projectKnown && <Text size="small" tone="muted">Load the assigned Project before resolving this field.</Text>}
+    <Inline wrap gap="small"><Button variant="secondary" disabled={projectField && !projectKnown} onClick={() => resolve({ kind: 'local' })}>Keep Houston value</Button><Button variant="secondary" disabled={projectField && !projectKnown} onClick={() => resolve({ kind: 'remote' })}>Use tracker value</Button></Inline>
+    <div className="flex gap-[var(--space-2)]"><TextInput aria-label={`Custom ${field} value`} value={custom} onChange={(event) => setCustom(event.target.value)} /><Button variant="secondary" disabled={!custom.trim() || projectField && !projectKnown} onClick={() => resolve({ kind: 'custom', value: custom })}>Use custom value</Button></div>
   </Card>
 }
 
-function TaskDetailDrawer({ props, taskTitle, trackerLinks }: { props: TaskDetailProps; taskTitle: string; trackerLinks: TaskTrackerLink[] }): React.JSX.Element {
-  const { detail, now } = props
+function TaskDetailDrawer({ props, taskTitle, trackerLinks, trackerProject }: { props: TaskDetailProps; taskTitle: string; trackerLinks: TaskTrackerLink[]; trackerProject: TaskProject | null }): React.JSX.Element {
+  const { detail } = props
   const { task } = detail
   const latestRun = detail.runs[0] ?? null
   const archived = task.archived_at_ms != null
-  const startable = !archived && (task.status === 'backlog' || task.status === 'todo')
-  const review = taskReviewOutcome(detail.runs, detail.comments)
-  const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
 
   return <TaskDetailFrame>
     {props.refusal && props.refusal.id === task.id && <RefusalBanner refusal={props.refusal} onReload={props.onReload} taskId={task.id} />}
@@ -351,6 +386,23 @@ function TaskDetailDrawer({ props, taskTitle, trackerLinks }: { props: TaskDetai
         />
       </>}
     />
+    <TaskDrawerContents props={props} trackerLinks={trackerLinks} trackerProject={trackerProject} />
+  </TaskDetailFrame>
+}
+
+function TaskDrawerContents({ props, trackerLinks, trackerProject }: {
+  props: TaskDetailProps
+  trackerLinks: TaskTrackerLink[]
+  trackerProject: TaskProject | null
+}): React.JSX.Element {
+  const { detail, now } = props
+  const { task } = detail
+  const latestRun = detail.runs[0] ?? null
+  const startable = task.archived_at_ms == null && (task.status === 'backlog' || task.status === 'todo')
+  const review = taskReviewOutcome(detail.runs, detail.comments)
+  const checked = detail.acceptance.filter((item) => item.checked_at_ms != null).length
+
+  return <>
     {latestRun && <TaskExecutionCard
       run={latestRun}
       sessions={props.sessions}
@@ -367,7 +419,7 @@ function TaskDetailDrawer({ props, taskTitle, trackerLinks }: { props: TaskDetai
     {!latestRun && startable && <TaskStartCard task={task} settings={props.startSettings} workspaceOptions={props.workspaceOptions} readOnly={false} onStart={props.onStart} />}
     {props.client && <TaskWorkflowPanel client={props.client} detail={detail} onOpenSession={props.onOpenSession} onStartRequested={props.onStartRequested} />}
     <div className="grid gap-[var(--space-2)]">
-        <TaskTrackerLinks client={props.client} taskId={task.id} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
+      <TaskTrackerLinks client={props.client} taskId={task.id} taskRevision={task.revision} projectRevision={trackerProject?.revision ?? null} sourceUrl={task.ref_url ?? null} links={trackerLinks} />
       <TaskSectionLabel heading="Acceptance" trailing={`${checked}/${detail.acceptance.length}`} />
       <TaskDrawerCard><AcceptanceList
         items={detail.acceptance}
@@ -377,7 +429,7 @@ function TaskDetailDrawer({ props, taskTitle, trackerLinks }: { props: TaskDetai
       /></TaskDrawerCard>
       {task.origin?.kind === 'harness_finding' && <TaskDrawerOrigin><Chip variant="compound" label={`From Harness finding · ${task.origin.key}`} /></TaskDrawerOrigin>}
     </div>
-  </TaskDetailFrame>
+  </>
 }
 
 function commitTitle({ title, task, onSave, setTitle }: {

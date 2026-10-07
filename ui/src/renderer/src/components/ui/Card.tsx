@@ -73,7 +73,7 @@ function CardBase({ children, tone = 'default', shape = 'button', padding = 'non
   const layoutClass = {
     default: '',
     'center-stack': 'flex flex-col items-center gap-[var(--space-4)]',
-    'sleeping-session': 'grid w-full max-w-[70ch] gap-[var(--space-2)] text-center',
+    'sleeping-session': 'mx-auto grid w-full max-w-[70ch] gap-[var(--space-2)] text-center',
     'scrolling-copy': 'max-h-[16rem] overflow-auto whitespace-pre-wrap text-left'
   }[layout]
   return <div {...props} className={`${cardClasses({ tone, shape, padding, disabled: disabled ? 'true' : 'false', clip: clip ? 'true' : 'false' })} ${layoutClass} ${className}`}>{children}</div>

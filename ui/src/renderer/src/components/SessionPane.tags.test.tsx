@@ -105,6 +105,7 @@ describe('pane tags', () => {
   beforeEach(() => {
     setSessionTags = vi.fn()
     fakeClient = {
+      subscribe: () => () => {},
       resizeSession: vi.fn(),
       attachSession: vi.fn(),
       sessionVisibility: vi.fn(),

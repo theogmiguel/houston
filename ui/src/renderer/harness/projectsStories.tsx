@@ -44,26 +44,30 @@ const PLAN = {
   approved_revision: null
 }
 
-function domain(id: number, kind: 'delivery' | 'slice', projectId: number | null, plan: typeof PLAN | null = null): TaskDomain {
+function domain(id: number, kind: 'delivery' | 'slice', projectId: number | null, plan: typeof PLAN | null = null, conflicted = false): TaskDomain {
+  const reasons = id === 42 ? ['Task has one unfinished blocker', 'Task needs a verifiable acceptance item'] : id === 40 ? ['Delivery has one blocked Slice'] : []
+  if (kind === 'delivery' && projectId == null) reasons.push('Delivery needs an assigned Project')
+  if (plan) reasons.push('Task has one unanswered planning question', 'Planning proposal is not approved for this task revision')
+  if (conflicted) reasons.push('Task has one unresolved tracker conflict')
   return {
-    task_id: id, kind, project_id: projectId, delivery_id: kind === 'slice' ? 40 : null, slice_total: kind === 'delivery' ? 2 : 0, slice_done: kind === 'delivery' ? 1 : 0, planning_session_id: null,
-    blocked_by: id === 42 ? [41] : [], plan,
+    task_id: id, kind, project_id: projectId, delivery_id: id === 41 || id === 42 ? 40 : null, slice_total: kind === 'delivery' ? 2 : 0, slice_done: kind === 'delivery' ? 1 : 0, planning_session_id: null,
+    blocked_by: id === 42 ? [44] : [], plan,
     readiness: {
-      ready: id === 41, reasons: id === 42 ? ['Blocked by HOU-41 until it is Done', 'A verifiable acceptance item is still missing'] : [],
-      acceptance_total: 2, acceptance_verifiable: 1, unresolved_questions: plan ? 1 : 0,
-      unresolved_tracker_conflicts: 1, unfinished_blockers: id === 42 ? [41] : []
-    }, unresolved_tracker_conflicts: 1
+      ready: reasons.length === 0, reasons,
+      acceptance_total: 2, acceptance_verifiable: id === 42 ? 0 : 1, unresolved_questions: plan ? 1 : 0,
+      unresolved_tracker_conflicts: conflicted ? 1 : 0, unfinished_blockers: id === 42 ? [44] : []
+    }, unresolved_tracker_conflicts: conflicted ? 1 : 0
   }
 }
 
 function trackerSettings(): TaskTrackerWorkspaceSettings {
   return {
     workspace: WORKSPACE, provider: 'notion', enabled: true, github_repository: null, github_label: null,
-    github_assigned_user: null, notion_data_source_id: 'db_tasks', notion_title_property_id: 'title_prop',
+    github_assigned_user: null, notion_data_source_id: '01234567-89ab-cdef-0123-456789abcdef', notion_title_property_id: 'title_prop',
     notion_description_property_id: 'description_prop', notion_status_property_id: 'status_prop',
     notion_assignee_property_id: 'assignee_prop', notion_project_relation_property_id: 'project_prop',
-    notion_assignee_user_id: 'user_34', notion_active_status_values: ['In progress'],
-    notion_projects_data_source_id: 'db_projects', notion_project_title_property_id: 'project_title',
+    notion_assignee_user_id: '11111111-2222-3333-4444-555555555555', notion_active_status_values: ['In progress'],
+    notion_projects_data_source_id: 'fedcba98-7654-3210-fedc-ba9876543210', notion_project_title_property_id: 'project_title',
     notion_project_description_property_id: 'project_description', notion_pr_url_property_id: 'pr_url',
     notion_status_mapping: { todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done', canceled: 'Canceled' },
     has_credential: true, last_sync_at_ms: NOW - 900_000, last_error: null
@@ -92,9 +96,10 @@ function projectClient(includePlan: boolean, includeConflict: boolean): Pick<Hou
     taskSnapshot: (scope: string) => emit({ type: 'task_snapshot', scope, tasks: TASKS, counts: { ready: 1, backlog: 1, todo: 1, in_progress: 1, in_review: 0, done: 1, canceled: 0 } }),
     taskSave: () => {},
     send: (message: ClientMsg) => {
+      if (message.type === 'task_project_get' && message.id === PROJECT.id) emit({ type: 'task_project_state', project: PROJECT })
       if (message.type === 'task_projects_list') emit({ type: 'task_projects_state', workspace: WORKSPACE, projects: [PROJECT, { ...PROJECT, id: 10, name: 'Archived project', archived_at_ms: NOW - 1000 }] })
       if (message.type === 'task_domain_get' && message.id != null) {
-        const row = message.id === 40 ? domain(40, 'delivery', 9) : message.id === 41 ? domain(41, 'slice', 9) : message.id === 42 ? domain(42, 'slice', 9, includePlan ? PLAN : null) : domain(44, 'delivery', null)
+        const row = message.id === 40 ? domain(40, 'delivery', 9) : message.id === 41 ? domain(41, 'slice', 9) : message.id === 42 ? domain(42, 'slice', 9, includePlan ? PLAN : null, includeConflict) : domain(44, 'delivery', null)
         emit({ type: 'task_domain_state', domain: row })
       }
       if (message.type === 'task_tracker_settings_get') emit({ type: 'task_tracker_settings', settings: [trackerSettings()], refusal: null })

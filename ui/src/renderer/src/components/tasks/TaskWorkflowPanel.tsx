@@ -83,24 +83,46 @@ export function TaskWorkflowPanel({ client, detail, onOpenSession, onStartReques
       setError(null)
       save({ blocked_by: [...new Set(ids)] })
     }}>Save blockers</Button></div></Field>
-    <div aria-live="polite" className="grid gap-[var(--space-1)]">
-      <Text weight="semibold" tone={domain.readiness.ready ? 'success' : 'warning'}>{domain.readiness.ready ? 'Ready to start' : 'Not ready'}</Text>
-      {!domain.readiness.ready && <BulletList items={domain.readiness.reasons} />}
-      <Text size="small" tone="muted">{domain.readiness.acceptance_verifiable} of {domain.readiness.acceptance_total} acceptance items are verifiable.</Text>
-      {!domain.readiness.ready && manualStart && <Button variant="danger" onClick={startAnyway}>Start anyway</Button>}
-    </div>
+    <WorkflowReadiness domain={domain} manualStart={manualStart} onStartAnyway={startAnyway} />
     <Button variant="secondary" disabled={domain.planning_session_id != null} onClick={() => sendTaskWire(client, { type: 'task_plan_start', id: task.id, expected_revision: task.revision, agent })}>{domain.planning_session_id == null ? 'Generate plan' : 'Planning in progress'}</Button>
     {domain.planning_session_id != null && <Button variant="secondary" onClick={() => onOpenSession(domain.planning_session_id!)}>Open planning session</Button>}
-    {plan && <Card padding="sm" className="grid gap-[var(--space-2)]" aria-label="Plan proposal">
-      <SectionHead title="Plan proposal" />
-      <Text as="p" preserveWhitespace>{plan.proposal.description}</Text>
-      <ProposalList heading="Acceptance" items={plan.proposal.acceptance} />
-      <ProposalList heading="Pointers" items={plan.proposal.pointers} />
-      <ProposalList heading="Out of scope" items={plan.proposal.out_of_scope} />
-      {plan.proposal.questions.map((question) => <div key={question} className="grid gap-[var(--space-1)]"><span>{question}</span><TextInput aria-label={`Answer: ${question}`} value={answers[question] ?? plan.answers.find((item) => item.question === question)?.answer ?? ''} onChange={(event) => setAnswers((current) => ({ ...current, [question]: event.target.value }))} /><Button variant="secondary" disabled={!(answers[question] ?? '').trim()} onClick={() => sendTaskWire(client, { type: 'task_plan_answer', id: task.id, expected_revision: task.revision, question, answer: answers[question].trim() })}>Save answer</Button></div>)}
-      <Button variant="secondary" disabled={domain.readiness.unresolved_questions > 0 || domain.readiness.unresolved_tracker_conflicts > 0} onClick={() => sendTaskWire(client, { type: 'task_plan_approve', id: task.id, expected_revision: task.revision, plan_revision: plan.revision })}>{plan.approved_revision === task.revision ? 'Approved for this task revision' : 'Approve this plan revision'}</Button>
-      {plan.approved_revision != null && plan.approved_revision !== task.revision && <Notice tone="warn">This approval is stale. Review and approve the current task revision.</Notice>}
-    </Card>}
+    <WorkflowPlan client={client} detail={detail} domain={domain} plan={plan} answers={answers} setAnswers={setAnswers} />
+  </Card>
+}
+
+function WorkflowReadiness({ domain, manualStart, onStartAnyway }: {
+  domain: TaskDomain
+  manualStart: boolean
+  onStartAnyway: () => void
+}): React.JSX.Element {
+  return <div aria-live="polite" className="grid gap-[var(--space-1)]">
+    <Text weight="semibold" tone={domain.readiness.ready ? 'success' : 'warning'}>{domain.readiness.ready ? 'Ready to start' : 'Not ready'}</Text>
+    {!domain.readiness.ready && <BulletList items={domain.readiness.reasons} />}
+    <Text size="small" tone="muted">{domain.readiness.acceptance_verifiable} of {domain.readiness.acceptance_total} acceptance items are verifiable.</Text>
+    {!domain.readiness.ready && manualStart && <Button variant="danger" onClick={onStartAnyway}>Start anyway</Button>}
+  </div>
+}
+
+function WorkflowPlan({ client, detail, domain, plan, answers, setAnswers }: {
+  client: Pick<HoustonClient, 'send'>
+  detail: TaskDetailData
+  domain: TaskDomain
+  plan: TaskDomain['plan']
+  answers: Record<string, string>
+  setAnswers: React.Dispatch<React.SetStateAction<Record<string, string>>>
+}): React.JSX.Element | null {
+  if (!plan) return null
+  const { task } = detail
+
+  return <Card padding="sm" className="grid gap-[var(--space-2)]" aria-label="Plan proposal">
+    <SectionHead title="Plan proposal" />
+    <Text as="p" preserveWhitespace>{plan.proposal.description}</Text>
+    <ProposalList heading="Acceptance" items={plan.proposal.acceptance} />
+    <ProposalList heading="Pointers" items={plan.proposal.pointers} />
+    <ProposalList heading="Out of scope" items={plan.proposal.out_of_scope} />
+    {plan.proposal.questions.map((question) => <div key={question} className="grid gap-[var(--space-1)]"><span>{question}</span><TextInput aria-label={`Answer: ${question}`} value={answers[question] ?? plan.answers.find((item) => item.question === question)?.answer ?? ''} onChange={(event) => setAnswers((current) => ({ ...current, [question]: event.target.value }))} /><Button variant="secondary" disabled={!(answers[question] ?? '').trim()} onClick={() => sendTaskWire(client, { type: 'task_plan_answer', id: task.id, expected_revision: task.revision, question, answer: answers[question].trim() })}>Save answer</Button></div>)}
+    <Button variant="secondary" disabled={domain.readiness.unresolved_questions > 0 || domain.readiness.unresolved_tracker_conflicts > 0} onClick={() => sendTaskWire(client, { type: 'task_plan_approve', id: task.id, expected_revision: task.revision, plan_revision: plan.revision })}>{plan.approved_revision === task.revision ? 'Approved for this task revision' : 'Approve this plan revision'}</Button>
+    {plan.approved_revision != null && plan.approved_revision !== task.revision && <Notice tone="warn">This approval is stale. Review and approve the current task revision.</Notice>}
   </Card>
 }
 

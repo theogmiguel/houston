@@ -52,7 +52,8 @@ function renderPane(active: boolean, agent: SessionInfo['agent'] = 'claude'): {
   header: HTMLElement
 } {
   const fakeClient = {
-    resizeSession: vi.fn(),
+    subscribe: () => () => {},
+      resizeSession: vi.fn(),
     attachSession: vi.fn(),
     sessionVisibility: vi.fn(),
     sendStdin: vi.fn(),

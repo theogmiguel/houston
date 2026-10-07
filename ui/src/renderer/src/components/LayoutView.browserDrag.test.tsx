@@ -47,7 +47,7 @@ function renderGrid(): void {
         tree={TREE}
         sessions={new Map()}
         viewAll={false}
-        client={{} as HoustonClient}
+        client={{ subscribe: () => () => {} } as unknown as HoustonClient}
         theme="warm-espresso"
         fontSize={13}
         copyOnSelect={false}

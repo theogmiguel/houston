@@ -8,7 +8,7 @@ import type { HarnessAttention } from '../../houston/generated/HarnessAttention'
 import type { HarnessReport, HarnessReportError, HarnessState } from '../../houston/useHarness'
 import { Select } from '../ui/Select'
 import { BarSparkline, Button, Caption, Card, Field, Notice, PageFrame, PageHeader, Segmented, TextInput } from '../ui'
-import { BulletList as NavBulletList, FieldGrid, SectionTitle } from '../ui/navText'
+import { BulletList, FieldGrid, SectionTitle } from '../ui/navText'
 import { engineLabel } from '../engineLabel'
 import { HarnessFindings } from './HarnessFindings'
 import { HarnessReviewHistory } from './HarnessReviewHistory'
@@ -165,7 +165,7 @@ function WhatARunSends(): React.JSX.Element {
   return (
     <Card tone="inset" padding="md" className="grid gap-[var(--space-1-5)]" data-testid="harness-consent">
       <SectionTitle>What a review sends to its provider</SectionTitle>
-      <NavBulletList>
+      <BulletList>
         <li>
           The harness files: CLAUDE.md, AGENTS.md, rules, skills, settings, hooks and MCP configuration.
         </li>
@@ -174,7 +174,7 @@ function WhatARunSends(): React.JSX.Element {
           tool failures, permission denials with secrets masked, the skills and subagents used, and each
           session&apos;s last assistant message.
         </li>
-      </NavBulletList>
+      </BulletList>
       <Caption>
         The run is an agent pane you can watch. It sends those excerpts through the chosen provider&apos;s own
         CLI, like any turn of that agent. The findings it publishes stay on this machine.

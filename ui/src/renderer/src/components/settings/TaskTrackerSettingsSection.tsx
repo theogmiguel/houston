@@ -59,7 +59,7 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
   }, [client, workspace])
 
   useEffect(() => setDraft(setting), [setting])
-  useEffect(() => setToken(''), [provider])
+  useEffect(() => setToken(''), [provider, workspace])
 
   if (!workspace) return <>
     <SubHead>Tracker sync</SubHead>
@@ -70,8 +70,24 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
     <SettingsList><Row title="Workspace tracker settings" desc="Connect to the Houston daemon to load this workspace’s settings."><SettingsScope workspace={workspaceName} row /></Row></SettingsList>
   </>
 
-  const value = draft ?? setting
-  const update = (patch: Partial<TaskTrackerWorkspaceSettings>): void => setDraft((current) => ({ ...(current ?? setting!), ...patch, workspace }))
+  return <TrackerSettingsForm client={client} workspace={workspace} workspaceName={workspaceName} settingsLoaded={settingsLoaded} error={error} provider={provider} setProvider={setProvider} value={draft ?? setting} setting={setting} update={(patch) => setDraft((current) => ({ ...(current ?? setting!), ...patch, workspace }))} syncState={syncState[provider]} token={token} setToken={setToken} />
+}
+
+function TrackerSettingsForm({ client, workspace, workspaceName, settingsLoaded, error, provider, setProvider, value, setting, update, syncState, token, setToken }: {
+  client: Pick<HoustonClient, 'send'>
+  workspace: string
+  workspaceName: string | null
+  settingsLoaded: boolean
+  error: string | null
+  provider: TaskTrackerProvider
+  setProvider: (provider: TaskTrackerProvider) => void
+  value: TaskTrackerWorkspaceSettings | null
+  setting: TaskTrackerWorkspaceSettings | null
+  update: (patch: Partial<TaskTrackerWorkspaceSettings>) => void
+  syncState: { at: number | null; error: string | null } | undefined
+  token: string
+  setToken: (token: string) => void
+}): React.JSX.Element {
   const set = (): void => { if (value) sendTaskWire(client, { type: 'task_tracker_settings_set', settings: value }) }
   const setCredential = (): void => {
     if (!token.trim()) return
@@ -80,9 +96,8 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
   }
   const clearCredential = (): void => sendTaskWire(client, { type: 'task_tracker_credential_clear', workspace, provider })
   const sync = (): void => sendTaskWire(client, { type: 'task_tracker_sync_now', workspace })
-  const providerSyncState = syncState[provider]
-  const lastSync = providerSyncState ? providerSyncState.at : value?.last_sync_at_ms ?? null
-  const syncError = providerSyncState ? providerSyncState.error : value?.last_error ?? null
+  const lastSync = syncState ? syncState.at : value?.last_sync_at_ms ?? null
+  const syncError = syncState ? syncState.error : value?.last_error ?? null
 
   return <>
     <SubHead>Tracker sync · {workspaceName ?? workspace}</SubHead>
@@ -96,35 +111,7 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
         <Row title="Enable sync" desc="Allow this provider to import and synchronize tasks for this workspace.">
           <Toggle aria-label="Enable tracker sync" data-testid="tracker-sync-enabled" on={value.enabled} onChange={(enabled) => update({ enabled })} />
         </Row>
-        {provider === 'github_issues' ? <>
-          <SettingRow label="Repository (owner/name)" value={value.github_repository ?? ''} onChange={(text) => update({ github_repository: text || null })} />
-          <SettingRow label="Issue label" value={value.github_label ?? ''} onChange={(text) => update({ github_label: text || null })} />
-          <SettingRow label="Assigned GitHub user" value={value.github_assigned_user ?? ''} onChange={(text) => update({ github_assigned_user: text || null })} />
-          <Row title="Authentication" desc="GitHub CLI authentication is used for GitHub Issues. No GitHub token is stored here." />
-        </> : <>
-          <SettingRow label="Notion data source ID" value={value.notion_data_source_id ?? ''} onChange={(text) => update({ notion_data_source_id: text || null })} />
-          <SettingRow label="Title property ID" value={value.notion_title_property_id ?? ''} onChange={(text) => update({ notion_title_property_id: text || null })} />
-          <SettingRow label="Description property ID" value={value.notion_description_property_id ?? ''} onChange={(text) => update({ notion_description_property_id: text || null })} />
-          <SettingRow label="Status property ID" value={value.notion_status_property_id ?? ''} onChange={(text) => update({ notion_status_property_id: text || null })} />
-          <SettingRow label="Assignee property ID" value={value.notion_assignee_property_id ?? ''} onChange={(text) => update({ notion_assignee_property_id: text || null })} />
-          <SettingRow label="Project relation property ID" value={value.notion_project_relation_property_id ?? ''} onChange={(text) => update({ notion_project_relation_property_id: text || null })} />
-          <SettingRow label="Notion assignee user ID" value={value.notion_assignee_user_id ?? ''} onChange={(text) => update({ notion_assignee_user_id: text || null })} />
-          <SettingRow label="Active status values (comma separated)" value={value.notion_active_status_values.join(', ')} onChange={(text) => update({ notion_active_status_values: text.split(',').map((item) => item.trim()).filter(Boolean) })} />
-          <SettingRow label="Projects data source ID" value={value.notion_projects_data_source_id ?? ''} onChange={(text) => update({ notion_projects_data_source_id: text || null })} />
-          <SettingRow label="Project title property ID" value={value.notion_project_title_property_id ?? ''} onChange={(text) => update({ notion_project_title_property_id: text || null })} />
-          <SettingRow label="Project description property ID" value={value.notion_project_description_property_id ?? ''} onChange={(text) => update({ notion_project_description_property_id: text || null })} />
-          <SettingRow label="Pull request URL property ID" value={value.notion_pr_url_property_id ?? ''} onChange={(text) => update({ notion_pr_url_property_id: text || null })} />
-          {(['todo', 'in_progress', 'in_review', 'done', 'canceled'] as const).map((status) => <SettingRow key={status} label={`Status option: ${status.replace('_', ' ')}`} value={value.notion_status_mapping[status] ?? ''} onChange={(text) => update({ notion_status_mapping: { ...value.notion_status_mapping, [status]: text || null } })} />)}
-          <Row title="Notion integration token" desc={value.has_credential ? 'A token is stored in the OS keychain. Enter a replacement only when rotating it.' : 'The token is sent directly to the daemon credential endpoint and stored in the OS keychain.'}>
-            <div className="grid gap-[var(--space-2)]">
-              <TextInput aria-label="Notion integration token" type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={value.has_credential ? 'Replace keychain token' : 'Enter token'} />
-              <div className="flex gap-[var(--space-2)]">
-                <Button variant="secondary" disabled={!token.trim()} onClick={setCredential}>Save token</Button>
-                {value.has_credential && <Button variant="ghost" onClick={clearCredential}>Remove token</Button>}
-              </div>
-            </div>
-          </Row>
-        </>}
+        <ProviderSettingsFields provider={provider} value={value} update={update} token={token} setToken={setToken} setCredential={setCredential} clearCredential={clearCredential} />
         <Row title="Current sync status" desc={syncError ? <Notice tone="danger">{syncError}</Notice> : 'No current tracker sync error.'}>
           <Text size="small">{lastSync == null ? 'Never synced' : `Last sync ${new Date(lastSync).toLocaleString()}`}</Text>
         </Row>
@@ -136,6 +123,58 @@ export function TaskTrackerSettingsSection({ client, workspace, workspaceName }:
         </Row>
       </>}
     </SettingsList>}
+  </>
+}
+
+function ProviderSettingsFields({ provider, value, update, token, setToken, setCredential, clearCredential }: {
+  provider: TaskTrackerProvider
+  value: TaskTrackerWorkspaceSettings
+  update: (patch: Partial<TaskTrackerWorkspaceSettings>) => void
+  token: string
+  setToken: (token: string) => void
+  setCredential: () => void
+  clearCredential: () => void
+}): React.JSX.Element {
+  if (provider === 'github_issues') return <>
+    <SettingRow label="Repository (owner/name)" value={value.github_repository ?? ''} onChange={(text) => update({ github_repository: text || null })} />
+    <SettingRow label="Issue label" value={value.github_label ?? ''} onChange={(text) => update({ github_label: text || null })} />
+    <SettingRow label="Assigned GitHub user" value={value.github_assigned_user ?? ''} onChange={(text) => update({ github_assigned_user: text || null })} />
+    <Row title="Authentication" desc="GitHub CLI authentication is used for GitHub Issues. No GitHub token is stored here." />
+  </>
+  return <NotionSettingsFields value={value} update={update} token={token} setToken={setToken} setCredential={setCredential} clearCredential={clearCredential} />
+}
+
+function NotionSettingsFields({ value, update, token, setToken, setCredential, clearCredential }: {
+  value: TaskTrackerWorkspaceSettings
+  update: (patch: Partial<TaskTrackerWorkspaceSettings>) => void
+  token: string
+  setToken: (token: string) => void
+  setCredential: () => void
+  clearCredential: () => void
+}): React.JSX.Element {
+  return <>
+    <SettingRow label="Notion data source ID" value={value.notion_data_source_id ?? ''} onChange={(text) => update({ notion_data_source_id: text || null })} />
+    <SettingRow label="Title property ID" value={value.notion_title_property_id ?? ''} onChange={(text) => update({ notion_title_property_id: text || null })} />
+    <SettingRow label="Description property ID" value={value.notion_description_property_id ?? ''} onChange={(text) => update({ notion_description_property_id: text || null })} />
+    <SettingRow label="Status property ID" value={value.notion_status_property_id ?? ''} onChange={(text) => update({ notion_status_property_id: text || null })} />
+    <SettingRow label="Assignee property ID" value={value.notion_assignee_property_id ?? ''} onChange={(text) => update({ notion_assignee_property_id: text || null })} />
+    <SettingRow label="Project relation property ID" value={value.notion_project_relation_property_id ?? ''} onChange={(text) => update({ notion_project_relation_property_id: text || null })} />
+    <SettingRow label="Notion assignee user ID" value={value.notion_assignee_user_id ?? ''} onChange={(text) => update({ notion_assignee_user_id: text || null })} />
+    <SettingRow label="Active status values (comma separated)" value={value.notion_active_status_values.join(', ')} onChange={(text) => update({ notion_active_status_values: text.split(',').map((item) => item.trim()).filter(Boolean) })} />
+    <SettingRow label="Projects data source ID" value={value.notion_projects_data_source_id ?? ''} onChange={(text) => update({ notion_projects_data_source_id: text || null })} />
+    <SettingRow label="Project title property ID" value={value.notion_project_title_property_id ?? ''} onChange={(text) => update({ notion_project_title_property_id: text || null })} />
+    <SettingRow label="Project description property ID" value={value.notion_project_description_property_id ?? ''} onChange={(text) => update({ notion_project_description_property_id: text || null })} />
+    <SettingRow label="Pull request URL property ID" value={value.notion_pr_url_property_id ?? ''} onChange={(text) => update({ notion_pr_url_property_id: text || null })} />
+    {(['todo', 'in_progress', 'in_review', 'done', 'canceled'] as const).map((status) => <SettingRow key={status} label={`Status option: ${status.replace('_', ' ')}`} value={value.notion_status_mapping[status] ?? ''} onChange={(text) => update({ notion_status_mapping: { ...value.notion_status_mapping, [status]: text || null } })} />)}
+    <Row title="Notion integration token" desc={value.has_credential ? 'A token is stored in the OS keychain. Enter a replacement only when rotating it.' : 'The token is sent directly to the daemon credential endpoint and stored in the OS keychain.'}>
+      <div className="grid gap-[var(--space-2)]">
+        <TextInput aria-label="Notion integration token" type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={value.has_credential ? 'Replace keychain token' : 'Enter token'} />
+        <div className="flex gap-[var(--space-2)]">
+          <Button variant="secondary" disabled={!token.trim()} onClick={setCredential}>Save token</Button>
+          {value.has_credential && <Button variant="ghost" onClick={clearCredential}>Remove token</Button>}
+        </div>
+      </div>
+    </Row>
   </>
 }
 
