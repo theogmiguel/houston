@@ -71,8 +71,9 @@ The proposal contains a description, acceptance items, file pointers, exclusions
 questions. Planning does not edit code or start implementation.
 
 Answer the questions and approve the proposal to apply it to the task. Approval belongs to
-the revision the planner read: if the task changed, refresh and plan again rather than
-applying an obsolete proposal. Approval and execution are separate actions.
+the task and Project revisions the planner read: if either changed, refresh and plan
+again rather than applying an obsolete proposal. A Project edit also invalidates a previously
+approved plan. Approval and execution are separate actions.
 
 ## Starting a task
 

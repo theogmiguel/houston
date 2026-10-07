@@ -295,28 +295,62 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         &["Unrelated output exists"],
     )
     .await;
-    let project = match daemon.task_project_save(
-        &workspace, None, None, "Shared initiative", None,
-        Some(Some("The tracker describes an obsolete API".into())),
-        Some(vec!["Use the repository API verified by the maintainer".into()]),
-    ).unwrap() {
+    let project = match daemon
+        .task_project_save(
+            &workspace,
+            None,
+            None,
+            "Shared initiative",
+            None,
+            Some(Some("The tracker describes an obsolete API".into())),
+            Some(vec![
+                "Use the repository API verified by the maintainer".into()
+            ]),
+        )
+        .unwrap()
+    {
         proto::ServerMsg::TaskProjectChanged { id, .. } => id,
         other => panic!("expected Project creation, got {other:?}"),
     };
-    let delivery = create_task(&mut ws, &workspace, "Parent Delivery", &["Both Slices ship"]).await;
+    let delivery = create_task(
+        &mut ws,
+        &workspace,
+        "Parent Delivery",
+        &["Both Slices ship"],
+    )
+    .await;
     let delivery_task = task(&mut ws, delivery).await;
-    assert!(matches!(daemon.task_domain_save(
-        delivery, delivery_task.revision, Some(proto::TaskDomainKind::Delivery),
-        Some(Some(project)), None,
-    ).unwrap(), proto::ServerMsg::TaskChanged { .. }));
+    assert!(matches!(
+        daemon
+            .task_domain_save(
+                delivery,
+                delivery_task.revision,
+                Some(proto::TaskDomainKind::Delivery),
+                Some(Some(project)),
+                None,
+            )
+            .unwrap(),
+        proto::ServerMsg::TaskChanged { .. }
+    ));
     let target_before_parent = task(&mut ws, target).await;
-    send(&mut ws, &proto::ClientMsg::TaskSave {
-        workspace: Some(workspace.clone()), id: Some(target),
-        expected_revision: Some(target_before_parent.revision),
-        patch: proto::TaskPatch { parent_id: Some(Some(delivery)), ..Default::default() },
-    }).await;
+    send(
+        &mut ws,
+        &proto::ClientMsg::TaskSave {
+            workspace: Some(workspace.clone()),
+            id: Some(target),
+            expected_revision: Some(target_before_parent.revision),
+            patch: proto::TaskPatch {
+                parent_id: Some(Some(delivery)),
+                ..Default::default()
+            },
+        },
+    )
+    .await;
     loop {
-        if matches!(common::next_control(&mut ws).await, proto::ServerMsg::TaskChanged { id, .. } if id == target) { break; }
+        if matches!(common::next_control(&mut ws).await, proto::ServerMsg::TaskChanged { id, .. } if id == target)
+        {
+            break;
+        }
     }
     let target_initial = task(&mut ws, target).await;
     let before_status = git(&workspace_path, &["status", "--porcelain"]);
@@ -343,7 +377,10 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
         argv.contains("--permission-mode\nplan") || argv.contains("--permission-mode=plan"),
         "Claude plan-mode flag missing: {argv:?}"
     );
-    assert!(argv.contains("Shared initiative"), "inherited Project missing from Plan brief: {argv:?}");
+    assert!(
+        argv.contains("Shared initiative"),
+        "inherited Project missing from Plan brief: {argv:?}"
+    );
     assert!(argv.contains("The tracker describes an obsolete API"));
     assert!(argv.contains("Use the repository API verified by the maintainer"));
     assert!(argv.contains("Local Project decisions/corrections take precedence"));
@@ -385,9 +422,21 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
     }
     let mut oversized = proposal("");
     oversized.acceptance = vec!["x".repeat(proto::TASK_TITLE_MAX + 1)];
-    let refused = call_tool(addr, &plan_token, "task_plan_submit", serde_json::to_value(oversized).unwrap()).await;
-    assert_eq!(refused["structuredContent"]["type"], "task_refused", "{refused}");
-    assert!(daemon.task_plan_session(plan_session).unwrap().is_some(), "an invalid proposal must keep the planning session available for correction");
+    let refused = call_tool(
+        addr,
+        &plan_token,
+        "task_plan_submit",
+        serde_json::to_value(oversized).unwrap(),
+    )
+    .await;
+    assert_eq!(
+        refused["structuredContent"]["type"], "task_refused",
+        "{refused}"
+    );
+    assert!(
+        daemon.task_plan_session(plan_session).unwrap().is_some(),
+        "an invalid proposal must keep the planning session available for correction"
+    );
     let submission = call_tool(
         addr,
         &plan_token,
@@ -690,6 +739,152 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
     assert!(stale_plan.answers.is_empty());
     assert_eq!(stale_plan.approved_revision, None);
 
+    let project_stale = create_task(
+        &mut ws,
+        &workspace,
+        "Project stale plan",
+        &["The Project decision is respected"],
+    )
+    .await;
+    let project_stale_initial = task(&mut ws, project_stale).await;
+    let project_stale_revision = match daemon
+        .task_domain_save(
+            project_stale,
+            project_stale_initial.revision,
+            Some(proto::TaskDomainKind::Slice),
+            Some(Some(project)),
+            None,
+        )
+        .unwrap()
+    {
+        proto::ServerMsg::TaskChanged { revision, .. } => revision,
+        other => panic!("expected Project assignment, got {other:?}"),
+    };
+    send(
+        &mut ws,
+        &proto::ClientMsg::TaskPlanStart {
+            id: project_stale,
+            expected_revision: project_stale_revision,
+            agent: proto::AgentKind::Claude,
+        },
+    )
+    .await;
+    let project_stale_session = plan_started(&mut ws, project_stale).await;
+    let project_stale_token = daemon.mcp_creds.issue(McpScope {
+        session_id: project_stale_session,
+        workspace_id: workspace.clone(),
+    });
+    let current_project_data = match daemon.task_project_get(project).unwrap() {
+        proto::ServerMsg::TaskProjectState {
+            project: Some(project_row),
+        } => project_row,
+        other => panic!("expected Project state, got {other:?}"),
+    };
+    assert!(matches!(
+        daemon
+            .task_project_save(
+                &workspace,
+                Some(project),
+                Some(current_project_data.revision),
+                "Shared initiative",
+                None,
+                None,
+                Some(vec!["Changed while planning".into()]),
+            )
+            .unwrap(),
+        proto::ServerMsg::TaskProjectChanged { .. }
+    ));
+    let changed_project_submit = call_tool(
+        addr,
+        &project_stale_token,
+        "task_plan_submit",
+        serde_json::to_value(proposal("")).unwrap(),
+    )
+    .await;
+    assert_eq!(
+        changed_project_submit["isError"], true,
+        "{changed_project_submit}"
+    );
+    assert!(
+        changed_project_submit.to_string().contains("Project"),
+        "stale proposal refusal names Project context: {changed_project_submit}"
+    );
+    assert!(domain(&mut ws, project_stale).await.plan.is_none());
+    daemon.kill(project_stale_session).unwrap();
+    wait_for_planning_settlement(&daemon, project_stale_session).await;
+
+    let project_approval = create_task(
+        &mut ws,
+        &workspace,
+        "Project approval plan",
+        &["Approval uses current Project decisions"],
+    )
+    .await;
+    let project_approval_task = task(&mut ws, project_approval).await;
+    let project_approval_revision = match daemon
+        .task_domain_save(
+            project_approval,
+            project_approval_task.revision,
+            Some(proto::TaskDomainKind::Slice),
+            Some(Some(project)),
+            None,
+        )
+        .unwrap()
+    {
+        proto::ServerMsg::TaskChanged { revision, .. } => revision,
+        other => panic!("expected Project assignment, got {other:?}"),
+    };
+    send(
+        &mut ws,
+        &proto::ClientMsg::TaskPlanStart {
+            id: project_approval,
+            expected_revision: project_approval_revision,
+            agent: proto::AgentKind::Claude,
+        },
+    )
+    .await;
+    let project_approval_session = plan_started(&mut ws, project_approval).await;
+    let project_approval_token = daemon.mcp_creds.issue(McpScope {
+        session_id: project_approval_session,
+        workspace_id: workspace.clone(),
+    });
+    let submitted = call_tool(
+        addr,
+        &project_approval_token,
+        "task_plan_submit",
+        serde_json::to_value(proposal("")).unwrap(),
+    )
+    .await;
+    assert_eq!(submitted["isError"], false, "{submitted}");
+    wait_for_planning_settlement(&daemon, project_approval_session).await;
+    let current_project_data = match daemon.task_project_get(project).unwrap() {
+        proto::ServerMsg::TaskProjectState {
+            project: Some(project_row),
+        } => project_row,
+        other => panic!("expected Project state, got {other:?}"),
+    };
+    assert!(matches!(
+        daemon
+            .task_project_save(
+                &workspace,
+                Some(project),
+                Some(current_project_data.revision),
+                "Shared initiative",
+                None,
+                None,
+                Some(vec!["Changed before approval".into()]),
+            )
+            .unwrap(),
+        proto::ServerMsg::TaskProjectChanged { .. }
+    ));
+    let refused_approval = daemon
+        .task_plan_approve(project_approval, project_approval_revision, 1)
+        .unwrap();
+    assert!(
+        format!("{refused_approval:?}").contains("Project context"),
+        "stale approval refusal names Project context: {refused_approval:?}"
+    );
+
     let retry_task = create_task(&mut ws, &workspace, "Retry after cancel", &["Retry works"]).await;
     let retry_initial = task(&mut ws, retry_task).await;
     send(
@@ -724,6 +919,34 @@ async fn plan_capability_submission_answer_approval_and_stale_revision_are_wire_
     .await;
     let retried = plan_started(&mut ws, retry_task).await;
     daemon.kill(retried).unwrap();
+    let current_project_data = match daemon.task_project_get(project).unwrap() {
+        proto::ServerMsg::TaskProjectState {
+            project: Some(project_row),
+        } => project_row,
+        other => panic!("expected Project state, got {other:?}"),
+    };
+    assert!(matches!(
+        daemon
+            .task_project_save(
+                &workspace,
+                Some(project),
+                Some(current_project_data.revision),
+                "Shared initiative",
+                None,
+                None,
+                Some(vec!["Changed after approval".into()]),
+            )
+            .unwrap(),
+        proto::ServerMsg::TaskProjectChanged { .. }
+    ));
+    let after_project_edit = domain(&mut ws, target).await;
+    assert!(!after_project_edit.readiness.ready);
+    assert!(after_project_edit
+        .readiness
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("Project context")));
+    assert_eq!(after_project_edit.plan.unwrap().approved_revision, None);
     daemon.kill(outsider).unwrap();
 }
 
