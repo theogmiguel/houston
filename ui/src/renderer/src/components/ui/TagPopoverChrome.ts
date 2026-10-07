@@ -55,7 +55,7 @@ export const TAG_POPOVER_CLS = {
   actions: 'tag-popover-actions flex items-center justify-end',
   reason: 'mr-auto [font-size:var(--tr-text-sm)] leading-4 text-[var(--stop)]',
   colorPicker: 'relative touch-none cursor-crosshair rounded',
-  colorPickerHeight: 'h-[120px]',
+  colorPickerHeight: 'h-[var(--h-tag-color-picker)]',
   colorPickerInlineHeight: 'h-24',
   colorPickerCompact: 'h-3 touch-none rounded-full',
   colorPickerFull: 'relative h-3 touch-none cursor-pointer rounded-full',

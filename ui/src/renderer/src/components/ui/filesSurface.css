@@ -240,13 +240,13 @@
 }
 .files-view [data-testid="editor-preview-markdown"] > div {
   max-width: none;
-  padding: 18px 22px 32px;
+  padding: var(--space-files-prose-indent) var(--space-files-prose-x) var(--space-6);
   color: var(--text-secondary);
   font-size: var(--tr-text-base);
   line-height: 1.6;
 }
 .files-view [data-testid="editor-preview-markdown"] h1 {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-2-5);
   padding: 0;
   border: 0;
   color: var(--text-primary);
@@ -254,24 +254,24 @@
   font-weight: 600;
 }
 .files-view [data-testid="editor-preview-markdown"] h2 {
-  margin: 18px 0 6px;
+  margin: var(--space-files-prose-indent) 0 var(--space-1-5);
   color: var(--text-primary);
   font-size: var(--tr-text-md);
   font-weight: 600;
 }
 .files-view [data-testid="editor-preview-markdown"] p {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-2-5);
 }
 .files-view [data-testid="editor-preview-markdown"] ul {
-  margin: 0 0 10px;
-  padding-left: 18px;
+  margin: 0 0 var(--space-2-5);
+  padding-left: var(--space-files-prose-indent);
 }
 .files-view [data-testid="editor-preview-markdown"] li { margin-top: 0; margin-bottom: 0; }
 .files-view [data-testid="editor-preview-markdown"] li:has(> input[type="checkbox"]) {
   display: flex;
   align-items: flex-start;
   gap: var(--space-1-75);
-  margin: 0 0 0 -18px;
+  margin: 0 0 0 calc(-1 * var(--space-files-prose-indent));
   list-style: none;
 }
 .files-view [data-testid="editor-preview-markdown"] li:has(> input[type="checkbox"]) > input {

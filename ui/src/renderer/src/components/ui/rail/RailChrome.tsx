@@ -1,3 +1,4 @@
+import { RING_CARD_HOVER_GAP } from '../shadowChrome'
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from 'react'
 import { Button } from '../Button'
 import { ContextMenu } from '../ContextMenu'
@@ -40,14 +41,14 @@ export function RailMenuCheckSlot({ checked }: { checked: boolean }): React.JSX.
 }
 
 export function RailCardModeSegment({ value, onChange }: { value: 'detailed' | 'compact'; onChange: (value: 'detailed' | 'compact') => void }): React.JSX.Element {
-  return <div className="mx-2 mb-1.5 flex gap-0.5 rounded-lg bg-hover-fill p-0.5">
-    {(['detailed', 'compact'] as const).map((mode) => <button key={mode} type="button" aria-pressed={value === mode} onClick={() => onChange(mode)} className="h-[22px] flex-1 rounded-md [font-size:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{mode === 'compact' ? 'Condensed' : 'Detailed'}</button>)}
-  </div>
+  return <div className="px-2 pb-[var(--space-1-5)]"><div className="flex gap-0.5 rounded-[var(--tr-radius-button)] bg-hover-fill p-0.5">
+    {(['detailed', 'compact'] as const).map((mode) => <button key={mode} type="button" aria-pressed={value === mode} onClick={() => onChange(mode)} className="h-[var(--h-rail-segment)] flex-1 rounded-[var(--tr-radius-sm)] [font-size:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{mode === 'compact' ? 'Condensed' : 'Detailed'}</button>)}
+  </div></div>
 }
 
 export function RailTagDisplaySegment({ value, onChange }: { value: 'icon' | 'dots' | 'chips'; onChange: (value: 'icon' | 'dots' | 'chips') => void }): React.JSX.Element {
-  return <div role="group" aria-label="Tags display" className="mx-2 my-1 flex gap-0.5 rounded-lg bg-hover-fill p-0.5">
-    {(['icon', 'dots', 'chips'] as const).map((mode) => <button key={mode} type="button" aria-pressed={value === mode} onClick={() => onChange(mode)} className="h-[22px] flex-1 rounded-md [font-size:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{mode === 'icon' ? 'Icon' : mode === 'dots' ? 'Dots' : 'Chips'}</button>)}
+  return <div role="group" aria-label="Tags display" className="mx-2 my-1 flex gap-0.5 rounded-[var(--tr-radius-button)] bg-hover-fill p-0.5">
+    {(['icon', 'dots', 'chips'] as const).map((mode) => <button key={mode} type="button" aria-pressed={value === mode} onClick={() => onChange(mode)} className="h-[var(--h-rail-segment)] flex-1 rounded-[var(--tr-radius-sm)] [font-size:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{mode === 'icon' ? 'Icon' : mode === 'dots' ? 'Dots' : 'Chips'}</button>)}
   </div>
 }
 
@@ -67,9 +68,9 @@ export function RailGroupStatusDot({ label }: { label: string }): React.JSX.Elem
 
 export function RailGroupSegment({ value, onChange }: { value: 'none' | 'status' | 'workspace' | 'pr'; onChange: (value: 'none' | 'status' | 'workspace' | 'pr') => void }): React.JSX.Element {
   const options = value === 'pr' ? ['none', 'status', 'workspace', 'pr'] as const : ['none', 'status', 'workspace'] as const
-  return <div role="group" aria-label="Group by" className="mx-2 mb-1.5 flex gap-0.5 rounded-lg bg-hover-fill p-0.5">
-    {options.map((option) => <button key={option} type="button" aria-pressed={value === option} onClick={() => onChange(option)} className="h-[22px] min-w-0 flex-1 rounded-md px-0.5 text-[length:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{option === 'none' ? 'None' : option === 'status' ? 'Status' : option === 'pr' ? 'PR' : 'Workspace'}</button>)}
-  </div>
+  return <div className="px-2 pb-[var(--space-1-5)]"><div role="group" aria-label="Group by" className="flex gap-0.5 rounded-[var(--tr-radius-button)] bg-hover-fill p-0.5">
+    {options.map((option) => <button key={option} type="button" aria-pressed={value === option} onClick={() => onChange(option)} className="h-[var(--h-rail-segment)] min-w-0 flex-1 rounded-[var(--tr-radius-sm)] px-0.5 text-[length:var(--tr-text-xs)] text-[var(--text-muted)] aria-pressed:bg-[var(--card-hover)] aria-pressed:font-semibold aria-pressed:text-[var(--text-primary)]">{option === 'none' ? 'None' : option === 'status' ? 'Status' : option === 'pr' ? 'PR' : 'Workspace'}</button>)}
+  </div></div>
 }
 
 export function RailSortOption({ selected, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { selected: boolean; children: ReactNode }): React.JSX.Element {
@@ -132,7 +133,7 @@ export function RailUpdateIconButton({ failed = false, ...props }: ComponentProp
 }
 
 export function RailUpdateDot(): React.JSX.Element {
-  return <span aria-hidden className="absolute right-[var(--space-1-5)] top-[var(--space-1-5)] size-[var(--space-1-5)] rounded-full bg-current shadow-[0_0_0_2px_var(--card-hover)]" />
+  return <span aria-hidden className={`absolute right-[var(--space-1-5)] top-[var(--space-1-5)] size-[var(--space-1-5)] rounded-full bg-current shadow-[${RING_CARD_HOVER_GAP}]`} />
 }
 
 export function RailSrOnlyText({ children }: { children: ReactNode }): React.JSX.Element {
@@ -145,7 +146,10 @@ export function RailContextMenu({ visible = true, children, ...props }: Componen
 }
 
 export function RailGroupHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div className="group sticky top-0 z-[1] mt-1 flex h-7 w-full items-center rounded-[var(--tr-radius-sm)] px-2 [font-size:var(--tr-text-small-size)] font-semibold leading-4 text-[var(--text-secondary)] hover:bg-hover-fill">{children}</div>
+  // The top padding separates groups; the hover fill covers only the label row.
+  return <div className="group sticky top-0 z-[1] w-full pt-[var(--space-1)]">
+    <div className="flex h-[var(--h-row)] w-full items-center rounded-[var(--tr-radius-sm)] px-2 [font-size:var(--tr-text-small-size)] font-semibold leading-4 text-[var(--text-secondary)] hover:bg-hover-fill">{children}</div>
+  </div>
 }
 
 export function RailGroupToggle({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
@@ -157,7 +161,7 @@ export function RailGroupCount({ children }: { children: ReactNode }): React.JSX
 }
 
 export function RailTreeGroupHeader({ children }: { children: ReactNode }): React.JSX.Element {
-  return <div data-testid="tree-group-header" className="mt-2 flex h-8 flex-none items-center gap-1 px-[var(--space-2)]">{children}</div>
+  return <div data-testid="tree-group-header" className="box-content flex h-[var(--h-rail-group-header)] flex-none items-center gap-1 px-[var(--space-2)] pt-[var(--space-2)]">{children}</div>
 }
 
 export function RailTreeTitle({ children }: { children: ReactNode }): React.JSX.Element {

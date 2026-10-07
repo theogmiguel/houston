@@ -28,7 +28,7 @@ export function NavigationRailSection({ children, ...props }: HTMLAttributes<HTM
 }
 
 export function NavigationRailSearch({ paletteChord, onClick }: { paletteChord?: string | null; onClick?: () => void }): React.JSX.Element {
-  return <button type="button" data-testid="rail-search" className="btn mb-[var(--space-1-5)] flex h-[30px] w-full items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 bg-hover-fill px-[var(--space-2)] text-left [font-size:var(--tr-text-small-size)] font-normal text-[var(--text-muted)] hover:bg-hover-fill" onClick={onClick}><Icon glyph={IconSearch} role="small" /><span className="min-w-0 flex-1 truncate">Search</span>{paletteChord && <HintKey size="compact">{paletteChord.replace(/[+\s]/g, '')}</HintKey>}</button>
+  return <div className="pb-[var(--space-1-5)]"><button type="button" data-testid="rail-search" className="btn flex h-[var(--h-rail-search)] w-full items-center gap-[var(--space-2)] rounded-[var(--tr-radius-sm)] border-0 bg-hover-fill px-[var(--space-2)] text-left [font-size:var(--tr-text-small-size)] font-normal text-[var(--text-muted)] hover:bg-hover-fill" onClick={onClick}><Icon glyph={IconSearch} role="small" /><span className="min-w-0 flex-1 truncate">Search</span>{paletteChord && <HintKey size="compact">{paletteChord.replace(/[+\s]/g, '')}</HintKey>}</button></div>
 }
 
 export function NavigationRailItem({ icon, label, selected = false, trailing, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: IconComponent; label: string; selected?: boolean; trailing?: ReactNode }): React.JSX.Element {

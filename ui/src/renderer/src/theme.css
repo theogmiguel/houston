@@ -1276,6 +1276,13 @@
   --tr-scrollbar-thin: thin;
   --tr-check-dot-size: 7px;
   --space-0-5: 2px;
+  --space-0-75: 3px;
+  --space-tag-inline-indent: 22px;
+  --space-tag-chip-x: 5px;
+  --space-pr-timeline-indent: 44px;
+  --space-panel-empty-bottom: 58px;
+  --space-files-prose-indent: 18px;
+  --space-files-prose-x: 22px;
   --space-1: 4px;
   --space-pixel: 1px;
   --space-1-5: 6px;
@@ -1544,6 +1551,9 @@
   --h-rail-filter-button: 24px;
   --h-rail-filter-badge: 12px;
   --h-rail-group-header: 32px;
+  --h-rail-segment: 22px;
+  --h-rail-search: 30px;
+  --h-tag-color-picker: 120px;
   --w-shortcut-hint-footer: 520px;
   --w-rail-keycap-min: 16px;
   --sz-workspace-empty-icon: 50px;
