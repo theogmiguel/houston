@@ -940,7 +940,7 @@ impl Daemon {
     }
 
     pub fn task_plan_submit(
-        &self,
+        self: &Arc<Self>,
         session_id: u32,
         proposal: proto::TaskPlanProposal,
     ) -> Result<proto::ServerMsg> {
