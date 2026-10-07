@@ -10325,6 +10325,7 @@ impl Daemon {
                 &handle,
                 &resume_cwd,
                 Path::new(&resume_cwd),
+                current_profile_dir,
                 None,
             ).map_err(|reason| anyhow!("Sleep refused for session {id}: {reason}"))?;
             if !session.state.lock().expect("state lock").is_live() {
