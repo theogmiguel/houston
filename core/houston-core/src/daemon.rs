@@ -207,33 +207,55 @@ fn has_running_procs(pid: u32) -> Option<bool> {
 
 #[cfg(target_os = "linux")]
 fn has_external_running_descendants(root: u32, allow_codex_app_server: bool) -> Option<bool> {
-    let mut pending = direct_child_pids(root)?;
+    has_external_running_descendants_with(
+        root,
+        allow_codex_app_server,
+        direct_child_pids,
+        is_zombie,
+        |pid| std::fs::read(format!("/proc/{pid}/cmdline")).ok(),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn has_external_running_descendants_with(
+    root: u32,
+    allow_codex_app_server: bool,
+    mut children_of: impl FnMut(u32) -> Option<Vec<u32>>,
+    mut is_zombie: impl FnMut(u32) -> bool,
+    mut command_line: impl FnMut(u32) -> Option<Vec<u8>>,
+) -> Option<bool> {
+    let mut pending = children_of(root)?;
     let mut visited = 0usize;
     while let Some(pid) = pending.pop() {
         visited += 1;
         if visited > MAX_DESCENDANTS_SCANNED {
             return Some(true);
         }
-        if let Some(children) = direct_child_pids(pid) {
+        if let Some(children) = children_of(pid) {
             pending.extend(children);
         }
         if is_zombie(pid) {
             continue;
         }
         let app_server = allow_codex_app_server
-            && std::fs::read(format!("/proc/{pid}/cmdline"))
-                .ok()
-                .is_some_and(|args| {
-                    let mut argv = args.split(|b| *b == 0).filter(|part| !part.is_empty());
-                    let executable = argv.next().unwrap_or_default();
-                    executable.rsplit(|b| *b == b'/').next() == Some(b"codex".as_slice())
-                        && argv.next() == Some(b"app-server".as_slice())
-                });
+            && command_line(pid).is_some_and(|args| {
+                let mut argv = args.split(|b| *b == 0).filter(|part| !part.is_empty());
+                let executable = argv.next().unwrap_or_default();
+                executable.rsplit(|b| *b == b'/').next() == Some(b"codex".as_slice())
+                    && argv.next() == Some(b"app-server".as_slice())
+            });
         if !app_server {
             return Some(true);
         }
     }
     Some(false)
+}
+
+#[cfg(target_os = "linux")]
+fn complete_process_tree_pss_kib(readings: impl IntoIterator<Item = Option<u64>>) -> Option<u64> {
+    readings
+        .into_iter()
+        .try_fold(0u64, |total, reading| Some(total.saturating_add(reading?)))
 }
 
 #[cfg(test)]
@@ -390,6 +412,39 @@ mod process_liveness_tests {
         let _ = child.wait();
 
         assert!(!is_zombie(pid));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn sleep_refuses_external_descendant_behind_codex_app_server() {
+        let children = HashMap::from([(1, vec![2]), (2, vec![3]), (3, Vec::new())]);
+        let command_lines = HashMap::from([
+            (2, b"/usr/bin/codex\0app-server\0".to_vec()),
+            (3, b"/usr/bin/sleep\0".to_vec()),
+        ]);
+
+        let has_external = has_external_running_descendants_with(
+            1,
+            true,
+            |pid| Some(children.get(&pid).cloned().unwrap_or_default()),
+            |_| false,
+            |pid| command_lines.get(&pid).cloned(),
+        );
+
+        assert_eq!(has_external, Some(true));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unavailable_process_tree_pss_does_not_return_a_partial_total() {
+        assert_eq!(
+            complete_process_tree_pss_kib([Some(20), None, Some(30)]),
+            None
+        );
+        assert_eq!(
+            complete_process_tree_pss_kib([Some(20), Some(30)]),
+            Some(50)
+        );
     }
 
     #[cfg(unix)]
@@ -1285,6 +1340,7 @@ pub struct Daemon {
     workspace_membership: Mutex<()>,
     session_lifecycle_lock: Mutex<()>,
     sleeping_sessions: Mutex<HashSet<u32>>,
+    shell_restore_reservations: Mutex<HashSet<u32>>,
     state_dir: PathBuf,
     db_path: PathBuf,
     scrollback_dir: PathBuf,
@@ -1350,6 +1406,7 @@ pub struct Daemon {
     worktree_branch_reservations: Mutex<HashMap<(String, String), String>>,
     pending_cleanup_cancellations: Mutex<HashSet<u32>>,
     spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
+    shell_child_restore_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_spawn_observer_for_test: Mutex<Option<SpawnObserver>>,
     worktree_cleanup: Mutex<worktree_pass::CleanupState>,
     worktree_cleanup_notify: tokio::sync::Notify,
@@ -1399,6 +1456,20 @@ struct PendingShellChildren {
 struct SleepReservation<'a> {
     sessions: &'a Mutex<HashSet<u32>>,
     id: u32,
+}
+
+struct ShellRestoreReservation<'a> {
+    sessions: &'a Mutex<HashSet<u32>>,
+    id: u32,
+}
+
+impl Drop for ShellRestoreReservation<'_> {
+    fn drop(&mut self) {
+        self.sessions
+            .lock()
+            .expect("shell restore reservations lock")
+            .remove(&self.id);
+    }
 }
 
 impl Drop for SleepReservation<'_> {
@@ -2705,6 +2776,7 @@ impl Daemon {
             workspace_membership: Mutex::new(()),
             session_lifecycle_lock: Mutex::new(()),
             sleeping_sessions: Mutex::new(HashSet::new()),
+            shell_restore_reservations: Mutex::new(HashSet::new()),
             state_dir: state_dir.clone(),
             db_path: cfg.db_path.clone(),
             scrollback_dir,
@@ -2765,6 +2837,7 @@ impl Daemon {
             worktree_branch_reservations: Mutex::new(HashMap::new()),
             pending_cleanup_cancellations: Mutex::new(HashSet::new()),
             spawn_observer_for_test: Mutex::new(None),
+            shell_child_restore_observer_for_test: Mutex::new(None),
             worktree_spawn_observer_for_test: Mutex::new(None),
             worktree_cleanup: Mutex::new(worktree_pass::CleanupState::default()),
             worktree_cleanup_notify: tokio::sync::Notify::new(),
@@ -3091,14 +3164,45 @@ impl Daemon {
                 match self.db.session_resume_handle(child.id) {
                     Ok(None) => Err(anyhow!("no resume handle")),
                     Err(e) => Err(e.context("reading resume handle")),
-                    Ok(Some(_)) => self.respawn_session_with(
-                        child.id,
-                        true,
-                        None,
-                        None,
-                        false,
-                        RespawnConversation::Resume,
-                    ),
+                    Ok(Some(_)) => {
+                        let _parent_exit_guard = self
+                            .temporary_cleanup_lock
+                            .lock()
+                            .expect("temporary cleanup lock");
+                        let parent_live = self
+                            .sessions
+                            .lock()
+                            .expect("sessions lock")
+                            .get(&parent)
+                            .is_some_and(|session| {
+                                !session.removed.load(Ordering::Acquire)
+                                    && !session.backend_exited.load(Ordering::Acquire)
+                                    && session.state.lock().expect("state lock").is_live()
+                            });
+                        if !parent_live {
+                            Err(anyhow!(
+                                "parent session {parent} exited before child {} could be restored",
+                                child.id
+                            ))
+                        } else {
+                            let observer = self
+                                .shell_child_restore_observer_for_test
+                                .lock()
+                                .expect("shell child restore observer lock")
+                                .clone();
+                            if let Some(observer) = observer {
+                                observer(child.id);
+                            }
+                            self.respawn_session_with(
+                                child.id,
+                                true,
+                                None,
+                                None,
+                                false,
+                                RespawnConversation::Resume,
+                            )
+                        }
+                    }
                 }
             };
             let (restored, reason) = match result {
@@ -7248,6 +7352,7 @@ impl Daemon {
     /// `env` adds to the profile's environment, `spawn_args` follow the provider's
     /// own, `prompt_label` names the prompt file (default: the session id) and `cwd`
     /// starts the process elsewhere while the session stays in `project_dir`.
+    #[allow(clippy::too_many_arguments)]
     fn create_session_with_env(
         self: &Arc<Self>,
         p: CreateParams,
@@ -7623,6 +7728,7 @@ impl Daemon {
             .lock()
             .expect("session lifecycle lock");
         self.ensure_not_sleeping(old_id)?;
+        self.ensure_not_shell_restoring(old_id)?;
         let children: Vec<_> = self
             .dead
             .lock()
@@ -7705,7 +7811,9 @@ impl Daemon {
                         seen_provider == provider && seen_id == expected_conversation
                     });
                 if matched_early {
-                    self.finish_pending_shell_children(parent.id);
+                    if let Ok(reservation) = self.reserve_shell_restore(parent.id) {
+                        self.finish_pending_shell_children(parent.id, reservation);
+                    }
                 }
             } else {
                 self.defer_children(old_id, &children, proto::RestoreReason::SpawnFailed);
@@ -8178,6 +8286,7 @@ impl Daemon {
 
     /// The argv that resumes `handle` in the respawned pane, or why it cannot. Reads
     /// the transcript's metadata only, never its content.
+    #[allow(clippy::too_many_arguments)]
     fn resume_check(
         &self,
         old_id: u32,
@@ -8510,12 +8619,12 @@ impl Daemon {
         session_id: u32,
         provider: proto::AgentKind,
         d: &crate::hook_drop::HookDrop,
-    ) {
+    ) -> Option<ShellRestoreReservation<'_>> {
         if d.event != "SessionStart" || d.agent_id.is_some() || d.subagent_type.is_some() {
-            return;
+            return None;
         }
         let Ok(session) = self.get(session_id) else {
-            return;
+            return None;
         };
         if session.info.agent != proto::AgentKind::Shell
             || !session.info.resumable
@@ -8528,7 +8637,7 @@ impl Daemon {
                 .expect("operator_ended lock")
                 .contains(&session_id)
         {
-            return;
+            return None;
         }
         let provider_resume = match provider {
             proto::AgentKind::Claude => {
@@ -8540,11 +8649,9 @@ impl Daemon {
             proto::AgentKind::Codex => true,
             _ => false,
         };
-        let Some(conversation) = d.session_id.as_deref() else {
-            return;
-        };
+        let conversation = d.session_id.as_deref()?;
         if !provider_resume {
-            return;
+            return None;
         }
         let matched = {
             let restores = self
@@ -8560,16 +8667,20 @@ impl Daemon {
                 .lock()
                 .expect("early shell resumes lock")
                 .insert(session_id, (provider, conversation.to_string()));
-            return;
+            return None;
         }
         self.early_shell_resumes
             .lock()
             .expect("early shell resumes lock")
             .remove(&session_id);
-        self.finish_pending_shell_children(session_id);
+        self.reserve_shell_restore(session_id).ok()
     }
 
-    fn finish_pending_shell_children(self: &Arc<Self>, session_id: u32) {
+    fn finish_pending_shell_children(
+        self: &Arc<Self>,
+        session_id: u32,
+        _reservation: ShellRestoreReservation<'_>,
+    ) {
         let pending = self
             .pending_shell_children
             .lock()
@@ -10385,11 +10496,13 @@ impl Daemon {
             .lock()
             .expect("session lifecycle lock");
         self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
         self.kill_unlocked(id)
     }
 
     fn kill_unlocked(&self, id: u32) -> Result<()> {
         self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
         let session = self.get(id)?;
         session
             .backend
@@ -10581,6 +10694,7 @@ impl Daemon {
             .lock()
             .expect("session lifecycle lock");
         self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
         {
             let mut dead = self.dead.lock().expect("dead lock");
             let Some(info) = dead.get_mut(&id) else {
@@ -10638,7 +10752,7 @@ impl Daemon {
             };
             let mut pending = vec![pid];
             let mut seen = HashSet::new();
-            let mut total_kib = 0u64;
+            let mut pss_readings = Vec::new();
             let mut unreadable = false;
             while let Some(process) = pending.pop() {
                 if !seen.insert(process) {
@@ -10662,14 +10776,17 @@ impl Daemon {
                         .then(|| parts.next()?.parse::<u64>().ok())
                         .flatten()
                 }) {
-                    total_kib = total_kib.saturating_add(kib);
+                    pss_readings.push(Some(kib));
                 } else {
-                    unreadable = true;
+                    pss_readings.push(None);
                 }
             }
             if unreadable {
                 return (None, Some("one or more process-tree PSS readings were unavailable; no partial total was reported".into()));
             }
+            let Some(total_kib) = complete_process_tree_pss_kib(pss_readings) else {
+                return (None, Some("one or more process-tree PSS readings were unavailable; no partial total was reported".into()));
+            };
             if total_kib == 0 {
                 return (
                     None,
@@ -10763,11 +10880,13 @@ impl Daemon {
             .lock()
             .expect("session lifecycle lock");
         self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
         self.close_unlocked(id)
     }
 
     fn close_unlocked(&self, id: u32) -> Result<()> {
         self.ensure_not_sleeping(id)?;
+        self.ensure_not_shell_restoring(id)?;
         for row in self.db.delegations_for_parent(id)? {
             if row.child_session != id
                 && (self.get(row.child_session).is_ok()
@@ -11527,12 +11646,40 @@ impl Daemon {
         Ok(())
     }
 
+    fn ensure_not_shell_restoring(&self, id: u32) -> Result<()> {
+        if self
+            .shell_restore_reservations
+            .lock()
+            .expect("shell restore reservations lock")
+            .contains(&id)
+        {
+            bail!("session {id} is restoring orchestration children");
+        }
+        Ok(())
+    }
+
+    fn reserve_shell_restore(&self, id: u32) -> Result<ShellRestoreReservation<'_>> {
+        if !self
+            .shell_restore_reservations
+            .lock()
+            .expect("shell restore reservations lock")
+            .insert(id)
+        {
+            bail!("session {id} is already restoring orchestration children");
+        }
+        Ok(ShellRestoreReservation {
+            sessions: &self.shell_restore_reservations,
+            id,
+        })
+    }
+
     fn reserve_sleep(&self, id: u32) -> Result<SleepReservation<'_>> {
         let _lifecycle = self
             .session_lifecycle_lock
             .lock()
             .expect("session lifecycle lock");
         self.get(id)?;
+        self.ensure_not_shell_restoring(id)?;
         if !self
             .sleeping_sessions
             .lock()
@@ -11684,14 +11831,20 @@ impl Daemon {
         if self.ensure_not_sleeping(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
         }
-        let _lifecycle = match self.session_lifecycle_lock.try_lock() {
+        if self.ensure_not_shell_restoring(d.session).is_err() {
+            return crate::hook_drop::DropVerdict::Retry;
+        }
+        let mut lifecycle = Some(match self.session_lifecycle_lock.try_lock() {
             Ok(guard) => guard,
             Err(std::sync::TryLockError::WouldBlock) => {
                 return crate::hook_drop::DropVerdict::Retry;
             }
             Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
-        };
+        });
         if self.ensure_not_sleeping(d.session).is_err() {
+            return crate::hook_drop::DropVerdict::Retry;
+        }
+        if self.ensure_not_shell_restoring(d.session).is_err() {
             return crate::hook_drop::DropVerdict::Retry;
         }
         let provider = match d.agent.as_deref() {
@@ -11816,7 +11969,21 @@ impl Daemon {
             self.mark_detected(d.session, &session, provider);
             self.note_transcript_link(d.session, provider, d);
             self.note_resume_turn(d.session, &session, provider, d);
-            self.confirm_shell_resume(d.session, provider, d);
+            let restore = self.confirm_shell_resume(d.session, provider, d);
+            if let Some(reservation) = restore {
+                drop(lifecycle.take());
+                self.finish_pending_shell_children(d.session, reservation);
+                lifecycle = Some(match self.session_lifecycle_lock.try_lock() {
+                    Ok(guard) => guard,
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        return crate::hook_drop::DropVerdict::Retry;
+                    }
+                    Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+                });
+                if self.ensure_not_sleeping(d.session).is_err() {
+                    return crate::hook_drop::DropVerdict::Retry;
+                }
+            }
             if crate::agent_events::compaction_event(provider) == Some(d.event.as_str())
                 && d.subagent_type.is_none()
                 && d.agent_id.is_none()
@@ -11868,6 +12035,7 @@ impl Daemon {
         let verdict =
             self.handle_hook_from_with(d.session, provider, &d.event, d.cwd.as_deref(), ambiguous);
         self.note_context_from_hook(d.session, provider, d);
+        drop(lifecycle.take());
         verdict
     }
 
@@ -16297,6 +16465,17 @@ impl Daemon {
     }
 
     #[doc(hidden)]
+    pub fn set_shell_child_restore_observer_for_test(
+        &self,
+        observer: Arc<dyn Fn(u32) + Send + Sync>,
+    ) {
+        *self
+            .shell_child_restore_observer_for_test
+            .lock()
+            .expect("shell child restore observer lock") = Some(observer);
+    }
+
+    #[doc(hidden)]
     pub fn inbox_wait_active_for_test(&self, caller: u32) -> bool {
         self.inbox_waiting
             .lock()
@@ -19763,6 +19942,7 @@ mod hook_state_registry_tests {
             agent: proto::AgentKind::Custom,
             auto_approve: false,
             model: None,
+            plan_mode: false,
             custom_prompt: None,
             cmd: Some(vec!["true".into()]),
         }]
@@ -19931,6 +20111,7 @@ mod swarm_send_inbox_tests {
                 agent: proto::AgentKind::Custom,
                 auto_approve: false,
                 model: None,
+                plan_mode: false,
                 custom_prompt: None,
                 cmd: None,
             },
@@ -19940,6 +20121,7 @@ mod swarm_send_inbox_tests {
                 agent: proto::AgentKind::Custom,
                 auto_approve: false,
                 model: None,
+                plan_mode: false,
                 custom_prompt: None,
                 cmd: None,
             },

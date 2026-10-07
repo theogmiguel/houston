@@ -137,6 +137,12 @@ external child work is active, and for child, routine, harness, shell and unsupp
 provider sessions. Non-Linux platforms report Sleep as unavailable until graceful
 process-tree shutdown is supported there.
 
+Choose **Measure process memory** from an agent pane's actions to read its current process-tree
+PSS on Linux. An unavailable reading is shown as unknown rather than a partial total.
+The sleeping placeholder retains the last prompt, agent message and reported context size;
+the provider owns transcript retention, so the expiration time is shown as unknown.
+Sleeping panes remain asleep after a daemon restart or reboot.
+
 ## Idle and restore behavior
 
 Settings ▸ Workspaces ▸ Close idle background sessions can end sessions that have sat
