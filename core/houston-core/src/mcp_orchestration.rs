@@ -108,6 +108,7 @@ const PANE_ROUTING: &str = concat!(
      of those paths and `cwd` must stay inside it. ",
     "The other verbs are `pane_list`, `pane_get`, `pane_read`, `pane_prompt`, `pane_wait`, ",
     "`pane_send_keys`, `pane_kill`, `pane_submit`, `pane_pr_watch`, `pane_pr_unwatch`. ",
+    "After receiving a completed child's result, preserve its needed output and artifacts, then promptly close the pane with `pane_kill` (or `hs-pane kill`); completed panes remain until the parent closes them, so do not accumulate them. Keep a reusable pane only when you intentionally plan more assigned work. Never close a child that is still working; inspect live descendants and do not confirm ending them unless their work is also complete and preserved. The worker must not kill itself before delivering its result. ",
     "Call `pane_pr_watch` with a PR URL or number and end your turn; do not poll. Use `pane_pr_unwatch` when updates are no longer needed. ",
     "A pane that needs input will not take a `pane_prompt` — read it, then answer it with ",
     "`pane_send_keys` (esc enter up down tab ctrl+c y n), or escalate to the user when their decision is required. Child needs-input belongs to its parent and does not notify the desktop. ",
@@ -132,7 +133,7 @@ const PANE_ROUTING: &str = concat!(
 /// forgets otherwise waits on a promise this very block made.
 fn worker_duty(parent: u32) -> String {
     format!(
-        "You were spawned by pane {parent}. When your task is done, hand the result back with          `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes          the pane waiting on you. Say what you did, what you did not, and anything it must          decide. "
+        "You were spawned by pane {parent}. When your task is done, hand the result back with          `pane_submit` (or `hs-pane submit`) — that is your end-of-turn, and it is what wakes          the pane waiting on you. Say what you did, what you did not, and anything it must          decide. The parent closes the completed pane after receiving your result; do not try          to close your own pane. "
     )
 }
 
@@ -860,7 +861,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_wait".into(),
                 title: "Wait for your inbox".into(),
-                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. Returns inbox result, no-handback, question or exit rows at zero token cost while blocked. Omit session for the whole inbox; specify a child to scope rows. Urgent child rows bypass kind. Without supported hooks, only submit or exit produces rows.".into(),
+                description: "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list. Returns inbox result, no-handback, question or exit rows at zero token cost while blocked. After receiving a completed result, preserve needed output and artifacts, then promptly close that completed pane with pane_kill; keep a reusable pane only for intentional follow-up work. Omit session for the whole inbox; specify a child to scope rows. Urgent child rows bypass kind. Without supported hooks, only submit or exit produces rows.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -898,7 +899,7 @@ impl OrchestrationTools {
             ToolSpec {
                 name: "pane_kill".into(),
                 title: "Kill a pane you spawned".into(),
-                description: "End and dismiss your child's terminal; read needed output first. Live descendants require confirm_children to end the subtree.".into(),
+                description: "End and dismiss your child's terminal. After receiving a completed result and preserving needed output/artifacts, close the pane promptly; do not accumulate completed panes. Keep a reusable pane only for intentional follow-up work. Do not kill a working child; inspect live descendants and confirm ending them only when their work is complete and preserved. Read needed output first.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -917,7 +918,7 @@ impl OrchestrationTools {
                 name: "pane_submit".into(),
                 title: "Hand your result to the pane that spawned you".into(),
                 description: format!(
-                    "Child panes only: deliver your final result to the parent's inbox, waking its wait or next turn. Call once at end-of-turn; report completed work, omissions and decisions. Body clips at {} characters; put long results in files named by artifacts.",
+                    "Child panes only: deliver your final result to the parent's inbox, waking its wait or next turn. Call once at end-of-turn; report completed work, omissions and decisions. The parent closes your completed pane after receiving the result; do not try to close your own pane. Body clips at {} characters; put long results in files named by artifacts.",
                     orchestrate::SUBMIT_BODY_MAX_CHARS
                 ),
                 input_schema: json!({
@@ -974,6 +975,8 @@ mod tests {
         assert!(wait.description.contains(
             "After pane_spawn, call this and block; do not poll pane_get/pane_read/pane_list"
         ));
+        assert!(wait.description.contains("preserve needed output and artifacts"));
+        assert!(wait.description.contains("promptly close that completed pane with pane_kill"));
         assert!(wait.input_schema["properties"]["timeout_ms"]
             .get("maximum")
             .is_none());
@@ -988,6 +991,10 @@ mod tests {
             assert!(spec.description.contains("after a wait timeout"));
             assert!(!spec.description.contains("before deciding to wait"));
         }
+        let kill = specs.iter().find(|spec| spec.name == "pane_kill").unwrap();
+        assert!(kill.description.contains("completed result"));
+        assert!(kill.description.contains("do not accumulate completed panes"));
+        assert!(kill.description.contains("Do not kill a working child"));
     }
 
     #[test]

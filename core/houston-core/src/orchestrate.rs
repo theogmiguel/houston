@@ -2397,12 +2397,16 @@ may hand off.
    to diagnose a reported blocker or a timeout; use `hs-pane read <id>` for
    the current terminal screen when the blocker needs terminal interaction.
    Neither call is a prerequisite to waiting or a routine progress check.
-4. Temporary processes end after their final durable handback and authoritative
-   completion; sessions and transcripts remain until close or retention expiry.
-   Use `hs-pane kill <id>` to dismiss a reusable
-   child once its work is done. Its terminal goes with it, so preserve any
-   needed output first. If it has live children, inspect their purpose before
-   confirming the subtree kill with `--yes`.
+4. After receiving a child's completed result, preserve any needed output and
+   artifacts, then promptly close that pane with `hs-pane kill <id>`. A
+   temporary process ends after its final durable handback and authoritative
+   completion, but its session and transcript remain until the parent closes it
+   or retention expires; do not accumulate completed panes. Keep a reusable
+   child only when you intentionally plan more assigned work, and close it when
+   that work is done. Do not kill a child that is still working. If it has live
+   descendants, inspect their purpose and do not confirm the subtree kill with
+   `--yes` unless their work is also complete and preserved. Never tell a worker
+   to kill itself before delivering its result.
 
 For a long result, do not try to scrape it out of the terminal. The child
 writes a file and names it in `--artifacts`; the path reaches you in the
@@ -3218,6 +3222,14 @@ mod tests {
         assert!(
             SKILL_MD.contains("Your next action is either independent work or this wait"),
             "wait first, then continue from the durable inbox row"
+        );
+        assert!(
+            SKILL_MD.contains("then promptly close that pane with `hs-pane kill <id>`"),
+            "the parent closes completed panes after preserving results"
+        );
+        assert!(
+            SKILL_MD.contains("Never tell a worker to kill itself before delivering its result"),
+            "the worker hands back before parent cleanup"
         );
     }
 

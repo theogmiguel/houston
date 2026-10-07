@@ -1373,7 +1373,12 @@ none was supplied. Omitted `pane_submit.request_id` uses the current request rep
 `workspace_info` and the reply states that default.
 
 Temporary children end their PTY after their accepted result is delivered to the parent;
-settled records and transcripts remain through retention. A child with `no_handback`
+settled records and transcripts remain until the parent closes the pane or retention
+expires. The parent should preserve needed output and artifacts, then promptly close each
+completed child; reusable panes may remain only for intentionally assigned follow-up work.
+This is a parent instruction, not automatic settlement: do not close a running child or
+confirm closing live descendants unless their work is also complete and preserved. A child
+with `no_handback`
 settles as failed after five minutes of authoritative Idle status, with no background,
 composer or descendant hold. Its stop reason names `NO_HANDBACK_SETTLE_MS`.
 
