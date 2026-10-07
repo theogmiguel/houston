@@ -940,7 +940,8 @@ mod tests {
             "Notes":{"id":"f%5C%5C%3Ap","type":"rich_text"},
             "State":{"id":"statusId","type":"status","status":{"options":[{"name":"Active"},{"name":"Done"}]}},
             "Owner":{"id":"ownR","type":"people"},
-            "Project":{"id":"projectRelation","type":"relation"}
+            "Project":{"id":"projectRelation","type":"relation"},
+            "PR":{"id":"prUrl","type":"url"}
         }});
         let project_schema = serde_json::json!({"properties":{
             "Project name":{"id":"title","type":"title"},

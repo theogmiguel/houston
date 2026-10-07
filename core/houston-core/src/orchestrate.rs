@@ -3228,7 +3228,11 @@ mod tests {
             "the parent closes completed panes after preserving results"
         );
         assert!(
-            SKILL_MD.contains("Never tell a worker to kill itself before delivering its result"),
+            SKILL_MD
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .contains("Never tell a worker to kill itself before delivering its result"),
             "the worker hands back before parent cleanup"
         );
     }

@@ -2304,8 +2304,17 @@ mod tests {
         assert_eq!(outbox.len(), 1);
         assert_eq!(outbox[0].action, "status");
         assert_eq!(
-            outbox[0].payload,
-            r#"{"issue_number":12,"revision":1,"status":"todo","task_identity":"houston-task-1"}"#
+            serde_json::from_str::<serde_json::Value>(&outbox[0].payload).unwrap(),
+            serde_json::json!({
+                "issue_number": 12,
+                "revision": 1,
+                "status": "todo",
+                "task_identity": format!(
+                    "houston-task-{}-{}",
+                    db.task_tracker_database_namespace().unwrap(),
+                    row.id
+                )
+            })
         );
     }
 
@@ -2380,13 +2389,13 @@ mod tests {
         db.task_tracker_outbox_failed(row.id, "temporary failure", 100)
             .unwrap();
         assert!(db
-            .task_tracker_outbox_pending(1_999, 10)
+            .task_tracker_outbox_pending(1_099, 10)
             .unwrap()
             .is_empty());
-        let retry = db.task_tracker_outbox_pending(2_100, 10).unwrap().remove(0);
+        let retry = db.task_tracker_outbox_pending(1_100, 10).unwrap().remove(0);
         assert_eq!(retry.attempts, 1);
         assert_eq!(retry.last_error.as_deref(), Some("temporary failure"));
-        db.task_tracker_outbox_sent(retry.id, "remote-page-id", 2_100)
+        db.task_tracker_outbox_sent(retry.id, "remote-page-id", 1_100)
             .unwrap();
         assert!(db
             .task_tracker_outbox_pending(10_000, 10)

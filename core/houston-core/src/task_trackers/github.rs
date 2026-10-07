@@ -983,7 +983,7 @@ mod tests {
         std::fs::write(
             &shim,
             format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \"$*\" in *'page=1'*If-None-Match*) printf 'HTTP/2 304\\r\\nETag: \"page-1\"\\r\\n\\r\\n' ;; *) printf 'HTTP/2 200\\r\\nETag: \"page-2\"\\r\\n\\r\\n'; cat '{}' ;; esac\n",
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \"$*\" in *'&page=1 '*If-None-Match*) printf 'HTTP/2 304\\r\\nETag: \"page-1\"\\r\\n\\r\\n' ;; *'&page=2 '*If-None-Match*) printf 'HTTP/2 200\\r\\nETag: \"page-2\"\\r\\n\\r\\n'; printf '%s' '[{{\"number\":14,\"title\":\"Changed page two\",\"body\":\"\",\"html_url\":\"https://github.com/octo-org/project/issues/14\",\"updated_at\":\"2026-10-06T12:30:00Z\",\"state\":\"open\",\"labels\":[{{\"name\":\"import\"}}],\"assignee\":null,\"assignees\":[],\"milestone\":null}}]' ;; *) printf 'HTTP/2 200\\r\\nETag: \"page-1\"\\r\\n\\r\\n'; cat '{}' ;; esac\n",
                 calls.display(), fixture.display()
             ),
         )
@@ -1023,13 +1023,31 @@ mod tests {
         let result = poll(&settings(), None, &cursor).await.unwrap();
         assert!(!result.not_modified);
         assert_eq!(result.records.len(), 2);
+        assert!(result
+            .records
+            .iter()
+            .any(|record| record.external_id == "octo-org/project#11"));
+        assert!(result
+            .records
+            .iter()
+            .any(|record| record.external_id == "octo-org/project#12"));
+        assert!(!result
+            .records
+            .iter()
+            .any(|record| record.external_id == "octo-org/project#14"));
         let calls = std::fs::read_to_string(calls).unwrap();
+        let calls = calls.lines().collect::<Vec<_>>();
         assert_eq!(
-            calls.lines().count(),
+            calls.len(),
             3,
             "page 1 304 and page 2 changed must trigger a full refetch"
         );
-        assert!(calls.lines().last().unwrap().contains("page=1"));
+        assert!(calls[0].contains("&page=1 "));
+        assert!(calls[0].contains("If-None-Match: page-1"));
+        assert!(calls[1].contains("&page=2 "));
+        assert!(calls[1].contains("If-None-Match: page-2"));
+        assert!(calls[2].contains("&page=1 "));
+        assert!(!calls[2].contains("If-None-Match"));
         *lock.lock().unwrap() = None;
     }
 
