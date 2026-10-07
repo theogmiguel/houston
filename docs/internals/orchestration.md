@@ -143,7 +143,7 @@ spelling, or a verb that is CLI-only).
 | `pane_send_keys` | `mcp_orchestration.rs` | — | press a small set of keys in a pane (see the tool's own description for the list) |
 | `harness_publish` | `mcp_harness.rs` | `hs-harness publish` | not a pane verb: a harness review run hands its `report.md` and `findings.json` to the Harness view. Offered only to that run's pane while it is in flight, whatever the orchestration setting |
 | — | — | `hs-harness` | the extractor a harness review run calls (`inventory`, `digest`, `publish`); its wrapper sits beside `hs-pane`, and `digest` refuses outside a routine run (carve-out #6 in `invariants.md`) |
-| `task_list` | `mcp_tasks.rs` | `hs-task ls` | list the workspace's active tasks, filtered by `status`, `ready`, `mine`, `query` and a capped `limit`; ready is a todo task with no unfinished blocker |
+| `task_list` | `mcp_tasks.rs` | `hs-task ls` | list the workspace's active tasks, filtered by `status`, `ready`, `mine`, `query` and a capped `limit`; ready applies the same content and dependency gate as automatic execution |
 | `task_get` | `mcp_tasks.rs` | `hs-task show` | one task's full text, acceptance items and recent comments. Every `task_*` tool's `id` is an integer id or a `HOU-<n>` key resolved globally (`Daemon::task_ref_in`; `hs-task` keys go through `task_id_for_key`, the same lookup) |
 | `task_next` | `mcp_tasks.rs` | `hs-task next` | the highest-priority ready task (urgent, high, medium, low, then none) |
 | `task_create` | `mcp_tasks.rs` | `hs-task add` | create a task, attributed to the calling pane |

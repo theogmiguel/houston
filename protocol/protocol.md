@@ -305,14 +305,14 @@ every refusal names the setting.
 | `task_domain_save` | `id`, `expected_revision`, `kind?`, `project_id?`, `blocked_by?` | `task_changed`; refuses dependency cycles or incompatible Project/Delivery assignments |
 | `task_plan_start` | `id`, `expected_revision`, `agent` | `task_plan_started`; reserves a task-scoped read-only planning capability before launching the provider; creates no worktree |
 | `task_plan_answer` | `id`, `expected_revision`, `question`, `answer` | `task_plan_changed` |
-| `task_plan_approve` | `id`, `expected_revision`, `plan_revision` | `task_plan_changed` and `task_changed`; applies the proposal only after every question has an answer and both revisions match |
+| `task_plan_approve` | `id`, `expected_revision`, `plan_revision` | `task_plan_changed` and `task_changed`; applies the proposal only after every question has an answer and the task, plan and captured Project revisions match |
 | `task_tracker_settings_get` | `workspace` | `task_tracker_settings` |
 | `task_tracker_settings_set` | `settings: TaskTrackerWorkspaceSettings` | `task_tracker_settings`, with current saved values or a refusal |
 | `task_tracker_credential_set` | `workspace`, `provider`, `token` | `task_tracker_settings`; Notion only, token stored in the OS keychain |
 | `task_tracker_credential_clear` | `workspace`, `provider` | `task_tracker_settings` |
 | `task_tracker_sync_now` | `workspace` | `task_tracker_sync_state` |
 | `task_tracker_links_get` | `task_id` | `task_tracker_links`; source links and pull requests remain distinct |
-| `task_tracker_conflict_resolve` | `task_id`, `provider`, `external_id`, `field`, `expected_revision`, `resolution: local\|remote\|custom` | `task_tracker_conflict_resolved`; the revision belongs to the link snapshot, and stale choices are refused |
+| `task_tracker_conflict_resolve` | `task_id`, `expected_task_revision`, `expected_project_revision?`, `provider`, `external_id`, `field`, `expected_revision`, `resolution: local\|remote\|custom` | `task_tracker_conflict_resolved`; checks current task, Project (for project fields) and link snapshot revisions; stale choices are refused |
 | `task_get` | `id` | `task_detail` (direct); `task_refused` `not_found`\|`access_off` |
 | `task_save` | `workspace?` (null or absent creates unassigned), `id?` (absent creates), `expected_revision?` (required when `id` is present), `patch: TaskPatch` | `task_changed` (bcast) on success; `task_refused` (direct) `conflict`\|`limit`\|`not_found`\|`access_off`\|`read_only`\|`invalid`\|`cycle` |
 | `task_comment` | `id`, `body` (non-empty, ≤ `TASK_COMMENT_MAX`) | `task_changed` (bcast); `task_refused` `not_found`\|`limit`\|`access_off`\|`read_only`\|`invalid` |
@@ -476,7 +476,7 @@ every refusal names the setting.
 | `task_plan_changed` | `id`, `revision` | proposal submission, answer or approval; refresh task/domain details |
 | `task_tracker_settings` | `settings: TaskTrackerWorkspaceSettings[]`, `refusal?` | current per-workspace connector settings; contains credential presence, never its value |
 | `task_tracker_links` | `task_id`, `links: TaskExternalLink[]` | bounded source snapshots, sync state and conflicts |
-| `task_tracker_sync_state` | `workspace`, `last_sync_at_ms?`, `error?` | a sync completed or failed |
+| `task_tracker_sync_state` | `workspace`, `provider`, `last_sync_at_ms?`, `error?` | a sync completed or failed |
 | `task_tracker_conflict_resolved` | `task_id`, `link: TaskExternalLink` | a revision-checked explicit conflict choice was applied |
 | `task_detail` | `task: Task`, `acceptance: TaskAcceptanceItem[]` (by position), `comments: TaskComment[]` (newest first, at most `COMMENTS_PER_TASK`), `history: TaskHistoryEntry[]` (newest first, at most `TASK_HISTORY_PAGE`), `runs: TaskRun[]` (newest first, at most `RUNS_PER_TASK`) | direct reply to `task_get` |
 | `task_changed` | `workspace?` (null = unassigned), `id`, `revision` | bcast after any task write — a client refreshes its scoped snapshot and open detail |
@@ -723,7 +723,7 @@ SlackLanguage      en | pt_br — what Houston writes in Slack and asks the agen
 SlackInfo          enabled, has_tokens, connection: SlackConnection, team?, bot_user_id?,
                    owner_user_id?, channels: SlackChannelMap[], language: SlackLanguage,
                    last_event_at_ms?, last_catchup_at_ms?, error?
-TaskCounts         ready (todo with no unfinished blocker; the queue's pool), backlog, todo,
+TaskCounts         ready (todo satisfying content, Plan and dependency readiness; the queue's pool), backlog, todo,
                    in_progress, in_review, done, canceled
 TaskQueueRefusal   id, key, message — one ready task a task_queue_run could not start
 TaskPatch          workspace? (absent unchanged, null clears, registered path binds), title?, description?, status?, priority?, acceptance? (each absent = unchanged;

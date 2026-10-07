@@ -3744,7 +3744,7 @@ pub enum ClientMsg {
         workspace: String,
     },
     TaskTrackerSettingsSet {
-        settings: TaskTrackerWorkspaceSettings,
+        settings: Box<TaskTrackerWorkspaceSettings>,
     },
     TaskTrackerCredentialSet {
         workspace: String,
@@ -3765,7 +3765,9 @@ pub enum ClientMsg {
     TaskTrackerConflictResolve {
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         task_id: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_task_revision: i64,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
         expected_project_revision: Option<i64>,
         provider: TaskTrackerProvider,
         external_id: String,
