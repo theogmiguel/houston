@@ -249,7 +249,12 @@ impl Db {
                 let remote_value = record.fields.get(field).map(String::as_str).unwrap_or(live_value);
                 let base_value = previous_snapshot.base.get(field).cloned();
                 let base = base_value.as_deref().unwrap_or(live_value);
-                if remote_value == live_value {
+                if let Some(previous_conflict) = previous_snapshot.conflicts.iter().find(|conflict| conflict.field == field) {
+                    conflicts.push(proto::TaskTrackerFieldConflict {
+                        field: field.into(), base: previous_conflict.base.clone(), local: live_value.into(), remote: remote_value.into(),
+                    });
+                    resolved.insert(field.to_string(), live_value.to_string());
+                } else if remote_value == live_value {
                     next_base.insert(field.to_string(), remote_value.to_string());
                     resolved.insert(field.to_string(), live_value.to_string());
                 } else if remote_value != base || (field == "status" && user_status_override) {
@@ -371,7 +376,11 @@ impl Db {
                 let remote_description = incoming.description.as_str();
                 let mut conflicts = Vec::new();
                 let title_base = previous_project.map(|project| project.title.as_str()).unwrap_or(local_title.as_str());
-                if incoming.title != local_title && incoming.title != title_base {
+                if let Some(previous_conflict) = previous_snapshot.and_then(|snapshot| snapshot.conflicts.iter().find(|conflict| conflict.field == "project.title")) {
+                    conflicts.push(proto::TaskTrackerFieldConflict {
+                        field: "project.title".into(), base: previous_conflict.base.clone(), local: local_title.clone(), remote: incoming.title.clone(),
+                    });
+                } else if incoming.title != local_title && incoming.title != title_base {
                     conflicts.push(proto::TaskTrackerFieldConflict {
                         field: "project.title".into(),
                         base: title_base.into(),
@@ -379,7 +388,11 @@ impl Db {
                         remote: incoming.title.clone(),
                     });
                 }
-                if remote_description != local_description && remote_description != previous_base {
+                if let Some(previous_conflict) = previous_snapshot.and_then(|snapshot| snapshot.conflicts.iter().find(|conflict| conflict.field == "project.description")) {
+                    conflicts.push(proto::TaskTrackerFieldConflict {
+                        field: "project.description".into(), base: previous_conflict.base.clone(), local: local_description.clone(), remote: remote_description.into(),
+                    });
+                } else if remote_description != local_description && remote_description != previous_base {
                     conflicts.push(proto::TaskTrackerFieldConflict {
                         field: "project.description".into(),
                         base: previous_base.into(),
@@ -425,8 +438,14 @@ impl Db {
                 } else {
                     String::new()
                 };
-                let identity_base = previous_snapshot.and_then(|snapshot| snapshot.base.get("project.identity").cloned()).unwrap_or_default();
-                if external_id != identity_base {
+                let previous_identity_conflict = previous_snapshot.and_then(|snapshot| snapshot.conflicts.iter().find(|conflict| conflict.field == "project.identity"));
+                let identity_base = previous_identity_conflict.map(|conflict| conflict.base.clone())
+                    .or_else(|| previous_snapshot.and_then(|snapshot| snapshot.base.get("project.identity").cloned())).unwrap_or_default();
+                if let Some(conflict) = previous_identity_conflict {
+                    project_identity_conflict = Some(proto::TaskTrackerFieldConflict {
+                        field: "project.identity".into(), base: conflict.base.clone(), local: local_identity, remote: external_id.clone(),
+                    });
+                } else if external_id != identity_base {
                     project_identity_conflict = Some(proto::TaskTrackerFieldConflict {
                         field: "project.identity".into(), base: identity_base, local: local_identity, remote: external_id.clone(),
                     });
@@ -446,9 +465,8 @@ impl Db {
         link.snapshot.project = Some(remote_project);
         link.snapshot.local.insert("project.title".into(), local_title.clone());
         link.snapshot.remote.insert("project.title".into(), incoming.title.clone());
-        let project_title_base = if project_conflicts.iter().any(|conflict| conflict.field == "project.title") {
-            previous_project.map(|project| project.title.clone()).unwrap_or_else(|| local_title.clone())
-        } else { incoming.title.clone() };
+        let project_title_base = project_conflicts.iter().find(|conflict| conflict.field == "project.title")
+            .map(|conflict| conflict.base.clone()).unwrap_or_else(|| incoming.title.clone());
         link.snapshot.base.insert("project.title".into(), project_title_base);
         link.snapshot.local.insert("project.description".into(), local_description.clone());
         link.snapshot.remote.insert("project.description".into(), incoming.description.clone());
@@ -483,12 +501,22 @@ impl Db {
 
     pub fn task_tracker_outbox_enqueue(&self, workspace: &str, task_id: i64, provider: proto::TaskTrackerProvider, action: &str, revision: i64, payload: &str, now_ms: i64) -> Result<bool> {
         if payload.len() > 65_536 { bail!("task tracker outbox payload is {} bytes, over the 65536-byte limit", payload.len()); }
-        let changed = self.conn.lock().expect("sqlite lock").execute(
+        let conn = self.conn.lock().expect("sqlite lock");
+        let changed = conn.execute(
             "INSERT OR IGNORE INTO task_tracker_outbox(workspace, task_id, provider, action, revision, payload, next_attempt_at_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![workspace, task_id, provider_name(provider), action, revision, payload, now_ms],
         )?;
-        Ok(changed == 1)
+        if changed == 1 { return Ok(true); }
+        if matches!(action, "delivery_close" | "close_delivery") {
+            let revived = conn.execute(
+                "UPDATE task_tracker_outbox SET payload=?1, attempts=0, next_attempt_at_ms=?2, last_error=NULL, receipt=NULL
+                 WHERE task_id=?3 AND provider=?4 AND action=?5 AND revision=?6 AND receipt=?7",
+                params![payload, now_ms, task_id, provider_name(provider), action, revision, r#"{"superseded":true}"#],
+            )?;
+            return Ok(revived == 1);
+        }
+        Ok(false)
     }
 
     /// Called by task-domain transitions after their task transaction commits.
@@ -614,6 +642,21 @@ impl Db {
                     }
                 }
                 "merged" => {
+                    let slice = self.task(task_id)?.context("merged Slice disappeared")?;
+                    let summary = self.task_tracker_latest_summary(task_id)?.unwrap_or_else(|| slice.description.clone());
+                    let summary = format!("{}: {}", slice.title, summary);
+                    match settings.provider {
+                        proto::TaskTrackerProvider::GithubIssues => {
+                            let Some(issue_number) = source.external_id.rsplit_once('#').and_then(|(_, number)| number.parse::<u64>().ok()) else { continue; };
+                            let payload = serde_json::json!({"delivery_task_id":target_task_id,"issue_number":issue_number,"task_identity":format!("houston-task-{}-{task_id}", self.task_tracker_database_namespace()?),"summary":summary,"revision":revision});
+                            self.task_tracker_outbox_enqueue(&workspace, task_id, settings.provider, "summary_comment", revision, &payload.to_string(), now_ms)?;
+                        }
+                        proto::TaskTrackerProvider::Notion => {
+                            let payload = serde_json::json!({"delivery_task_id":target_task_id,"external_id":source.external_id,"summary":summary});
+                            self.task_tracker_outbox_enqueue(&workspace, task_id, settings.provider, "handback_summary", revision, &payload.to_string(), now_ms)?;
+                        }
+                        proto::TaskTrackerProvider::Slack => {}
+                    }
                     let pr_url = slice_links.iter().find(|link| link.provider == settings.provider && link.source == proto::TaskExternalLinkSource::PullRequest)
                         .map(|link| link.url.clone()).or(self.task_tracker_latest_pr_url(task_id)?);
                     if let Some(pr_url) = pr_url {
@@ -724,6 +767,9 @@ impl Db {
             }
             "summary_comment" | "handback_summary" => {
                 if let Some(summary) = self.task_tracker_latest_summary(row.task_id)? {
+                    let summary = if target_task_id != row.task_id {
+                        format!("{}: {summary}", task.title)
+                    } else { summary };
                     payload["summary"] = serde_json::Value::String(summary);
                 }
             }
@@ -854,6 +900,50 @@ impl Db {
                 link.body_hash, link.remote_rev, link.synced_at_ms, source_name(link.source), snapshot, state],
         )?;
         Ok(())
+    }
+
+    pub fn task_tracker_write_receipt(
+        &self, task_id: i64, provider: proto::TaskTrackerProvider, action: &str,
+        external_id: Option<&str>, url: Option<&str>, remote_rev: Option<&str>, now_ms: i64,
+    ) -> Result<bool> {
+        let source = match action {
+            "create" | "delivery_open" | "open_delivery" => proto::TaskExternalLinkSource::Source,
+            "pr_reference" | "pull_request_url" => proto::TaskExternalLinkSource::PullRequest,
+            _ => return Ok(false),
+        };
+        let external_id = if source == proto::TaskExternalLinkSource::PullRequest { url.or(external_id) } else { external_id.or(url) }
+            .context("tracker write receipt needs an external ID or URL")?;
+        let url = url.unwrap_or(external_id);
+        let existing = self.task_external_links(task_id)?.into_iter().find(|link| {
+            link.provider == provider && link.external_id == external_id && link.source == source
+        });
+        let mut link = if let Some(link) = existing {
+            link
+        } else {
+            let fields = if source == proto::TaskExternalLinkSource::Source {
+                let task = self.task(task_id)?.context("tracker receipt task was not found")?;
+                BTreeMap::from([
+                    ("title".to_string(), task.title),
+                    ("description".to_string(), task.description),
+                    ("status".to_string(), serde_json::to_value(task.status)?.as_str().context("serializing task status")?.to_string()),
+                ])
+            } else { BTreeMap::new() };
+            let snapshot = proto::TaskTrackerSnapshot {
+                base: fields.clone(), local: fields.clone(), remote: fields, conflicts: vec![],
+                revision: 1, project_external_id: None, project: None,
+            };
+            proto::TaskExternalLink {
+                task_id, provider, external_id: external_id.to_string(), url: url.to_string(),
+                fetched_at_ms: None, body_hash: None, remote_rev: None, synced_at_ms: None,
+                source, snapshot, sync_state: proto::TaskTrackerSyncState::Current,
+            }
+        };
+        link.url = url.to_string();
+        link.fetched_at_ms = Some(now_ms);
+        if let Some(remote_rev) = remote_rev { link.remote_rev = Some(remote_rev.to_string()); }
+        link.synced_at_ms = Some(now_ms);
+        self.task_external_link_upsert(&link)?;
+        Ok(true)
     }
 
     pub fn task_tracker_conflict_resolve(

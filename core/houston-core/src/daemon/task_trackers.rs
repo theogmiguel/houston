@@ -165,6 +165,10 @@ impl Daemon {
                                     });
                                 }
                             }
+                            self.broadcast_control(&proto::ServerMsg::TaskTrackerLinks {
+                                task_id,
+                                links: self.db().task_external_links(task_id)?,
+                            });
                             if let Some(key) = project_key.as_deref() {
                                 self.broadcast_tracker_project_change(&settings.workspace, key, prior_project_revision)?;
                             }
@@ -228,6 +232,10 @@ impl Daemon {
                         });
                     }
                 }
+                self.broadcast_control(&proto::ServerMsg::TaskTrackerLinks {
+                    task_id,
+                    links: self.db().task_external_links(task_id)?,
+                });
                 if let Some(key) = project_key.as_deref() {
                     self.broadcast_tracker_project_change(&settings.workspace, key, prior_project_revision)?;
                 }
@@ -312,27 +320,12 @@ impl Daemon {
             };
             match result {
                 Ok(receipt) => {
-                    if let (Some(external_id), Some(url)) = (receipt.external_id.as_deref(), receipt.url.as_deref()) {
-                        if let Some(task) = self.db().task(link_task_id)? {
-                            let fields = task_fields(&task)?;
-                            let link = proto::TaskExternalLink {
-                                task_id: link_task_id,
-                                provider: row.provider,
-                                external_id: external_id.to_string(),
-                                url: url.to_string(),
-                                fetched_at_ms: None,
-                                body_hash: None,
-                                remote_rev: receipt.remote_rev.clone(),
-                                synced_at_ms: Some(now_ms()),
-                                source: proto::TaskExternalLinkSource::Source,
-                                snapshot: proto::TaskTrackerSnapshot {
-                                    base: fields.clone(), local: fields.clone(), remote: fields,
-                                    conflicts: vec![], revision: 1, project_external_id: None, project: None,
-                                },
-                                sync_state: proto::TaskTrackerSyncState::Current,
-                            };
-                            self.db().task_external_link_upsert(&link)?;
-                        }
+                    if let Err(error) = self.db().task_tracker_write_receipt(
+                        link_task_id, row.provider, &row.action, receipt.external_id.as_deref(),
+                        receipt.url.as_deref(), receipt.remote_rev.as_deref(), now_ms(),
+                    ) {
+                        self.db().task_tracker_outbox_failed(row.id, &format!("cannot persist tracker write receipt: {error:#}"), now_ms())?;
+                        continue;
                     }
                     let receipt = serde_json::to_string(&receipt)?;
                     self.db().task_tracker_outbox_sent(row.id, &receipt, now_ms())?;
@@ -356,14 +349,6 @@ impl Daemon {
 fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default().as_millis().min(i64::MAX as u128) as i64
-}
-
-fn task_fields(task: &crate::db::TaskRow) -> Result<std::collections::BTreeMap<String, String>> {
-    Ok(std::collections::BTreeMap::from([
-        ("title".to_string(), task.title.clone()),
-        ("description".to_string(), task.description.clone()),
-        ("status".to_string(), serde_json::to_value(task.status)?.as_str().context("serializing task status")?.to_string()),
-    ]))
 }
 
 async fn notion_data_source_schema(client: &reqwest::Client, token: &str, data_source_id: &str) -> Result<serde_json::Value> {
