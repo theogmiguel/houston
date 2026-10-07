@@ -5,4 +5,4 @@ export type PrCheck = { name: string, state: PrCheckState, url?: string | null,
 /**
  * Only a completed check run carries both timestamps; absent otherwise.
  */
-duration_ms?: number | null, };
+duration_ms?: number | null, run_id?: number | null, };

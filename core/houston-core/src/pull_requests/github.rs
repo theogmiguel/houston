@@ -252,6 +252,7 @@ fn check_from_entry(c: &serde_json::Value) -> PrCheck {
             _ => PrCheckState::Unknown,
         };
         return PrCheck {
+            run_id: None,
             name,
             state,
             url: text(c.get("targetUrl")),
@@ -280,6 +281,7 @@ fn check_from_entry(c: &serde_json::Value) -> PrCheck {
         _ => None,
     };
     PrCheck {
+        run_id: actions_run_id(c),
         name,
         state,
         url: text(c.get("detailsUrl")),
@@ -287,10 +289,27 @@ fn check_from_entry(c: &serde_json::Value) -> PrCheck {
     }
 }
 
+fn actions_run_id(c: &serde_json::Value) -> Option<u64> {
+    c.pointer("/workflowRun/databaseId")
+        .or_else(|| c.get("workflowDatabaseId"))
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            let url = c.get("detailsUrl").and_then(Value::as_str)?;
+            let path = url.split_once("github.com/")?.1.split('?').next()?;
+            let mut parts = path.split('/');
+            while parts.next()? != "actions" {}
+            if parts.next()? != "runs" {
+                return None;
+            }
+            parts.next()?.parse().ok()
+        })
+}
+
 /// An entry whose name cannot be read is unverifiable, so it blocks the gate
 /// rather than vanishing into an all-green rollup.
 fn unnamed_check() -> PrCheck {
     PrCheck {
+        run_id: None,
         name: "unnamed check".to_string(),
         state: PrCheckState::Unknown,
         url: None,
@@ -940,7 +959,12 @@ pub fn label_candidates(
 }
 
 /// One `gh pr list` row each, folded from the fields the list read asked for.
+#[cfg(test)]
 pub fn list_items(v: &Value) -> Vec<proto::PrListItem> {
+    list_items_for_viewer(v, None)
+}
+
+pub fn list_items_for_viewer(v: &Value, viewer: Option<&str>) -> Vec<proto::PrListItem> {
     let Some(rows) = v.as_array() else {
         return Vec::new();
     };
@@ -972,14 +996,50 @@ pub fn list_items(v: &Value) -> Vec<proto::PrListItem> {
                 head_ref: text(row.get("headRefName")).unwrap_or_default(),
                 base_ref: text(row.get("baseRefName")).unwrap_or_default(),
                 updated_at: timestamp(row.get("updatedAt")).unwrap_or(0),
+                created_at: timestamp(row.get("createdAt")).unwrap_or(0),
                 additions: count(row.get("additions")),
                 deletions: count(row.get("deletions")),
                 review_decision: text(row.get("reviewDecision")),
                 checks: (checks != proto::PrChecks::None).then_some(checks),
                 labels: labels_from(row.get("labels")),
+                comments: comment_count(row.get("comments")),
+                review_requested: viewer.is_some_and(|login| {
+                    requested_reviewers(row.get("reviewRequests")).contains(&login)
+                }),
+                mergeable: text(row.get("mergeable")),
             })
         })
         .collect()
+}
+
+fn requested_reviewers(v: Option<&Value>) -> Vec<&str> {
+    fn collect<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+        match v {
+            Value::Array(items) => items.iter().for_each(|item| collect(item, out)),
+            Value::Object(fields) => {
+                if let Some(login) = fields.get("login").and_then(Value::as_str) {
+                    out.push(login);
+                }
+                fields.values().for_each(|value| collect(value, out));
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(v) = v {
+        collect(v, &mut out);
+    }
+    out
+}
+
+fn comment_count(v: Option<&Value>) -> u32 {
+    let count = v.and_then(|value| {
+        value
+            .as_u64()
+            .or_else(|| value.get("totalCount").and_then(Value::as_u64))
+            .or_else(|| value.as_array().map(|items| items.len() as u64))
+    });
+    count.and_then(|n| u32::try_from(n).ok()).unwrap_or(0)
 }
 
 /// `gh run list --json databaseId,workflowName,url` rows as approval targets.
@@ -1509,6 +1569,52 @@ mod tests {
             "a row with no rollup carries no verdict"
         );
         assert!(list_items(&json!({"not": "an array"})).is_empty());
+    }
+
+    #[test]
+    fn a_list_row_includes_created_review_request_and_mergeability() {
+        let items = list_items_for_viewer(
+            &json!([{
+                "number": 8, "url": "https://github.com/o/r/pull/8", "title": "Review",
+                "createdAt": "2026-09-01T00:00:00Z", "updatedAt": "2026-09-02T00:00:00Z",
+                "comments": {"totalCount": 4}, "mergeable": "MERGEABLE",
+                "reviewRequests": [{"requestedReviewer": {"login": "theo"}}]
+            }]),
+            Some("theo"),
+        );
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0].created_at,
+            timestamp(Some(&json!("2026-09-01T00:00:00Z"))).unwrap()
+        );
+        assert_eq!(items[0].comments, 4);
+        assert_eq!(comment_count(Some(&json!([{}, {}]))), 2);
+        assert!(items[0].review_requested);
+        assert_eq!(items[0].mergeable.as_deref(), Some("MERGEABLE"));
+        assert!(
+            !list_items_for_viewer(
+                &json!([{
+                    "number": 8, "url": "u", "reviewRequests": [{"login": "someone-else"}]
+                }]),
+                Some("theo")
+            )[0]
+            .review_requested
+        );
+    }
+
+    #[test]
+    fn action_check_run_ids_are_read_from_actions_urls() {
+        let check = check_from_entry(&json!({
+            "__typename": "CheckRun", "name": "build", "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "detailsUrl": "https://github.com/o/r/actions/runs/987654/job/123"
+        }));
+        assert_eq!(check.run_id, Some(987654));
+        let external = check_from_entry(&json!({
+            "__typename": "CheckRun", "name": "external", "status": "COMPLETED",
+            "detailsUrl": "https://ci.example.test/build/123"
+        }));
+        assert_eq!(external.run_id, None);
     }
 
     #[test]

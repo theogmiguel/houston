@@ -31,6 +31,7 @@ import type { PrReviewDraft } from './generated/PrReviewDraft'
 import type { PrReviewer } from './generated/PrReviewer'
 import type { PrListState } from './generated/PrListState'
 import type { PrListInvolvement } from './generated/PrListInvolvement'
+import type { PrSort } from './generated/PrSort'
 import type { PrStackHead } from './generated/PrStackHead'
 
 export type { AgentKind } from './generated/AgentKind'
@@ -72,6 +73,7 @@ export type { PrDiffSide } from './generated/PrDiffSide'
 export type { PrListItem } from './generated/PrListItem'
 export type { PrListState } from './generated/PrListState'
 export type { PrListInvolvement } from './generated/PrListInvolvement'
+export type { PrSort } from './generated/PrSort'
 export type { PrMutationKind } from './generated/PrMutationKind'
 export type { PrStack } from './generated/PrStack'
 export type { PrStackLayer } from './generated/PrStackLayer'
@@ -947,11 +949,16 @@ export class HoustonClient {
     state: PrListState,
     involvement: PrListInvolvement,
     query: string | null,
-    limit: number
+    limit: number,
+    sort: PrSort = 'updated'
   ): number {
     const request = this.nextPrRequest()
-    this.send({ type: 'pr_list', dir, state, involvement, query, limit, request })
+    this.send({ type: 'pr_list', dir, state, involvement, query, limit, sort, request })
     return request
+  }
+
+  prCheckLog(dir: string, runId: number): void {
+    this.send({ type: 'pr_check_log', dir, run_id: runId })
   }
 
   prDiff(dir: string, number: number): number {

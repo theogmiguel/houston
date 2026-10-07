@@ -40,6 +40,8 @@ fn create_session(daemon: &Arc<Daemon>, dir: &std::path::Path) -> u32 {
 fn seed_husk(state_dir: &std::path::Path, dir: &std::path::Path) {
     let db = Db::open(&state_dir.join("test.db")).unwrap();
     db.insert_session(&proto::SessionInfo {
+        checkout: None,
+        activity: None,
         id: 1,
         agent: proto::AgentKind::Shell,
         project_dir: dir.display().to_string(),

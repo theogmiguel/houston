@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 126;
+pub const PROTOCOL_VERSION: u32 = 127;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -1859,6 +1859,12 @@ pub struct SessionInfo {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub worktree: Option<SessionWorktree>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub checkout: Option<SessionCheckout>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub activity: Option<SessionActivity>,
     pub state: SessionState,
     pub title: String,
     #[serde(default)]
@@ -1931,6 +1937,45 @@ pub struct SessionInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionCheckout {
+    pub root: String,
+    pub kind: CheckoutKind,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub branch: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub head: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum CheckoutKind {
+    Primary,
+    Worktree { slug: String },
+    Folder,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+pub struct SessionActivity {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub last_message: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub tool: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrWatchInfo {
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
@@ -1963,6 +2008,10 @@ pub const TAG_PALETTE: [&str; 11] = [
 pub const MAX_TAG_NAME_LEN: usize = 32;
 
 pub const MAX_TAGS_PER_SESSION: usize = 5;
+
+/// Keep the failure tail useful while bounding each check-log reply to 16 KiB.
+pub const MAX_CHECK_LOG_LINES: usize = 40;
+pub const MAX_CHECK_LOG_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
@@ -2205,6 +2254,18 @@ pub struct PrInfo {
     pub number: u32,
     pub url: String,
     pub state: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub head_ref: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub additions: u32,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub deletions: u32,
+    #[serde(default)]
+    pub is_draft: bool,
     pub review_decision: Option<String>,
     pub checks: PrChecks,
 }
@@ -2325,6 +2386,9 @@ pub struct PrCheck {
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub duration_ms: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
+    pub run_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2694,6 +2758,9 @@ pub struct PrListItem {
     pub base_ref: String,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub updated_at: u64,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub created_at: u64,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub additions: u32,
     #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
@@ -2706,6 +2773,24 @@ pub struct PrListItem {
     pub checks: Option<PrChecks>,
     #[serde(default)]
     pub labels: Vec<PrLabel>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+    pub comments: u32,
+    #[serde(default)]
+    pub review_requested: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+    pub mergeable: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum PrSort {
+    #[default]
+    Updated,
+    Created,
+    Ready,
 }
 
 /// Which pull requests a listing asks the host for. `Closed` excludes merged
@@ -2988,6 +3073,9 @@ pub enum ClientMsg {
     PrStatus {
         dir: String,
     },
+    PrStatusBatch {
+        dirs: Vec<String>,
+    },
     /// Opens the branch's pull request. `title`/`body` come from the compose
     /// control; absent, `gh pr create --fill` writes them from the commits.
     PrCreate {
@@ -3146,7 +3234,14 @@ pub enum ClientMsg {
         query: Option<String>,
         #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         limit: u32,
+        #[serde(default)]
+        sort: PrSort,
         request: u32,
+    },
+    PrCheckLog {
+        dir: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        run_id: u64,
     },
     PrDiff {
         dir: String,
@@ -4071,6 +4166,14 @@ pub enum ServerMsg {
         truncated: bool,
         message: Option<String>,
     },
+    PrCheckLog {
+        dir: String,
+        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
+        run_id: u64,
+        lines: Vec<String>,
+        truncated: bool,
+        available: bool,
+    },
     PrDiff {
         dir: String,
         request: u32,
@@ -4164,6 +4267,18 @@ pub enum ServerMsg {
         session: u32,
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         context: Option<SessionContext>,
+    },
+    SessionCheckout {
+        id: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        checkout: Option<SessionCheckout>,
+    },
+    SessionActivity {
+        id: u32,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
+        activity: Option<SessionActivity>,
     },
     OrchestrationState {
         caps: OrchestrationCaps,
@@ -5115,6 +5230,11 @@ mod tests {
             gh: GhState::Ready,
             has_upstream: true,
             pr: Some(PrInfo {
+                title: String::new(),
+                head_ref: String::new(),
+                additions: 0,
+                deletions: 0,
+                is_draft: false,
                 number: 212,
                 url: "https://github.com/o/r/pull/212".into(),
                 state: "OPEN".into(),
@@ -5127,7 +5247,18 @@ mod tests {
         let pr = value["pr"].as_object().unwrap();
         let mut keys: Vec<&str> = pr.keys().map(String::as_str).collect();
         keys.sort_unstable();
-        let mut expected = ["number", "url", "state", "review_decision", "checks"];
+        let mut expected = [
+            "number",
+            "url",
+            "state",
+            "title",
+            "head_ref",
+            "additions",
+            "deletions",
+            "is_draft",
+            "review_decision",
+            "checks",
+        ];
         expected.sort_unstable();
         assert_eq!(keys, expected);
         assert_eq!(pr["number"], serde_json::json!(212));
@@ -5190,6 +5321,7 @@ mod tests {
             mergeable: PrMergeable::Mergeable,
             merge_state: PrMergeState::Clean,
             checks: vec![PrCheck {
+                run_id: None,
                 name: "core-checks".into(),
                 state: PrCheckState::Running,
                 url: None,
@@ -5376,6 +5508,10 @@ mod tests {
             dir: "/w".into(),
             request: 5,
             items: vec![PrListItem {
+                created_at: 0,
+                comments: 0,
+                review_requested: false,
+                mergeable: None,
                 number: 61,
                 title: "a change".into(),
                 url: "https://github.com/o/r/pull/61".into(),

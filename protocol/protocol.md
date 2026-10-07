@@ -1,4 +1,4 @@
-# Wire protocol v126
+# Wire protocol v127
 
 Transport: one WebSocket at `ws://127.0.0.1:<port>/ws`, served by the daemon
 (`core/houston-core/src/server.rs`). Auth: a bearer token in the first message —
@@ -100,7 +100,7 @@ failure not given a typed refusal comes back as `error`.
 | `session_attach` | `session`, `replay_bytes?` (cap the tail; omitted = whole ring), `snapshot?` (v94: ask for emulator state instead of a byte replay) | `scrollback` **or** `attach_snapshot` (direct), numbered by `attempt`; this socket starts receiving that session's frames, and nothing below the reply's cutoff follows it. `snapshot: true` is answered with `attach_snapshot` when the daemon has an emulator and could encode one, and with `scrollback` otherwise — a client must handle either reply |
 | `session_rename` | `session`, `title` (trimmed, non-empty, ≤ 40 chars) | `session_renamed` (bcast) |
 | `session_set_tags` | `session`, `tags: u32[]` (registry ids, ≤ `MAX_TAGS_PER_SESSION` (5), whole-set replacement) | `session_tags_set` (bcast); unknown session or tag id, or over the cap, is an `error` naming the limit and the value |
-| `tag_create` | `name` (trimmed, non-empty, ≤ `MAX_TAG_NAME_LEN` (32) chars, unique case-insensitively), `color` (`#rrggbb` from `TAG_PALETTE`) | `tag_list` (bcast); collisions and non-palette colors are `error`s naming the offending value |
+| `tag_create` | `name` (trimmed, non-empty, ≤ `MAX_TAG_NAME_LEN` (32) chars, unique case-insensitively), `color` (any six-digit `#rrggbb`; `TAG_PALETTE` supplies presets) | `tag_list` (bcast); collisions and invalid colors are `error`s naming the offending value |
 | `tag_update` | `tag`, `name`, `color` (same rules as `tag_create`) | `tag_list` (bcast); sessions follow — they carry the id |
 | `tag_delete` | `tag` | `tag_list` + `tag_deleted` (bcast); detaches from every session carrying it (the caller owns the confirm) |
 | `session_reparent` | `session`, `project_dir` | `session_reparented` (bcast) |
@@ -183,6 +183,7 @@ failure not given a typed refusal comes back as `error`.
 | `git_checkpoint_restore` | `dir`, `ref` | fresh `git_checkpoints` then `git_status`; the UI confirms first |
 | `git_checkpoint_delete` | `dir`, `ref` | fresh `git_checkpoints` |
 | `pr_status` | `dir` | `pr_status` (direct) — never `error` for a missing or unauthenticated `gh` |
+| `pr_status_batch` | `dirs: string[]` | one `pr_status` reply per directory, each preserving the single-directory reply shape |
 | `pr_create` | `dir`, `title?`, `body?` (both = the caller's own text; absent = `gh pr create --fill`) | `pr_create` (direct) — same non-erroring `gh` contract |
 | `pr_detail` | `dir`, `request`, `number?` (absent = the stored link, else the branch's own) | `pr_detail` (direct) — a `gh` problem is `gh` + `hint`, a failed read is `message` |
 | `pr_link` | `dir`, `number` (positive), `request` | `pr_linked` then a fresh `pr_detail` carrying the same `request`; `number: 0` is refused by name |
@@ -200,7 +201,8 @@ failure not given a typed refusal comes back as `error`.
 | `pr_reviewer_set` | `dir`, `number`, `reviewers: PrReviewer[]`, `requested`, `request` | `pr_mutation {kind: reviewer_set}` then a fresh `pr_detail` |
 | `pr_labels` | `dir`, `number`, `request` | `pr_label_candidates` (direct) |
 | `pr_label_set` | `dir`, `number`, `labels: string[]`, `applied`, `request` | `pr_mutation {kind: label_set}` then a fresh `pr_detail` |
-| `pr_list` | `dir`, `state: PrListState`, `involvement: PrListInvolvement`, `query?`, `limit` (1–`PR_LIST_LIMIT_MAX`) | `pr_list` (direct); a limit over the cap is an `error` naming the cap and the value |
+| `pr_list` | `dir`, `state: PrListState`, `involvement: PrListInvolvement`, `query?`, `limit` (1–`PR_LIST_LIMIT_MAX`), `sort: PrSort` (`updated` default, `created`, `ready`) | `pr_list` (direct); a limit over the cap is an `error` naming the cap and the value |
+| `pr_check_log` | `dir`, `run_id` | `pr_check_log` (direct); at most `MAX_CHECK_LOG_LINES` lines and `MAX_CHECK_LOG_BYTES` bytes, with `truncated` marking a capped tail and `available: false` for checks without an Actions log |
 | `pr_diff` | `dir`, `number`, `request` | `pr_diff` (direct) — `gh pr diff --color never`, capped with `truncated` |
 | `pr_stack` | `dir`, `number`, `request` | `pr_stack` (direct) — the host's own stack, `stack: null` where the preview answers 404 |
 | `pr_stack_merge` | `dir`, `number`, `stack_number`, `heads: PrStackHead[]`, `merge_method?`, `request` | `pr_mutation {kind: action}` then a fresh `pr_detail`. Every open layer up to `number` must match `heads` and be open and non-draft; GitHub's async job is polled for up to two minutes |
@@ -391,6 +393,8 @@ every refusal names the setting.
 | `agent_detected` | `session`, `agent: AgentKind` | bcast, only when the detected identity changes |
 | `agent_status` | `session`, `status: AgentStatus` | bcast, only on change. Driven by hooks or ACP; process liveness only starts the bounded `spawning` grace and never guesses activity |
 | `session_context` | `session`, `context?: SessionContext` | v111: bcast, only on change. The pane's context-window occupancy, read from the Claude or Codex transcript the hook names; unsupported providers stay absent and render no indicator |
+| `session_checkout` | `id`, `checkout?: SessionCheckout` | bcast when a session's checkout identity changes; primary, managed worktree and folder checkouts are explicit, with nullable branch/head for detached HEAD |
+| `session_activity` | `id`, `activity?: SessionActivity` | bcast when hook-reported prompt, last message, tool or model activity changes; unsupported values remain null |
 | `clipboard_set` | `session`, `text` | bcast — the pane wrote an OSC 52 clipboard payload (decoded, 1 MiB cap; queries are never answered) |
 | `git_status` | `dir`, `files: GitFileStatus[]`, `branch?`, `upstream?`, `ahead`, `behind`, `base?`, `default_base?` | direct reply to `git_status` and to every mutating git message |
 | `git_diff` | `dir`, `path?`, `patch`, `truncated`, `base?` | direct reply to `git_diff` |
@@ -406,6 +410,7 @@ every refusal names the setting.
 | `git_pull` | `dir`, `status: GitPullStatus` | direct reply to `git_pull` |
 | `git_fetch` | `dir`, `summary` | direct reply to `git_fetch` |
 | `pr_status` | `dir`, `gh: GhState`, `has_upstream`, `pr?: PrInfo`, `hint?` | direct reply — a `gh` problem is reported in `gh` + `hint`, never as `error` |
+| `pr_check_log` | `dir`, `run_id`, `lines: string[]`, `truncated`, `available` | direct reply; bounded to 40 lines and 16 KiB; `available: false` when this check has no fetchable Actions log |
 | `pr_create` | `dir`, `gh: GhState`, `pr?: PrInfo`, `message?` | direct reply — `message` carries `gh`'s own first stderr line on a genuine failure |
 | `pr_detail` | `dir`, `request`, `gh: GhState`, `has_upstream`, `link?: PullRequestLink`, `detail?: PrDetail`, `linked`, `hint?`, `message?` | direct reply to `pr_detail`, and pushed after link/unlink/merge carrying that mutation's `request`. `linked` marks a manual association; `detail.merge_disabled_reason` is the server's merge gate |
 | `pr_watch_list` | `watches: SessionPrWatches[]` | direct reply; contains the watches currently owned by each session |
@@ -559,13 +564,24 @@ SwarmMessage          id, swarm, from, to, body, created_at,
 SwarmAgentInfo        id, swarm, label, role, agent, session?, auto_approve, plan_mode, model?,
                       custom_prompt?, cmd?, status, activity?, created_at
 
+SessionInfo           id, agent, project_dir, cwd, checkout_root?, worktree?, checkout?,
+                      activity?, state, title, codename, status?, status_since_ms?, ...
+SessionCheckout       root, kind: CheckoutKind, branch?, head?
+CheckoutKind          primary | worktree{slug} | folder
+SessionActivity       prompt?, last_message?, tool?, model?
+
 GitFileState       modified | added | deleted | renamed | untracked | conflicted
 GitFileStatus      path, status: GitFileState, staged, added?, deleted?, is_sensitive
 GitReviewSection   scope (staged | unstaged | untracked), patch
 GitDiscardKind     staged | unstaged | untracked
 GhState            missing | unauthenticated | ready
 PrChecks           none | running | passing | failing
-PrInfo             number, url, state, review_decision?, checks: PrChecks
+PrInfo             number, url, state, title, head_ref, additions, deletions, is_draft,
+                   review_decision?, checks: PrChecks
+PrListItem         number, title, url, state, is_draft, author?, head_ref, base_ref,
+                   updated_at, created_at, additions, deletions, review_decision?, checks?,
+                   labels, comments, review_requested, mergeable?
+PrSort             updated | created | ready
 PullRequestState   open | closed | merged
 PullRequestLink    host, repository, number, url, state: PullRequestState,
                    source (manual | created | agent | detected), title?, is_draft,
@@ -577,7 +593,8 @@ PrDetail           body?, author?, base_ref?, head_ref?, head_sha, commit_count,
                    unstable | unknown), checks: PrCheck[], comments: PrComment[],
                    reviews: PrReview[], comments_total, reviews_total, merge_disabled_reason?
 PrCheck            name, state (queued | running | passing | failing | skipped | unknown),
-                   url?, duration_ms?
+                   url?, duration_ms?, run_id?
+PrCheckLog         dir, run_id, lines, truncated, available
 PrComment          author, body, created_at, url?
 PrReview           author, state, body, submitted_at
 PrWatchInfo        number, url
@@ -1073,6 +1090,7 @@ Only the current window; older bumps live in git history.
 
 | Version | What changed |
 |---|---|
+| 127 | **Checkout, activity and pull-request surfaces gain their wire data.** `SessionInfo.checkout?` (`SessionCheckout`, `CheckoutKind`) and `SessionInfo.activity?` (`SessionActivity`) have matching `session_checkout` and `session_activity` broadcasts. `PrInfo` and `PrListItem` gain title, branch, diffstat, creation, comment, review-request and mergeability details; `pr_list` gains `PrSort`; `pr_status_batch` requests one existing `pr_status` reply per directory. `PrCheck.run_id` and `pr_check_log` expose a tail capped at 40 lines and 16 KiB. Tag colors accept any six-digit hexadecimal `#rrggbb`, stored lowercase; `TAG_PALETTE` remains the preset list |
 | 126 | **Usage buckets and durable activity gain detail.** Usage buckets gain category and speed costs plus workspace attribution; `usage_summary_get.workspace?`; `usage_activity_summary_get` → `usage_activity_summary` reads up to 365 local calendar days persisted in `usage_daily_rollup`. **Harness findings can be tracked through fix tasks and verification.** New `harness_fix_task`, `harness_overview_get` and `harness_seen` client messages; `harness_overview` direct reply; `HarnessFinding` gains its derived phase, linked task, latest verification and last-seen review; `HarnessState` reports provider coverage; task details and summaries gain `TaskOrigin`. Fix tasks and verification verdicts use dedicated tables, and the daemon stores a monotonic per-workspace seen-review cursor. A published `gone` verdict resolves the finding at publish time; `still_present` reopens it and `inconclusive` leaves it awaiting verification. **Pull-request watches** add `pr_watch_list` / `pr_watch_unwatch` and the `pr_watch_list` / `pr_watch_changed` replies with `PrWatchInfo` and `SessionPrWatches`; the watch remains local daemon state. The same batch adds `git_branch_commits` and optional `PrWatchInfo.last_checked_at_ms` without changing this protocol version |
 | 125 | **A Slack mention becomes a pending task; the owner's ✅ starts it.** New `slack_get`, `slack_connect`, `slack_disconnect` and `slack_configure` client messages and the `slack` reply, with `SlackInfo`, `SlackConnection`, `SlackChannelMap`, `SlackLanguage`, `TaskIntake` and `IntakeState`; `TaskSummary.intake?` and `TaskRun.pr_url?`. The daemon holds an opt-in Socket Mode connection, files mentions in mapped channels as tasks, starts them on the owner's reaction or direct-message button within `SLACK_RUNS_WORKING_MAX`, shows each request's state as a reaction, and posts the agent's questions (one button per option) and hand-back to the request's thread. Agents get `hs-task ask` / MCP `task_ask` (HTTP `/task/ask`, fields `context?`, `question`, `options`, `recommended`, `why?`). Existing messages are unchanged |
 | 124 | **Tasks become a global backlog with optional workspace binding.** `Task.workspace`, `TaskSummary.workspace` and `task_changed.workspace` become nullable; `TaskPatch.workspace` distinguishes absent, null and a registered path; snapshots use `scope` (`all`, `unassigned`, workspace path); `task_save.workspace` is optional; `task_start.workspace?` assigns an unassigned task. Agents read the global backlog and write only their own workspace or unassigned tasks; writes to another workspace are refused naming the task key, workspace and read-only rule. Per-workspace access still gates agents. Keys resolve globally; a single counter allocates immutable `HOU-<n>` keys. Migration preserves rows and revisions, renumbers collisions above the current maximum with `houston:renumbered` history and preserves counter high-water marks. Claim binds unassigned tasks with `houston:claim-assign`; execute and queue stay within the orchestrator workspace. Workspace removal unassigns tasks with `houston:workspace-removed` history and interrupts open runs. **Start launches an agent in a worktree and the task follows it.** New `task_start`, `task_run_control`, `task_start_settings_get` and `task_start_settings_set` client messages; `task_run_changed` and `task_start_settings` replies; `TaskSummary.open_run?`; `TaskRun.reason?`; `SessionInfo.task?` with the new `SessionTask`; `TaskRunAction` and `TaskPromptDelivery`; and `TaskErrorKind.busy`. Start opens (or reuses) `houston/task/hou-<n>-<slug>`, exports `HOUSTON_TASK`, delivers a capped brief (send or prefill, per workspace, default claude/send) and records a `backlog_task_runs` row. Working panes move backlog/todo to in progress unless the user set the status after the run started; `task_handback` moves the run to handed_back and the task to in_review with the drift warning; a pane exit interrupts the run; a 5-minute `gh pr view` watch per in-review task marks the task done on a merged PR and otherwise leaves the reason on the run. `stop` ends the run's pane; `resume` opens attempt N+1 on the same worktree; `retry` opens it with the newest failed review's findings appended. The same batch adds `task_queue_run`, `task_review_settings_get`/`_set`, the `task_queue_result` and `task_review_settings` replies, `TaskQueueRefusal`, `TaskCounts.ready` and `TaskRunAction.retry`: an orchestrator pane's MCP `task_execute` starts a task as its child (delegation, task key as role, the run stores the delegation) and the child's `pane_submit` ends with a `task_result` JSON line that ticks acceptance by name, comments the summary and moves the task to in_review (missing or malformed leaves the run needs_review with the raw text); MCP `task_review` opens an independent read-only reviewer whose `task_review` verdict pass comments and leaves the task in review, fail comments the findings and marks the run needs_review, then auto-retries per the workspace's rounds (history `houston:auto-rework`, capped) and a restart flips a resumed task child's interrupted run back to running. Existing task messages change as described above |

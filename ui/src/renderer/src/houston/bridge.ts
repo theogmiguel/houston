@@ -435,3 +435,31 @@ export async function trashFile(path: string): Promise<void> {
   const invoke = await invoker()
   return invoke<void>('fs_delete', { targetPath: path })
 }
+
+export interface FileSearchResult {
+  path: string
+  name: string
+  isDir: false
+  nameIndices: number[]
+  pathIndices: number[]
+}
+
+export async function searchFilePaths(root: string, query: string, limit = 200): Promise<{ items: FileSearchResult[]; total: number; truncated: boolean }> {
+  const invoke = await invoker()
+  return invoke('fs_search_paths', { root, query, limit })
+}
+
+export async function watchFileDirs(root: string, dirs: string[]): Promise<void> {
+  const invoke = await invoker()
+  return invoke('fs_watch_dirs', { root, dirs })
+}
+
+export async function unwatchFileDirs(root: string): Promise<void> {
+  const invoke = await invoker()
+  return invoke<void>('fs_unwatch', { root })
+}
+
+export async function onFilesChanged(handler: (event: { root: string; paths: string[] }) => void): Promise<() => void> {
+  const { listen } = await import('@tauri-apps/api/event')
+  return listen('fs://changed', (event) => handler(event.payload as { root: string; paths: string[] }))
+}

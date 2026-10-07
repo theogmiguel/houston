@@ -6,7 +6,7 @@ pub const AUTH_HINT: &str = "gh is not signed in — run `gh auth login`";
 
 pub const MISSING_HINT: &str = "gh is not installed — install the GitHub CLI to open PRs from here";
 
-const PR_VIEW_FIELDS: &str = "number,url,state,reviewDecision,statusCheckRollup";
+const PR_VIEW_FIELDS: &str = "number,url,state,title,headRefName,additions,deletions,isDraft,reviewDecision,statusCheckRollup";
 
 // Two commands, not one: unauthenticated `gh` and absent `gh` both exit
 // non-zero, so only probing `--version` first can tell the two hints apart.
@@ -44,6 +44,57 @@ pub struct PrStatus {
     pub has_upstream: bool,
     pub pr: Option<proto::PrInfo>,
     pub hint: Option<String>,
+}
+
+// Coalesce duplicate viewport requests without suppressing the 60-second selected-card refresh.
+const PR_STATUS_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+// Match the largest practical set of open cards while bounding stale path memory.
+const PR_STATUS_CACHE_MAX_ENTRIES: usize = 256;
+type PrStatusCache =
+    std::collections::HashMap<std::path::PathBuf, (std::time::Instant, CachedPrStatus)>;
+static PR_STATUS_CACHE: std::sync::OnceLock<std::sync::Mutex<PrStatusCache>> =
+    std::sync::OnceLock::new();
+
+#[derive(Clone)]
+struct CachedPrStatus {
+    gh: proto::GhState,
+    has_upstream: bool,
+    pr: Option<proto::PrInfo>,
+    hint: Option<String>,
+}
+
+pub fn pr_status_cached(dir: &Path) -> PrStatus {
+    let cache = PR_STATUS_CACHE.get_or_init(Default::default);
+    if let Some((at, value)) = cache.lock().expect("PR status cache poisoned").get(dir) {
+        if at.elapsed() < PR_STATUS_CACHE_TTL {
+            return PrStatus {
+                gh: value.gh,
+                has_upstream: value.has_upstream,
+                pr: value.pr.clone(),
+                hint: value.hint.clone(),
+            };
+        }
+    }
+    let value = pr_status(dir);
+    let cached = CachedPrStatus {
+        gh: value.gh,
+        has_upstream: value.has_upstream,
+        pr: value.pr.clone(),
+        hint: value.hint.clone(),
+    };
+    let mut cache = cache.lock().expect("PR status cache poisoned");
+    cache.retain(|_, (at, _)| at.elapsed() < PR_STATUS_CACHE_TTL);
+    if cache.len() >= PR_STATUS_CACHE_MAX_ENTRIES && !cache.contains_key(dir) {
+        if let Some(oldest) = cache
+            .iter()
+            .min_by_key(|(_, (at, _))| *at)
+            .map(|(path, _)| path.clone())
+        {
+            cache.remove(&oldest);
+        }
+    }
+    cache.insert(dir.to_path_buf(), (std::time::Instant::now(), cached));
+    value
 }
 
 pub fn pr_status(dir: &Path) -> PrStatus {
@@ -365,9 +416,28 @@ pub fn parse_pr(stdout: &str) -> Option<proto::PrInfo> {
         number,
         url,
         state,
+        title: v
+            .get("title")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        head_ref: v
+            .get("headRefName")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        additions: json_count(v.get("additions")),
+        deletions: json_count(v.get("deletions")),
+        is_draft: v.get("isDraft").and_then(|x| x.as_bool()).unwrap_or(false),
         review_decision,
         checks: rollup(v.get("statusCheckRollup")),
     })
+}
+
+fn json_count(v: Option<&serde_json::Value>) -> u32 {
+    v.and_then(serde_json::Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .unwrap_or(0)
 }
 
 // A failure outranks a still-running check: the red one is the fact the line
@@ -987,6 +1057,7 @@ pub fn pr_list(
     involvement: proto::PrListInvolvement,
     query: Option<&str>,
     limit: u32,
+    sort: proto::PrSort,
 ) -> Result<(Vec<proto::PrListItem>, bool)> {
     ready(dir, "list pull requests")?;
     if limit == 0 || limit > PR_LIST_LIMIT_MAX {
@@ -1011,7 +1082,7 @@ pub fn pr_list(
     }
     // The order the list reads in, and the only order a bigger page can carry on
     // from: a change request opened last year and touched this morning belongs on top.
-    search.push("sort:updated-desc".to_string());
+    search.push(format!("sort:{}-desc", pr_list_server_sort(sort)));
     let probe = limit + 1;
     let probe_string = probe.to_string();
     let mut args = vec![
@@ -1045,7 +1116,8 @@ pub fn pr_list(
     }
     let value: serde_json::Value =
         serde_json::from_str(raw).with_context(|| "gh pr list returned unreadable JSON")?;
-    let items = super::pull_requests::github::list_items(&value);
+    let viewer = viewer_login(dir).ok().flatten();
+    let items = super::pull_requests::github::list_items_for_viewer(&value, viewer.as_deref());
     let truncated = items.len() as u32 > limit;
     Ok((items.into_iter().take(limit as usize).collect(), truncated))
 }
@@ -1057,8 +1129,84 @@ fn search_phrase(query: &str) -> String {
     format!("\"{}\"", query.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+fn pr_list_server_sort(sort: proto::PrSort) -> &'static str {
+    match sort {
+        proto::PrSort::Created => "created",
+        proto::PrSort::Updated | proto::PrSort::Ready => "updated",
+    }
+}
+
 const LIST_FIELDS: &str =
-    "number,title,url,author,headRefName,baseRefName,state,isDraft,reviewDecision,additions,deletions,updatedAt,mergedAt,labels,statusCheckRollup,reviewRequests";
+    "number,title,url,author,headRefName,baseRefName,state,isDraft,reviewDecision,additions,deletions,updatedAt,createdAt,mergedAt,comments,mergeable,labels,statusCheckRollup,reviewRequests";
+
+// Match the failure-focused tail shown by the check row.
+pub const MAX_CHECK_LOG_LINES: usize = 40;
+// Bound JSON responses even when a single failed check emits exceptionally long lines.
+pub const MAX_CHECK_LOG_BYTES: usize = 16 * 1024;
+
+pub struct PrCheckLog {
+    pub lines: Vec<String>,
+    pub truncated: bool,
+    pub available: bool,
+}
+
+fn cap_check_log(stdout: &str) -> (Vec<String>, bool) {
+    let all_lines: Vec<&str> = stdout.lines().collect();
+    let mut tail = Vec::new();
+    let mut bytes = 0usize;
+    let mut truncated = all_lines.len() > MAX_CHECK_LOG_LINES;
+    for line in all_lines.iter().rev().take(MAX_CHECK_LOG_LINES) {
+        let remaining = MAX_CHECK_LOG_BYTES.saturating_sub(bytes);
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let mut start = line.len().saturating_sub(remaining);
+        while !line.is_char_boundary(start) {
+            start += 1;
+        }
+        tail.push(line[start..].to_string());
+        bytes += line.len() - start;
+        if start > 0 {
+            truncated = true;
+            break;
+        }
+    }
+    tail.reverse();
+    (tail, truncated)
+}
+
+pub fn pr_check_log(dir: &Path, run_id: u64) -> Result<PrCheckLog> {
+    ready(dir, "read a check log")?;
+    let id = run_id.to_string();
+    let out = run(dir, &["run", "view", id.as_str(), "--log-failed"])?;
+    if !out.ok {
+        // Checks from external providers do not have an Actions run to inspect.
+        let error = out.stderr.to_ascii_lowercase();
+        if error.contains("could not find") || error.contains("not found") {
+            return Ok(PrCheckLog {
+                lines: Vec::new(),
+                truncated: false,
+                available: false,
+            });
+        }
+        bail!(
+            "{}",
+            first_meaningful_line(&out.stderr).unwrap_or_else(|| {
+                format!(
+                    "gh run view {run_id} --log-failed failed (exit {:?})",
+                    out.code
+                )
+            })
+        );
+    }
+    let (selected, truncated) = cap_check_log(&out.stdout);
+    Ok(PrCheckLog {
+        lines: selected,
+        truncated,
+        available: true,
+    })
+}
 
 /// `gh pr diff --color never`, cut to [`PR_DIFF_MAX_BYTES`] on a character
 /// boundary when GitHub serves more; the flag says which it was.
@@ -1478,6 +1626,37 @@ mod tests {
     }
 
     #[test]
+    fn parses_pr_card_fields_and_caps_check_logs_from_the_tail() {
+        let pr = parse_pr(r#"{"number":4,"url":"https://github.com/o/r/pull/4","state":"OPEN","title":"Change","headRefName":"feature","additions":12,"deletions":3,"isDraft":true}"#).unwrap();
+        assert_eq!(
+            (
+                pr.title.as_str(),
+                pr.head_ref.as_str(),
+                pr.additions,
+                pr.deletions,
+                pr.is_draft
+            ),
+            ("Change", "feature", 12, 3, true)
+        );
+
+        let source = (0..50)
+            .map(|n| format!("line-{n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (lines, truncated) = cap_check_log(&source);
+        assert!(truncated);
+        assert_eq!(lines.len(), MAX_CHECK_LOG_LINES);
+        assert_eq!(lines.first().map(String::as_str), Some("line-10"));
+        assert_eq!(lines.last().map(String::as_str), Some("line-49"));
+
+        let huge_line = format!("{}END", "x".repeat(MAX_CHECK_LOG_BYTES));
+        let (lines, truncated) = cap_check_log(&huge_line);
+        assert!(truncated);
+        assert_eq!(lines[0].len(), MAX_CHECK_LOG_BYTES);
+        assert!(lines[0].ends_with("END"));
+    }
+
+    #[test]
     fn a_failure_outranks_a_running_check() {
         let json = r#"{"number":1,"url":"u","state":"OPEN","reviewDecision":null,
           "statusCheckRollup":[{"status":"IN_PROGRESS"},{"status":"COMPLETED","conclusion":"FAILURE"}]}"#;
@@ -1569,6 +1748,13 @@ mod tests {
             "a quote and a qualifier stay inside the phrase"
         );
         assert_eq!(search_phrase("back\\slash"), "\"back\\\\slash\"");
+    }
+
+    #[test]
+    fn created_and_updated_sorts_are_server_side_while_ready_uses_the_updated_page() {
+        assert_eq!(pr_list_server_sort(proto::PrSort::Created), "created");
+        assert_eq!(pr_list_server_sort(proto::PrSort::Updated), "updated");
+        assert_eq!(pr_list_server_sort(proto::PrSort::Ready), "updated");
     }
 
     #[test]

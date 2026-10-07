@@ -25,6 +25,18 @@ use crate::daemon::{CreateParams, Daemon, Outbound, OUTBOUND_CAPACITY};
 use crate::frame_queue::{FrameTap, Queued};
 use tokio::sync::Notify;
 
+// Bound per-request CLI process fan-out while covering the usual visible rail viewport.
+const MAX_PR_STATUS_BATCH_DIRS: usize = 32;
+
+fn check_pr_status_batch_size(actual: usize) -> Result<()> {
+    if actual > MAX_PR_STATUS_BATCH_DIRS {
+        anyhow::bail!(
+            "PrStatusBatch limit is {MAX_PR_STATUS_BATCH_DIRS} dirs; {actual} dirs requested by this request"
+        );
+    }
+    Ok(())
+}
+
 pub async fn start(daemon: Arc<Daemon>, addr: SocketAddr) -> Result<(SocketAddr, JoinHandle<()>)> {
     let listener = bind(addr).await?;
     start_with_listener(daemon, listener).await
@@ -610,6 +622,8 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::GitBranch { .. }
             | proto::ClientMsg::GitBranchCommits { .. }
             | proto::ClientMsg::PrStatus { .. }
+            | proto::ClientMsg::PrStatusBatch { .. }
+            | proto::ClientMsg::PrCheckLog { .. }
             | proto::ClientMsg::PrDetail { .. }
             | proto::ClientMsg::PrWatchList
             | proto::ClientMsg::GitReviewDiffs { .. }
@@ -1832,7 +1846,7 @@ async fn dispatch(
         }
         proto::ClientMsg::PrStatus { dir } => {
             let d = PathBuf::from(&dir);
-            let st = tokio::task::spawn_blocking(move || crate::gh::pr_status(&d))
+            let st = tokio::task::spawn_blocking(move || crate::gh::pr_status_cached(&d))
                 .await
                 .unwrap_or_else(|e| {
                     tracing::error!("pr_status: spawn_blocking join failed for {dir:?}: {e}");
@@ -1851,6 +1865,68 @@ async fn dispatch(
                     has_upstream: st.has_upstream,
                     pr: st.pr,
                     hint: st.hint,
+                },
+            )
+            .await;
+            Ok(())
+        }
+        proto::ClientMsg::PrStatusBatch { dirs } => {
+            check_pr_status_batch_size(dirs.len())?;
+            let requested = dirs.len();
+            let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+            let statuses = tokio::task::spawn_blocking(move || {
+                paths
+                    .iter()
+                    .map(|path| crate::gh::pr_status_cached(path))
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!("pr_status batch: spawn_blocking join failed: {e}");
+                (0..requested)
+                    .map(|_| crate::gh::PrStatus {
+                        gh: proto::GhState::Missing,
+                        has_upstream: false,
+                        pr: None,
+                        hint: Some(crate::gh::MISSING_HINT.to_string()),
+                    })
+                    .collect()
+            });
+            for (dir, st) in dirs.into_iter().zip(statuses) {
+                let _ = send_msg(
+                    sink,
+                    &proto::ServerMsg::PrStatus {
+                        dir,
+                        gh: st.gh,
+                        has_upstream: st.has_upstream,
+                        pr: st.pr,
+                        hint: st.hint,
+                    },
+                )
+                .await;
+            }
+            Ok(())
+        }
+        proto::ClientMsg::PrCheckLog { dir, run_id } => {
+            let d = PathBuf::from(&dir);
+            let result = tokio::task::spawn_blocking(move || crate::gh::pr_check_log(&d, run_id))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("check log task panicked: {e}")));
+            let (lines, truncated, available) = match result {
+                Ok(log) => (log.lines, log.truncated, log.available),
+                Err(e) => {
+                    tracing::warn!("pr_check_log in {dir}: {e:#}");
+                    (Vec::new(), false, false)
+                }
+            };
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::PrCheckLog {
+                    dir,
+                    run_id,
+                    lines,
+                    truncated,
+                    available,
                 },
             )
             .await;
@@ -2237,9 +2313,10 @@ async fn dispatch(
             involvement,
             query,
             limit,
+            sort,
             request,
         } => {
-            send_pr_list(sink, dir, state, involvement, query, limit, request).await;
+            send_pr_list(sink, dir, state, involvement, query, limit, sort, request).await;
             Ok(())
         }
         proto::ClientMsg::PrDiff {
@@ -3684,6 +3761,7 @@ async fn send_pr_label_candidates(
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn send_pr_list(
     sink: &mut (impl SinkExt<Message> + Unpin),
     dir: String,
@@ -3691,11 +3769,12 @@ async fn send_pr_list(
     involvement: proto::PrListInvolvement,
     query: Option<String>,
     limit: u32,
+    sort: proto::PrSort,
     request: u32,
 ) {
     let d = PathBuf::from(&dir);
     let result = tokio::task::spawn_blocking(move || {
-        crate::gh::pr_list(&d, state, involvement, query.as_deref(), limit)
+        crate::gh::pr_list(&d, state, involvement, query.as_deref(), limit, sort)
     })
     .await
     .unwrap_or_else(|e| Err(anyhow::anyhow!("pull request listing task panicked: {e}")));
@@ -5024,5 +5103,19 @@ mod frame_flush_tests {
         });
         let _client = tokio::net::TcpStream::connect(address).await.unwrap();
         assert!(accept.await.unwrap());
+    }
+}
+
+#[cfg(test)]
+mod pr_surface_tests {
+    use super::*;
+
+    #[test]
+    fn pr_status_batch_names_the_limit_and_requested_count() {
+        assert!(check_pr_status_batch_size(MAX_PR_STATUS_BATCH_DIRS).is_ok());
+        let error = check_pr_status_batch_size(MAX_PR_STATUS_BATCH_DIRS + 1)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("32") && error.contains("33") && error.contains("request"));
     }
 }

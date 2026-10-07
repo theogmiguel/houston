@@ -17,6 +17,7 @@ pub fn spawn_background_loops(daemon: &Arc<Daemon>) {
     // is task behaviour, and the sweep above has its own switch.
     tokio::spawn(daemon.clone().task_pr_watch_loop());
     tokio::spawn(daemon.clone().pr_watch_loop());
+    tokio::spawn(crate::checkout_watch::checkout_watch_loop(daemon.clone()));
     // Idle until Settings ▸ Slack turns the intake on.
     tokio::spawn(daemon.clone().slack_loops());
 }

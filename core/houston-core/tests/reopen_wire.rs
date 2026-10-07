@@ -251,6 +251,8 @@ async fn respawn_refuses_a_swarm_tied_session() {
     let agent_id = {
         let db = Db::open(&db_path).unwrap();
         db.insert_session(&proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id: 1,
             agent: proto::AgentKind::Shell,
             project_dir: "/tmp".into(),

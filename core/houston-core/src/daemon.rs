@@ -486,6 +486,7 @@ pub struct Session {
     status: Mutex<Option<proto::AgentStatus>>,
     status_since_ms: Mutex<Option<u64>>,
     context: Mutex<Option<proto::SessionContext>>,
+    activity: Mutex<crate::session_activity::Tracker>,
     removed: AtomicBool,
     backend_exited: AtomicBool,
     hook_cwd: Mutex<Option<String>>,
@@ -1011,6 +1012,7 @@ impl Session {
         info.status = *self.status.lock().expect("status lock");
         info.status_since_ms = *self.status_since_ms.lock().expect("status since lock");
         info.context = *self.context.lock().expect("context lock");
+        info.activity = self.activity.lock().expect("activity lock").activity();
         info.tags = self.tags.lock().expect("tags lock").clone();
         info
     }
@@ -3918,6 +3920,8 @@ impl Daemon {
     #[cfg(unix)]
     fn adopted_session(m: &crate::adoption::SessionManifest, backend: Backend) -> Arc<Session> {
         let info = proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id: m.session_id,
             agent: m.agent,
             project_dir: m.project_dir.clone(),
@@ -3983,6 +3987,7 @@ impl Daemon {
             status: Mutex::new(m.status),
             status_since_ms: Mutex::new(info.status_since_ms),
             context: Mutex::new(None),
+            activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             hook_cwd: Mutex::new(m.hook_cwd.clone()),
@@ -6735,8 +6740,75 @@ impl Daemon {
         }
     }
 
-    fn session_checkout_metadata(&self, info: &mut proto::SessionInfo) {
+    fn note_session_activity(
+        self: &Arc<Self>,
+        id: u32,
+        provider: proto::AgentKind,
+        drop: &crate::hook_drop::HookDrop,
+    ) {
+        let session = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .get(&id)
+            .cloned();
+        let Some(session) = session else {
+            return;
+        };
+        let now = std::time::Instant::now();
+        let (dispatch, activity) = {
+            let mut tracker = session.activity.lock().expect("activity lock");
+            let dispatch = tracker.update(
+                provider,
+                &drop.event,
+                drop.prompt.as_deref(),
+                drop.last_message.as_deref(),
+                drop.tool_name.as_deref(),
+                now,
+            );
+            (dispatch, tracker.activity())
+        };
+        match dispatch {
+            crate::session_activity::Dispatch::Unchanged => {}
+            crate::session_activity::Dispatch::SendNow => {
+                self.broadcast_control(&proto::ServerMsg::SessionActivity { id, activity });
+            }
+            crate::session_activity::Dispatch::Schedule(delay) => {
+                let daemon = Arc::downgrade(self);
+                tokio::spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    let Some(daemon) = daemon.upgrade() else {
+                        return;
+                    };
+                    let update = daemon
+                        .sessions
+                        .lock()
+                        .expect("sessions lock")
+                        .get(&id)
+                        .and_then(|session| {
+                            session
+                                .activity
+                                .lock()
+                                .expect("activity lock")
+                                .flush(std::time::Instant::now())
+                        });
+                    if let Some(activity) = update {
+                        daemon
+                            .broadcast_control(&proto::ServerMsg::SessionActivity { id, activity });
+                    }
+                });
+            }
+        }
+    }
+
+    pub(crate) fn session_checkout_metadata(&self, info: &mut proto::SessionInfo) {
         if info.ssh_host.is_some() {
+            info.checkout = Some(proto::SessionCheckout {
+                root: info.project_dir.clone(),
+                kind: proto::CheckoutKind::Folder,
+                branch: None,
+                head: None,
+            });
             return;
         }
         let facts = crate::git::checkout_facts(Path::new(&info.cwd));
@@ -6770,6 +6842,51 @@ impl Daemon {
                 None
             }
         };
+        let root = info
+            .checkout_root
+            .clone()
+            .unwrap_or_else(|| info.project_dir.clone());
+        let kind = if info.worktree.is_some() {
+            let slug = Path::new(&root)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            proto::CheckoutKind::Worktree { slug }
+        } else if Path::new(&root).join(".git").is_dir() {
+            proto::CheckoutKind::Primary
+        } else {
+            proto::CheckoutKind::Folder
+        };
+        let facts = crate::git::checkout_facts(Path::new(&root));
+        let head = crate::checkout_watch::head_path(Path::new(&root))
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|head| {
+                let head = head.trim();
+                (!head.starts_with("ref: ")).then(|| head.chars().take(7).collect())
+            });
+        info.checkout = Some(proto::SessionCheckout {
+            root,
+            kind,
+            branch: facts.branch,
+            head,
+        });
+    }
+
+    pub(crate) fn checkout_watch_sessions(&self) -> Vec<proto::SessionInfo> {
+        let mut snapshots: Vec<_> = self
+            .sessions
+            .lock()
+            .expect("sessions lock")
+            .values()
+            .filter(|session| !session.info.hidden && session.info.ssh_host.is_none())
+            .map(|session| session.snapshot_info())
+            .collect();
+        for info in &mut snapshots {
+            if info.checkout.is_none() {
+                self.session_checkout_metadata(info);
+            }
+        }
+        snapshots
     }
 
     pub fn list(&self) -> Vec<proto::SessionInfo> {
@@ -8477,6 +8594,8 @@ impl Daemon {
         let initial_status = (!hidden && reports_status).then_some(proto::AgentStatus::Spawning);
         let status_since_ms = initial_status.map(|_| now_ms());
         let mut info = proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id,
             agent,
             project_dir: project_dir.display().to_string(),
@@ -8548,6 +8667,7 @@ impl Daemon {
             status: Mutex::new(initial_status),
             status_since_ms: Mutex::new(status_since_ms),
             context: Mutex::new(None),
+            activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
@@ -8875,6 +8995,8 @@ impl Daemon {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let title = self.next_codename();
         let info = proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id,
             agent: proto::AgentKind::Ssh,
             project_dir: display.clone(),
@@ -8934,6 +9056,7 @@ impl Daemon {
             status: Mutex::new(None),
             status_since_ms: Mutex::new(None),
             context: Mutex::new(None),
+            activity: Mutex::new(crate::session_activity::Tracker::default()),
             removed: AtomicBool::new(false),
             backend_exited: AtomicBool::new(false),
             hook_cwd: Mutex::new(None),
@@ -9878,14 +10001,13 @@ impl Daemon {
                 proto::MAX_TAG_NAME_LEN
             );
         }
-        if !proto::TAG_PALETTE.contains(&color) {
-            bail!(
-                "invalid tag color {color:?}: expected one of TAG_PALETTE's {} colors (see the \
-                 generated DEFAULTS.ts for the list)",
-                proto::TAG_PALETTE.len()
-            );
+        let is_hex_color = color.len() == 7
+            && color.starts_with('#')
+            && color[1..].bytes().all(|byte| byte.is_ascii_hexdigit());
+        if !is_hex_color {
+            bail!("invalid tag color {color:?}: expected #rrggbb (six hexadecimal digits)");
         }
-        Ok((name.to_string(), color.to_string()))
+        Ok((name.to_string(), color.to_ascii_lowercase()))
     }
 
     pub fn tag_create(&self, name: &str, color: &str) -> Result<()> {
@@ -10770,6 +10892,7 @@ impl Daemon {
             crate::agent_events::AgentEvent::from_provider(provider, &d.event),
             d.last_message.as_deref(),
         );
+        self.note_session_activity(d.session, provider, d);
         if d.event == "Stop" && provider == proto::AgentKind::Claude {
             if let Some(count) = d.background_tasks {
                 let mut holds = self.background_holds.lock().expect("background holds lock");

@@ -989,12 +989,9 @@ mod opencode {
         )
         .await;
         assert!(
-            tokio::time::timeout(
-                Duration::from_millis(150),
-                common::next_broadcast_control(&mut rx),
-            )
-            .await
-            .is_err(),
+            tokio::time::timeout(Duration::from_millis(150), next_status(&mut rx, info.id))
+                .await
+                .is_err(),
             "the legacy idle emitted after session.error must not emit a second status"
         );
     }

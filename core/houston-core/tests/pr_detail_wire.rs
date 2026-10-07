@@ -1592,6 +1592,7 @@ async fn a_listing_pages_by_limit_and_refuses_over_the_cap() {
             involvement: proto::PrListInvolvement::All,
             query: None,
             limit: 1,
+            sort: proto::PrSort::Updated,
             request: 81,
         },
     )
@@ -1616,6 +1617,7 @@ async fn a_listing_pages_by_limit_and_refuses_over_the_cap() {
             involvement: proto::PrListInvolvement::Authored,
             query: Some("flaky test".into()),
             limit: 25,
+            sort: proto::PrSort::Updated,
             request: 82,
         },
     )
@@ -1637,6 +1639,7 @@ async fn a_listing_pages_by_limit_and_refuses_over_the_cap() {
             involvement: proto::PrListInvolvement::Reviewing,
             query: None,
             limit: 101,
+            sort: proto::PrSort::Updated,
             request: 83,
         },
     )

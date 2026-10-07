@@ -438,6 +438,8 @@ async fn ssh_husks_are_deferred_never_auto_reconnected() {
     {
         let db = houston_core::db::Db::open(&state.path().join("test.db")).unwrap();
         db.insert_session(&proto::SessionInfo {
+            checkout: None,
+            activity: None,
             id: 1,
             agent: proto::AgentKind::Ssh,
             project_dir: "tester@example.com".into(),
