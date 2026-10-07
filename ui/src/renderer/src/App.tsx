@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { QuickOpenOverlay } from "./QuickOpenOverlay";
 import type { Dispatch, SetStateAction } from "react";
 import type {
   AgentKind,
@@ -26,6 +27,7 @@ import type {
   SshConfigHost,
   SshProfile,
   Workspace,
+  PullRequestLink,
 } from "./houston/client";
 import type { AgentHookState } from "./houston/generated/AgentHookState";
 import type { TagInfo } from "./houston/generated/TagInfo";
@@ -103,9 +105,10 @@ import {
   ZOOM_MAX,
   ZOOM_STEP,
   usePreferences,
+  useModifierHeld,
   type DesktopNotificationMode,
 } from "./usePreferences";
-import { Sidebar } from "./components/Sidebar";
+import { MANAGE_TAGS_EVENT, Sidebar } from "./components/Sidebar";
 import { useCustomSurface } from "./components/customChrome";
 import { SkillsSurface } from "./components/nav/SkillsSurface";
 import { canUseSkillInFocusedPane } from "./houston/skillSurface";
@@ -123,6 +126,10 @@ import { tabsStorageKey } from "./components/browserTabsKey";
 import { recordAndReload } from "./reloadBudget";
 import { AnimOut } from "./components/ui/AnimOut";
 import { SurfaceBoundary } from "./components/SurfaceBoundary";
+import { useRailPrCache } from "./components/git/railPrCache";
+import { usePullRequestRailData } from "./usePullRequestRailData";
+import { useBrowserLayoutMigration } from "./useBrowserLayoutMigration";
+import { focusAndFlashPane, handlePullRequestWireMessage, handleQuickOpenShortcut, handleSurfaceShortcut, pasteToAgent as pasteToAgentMessage, pullRequestRepositoryName, pullRequestWorkspace } from "./appSurfaceEvents";
 import { Shell } from "./components/Shell/Shell";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -162,7 +169,6 @@ import {
   fontZoomOut,
   fontZoomReset,
   newTerminal as newTerminalShortcut,
-  newBrowserPane as newBrowserPaneShortcut,
   openFileShortcut,
   renameWorkspaceShortcut,
   resolveGlobalMatch,
@@ -198,6 +204,11 @@ import {
 import { KeymapOverridesContext } from "./layout/keymapOverridesContext";
 import { TagsContext } from "./layout/tagsContext";
 import { setRailView, useRailView, type RailView } from "./railView";
+import { PullRequestsRailScreen } from "./components/prs/PullRequestsRailScreen";
+import { usePullRequestsScreen } from "./usePullRequestsScreen";
+import { useProactiveDiff } from "./useProactiveDiff";
+import { useCheckAgentCreation, type CheckAgentSplitIntent } from "./useCheckAgentCreation";
+import { usePanelSurfaceNavigation } from "./usePanelSurfaceNavigation";
 import { touchGrid } from "./gridRecency";
 import { useNativeSuppressionCount } from "./layout/nativeSuppression";
 import type { ReviewDiffsData } from "./git/review";
@@ -218,10 +229,10 @@ import {
   useScmWidth,
   type ScmTab,
 } from "./scmPanel";
-import { SidePanelIntegration } from "./components/SidePanel";
+import { preloadable } from "./preloadable";
 import { useExitAnimation } from "./components/ui/AnimOut";
 import { focusSideBrowserUrl, useSidePanelState } from "./useSidePanelState";
-import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideTasks } from "./sidePanel";
+import { loadSideState, reviewCheckoutDir, SIDE_BROWSER_MOVE_EVENT, TASKS_OPEN_EVENT, openSideBrowser, openSideTasks } from "./sidePanel";
 import { terminalSelection } from "./pane/terminalSelection";
 import { SourceControlToggle } from "./components/SourceControlToggle";
 import { RailResizeHandle } from "./components/RailResizeHandle";
@@ -269,7 +280,6 @@ import {
   syncSessionLayout,
   unstack,
   updateBrowserUrl,
-  type BrowserNode,
   type EditorNode,
   type GridMeta,
   type LayoutNode,
@@ -600,7 +610,16 @@ function SessionEffects({
   return null;
 }
 
+const sidePanelIntegration = preloadable(() => import("./components/SidePanel").then((module) => module.SidePanelIntegration));
+export const preloadSidePanel = sidePanelIntegration.preload;
+const SidePanelIntegration = sidePanelIntegration.Slot;
+
 export function App(): React.JSX.Element {
+  useEffect(() => {
+    const timer = window.setTimeout(() => void preloadSidePanel(), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useModifierHeld();
   const [conn, setConn] = useState<Conn>({ kind: "connecting" });
   const dismissedUpdate = useDismissedUpdate();
   const customChrome = useCustomSurface();
@@ -651,6 +670,7 @@ export function App(): React.JSX.Element {
   }, []);
   const [sessionsStore] = useState(createSessionsStore);
   const sessions = useLayoutSessions(sessionsStore);
+  const railPrByDir = useRailPrCache();
   const setSessions = sessionsStore.set;
   const [rosterRevision, setRosterRevision] = useState(0);
   const [openedAttention, setOpenedAttention] = useState<ReadonlySet<number>>(() => new Set());
@@ -760,6 +780,10 @@ export function App(): React.JSX.Element {
 
   const settingsSection = useSettingsSection();
   const railView = useRailView();
+  const prListDir = scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
+  const prScreen = usePullRequestsScreen(readyClient(conn), prListDir, railView === 'prs');
+  const [requestedPr, setRequestedPr] = useState<PullRequestLink | null>(null);
+  const browserRelaySequence = useRef(0);
   const [taskSurfaceRequest, setTaskSurfaceRequest] = useState<{ openId?: number; compose?: boolean; create?: { title: string; description: string } } | null>(null);
   useEffect(() => {
     const open = (event: Event): void => {
@@ -843,6 +867,7 @@ export function App(): React.JSX.Element {
   useNativeSuppressionCount("grid-hidden", openOverlays);
   const gridHidden = openOverlays > 0;
   const [shortcutSheet, setShortcutSheet] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [confirmRemoveWs, setConfirmRemoveWs] = useState<{
     path: string;
     message: string;
@@ -902,6 +927,7 @@ export function App(): React.JSX.Element {
     setDesktopNotificationMode,
     inAppNotifications,
     setInAppNotifications,
+    openDiffOnAgentStop,
     changeFont,
     changeZoom,
   } = usePreferences();
@@ -919,6 +945,7 @@ export function App(): React.JSX.Element {
   const [scmOpen, setScmOpen] = useState<boolean>(() => loadScmOpen());
   const { mounted: sidePanelPresent, finishExit: finishSidePanelExit } = useExitAnimation(scmOpen, 240);
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
+  const [panelMountEpoch, setPanelMountEpoch] = useState(0);
   const scmWidth = useScmWidth();
   const { sideRequest, setSideRequest, activeSurface, setActiveSurface, sideWorkspace, pickerTarget, sideReview, setSideReview } = useSidePanelState(selectedWs, activeId, sessions, scmOpen, setScmOpen, (workspace) => revealWorkspace(workspace));
   const gridSurfaceHidden = gridHidden;
@@ -986,16 +1013,7 @@ export function App(): React.JSX.Element {
     });
   }, [workspaces]);
   const outputHandlers = useRef<Map<number, OutputSink>>(new Map());
-  const splitIntents = useRef<
-    {
-      anchor: number;
-      side: SplitSide;
-      ws: string;
-      projectDir: string;
-      agent: AgentKind;
-      ts: number;
-    }[]
-  >([]);
+  const splitIntents = useRef<CheckAgentSplitIntent[]>([]);
   // Starts this client sent, so the pane the daemon creates for one is placed
   // beside the pane that was focused; a run started by another client or an
   // agent has no entry and keeps the default placement.
@@ -1067,6 +1085,14 @@ export function App(): React.JSX.Element {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const sessionsRef = useMemo(() => ({ get current() { return sessionsStore.getSnapshot(); } }), [sessionsStore]);
+  const proactiveDiff = useProactiveDiff({
+    client: readyClient(conn),
+    enabled: openDiffOnAgentStop,
+    activeIdRef,
+    sessionsRef,
+    setScmOpen,
+    setActiveSurface,
+  });
   const taskbarAttentionCount = useMemo(() => [...sessions.values()].filter((session) =>
     session.state === 'running' && session.status === 'needs-input' &&
     session.spawned_by == null && !session.hidden && !openedAttention.has(session.id)
@@ -1123,7 +1149,6 @@ export function App(): React.JSX.Element {
     setSelectedWs(target.project_dir);
     setActiveId(session);
   };
-
   const [focusBrowserUrl, setFocusBrowserUrl] = useState(0);
   const [reviewSessions, setReviewSessions] = useState<
     Map<string, { session: number; data: ReviewDiffsData }>
@@ -1208,6 +1233,7 @@ export function App(): React.JSX.Element {
         handleTagWireMessage(msg, setTags, reconcileGridTags);
         if (msg.type === "tag_deleted") dropDeletedTagFromGrids(msg.tag);
         checkout.handleMessage(msg);
+        if (handlePullRequestWireMessage(msg, prScreen.handleMessage)) return;
         switch (msg.type) {
           case "hello_ok":
             client.snapshotAttach = msg.snapshot_attach;
@@ -1689,6 +1715,7 @@ export function App(): React.JSX.Element {
     gridsFor,
     activeGridId,
   ]);
+  useBrowserLayoutMigration(orderedWorkspaces, warmLayouts);
 
   const gridsByWorkspace = useMemo(() => {
     const out: Record<
@@ -1954,6 +1981,9 @@ export function App(): React.JSX.Element {
   }, [layouts, warmLayouts, selectedWs, idsKey, activeGridId, replacedSessions]);
   const currentTree = wsState.tree;
   currentTreeRef.current = currentTree;
+  const { checkAgentTargets, linkedPullRequests } = usePullRequestRailData(
+    readyClient(conn), sideWorkspace, currentTree, activeGridId, layouts, warmLayouts, sessions, railPrByDir,
+  );
   const mountedGridSessionIds = new Set<number>();
   for (const state of warmLayouts.values()) {
     for (const id of preorderSessions(state.tree)) mountedGridSessionIds.add(id);
@@ -2341,21 +2371,8 @@ export function App(): React.JSX.Element {
     [mutateTree],
   );
   const openBrowserPane = useCallback(
-    (workspaceDir: string, anchor: PaneKey | null, url = ""): void => {
-      setExpandedId(null);
-      const key = keyForRef(workspaceDir);
-      setLayouts((prev) => {
-        const cur = prev.get(key) ?? loadLayout(key);
-        const node: BrowserNode = {
-          kind: "browser",
-          id: `b${Date.now()}-${++browserLeafSeq.current}`,
-          url,
-        };
-        return new Map(prev).set(key, {
-          ...cur,
-          tree: insertPaneAt(cur.tree, node, anchor),
-        });
-      });
+    (workspaceDir: string, _anchor: PaneKey | null, url = ""): void => {
+      openSideBrowser(`browser-${Date.now()}-${++browserLeafSeq.current}`, url, workspaceDir);
     },
     [],
   );
@@ -2496,10 +2513,29 @@ export function App(): React.JSX.Element {
     },
     [openEditorFile],
   );
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      handleQuickOpenShortcut(event, selectedWs, () => setQuickOpen(true));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedWs]);
 
   // In All view the focused pane supplies its checkout; within a workspace the
   // selected workspace stays authoritative when a stale pane has focus.
   const scmDir = reviewCheckoutDir(sideReview) ?? scmWorkspace(selectedWs, focusedRepoDir(sessions, activeId));
+  const { openPanelSurface, openPullRequestFromScreen } = usePanelSurfaceNavigation({
+    activeId,
+    sessions,
+    sideWorkspace,
+    prListDir,
+    setScmOpen,
+    setActiveSurface,
+    setRequestedPr,
+    setScmTab,
+    setRailView,
+    setPanelMountEpoch,
+  });
   useEffect(() => {
     setSideReview((current) => current?.id === activeId ? current : null);
   }, [activeId, sideReview, setSideReview]);
@@ -2762,6 +2798,21 @@ export function App(): React.JSX.Element {
     },
     [conn, selectedWs, shellIntegration],
   );
+  const pasteToAgent = useCallback((session: number, text: string): void => {
+    pasteToAgentMessage(readyClient(conn), sessionsRef, session, text, pushError);
+  }, [conn, pushError, sessionsRef]);
+  const createCheckAgent = useCheckAgentCreation({
+    client: readyClient(conn),
+    selectedWorkspace: selectedWs,
+    panelWorkspace: sideWorkspace,
+    targets: checkAgentTargets,
+    activeIdRef,
+    sessionsRef,
+    shellIntegration,
+    setSelectedWorkspace: setSelectedWs,
+    setExpandedId,
+    splitIntents,
+  })
 
   const [addPanePopover, setAddPanePopover] = useState<{
     anchor: PaneKey | null;
@@ -2959,7 +3010,9 @@ export function App(): React.JSX.Element {
   };
   useBrowserOpenRequest((workspaceDir, url, surfaceId) => {
     if (!workspacesRef.current.some((w) => w.path === workspaceDir)) return;
-    routeBrowserOpenRequest(workspaceDir, url, surfaceId, revealGridBrowser, (workspace, requestedUrl) => openBrowserPane(workspace, null, requestedUrl));
+    routeBrowserOpenRequest(workspaceDir, url, surfaceId, revealGridBrowser, (workspace, requestedUrl) => {
+      openSideBrowser(`relay-${Date.now()}-${++browserRelaySequence.current}`, requestedUrl, workspace);
+    });
   });
 
   const voiceClient = conn.kind === "ready" ? conn.client : null;
@@ -2998,6 +3051,7 @@ export function App(): React.JSX.Element {
         e.preventDefault();
         return;
       }
+      if (handleSurfaceShortcut(e, keymapOverrides, layerArmed, openPanelSurface, () => setRailView('prs'))) return;
       if (
         !layerArmed &&
         resolveGlobalMatch(prefixShortcut, keymapOverrides)(e)
@@ -3092,11 +3146,6 @@ export function App(): React.JSX.Element {
         newTerminal();
       } else if (resolveGlobalMatch(openFileShortcut, keymapOverrides)(e)) {
         if (selectedWs !== "all") void pickAndOpenFile(selectedWs);
-      } else if (
-        resolveGlobalMatch(newBrowserPaneShortcut, keymapOverrides)(e)
-      ) {
-        if (!workspacesEmptyOpen && selectedWs !== "all")
-          openBrowserPane(selectedWs, null);
       } else if (resolveGlobalMatch(expandPane, keymapOverrides)(e)) {
         const target = activeLeaf ?? orderedIds[0] ?? null;
         setExpandedId((cur) => (cur === null ? target : null));
@@ -3163,6 +3212,7 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [
     orderedIds,
+    openPanelSurface,
     currentTree,
     mutateTree,
     settings,
@@ -3282,12 +3332,9 @@ export function App(): React.JSX.Element {
 
   const paletteActions: PaletteActions = {
     workspaceActions,
+    openManageTags: () => window.dispatchEvent(new Event(MANAGE_TAGS_EVENT)),
     runWorkspaceAction: workspaceActionState.run,
     newTerminal,
-    insertPane: (kind) => {
-      if (kind === "browser" && selectedWs !== "all")
-        openBrowserPane(selectedWs, null);
-    },
     splitPane:
       activeId !== null
         ? () => handleSplitFromLayout(activeId, "right")
@@ -3390,6 +3437,7 @@ export function App(): React.JSX.Element {
           {!sidebarRail && (
             <Sidebar
               gridArea="rail"
+              currentRailView={railView ?? undefined}
               onHeadMouseDown={handleTitlebarMouseDown}
               onHeadDoubleClick={handleTitlebarDoubleClick}
               workspaces={orderedWorkspaces}
@@ -3475,6 +3523,7 @@ export function App(): React.JSX.Element {
                 setSettings((cur) => !cur);
               }}
               onOpenPalette={() => setPaletteOpen(true)}
+              onOpenPullRequests={() => setRailView('prs')}
               paletteChord={effectiveLabel(
                 commandPaletteShortcut,
                 keymapOverrides,
@@ -3605,8 +3654,6 @@ export function App(): React.JSX.Element {
                   <LayoutView
                     tree={currentTree}
                     sessions={sessions}
-                    branches={checkout.chips}
-                    branchNotes={checkout.notes}
                     roster={paneRoster}
                     gridSessionIds={mountedGridSessionIds}
                     onMoveChildToGrid={moveChildToGrid}
@@ -3699,8 +3746,6 @@ export function App(): React.JSX.Element {
                               tree={tree}
                               warm={!gridSelected}
                               sessions={sessions}
-                              branches={checkout.chips}
-                    branchNotes={checkout.notes}
                               roster={paneRoster}
                               gridSessionIds={mountedGridSessionIds}
                               onMoveChildToGrid={moveChildToGrid}
@@ -3811,6 +3856,9 @@ export function App(): React.JSX.Element {
                 onClose={() => { setComposer(null); setLaunchPreview(null) }}
               />
               <SidePanelIntegration
+                  key={`${sideWorkspace}:${panelMountEpoch}`}
+                  proactiveDiffEnabled={openDiffOnAgentStop}
+                  proactiveDiffRequest={proactiveDiff.request}
                   focused={activeSurface === "side"}
                   open={scmOpen}
                   keepMounted={loadSideState(sideWorkspace).tabs.some((tab) => tab.kind === "browser")}
@@ -3823,7 +3871,19 @@ export function App(): React.JSX.Element {
                   request={sideRequest}
                   reviewChild={sideReview}
                   onSurface={setActiveSurface}
-                  onFocusPane={focusPane}
+                  onFocusPane={(session) => focusAndFlashPane(session, focusPane)}
+                  requestedPr={requestedPr}
+                  linkedPullRequests={linkedPullRequests}
+                  onSelectPullRequest={(link: PullRequestLink) => {
+                    setRequestedPr(link);
+                    setScmTab('pull-request');
+                    setScmOpen(true);
+                    setActiveSurface('side');
+                  }}
+                  onPasteToAgent={pasteToAgent}
+                  onCreateCheckAgent={createCheckAgent}
+                  checkAgentTargets={checkAgentTargets}
+                  onUserActionCounterChange={proactiveDiff.onUserActionCounterChange}
                   onRevealWorkspace={revealWorkspace}
                   onOpenEditor={openEditorFile}
                   onReviewChild={(child) => { setActiveId(child.id); setSideReview(child); setScmTab("changes"); setSideRequest(null); }}
@@ -3846,7 +3906,21 @@ export function App(): React.JSX.Element {
             {settings || railView !== null ? (
               <ContentRegion>
                 <SurfaceBoundary label={railView ?? "Settings"}>
-                  {railView === "tasks" ? (
+                  {railView === "prs" ? (
+                    <PullRequestsRailScreen
+                      repoName={pullRequestRepositoryName(workspaces, prListDir)}
+                      workspace={pullRequestWorkspace(prListDir)}
+                      currentUser={prScreen.viewerLogin}
+                      items={prScreen.items}
+                      state={prScreen.state}
+                      sort={prScreen.sort}
+                      loading={prScreen.loading}
+                      onStateChange={prScreen.setState}
+                      onSortChange={prScreen.setSort}
+                      onRefresh={prScreen.refresh}
+                      onOpenPullRequest={openPullRequestFromScreen}
+                    />
+                  ) : railView === "tasks" ? (
                     <Suspense fallback={<div className="flex-1" />}>
                       <TasksSurface
                         client={conn.kind === "ready" ? conn.client : null}
@@ -4285,9 +4359,6 @@ export function App(): React.JSX.Element {
               keymapOverrides={keymapOverrides}
               onClose={() => setAddPanePopover(null)}
               onNewTerminal={newTerminal}
-              onNewBrowser={() => {
-                if (selectedWs !== "all") openBrowserPane(selectedWs, null);
-              }}
               onSpawnAgent={spawnAgentPane}
               agentProfiles={agentProfiles}
               workspaceActions={workspaceActions}
@@ -4308,6 +4379,16 @@ export function App(): React.JSX.Element {
           )}
 
           <PrefixHint />
+
+          <QuickOpenOverlay
+            open={quickOpen}
+            workspace={selectedWs}
+            onClose={() => setQuickOpen(false)}
+            onOpen={(path) => {
+              openEditorFile(selectedWs, path, null);
+              setQuickOpen(false);
+            }}
+          />
 
           <AnimOut open={shortcutSheet} suppress="modal">
             <ShortcutSheet onClose={() => setShortcutSheet(false)} />

@@ -53,6 +53,7 @@ function mountPane(opts: {
   liveChildren?: number
   profileLabel?: string | null
   branch?: string | null
+  checkout?: unknown
   context?: SessionContext | null
   onAddPane?: (id: number, rect: DOMRect) => void
   onHeaderPointerDown?: (id: number, e: React.PointerEvent) => void
@@ -72,7 +73,8 @@ function mountPane(opts: {
     live_children: opts.liveChildren ?? 0,
     children_waiting: 0,
     profile_label: opts.profileLabel ?? null,
-    context: opts.context ?? null
+    context: opts.context ?? null,
+    checkout: opts.checkout ?? (opts.branch ? { root: '/tmp/project', kind: 'primary', branch: opts.branch, head: null } : null)
   } as SessionInfo
   root ??= createRoot(container!)
   act(() => {
@@ -87,7 +89,6 @@ function mountPane(opts: {
         copyOnSelect={false}
         stripBoxGlyphs={false}
         showProject={false}
-        branch={opts.branch ?? null}
         registerOutput={() => noop}
         shellIntegration={false}
         onReconnectSsh={noop}
@@ -149,7 +150,7 @@ describe('pane header anatomy (step 13, reference shape)', () => {
     expect(shellGlyph.querySelector('rect')).not.toBeNull()
   })
 
-  it('renders no branch chip until git answers, and one after the title when it does', () => {
+  it('renders the protocol checkout identity after the title', () => {
     const bare = mountPane({})
     expect(bare.querySelector('[data-testid="branch-chip"]')).toBeNull()
     expect(bare.querySelector('[data-testid="header-divider"]')).toBeNull()
@@ -162,6 +163,13 @@ describe('pane header anatomy (step 13, reference shape)', () => {
       title.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING,
       'the branch chip belongs after the pane title'
     ).toBeTruthy()
+  })
+
+  it('renders the worktree slug in the header chip using monospace text', () => {
+    const el = mountPane({ checkout: { root: '/tmp/worktree', kind: { worktree: { slug: 'feature' } }, branch: 'feat/x', head: 'abcdef0' } })
+    const chip = el.querySelector('[data-testid="branch-chip"]')!
+    expect(chip.textContent).toContain('wt/feature · feat/x')
+    expect(chip.querySelector('.font-mono')).not.toBeNull()
   })
 
   it('renders the ACP badge as bare text without delegation chrome', () => {

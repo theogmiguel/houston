@@ -124,6 +124,44 @@ export function scmWorkspace(
 
 export type ScmTab = "changes" | "pull-request";
 
+export type SurfaceKind = 'browser' | 'files' | 'diff' | 'pull-request' | 'linked-pull-requests'
+export interface InspectorTabsState { openTabs: SurfaceKind[]; active: SurfaceKind | null }
+const INSPECTOR_TABS_PREFIX = 'tr-inspector-tabs:'
+const LEGACY_INSPECTOR_TAB_PREFIX = 'tr-inspector-tab:'
+const SURFACES: SurfaceKind[] = ['browser', 'files', 'diff', 'pull-request', 'linked-pull-requests']
+
+export function loadInspectorTabs(workspace: string): InspectorTabsState {
+  const fallback: InspectorTabsState = { openTabs: [], active: null }
+  try {
+    const raw = localStorage.getItem(INSPECTOR_TABS_PREFIX + workspace)
+    if (raw !== null) {
+      const parsed = JSON.parse(raw) as Partial<InspectorTabsState>
+      if (!Array.isArray(parsed.openTabs)) return fallback
+      const openTabs = parsed.openTabs.filter(
+        (tab, index, all): tab is SurfaceKind =>
+          SURFACES.includes(tab as SurfaceKind) && all.indexOf(tab) === index,
+      )
+      const active = SURFACES.includes(parsed.active as SurfaceKind) && openTabs.includes(parsed.active as SurfaceKind)
+        ? parsed.active as SurfaceKind
+        : openTabs.at(-1) ?? null
+      return { openTabs, active }
+    }
+    const legacy = localStorage.getItem(LEGACY_INSPECTOR_TAB_PREFIX + workspace)
+    const migrated: SurfaceKind | null = legacy === 'files'
+      ? 'files'
+      : legacy === 'pull-request'
+        ? 'pull-request'
+        : legacy === 'changes' ? 'diff' : null
+    return migrated ? { openTabs: [migrated], active: migrated } : fallback
+  } catch { return fallback }
+}
+
+export function saveInspectorTabs(workspace: string, state: InspectorTabsState): void {
+  try { localStorage.setItem(INSPECTOR_TABS_PREFIX + workspace, JSON.stringify(state)) } catch { }
+}
+
+export function inspectorTabsKey(workspace: string): string { return INSPECTOR_TABS_PREFIX + workspace }
+
 export function scmTabLabel(tab: ScmTab): string {
   return tab === "changes" ? "Changes" : "Pull request";
 }

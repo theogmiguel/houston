@@ -7,7 +7,7 @@ import { ChildrenColumn, PeekBarButton, PeekBarIconButton, SettledChildButton, S
 import { KeyCap, KeymapHintGroup, KeymapHintHeading, KeymapHintRow, KeymapHintSurface } from '../src/components/ui/KeymapHint'
 import { StackTab, StackTabBadge, StackTabCapacity, StackTabClose, StackTabLabel, StackTabStrip } from '../src/components/ui/StackTab'
 import { TagChip } from '../src/components/ui/TagChip'
-import { TagEditorActions, TagEditorButton, TagEditorCaption, TagEditorInput, TagEditorPopover, TagEditorPreviewRow, TagEditorTitle } from '../src/components/ui/TagEditor'
+import { TaskDescriptionPreviewSpecimen } from '../src/components/ui/TaskDescriptionPreview'
 import { TagFieldGroup, TagFieldLabel, TagFormActions, TagFormPreview, TagHint, TagList, TagListName, TagListRow, TagListUsage, TagRowIconButton, TagTextInput } from '../src/components/ui/TagList'
 import { TagSwatchButton, TagSwatchDot, TagSwatchGrid } from '../src/components/ui/TagSwatch'
 import { DropzoneIcon, TerminalDropzone, DropzoneLabel } from '../src/components/ui/TerminalDropzone'
@@ -29,6 +29,7 @@ export function UiRoleSpecimen(): React.JSX.Element {
   return (
     <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))' }}>
       <div className="grid content-start gap-[var(--space-2)]">
+        <TaskDescriptionPreviewSpecimen />
         <PaneHeadIdentity>
           <PaneStatusDot status="working" /><PaneEngineGlyph><Icon glyph={IconCheck} role="ui" /></PaneEngineGlyph><PaneSubtitle>~/project</PaneSubtitle><PaneBranchChip>main</PaneBranchChip>
           <PaneHeadActions><PaneStateChip state="exited">ENDED</PaneStateChip><PaneStateChip state="running">Working</PaneStateChip><PaneHeadButton aria-label="Close pane"><Icon glyph={IconClose} role="ui" /></PaneHeadButton><PaneHeadButton tone="accent" aria-label="Resume pane"><Icon glyph={IconCheck} role="ui" /></PaneHeadButton><PaneHeadButton tone="danger" aria-label="Stop pane"><Icon glyph={IconClose} role="ui" /></PaneHeadButton><PaneHeadButton tone="info" aria-label="Working pane"><Icon glyph={IconCheck} role="ui" /></PaneHeadButton></PaneHeadActions>
@@ -49,11 +50,10 @@ export function UiRoleSpecimen(): React.JSX.Element {
       </div>
       <div className="grid content-start gap-[var(--space-2)]">
         <TagChip tag={TAGS[0]} /><TagList><TagListRow isNew><TagListName>Bug</TagListName><TagListUsage>3 sessions</TagListUsage></TagListRow></TagList>
-        <TagFieldGroup><TagFieldLabel htmlFor="tag-specimen-name">Name</TagFieldLabel><TagEditorInput id="tag-specimen-name" value="Bug" readOnly /><TagTextInput aria-label="New tag name" value="Review" readOnly /></TagFieldGroup>
+        <TagFieldGroup><TagFieldLabel htmlFor="tag-specimen-name">Name</TagFieldLabel><TagTextInput id="tag-specimen-name" aria-label="Tag name" value="Bug" readOnly /><TagTextInput aria-label="New tag name" value="Review" readOnly /></TagFieldGroup>
         <TagHint>Used to filter the session rail.</TagHint>
         <TagSwatchDot color="#f472b6" size="menu" /><TagSwatchGrid><TagSwatchButton color="#f472b6" selected aria-label="Pink" /><TagSwatchButton color="#f59e0b" selected={false} aria-label="Amber" /></TagSwatchGrid>
         <TagFormPreview><TagChip tag={TAGS[0]} /></TagFormPreview><TagFormActions><button type="button">Add tag</button></TagFormActions><TagRowIconButton aria-label="Delete tag">×</TagRowIconButton>
-        <TagEditorPopover style={{ position: 'relative' }}><TagEditorTitle>New tag</TagEditorTitle><TagEditorCaption>PREVIEW</TagEditorCaption><TagEditorCaption inline>Inline caption</TagEditorCaption><TagEditorPreviewRow><TagChip tag={TAGS[0]} /></TagEditorPreviewRow><TagEditorActions><TagEditorButton variant="ghost">Cancel</TagEditorButton><TagEditorButton variant="primary">Create</TagEditorButton></TagEditorActions></TagEditorPopover>
       </div>
       <div className="grid content-start gap-[var(--space-2)]">
         <StackTabStrip><StackTab active><StackTabLabel>Terminal</StackTabLabel></StackTab><StackTab active={false}><StackTabLabel>Shell</StackTabLabel><StackTabBadge aria-label="Needs input" /><StackTabClose aria-label="Close tab">×</StackTabClose></StackTab><StackTabCapacity>2/4</StackTabCapacity></StackTabStrip>

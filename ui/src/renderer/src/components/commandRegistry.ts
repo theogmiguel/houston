@@ -10,7 +10,6 @@ import type { WorkspaceAction } from '../houston/generated/WorkspaceAction'
 import { gridRecency, gridRecencyKey } from '../gridRecency'
 import {
   newTerminal as newTerminalShortcut,
-  newBrowserPane as newBrowserPaneShortcut,
   toggleGit as toggleGitShortcut,
   toggleSidebar as toggleSidebarShortcut,
   togglePanel as togglePanelShortcut,
@@ -59,7 +58,6 @@ export interface PaletteActions {
   workspaceActions?: readonly WorkspaceAction[]
   runWorkspaceAction?: (action: WorkspaceAction) => void
   newTerminal: () => void
-  insertPane: (kind: 'browser') => void
   splitPane?: () => void
   newGrid: () => void
   closePane?: () => void
@@ -84,7 +82,8 @@ export interface PaletteActions {
   windowClose?: () => void
   quitAndStopDaemon?: () => void
 
-  selectNavRow: (row: 'routines' | 'skills' | 'harness' | 'mcp' | 'usage') => void
+  selectNavRow: (row: 'routines' | 'skills' | 'harness' | 'mcp' | 'prs' | 'usage') => void
+  openManageTags?: () => void
 
   switchWorkspace: (path: string | 'all') => void
 
@@ -180,7 +179,7 @@ function buildSettingsRowCommands(): Command[] {
 
 function buildRailNavCommands(actions: PaletteActions): Command[] {
   const rows: {
-    id: 'routines' | 'skills' | 'harness' | 'mcp' | 'usage'
+    id: 'routines' | 'skills' | 'harness' | 'mcp' | 'prs' | 'usage'
     title: string
     keywords: string[]
   }[] = [
@@ -188,9 +187,10 @@ function buildRailNavCommands(actions: PaletteActions): Command[] {
     { id: 'skills', title: 'Go to Skills', keywords: ['library', 'commands'] },
     { id: 'harness', title: 'Go to Harness', keywords: ['review', 'findings', 'mistakes'] },
     { id: 'mcp', title: 'Go to Connections', keywords: ['mcp', 'servers', 'plugins', 'model context protocol'] },
+    { id: 'prs', title: 'Go to Pull Requests', keywords: ['pull requests', 'review', 'github'] },
     { id: 'usage', title: 'Go to Usage', keywords: ['tokens', 'cost', 'spend', 'limits', 'analytics'] }
   ]
-  return rows.map((r) => ({
+  const commands: Command[] = rows.map((r) => ({
     id: `go-to.nav.${r.id}`,
     title: r.title,
     group: 'Go to' as const,
@@ -198,6 +198,16 @@ function buildRailNavCommands(actions: PaletteActions): Command[] {
     enabled: true,
     run: () => actions.selectNavRow(r.id)
   }))
+  commands.push({
+    id: 'go-to.manage-tags',
+    title: 'Manage tags',
+    group: 'Go to' as const,
+    keywords: ['labels', 'colors', 'rail'],
+    enabled: Boolean(actions.openManageTags),
+    disabledReason: actions.openManageTags ? undefined : 'Tag management is unavailable',
+    run: () => actions.openManageTags?.()
+  })
+  return commands
 }
 
 function buildPaneCommands(actions: PaletteActions, hasWorkspace: boolean): Command[] {
@@ -263,6 +273,7 @@ function buildPaneCommands(actions: PaletteActions, hasWorkspace: boolean): Comm
   })
 
   for (const t of PANE_TYPES) {
+    if (t.kind === 'browser') continue
     const forcedReason = PANE_DISABLED_REASON[t.kind]
     const state = paneTypeButtonState(t, hasWorkspace)
     const disabled = forcedReason !== undefined || !t.insertable || state.disabled || !hasWorkspace
@@ -271,12 +282,10 @@ function buildPaneCommands(actions: PaletteActions, hasWorkspace: boolean): Comm
       title: `New ${t.label} pane`,
       group: 'Panes',
       keywords: PANE_KEYWORDS[t.kind] ?? [],
-      chord: t.kind === 'browser' ? newBrowserPaneShortcut : undefined,
+      chord: undefined,
       enabled: !disabled,
       disabledReason: disabled ? (forcedReason ?? (!hasWorkspace ? `Open a workspace to use ${t.label}` : state.title)) : undefined,
-      run: () => {
-        if (t.kind === 'browser') actions.insertPane('browser')
-      }
+      run: () => undefined
     })
   }
   return commands

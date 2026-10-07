@@ -7,9 +7,11 @@ import {
   type TerminalPaletteChoice
 } from '../../theme'
 import { Segmented } from '../ui/SegmentedControl'
+import { ShellElement } from '../ui/ShellPrimitives'
 import { ChoiceGrid, RadioCard, RadioCardFooter, ThemePreviewSwatch } from '../ui/RadioCard'
 import { Group, Row } from './shared'
 import { Toggle } from '../ui/settingsPrimitives'
+import { Button } from '../ui/Button'
 import {
   RAIL_VIEWS,
   RAIL_VIEW_LABEL,
@@ -21,6 +23,7 @@ import {
   setContextIndicatorVisible,
   useContextIndicatorVisible
 } from '../../contextIndicatorPref'
+import { useOpenDiffOnAgentStopPreference } from '../../usePreferences'
 
 const CHROME_THEME_TAGS: Record<ChromeTheme, string> = {
   graphite: 'Default',
@@ -62,20 +65,35 @@ function SidebarRowToggles(): React.JSX.Element {
   const hidden = useHiddenRailViews()
   return (
     <>
-      {RAIL_VIEWS.map((v) => (
+      {RAIL_VIEWS.filter((v) => hidden.has(v)).map((v) => (
         <Row
           key={v}
           title={RAIL_VIEW_LABEL[v]}
-          desc={`Show ${RAIL_VIEW_LABEL[v]} in the sidebar, above the workspace tree.`}
+          desc="Hidden from the navigation rail."
         >
-          <Toggle
-            on={!hidden.has(v)}
-            data-testid={`sidebar-row-toggle-${v}`}
-            onChange={(on) => setRailViewHidden(v, !on)}
-          />
+          <Button variant="legacy-ghost" size="sm" data-testid={`sidebar-row-restore-${v}`} onClick={() => setRailViewHidden(v, false)}>Restore</Button>
         </Row>
       ))}
+      {hidden.size === 0 && <ShellElement as="p" shellRole="appearance-hidden-empty">No hidden navigation rows.</ShellElement>}
     </>
+  )
+}
+
+function PanelsSettings(): React.JSX.Element {
+  const [openDiffOnAgentStop, setOpenDiffOnAgentStop] = useOpenDiffOnAgentStopPreference()
+  return (
+    <Group heading="Panels">
+      <Row
+        title="Open diff when an agent stops"
+        desc="Open the Diff panel after the focused agent finishes when the workspace has changes."
+      >
+        <Toggle
+          on={openDiffOnAgentStop}
+          data-testid="open-diff-on-agent-stop-toggle"
+          onChange={setOpenDiffOnAgentStop}
+        />
+      </Row>
+    </Group>
   )
 }
 
@@ -123,6 +141,8 @@ export function AppearanceSection({
         {}
         <SidebarRowToggles />
       </Group>
+
+      <PanelsSettings />
 
       <Group heading="Interface">
         <Row

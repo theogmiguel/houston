@@ -7,7 +7,6 @@ import type { Workspace } from '../houston/generated/Workspace'
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
     newTerminal: vi.fn(),
-    insertPane: vi.fn(),
     splitPane: vi.fn(),
     newGrid: vi.fn(),
     closePane: vi.fn(),

@@ -12,7 +12,10 @@ import {
   scmWidthMax,
   setScmWidth,
   stepScmWidth,
-  resetScmWidthForTests
+  resetScmWidthForTests,
+  loadInspectorTabs,
+  saveInspectorTabs,
+  inspectorTabsKey
 } from './scmPanel'
 
 beforeEach(() => {
@@ -49,6 +52,18 @@ describe('source control width contract', () => {
 })
 
 describe('source control persistence', () => {
+  it('migrates the legacy inspector selection into ordered surface state', () => {
+    localStorage.setItem('tr-inspector-tab:/repo', 'pull-request')
+    expect(loadInspectorTabs('/repo')).toEqual({ openTabs: ['pull-request'], active: 'pull-request' })
+  })
+
+  it('persists ordered open surfaces and the active surface per workspace', () => {
+    const state = { openTabs: ['files', 'browser', 'diff'] as ('files' | 'browser' | 'diff')[], active: 'browser' as const }
+    saveInspectorTabs('/repo', state)
+    expect(localStorage.getItem(inspectorTabsKey('/repo'))).toBe(JSON.stringify(state))
+    expect(loadInspectorTabs('/repo')).toEqual(state)
+  })
+
   it('remembers the requested width across a reload', () => {
     setScmWidth(612)
     expect(localStorage.getItem('tr-scm-width')).toBe('612')

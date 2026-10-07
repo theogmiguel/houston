@@ -28,6 +28,7 @@ import {
 } from '../icons'
 import type { SelectOption } from '../ui/Select'
 import { Tooltip } from '../ui/Tooltip'
+import { ShellElement, ShellTaskDescriptionEditButton, ShellTaskDescriptionTextarea } from '../ui/ShellPrimitives'
 import {
   actorLabel,
   formatAge,
@@ -54,6 +55,7 @@ import {
   TaskCommentBox,
   TaskCommentField,
   TaskDetailFrame,
+  TaskDescriptionPreview,
   TaskDot,
   TaskDrawerCard,
   TaskDrawerHeader,
@@ -146,10 +148,10 @@ function TaskDetailDrawer({ props, description, setDescription }: { props: TaskD
     <section className="grid gap-[var(--space-2)]">
       <TaskSectionLabel heading="Activity" />
       <TaskDrawerCard>
-        <div className="grid gap-[var(--space-2)] p-[var(--space-3)]">
+        <ShellElement as="div" shellRole="task-activity-content">
           <ActivityFeed history={detail.history} comments={detail.comments} runs={detail.runs} now={now} />
           <CommentComposer readOnly={false} onSubmit={(body) => props.onComment(task.id, body)} />
-        </div>
+        </ShellElement>
       </TaskDrawerCard>
     </section>
   </TaskDetailFrame>
@@ -190,18 +192,17 @@ function TaskDescriptionSection({ task, description, setDescription, onSave }: {
 
   return (
       <section className="grid gap-[var(--space-1)]" data-testid="task-description">
-        <div className="group flex items-center">
+        <ShellElement as="div" shellRole="task-description-heading">
           <div className="flex-1"><TaskSectionLabel heading="Description" /></div>
           <Tooltip label="Edit description">
-            <Button variant="icon" icon={IconPencil} aria-label="Edit description" className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" onClick={() => setEditingDescription(true)} />
+            <ShellTaskDescriptionEditButton onClick={() => setEditingDescription(true)} />
           </Tooltip>
-        </div>
+        </ShellElement>
         <TaskDrawerCard>
-          {editingDescription ? <textarea
+          {editingDescription ? <ShellTaskDescriptionTextarea
             ref={descriptionField}
             aria-label="Task description"
             data-testid="task-description-editor"
-            className="block w-full resize-none border-0 bg-transparent p-[var(--space-3)] text-[var(--text-primary)] outline-none"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             onBlur={saveDescription}
@@ -216,18 +217,17 @@ function TaskDescriptionSection({ task, description, setDescription, onSave }: {
                 event.currentTarget.blur()
               }
             }}
-          /> : description.trim() === '' ? <div className="flex items-center justify-between gap-[var(--space-2)] p-[var(--space-3)]">
-            <span className="text-[var(--text-muted)]">No description</span>
+          /> : description.trim() === '' ? <ShellElement as="div" shellRole="task-description-empty">
+            <ShellElement as="span" shellRole="task-description-empty-label">No description</ShellElement>
             <Button variant="ghost" size="sm" onClick={() => setEditingDescription(true)}>Add description</Button>
-          </div> : <>
-            <div className="relative grid transition-[grid-template-rows] duration-150 ease-out" style={{ gridTemplateRows: canExpandDescription && !expandedDescription ? '12.4em' : '1fr' }}>
-              <div className={`min-h-0 overflow-hidden p-[var(--space-3)] ${canExpandDescription && !expandedDescription ? 'line-clamp-[8]' : ''}`} onDoubleClick={() => setEditingDescription(true)}>
-                <MarkdownPreview source={description} variant="chat" />
-              </div>
-              {canExpandDescription && !expandedDescription && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[var(--card-bg)] to-transparent" />}
-            </div>
-            {canExpandDescription && <Button variant="ghost" size="sm" className="mx-[var(--space-2)] mb-[var(--space-2)]" onClick={() => setExpandedDescription((value) => !value)}>{expandedDescription ? 'Show less' : 'Show more'}</Button>}
-          </>}
+          </ShellElement> : <TaskDescriptionPreview
+            expanded={expandedDescription}
+            canExpand={canExpandDescription}
+            onToggle={() => setExpandedDescription((value) => !value)}
+            onDoubleClick={() => setEditingDescription(true)}
+          >
+            <MarkdownPreview source={description} variant="chat" />
+          </TaskDescriptionPreview>}
         </TaskDrawerCard>
       </section>
   )

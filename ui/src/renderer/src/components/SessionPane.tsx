@@ -38,7 +38,6 @@ import {
   IconEllipsis,
   IconEraser,
   IconFolder,
-  IconGitBranch,
   IconMaximize,
   IconMinimize,
   IconPlus,
@@ -54,7 +53,6 @@ import {
 import { usePaneFocusTier } from '../windowFocus'
 import { PaneHeader } from './ui'
 import {
-  PaneBranchChip,
   PaneEngineGlyph,
   PaneHeadActions,
   PaneHeadButton,
@@ -103,6 +101,9 @@ import { usePrWatch } from './git/usePrWatch'
 import { Button } from './ui/Button'
 import { RosterPeekbar, RosterSplit } from './ui/RosterSurface'
 import { Count } from './ui/Count'
+import { ShellBranchCopyChip, ShellElement } from './ui/ShellPrimitives'
+import { formatCheckout } from './checkout/formatCheckout'
+import type { SessionCheckout } from '../houston/generated/SessionCheckout'
 
 export const HEAD_ICON_CLS = ICON_ROLE_CLS.ui
 
@@ -237,29 +238,32 @@ export function OrchestratorBadge({
   )
 }
 
-// The branch a pane's cwd is on, once git has answered for it. No answer means
-// no chip, never a placeholder; the tooltip gives the full name on hover and on
-// keyboard focus, plus a quiet note naming the panes that share the checkout.
 export function BranchChip({
-  branch,
-  note
+  checkout,
+  remoteHost
 }: {
-  branch?: string | null
-  note?: string | null
+  checkout?: SessionCheckout | null
+  remoteHost?: string | null
 }): React.JSX.Element | null {
-  if (branch == null || branch === '') return null
-  const label = note ? `${branch}\n${note}` : branch
+  const formatted = formatCheckout(checkout, { remoteHost: remoteHost ?? undefined })
+  if (formatted.kind === 'unknown') return null
+  const detail = formatted.kind === 'remote' ? remoteHost : formatted.branch
+  const revealWorktree = (event: React.MouseEvent<HTMLSpanElement>): void => {
+    if (!event.ctrlKey || formatted.kind !== 'worktree' || !checkout) return
+    event.preventDefault()
+    event.stopPropagation()
+    void showItemInFolder(checkout.root)
+  }
   return (
-    <Tooltip label={label}>
-      <PaneBranchChip
-        type="button"
-        data-testid="branch-chip"
-        aria-label={`Branch ${branch}`}
-        className="[@container_(max-width:400px)]:hidden"
-      >
-        <Icon glyph={IconGitBranch} role="small" />
-        <span className="truncate">{branch}</span>
-      </PaneBranchChip>
+    <Tooltip label={formatted.kind === 'worktree' && checkout ? `${formatted.text}\n${checkout.root}` : formatted.text}>
+      <span data-testid="branch-chip" className="[@container_(max-width:400px)]:hidden" onClickCapture={revealWorktree}>
+        <ShellBranchCopyChip value={formatted.branch ?? checkout?.head ?? formatted.badge}>
+          <span className="inline-flex min-w-0 items-center gap-[var(--space-1)] truncate">
+            <span>{formatted.kind === 'remote' ? 'remote' : formatted.badge}</span>
+            {detail && <><span> </span><ShellElement as="span" shellRole="pane-branch-detail-separator">·</ShellElement><span> </span><span className="truncate">{detail}</span></>}
+          </span>
+        </ShellBranchCopyChip>
+      </span>
     </Tooltip>
   )
 }
@@ -291,9 +295,7 @@ interface Props {
   copyOnSelect: boolean
   stripBoxGlyphs: boolean
   showProject: boolean
-  /** The branch this pane's cwd is on, once git has answered; absent hides the chip. */
   branch?: string | null
-  /** A quiet note for the chip's tooltip: who else shares the checkout or repository. */
   branchNote?: string | null
   registerOutput: RegisterOutput
   shellIntegration: boolean
@@ -335,8 +337,6 @@ function SessionPaneImpl({
   copyOnSelect,
   stripBoxGlyphs,
   showProject,
-  branch,
-  branchNote,
   registerOutput,
   shellIntegration,
   onReconnectSsh,
@@ -456,7 +456,7 @@ function SessionPaneImpl({
           />
           <PaneTaskChip task={info.task} />
           <PaneWatchChip watches={prWatches} />
-          <BranchChip branch={branch} note={branchNote} />
+          <BranchChip checkout={(info as SessionInfo & { checkout?: SessionCheckout | null }).checkout} remoteHost={info.ssh_host} />
           <PaneHeaderTags tagIds={info.tags} />
           {info.acp != null && <AcpBadge slug={info.acp} />}
           {info.profile_label != null && <ProfileBadge label={info.profile_label} />}

@@ -36,7 +36,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}
   }
 }
 
-describe('Sidebar railfoot — Settings and theme icon buttons', () => {
+describe('Sidebar railfoot — navigation actions', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -65,15 +65,17 @@ describe('Sidebar railfoot — Settings and theme icon buttons', () => {
     return container.querySelector('.railfoot') as HTMLElement
   }
 
-  it('renders exactly two buttons in the railfoot, no "Settings" text and no hide control', () => {
+  it('renders Settings, Pull requests, Usage and Theme without a hide control', () => {
     render()
     const buttons = foot().querySelectorAll('button')
-    expect(buttons).toHaveLength(2)
+    expect(buttons).toHaveLength(4)
     expect(foot().textContent).not.toContain('Settings')
     expect(foot().querySelector('button[aria-label="Hide sidebar"]')).toBeNull()
+    expect(foot().querySelector('[data-testid="rail-footer-pull-requests"]')).not.toBeNull()
+    expect(foot().querySelector('button[aria-label="Usage"]')).not.toBeNull()
   })
 
-  it('both buttons are 28px squares over the topbar-sized ui glyph, not label-sized tiles or oversized ones', () => {
+  it('footer actions use 28px squares over the topbar-sized ui glyph', () => {
     render()
     for (const button of Array.from(foot().querySelectorAll('button'))) {
       const cls = button.className
@@ -122,14 +124,14 @@ describe('Sidebar railfoot — Settings and theme icon buttons', () => {
   it('renders nothing for an update nobody offered -- no third button, no reserved space', () => {
     render()
     expect(foot().querySelector('[data-testid="rail-update-available"]')).toBeNull()
-    expect(foot().querySelectorAll('button')).toHaveLength(2)
+    expect(foot().querySelectorAll('button')).toHaveLength(4)
   })
 
   it('offers one worded chip carrying the glyph and the version, pushed to the far end', () => {
     render({ updateVersion: '1.2.3' })
     const buttons = Array.from(foot().querySelectorAll('button'))
-    expect(buttons).toHaveLength(3)
-    const indicator = buttons[2]
+    expect(buttons).toHaveLength(5)
+    const indicator = buttons[4]
     expect(indicator.getAttribute('data-testid')).toBe('rail-update-available')
     expect(indicator.getAttribute('aria-label')).toBe('Houston v1.2.3 is available. Open to install')
     expect(indicator.textContent).toBe('1.2.3 available')

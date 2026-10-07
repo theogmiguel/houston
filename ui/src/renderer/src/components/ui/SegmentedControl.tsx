@@ -29,6 +29,7 @@ export interface SegmentedProps<T extends string = string> {
   'aria-label': string
   className?: string
   leadingLabel?: ReactNode
+  size?: 'default' | 'xs'
 }
 
 function Spinner(): React.JSX.Element {
@@ -49,6 +50,7 @@ export function Segmented<T extends string = string>({
   error,
   className = '',
   leadingLabel,
+  size = 'default',
   ...rest
 }: SegmentedProps<T>): React.JSX.Element {
   const ariaLabel = rest['aria-label']
@@ -60,7 +62,7 @@ export function Segmented<T extends string = string>({
         aria-label={ariaLabel}
         data-testid="segmented"
         data-state="error"
-        className="inline-flex items-center gap-[var(--space-2)] h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-pill)] border border-[var(--danger)] bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)] text-[length:var(--tr-text-ui-size)]"
+        className={`inline-flex items-center gap-[var(--space-2)] ${size === 'xs' ? 'h-6 px-1 text-[length:var(--tr-text-xs)]' : 'h-[var(--h-ctl)] px-[var(--space-3)] text-[length:var(--tr-text-ui-size)]'} rounded-[var(--tr-radius-pill)] border border-[var(--danger)] bg-[var(--status-blocked-bg)] text-[var(--status-blocked-text)]`}
       >
         <span>{error.message}</span>
         <button
@@ -81,7 +83,7 @@ export function Segmented<T extends string = string>({
         aria-label={ariaLabel}
         data-testid="segmented"
         data-state="empty-set"
-        className="inline-flex items-center h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-pill)] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] text-[length:var(--tr-text-ui-size)]"
+        className={`inline-flex items-center h-[var(--h-ctl)] px-[var(--space-3)] rounded-[var(--tr-radius-pill)] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] ${size === 'xs' ? 'h-6 px-1 text-[length:var(--tr-text-xs)]' : 'text-[length:var(--tr-text-ui-size)]'}`}
       >
         No options
       </div>
@@ -150,6 +152,7 @@ export function Segmented<T extends string = string>({
       aria-busy={loading || undefined}
       data-testid="segmented"
       data-state={value === undefined ? 'empty' : 'filled'}
+      data-size={size}
       onKeyDown={handleKeyDown}
       className={`${SEG_TRACK_CLS} ${
         loading ? 'opacity-60' : ''
@@ -176,7 +179,7 @@ export function Segmented<T extends string = string>({
               ref={(el) => {
                 itemRefs.current[index] = el
               }}
-              className={`${SEG_ITEM_CLS} ${selected ? SEG_ITEM_ON_CLS : SEG_ITEM_OFF_CLS}`}
+              className={`${SEG_ITEM_CLS} ${selected ? SEG_ITEM_ON_CLS : SEG_ITEM_OFF_CLS} ${size === 'xs' ? 'h-[var(--h-segmented-xs)] min-h-0 px-1 text-[length:var(--tr-text-xs)]' : ''}`}
             >
               {opt.icon && <span aria-hidden>{opt.icon}</span>}
               {loading && selected ? (

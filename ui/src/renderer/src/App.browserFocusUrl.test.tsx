@@ -30,19 +30,14 @@ describe('Ctrl+L focuses the browser address bar', () => {
   })
 
   async function openBrowserPanel(h: AppHarness): Promise<HTMLInputElement> {
-    press({ key: 'B', ctrlKey: true, shiftKey: true })
+    press({ key: ' ', code: 'Space', ctrlKey: true })
     press({ key: 'b' })
     await settleLazySurface(
-      () => h.container.querySelector('input[aria-label="Address and search bar"]') !== null,
-      'BrowserPane'
+      () => h.container.querySelector('.browser-surface[data-active="true"] input[aria-label="Address"]') !== null,
+      'BrowserSurface'
     )
-    const url = h.container.querySelector('input[aria-label="Address and search bar"]')
-    if (!(url instanceof HTMLInputElement)) throw new Error('browser pane did not open')
-    const pane = url.closest('.pane')
-    if (!pane) throw new Error('browser pane has no .pane ancestor')
-    act(() => {
-      pane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }))
-    })
+    const url = h.container.querySelector('.browser-surface[data-active="true"] input[aria-label="Address"]')
+    if (!(url instanceof HTMLInputElement)) throw new Error('Browser surface did not open')
     return url
   }
 
@@ -51,9 +46,11 @@ describe('Ctrl+L focuses the browser address bar', () => {
     const url = await openBrowserPanel(harness)
     expect(document.activeElement).not.toBe(url)
 
-    press({ key: 'l', ctrlKey: true })
+    const event = new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true, cancelable: true })
+    act(() => window.dispatchEvent(event))
 
     expect(document.activeElement).toBe(url)
+    expect(event.defaultPrevented).toBe(true)
   })
 
   it('leaves the keystroke alone when a text field elsewhere has focus', async () => {

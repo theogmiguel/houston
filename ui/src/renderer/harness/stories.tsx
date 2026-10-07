@@ -141,9 +141,10 @@ const STORY_ACTIONS = [{ id: 'test', name: 'test', command: 'bun run test', shor
 import { UiPrimitivesStory } from './uiStories'
 import { AddPaneDisabled, AddPaneProfiles, AttachmentChips, AttachmentPreviews, ComposerControlsOpen, ComposerControlsOverflow, ComposerControlsStates, NewSessionTask, NewSessionWithRoutes, ReconnectBannerStory } from './composerStories'
 import { FilesEmptyGraphite, FilesNarrowGraphite, FilesPaneGraphite, FilesRenameGraphite, FilesRootErrorGraphite, FilesSplitGraphite, FilesSplitPaper, FilesTabMenuGraphite, FilesTreeMenuGraphite } from './filesStories'
+import { FilesSurfaceDiskChanged, FilesSurfaceFile340, FilesSurfaceFile470, FilesSurfaceFile600, FilesSurfaceFile732, FilesSurfaceOpenIn, FilesSurfaceQuickOpen, FilesSurfaceTree340, FilesSurfaceTree470, FilesSurfaceTree600, FilesSurfaceTree732 } from './filesSurfaceStories'
 import { EditorSurfaceMenuStory, LayoutDropSlotsStory, MarkdownPreviewStory, OpenInSubmenuStory, EditorPreviewStatesStory, DictationListeningStory, DictationTranscribingStory, WindowControlsStory } from './workbenchStories'
 import { PaletteGraphiteStory, PalettePaperStory } from './paletteStories'
-import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper } from './inspectorStories'
+import { InspectorChangesGraphite, InspectorChangesPaper, InspectorChildrenGraphite, InspectorChildrenPaper, InspectorFilesGraphite, InspectorOverviewStory, InspectorPrGraphite, InspectorPrPaper, SurfaceBrowserEmpty, SurfaceBrowserEmpty340, SurfaceBrowserPage, SurfaceBrowserPage340, SurfaceDiff, SurfaceDiff340, SurfaceDiff600, SurfaceDiff732, SurfaceLauncher, SurfacePrFailing, SurfacePrFailing340, SurfacePrFailing600, SurfacePrFailing732, SurfacePrPassing, SurfaceWidth340, SurfaceWidth470, SurfaceWidth600, SurfaceWidth732 } from './inspectorStories'
 import {
   LegacyBranchesStory,
   LegacyBranchesPopulatedStory,
@@ -167,14 +168,16 @@ import {
   LegacyUpdateStory
 } from './dialogStories'
 import { GridRailRow } from '../src/components/ui/GridRailRow'
+import type { PrInfo } from '../src/houston/client'
 import { FirstRunHooksStepSpecimen } from '../src/components/ui/FirstRunHooksStep'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagEditorStory, TagsFormsStory } from './paneChromeStories'
+import { PaneCheckoutHeaderStory, PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
+import { PullRequestsScreenStory } from './prsStories'
 
 const noop = (): void => {}
 
@@ -184,10 +187,22 @@ function RailGridRowStory({ theme, width }: { theme: 'graphite' | 'paper'; width
     { id: 11, agent: 'claude', project_dir: '/work/houston', cwd: '/work/houston', checkout_root: '/work/houston', state: 'running', status: 'working', status_since_ms: Date.now() - 14 * 60_000, title: 'Rail implementation', codename: 'Rail', hidden: false, live_children: 1, children_waiting: 0, context: { used_percent: 63 }, task: { key: 'HOU-411' }, spawned_by: null },
     { id: 12, agent: 'codex', project_dir: '/work/houston', cwd: '/work/houston-wt', worktree: { path: '/work/houston-wt', branch: 'ui/p4-rail' }, state: 'running', status: 'needs-input', status_since_ms: Date.now() - 4 * 60_000, title: 'Review rail states', codename: 'Review', hidden: false, live_children: 0, children_waiting: 0, context: { used_percent: 91 }, task: { key: 'HOU-412' }, spawned_by: 11 }
   ] as unknown as SessionInfo[]
+  const pr: PrInfo = {
+    number: 411,
+    url: 'https://github.com/example/houston/pull/411',
+    state: 'OPEN',
+    review_decision: 'REVIEW_REQUIRED',
+    checks: 'running',
+    title: 'Redesign the surfaces',
+    head_ref: 'ui/p4-rail',
+    additions: 142,
+    deletions: 39,
+    is_draft: false,
+  }
   const store = React.useMemo(() => createSessionsStore(new Map(sessions.map((session) => [session.id, session]))), [])
   return <div style={{ width, height: '100%', padding: 18, background: 'var(--background)' }}>
     <SessionsStoreContext.Provider value={store}>
-      <GridRailRow name="Rail implementation" selected paneIds={[11, 12]} tags={[{ id: 1, name: 'Bug', color: '#f472b6' }, { id: 2, name: 'Teste', color: '#f59e0b' }]} fallbackSessions={sessions} branches={new Map([[11, 'ui/p4-rail'], [12, 'ui/p4-rail']])} diffByDir={new Map([['/work/houston', { added: 142, deleted: 39, ahead: 2, behind: 0, changedFiles: 5 }], ['/work/houston-wt', { added: 24, deleted: 8, ahead: 0, behind: 1, changedFiles: 2 }]])} prByDir={new Map([['/work/houston', { gh: 'ready', pr: { number: 411, url: 'https://github.com/example/houston/pull/411', state: 'OPEN', review_decision: 'REVIEW_REQUIRED', checks: 'running' } }]])} width={width} jumpNumber={1} onSelect={noop} onOpenInspector={noop} onOpenExternal={noop} />
+      <GridRailRow name="Rail implementation" workspace="/work/houston" gridId="grid-rail" selected paneIds={[11, 12]} tags={[{ id: 1, name: 'Bug', color: '#f472b6' }, { id: 2, name: 'Teste', color: '#f59e0b' }]} fallbackSessions={sessions} branches={new Map([[11, 'ui/p4-rail'], [12, 'ui/p4-rail']])} diffByDir={new Map([['/work/houston', { added: 142, deleted: 39, ahead: 2, behind: 0, changedFiles: 5 }], ['/work/houston-wt', { added: 24, deleted: 8, ahead: 0, behind: 1, changedFiles: 2 }]])} prByDir={new Map([['/work/houston', { gh: 'ready', pr }]])} jumpNumber={1} onSelect={noop} onOpenInspector={noop} />
     </SessionsStoreContext.Provider>
   </div>
 }
@@ -263,7 +278,7 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'browser/act-overlay': () => <BrowserActOverlayStory />,
   'browser/act-modal': () => <BrowserActModalStory />,
   'new-session/default': () => <NewSession />,
-  'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onNewBrowser={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
+  'shell/add-pane-menu': () => <AddPanePopover right={24} y={24} hasWorkspace keymapOverrides={{ bindings: {}, shortcuts_enabled: true }} onClose={() => {}} onNewTerminal={() => {}} onSpawnAgent={() => {}} onSplitDown={() => {}} onNewGrid={() => {}} agentProfiles={null} workspaceActions={STORY_ACTIONS} />,
   'shell/workspace-empty': () => <WorkspaceEmpty onNewSession={() => {}} onTerminal={() => {}} onBrowser={() => {}} actions={STORY_ACTIONS} />,
   'launch/docked': () => <DockedLaunchStory />,
   'launch/docked-preset-hover': () => <DockedLaunchHoverStory />,
@@ -329,6 +344,17 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'shell/window-controls-resize': () => <WindowControlsStory />,
   'layout/drop-slots-splitter': () => <LayoutDropSlotsStory />,
   'shell/open-in-submenu': () => <OpenInSubmenuStory />,
+  'files/surface-340': () => <FilesSurfaceTree340 />,
+  'files/surface-470': () => <FilesSurfaceTree470 />,
+  'files/surface-600': () => <FilesSurfaceTree600 />,
+  'files/surface-732': () => <FilesSurfaceTree732 />,
+  'files/surface-file-340': () => <FilesSurfaceFile340 />,
+  'files/surface-file-470': () => <FilesSurfaceFile470 />,
+  'files/surface-file-600': () => <FilesSurfaceFile600 />,
+  'files/surface-file-732': () => <FilesSurfaceFile732 />,
+  'files/surface-quick-open': () => <FilesSurfaceQuickOpen />,
+  'files/surface-disk-changed': () => <FilesSurfaceDiskChanged />,
+  'files/surface-open-in': () => <FilesSurfaceOpenIn />,
   'connections/slack-connected': () => <SlackConnectionsStory state="connected" />,
   'connections/slack-reconnecting': () => <SlackConnectionsStory state="reconnecting" />,
   'connections/slack-off': () => <SlackConnectionsStory state="off" />,
@@ -354,6 +380,12 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'harness/first-run': () => <HarnessPageStory firstRun />,
   'harness/no-reviews': () => <HarnessPageStory noReviews />,
   'rail/workspaces-multi': () => <RailWorkspacesMulti />,
+  'prs/screen-paper': () => <PullRequestsScreenStory />,
+  'prs/screen-empty': () => <PullRequestsScreenStory mode="empty" />,
+  'prs/screen-loading': () => <PullRequestsScreenStory mode="loading" />,
+  'prs/screen-sort-menu': () => <PullRequestsScreenStory mode="sort" />,
+  'prs/screen-filter-menu': () => <PullRequestsScreenStory mode="filters" />,
+  'prs/screen-hover': () => <PullRequestsScreenStory mode="hover" />,
   'rail/grid-row-graphite-200': () => <RailGridRowStory theme="graphite" width={200} />,
   'rail/grid-row-graphite-240': () => <RailGridRowStory theme="graphite" width={240} />,
   'rail/grid-row-graphite-420': () => <RailGridRowStory theme="graphite" width={420} />,
@@ -461,12 +493,12 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'tasks/start-card': () => <TasksStartStory />,
   'panes/lifecycle': () => <PaneLifecycleStory />,
   'panes/chrome-menu': () => <PaneMenuStory />,
+  'surface/pane-header': () => <PaneCheckoutHeaderStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
   'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
   'panes/chrome-misc': () => <PaneMiscStory />,
   'panes/title-controls': () => <RenameTitleStory />,
   'legacy/tags-forms': () => <TagsFormsStory />,
-  'legacy/tag-editor': () => <TagEditorStory />,
   'tasks/roster': () => <TasksRosterStory />,
   'tasks/list-states': () => <TasksListStatesStory />,
   'tasks/composer': () => <TasksComposerStory />,
@@ -478,6 +510,24 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'tasks/overview-roster': () => <TasksOverviewRosterStory />,
   'shell-a/changes-graphite': () => <InspectorChangesGraphite />,
   'shell-a/changes-paper': () => <InspectorChangesPaper />,
+  'surface/launcher': () => <SurfaceLauncher />,
+  'surface/diff': () => <SurfaceDiff />,
+  'surface/diff-340': () => <SurfaceDiff340 />,
+  'surface/diff-600': () => <SurfaceDiff600 />,
+  'surface/diff-732': () => <SurfaceDiff732 />,
+  'surface/pr-passing': () => <SurfacePrPassing />,
+  'surface/pr-failing-expanded': () => <SurfacePrFailing />,
+  'surface/pr-failing-340': () => <SurfacePrFailing340 />,
+  'surface/pr-failing-600': () => <SurfacePrFailing600 />,
+  'surface/pr-failing-732': () => <SurfacePrFailing732 />,
+  'surface/browser-empty': () => <SurfaceBrowserEmpty />,
+  'surface/browser-page': () => <SurfaceBrowserPage />,
+  'surface/browser-empty-340': () => <SurfaceBrowserEmpty340 />,
+  'surface/browser-page-340': () => <SurfaceBrowserPage340 />,
+  'surface/width-340': () => <SurfaceWidth340 />,
+  'surface/width-470': () => <SurfaceWidth470 />,
+  'surface/width-600': () => <SurfaceWidth600 />,
+  'surface/width-732': () => <SurfaceWidth732 />,
   'shell-a/pr-graphite': () => <InspectorPrGraphite />,
   'shell-a/pr-paper': () => <InspectorPrPaper />,
   'shell-a/pr-browse': () => <PrBrowseCapture />,

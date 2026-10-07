@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import type { Task } from '../../houston/generated/Task'
 import { TasksSurface } from '../nav/TasksSurface'
@@ -37,6 +37,11 @@ function state() {
     setAccess: vi.fn(), startTask: mocks.startTask
   }
 }
+
+// The drawer renders descriptions through the lazy markdown pipeline; a cold import can outlast waitFor.
+beforeAll(async () => {
+  await import('../markdownPipeline')
+})
 
 describe('Tasks surface and drawer', () => {
   let container: HTMLDivElement

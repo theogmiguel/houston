@@ -1,0 +1,7 @@
+/* Prs layout offsets retain the legacy spacing of the pull request surface. */
+.prs-ml-1 { margin-left: var(--space-1); }
+.prs-mt-1 { margin-top: var(--space-1); }
+.prs-mb-1 { margin-bottom: var(--space-1); }
+.prs-mr-2 { margin-right: var(--space-2); }
+.prs-mt-nudge { margin-top: var(--space-disclosure-nudge); }
+.prs-mb-half { margin-bottom: var(--space-0-5); }

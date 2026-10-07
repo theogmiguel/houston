@@ -20,8 +20,7 @@ const WS_B = '/tmp/other'
 const GRID_KEY = gridStorageKey(WS, DEFAULT_GRID_ID)
 
 beforeAll(async () => {
-  // Panel routing assertions must not depend on cold module-transform latency.
-  await import('./components/ChangesPane')
+  await import('./components/SourceControlPanel')
 })
 
 beforeEach(() => {
@@ -102,9 +101,19 @@ describe('source control panel — shell integration', () => {
     return el
   }
 
+  // A fresh panel opens on the surface launcher; the Diff surface is what
+  // these tests exercise, so open it through the prefix layer once.
   async function settlePanel(): Promise<void> {
+    let openedDiff = false
     for (let i = 0; i < 240; i++) {
-      if (harness!.container.querySelector('[data-testid="changes-pane"]')) return
+      if (harness!.container.querySelector('[data-testid="source-control-panel"]')) return
+      if (!openedDiff && panel() && !harness!.container.querySelector('.side-panel-surface')) {
+        openedDiff = true
+        act(() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', ctrlKey: true, bubbles: true }))
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }))
+        })
+      }
       await act(async () => {
         await new Promise((r) => setTimeout(r, 5))
       })
@@ -190,7 +199,7 @@ describe('source control panel — shell integration', () => {
     expect(panel()!.style.width).toBe('612px')
   })
 
-  it('loads a saved grid with a legacy git leaf while the inspector stays closed by default', async () => {
+  it('migrates saved browser and git leaves while the panel stays closed by default', async () => {
     const saved: LayoutNode = {
       kind: 'split',
       dir: 'col',
@@ -206,13 +215,14 @@ describe('source control panel — shell integration', () => {
 
     await boot([1, 2])
 
-    await waitFor(() => expect(panel()).toBeNull())
+    await waitFor(() => expect(panel()?.getAttribute('data-state')).toBe('closing'))
     press('g')
     expect(panel()).not.toBeNull()
     await settlePanel()
     const tree = storedTree()
     expect(hasKind(tree, 'git')).toBe(false)
-    expect(hasKind(tree, 'browser')).toBe(true)
+    expect(hasKind(tree, 'browser')).toBe(false)
+    expect(localStorage.getItem(`tr-side:${WS}`)).toContain('https://example.test')
     expect(sessionsIn(loadLayout(GRID_KEY).tree).sort()).toEqual([1, 2])
   })
 
@@ -315,6 +325,8 @@ describe('source control panel — shell integration', () => {
       if (!pane) throw new Error('session 2 pane not rendered in All view')
       pane.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
     })
+    // Focus moved the panel to session 2's workspace, whose surfaces start on the launcher.
+    await settlePanel()
     deliverClientMsg('git_status', {
       type: 'git_status',
       dir: WS_B,

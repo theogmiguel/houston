@@ -14,7 +14,7 @@ const SEEDED = {
     weights: [34, 33, 33],
     children: [
       { kind: 'leaf', session: 1 },
-      { kind: 'browser', id: 'b-keep', url: 'https://example.test/' },
+        { kind: 'editor', id: 'e-second', path: '/tmp/project/b.ts' },
       { kind: 'editor', id: 'e-keep', path: '/tmp/project/a.ts' }
     ]
   }
@@ -61,17 +61,17 @@ describe('tidying the grid (inherits M9/D37)', () => {
     act(() => btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
   }
 
-  it('keeps the browser and editor panes, by id', async () => {
+  it('keeps editor panes while tidying', async () => {
     harness = await renderReadyApp()
-    expect(savedPanes()).toEqual({ browsers: ['b-keep'], editors: ['e-keep'], sessions: [1] })
+    expect(savedPanes()).toEqual({ browsers: [], editors: ['e-second', 'e-keep'], sessions: [1] })
 
     clickTidy()
 
     const after = savedPanes()
-    expect(after.browsers).toEqual(['b-keep'])
-    expect(after.editors).toEqual(['e-keep'])
+    expect(after.browsers).toEqual([])
+    expect(after.editors).toEqual(['e-second', 'e-keep'])
     expect(after.sessions).toEqual([1])
-    expect(harness.container.querySelector('.pane.browser')).not.toBeNull()
+    expect(harness.container.querySelector('.pane.browser')).toBeNull()
   })
 
   it('keeps them across the syncs that follow, not just the click', async () => {
@@ -80,8 +80,8 @@ describe('tidying the grid (inherits M9/D37)', () => {
     clickTidy()
 
     const after = savedPanes()
-    expect(after.browsers).toEqual(['b-keep'])
-    expect(after.editors).toEqual(['e-keep'])
+    expect(after.browsers).toEqual([])
+    expect(after.editors).toEqual(['e-second', 'e-keep'])
   })
 
   it('rebalances three panes into a 2-column grid and evens every ratio', async () => {

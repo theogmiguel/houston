@@ -43,10 +43,6 @@ const LaunchGridPreview = lazy(() => import('./ui/LaunchGridPreview').then((m) =
 interface Props {
   tree: LayoutNode
   sessions: Map<number, SessionInfo>
-  /** Branch per session id, once git has answered for that pane's cwd. */
-  branches?: Map<number, string>
-  /** Consultative checkout note per session id, for the chip's tooltip. */
-  branchNotes?: Map<number, string>
   gridSessionIds?: ReadonlySet<number>
   onMoveChildToGrid?: (parent: number, child: number) => void
   onReturnChildToRoster?: (child: number) => void
@@ -360,8 +356,6 @@ function renderPaneBody(node: PaneNode, opts: PaneBodyOpts): React.JSX.Element |
         copyOnSelect={props.copyOnSelect}
         stripBoxGlyphs={props.stripBoxGlyphs}
         showProject={expanded ? false : props.viewAll}
-        branch={props.branches?.get(node.session) ?? null}
-        branchNote={props.branchNotes?.get(node.session) ?? null}
         registerOutput={props.registerOutput}
         shellIntegration={props.shellIntegration}
         onReconnectSsh={props.onReconnectSsh}

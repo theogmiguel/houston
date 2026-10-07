@@ -5,17 +5,17 @@ const KEY = "tr-rail-width";
 // The rail's shipped width (`w-60`), so a fresh install looks unchanged until dragged.
 export const RAIL_DEFAULT = 240;
 
-// Below this every rail row truncates its label; 200px is the smallest that still reads.
-export const RAIL_MIN = 200;
+// The Orca card identity and workspace controls remain readable at 220px.
+export const RAIL_MIN = 220;
 
-// A third of a 1366px screen; wider and the terminal grid stops being usable.
-export const RAIL_MAX = 420;
+// Above 500px the rail takes too much of the terminal grid on standard displays.
+export const RAIL_MAX = 500;
 
 // A drag under this collapses the rail; the stored width is what the expand button restores.
 export const RAIL_COLLAPSE_AT = 160;
 
-// Grid rows show their tag mark from this width; narrower, the branch name needs every pixel.
-export const RAIL_TAG_MARK_AT = 240;
+// Kept for compatibility with existing tag-row tests while cards use the full available width.
+export const RAIL_TAG_MARK_AT = 220;
 
 export function clampRailWidth(px: number): number {
   return Math.min(RAIL_MAX, Math.max(RAIL_MIN, Math.round(px)));

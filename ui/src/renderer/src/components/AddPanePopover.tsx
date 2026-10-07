@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentKind } from '../houston/client'
-import { effectiveLabel, newBrowserPane, newTerminal } from '../keymap'
+import { effectiveLabel, newTerminal } from '../keymap'
 import type { KeymapOverrides } from '../houston/client'
 import type { AgentProfileState } from './SettingsView'
 import type { ProfileChoice } from '../houston/generated/ProfileChoice'
@@ -8,7 +8,7 @@ import type { WorkspaceAction } from '../houston/client'
 import { PaneMenuRow } from './ui/PaneMenuRow'
 import { PaneMenuAgentRow, PaneMenuDivider, PaneMenuLabel, PaneMenuProfileGroup, PaneMenuProfileRow, PaneMenuSurface } from './ui/PaneMenu'
 import { WorkspaceActions } from './ui/WorkspaceActions'
-import { IconGlobe, IconGrid, IconSplitDown, IconSquareTerminal } from './icons'
+import { IconGrid, IconSplitDown, IconSquareTerminal } from './icons'
 
 // Only the agents spawnable via `hs-pane`/handoff today, not the full
 // `AgentKind` union (shell/custom/ssh/the ACP long tail are not offered here).
@@ -21,7 +21,6 @@ export interface AddPanePopoverProps {
   keymapOverrides: KeymapOverrides
   onClose: () => void
   onNewTerminal: () => void
-  onNewBrowser: () => void
   onSpawnAgent: (agent: AgentKind, profile?: ProfileChoice) => void
   onSplitDown?: () => void
   onNewGrid: () => void
@@ -39,7 +38,6 @@ export function AddPanePopover({
   keymapOverrides,
   onClose,
   onNewTerminal,
-  onNewBrowser,
   onSpawnAgent,
   onSplitDown,
   onNewGrid,
@@ -83,17 +81,6 @@ export function AddPanePopover({
         onClick={() => {
           onClose()
           onNewTerminal()
-        }}
-      />
-      <PaneMenuRow
-        data-testid="add-pane-browser"
-        icon={IconGlobe}
-        label="Browser"
-        shortcut={effectiveLabel(newBrowserPane, keymapOverrides)}
-        disabledReason={hasWorkspace ? undefined : 'Open a workspace to open a browser'}
-        onClick={() => {
-          onClose()
-          onNewBrowser()
         }}
       />
       {hasWorkspace && (

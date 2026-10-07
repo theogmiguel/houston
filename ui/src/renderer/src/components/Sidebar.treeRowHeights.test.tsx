@@ -99,20 +99,15 @@ describe('Sidebar — D9 workspace-tree row heights, copied from the carve', () 
     expect(row?.className).not.toContain('h-9')
   })
 
-  it('every rail row carries the one ui weight — selection is fill and ink, never bold', () => {
+  it('the workspace group name is semibold', () => {
     render({
       workspaces: [ws('/a', 'alpha'), ws('/b', 'bravo')],
       selected: '/a',
       gridsByWorkspace: { '/a': [{ id: 'g1', name: 'Main' }] }
     })
-    const rows = container.querySelectorAll<HTMLElement>(
-      '[data-testid="nav-row"], [data-testid="ws-disclosure"], [data-testid="grid-row"], .witem[role="button"]'
-    )
-    expect(rows.length).toBeGreaterThan(2)
-    for (const row of rows) {
-      expect(row.className).toContain('[font-weight:var(--tr-text-ui-weight)]')
-      expect(row.outerHTML).not.toMatch(/font-(semibold|bold|normal)\b/)
-    }
+    const workspaceRow = container.querySelector<HTMLElement>('[data-testid="ws-disclosure"]')!
+    expect(workspaceRow.outerHTML).toMatch(/font-semibold/)
+    expect(workspaceRow.className).toContain('font-semibold')
   })
 
   it('the tree rows carry a glyph', () => {

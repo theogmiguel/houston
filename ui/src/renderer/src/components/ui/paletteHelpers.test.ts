@@ -22,7 +22,7 @@ describe('command palette helpers', () => {
   })
 
   it('labels chords using the effective keymap overrides', () => {
-    const commands = buildCommands({ actions: { newTerminal: () => {}, insertPane: () => {}, newGrid: () => {}, toggleGitPane: () => {}, spawnAgent: () => {}, openTasks: () => {}, toggleSidebarRail: () => {}, toggleChromeTheme: () => {}, openAddPanePopover: () => {}, setGridLayout: () => {}, openShortcutSheet: () => {}, selectNavRow: () => {}, switchWorkspace: () => {}, switchGrid: () => {} }, hasWorkspace: true, workspaces: [] })
+    const commands = buildCommands({ actions: { newTerminal: () => {}, newGrid: () => {}, toggleGitPane: () => {}, spawnAgent: () => {}, openTasks: () => {}, toggleSidebarRail: () => {}, toggleChromeTheme: () => {}, openAddPanePopover: () => {}, setGridLayout: () => {}, openShortcutSheet: () => {}, selectNavRow: () => {}, switchWorkspace: () => {}, switchGrid: () => {} }, hasWorkspace: true, workspaces: [] })
     const labels = paletteShortcutLabels(commands, { shortcuts_enabled: true, bindings: { 'toggle-sidebar': { ctrl: true, alt: true, code: 'KeyJ', shift: false, meta: false } } })
     expect(labels['view.toggle-sidebar']).toBe('Ctrl+Alt+J')
   })

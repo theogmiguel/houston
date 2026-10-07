@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
 import { setSettingsNavForTests } from '../settingsNav'
 import { RAIL_VIEWS, setRailViewForTests } from '../railView'
 import type { TagInfo } from '../houston/generated/TagInfo'
 import type { SessionInfo, Workspace } from '../houston/client'
+
+beforeAll(() => preloadRailOptionsMenu())
 
 function ws(path: string, name = path): Workspace {
   return { path, name } as Workspace
@@ -105,10 +107,11 @@ describe('the rail nav block', () => {
     expect(q('[data-testid="rail-search"]')?.textContent?.trim()).toBe('Search')
   })
 
-  it('every library shows by default, in RAIL_VIEWS order', () => {
+  it('navigation rows leave Pull requests and Usage in the footer', () => {
     render()
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual([...RAIL_VIEWS])
-    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Skills', 'Routines', 'Harness', 'Connections', 'Usage'])
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(RAIL_VIEWS.filter((view) => view !== 'usage' && view !== 'prs'))
+    expect(rows().map((r) => r.textContent)).toEqual(['Tasks', 'Skills', 'Routines', 'Harness', 'Connections'])
+    expect(q('.railfoot button[aria-label="Usage"]')).not.toBeNull()
   })
 
   it('shows the task turn count in accent ink and omits zero', () => {
@@ -149,7 +152,7 @@ describe('the rail nav block', () => {
     expect(hide.textContent).toContain('Hide from sidebar')
 
     act(() => hide.click())
-    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'routines', 'harness', 'mcp', 'usage'])
+    expect(rows().map((r) => r.getAttribute('data-view'))).toEqual(['tasks', 'routines', 'harness', 'mcp'])
     expect(localStorage.getItem('tr-rail-views-hidden')).toContain('skills')
   })
 
@@ -164,40 +167,32 @@ describe('the rail nav block', () => {
   })
 })
 
-describe('the group header filter badge', () => {
-  const toggle = (): HTMLButtonElement =>
-    q('[data-testid="tree-filter-toggle"]') as HTMLButtonElement
-  const options = (): HTMLButtonElement[] => [
-    ...document.querySelectorAll<HTMLButtonElement>('[data-testid="tag-filter-option"]')
-  ]
+describe('sidebar options', () => {
+  const toggle = (): HTMLButtonElement => q('[data-options-testid="rail-options-trigger"]') as HTMLButtonElement
 
-  it('no badge while nothing is narrowing the tree', () => {
+  it('shows no active-filter badge by default', () => {
     render()
-    expect(q('[data-testid="tree-filter-badge"]')).toBeNull()
+    expect(q('[data-options-testid="rail-options-trigger"] span')).toBeNull()
   })
 
-  it('counts each active tag filter', () => {
+  it('opens the options menu and counts active filters', () => {
     render()
     act(() => toggle().click())
-    act(() => options()[0].click())
-    expect(q('[data-testid="tree-filter-badge"]')?.textContent).toBe('1')
-
-    act(() => options()[1].click())
-    expect(q('[data-testid="tree-filter-badge"]')?.textContent).toBe('2')
-    expect(toggle().getAttribute('aria-label')).toBe('Filter by tag (2 active)')
+    expect(document.querySelector('[aria-label="Sidebar options"]')).not.toBeNull()
+    const hideIdle = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]')).find((box) => box.closest('label')?.textContent?.includes('Hide idle grids'))!
+    act(() => { hideIdle.click() })
+    expect(q('[data-options-testid="rail-options-trigger"] span')?.textContent).toBe('1')
   })
 
-  it('an open but empty filter menu is not a filter', () => {
+  it('shows the Tags filter row inside Filters', () => {
     render()
     act(() => toggle().click())
-    expect(document.querySelector('[data-testid="tag-filter-menu"]')).not.toBeNull()
-    expect(q('[data-testid="tree-filter-badge"]')).toBeNull()
-    expect(toggle().getAttribute('aria-label')).toBe('Filter by tag')
+    expect(document.querySelector('[data-testid="rail-tags-filter"]')).not.toBeNull()
   })
 
-  it('the filter and Add workspace controls are visible at rest', () => {
+  it('options, Add workspace and New grid controls are visible at rest', () => {
     render()
-    for (const sel of ['[data-testid="tree-filter-toggle"]', '[aria-label="Add workspace"]']) {
+    for (const sel of ['[data-options-testid="rail-options-trigger"]', '[aria-label="Add workspace"]', '[aria-label="New grid"]']) {
       const el = q(sel)
       expect(el, `${sel} is missing`).not.toBeNull()
       expect(el?.closest('span')?.className ?? '').not.toContain('opacity-0')

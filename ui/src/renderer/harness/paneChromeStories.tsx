@@ -3,9 +3,8 @@ import type { HoustonClient, SessionInfo } from '../src/houston/client'
 import type { TagInfo } from '../src/houston/generated/TagInfo'
 import { SessionPane } from '../src/components/SessionPane'
 import { StackTabs } from '../src/components/StackTabs'
-import { TagManager } from '../src/components/TagManager'
-import { TagEditor } from '../src/components/tagEditing'
 import { TagChipRow } from '../src/components/tags'
+import { TagPopoverHost, useTagPopover } from '../src/components/tags/TagPopover'
 import { SurfaceBoundary } from '../src/components/SurfaceBoundary'
 import { PrefixHint } from '../src/components/PrefixHint'
 import { TerminalPane, type TermActions } from '../src/pane/TerminalPane'
@@ -15,14 +14,6 @@ import { leaf, stackPane } from '../src/layout/tree'
 import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 
 const noop = (): void => {}
-const settleTagEditorSelection = (): void => {
-  const inputs = document.querySelectorAll<HTMLInputElement>('[data-testid="tag-editor"] input')
-  const input = inputs[inputs.length - 1]
-  if (!input) return
-  if (document.documentElement.dataset.theme === 'paper') input.select()
-  else input.setSelectionRange(0, 0)
-}
-
 const TAGS: TagInfo[] = [
   { id: 1, name: 'Bug', color: '#f472b6' },
   { id: 2, name: 'Review', color: '#f59e0b' },
@@ -89,6 +80,22 @@ export function PaneMenuStory(): React.JSX.Element {
   )
 }
 
+export function PaneCheckoutHeaderStory(): React.JSX.Element {
+  const checkout = {
+    root: '/home/dev/code/houston/wt/inspector-polish',
+    kind: { worktree: { slug: 'inspector-polish' } },
+    branch: 'fix/inspector-polish',
+    head: null
+  }
+  return (
+    <TagsContext.Provider value={TAGS}>
+      <div style={{ height: '100%', padding: 12, display: 'flex' }}>
+        <PaneFor info={mkInfo({ title: 'Inspector polish', checkout } as Partial<SessionInfo>)} branch="fix/inspector-polish" />
+      </div>
+    </TagsContext.Provider>
+  )
+}
+
 const ENDED = mkInfo({ state: 'exited', status: 'idle', resumable: true, resume_notice: 'No conversation to resume, so this pane started fresh.', tags: [1, 2, 3] } as Partial<SessionInfo>)
 
 export function PaneEndedStory(): React.JSX.Element {
@@ -150,25 +157,27 @@ export function PaneTerminalStatesStory(): React.JSX.Element {
 }
 
 export function TagsFormsStory(): React.JSX.Element {
-  const usage = new Map([[1, { panes: 2, grids: 1 }], [2, { panes: 1, grids: 0 }]])
-  return <><style>{'[data-tag-new="true"]{animation:none!important}'}</style><TagManager open tags={TAGS} usage={usage} highlight="Docs" onCreate={noop} onUpdate={noop} onDelete={noop} onClose={noop} /></>
+  return (
+    <TagPopoverHost
+      tags={TAGS}
+      grids={[{ id: 'grid-1', title: 'Houston', tags: [1] }, { id: 'grid-2', title: 'UI', tags: [1, 2] }]}
+      actions={{ onCreate: (name, color) => ({ id: 4, name, color }), onUpdate: noop, onDelete: noop, onRestore: noop, onApply: noop, onFilter: noop }}
+    >
+      <TagPopoverStoryTrigger />
+    </TagPopoverHost>
+  )
 }
 
-export function TagEditorStory(): React.JSX.Element {
+function TagPopoverStoryTrigger(): React.JSX.Element {
+  const anchor = React.useRef<HTMLButtonElement>(null)
+  const { open } = useTagPopover()
   React.useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      const inputs = document.querySelectorAll<HTMLInputElement>('[data-testid="tag-editor"] input')
-      const input = inputs[inputs.length - 1]
-      input?.focus()
-      settleTagEditorSelection()
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [])
+    if (anchor.current) open({ anchor: anchor.current, view: 'manage' })
+  }, [open])
   return (
-    <div style={{ height: '100%', background: 'var(--content-bg)' }}>
-      <TagEditor state={{ x: 120, y: 80, tag: null }} tags={TAGS} onSave={noop} onCancel={noop} />
-      <TagEditor state={{ x: 420, y: 80, tag: TAGS[0] }} tags={TAGS} onSave={noop} onCancel={noop} />
-      <div style={{ position: 'absolute', left: 120, top: 460, display: 'grid', gap: 12 }}>
+    <div style={{ height: '100%', background: 'var(--content-bg)', padding: 20 }}>
+      <button ref={anchor} type="button">Manage tags</button>
+      <div style={{ marginTop: 360, display: 'grid', gap: 12 }}>
         <TagChipRow tags={TAGS} />
         <TagChipRow tags={TAGS} compact />
         <TagChipRow tags={TAGS} onToggle={noop} />

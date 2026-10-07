@@ -13,6 +13,14 @@ import {
   isModifierKeydown,
   KEYMAP,
   newTerminal,
+  openBrowserSurface,
+  openFilesSurface,
+  openDiffSurface,
+  openPullRequestSurface,
+  openLinkedPullRequestsSurface,
+  openPullRequestsScreen,
+  reorderCardPrev,
+  reorderCardNext,
   resolveMatch,
   selectPane,
   toggleSidebar,
@@ -76,6 +84,26 @@ describe('KEYMAP', () => {
   it('maps t to new terminal', () => {
     expect(newTerminal.match?.(fakeKey('t'))).toBe(true)
     expect(newTerminal.match?.(fakeKey('T'))).toBe(false)
+  })
+
+  it('resolves prefixed surface letters and the PR screen after arming', () => {
+    for (const [entry, key] of [
+      [openBrowserSurface, 'b'], [openFilesSurface, 'f'], [openDiffSurface, 'd'],
+      [openPullRequestSurface, 'p'], [openLinkedPullRequestsSurface, 'l'],
+      [openPullRequestsScreen, 'r']
+    ] as const) {
+      expect(entry.layer).toBe('prefix')
+      expect(entry.match?.(fakeKey(key))).toBe(true)
+      expect(entry.match?.(fakeKey(key, { ctrlKey: true }))).toBe(false)
+    }
+  })
+
+  it('matches reorder card shortcuts only with Mod+Shift and the requested direction', () => {
+    expect(reorderCardPrev.match?.(fakeKey('ArrowUp', { ctrlKey: true, shiftKey: true }))).toBe(true)
+    expect(reorderCardPrev.match?.(fakeKey('ArrowUp', { metaKey: true, shiftKey: true }))).toBe(true)
+    expect(reorderCardNext.match?.(fakeKey('ArrowDown', { ctrlKey: true, shiftKey: true }))).toBe(true)
+    expect(reorderCardPrev.match?.(fakeKey('ArrowUp', { ctrlKey: true }))).toBe(false)
+    expect(reorderCardNext.match?.(fakeKey('ArrowUp', { ctrlKey: true, shiftKey: true }))).toBe(false)
   })
 
   it('maps Ctrl+K to the command palette, and only Ctrl+K', () => {

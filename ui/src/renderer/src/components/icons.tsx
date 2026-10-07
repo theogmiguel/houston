@@ -612,6 +612,15 @@ export function IconFolder(p: IconProps): React.JSX.Element {
   )
 }
 
+export function IconFolderPlus(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M12 10v6m-3-3h6" />
+      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" />
+    </Svg>
+  )
+}
+
 export function IconSave(p: IconProps): React.JSX.Element {
   return (
     <Svg {...p}>
@@ -1420,5 +1429,21 @@ export function IconPriorityBars({ level, ...p }: IconProps & { level: 1 | 2 | 3
         />
       ))}
     </TaskGlyph>
+  )
+}
+
+export function IconSliders(p: IconProps): React.JSX.Element {
+  return (
+    <Svg {...p}>
+      <path d="M4 21v-7" />
+      <path d="M4 10V3" />
+      <path d="M12 21v-9" />
+      <path d="M12 8V3" />
+      <path d="M20 21v-5" />
+      <path d="M20 12V3" />
+      <path d="M2 14h4" />
+      <path d="M10 8h4" />
+      <path d="M18 16h4" />
+    </Svg>
   )
 }

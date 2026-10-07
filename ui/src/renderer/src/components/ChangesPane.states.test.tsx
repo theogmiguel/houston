@@ -59,9 +59,8 @@ describe('Changes pane — state matrix (§14)', () => {
       expect.stringContaining('text-[var(--ok)]'),
       expect.stringContaining('text-[var(--stop)]')
     ])
-    expect(q('.changes-group-head')?.textContent).toContain('UNCOMMITTED · 3 FILES')
-    expect(q('.changes-group-head')?.textContent).toContain('+67')
-    expect(q('.changes-group-head')?.textContent).toContain('−16')
+    expect(q('[data-testid="changes-diff-toolbar"] .changes-diff-stat [data-tone="added"]')?.textContent).toBe('+67')
+    expect(q('[data-testid="changes-diff-toolbar"] .changes-diff-stat [data-tone="deleted"]')?.textContent).toBe('−16')
   })
 
   it('shows the checkout target beside the embedded commit actions', () => {
@@ -75,7 +74,7 @@ describe('Changes pane — state matrix (§14)', () => {
     h.status([file({ path: 'src/a.ts', staged: true }), file({ path: 'src/b.ts', staged: true })])
     expect(q('[data-testid="changes-commit"]')?.textContent).toContain('Commit 2 files')
     h.prStatus()
-    expect(q('[data-testid="changes-pr-line"]')?.hasAttribute('hidden')).toBe(true)
+    expect(q('[data-testid="changes-pr-line"]')).toBeNull()
   })
 
   it('error: a generic status failure names the message and offers a working Retry', () => {

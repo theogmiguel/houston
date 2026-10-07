@@ -1,8 +1,5 @@
 import { useSessionsSelector, shallowArrayEqual } from '../sessionsStore';
 import type { TagInfo } from "../houston/generated/TagInfo";
-import { MAX_TAGS_PER_GRID } from "../layout/tree";
-import type { TagUsage } from "./TagManager";
-import type { TagEditorState } from "./tagEditing";
 import {
   Fragment,
   Suspense,
@@ -15,7 +12,6 @@ import {
 import { createPortal } from "react-dom";
 import type { HoustonClient, PrInfo, SessionInfo, Workspace } from "../houston/client";
 import { isLive } from "../houston/client";
-import { useRailWidth } from "../railWidth";
 import type { ChromeTheme } from "../theme";
 import {
   setSettingsOpen,
@@ -33,17 +29,17 @@ import { requestSettingsRowJump } from "../settingsRowJump";
 import { translateFilteredDropIndex } from "../layout/wsOrder";
 import {
   IconAlertTriangle,
-  IconArrowUp,
+  IconArrowDown,
   IconChevronRight,
-  IconCheck,
   IconClose,
   IconCodeXml,
   IconDatabase,
   IconEyeOff,
-  IconFilter,
   IconFolder,
+  IconFolderPlus,
   IconGear,
   IconGitFork,
+  IconGitPullRequest,
   IconGrid,
   IconInfo,
   IconWrench,
@@ -57,6 +53,8 @@ import {
   IconPin,
   IconPlus,
   IconSun,
+  IconSliders,
+  IconTag,
   IconServer,
   IconUser,
   IconTarget,
@@ -70,7 +68,7 @@ import {
 } from "./icons";
 import { Tooltip } from "./ui/Tooltip";
 import logoUrl from "../assets/logo-chrome.svg";
-import { openExternal, showItemInFolder } from "../houston/bridge";
+import { showItemInFolder } from "../houston/bridge";
 import { OpenInMenu } from "./OpenInMenu";
 import { Icon } from "./ui/Icon";
 import { Count } from "./ui/Count";
@@ -84,12 +82,18 @@ import {
   type RailView,
 } from "../railView";
 import { Button } from "./ui/Button";
-import { TreeGroupHeader } from "./ui/TreeGroupHeader";
 import { HorizontalRule, WorkspaceGroupDivider, WorkspaceGroupLabel } from "./ui/WorkspaceGroupLabel";
 import { NavigationRailFooter, NavigationRailScroll, WorkspaceList, SettingsNavigation } from "./ui/NavigationRailFooter";
-import { NavigationRail, NavigationRailHeader, NavigationRailSection, NavigationRailItem, NavigationRailSearch, RailSurface } from "./ui/NavigationRail";
+import {
+  NavigationRail,
+  NavigationRailHeader,
+  NavigationRailSection,
+  NavigationRailItem,
+  NavigationRailSearch,
+  RailSurface,
+} from "./ui/NavigationRail";
 import { openUpdateModal } from "../updateModal";
-import { isUpdateInstallRunning, useUpdateInstall, type UpdateInstallState } from "../updateInstall";
+import { isUpdateInstallRunning, useUpdateInstall } from "../updateInstall";
 import { useRailGitCache } from "./git/railGitCache";
 import { useRailPrCache } from "./git/railPrCache";
 import type { RailDiffTotals } from "./git/useRailGitFacts";
@@ -97,11 +101,61 @@ import type { RailPrState } from "./git/railPrCache";
 import { GridRailRowFallback } from "./ui/GridRailRowFallback";
 import { SettingsRailRow } from "./ui/SettingsRailRow";
 import { SettingsSearch } from "./ui/SettingsSearch";
-import { ContextMenu, ContextMenuItem, ContextMenuColorDot, ContextMenuHeading, ContextMenuItems, ContextMenuMessage, ContextMenuSectionLabel, ContextMenuSeparator } from "./ui/ContextMenu";
-import { WorkspaceTreeRow, WorkspaceTreeLabel, WorkspaceTreeActions, WorkspaceTreeAuxButton, WorkspaceDropIndicator, EmptyListMessage } from "./ui/WorkspaceTreeRow";
+import {
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuHeading,
+  ContextMenuItems,
+  ContextMenuSeparator,
+} from "./ui/ContextMenu";
+import {
+  WorkspaceTreeRow,
+  WorkspaceTreeLabel,
+  WorkspaceTreeActions,
+  WorkspaceTreeAuxButton,
+  WorkspaceDropIndicator,
+  EmptyListMessage,
+} from "./ui/WorkspaceTreeRow";
 import { TextInput } from "./ui/TextInput";
 import { ActivityDot } from "./ui/ActivityDot";
-import { Text } from "./ui/Text";
+import {
+  canReorderRailGrid,
+  GRID_PINNED_KEY,
+  GRID_PINNED_MIGRATION_KEY,
+  isRailGridUnread,
+  loadPinnedGridIds,
+  migratePinnedWorkspaces,
+  migrateRailPrefs,
+  moveSelectedRailGrid,
+  railUnreadSignature,
+  reorderRailGrid,
+  saveRailPrefs,
+  toggleRailGridRead,
+  type RailPrefs,
+} from "../railPrefs";
+import { TagPopoverHost, useTagPopover, type TagGrid } from "./tags/TagPopover";
+
+/** Window event that opens tag management anchored to the rail Options button. */
+export const MANAGE_TAGS_EVENT = "houston:open-manage-tags";
+import { buildRailCard } from "./rail/railCardModel";
+import { RailVirtualList, type RailVirtualItem } from "./rail/RailVirtualList";
+import {
+  RailChevron,
+  RailContextMenu,
+  RailFilterCountBadge,
+  RailGroupCount,
+  RailGroupHeader,
+  RailGroupToggle,
+  RailPinnedIndicator,
+  RailRowCount,
+  RailSrOnlyText,
+  RailTreeGroupHeader,
+  RailTreeTitle,
+  RailUpdateDot,
+  RailUpdateIconButton,
+  RailWorkspaceGroupRow,
+} from "./ui/rail/RailChrome";
+import { preloadable } from "../preloadable";
 
 const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   palette: IconPalette,
@@ -122,58 +176,193 @@ const SETTINGS_ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   server: IconServer,
 };
 
-const GridRailContextActions = lazy(() => import("./ui/GridRailContextActions").then((module) => ({ default: module.GridRailContextActions })));
-const GridRailGitSubscription = lazy(() => import("./git/GridRailGitSubscription").then((module) => ({ default: module.GridRailGitSubscription })));
+const GridRailContextActions = lazy(() =>
+  import("./ui/GridRailContextActions").then((module) => ({ default: module.GridRailContextActions })),
+);
+const GridRailGitSubscription = lazy(() =>
+  import("./git/GridRailGitSubscription").then((module) => ({ default: module.GridRailGitSubscription })),
+);
 const LazyGridRailRow = lazy(() => import("./ui/GridRailRow").then((module) => ({ default: module.GridRailRow })));
+const railOptionsMenu = preloadable(() => import("./rail/RailOptionsMenu").then((module) => module.RailOptionsMenu));
+export const preloadRailOptionsMenu = railOptionsMenu.preload;
+const RailOptionsMenu = railOptionsMenu.Slot;
 
-export function railUpdateChip(
-  version: string | null | undefined,
-  install: UpdateInstallState,
-): { label: string; tooltip: string; failed: boolean } | null {
-  if (isUpdateInstallRunning(install)) {
-    const pct =
-      install.kind === "downloading" && install.total !== null && install.total > 0
-        ? Math.min(100, Math.floor((install.downloaded / install.total) * 100))
-        : null;
-    return {
-      label: pct === null ? "Updating…" : `Updating ${pct}%`,
-      tooltip: "Houston is installing an update. Open to see the steps",
-      failed: false,
-    };
+function RailOptionsMenuHost({ anchor, prefs, onChange, onClose, selectedTagIds }: {
+  anchor: HTMLElement | null;
+  prefs: RailPrefs;
+  onChange: (next: RailPrefs) => void;
+  onClose: () => void;
+  selectedTagIds: number[];
+}): React.JSX.Element | null {
+  if (!anchor) return null;
+  return <RailOptionsMenu anchor={anchor} prefs={prefs} onChange={onChange} onClose={onClose} selectedTagIds={selectedTagIds} />;
+}
+
+function RailTreeContent({ groupBy, virtualItems, compact, dragging, renderWorkspaceContent }: {
+  groupBy: RailPrefs['groupBy'];
+  virtualItems: RailVirtualItem[];
+  compact: boolean;
+  dragging: boolean;
+  renderWorkspaceContent: () => React.ReactNode;
+}): React.JSX.Element {
+  void groupBy;
+  void renderWorkspaceContent;
+  return <RailVirtualList items={virtualItems} compact={compact} dragging={dragging} />;
+}
+
+function WorkspaceRailGroupRow({
+  workspace,
+  count,
+  hasGrids,
+  index,
+  color,
+  collapsed,
+  selected,
+  pinned,
+  dragging,
+  dragged,
+  renaming,
+  dragActiveRef,
+  startWsDrag,
+  onSelect,
+  onToggle,
+  onOpenMenu,
+  onNewSession,
+  onRenameSubmit,
+  onRenameCancel,
+}: {
+  workspace: Workspace;
+  count: number;
+  hasGrids: boolean;
+  index: number;
+  color: string;
+  collapsed: boolean;
+  selected: boolean;
+  pinned: boolean;
+  dragging: boolean;
+  dragged: boolean;
+  renaming: boolean;
+  dragActiveRef: React.RefObject<boolean>;
+  startWsDrag: (event: React.PointerEvent, path: string) => void;
+  onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
+  onOpenMenu: (event: React.MouseEvent, workspace: Workspace, color: string) => void;
+  onNewSession?: (path: string) => void;
+  onRenameSubmit: (path: string, name: string) => void;
+  onRenameCancel: () => void;
+}): React.JSX.Element {
+  if (renaming) {
+    return <WorkspaceRenameField w={workspace} i={index} color={color} onRenameSubmit={onRenameSubmit} onRenameCancel={onRenameCancel} />;
   }
-  if (install.kind === "failed") {
-    return {
-      label: "Update failed",
-      tooltip: `Houston ${install.version} did not install. Open to see why and try again`,
-      failed: true,
-    };
-  }
-  if (version == null) return null;
-  return {
-    label: `${version} available`,
-    tooltip: `Houston v${version} is available. Open to install`,
-    failed: false,
-  };
+  return (
+    <Tooltip label={workspace.path}>
+      <RailWorkspaceGroupRow
+        kind="tree"
+        selected={selected}
+        dragging={dragging}
+        dragged={dragged}
+        role="button"
+        tabIndex={0}
+        aria-label={workspace.path}
+        aria-current={selected ? 'true' : undefined}
+        aria-expanded={hasGrids ? !collapsed : undefined}
+        data-testid={hasGrids ? 'ws-disclosure' : undefined}
+        data-ws-idx={index}
+        data-dragging={dragged || undefined}
+        onPointerDown={(event) => {
+          dragActiveRef.current = false;
+          if (event.button === 0) startWsDrag(event, workspace.path);
+        }}
+        onClick={() => {
+          if (dragActiveRef.current) {
+            dragActiveRef.current = false;
+            return;
+          }
+          if (selected) onToggle(workspace.path);
+          else onSelect(workspace.path);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          if (selected) onToggle(workspace.path);
+          else onSelect(workspace.path);
+        }}
+        onContextMenu={(event) => onOpenMenu(event, workspace, color)}
+      >
+        {hasGrids && (
+          <Button
+            type="button"
+            variant="disclosure-icon"
+            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${workspace.name}`}
+            data-testid="ws-chevron"
+            className="flex-none"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle(workspace.path);
+            }}
+          >
+            <RailChevron collapsed={collapsed} />
+          </Button>
+        )}
+        {!hasGrids && <span aria-hidden="true" className="flex-none"><RailChevron collapsed /></span>}
+        <Icon glyph={IconFolder} role="ui" opacity="muted" />
+        <WorkspaceTreeLabel heading>{workspace.name}</WorkspaceTreeLabel>
+        {count > 0 && <RailRowCount count={count} />}
+        {pinned && <PinIndicator />}
+        <WorkspaceTreeActions>
+          {onNewSession && (
+            <Tooltip label="New session">
+              <WorkspaceTreeAuxButton
+                aria-label={`New session in ${workspace.name}`}
+                data-testid="ws-new-session"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); onNewSession(workspace.path); }}
+              >
+                <Icon glyph={IconPlus} role="small" />
+              </WorkspaceTreeAuxButton>
+            </Tooltip>
+          )}
+        </WorkspaceTreeActions>
+      </RailWorkspaceGroupRow>
+    </Tooltip>
+  );
 }
 
 // Its own component so the foot keeps no branch of its own: nothing at all is
 // rendered until a release is waiting or an install is running or has failed.
 function RailUpdateButton({ version }: { version?: string | null }): React.JSX.Element | null {
   const install = useUpdateInstall();
-  const chip = railUpdateChip(version, install);
-  if (chip === null) return null;
+  const running = isUpdateInstallRunning(install);
+  const failed = install.kind === "failed";
+  if (version == null && !running && !failed) return null;
+  const content = failed
+    ? "Update failed"
+    : install.kind === "downloading"
+      ? install.total && install.total > 0
+        ? `Updating ${Math.floor((install.downloaded / install.total) * 100)}%`
+        : "Updating…"
+      : running
+        ? "Updating…"
+        : `${version} available`;
+  const label = failed
+    ? `Houston ${install.version} did not install. Open to see why and try again`
+    : running
+      ? "Houston is installing an update. Open to see the steps"
+      : `Houston v${version} is available. Open to install`;
   return (
-    <Tooltip label={chip.tooltip}>
-      <Button
-        variant="status-chip"
-        status={chip.failed ? "failed" : "available"}
+    <Tooltip label={label}>
+      <RailUpdateIconButton
+        variant="subtle-icon"
+        failed={failed}
         data-testid="rail-update-available"
-        aria-label={chip.tooltip}
+        aria-label={label}
         onClick={openUpdateModal}
       >
-        <Icon glyph={chip.failed ? IconAlertTriangle : IconArrowUp} role="ui" />
-        <span>{chip.label}</span>
-      </Button>
+        <Icon glyph={failed ? IconAlertTriangle : IconArrowDown} role="ui" />
+        {!failed && !running && <RailUpdateDot />}
+        <RailSrOnlyText>{content}</RailSrOnlyText>
+      </RailUpdateIconButton>
     </Tooltip>
   );
 }
@@ -271,6 +460,8 @@ interface Props {
   onRemoveGrid?: (path: string, gridId: string) => void;
 
   onOpenSettings?: () => void;
+  onOpenPullRequests?: () => void;
+  currentRailView?: RailView;
   onOpenPalette?: () => void;
   paletteChord?: string | null;
   onHideRail?: () => void;
@@ -345,6 +536,7 @@ interface GridCtxMenu {
   gridId: string;
   name: string;
   canRemove: boolean;
+  pinned: boolean;
   tagIds: number[];
   paneId: number | null;
   branch: string | null;
@@ -417,75 +609,6 @@ const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
 
 function portalOrNull(el: React.ReactElement | null): React.ReactPortal | null {
   return el && createPortal(el, document.body);
-}
-
-// Neither tag surface is on a launch path, so both load on first use — see
-// bundle-budget.json's forbiddenBootPaths, which holds them there.
-const TagEditor = lazy(() =>
-  import("./tagEditing").then((m) => ({ default: m.TagEditor })),
-);
-
-function TagEditorSurface({
-  state,
-  tags,
-  onSave,
-  onCancel,
-  onTagCreate,
-  onTagUpdate,
-}: {
-  state: TagEditorState | null;
-  tags: TagInfo[];
-  onSave: (name: string, color: string, editing: TagInfo | null) => void;
-  onCancel: () => void;
-  onTagCreate?: (name: string, color: string) => void;
-  onTagUpdate?: (tag: number, name: string, color: string) => void;
-}): React.JSX.Element | null {
-  if (!state || !onTagCreate || !onTagUpdate) return null;
-  return (
-    <Suspense fallback={null}>
-      <TagEditor state={state} tags={tags} onSave={onSave} onCancel={onCancel} />
-    </Suspense>
-  );
-}
-
-const TagManager = lazy(() =>
-  import("./TagManager").then((m) => ({ default: m.TagManager })),
-);
-
-function TagManagerSurface({
-  open,
-  tags,
-  usage,
-  highlight,
-  onClose,
-  onTagCreate,
-  onTagUpdate,
-  onTagDelete,
-}: {
-  open: boolean;
-  tags: TagInfo[];
-  usage: Map<number, TagUsage>;
-  highlight: string | null;
-  onClose: () => void;
-  onTagCreate?: (name: string, color: string) => void;
-  onTagUpdate?: (tag: number, name: string, color: string) => void;
-  onTagDelete?: (tag: number) => void;
-}): React.JSX.Element | null {
-  if (!open || !onTagCreate || !onTagUpdate || !onTagDelete) return null;
-  return (
-    <Suspense fallback={null}>
-      <TagManager
-        open={open}
-        tags={tags}
-        usage={usage}
-        highlight={highlight}
-        onCreate={onTagCreate}
-        onUpdate={onTagUpdate}
-        onDelete={onTagDelete}
-        onClose={onClose}
-      />
-    </Suspense>
-  );
 }
 
 function WorkspaceContextMenu({
@@ -600,35 +723,29 @@ function WorkspaceContextMenu({
 function GridContextMenu({
   gridMenu,
   workspaces,
-  tags,
   onClose,
   onStartRename,
   onRemoveGrid,
-  onToggleTag,
-  onFilterByTags,
-  onNewTag,
-  onManageTags,
+  onTogglePin,
   onOpenInspector,
   onError,
 }: {
   gridMenu: GridCtxMenu;
   workspaces: Workspace[];
-  tags: TagInfo[];
   onClose: () => void;
   onStartRename: (path: string, gridId: string) => void;
   onRemoveGrid?: (path: string, gridId: string) => void;
-  onToggleTag: (menu: GridCtxMenu, tagId: number) => void;
-  onFilterByTags: (tagIds: number[]) => void;
-  onNewTag: (e: React.MouseEvent) => void;
-  onManageTags: () => void;
+  onTogglePin: (gridId: string) => void;
   onOpenInspector?: (paneId: number, tab: "pull-request") => void;
   onError?: (message: string) => void;
 }): React.JSX.Element {
+  const tagPopover = useTagPopover();
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const workspaceName =
     workspaces.find((w) => w.path === gridMenu.path)?.name ?? gridMenu.path;
   return (
-    <ContextMenu
-      className=""
+    <RailContextMenu
+      visible={!tagPickerOpen}
       style={{
         top: gridMenu.y,
         left: gridMenu.x,
@@ -665,6 +782,10 @@ function GridContextMenu({
           <Icon glyph={IconPencil} role="ui" />
           <span>Rename</span>
         </ContextMenuItem>
+        <ContextMenuItem role="menuitem" data-testid="menu-grid-pin" onClick={() => { onTogglePin(gridMenu.gridId); onClose() }}>
+          <Icon glyph={IconPin} role="ui" />
+          <span>{gridMenu.pinned ? "Unpin grid" : "Pin grid"}</span>
+        </ContextMenuItem>
         {gridMenu.canRemove && (
           <ContextMenuItem danger
 
@@ -679,78 +800,21 @@ function GridContextMenu({
             <span>Close Tab</span>
           </ContextMenuItem>
         )}
-        {tags.length > 0 && (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuSectionLabel>Tags</ContextMenuSectionLabel>
-            {tags.map((t) => {
-              const on = gridMenu.tagIds.includes(t.id);
-              const capBlocked =
-                !on && gridMenu.tagIds.length >= MAX_TAGS_PER_GRID;
-              return (
-                <ContextMenuItem
-                  key={t.id}
-
-                  role="menuitemcheckbox"
-                  aria-checked={on}
-                  disabled={capBlocked}
-                  data-testid="menu-tag-item"
-                  data-tag={t.id}
-                  onClick={() => onToggleTag(gridMenu, t.id)}
-                >
-                  <ContextMenuColorDot color={t.color} />
-                  <span className="truncate">{t.name}</span>
-                  {on && (
-                  <Text tone="accent">
-                    <Icon glyph={IconCheck} role="label" />
-                  </Text>
-                  )}
-                </ContextMenuItem>
-              );
-            })}
-            {gridMenu.tagIds.length > 0 && (
-              <ContextMenuItem
-
-                role="menuitem"
-                data-testid="menu-filter-by-tag"
-                onClick={() => {
-                  onFilterByTags(gridMenu.tagIds);
-                  onClose();
-                }}
-              >
-                <Icon glyph={IconFilter} role="ui" />
-                <span>
-                  {gridMenu.tagIds.length === 1
-                    ? "Filter by this tag"
-                    : `Filter by these ${gridMenu.tagIds.length} tags`}
-                </span>
-              </ContextMenuItem>
-            )}
-          </>
-        )}
         <ContextMenuSeparator />
         <ContextMenuItem
-
           role="menuitem"
-          data-testid="menu-new-tag"
-          onClick={onNewTag}
+          data-testid="menu-tags-entry"
+          onClick={(event) => {
+            setTagPickerOpen(true);
+            tagPopover.open({ anchor: event.currentTarget, gridId: gridMenu.gridId, view: 'pick', onDismiss: onClose });
+          }}
         >
-          <Icon glyph={IconPlus} role="ui" />
-          <span>New tag…</span>
+          <Icon glyph={IconTag} role="ui" />
+          <span className="flex-1">Tags</span>
+          <Icon glyph={IconChevronRight} role="small" />
         </ContextMenuItem>
-        {tags.length > 0 && (
-          <ContextMenuItem
-
-            role="menuitem"
-            data-testid="menu-manage-tags"
-            onClick={onManageTags}
-          >
-            <Icon glyph={IconGear} role="ui" />
-            <span>Manage tags…</span>
-          </ContextMenuItem>
-        )}
       </ContextMenuItems>
-    </ContextMenu>
+    </RailContextMenu>
   );
 }
 
@@ -784,13 +848,7 @@ function tagsOf(s: SessionInfo): number[] {
 }
 
 function PinIndicator(): React.JSX.Element {
-  return (
-    <Tooltip label="Pinned">
-      <span aria-label="Pinned" data-testid="ws-pinned-indicator" className="flex-none flex items-center">
-        <Icon glyph={IconPin} role="small" tone="muted" />
-      </span>
-    </Tooltip>
-  );
+  return <RailPinnedIndicator />;
 }
 
 function CollapsedGridsRow({
@@ -997,12 +1055,6 @@ function workspaceCarriesTag(
   );
 }
 
-function filterLabelFor(activeTagCount: number): string {
-  return activeTagCount > 0
-    ? `Filter by tag (${activeTagCount} active)`
-    : "Filter by tag";
-}
-
 function ExpandedGridsRow({
   w,
   i,
@@ -1035,7 +1087,8 @@ function ExpandedGridsRow({
   sessions,
   railDiffByDir,
   railPrByDir,
-  railWidth,
+  railPrefs,
+  pinnedGridIds,
   onOpenInspector,
 }: {
   w: Workspace;
@@ -1070,7 +1123,8 @@ function ExpandedGridsRow({
   sessions: SessionInfo[];
   railDiffByDir: ReadonlyMap<string, RailDiffTotals>;
   railPrByDir: ReadonlyMap<string, RailPrState>;
-  railWidth: number;
+  railPrefs: RailPrefs;
+  pinnedGridIds: ReadonlySet<string>;
   onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
   setGridRenaming: (v: { path: string; gridId: string } | null) => void;
   renamingThis: boolean;
@@ -1164,7 +1218,9 @@ function ExpandedGridsRow({
         </WorkspaceTreeRow>
       </Tooltip>
       )}
-      {grids.map((g) => {
+      {[...grids]
+        .sort((left, right) => Number(pinnedGridIds.has(right.id)) - Number(pinnedGridIds.has(left.id)))
+        .map((g, gridIndex, orderedGrids) => {
         if (hiddenByTagFilter(g, activeTagIds)) return null;
         const gridOn =
           selected === w.path && selectedGridId === g.id;
@@ -1201,24 +1257,49 @@ function ExpandedGridsRow({
           );
         }
         const onRemove = onRemoveGrid && grids.length > 1 ? () => onRemoveGrid(w.path, g.id) : undefined;
-        return <Suspense key={g.id} fallback={<GridRailRowFallback name={g.name} selected={gridOn} jumpNumber={grids.indexOf(g) + 1} onSelect={() => onSelectGrid?.(w.path, g.id)} onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)} onRemove={onRemove} />}><LazyGridRailRow
+        return (
+          <Fragment key={g.id}>
+            {gridIndex === 0 && pinnedGridIds.has(g.id) && <WorkspaceGroupLabel>Pinned</WorkspaceGroupLabel>}
+            {gridIndex > 0 && !pinnedGridIds.has(g.id) && pinnedGridIds.has(orderedGrids[gridIndex - 1]?.id ?? '') && (
+              <WorkspaceGroupDivider><HorizontalRule /></WorkspaceGroupDivider>
+            )}
+            <Suspense
+              fallback={
+                <GridRailRowFallback
+                  name={g.name}
+                  selected={gridOn}
+                  jumpNumber={grids.indexOf(g) + 1}
+                  onSelect={() => onSelectGrid?.(w.path, g.id)}
+                  onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)}
+                  onRemove={onRemove}
+                />
+              }
+            >
+              <LazyGridRailRow
           key={g.id}
           name={g.name}
+          workspace={w.path}
+          gridId={g.id}
           selected={gridOn}
+          pinned={pinnedGridIds.has(g.id)}
           paneIds={g.sessionIds ?? []}
           fallbackSessions={sessions}
           tags={(g.tagIds ?? []).flatMap((id) => tagById.get(id) ?? [])}
           branches={checkoutBranches}
           diffByDir={railDiffByDir}
           prByDir={railPrByDir}
-          width={railWidth}
+          cardMode={railPrefs.cardMode}
+          agentActivity={railPrefs.agentActivity}
+          properties={railPrefs.properties}
           jumpNumber={grids.indexOf(g) + 1}
           onSelect={() => onSelectGrid?.(w.path, g.id)}
           onRemove={onRemove}
           onContextMenu={(event) => openGridMenu(event, w.path, g, Boolean(onRemoveGrid) && grids.length > 1)}
           onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
-          onOpenExternal={(url) => { void openExternal(url); }}
-        /></Suspense>;
+              />
+            </Suspense>
+          </Fragment>
+        );
       })}
     </Fragment>
   );
@@ -1410,6 +1491,7 @@ const RAIL_VIEW_ICON: Readonly<Record<RailView, (p: IconProps) => React.JSX.Elem
     routines: IconClock,
     harness: IconTarget,
     mcp: IconGlobe,
+    prs: IconGitPullRequest,
     usage: IconChartArea,
   });
 
@@ -1432,7 +1514,7 @@ function RailNav({
   onRowMenu: (e: React.MouseEvent, v: RailView) => void;
   harnessAttention?: number;
 }): React.JSX.Element {
-  const shown = RAIL_VIEWS.filter((v) => !hidden.has(v));
+  const shown = RAIL_VIEWS.filter((v) => v !== "prs" && v !== "usage" && !hidden.has(v));
   return (
     <NavigationRail>
       <Tooltip label={paletteChord ? `Search (${paletteChord})` : "Search"}>
@@ -1450,7 +1532,10 @@ function RailNav({
             selected={on}
             onClick={() => onSelect(v)}
             onContextMenu={(e) => onRowMenu(e, v)}
-            trailing={v === "harness" ? <Count value={harnessAttention ?? 0} from="accent" /> : v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="accent" /> : null}
+            trailing={
+              v === "harness" ? <Count value={harnessAttention ?? 0} from="accent" /> :
+                v === "tasks" && taskTurnCount > 0 ? <Count value={taskTurnCount} from="accent" /> : null
+            }
           />
         );
       })}
@@ -1505,83 +1590,6 @@ function NavViewMenu({
   );
 }
 
-function TagFilterMenu({
-  menu,
-  tags,
-  activeTagIds,
-  onToggle,
-  onClear,
-}: {
-  menu: { x: number; y: number; originX: number; originY: number } | null;
-  tags: TagInfo[];
-  activeTagIds: number[];
-  onToggle: (id: number) => void;
-  onClear: () => void;
-}): React.JSX.Element | null {
-  if (menu === null) return null;
-  return (
-    <ContextMenu
-      className=""
-      style={{
-        top: menu.y,
-        left: menu.x,
-        ["--pop-origin-x" as string]: `${menu.originX}px`,
-        ["--pop-origin-y" as string]: `${menu.originY}px`,
-      }}
-      role="menu"
-      aria-label="Filter by tag"
-      data-testid="tag-filter-menu"
-      onKeyDown={handleMenuKeyDown}
-    >
-      <ContextMenuItems>
-        {tags.length === 0 ? (
-          <div
-            data-testid="tag-filter-menu-empty"
-          >
-            <ContextMenuMessage>No tags yet — a tab’s own menu is where they are made.</ContextMenuMessage>
-          </div>
-        ) : (
-          tags.map((t) => {
-            const on = activeTagIds.includes(t.id);
-            return (
-              <ContextMenuItem
-                key={t.id}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={on}
-                data-testid="tag-filter-option"
-                data-tag-id={t.id}
-
-                onClick={() => onToggle(t.id)}
-              >
-                <ContextMenuColorDot color={t.color} size="filter" />
-                <span className="min-w-0 truncate">{t.name}</span>
-                {on && (
-                  <span className="justify-self-end">
-                    <Icon glyph={IconCheck} role="ui" />
-                  </span>
-                )}
-              </ContextMenuItem>
-            );
-          })
-        )}
-        <ContextMenuSeparator aria-hidden />
-        <ContextMenuItem
-          type="button"
-          role="menuitem"
-          data-testid="tag-filter-clear"
-          disabled={activeTagIds.length === 0}
-
-          onClick={onClear}
-        >
-          <Icon glyph={IconClose} role="ui" />
-          <span>Clear filter</span>
-        </ContextMenuItem>
-      </ContextMenuItems>
-    </ContextMenu>
-  );
-}
-
 function SettingsTree({
   treeFilter,
   setTreeFilter,
@@ -1613,7 +1621,11 @@ function SettingsTree({
   }, []);
   const query = (treeFilter ?? '').trim().toLowerCase();
   const rowHits = query ? searchSettingsRows(query) : [];
-  const sections = settingsSections.filter((s) => !query || s.label.toLowerCase().includes(query) || s.keywords.some((keyword) => keyword.toLowerCase().includes(query)));
+  const sections = settingsSections.filter((section) =>
+    !query ||
+    section.label.toLowerCase().includes(query) ||
+    section.keywords.some((keyword) => keyword.toLowerCase().includes(query)),
+  );
   return (
     <div className="grid gap-[var(--space-1)]">
       <SettingsSearch
@@ -1634,11 +1646,36 @@ function SettingsTree({
       <SettingsNavigation>
         {query ? rowHits.length > 0 ? rowHits.map(({ section: s, title }) => {
           const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
-          return <SettingsRailRow key={`${s.id}:${title}`} kind="search" icon={Icon} label={title} subtitle={s.label} sectionId={s.id} rowTitle={title} onClick={() => { requestSettingsRowJump(s.id, title); setSettingsSection(s.id); setTreeFilter(null); }} />
+          return (
+            <SettingsRailRow
+              key={`${s.id}:${title}`}
+              kind="search"
+              icon={Icon}
+              label={title}
+              subtitle={s.label}
+              sectionId={s.id}
+              rowTitle={title}
+              onClick={() => {
+                requestSettingsRowJump(s.id, title)
+                setSettingsSection(s.id)
+                setTreeFilter(null)
+              }}
+            />
+          )
         }) : <EmptyListMessage kind="settings">No settings match your search.</EmptyListMessage> : sections.map((s) => {
               const Icon = SETTINGS_ICON_MAP[s.icon] ?? IconInfo;
               const on = activeSettingsSection === s.id;
-              return <SettingsRailRow key={s.id} kind="section" icon={Icon} label={s.label} selected={on} sectionId={s.id} onClick={() => setSettingsSection(s.id)} />;
+              return (
+                <SettingsRailRow
+                  key={s.id}
+                  kind="section"
+                  icon={Icon}
+                  label={s.label}
+                  selected={on}
+                  sectionId={s.id}
+                  onClick={() => setSettingsSection(s.id)}
+                />
+              );
             })}
       </SettingsNavigation>
     </div>
@@ -1674,28 +1711,51 @@ function AddWorkspaceMenu({ onAddWorkspace, onSshConnect }: {
   const dispatch = (action: () => void): void => { setPosition(null); trigger.current?.focus(); action(); };
   return <>
     <Tooltip label="Add workspace">
-      <Button ref={trigger} variant="compact-icon-secondary" aria-label="Add workspace" aria-haspopup="menu" aria-expanded={position !== null}
+      <Button
+        ref={trigger}
+        variant="compact-icon-secondary"
+        aria-label="Add workspace"
+        aria-haspopup="menu"
+        aria-expanded={position !== null}
         onClick={() => {
           const rect = trigger.current!.getBoundingClientRect();
-          setPosition(position ? null : { x: Math.max(8, Math.min(rect.right - 244, window.innerWidth - 252)), y: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 88)) });
-        }}><Icon glyph={IconPlus} role="ui" /></Button>
+          setPosition(position ? null : {
+            x: Math.max(8, Math.min(rect.right - 244, window.innerWidth - 252)),
+            y: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 88)),
+          });
+        }}><Icon glyph={IconFolderPlus} role="ui" /></Button>
     </Tooltip>
-    {position && portalOrNull(<ContextMenu ref={menuRef} role="menu" aria-label="Add workspace" className="" style={{ left: position.x, top: position.y }}
-      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) setPosition(null); }}>
-      <ContextMenuItems>
-        <ContextMenuItem type="button" role="menuitem" onClick={() => dispatch(onAddWorkspace)}><Icon glyph={IconFolder} role="ui" /><span>Local folder…</span></ContextMenuItem>
-        <ContextMenuItem type="button" role="menuitem" data-testid="rail-ssh-connect" onClick={() => dispatch(onSshConnect)}><Icon glyph={IconServer} role="ui" /><span>Connect via SSH…</span></ContextMenuItem>
-      </ContextMenuItems>
-    </ContextMenu>)}
+    {position && portalOrNull(
+      <ContextMenu
+        ref={menuRef}
+        role="menu"
+        aria-label="Add workspace"
+        className=""
+        style={{ left: position.x, top: position.y }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) {
+            setPosition(null)
+          }
+        }}
+      >
+        <ContextMenuItems>
+          <ContextMenuItem type="button" role="menuitem" onClick={() => dispatch(onAddWorkspace)}>
+            <Icon glyph={IconFolder} role="ui" />
+            <span>Local folder…</span>
+          </ContextMenuItem>
+          <ContextMenuItem type="button" role="menuitem" data-testid="rail-ssh-connect" onClick={() => dispatch(onSshConnect)}>
+            <Icon glyph={IconServer} role="ui" />
+            <span>Connect via SSH…</span>
+          </ContextMenuItem>
+        </ContextMenuItems>
+      </ContextMenu>,
+    )}
   </>;
 }
 
 function RailTree({
   treeLabel,
-  filterOpen,
   activeFilterCount,
-  filterLabel,
-  onToggleFilter,
   onSshConnect,
   onAddWorkspace,
   selected,
@@ -1732,13 +1792,22 @@ function RailTree({
   checkoutBranches,
   railDiffByDir,
   railPrByDir,
-  railWidth,
+  railPrefs,
+  pinnedGridIds,
+  onRailPrefsChange,
+  railOptionsAnchor,
+  setRailOptionsAnchor,
+  onAddGrid,
+  suppressGridClickRef,
+  onGridPointerDown,
+  gridDragId,
+  gridDrop,
+  gridDragRefused,
+  onToggleGridUnread,
+  isGridUnread,
 }: {
   treeLabel: string;
-  filterOpen: boolean;
   activeFilterCount: number;
-  filterLabel: string;
-  onToggleFilter: (e: React.MouseEvent) => void;
   onSshConnect: () => void;
   onAddWorkspace: () => void;
   selected: string;
@@ -1779,25 +1848,330 @@ function RailTree({
   checkoutBranches: ReadonlyMap<number, string>;
   railDiffByDir: ReadonlyMap<string, RailDiffTotals>;
   railPrByDir: ReadonlyMap<string, RailPrState>;
-  railWidth: number;
+  railPrefs: RailPrefs;
+  pinnedGridIds: ReadonlySet<string>;
+  onRailPrefsChange: (prefs: RailPrefs) => void;
+  railOptionsAnchor: HTMLElement | null;
+  setRailOptionsAnchor: (anchor: HTMLElement | null) => void;
+  agentCount: number;
+  onAddGrid?: (path: string) => void;
+  suppressGridClickRef: React.RefObject<boolean>;
+  onGridPointerDown: (event: React.PointerEvent, workspace: string, gridId: string) => void;
+  gridDragId: string | null;
+  gridDrop: { gridId: string; position: 'before' | 'after' } | null;
+  gridDragRefused: string | null;
+  onToggleGridUnread: (gridId: string, signature: string, unread: boolean) => void;
+  isGridUnread: (gridId: string, agents: ReturnType<typeof buildRailCard>['agents']) => { unread: boolean; signature: string };
   onOpenInspector?: (paneId: number, tab: "changes" | "pull-request") => void;
 }): React.JSX.Element {
-  return (
-    <NavigationRailSection
-      data-testid="rail-tree"
-    >
-      <TreeGroupHeader
-        label={treeLabel}
-        filterOpen={filterOpen}
-        activeFilterCount={activeFilterCount}
-        filterLabel={filterLabel}
-        onToggleFilter={onToggleFilter}
-        leadingAction={
-          <AddWorkspaceMenu onAddWorkspace={onAddWorkspace} onSshConnect={onSshConnect} />
+  const tagPopover = useTagPopover();
+  const optionsTriggerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const openManage = (): void => {
+      const anchor = optionsTriggerRef.current;
+      if (anchor) tagPopover.open({ anchor, view: 'manage', selectedTagIds: activeTagIds });
+    };
+    window.addEventListener(MANAGE_TAGS_EVENT, openManage);
+    return () => window.removeEventListener(MANAGE_TAGS_EVENT, openManage);
+  }, [tagPopover, activeTagIds]);
+  const flatCards = useMemo(
+    () => filteredWorkspaces.flatMap((workspace) => (gridsByWorkspace[workspace.path] ?? [])
+      .filter((grid) => !hiddenByTagFilter(grid, activeTagIds))
+      .map((grid) => {
+        const paneIds = grid.sessionIds ?? []
+        const card = buildRailCard({
+          gridId: grid.id,
+          workspace: workspace.path,
+          title: grid.name,
+          pinned: pinnedGridIds.has(grid.id),
+          paneIds,
+          sessions,
+          branches: checkoutBranches,
+          diffByDir: railDiffByDir,
+          prByDir: railPrByDir,
+        })
+        return { workspace, grid, paneIds, card }
+      })
+      .filter(({ card }) => !railPrefs.filters.hideIdle || !['idle', 'done'].includes(card.status.kind))
+      .filter(({ paneIds }) => !railPrefs.filters.hideEmptyGrids || paneIds.length > 0)
+      .filter(({ card }) => !railPrefs.filters.hideDefaultBranch || !card.checkouts.some(
+        (checkout) => 'branch' in checkout && ['main', 'master'].includes(checkout.branch ?? ''),
+      ))),
+    [
+      filteredWorkspaces,
+      gridsByWorkspace,
+      activeTagIds,
+      sessions,
+      pinnedGridIds,
+      checkoutBranches,
+      railDiffByDir,
+      railPrByDir,
+      railPrefs.filters,
+    ],
+  )
+  const [settledSmartCards, setSettledSmartCards] = useState(flatCards);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettledSmartCards(flatCards), railPrefs.sort === 'smart' ? 3000 : 0);
+    return () => window.clearTimeout(timer);
+  }, [flatCards, railPrefs.sort]);
+  const smartRank = (card: ReturnType<typeof buildRailCard>): number =>
+    card.status.kind === 'needs-input' ? 0 :
+      card.status.kind === 'working' ? 1 :
+        card.agents.some((agent) => agent.unread) ? 2 : 3
+  const settledStatusById = new Map(settledSmartCards.map((entry) => [entry.grid.id, entry.card]));
+  const sortCards = (cards: typeof flatCards): typeof flatCards => {
+    if (railPrefs.sort === 'name') return [...cards].sort((a, b) => a.grid.name.localeCompare(b.grid.name));
+    if (railPrefs.sort === 'recent') return [...cards].sort((a, b) => b.card.lastActivityMs - a.card.lastActivityMs);
+    if (railPrefs.sort === 'smart') return [...cards].sort((a, b) => {
+      const left = settledStatusById.get(a.grid.id) ?? a.card;
+      const right = settledStatusById.get(b.grid.id) ?? b.card;
+      return smartRank(left) - smartRank(right) || right.lastActivityMs - left.lastActivityMs;
+    });
+    const order = new Map(railPrefs.gridOrder.map((id, index) => [id, index]));
+    return [...cards].sort((left, right) =>
+      (order.get(left.grid.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.grid.id) ?? Number.MAX_SAFE_INTEGER),
+    )
+  };
+  const pinnedCards = sortCards(flatCards.filter(({ card }) => card.pinned));
+  const unpinnedCards = sortCards(flatCards.filter(({ card }) => !card.pinned));
+  const groupingKey = (entry: typeof flatCards[number]): string => {
+    const card = railPrefs.sort === 'smart'
+      ? settledStatusById.get(entry.grid.id) ?? entry.card
+      : entry.card
+    if (railPrefs.groupBy === 'status') {
+      return card.status.kind === 'needs-input' ? 'Needs you' :
+        card.status.kind === 'working' || card.status.kind === 'starting' ? 'Working' : 'Idle'
+    }
+    if (railPrefs.groupBy === 'pr') return entry.card.pr?.pr ? 'Pull requests' : 'No pull request';
+    return entry.workspace.name;
+  };
+  const unpinnedGroups = new Map<string, typeof unpinnedCards>();
+  for (const entry of unpinnedCards) {
+    const key = railPrefs.groupBy === 'none' ? '' : groupingKey(entry);
+    unpinnedGroups.set(key, [...(unpinnedGroups.get(key) ?? []), entry]);
+  }
+  const groupEntries = [...unpinnedGroups.entries()].sort(([left], [right]) => {
+    if (railPrefs.groupBy === 'status') {
+      return ['Needs you', 'Working', 'Idle'].indexOf(left) - ['Needs you', 'Working', 'Idle'].indexOf(right)
+    }
+    if (railPrefs.groupBy === 'pr') {
+      return ['Pull requests', 'No pull request'].indexOf(left) - ['Pull requests', 'No pull request'].indexOf(right)
+    }
+    return filteredWorkspaces.findIndex((workspace) => workspace.name === left) -
+      filteredWorkspaces.findIndex((workspace) => workspace.name === right)
+  });
+  const renderFlatCard = ({ workspace, grid, paneIds, card }: typeof flatCards[number]): React.JSX.Element => {
+    const selectedCard = selected === workspace.path && selectedGridId === grid.id;
+    const onRemove = onRemoveGrid && (gridsByWorkspace[workspace.path]?.length ?? 0) > 1
+      ? () => onRemoveGrid(workspace.path, grid.id)
+      : undefined
+    const jumpNumber = flatCards.findIndex((entry) => entry.grid.id === grid.id) + 1;
+    const unreadState = isGridUnread(grid.id, card.agents);
+    if (gridRenaming?.path === workspace.path && gridRenaming.gridId === grid.id && onRenameGrid) {
+      return (
+        <WorkspaceTreeRow key={grid.id} kind="child" data-testid="grid-row-renaming">
+          <Icon glyph={IconGrid} role="ui" opacity="muted" />
+          <RenameInput
+            initial={grid.name}
+            onSubmit={(name) => {
+              setGridRenaming(null);
+              const next = name.trim();
+              if (next && next !== grid.name) onRenameGrid(workspace.path, grid.id, next);
+            }}
+            onCancel={() => setGridRenaming(null)}
+          />
+        </WorkspaceTreeRow>
+      );
+    }
+    return (
+      <Suspense
+        key={grid.id}
+        fallback={
+          <GridRailRowFallback
+            name={grid.name}
+            selected={selectedCard}
+            jumpNumber={1}
+            onSelect={() => onSelectGrid?.(workspace.path, grid.id)}
+            onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove))}
+            onRemove={onRemove}
+          />
         }
-      />
+      >
+        <LazyGridRailRow
+          name={grid.name}
+          workspace={workspace.path}
+          gridId={grid.id}
+          selected={selectedCard}
+          pinned={pinnedGridIds.has(grid.id)}
+          paneIds={paneIds}
+          tags={(grid.tagIds ?? []).flatMap((id) => tagById.get(id) ?? [])}
+          fallbackSessions={sessions}
+          branches={checkoutBranches}
+          diffByDir={railDiffByDir}
+          prByDir={railPrByDir}
+          cardMode={railPrefs.cardMode}
+          agentActivity={railPrefs.agentActivity}
+          properties={railPrefs.properties}
+          unread={unreadState.unread}
+          dragging={gridDragId === grid.id}
+          dragPosition={gridDrop?.gridId === grid.id ? gridDrop.position : null}
+          dragRefusal={gridDragRefused === grid.id}
+          onGridPointerDown={onGridPointerDown}
+          jumpNumber={jumpNumber}
+          onSelect={() => {
+            if (suppressGridClickRef.current) return
+            onSelectGrid?.(workspace.path, grid.id)
+          }}
+          onToggleUnread={() => onToggleGridUnread(grid.id, unreadState.signature, unreadState.unread)}
+          onRemove={onRemove}
+          onContextMenu={(event) => openGridMenu(event, workspace.path, grid, Boolean(onRemove))}
+          onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
+        />
+      </Suspense>
+    )
+  };
+  const virtualItems: RailVirtualItem[] = [];
+  const toggleGroup = (group: string): void => onRailPrefsChange({
+    ...railPrefs,
+    collapsedGroups: railPrefs.collapsedGroups.includes(group)
+      ? railPrefs.collapsedGroups.filter((entry) => entry !== group)
+      : [...railPrefs.collapsedGroups, group],
+  })
+  const groupHeader = (label: string, count: number, workspace?: Workspace, index = 0): React.JSX.Element => {
+    if (workspace) {
+      const collapsed = !isWsOpen(workspace.path);
+      return (
+        <WorkspaceRailGroupRow
+          workspace={workspace}
+          index={index}
+          color={colorOf(workspace.path)}
+          count={count}
+          hasGrids={(gridsByWorkspace[workspace.path]?.length ?? 0) > 0}
+          collapsed={collapsed}
+          selected={selected === workspace.path}
+          pinned={pinnedWorkspaces.has(workspace.path)}
+          dragging={dragPath !== null}
+          dragged={dragPath === workspace.path}
+          renaming={renaming === workspace.path}
+          dragActiveRef={dragActiveRef}
+          startWsDrag={startWsDrag}
+          onSelect={onSelect}
+          onToggle={toggleWsOpen}
+          onOpenMenu={openMenu}
+          onNewSession={onNewWorkspaceSession}
+          onRenameSubmit={onRenameSubmit}
+          onRenameCancel={onRenameCancel}
+        />
+      );
+    }
+    return (
+      <RailGroupHeader>
+        <RailGroupToggle
+          aria-expanded={!railPrefs.collapsedGroups.includes(label)}
+          onClick={() => toggleGroup(label)}
+        >
+          <Icon glyph={IconPin} role="small" tone="faint" className="flex-none" />
+          <span className="truncate">{label}</span>
+          {count > 0 && <RailGroupCount>{count}</RailGroupCount>}
+        </RailGroupToggle>
+      </RailGroupHeader>
+    );
+  };
+  if (pinnedCards.length > 0) {
+    virtualItems.push({
+      key: 'group:pinned',
+      kind: 'group',
+      content: groupHeader('Pinned', pinnedCards.length),
+    })
+    if (!railPrefs.collapsedGroups.includes('Pinned')) {
+      pinnedCards.forEach((entry) => virtualItems.push({
+        key: `card:${entry.grid.id}`,
+        kind: 'card',
+        content: renderFlatCard(entry),
+      }))
+    }
+  }
+  const workspaceGroups = railPrefs.groupBy === 'workspace'
+    ? filteredWorkspaces
+      // A workspace whose grids are all pinned is represented by the Pinned group alone.
+      .filter((workspace) => !(gridsByWorkspace[workspace.path] ?? []).length || (gridsByWorkspace[workspace.path] ?? []).some((grid) => !pinnedGridIds.has(grid.id)))
+      .map((workspace) => [workspace.name, unpinnedCards.filter((entry) => entry.workspace.path === workspace.path), workspace] as const)
+    : groupEntries.map(([label, cards]) => [label, cards, undefined] as const)
+  for (const [label, cards, workspace] of workspaceGroups) {
+    if (label) virtualItems.push({
+      key: `group:${workspace?.path ?? label}`,
+      kind: 'group',
+      content: groupHeader(label, cards.length, workspace, workspace ? filteredWorkspaces.findIndex((entry) => entry.path === workspace.path) : 0),
+    })
+    if (workspace ? isWsOpen(workspace.path) : !railPrefs.collapsedGroups.includes(label)) {
+      cards.forEach((entry) => virtualItems.push({
+        key: `card:${entry.grid.id}`,
+        kind: 'card',
+        content: renderFlatCard(entry),
+      }))
+    }
+  }
+  if (virtualItems.length === 0) {
+    virtualItems.push({
+      key: 'empty',
+      kind: 'group',
+      content: (
+        <EmptyListMessage>
+          {activeTagIds.length > 0
+            ? `No tab carries ${activeTagIds.length === 1 ? 'that tag' : 'any of those tags'}. Clear the filter in Sidebar options.`
+            : 'No grids match these filters.'}
+        </EmptyListMessage>
+      ),
+    })
+  }
+  return (
+    <NavigationRailSection data-testid="rail-tree">
+      <RailTreeGroupHeader>
+        <RailTreeTitle>{treeLabel}</RailTreeTitle>
+        <Tooltip label="Sidebar options">
+          <Button
+            type="button"
+            variant="compact-icon"
+            aria-label="Sidebar options"
+            aria-expanded={railOptionsAnchor !== null}
+            data-testid="tree-filter-toggle"
+            data-options-testid="rail-options-trigger"
+            ref={optionsTriggerRef}
+            onClick={(event) => setRailOptionsAnchor(railOptionsAnchor ? null : event.currentTarget)}
+            className="relative"
+          >
+            <Icon glyph={IconSliders} role="ui" />
+            {activeFilterCount > 0 && (
+              <RailFilterCountBadge>
+                {activeFilterCount > 9 ? '9+' : activeFilterCount}
+              </RailFilterCountBadge>
+            )}
+          </Button>
+        </Tooltip>
+        <Tooltip label="Add workspace">
+          <span><AddWorkspaceMenu onAddWorkspace={onAddWorkspace} onSshConnect={onSshConnect} /></span>
+        </Tooltip>
+        <Tooltip label="New grid">
+          <Button
+            type="button"
+            variant="compact-icon"
+            aria-label="New grid"
+            disabled={!onAddGrid}
+            onClick={() => onAddGrid?.(selected)}
+          >
+            <Icon glyph={IconPlus} role="ui" />
+          </Button>
+        </Tooltip>
+        <RailOptionsMenuHost
+          anchor={railOptionsAnchor}
+          prefs={railPrefs}
+          onChange={onRailPrefsChange}
+          onClose={() => setRailOptionsAnchor(null)}
+          selectedTagIds={activeTagIds}
+        />
+      </RailTreeGroupHeader>
 
-      {(
+      <RailTreeContent groupBy={railPrefs.groupBy} virtualItems={virtualItems} compact={railPrefs.cardMode === 'compact'} dragging={dragPath !== null} renderWorkspaceContent={() => (
         <WorkspaceList dragging={dragPath !== null}>
           {filteredWorkspaces.map((w, i) => {
             const color = colorOf(w.path);
@@ -1880,7 +2254,8 @@ function RailTree({
                     sessions={sessions}
                     railDiffByDir={railDiffByDir}
                     railPrByDir={railPrByDir}
-                    railWidth={railWidth}
+                    railPrefs={railPrefs}
+                    pinnedGridIds={pinnedGridIds}
                     onOpenInspector={onOpenInspector}
                   />
                 );
@@ -1929,12 +2304,12 @@ function RailTree({
               {workspaces.length === 0
                 ? "No workspaces yet. The + above opens a git project folder."
                 : activeFilterCount > 0
-                  ? `No tab carries ${activeFilterCount === 1 ? "that tag" : "any of those tags"}. Clear the filter from the funnel above.`
+                  ? `No tab carries ${activeFilterCount === 1 ? "that tag" : "any of those tags"}. Clear the filter in Sidebar options.`
                   : "No workspaces match your filter."}
             </EmptyListMessage>
           )}
         </WorkspaceList>
-      )}
+      )} />
     </NavigationRailSection>
   );
 }
@@ -1968,6 +2343,8 @@ export function Sidebar({
   onRenameGrid,
   onRemoveGrid,
   onOpenSettings,
+  onOpenPullRequests,
+  currentRailView,
   onOpenPalette,
   paletteChord,
   onHideRail,
@@ -1986,6 +2363,10 @@ export function Sidebar({
   onTagUpdate,
   onTagDelete,
 }: Props): React.JSX.Element {
+  useEffect(() => {
+    const timer = window.setTimeout(() => void preloadRailOptionsMenu(), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [menu, setMenu] = useState<CtxMenu | null>(null);
   const [gridMenu, setGridMenu] = useState<GridCtxMenu | null>(null);
   const [gridRenaming, setGridRenaming] = useState<{
@@ -2002,29 +2383,97 @@ export function Sidebar({
   const [tagFilter, setTagFilter] = useState<number[]>(() =>
     loadTagFilter(),
   );
-  const [tagMenu, setTagMenu] = useState<{
-    x: number;
-    y: number;
-    originX: number;
-    originY: number;
-  } | null>(null);
-  const [tagEditor, setTagEditor] = useState<TagEditorState | null>(null);
-  const [tagManagerOpen, setTagManagerOpen] = useState(false);
-  // Name of the tag the quick editor just made, so the manager it hands over to
-  // can point at the new row. Cleared whenever the manager is opened any other way.
-  const [tagJustMade, setTagJustMade] = useState<string | null>(null);
+  const [railPrefs, setRailPrefs] = useState<RailPrefs>(() => migrateRailPrefs());
+  const [gridDragId, setGridDragId] = useState<string | null>(null);
+  const [gridDrop, setGridDrop] = useState<{ gridId: string; position: 'before' | 'after' } | null>(null);
+  const [gridDragRefused, setGridDragRefused] = useState<string | null>(null);
+  const suppressGridClickRef = useRef(false);
+  const [railOptionsAnchor, setRailOptionsAnchor] = useState<HTMLElement | null>(null);
+  const [pinnedGridIds, setPinnedGridIds] = useState<Set<string>>(() => new Set(loadPinnedGridIds()));
+  const pendingTagRestores = useRef<{ tag: TagInfo; gridIds: string[] }[]>([]);
 
   const settingsOpen = useSettingsOpen();
-  const railWidth = useRailWidth();
   const railPrByDir = useRailPrCache();
   const railDiffByDir = useRailGitCache();
   const railView = useRailView();
+  const activeRailView = currentRailView ?? railView;
   const hiddenRailViews = useHiddenRailViews();
   const { custom, dataCustom } = useCustomSurface();
   const activeSettingsSection = useSettingsSection();
 
+  const isGridUnread = (
+    gridId: string,
+    agents: ReturnType<typeof buildRailCard>['agents'],
+  ): { unread: boolean; signature: string } => {
+    const signature = railUnreadSignature(agents.map(({ session }) => ({
+      id: session.id,
+      inboxUnread: session.inbox_unread,
+      childrenWaiting: session.children_waiting,
+    })))
+    return {
+      unread: isRailGridUnread(railPrefs.gridUnreadOverrides, gridId, signature, agents.some((agent) => agent.unread)),
+      signature,
+    }
+  };
+  const onToggleGridUnread = (gridId: string, signature: string, unread: boolean): void => {
+    setRailPrefs((current) => {
+      const gridUnreadOverrides = toggleRailGridRead(current.gridUnreadOverrides, gridId, signature, unread);
+      return { ...current, gridUnreadOverrides };
+    });
+  };
+
+  useEffect(() => {
+    const reorderSelected = (event: Event): void => {
+      const direction = (event as CustomEvent<{ direction?: number }>).detail?.direction;
+      if (railPrefs.sort !== 'manual' || (direction !== -1 && direction !== 1) || !selectedGridId) return;
+      const ids = (gridsByWorkspace[selected] ?? []).map((grid) => grid.id);
+      const currentOrder = [...new Set([...railPrefs.gridOrder, ...Object.values(gridsByWorkspace).flat().map((grid) => grid.id)])];
+      const current = currentOrder;
+      const next = moveSelectedRailGrid(current, ids, selectedGridId, direction);
+      if (next.some((id, index) => id !== current[index])) setRailPrefs((prefs) => ({ ...prefs, gridOrder: next }));
+    };
+    window.addEventListener('houston:rail-reorder-selected-card', reorderSelected);
+    return () => window.removeEventListener('houston:rail-reorder-selected-card', reorderSelected);
+  }, [railPrefs, selectedGridId, selected, gridsByWorkspace]);
+
+  useEffect(() => saveRailPrefs(railPrefs), [railPrefs]);
+  useEffect(() => {
+    const signatures = new Map<string, string>();
+    for (const grid of Object.values(gridsByWorkspace).flat()) {
+      const gridSessions = (grid.sessionIds ?? []).flatMap((id) => {
+        const session = sessions.find((candidate) => candidate.id === id);
+        return session ? [session] : [];
+      });
+      if (gridSessions.length) signatures.set(grid.id, railUnreadSignature(gridSessions.map((session) => ({
+        id: session.id,
+        inboxUnread: session.inbox_unread,
+        childrenWaiting: session.children_waiting,
+      }))))
+    }
+    setRailPrefs((current) => {
+      const gridUnreadOverrides = Object.fromEntries(Object.entries(current.gridUnreadOverrides).filter(
+        ([gridId, override]) => !signatures.has(gridId) || signatures.get(gridId) === override.signature,
+      ))
+      return Object.keys(gridUnreadOverrides).length === Object.keys(current.gridUnreadOverrides).length
+        ? current
+        : { ...current, gridUnreadOverrides }
+    });
+  }, [gridsByWorkspace, sessions]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(GRID_PINNED_KEY, JSON.stringify([...pinnedGridIds]))
+    } catch { /* Storage can be unavailable in private contexts. */ }
+  }, [pinnedGridIds]);
+  useEffect(() => {
+    if (localStorage.getItem(GRID_PINNED_MIGRATION_KEY) === '1') return;
+    if (Object.keys(gridsByWorkspace).length === 0 && pinnedWorkspaces.size > 0) return;
+    setPinnedGridIds(new Set(migratePinnedWorkspaces(
+      workspaces.map((workspace) => ({ path: workspace.path, gridIds: (gridsByWorkspace[workspace.path] ?? []).map((grid) => grid.id) })),
+      pinnedWorkspaces,
+    )));
+  }, [workspaces, gridsByWorkspace, pinnedWorkspaces]);
+
   const [treeFilter, setTreeFilter] = useState<string | null>(null);
-  const filterOpen = tagMenu !== null;
   const tags = useMemo(() => tagsProp ?? [], [tagsProp]);
   const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
   const activeTagIds = useMemo(
@@ -2140,22 +2589,73 @@ export function Sidebar({
     window.addEventListener("pointercancel", cancel);
   };
 
+  const startGridDrag = (event: React.PointerEvent, workspace: string, gridId: string): void => {
+    if (railPrefs.sort !== 'manual' || event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let active = false;
+    let target: { gridId: string; position: 'before' | 'after'; workspace: string } | null = null;
+    const move = (pointer: PointerEvent): void => {
+      if (!active) {
+        if (Math.hypot(pointer.clientX - startX, pointer.clientY - startY) < 5) return;
+        active = true;
+        setGridDragId(gridId);
+      }
+      const row = document.elementFromPoint(pointer.clientX, pointer.clientY)?.closest('[data-rail-grid-id]') as HTMLElement | null;
+      if (!row) { target = null; setGridDrop(null); setGridDragRefused(null); return; }
+      const targetId = row.dataset.railGridId;
+      const targetWorkspace = row.dataset.railWorkspace;
+      if (!targetId || !targetWorkspace || targetId === gridId) { target = null; setGridDrop(null); setGridDragRefused(null); return; }
+      if (!canReorderRailGrid(railPrefs.sort, workspace, targetWorkspace)) {
+        target = null
+        setGridDrop(null)
+        setGridDragRefused(targetId)
+        return
+      }
+      const rect = row.getBoundingClientRect();
+      const position = pointer.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      target = { gridId: targetId, position, workspace: targetWorkspace };
+      setGridDrop({ gridId: targetId, position });
+      setGridDragRefused(null);
+    };
+    const cleanup = (commit: boolean): void => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      if (commit && active && target?.workspace === workspace && target.gridId !== gridId) {
+        const allIds = Object.values(gridsByWorkspace).flat().map((grid) => grid.id);
+        const order = [...new Set([...railPrefs.gridOrder, ...allIds])];
+        const next = reorderRailGrid(order, gridId, target.gridId, target.position === 'before');
+        setRailPrefs((current) => ({ ...current, gridOrder: next }));
+        suppressGridClickRef.current = true;
+        window.setTimeout(() => { suppressGridClickRef.current = false; }, 0);
+      }
+      setGridDragId(null);
+      setGridDrop(null);
+      setGridDragRefused(null);
+    };
+    const up = (): void => cleanup(true);
+    const cancel = (): void => cleanup(false);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+  };
+
   const colorOf = (path: string): string =>
     customColors[path] ?? workspaceColor(colorIndexByPath[path] ?? 0);
 
   useEffect(() => {
-    if (!menu && !gridMenu && !navMenu && !tagMenu) return;
+    if (!menu && !gridMenu && !navMenu) return;
     const closeAll = (): void => {
       setMenu(null);
       setGridMenu(null);
       setNavMenu(null);
-      setTagMenu(null);
     };
     const onDown = (e: MouseEvent): void => {
       const target = e.target as HTMLElement;
       if (
         !target.closest(".ctxmenu") &&
-        !target.closest('[data-testid="tree-filter-toggle"]')
+        !target.closest('[data-testid="rail-options-trigger"]')
       )
         closeAll();
     };
@@ -2171,27 +2671,7 @@ export function Sidebar({
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [menu, gridMenu, navMenu, tagMenu]);
-
-  const openTagMenu = (e: React.MouseEvent): void => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = Math.max(8, Math.min(r.right - 244, window.innerWidth - 252));
-    const y = Math.min(r.bottom + 4, window.innerHeight - 120);
-    setMenu(null);
-    setGridMenu(null);
-    setNavMenu(null);
-    setTagMenu({
-      x,
-      y,
-      originX: r.left + r.width / 2 - x,
-      originY: r.top - y,
-    });
-  };
-
-  const onToggleFilter = (e: React.MouseEvent): void => {
-    if (tagMenu !== null) setTagMenu(null);
-    else openTagMenu(e);
-  };
+  }, [menu, gridMenu, navMenu]);
 
   const openMenu = (e: React.MouseEvent, w: Workspace, color: string): void => {
     e.preventDefault();
@@ -2245,77 +2725,52 @@ export function Sidebar({
       gridId: grid.id,
       name: grid.name,
       canRemove,
+      pinned: pinnedGridIds.has(grid.id),
       tagIds: grid.tagIds ?? [],
       ...railGridContextFacts(grid, path, sessions, checkoutBranches, railPrByDir),
     });
   };
 
+  const toggleGridPin = (gridId: string): void => setPinnedGridIds((current) => {
+    const next = new Set(current)
+    if (next.has(gridId)) next.delete(gridId)
+    else next.add(gridId)
+    return next
+  });
+
   useEffect(() => {
     localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(activeTagIds));
   }, [activeTagIds]);
-  const activeFilterCount = activeTagIds.length;
-  const filterLabel = filterLabelFor(activeTagIds.length);
+  const activeFilterCount = activeTagIds.length +
+    Number(railPrefs.filters.hideIdle) +
+    Number(railPrefs.filters.hideDefaultBranch) +
+    Number(railPrefs.filters.hideEmptyGrids)
 
-  const tagUsage = useMemo(() => {
-    const m = new Map<number, TagUsage>();
-    const at = (t: number): TagUsage => {
-      const u = m.get(t) ?? { panes: 0, grids: 0 };
-      m.set(t, u);
-      return u;
-    };
-    for (const s of sessions) for (const t of tagsOf(s)) at(t).panes += 1;
-    for (const grids of Object.values(gridsByWorkspace ?? {}))
-      for (const g of grids) for (const t of g.tagIds ?? []) at(t).grids += 1;
-    return m;
-  }, [sessions, gridsByWorkspace]);
-
-  const toggleTagFilter = (id: number): void => {
-    setTagFilter((cur) =>
-      cur.includes(id) ? cur.filter((t) => t !== id) : [...cur, id],
-    );
-  };
-
-  const addTagFilters = (ids: number[]): void => {
-    setTagFilter((cur) => [...cur, ...ids.filter((id) => !cur.includes(id))]);
-  };
-
-  const toggleGridTag = (menu: GridCtxMenu, tagId: number): void => {
-    const on = menu.tagIds.includes(tagId);
-    if (!on && menu.tagIds.length >= MAX_TAGS_PER_GRID) {
-      onOpenExternalError?.(
-        `refused: grid "${menu.name}" already carries ${menu.tagIds.length} tags (the MAX_TAGS_PER_GRID cap of ${MAX_TAGS_PER_GRID})`,
-      );
-      return;
+  const tagPopoverGrids = useMemo<TagGrid[]>(
+    () => Object.values(gridsByWorkspace).flatMap((grids) => grids.map((grid) => ({
+      id: grid.id,
+      title: grid.name,
+      tags: grid.tagIds ?? [],
+    }))),
+    [gridsByWorkspace],
+  )
+  useEffect(() => {
+    const pending = pendingTagRestores.current;
+    const remaining: typeof pending = [];
+    for (const restore of pending) {
+      const restored = tags.find((tag) => tag.id !== restore.tag.id && tag.name === restore.tag.name && tag.color === restore.tag.color);
+      if (!restored) {
+        remaining.push(restore);
+        continue;
+      }
+      for (const gridId of restore.gridIds) {
+        const grid = tagPopoverGrids.find((entry) => entry.id === gridId);
+        const path = Object.entries(gridsByWorkspace).find(([, entries]) => entries.some((entry) => entry.id === gridId))?.[0];
+        if (grid && path) onSetGridTags?.(path, gridId, [...grid.tags.filter((id) => id !== restore.tag.id), restored.id]);
+      }
     }
-    const next = on
-      ? menu.tagIds.filter((t) => t !== tagId)
-      : [...menu.tagIds, tagId];
-    setGridMenu({ ...menu, tagIds: next });
-    onSetGridTags?.(menu.path, menu.gridId, next);
-  };
-
-  const openTagEditorAt = (e: React.MouseEvent, tag: TagInfo | null): void => {
-    e.stopPropagation();
-    setGridMenu(null);
-    setTagEditor({ x: e.clientX, y: e.clientY, tag });
-  };
-
-  const saveTag = (
-    name: string,
-    color: string,
-    editing: TagInfo | null,
-  ): void => {
-    setTagEditor(null);
-    if (editing) {
-      onTagUpdate?.(editing.id, name, color);
-      return;
-    }
-    // A new tag lands you in the manager, where it can be renamed, recoloured or
-    // deleted — the quick editor is a way in, not a dead end.
-    onTagCreate?.(name, color);
-    setTagJustMade(name);
-    setTagManagerOpen(true);
-  };
+    pendingTagRestores.current = remaining;
+  }, [tags, tagPopoverGrids, gridsByWorkspace, onSetGridTags]);
 
   const menuEl = menu && (
     <WorkspaceContextMenu
@@ -2333,47 +2788,12 @@ export function Sidebar({
     <GridContextMenu
       gridMenu={gridMenu}
       workspaces={workspaces}
-      tags={tags}
       onClose={() => setGridMenu(null)}
       onStartRename={(path, gridId) => setGridRenaming({ path, gridId })}
       onRemoveGrid={onRemoveGrid}
-      onToggleTag={toggleGridTag}
-      onFilterByTags={addTagFilters}
-      onNewTag={(e) => openTagEditorAt(e, null)}
-      onManageTags={() => {
-        setGridMenu(null);
-        setTagJustMade(null);
-        setTagManagerOpen(true);
-      }}
+      onTogglePin={toggleGridPin}
       onOpenInspector={(paneId, tab) => onOpenInspector?.(paneId, tab)}
       onError={onOpenExternalError}
-    />
-  );
-
-  const tagEditorEl = (
-    <TagEditorSurface
-      state={tagEditor}
-      tags={tags}
-      onSave={saveTag}
-      onCancel={() => setTagEditor(null)}
-      onTagCreate={onTagCreate}
-      onTagUpdate={onTagUpdate}
-    />
-  );
-
-  const tagManagerEl = (
-    <TagManagerSurface
-      open={tagManagerOpen}
-      tags={tags}
-      usage={tagUsage}
-      highlight={tagJustMade}
-      onClose={() => {
-        setTagManagerOpen(false);
-        setTagJustMade(null);
-      }}
-      onTagCreate={onTagCreate}
-      onTagUpdate={onTagUpdate}
-      onTagDelete={onTagDelete}
     />
   );
 
@@ -2385,21 +2805,36 @@ export function Sidebar({
     />
   );
 
-  const tagMenuEl = (
-    <TagFilterMenu
-      menu={tagMenu}
-      tags={tags}
-      activeTagIds={activeTagIds}
-      onToggle={toggleTagFilter}
-      onClear={() => setTagFilter([])}
-    />
-  );
-
-  const treeLabel = "Workspaces";
+  const treeLabel = railPrefs.groupBy === 'workspace' ? 'Workspaces' : 'Grids';
 
   const settingsSections = NAVIGABLE_SETTINGS_SECTIONS;
 
   return (
+    <TagPopoverHost
+      tags={tags}
+      grids={tagPopoverGrids}
+      actions={{
+        onCreate: (name, color) => {
+          const created = { id: Math.max(0, ...tags.map((tag) => tag.id)) + 1, name, color };
+          onTagCreate?.(name, color);
+          return created;
+        },
+        onUpdate: (id, name, color) => onTagUpdate?.(id, name, color),
+        onDelete: (id) => onTagDelete?.(id),
+        onRestore: (tag, gridIds) => {
+          pendingTagRestores.current.push({ tag, gridIds });
+          onTagCreate?.(tag.name, tag.color);
+        },
+        onApply: (gridId, tagIds) => {
+          const workspacePath = Object.entries(gridsByWorkspace).find(([, grids]) => grids.some((grid) => grid.id === gridId))?.[0];
+          if (workspacePath) onSetGridTags?.(workspacePath, gridId, tagIds);
+        },
+        onFilter: (tagIds) => {
+          setTagFilter(tagIds);
+          setRailPrefs((current) => ({ ...current, tags: tagIds }));
+        },
+      }}
+    >
     <RailSurface
       data-grid-area={gridArea}
       data-custom={dataCustom}
@@ -2415,7 +2850,7 @@ export function Sidebar({
       {}
       {!settingsOpen && (
         <RailNav
-          view={railView}
+          view={activeRailView}
           hidden={hiddenRailViews}
           paletteChord={paletteChord}
           taskTurnCount={taskTurnCount}
@@ -2436,16 +2871,26 @@ export function Sidebar({
         ) : (
           <RailTree
             treeLabel={treeLabel}
-            filterOpen={filterOpen}
             activeFilterCount={activeFilterCount}
-            filterLabel={filterLabel}
-            onToggleFilter={onToggleFilter}
             onSshConnect={onSshConnect}
             onOpenInspector={onOpenInspector}
             checkoutBranches={checkoutBranches}
             railDiffByDir={railDiffByDir}
             railPrByDir={railPrByDir}
-            railWidth={railWidth}
+            onAddGrid={onAddGrid}
+            railPrefs={railPrefs}
+            pinnedGridIds={pinnedGridIds}
+            onRailPrefsChange={(next) => setRailPrefs(next)}
+            railOptionsAnchor={railOptionsAnchor}
+            setRailOptionsAnchor={setRailOptionsAnchor}
+            agentCount={sessions.filter((session) => session.state === "running").length}
+            suppressGridClickRef={suppressGridClickRef}
+            gridDragId={gridDragId}
+            gridDrop={gridDrop}
+            gridDragRefused={gridDragRefused}
+            onGridPointerDown={startGridDrag}
+            onToggleGridUnread={onToggleGridUnread}
+            isGridUnread={isGridUnread}
             onAddWorkspace={onAddWorkspace}
             selected={selected}
             filteredWorkspaces={filteredWorkspaces}
@@ -2494,6 +2939,28 @@ export function Sidebar({
             <Icon glyph={IconGear} role="ui" />
           </Button>
         </Tooltip>
+        <Tooltip label="Pull requests">
+          <Button
+            variant="subtle-icon"
+            aria-label="Pull requests"
+            aria-current={activeRailView === "prs" ? "page" : undefined}
+            selected={activeRailView === "prs"}
+            data-testid="rail-footer-pull-requests"
+            onClick={onOpenPullRequests}
+          >
+            <Icon glyph={IconGitPullRequest} role="ui" />
+          </Button>
+        </Tooltip>
+        <Tooltip label="Usage">
+          <Button
+            variant="subtle-icon"
+            aria-label="Usage"
+            aria-current={activeRailView === "usage" ? "page" : undefined}
+            onClick={() => selectRailView("usage")}
+          >
+            <Icon glyph={IconChartArea} role="ui" />
+          </Button>
+        </Tooltip>
         <Tooltip label={chromeTheme === "paper" ? "Switch to dark theme" : "Switch to light theme"}>
           <Button
             variant="subtle-icon"
@@ -2509,9 +2976,7 @@ export function Sidebar({
       {portalOrNull(menuEl)}
       {portalOrNull(gridMenuEl)}
       {portalOrNull(navMenuEl)}
-      {portalOrNull(tagMenuEl)}
-      {portalOrNull(tagEditorEl)}
-      {portalOrNull(tagManagerEl)}
     </RailSurface>
+    </TagPopoverHost>
   );
 }

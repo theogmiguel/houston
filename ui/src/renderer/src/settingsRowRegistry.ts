@@ -1,7 +1,7 @@
 import { SETTINGS_SECTIONS, type SettingsSectionDef, type SettingsSectionId } from './settingsSections'
 
 export const SETTINGS_ROW_REGISTRY: Partial<Record<SettingsSectionId, readonly string[]>> = {
-  appearance: ['Background', 'Skills', 'Routines', 'Connections', 'App zoom'],
+  appearance: ['Background', 'Skills', 'Routines', 'Connections', 'Open diff when an agent stops', 'App zoom'],
   terminal: ['Palette', 'Font size', 'Font family', 'Line height', 'Cursor blink', 'Scrollback', 'Shell integration', 'Shift+Enter inserts a newline', 'Clipboard access', 'Copy on select', 'Copy the text, not the box', 'Panes per stack', 'Idle quiet window'],
   shortcuts: ['Enable shortcuts', 'Pass through to terminal'],
   agents: ['Claude Code', 'Codex', 'OpenCode', 'Cursor', 'Grok', 'Active profile', 'Saved profiles', 'Add profile'],

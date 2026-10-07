@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView, type OrchestrationStateView } from './SettingsView'
 import { setSettingsNavForTests } from '../settingsNav'
 import { SETTINGS_ROW_REGISTRY } from '../settingsRowRegistry'
+import { setRailViewForTests } from '../railView'
 import type { SettingsSectionId } from '../settingsSections'
 import { baseSettingsViewProps, hostInfoFixture } from './settingsViewTestFixtures'
 import type { VoiceSettings } from '../houston/generated/VoiceSettings'
@@ -106,12 +107,16 @@ describe('settingsRowRegistry — every registered title actually renders', () =
     act(() => root.unmount())
     host.remove()
     setSettingsNavForTests({ section: 'appearance' })
+    setRailViewForTests({ hidden: [] })
   })
 
   it.each(Object.entries(SETTINGS_ROW_REGISTRY) as [SettingsSectionId, readonly string[]][])(
     '%s: every registered row title renders',
     async (section, titles) => {
       act(() => setSettingsNavForTests({ section }))
+      if (section === 'appearance') {
+        act(() => setRailViewForTests({ hidden: ['skills', 'routines', 'mcp'] }))
+      }
       act(() => {
         root.render(
           <SettingsView

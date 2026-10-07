@@ -6,7 +6,7 @@ import { HostKeyModal } from '../src/components/HostKeyModal'
 import { SshConnectModal } from '../src/components/SshConnectModal'
 import { HandoffOverlay } from '../src/components/HandoffOverlay'
 import { PaneHandoff } from '../src/components/PaneHandoff'
-import { TagManager } from '../src/components/TagManager'
+import { TagsFormsStory } from './paneChromeStories'
 import { QuestionCard } from '../src/components/QuestionCard'
 import { GitDialogShell } from '../src/components/git/GitDialogShell'
 import { BranchesDialog } from '../src/components/git/BranchesDialog'
@@ -49,7 +49,7 @@ export function LegacyPaneHandoffStory(): React.JSX.Element {
 }
 
 export function LegacyTagsStory(): React.JSX.Element {
-  return <TagManager open tags={[]} usage={new Map()} onCreate={noop} onUpdate={noop} onDelete={noop} onClose={noop} />
+  return <TagsFormsStory />
 }
 
 export function LegacyQuestionStory(): React.JSX.Element {

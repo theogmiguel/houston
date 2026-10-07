@@ -11,6 +11,9 @@
   --tr-radius-palette-swatch: 3px;
   --space-palette-option-row: 2px;
   --h-palette-option-list: 320px;
+  /* Tags */
+  --h-tags-pick-list-max: 280px;
+  --h-tags-manage-list-max: 320px;
   --space-palette-search-inset: 28px;
   --w-palette-specimen: 420px;
   --w-field-preview-rail: 21%;
@@ -128,6 +131,7 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
   --shadow-1: var(--shadow-md);
   --shadow-2: var(--shadow-lg);
+  --shadow-grid-rail-hover-card: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.33);
   --tool-surface: #0a0a0b;
   --tool-surface-alt: #0a0a0b;
   --tool-border: #2a2a31;
@@ -506,6 +510,9 @@
   --tr-radius-palette-swatch: 3px;
   --space-palette-option-row: 2px;
   --h-palette-option-list: 320px;
+  /* Tags */
+  --h-tags-pick-list-max: 280px;
+  --h-tags-manage-list-max: 320px;
   --space-palette-search-inset: 28px;
   --w-palette-specimen: 420px;
   --w-field-preview-rail: 21%;
@@ -1225,6 +1232,7 @@
      unlayered, so redefining those names would silently resize every
      `rounded-*`/`text-*` utility instead of only these tokens. */
   --tr-radius-sm: 6px;
+  --tr-radius-xs: 3px;
   --tr-radius-shortcut-fixed: 2px;
   --tr-radius-md: 10px;
   --tr-radius-input: 4px;
@@ -1237,6 +1245,25 @@
   --tr-radius-pill: 9999px;
   /* Corner of a file-type badge or thumbnail inside an attachment chip. */
   --tr-radius-badge: 3px;
+  --tr-radius-surface-small: 5px;
+  --tr-radius-surface-control: 7px;
+  --tr-radius-surface-circle: 50%;
+  --tr-radius-surface-full: 999px;
+  --space-files-subheader: 40px;
+  --space-files-empty-top: 96px;
+  --space-panel-launcher-bottom: 72px;
+  --tr-text-browser-count: 8.5px;
+  --tr-text-surface-micro: 9px;
+  --tr-text-surface-compact: 10px;
+  --tr-text-panel-launcher: 13.5px;
+  --shadow-files-menu: 0 12px 32px #0008;
+  --shadow-panel-check-popover: 0 18px 44px -18px #000c;
+  --shadow-files-explorer: -18px 0 40px -18px #000c;
+  --shadow-files-dialog: 0 8px 24px #0005;
+  --shadow-files-modal: 0 30px 70px -20px #000d;
+  --shadow-files-menu-raised: 0 10px 28px #0007;
+  --shadow-files-accent-inset: inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent);
+  --shadow-hairline-inset: inset 0 0 0 1px var(--border);
   --tr-empty-copy-max: 48ch;
   --tr-empty-compact-copy-max: 46ch;
   --tr-pr-number-width: 96px;
@@ -1493,6 +1520,8 @@
   --h-pane-head: 28px;
   --h-pill: 26px;
   --h-ctl: 28px;
+  --h-agent-row: 22px;
+  --h-segmented-xs: 18px;
   --h-empty-action: 36px;
   --h-context-menu-item: 30px;
   --h-context-menu-title: 48px;
@@ -1503,6 +1532,12 @@
   --w-empty-state-heading: 20ch;
   --w-empty-state-description: 52ch;
   --w-rail-specimen: 256px;
+  /* Rail */
+  --w-rail-options: 264px;
+  --sz-rail-update-button: 32px;
+  --h-rail-filter-button: 24px;
+  --h-rail-filter-badge: 12px;
+  --h-rail-group-header: 32px;
   --w-shortcut-hint-footer: 520px;
   --w-rail-keycap-min: 16px;
   --sz-workspace-empty-icon: 50px;

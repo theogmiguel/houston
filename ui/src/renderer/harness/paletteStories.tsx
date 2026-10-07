@@ -8,7 +8,7 @@ import { PALETTE_RECENTS_KEY } from '../src/components/ui/paletteHelpers'
 const noop = (): void => {}
 localStorage.setItem(PALETTE_RECENTS_KEY, JSON.stringify(['panes.toggle-git']))
 const actions: PaletteActions = {
-  newTerminal: noop, insertPane: noop, newGrid: noop, toggleGitPane: noop, spawnAgent: noop,
+  newTerminal: noop, newGrid: noop, toggleGitPane: noop, spawnAgent: noop,
   openTasks: noop, toggleSidebarRail: noop, toggleChromeTheme: noop, openAddPanePopover: noop,
   setGridLayout: noop, openShortcutSheet: noop, selectNavRow: noop, switchWorkspace: noop,
   switchGrid: noop, focusPane: noop, restartPane: noop

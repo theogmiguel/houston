@@ -34,4 +34,17 @@ describe('PrefixHint', () => {
     act(() => prefixLayer.disarm())
     expect(hint()).toBeNull()
   })
+
+  it('shows the redesigned panel and Pull Requests prefix destinations', () => {
+    act(() => prefixLayer.arm())
+    act(() => vi.advanceTimersByTime(250))
+    expect(hint()?.textContent).toContain('panel surfaces')
+    expect(hint()?.textContent).toContain('B')
+    expect(hint()?.textContent).toContain('F')
+    expect(hint()?.textContent).toContain('D')
+    expect(hint()?.textContent).toContain('P')
+    expect(hint()?.textContent).toContain('L')
+    expect(hint()?.textContent).toContain('Pull Requests screen')
+    expect(hint()?.textContent).toContain('R')
+  })
 })

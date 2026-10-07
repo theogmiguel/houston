@@ -16,7 +16,6 @@ import { gridNext, gridPrev, wsLast, wsNext, wsPrev } from '../keymap'
 function makeActions(overrides: Partial<PaletteActions> = {}): PaletteActions {
   return {
     newTerminal: vi.fn(),
-    insertPane: vi.fn(),
     splitPane: vi.fn(),
     newGrid: vi.fn(),
     closePane: vi.fn(),
@@ -90,13 +89,11 @@ describe('commandRegistry — buildCommands', () => {
     expect(git?.keywords).toContain('review')
   })
 
-  it('without a workspace, workspace-gated commands are disabled but the panel toggle is not', () => {
+  it('without a workspace, browser pane commands are absent and the panel toggle is not gated', () => {
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: false, workspaces: [] })
-    const browser = commands.find((c) => c.id === 'panes.new-browser')
     const git = commands.find((c) => c.id === 'panes.toggle-git')
     const claude = commands.find((c) => c.id === 'agents.spawn.claude')
-    expect(browser?.enabled).toBe(false)
-    expect(browser?.disabledReason).toMatch(/workspace/i)
+    expect(commands.find((c) => c.id === 'panes.new-browser')).toBeUndefined()
     // The panel opens in All view too, scoped to the focused pane's repo.
     expect(git?.enabled).toBe(true)
     expect(claude?.enabled).toBe(false)
@@ -105,26 +102,21 @@ describe('commandRegistry — buildCommands', () => {
 
   it('with a workspace, the same commands are enabled', () => {
     const commands = buildCommands({ actions: makeActions(), hasWorkspace: true, workspaces: WORKSPACES })
-    expect(commands.find((c) => c.id === 'panes.new-browser')?.enabled).toBe(true)
+    expect(commands.find((c) => c.id === 'panes.new-browser')).toBeUndefined()
     expect(commands.find((c) => c.id === 'panes.toggle-git')?.enabled).toBe(true)
     expect(commands.find((c) => c.id === 'agents.spawn.claude')?.enabled).toBe(true)
   })
 
-  it('New browser pane calls insertPane, never toggleGitPane, and vice versa for the git row', () => {
-    const insertPane = vi.fn()
+  it('browser creation is absent while the git row dispatches to toggleGitPane', () => {
     const toggleGitPane = vi.fn()
     const commands = buildCommands({
-      actions: makeActions({ insertPane, toggleGitPane }),
+      actions: makeActions({ toggleGitPane }),
       hasWorkspace: true,
       workspaces: []
     })
-    commands.find((c) => c.id === 'panes.new-browser')?.run()
-    expect(insertPane).toHaveBeenCalledWith('browser')
-    expect(toggleGitPane).not.toHaveBeenCalled()
-    insertPane.mockClear()
+    expect(commands.find((c) => c.id === 'panes.new-browser')).toBeUndefined()
     commands.find((c) => c.id === 'panes.toggle-git')?.run()
     expect(toggleGitPane).toHaveBeenCalledOnce()
-    expect(insertPane).not.toHaveBeenCalled()
   })
 
   it('splitPane/closePane are disabled with a named reason when the mount has no focused pane to act on', () => {
@@ -197,7 +189,7 @@ describe('commandRegistry — buildCommands', () => {
     const commands = buildCommands({ actions: makeActions({ selectNavRow }), hasWorkspace: true, workspaces: [] })
     const rows = commands.filter((c) => c.id.startsWith('go-to.nav.'))
     expect(rows.map((r) => r.id).sort()).toEqual(
-      ['go-to.nav.routines', 'go-to.nav.skills', 'go-to.nav.harness', 'go-to.nav.mcp', 'go-to.nav.usage'].sort()
+      ['go-to.nav.routines', 'go-to.nav.skills', 'go-to.nav.harness', 'go-to.nav.mcp', 'go-to.nav.prs', 'go-to.nav.usage'].sort()
     )
     rows.find((r) => r.id === 'go-to.nav.mcp')?.run()
     expect(selectNavRow).toHaveBeenCalledWith('mcp')
@@ -205,6 +197,8 @@ describe('commandRegistry — buildCommands', () => {
     expect(selectNavRow).toHaveBeenCalledWith('harness')
     rows.find((r) => r.id === 'go-to.nav.usage')?.run()
     expect(selectNavRow).toHaveBeenCalledWith('usage')
+    rows.find((r) => r.id === 'go-to.nav.prs')?.run()
+    expect(selectNavRow).toHaveBeenCalledWith('prs')
   })
 
   it('any pending Settings section is offered but disabled, with a reason', () => {
