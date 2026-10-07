@@ -193,14 +193,14 @@ export function TaskDetail(props: TaskDetailProps): React.JSX.Element {
         />
       </TaskToolbar>
       {refusal && refusal.id === task.id && <RefusalBanner refusal={refusal} onReload={props.onReload} taskId={task.id} />}
-      <TaskDetailRecord props={props} title={title} setTitle={setTitle} description={description} setDescription={setDescription} trackerLinks={trackerLinks} trackerProject={trackerProject} />
+      <TaskDetailRecord props={props} titleValue={title} setTitle={setTitle} description={description} setDescription={setDescription} trackerLinks={trackerLinks} trackerProject={trackerProject} />
     </TaskPanel>
   )
 }
 
-function TaskDetailRecord({ props, title, setTitle, description, setDescription, trackerLinks, trackerProject }: {
+function TaskDetailRecord({ props, titleValue: title, setTitle, description, setDescription, trackerLinks, trackerProject }: {
   props: TaskDetailProps
-  title: string
+  titleValue: string
   setTitle: (value: string) => void
   description: string
   setDescription: (value: string) => void
