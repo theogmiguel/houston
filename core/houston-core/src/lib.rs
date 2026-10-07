@@ -72,6 +72,7 @@ pub mod ssh_credentials;
 pub mod statusline_sweep;
 pub mod supervisor;
 pub mod tasks_cli;
+pub mod task_trackers;
 pub mod updates;
 pub mod usage;
 pub mod voice;

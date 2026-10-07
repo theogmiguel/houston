@@ -3,6 +3,40 @@
 use anyhow::{anyhow, bail, Result};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::collections::BTreeMap;
+
+pub mod github;
+pub mod notion;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TrackerPollCursor {
+    pub etag: Option<String>,
+    pub last_edited_time: Option<String>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteTaskSnapshot {
+    pub external_id: String,
+    pub url: String,
+    pub remote_rev: Option<String>,
+    pub fields: BTreeMap<String, String>,
+    pub project: Option<houston_protocol::TaskTrackerProjectSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackerPollPage {
+    pub records: Vec<RemoteTaskSnapshot>,
+    pub cursor: TrackerPollCursor,
+    pub not_modified: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackerWriteReceipt {
+    pub external_id: Option<String>,
+    pub url: Option<String>,
+    pub remote_rev: Option<String>,
+}
 
 pub const NOTION_API_VERSION: &str = "2026-03-11";
 pub const SNAPSHOT_MAX_BYTES: usize = 65_536;

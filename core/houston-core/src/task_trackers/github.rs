@@ -109,7 +109,7 @@ pub async fn write(
     let repo_for_call = repo.clone();
     let payload = payload.clone();
     tokio::task::spawn_blocking(move || write_blocking(&repo_for_call, &action, &payload))
-        .await??
+        .await?
 }
 
 async fn poll_pages(
@@ -184,7 +184,7 @@ fn api_get_blocking(route: &str, etag: Option<&str>, jq: &str) -> anyhow::Result
     Ok(response)
 }
 
-const ISSUE_JQ: &str = r#"if type == "array" then map({number,title:((.title // "")[0:500]),body:((.body // "")[0:8000]),html_url,updated_at,state,labels:((.labels // [])[:100] | map(.name)),assignee:(.assignee.login // null),milestone:(if .milestone == null then null else {number:.milestone.number,title:((.milestone.title // "")[0:500]),description:((.milestone.description // "")[0:4000]),html_url} end),pull_request}) else {message:((.message // tostring)[0:4000])} end"#;
+const ISSUE_JQ: &str = r#"if type == "array" then map({number,title:((.title // "")[0:500]),body:((.body // "")[0:8000]),html_url,updated_at,state,labels:((.labels // [])[:100] | map(.name)),assignee:(.assignee.login // null),assignees:((.assignees // [])[:100] | map(.login)),milestone:(if .milestone == null then null else {number:.milestone.number,title:((.milestone.title // "")[0:500]),description:((.milestone.description // "")[0:4000]),html_url} end),pull_request}) else {message:((.message // tostring)[0:4000])} end"#;
 const COMMENTS_JQ: &str = r#"if type == "array" then map({body:((.body // "")[0:4000])}) else {message:((.message // tostring)[0:4000])} end"#;
 const WRITE_JQ: &str = r#"if has("number") then {number,html_url,updated_at} else {message:((.message // tostring)[0:4000])} end"#;
 
@@ -273,7 +273,13 @@ fn matches_filter(issue: &Value, settings: &proto::TaskTrackerWorkspaceSettings)
         })
     });
     let assignee_match = settings.github_assigned_user.as_deref().filter(|s| !s.is_empty()).is_some_and(|wanted| {
-        issue.get("assignee").and_then(|assignee| assignee.as_str().or_else(|| assignee.get("login").and_then(Value::as_str))).is_some_and(|actual| actual.eq_ignore_ascii_case(wanted))
+        let matches = |assignee: &Value| {
+            assignee.as_str().or_else(|| assignee.get("login").and_then(Value::as_str))
+                .is_some_and(|actual| actual.eq_ignore_ascii_case(wanted))
+        };
+        issue.get("assignees").and_then(Value::as_array)
+            .is_some_and(|assignees| assignees.iter().any(matches))
+            || issue.get("assignee").is_some_and(matches)
     });
     let configured = settings.github_label.as_deref().is_some_and(|s| !s.is_empty())
         || settings.github_assigned_user.as_deref().is_some_and(|s| !s.is_empty());
@@ -303,7 +309,7 @@ fn snapshot(issue: &Value, repo: &str) -> Option<RemoteTaskSnapshot> {
             url: milestone.get("html_url").and_then(Value::as_str).unwrap_or_default().to_owned(),
             title: bounded(milestone.get("title").and_then(Value::as_str).unwrap_or_default(), MAX_TITLE),
             description: bounded(milestone.get("description").and_then(Value::as_str).unwrap_or_default(), MAX_MILESTONE_DESCRIPTION),
-            unverified: false,
+            unverified: true,
         })
     });
     Some(RemoteTaskSnapshot {
@@ -316,7 +322,7 @@ fn snapshot(issue: &Value, repo: &str) -> Option<RemoteTaskSnapshot> {
 }
 
 fn decode_etags(raw: Option<&str>) -> anyhow::Result<PageEtags> {
-    raw.map(serde_json::from_str).transpose().map(|value| value.unwrap_or_default())
+    Ok(raw.map(serde_json::from_str).transpose()?.unwrap_or_default())
 }
 
 fn write_blocking(repo: &str, action: &str, payload: &Value) -> anyhow::Result<TrackerWriteReceipt> {
@@ -574,6 +580,9 @@ mod tests {
         let settings = settings();
         assert!(matches_filter(&issue(1, &["import"], None, false, false), &settings));
         assert!(matches_filter(&issue(2, &[], Some("THEO"), false, false), &settings));
+        let mut shared = issue(5, &[], Some("other"), false, false);
+        shared["assignees"] = json!([{"login": "other"}, {"login": "THEO"}]);
+        assert!(matches_filter(&shared, &settings));
         assert!(!matches_filter(&issue(3, &[], Some("other"), false, false), &settings));
         assert!(snapshot(&issue(4, &["import"], None, true, false), "octo-org/project").is_none());
     }
@@ -582,7 +591,9 @@ mod tests {
     fn milestone_import_has_repository_scoped_canonical_identity() {
         let record = snapshot(&issue(42, &[], None, false, true), "octo-org/project").unwrap();
         assert_eq!(record.external_id, "octo-org/project#42");
-        assert_eq!(record.project.unwrap().external_id, "github_issues:octo-org/project:milestone:7");
+        let project = record.project.unwrap();
+        assert_eq!(project.external_id, "github_issues:octo-org/project:milestone:7");
+        assert!(project.unverified);
         assert_eq!(record.remote_rev.as_deref(), Some("2026-10-06T12:00:00Z"));
         assert_eq!(record.fields.get("status").map(String::as_str), Some("todo"));
     }
