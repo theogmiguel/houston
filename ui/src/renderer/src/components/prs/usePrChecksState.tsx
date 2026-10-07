@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { HoustonClient, PrCheck } from '../../houston/client'
+import { checkAgentPrompt } from './checkAgentPrompt'
 import { ChecksList, checkKey, type CheckAgentTarget, type CheckLogState, type ChecksListProps } from './ChecksList'
 
 export interface UsePrChecksStateOptions {
@@ -115,14 +116,7 @@ export function usePrChecksState({
 
   const promptFor = (check: PrCheck): string => {
     const log = logs[checkKey(check)]
-    return [
-      `Please investigate this failing check: ${check.name}`,
-      `Pull request: #${number} ${url}`,
-      `Branch: ${branch ?? 'unknown'}`,
-      `Check run: ${check.url ?? 'not available'}`,
-      'Failure log tail:',
-      log?.available ? log.lines.slice(-40).join('\n') : "Logs aren't available for this check",
-    ].join('\n')
+    return checkAgentPrompt(check, { number, url, branch }, log?.available ? log.lines : null)
   }
 
   const send = (check: PrCheck, target: CheckAgentTarget): void => {
