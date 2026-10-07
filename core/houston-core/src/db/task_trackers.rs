@@ -568,6 +568,13 @@ impl Db {
                         proto::TaskTrackerProvider::Slack => continue,
                     };
                     self.task_tracker_outbox_enqueue(&workspace, task_id, settings.provider, "status", revision, &payload.to_string(), now_ms)?;
+                    if kind == "delivery" && settings.provider == proto::TaskTrackerProvider::GithubIssues
+                        && target_status == "done" && target_override
+                    {
+                        let issue_number = payload["issue_number"].as_u64().context("delivery Source omitted its issue number")?;
+                        let close = serde_json::json!({"issue_number":issue_number,"delivery_task_id":target_task_id,"authorized_by_daemon":true,"all_children_done":false,"user_override":true});
+                        self.task_tracker_outbox_enqueue(&workspace, target_task_id, settings.provider, "delivery_close", target_revision, &close.to_string(), now_ms)?;
+                    }
                 }
                 "handed_back" => {
                     let slice = self.task(task_id)?.context("handed-back Slice disappeared")?;
@@ -730,6 +737,7 @@ impl Db {
                 if row.provider == proto::TaskTrackerProvider::Notion { payload["external_id"] = serde_json::Value::String(self.task_external_links(target_task_id)?.into_iter().find(|link| link.provider == row.provider && link.source == proto::TaskExternalLinkSource::Source).map(|link| link.external_id).unwrap_or_default()); }
             }
             "delivery_close" | "close_delivery" => {
+                if target_task.status != proto::TaskStatus::Done { return Ok(None); }
                 let readiness: Option<(String, bool)> = self.conn.lock().expect("sqlite lock").query_row(
                     "SELECT d.kind, d.user_status_override FROM backlog_task_domain d WHERE d.task_id=?1",
                     [row.task_id], |result| Ok((result.get(0)?, result.get::<_, i64>(1)? != 0)),
