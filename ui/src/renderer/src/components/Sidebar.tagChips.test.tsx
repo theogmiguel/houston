@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Sidebar } from './Sidebar'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Sidebar, preloadRailOptionsMenu } from './Sidebar'
+import { DEFAULT_RAIL_PREFS } from '../railPrefs'
 import {
   RAIL_TAG_MARK_AT,
   resetRailWidthForTests,
@@ -10,6 +12,9 @@ import {
 } from '../railWidth'
 import type { TagInfo } from '../houston/generated/TagInfo'
 import type { SessionInfo, Workspace } from '../houston/client'
+import { preloadTagPopoverSurface } from './tags/TagPopover'
+
+beforeAll(() => Promise.all([preloadTagPopoverSurface(), preloadRailOptionsMenu()]))
 
 function ws(path: string, name = path): Workspace {
   return { path, name } as Workspace
@@ -157,13 +162,16 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
 
   const openFilter = (): void => {
     act(() => filterToggle().click())
+    act(() => document.querySelector<HTMLButtonElement>('[data-testid="rail-tags-filter"]')?.click())
+    const showTags = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.trim() === 'Show tags')
+    if (showTags) act(() => showTags.click())
   }
 
   const menu = (): HTMLElement | null =>
-    document.querySelector('[data-testid="tag-filter-menu"]')
+    document.querySelector('[data-testid="tag-popover"]')
 
   const options = (): HTMLButtonElement[] => [
-    ...document.querySelectorAll<HTMLButtonElement>('[data-testid="tag-filter-option"]')
+    ...document.querySelectorAll<HTMLButtonElement>('[data-testid="tag-pick-row"]')
   ]
 
   const badge = (): HTMLElement | null =>
@@ -179,6 +187,10 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
   })
 
   it('marks each tagged grid row with its first tag colour and counts the rest', async () => {
+    localStorage.setItem('tr-rail-prefs', JSON.stringify({
+      ...DEFAULT_RAIL_PREFS,
+      properties: [...DEFAULT_RAIL_PREFS.properties, 'tags']
+    }))
     render(TREE)
     const markOf = (name: string): HTMLElement | null => gridRow(name).querySelector<HTMLElement>('[data-testid="rail-tags"]')
     await vi.waitFor(() => expect(markOf('alpha review')).not.toBeNull())
@@ -231,7 +243,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(gridRow('alpha review')).not.toBeUndefined()
   })
 
-  it('the funnel opens a tag menu, and grid mode has no inline text filter at all', () => {
+  it('Sidebar options opens the tag picker without an inline text filter', () => {
     render(TREE)
     expect(container.querySelector('input[aria-label="Filter workspaces"]')).toBeNull()
     expect(menu()).toBeNull()
@@ -245,8 +257,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
       'wait-human',
       'renewals'
     ])
-    const clear = document.querySelector('[data-testid="tag-filter-clear"]') as HTMLButtonElement
-    expect(clear.disabled).toBe(true)
+    expect(menu()).not.toBeNull()
   })
 
   it('a menu row toggles its tag, marks itself checked and keeps the menu open', () => {
@@ -268,17 +279,17 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(badge()?.textContent).toBe('1')
   })
 
-  it('the funnel badge is absent at zero and names the active count', () => {
+  it('the options badge is absent at zero and names the active filter count', () => {
     render(TREE)
     expect(badge()).toBeNull()
-    expect(filterToggle().getAttribute('aria-label')).toBe('Filter by tag')
+    expect(filterToggle().getAttribute('aria-label')).toBe('Sidebar options')
 
     openFilter()
     expect(badge()).toBeNull()
 
     act(() => options()[0].click())
     expect(badge()?.textContent).toBe('1')
-    expect(filterToggle().getAttribute('aria-label')).toBe('Filter by tag (1 active)')
+    expect(filterToggle().getAttribute('aria-label')).toBe('Sidebar options')
   })
 
   it('Clear filter empties every active tag and leaves the menu open', () => {
@@ -288,8 +299,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     act(() => options()[2].click())
     expect(badge()?.textContent).toBe('2')
 
-    const clear = document.querySelector('[data-testid="tag-filter-clear"]') as HTMLButtonElement
-    expect(clear.disabled).toBe(false)
+    const clear = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.trim() === 'Clear filter')!
     act(() => clear.click())
 
     expect(badge()).toBeNull()
@@ -414,10 +424,14 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     })
   }
 
-  const gridMenuTag = (id: number): HTMLButtonElement =>
-    document.querySelector(`[data-testid="menu-tag-item"][data-tag="${id}"]`) as HTMLButtonElement
+  const openGridTags = (): void => {
+    act(() => (document.querySelector('[data-testid="menu-tags-entry"]') as HTMLButtonElement).click())
+  }
 
-  it('a grid menu tag toggles the grid\u2019s own tags and never writes its panes', () => {
+  const gridMenuTag = (id: number): HTMLButtonElement =>
+    [...document.querySelectorAll<HTMLButtonElement>('[data-testid="tag-pick-row"]')].find((row) => row.dataset.tagId === String(id))!
+
+  it('the grid Tags picker toggles its own tags and never writes its panes', () => {
     const calls: [string, string, number[]][] = []
     render({
       ...TREE,
@@ -426,6 +440,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
       onSetGridTags: (path, gridId, tagIds) => calls.push([path, gridId, tagIds])
     })
     openGridMenu('alpha main')
+    openGridTags()
     expect(gridMenuTag(1).getAttribute('aria-checked')).toBe('true')
     expect(gridMenuTag(3).getAttribute('aria-checked')).toBe('false')
 
@@ -437,7 +452,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
     expect(calls[1]).toEqual(['/a', 'a1', [2]])
   })
 
-  it('a grid at the MAX_TAGS_PER_GRID cap cannot take another tag, and can still drop one', () => {
+  it('a grid at the tag cap cannot take another tag, and can still drop one', () => {
     const many: TagInfo[] = [1, 2, 3, 4, 5, 6].map((id) => ({ id, name: `t${id}`, color: '#a78bfa' }))
     const calls: number[][] = []
     render({
@@ -453,6 +468,7 @@ describe('Sidebar tag chips and tag filter (v100)', () => {
       onSetGridTags: (_path, _gridId, tagIds) => calls.push(tagIds)
     })
     openGridMenu('alpha main')
+    openGridTags()
     expect(gridMenuTag(6).disabled).toBe(true)
     expect(gridMenuTag(5).disabled).toBe(false)
     act(() => gridMenuTag(5).click())
