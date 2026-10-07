@@ -56,6 +56,32 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('FilesSurface', () => {
+  it('keeps a successfully loaded empty workspace blank', async () => {
+    bridge.readDir.mockResolvedValue([])
+    render(<FilesSurface workspaceRoot="/ws" panelWidth={600} />)
+    await waitFor(() => expect(bridge.readDir).toHaveBeenCalledWith('/ws'))
+    await waitFor(() => expect(screen.queryByText('Loading files…')).toBeNull())
+    expect(screen.queryByText('No matching files.')).toBeNull()
+  })
+
+  it('expands ancestors and scrolls a restored nested file into view', async () => {
+    tabs.state.activePath = '/ws/src/selected.ts'
+    bridge.readDir.mockImplementation(async (directory: string) => directory === '/ws'
+      ? [{ name: 'src', path: '/ws/src', dir: true, ignored: false }]
+      : [{ name: 'selected.ts', path: '/ws/src/selected.ts', dir: false, ignored: false }])
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('files-tree')) return new DOMRect(0, 100, 200, 100)
+      if (this.getAttribute('data-path') === '/ws/src/selected.ts') return new DOMRect(0, 240, 200, 24)
+      return new DOMRect(0, 0, 0, 0)
+    })
+    render(<FilesSurface workspaceRoot="/ws" panelWidth={600} />)
+    const file = await screen.findByRole('treeitem', { name: 'selected.ts' })
+    expect(file.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('treeitem', { name: 'src' }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('tree').scrollTop).toBe(64)
+    bounds.mockRestore()
+  })
+
   it('uses the sheet below 560px and keeps the panel breakpoints explicit', () => {
     expect(filesSurfaceLayout(560)).toBe('wide')
     expect(filesSurfaceLayout(559)).toBe('sheet')

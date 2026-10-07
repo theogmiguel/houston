@@ -103,7 +103,9 @@ function FileBreadcrumbs(props: {
       </span>
       {props.panelWidth < 470 && (
         <div className={filesSurfaceClass(FilesSurfaceClass.crumbMore)}>
-          <button aria-label="Show parent folders" onClick={() => props.setCrumbsOpen((value) => !value)}>…</button>
+          <Tooltip label="Show parent folders">
+            <button aria-label="Show parent folders" onClick={() => props.setCrumbsOpen((value) => !value)}>…</button>
+          </Tooltip>
           {props.crumbsOpen && (
             <div className={filesSurfaceClass(FilesSurfaceClass.crumbMenu, FilesSurfaceClass.floatingGlass)}>
               {parts.map((part, index) => (
@@ -158,7 +160,9 @@ function FileActionControls(props: {
       )}
       {props.panelWidth < 400 && (props.isText || props.isMarkdown || props.isCsv) && (
         <div className={filesSurfaceClass(FilesSurfaceClass.moreWrap)}>
-          <button className={filesSurfaceClass(FilesSurfaceClass.iconButton)} aria-label="More file actions" onClick={() => props.setMoreOpen((value) => !value)}><Icon glyph={IconMoreHorizontal} role="ui" /></button>
+          <Tooltip label="More file actions">
+            <button className={filesSurfaceClass(FilesSurfaceClass.iconButton)} aria-label="More file actions" onClick={() => props.setMoreOpen((value) => !value)}><Icon glyph={IconMoreHorizontal} role="ui" /></button>
+          </Tooltip>
           {props.moreOpen && (
             <div className={filesSurfaceClass(FilesSurfaceClass.moreMenu, FilesSurfaceClass.floatingGlass)}>
               {(props.isMarkdown || props.isCsv) && <button onClick={props.toggleRendered}>{renderLabel}</button>}
@@ -168,7 +172,7 @@ function FileActionControls(props: {
         </div>
       )}
       <span className={filesSurfaceClass(FilesSurfaceClass.divider)} />
-      <Tooltip label={props.explorerVisible ? 'Hide file explorer' : 'Show file explorer'}>
+      <Tooltip label={`${props.explorerVisible ? 'Hide file explorer' : 'Show file explorer'} · Ctrl B`}>
         <button className={filesSurfaceClass(FilesSurfaceClass.iconButton)} aria-label={props.explorerVisible ? 'Hide file explorer' : 'Show file explorer'} aria-pressed={props.explorerVisible} onClick={() => toggleExplorer(props)}>
           <Icon glyph={IconPanelRight} role="ui" />
         </button>
@@ -215,7 +219,7 @@ function FilesOpenInDropdown({ path, onError }: { path: string; onError?: (messa
   }
 
   return <div ref={host} className={filesSurfaceClass(FilesSurfaceClass.openInWrap)}>
-    <Tooltip label="Open in editor">
+      <Tooltip label="Open in editor · Ctrl O">
       <button className={filesSurfaceClass(FilesSurfaceClass.openIn)} aria-label="Open in editor" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         <Icon glyph={IconExternal} role="ui" /><span>Open in</span><Icon glyph={IconChevronDown} role="small" />
       </button>
@@ -340,7 +344,7 @@ export function FilesContextMenu(props: {
     props.setContext(null)
   }
   return (
-    <ContextMenu ref={props.contextMenuRef} className={filesSurfaceClass(FilesSurfaceClass.context)} style={{ left: props.context.x, top: props.context.y }} role="menu" onKeyDown={(event) => { if (event.key === 'Escape') props.setContext(null) }}>
+    <ContextMenu ref={props.contextMenuRef} className={filesSurfaceClass(FilesSurfaceClass.context, FilesSurfaceClass.floatingGlass)} style={{ left: props.context.x, top: props.context.y }} role="menu" onKeyDown={(event) => { if (event.key === 'Escape') props.setContext(null) }}>
       {props.context.dir ? <DirectoryContextActions context={props.context} create={create} /> : <FileContextActions {...props} />}
       <ContextMenuItem role="menuitem" onClick={() => copy(props.context.path)}>
         <Icon glyph={IconCopy} role="ui" /><span>Copy path</span>

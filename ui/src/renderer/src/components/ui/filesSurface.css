@@ -829,11 +829,6 @@
 .files-surface[data-panel-crumb-collapsed="true"] .files-trail {
   display: none;
 }
-.files-surface[data-width="470"] .files-responsive-action,
-.files-surface[data-width="470"] .files-divider,
-.files-surface[data-width="470"] .files-icon-button:not(.files-responsive-action) {
-  display: none;
-}
 @media (prefers-reduced-motion: reduce) {
   .files-explorer,
   .files-explorer.sheet,
@@ -1022,13 +1017,13 @@
   height: 14px;
   justify-content: center;
   border-radius: var(--tr-radius-xs);
-  color: #0a0a0b;
+  color: var(--tool-code-bg);
   font: 700 7.5px/14px var(--font-sans);
   letter-spacing: -0.02em;
   text-align: center;
 }
 .files-ficon.image {
-  color: #c4b4ff;
+  color: var(--accent);
 }
 .files-ficon svg.text-warning {
   color: var(--text-muted);

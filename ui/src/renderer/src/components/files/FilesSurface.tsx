@@ -349,6 +349,24 @@ export function FilesSurface({
     },
     [onError],
   )
+  useEffect(() => {
+    if (!path || !path.startsWith(`${root}/`) || !entries.has(root)) return
+    let cancelled = false
+    void (async () => {
+      const directoryParts = parent(path).slice(root.length).split('/').filter(Boolean)
+      let directory = root
+      for (const part of directoryParts) {
+        if (cancelled) return
+        const children = entries.get(directory) ?? await loadDir(directory)
+        const next = children.find((entry) => entry.name === part && entry.dir)
+        if (!next) return
+        directory = next.path
+        setExpanded((old) => old.has(directory) ? old : new Set(old).add(directory))
+      }
+      if (!cancelled && !entries.has(directory)) await loadDir(directory)
+    })()
+    return () => { cancelled = true }
+  }, [entries, loadDir, path, root])
   const refresh = useCallback(() => {
     void loadDir(root)
     expanded.forEach((dir) => void loadDir(dir))
@@ -356,6 +374,16 @@ export function FilesSurface({
   useEffect(() => {
     void loadDir(root)
   }, [loadDir, root])
+  useLayoutEffect(() => {
+    if (!path || filter.trim()) return
+    const tree = surfaceRef.current?.querySelector<HTMLElement>('.files-tree')
+    const row = [...(tree?.querySelectorAll<HTMLElement>('[data-path]') ?? [])].find((item) => item.dataset.path === path)
+    if (!tree || !row) return
+    const treeBounds = tree.getBoundingClientRect()
+    const rowBounds = row.getBoundingClientRect()
+    if (rowBounds.top < treeBounds.top) tree.scrollTop -= treeBounds.top - rowBounds.top
+    else if (rowBounds.bottom > treeBounds.bottom) tree.scrollTop += rowBounds.bottom - treeBounds.bottom
+  }, [entries, expanded, filter, path])
 
   useEffect(() => {
     setIsGitRepository(null)

@@ -5,10 +5,10 @@ import type { GitFileStatus } from '../../houston/client'
 import { basename } from '../../editor/buffers'
 import { flattenTree } from './filesTree'
 import { gitTreeStatus } from './fileActions'
-import { classifyFileTreeEntry, FileTreeIcon } from '../fileTreeIcons'
-import { IconChevronDown, IconChevronRight, IconEye, IconPlus, IconRefresh, IconSearch } from '../icons'
+import { IconChevronDown, IconChevronRight, IconEye, IconFolder, IconPlus, IconRefresh, IconSearch } from '../icons'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
+import { fileIconForPath, IMAGE_EXTENSIONS } from './fileIconMap'
 
 export interface ExplorerProps {
   root: string
@@ -52,10 +52,6 @@ type ExplorerRow = ReturnType<typeof flattenTree>[number] & {
   nameIndices?: number[]
   pathIndices?: number[]
   displayPath?: string
-}
-
-function extension(path: string): string {
-  return path.split('.').pop()?.toLowerCase() ?? ''
 }
 
 export function Explorer(props: ExplorerProps): React.JSX.Element {
@@ -172,7 +168,7 @@ export function Explorer(props: ExplorerProps): React.JSX.Element {
               <div className={filesSurfaceClass(FilesSurfaceClass.rowWrap)}>
                 <div className={filesSurfaceClass(FilesSurfaceClass.row)} style={{ paddingLeft: 8, '--ind': '8px' } as React.CSSProperties}>
                   <span className={filesSurfaceClass(FilesSurfaceClass.fileTwisty)} />
-                  <FileMark name="" dir={props.mutation.kind === 'directory'} expanded={false} />
+                  <FileMark name="" dir={props.mutation.kind === 'directory'} />
                   <ExplorerEditInput
                     kind={props.mutation.kind}
                     target={props.root}
@@ -184,8 +180,10 @@ export function Explorer(props: ExplorerProps): React.JSX.Element {
                 </div>
               </div>
             )}
-            {!treeRows.length && !props.mutation && (
-              <div className={filesSurfaceClass(FilesSurfaceClass.fileStatus)}>{props.filter ? 'No matching files.' : 'Loading files…'}</div>
+            {!treeRows.length && !props.mutation && (props.filter || !props.entries.has(props.root)) && (
+              <div className={filesSurfaceClass(FilesSurfaceClass.fileStatus)}>
+                {props.filter ? 'No matching files.' : 'Loading files…'}
+              </div>
             )}
           </div>
         </>
@@ -240,7 +238,7 @@ function ExplorerTreeRow({
         <span className={filesSurfaceClass(FilesSurfaceClass.fileTwisty, row.expanded && FilesSurfaceClass.open)}>
           {row.dir ? <Icon glyph={IconChevronRight} role="ui" /> : null}
         </span>
-        <FileMark name={row.name} dir={row.dir} expanded={row.expanded} />
+        <FileMark name={row.name} dir={row.dir} />
         {mutating ? (
           <ExplorerEditInput
             kind="rename"
@@ -352,7 +350,7 @@ function ExplorerMutationRow({
     <div className={filesSurfaceClass(FilesSurfaceClass.rowWrap)}>
       <div className={filesSurfaceClass(FilesSurfaceClass.row)} style={{ paddingLeft: indent, '--ind': `${indent}px` } as React.CSSProperties}>
         <span className={filesSurfaceClass(FilesSurfaceClass.fileTwisty)} />
-        <FileMark name="" dir={mutation.kind === 'directory'} expanded={false} />
+        <FileMark name="" dir={mutation.kind === 'directory'} />
         <ExplorerEditInput
           kind={mutation.kind}
           target={row.path}
@@ -505,35 +503,24 @@ type ExplorerEditInputProps = {
   submitMutation: ExplorerProps['submitMutation']
 }
 
-function FileMark({ name, dir, expanded }: { name: string; dir: boolean; expanded: boolean }): React.JSX.Element {
+function FileMark({ name, dir }: { name: string; dir: boolean }): React.JSX.Element {
   if (dir)
     return (
       <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon)}>
-        <FileTreeIcon kind={classifyFileTreeEntry(name, true, expanded)} />
+        <Icon glyph={IconFolder} role="ui" />
       </span>
     )
-  const ext = extension(name)
-  const chips: Record<string, [string, string]> = {
-    ts: ['TS', '#7fb0ff'],
-    tsx: ['TS', '#7fb0ff'],
-    rs: ['RS', '#f59e0b'],
-    md: ['MD', '#b4b4bd'],
-    json: ['{}', '#fbbf24'],
-    toml: ['TM', '#9ca3af'],
-    yml: ['YM', '#f472b6'],
-    yaml: ['YM', '#f472b6'],
-    csv: ['CSV', '#4ade80'],
-  }
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext))
+  const ext = name.split('.').at(-1)?.toLowerCase() ?? ''
+  if (IMAGE_EXTENSIONS.has(ext))
     return (
       <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon, FilesSurfaceClass.image)}>
         <Icon glyph={IconEye} role="ui" />
       </span>
     )
-  const chip = chips[ext] ?? ['··', '#7a7a85']
+  const chip = fileIconForPath(name)
   return (
-    <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon, FilesSurfaceClass.chip)} style={{ backgroundColor: chip[1] }}>
-      {chip[0]}
+    <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon, FilesSurfaceClass.chip)} style={{ backgroundColor: chip.color }}>
+      {chip.label}
     </span>
   )
 }
