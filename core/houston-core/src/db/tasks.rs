@@ -128,8 +128,18 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
     )?;
     super::add_column_if_missing(conn, "backlog_task_runs", "reason", "reason TEXT")?;
     super::add_column_if_missing(conn, "backlog_task_runs", "pr_url", "pr_url TEXT")?;
-    super::add_column_if_missing(conn, "backlog_task_domain", "planning_session_id", "planning_session_id INTEGER")?;
-    super::add_column_if_missing(conn, "backlog_task_domain", "planning_task_revision", "planning_task_revision INTEGER")?;
+    super::add_column_if_missing(
+        conn,
+        "backlog_task_domain",
+        "planning_session_id",
+        "planning_session_id INTEGER",
+    )?;
+    super::add_column_if_missing(
+        conn,
+        "backlog_task_domain",
+        "planning_task_revision",
+        "planning_task_revision INTEGER",
+    )?;
     migrate_global_tasks(conn)?;
     Ok(())
 }
@@ -387,11 +397,46 @@ const TASK_SUMMARY_SELECT: &str = "SELECT t.id, t.workspace, t.number, t.title, 
     FROM backlog_tasks t";
 
 /// The SQL fragment every filtered query shares: `?1` is the workspace. A
-/// task is ready when it is to-do and no blocker of it is still unfinished.
-const READY_CLAUSE: &str = "t.status = 'todo' AND NOT EXISTS (
+/// Apply readiness before ordering and limiting, so an unready high-priority
+/// task cannot hide executable work farther down the queue.
+const READY_CLAUSE: &str = "t.status = 'todo' AND t.workspace IS NOT NULL
+    AND EXISTS (SELECT 1 FROM backlog_task_acceptance a WHERE a.task_id = t.id
+        AND trim(a.text) != '' AND lower(trim(a.text)) != 'tbd')
+    AND NOT EXISTS (
         SELECT 1 FROM backlog_task_blocks b
         JOIN backlog_tasks dep ON dep.id = b.blocked_by_id
-        WHERE b.task_id = t.id AND dep.status NOT IN ('done', 'canceled'))";
+        WHERE b.task_id = t.id AND dep.status != 'done')
+    AND NOT EXISTS (SELECT 1 FROM task_external_links l WHERE l.task_id = t.id
+        AND json_array_length(l.snapshot, '$.conflicts') > 0)
+    AND NOT EXISTS (SELECT 1 FROM backlog_task_domain d WHERE d.task_id = t.id
+        AND (d.planning_session_id IS NOT NULL
+            OR (d.plan_json IS NOT NULL AND (
+                d.approved_task_revision IS NOT t.revision
+                OR json_extract(d.plan_json, '$.approved_revision') IS NOT t.revision
+                OR EXISTS (SELECT 1 FROM json_each(d.plan_json, '$.proposal.questions') q
+                    WHERE NOT EXISTS (SELECT 1 FROM json_each(d.plan_json, '$.answers') a
+                        WHERE json_extract(a.value, '$.question') = q.value
+                            AND trim(json_extract(a.value, '$.answer')) != ''))))
+            OR (d.kind = 'delivery' AND d.project_id IS NULL)
+            OR (d.kind = 'delivery' AND EXISTS (
+                SELECT 1 FROM backlog_tasks child JOIN backlog_task_domain cd ON cd.task_id = child.id
+                JOIN backlog_task_blocks b ON b.task_id = child.id
+                JOIN backlog_tasks dep ON dep.id = b.blocked_by_id
+                WHERE child.parent_id = t.id AND cd.kind = 'slice'
+                    AND dep.status != 'done'))))
+    AND NOT EXISTS (
+        SELECT 1 FROM backlog_task_domain d
+        LEFT JOIN backlog_task_domain parent ON parent.task_id = t.parent_id AND parent.kind = 'delivery'
+        LEFT JOIN backlog_projects p ON p.id = coalesce(d.project_id, parent.project_id)
+        WHERE d.task_id = t.id AND coalesce(d.project_id, parent.project_id) IS NOT NULL
+            AND (p.id IS NULL OR p.archived_at IS NOT NULL OR p.workspace != t.workspace))
+    AND NOT EXISTS (
+        SELECT 1 FROM backlog_task_domain parent
+        LEFT JOIN backlog_projects p ON p.id = parent.project_id
+        WHERE parent.task_id = t.parent_id AND parent.kind = 'delivery'
+            AND NOT EXISTS (SELECT 1 FROM backlog_task_domain d WHERE d.task_id = t.id)
+            AND parent.project_id IS NOT NULL
+            AND (p.id IS NULL OR p.archived_at IS NOT NULL OR p.workspace != t.workspace))";
 
 const TASK_SELECT: &str = "SELECT id, workspace, number, title, description, status, priority, \
     parent_id, ref_url, revision, created_by, created_at, updated_at, archived_at \
@@ -1473,18 +1518,31 @@ impl Db {
         ).optional()?)
     }
 
-    pub fn task_projects(&self, workspace: &str, include_archived: bool) -> Result<Vec<TaskProjectRow>> {
+    pub fn task_projects(
+        &self,
+        workspace: &str,
+        include_archived: bool,
+    ) -> Result<Vec<TaskProjectRow>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
             "SELECT id, workspace, name, external_url, project_external_id, tracker_description, \
              local_decisions, revision, archived_at FROM backlog_projects \
              WHERE workspace = ?1 AND (?2 OR archived_at IS NULL) ORDER BY id",
         )?;
-        Ok(stmt.query_map(rusqlite::params![workspace, include_archived], Self::map_task_project)?
-            .collect::<std::result::Result<Vec<_>, _>>()?)
+        let rows = stmt
+            .query_map(
+                rusqlite::params![workspace, include_archived],
+                Self::map_task_project,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
-    pub fn task_project_by_external_id(&self, workspace: &str, external_id: &str) -> Result<Option<TaskProjectRow>> {
+    pub fn task_project_by_external_id(
+        &self,
+        workspace: &str,
+        external_id: &str,
+    ) -> Result<Option<TaskProjectRow>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.query_row(
             "SELECT id, workspace, name, external_url, project_external_id, tracker_description, \
@@ -1511,7 +1569,7 @@ impl Db {
         if provider.is_empty() || remote_context.is_empty() || remote_id.is_empty() {
             bail!("project_external_id {external_id:?} is not provider-qualified (expected provider:remote-context:id)");
         }
-        let mut conn = self.conn.lock().expect("db lock");
+        let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT OR IGNORE INTO backlog_projects \
              (workspace, name, project_external_id, revision, updated_at) VALUES (?1, ?2, ?3, 1, ?4)",
@@ -1544,10 +1602,13 @@ impl Db {
         let provider = parts.next().unwrap_or_default();
         let remote_context = parts.next().unwrap_or_default();
         let remote_id = parts.next().unwrap_or_default();
-        if provider.trim().is_empty() || remote_context.trim().is_empty() || remote_id.trim().is_empty() {
+        if provider.trim().is_empty()
+            || remote_context.trim().is_empty()
+            || remote_id.trim().is_empty()
+        {
             bail!("project_external_id {external_id:?} is not provider-qualified (expected provider:remote-context:id)");
         }
-        let mut conn = self.conn.lock().expect("db lock");
+        let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT INTO backlog_projects \
              (workspace, name, external_url, project_external_id, tracker_description, revision, updated_at) \
@@ -1586,14 +1647,18 @@ impl Db {
                 tx.last_insert_rowid()
             }
             Some(id) => {
-                let Some(revision) = expected_revision else { return Ok(None) };
+                let Some(revision) = expected_revision else {
+                    return Ok(None);
+                };
                 let changed = tx.execute(
                     "UPDATE backlog_projects SET name = ?3, external_url = ?4, tracker_description = ?5, \
                      local_decisions = ?6, revision = revision + 1, updated_at = ?7 \
                      WHERE id = ?1 AND workspace = ?2 AND revision = ?8 AND archived_at IS NULL",
                     rusqlite::params![id, workspace, name, external_url, tracker_description, decisions, now_ms, revision],
                 )?;
-                if changed == 0 { return Ok(None); }
+                if changed == 0 {
+                    return Ok(None);
+                }
                 id
             }
             None => return Ok(None),
@@ -1603,7 +1668,13 @@ impl Db {
         self.task_project(saved_id)
     }
 
-    pub fn archive_task_project(&self, id: i64, expected_revision: i64, archived: bool, now_ms: i64) -> Result<bool> {
+    pub fn archive_task_project(
+        &self,
+        id: i64,
+        expected_revision: i64,
+        archived: bool,
+        now_ms: i64,
+    ) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
         let changed = conn.execute(
             "UPDATE backlog_projects SET archived_at = ?3, revision = revision + 1, updated_at = ?4 \
@@ -1616,33 +1687,35 @@ impl Db {
 
     pub fn task_domain(&self, task_id: i64) -> Result<Option<TaskDomainRow>> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.query_row(
-            "SELECT task_id, kind, project_id, user_status_override, plan_json, \
+        Ok(conn
+            .query_row(
+                "SELECT task_id, kind, project_id, user_status_override, plan_json, \
              plan_revision, approved_task_revision, planning_session_id, planning_task_revision \
              FROM backlog_task_domain WHERE task_id = ?1",
-            [task_id],
-            |r| {
-                let raw: String = r.get(1)?;
-                let kind = from_wire::<proto::TaskDomainKind>(&raw).ok_or_else(|| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        format!("task {task_id} has unknown domain kind {raw:?}").into(),
-                    )
-                })?;
-                Ok(TaskDomainRow {
-                    task_id: r.get(0)?,
-                    kind,
-                    project_id: r.get(2)?,
-                    user_status_override: r.get::<_, i64>(3)? != 0,
-                    plan_json: r.get(4)?,
-                    plan_revision: r.get(5)?,
-                    approved_task_revision: r.get(6)?,
-                    planning_session_id: r.get(7)?,
-                    planning_task_revision: r.get(8)?,
-                })
-            },
-        ).optional()?)
+                [task_id],
+                |r| {
+                    let raw: String = r.get(1)?;
+                    let kind = from_wire::<proto::TaskDomainKind>(&raw).ok_or_else(|| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            1,
+                            rusqlite::types::Type::Text,
+                            format!("task {task_id} has unknown domain kind {raw:?}").into(),
+                        )
+                    })?;
+                    Ok(TaskDomainRow {
+                        task_id: r.get(0)?,
+                        kind,
+                        project_id: r.get(2)?,
+                        user_status_override: r.get::<_, i64>(3)? != 0,
+                        plan_json: r.get(4)?,
+                        plan_revision: r.get(5)?,
+                        approved_task_revision: r.get(6)?,
+                        planning_session_id: r.get(7)?,
+                        planning_task_revision: r.get(8)?,
+                    })
+                },
+            )
+            .optional()?)
     }
 
     pub fn save_task_domain(
@@ -1656,11 +1729,13 @@ impl Db {
     ) -> Result<bool> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        let current_revision: Option<i64> = tx.query_row(
-            "SELECT revision FROM backlog_tasks WHERE id = ?1",
-            [task_id],
-            |r| r.get(0),
-        ).optional()?;
+        let current_revision: Option<i64> = tx
+            .query_row(
+                "SELECT revision FROM backlog_tasks WHERE id = ?1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()?;
         if current_revision != Some(expected_revision) {
             return Ok(false);
         }
@@ -1669,7 +1744,9 @@ impl Db {
                 "UPDATE backlog_tasks SET revision = revision + 1, updated_at = ?3 WHERE id = ?1 AND revision = ?2",
                 rusqlite::params![task_id, expected_revision, now_ms],
             )?;
-            if changed == 0 { return Ok(false); }
+            if changed == 0 {
+                return Ok(false);
+            }
         }
         tx.execute(
             "INSERT INTO backlog_task_history(task_id, actor, action, changes, created_at) VALUES (?1, 'user', 'domain_update', ?2, ?3)",
@@ -1700,18 +1777,32 @@ impl Db {
         Ok(true)
     }
 
-    pub fn begin_task_planning(&self, task_id: i64, expected_revision: i64, session_id: u32) -> Result<bool> {
+    pub fn begin_task_planning(
+        &self,
+        task_id: i64,
+        expected_revision: i64,
+        session_id: u32,
+    ) -> Result<bool> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        let current: Option<i64> = tx.query_row(
-            "SELECT revision FROM backlog_tasks WHERE id = ?1", [task_id], |r| r.get(0),
-        ).optional()?;
-        if current != Some(expected_revision) { return Ok(false); }
+        let current: Option<i64> = tx
+            .query_row(
+                "SELECT revision FROM backlog_tasks WHERE id = ?1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if current != Some(expected_revision) {
+            return Ok(false);
+        }
         let session_was_used: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM backlog_task_planning_capabilities WHERE session_id = ?1)",
-            [session_id], |r| r.get(0),
+            [session_id],
+            |r| r.get(0),
         )?;
-        if session_was_used { return Ok(false); }
+        if session_was_used {
+            return Ok(false);
+        }
         tx.execute(
             "UPDATE backlog_task_planning_capabilities SET state = 'cancelled' WHERE task_id = ?1 AND state = 'active'",
             [task_id],
@@ -1727,11 +1818,18 @@ impl Db {
              approved_task_revision = NULL",
             rusqlite::params![task_id, session_id, expected_revision],
         )?;
-        let raw: Option<String> = tx.query_row("SELECT plan_json FROM backlog_task_domain WHERE task_id = ?1", [task_id], |r| r.get(0))?;
+        let raw: Option<String> = tx.query_row(
+            "SELECT plan_json FROM backlog_task_domain WHERE task_id = ?1",
+            [task_id],
+            |r| r.get(0),
+        )?;
         if let Some(raw) = raw {
             if let Ok(mut plan) = serde_json::from_str::<proto::TaskPlan>(&raw) {
                 plan.approved_revision = None;
-                tx.execute("UPDATE backlog_task_domain SET plan_json = ?2 WHERE task_id = ?1", rusqlite::params![task_id, serde_json::to_string(&plan)?])?;
+                tx.execute(
+                    "UPDATE backlog_task_domain SET plan_json = ?2 WHERE task_id = ?1",
+                    rusqlite::params![task_id, serde_json::to_string(&plan)?],
+                )?;
             }
         }
         tx.commit()?;
@@ -1740,19 +1838,22 @@ impl Db {
 
     pub fn task_planning_session(&self, session_id: u32) -> Result<Option<(i64, i64)>> {
         let conn = self.conn.lock().expect("db lock");
-        Ok(conn.query_row(
-            "SELECT task_id, task_revision FROM backlog_task_planning_capabilities \
+        Ok(conn
+            .query_row(
+                "SELECT task_id, task_revision FROM backlog_task_planning_capabilities \
              WHERE session_id = ?1 AND state = 'active'",
-            [session_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ).optional()?)
+                [session_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
     }
 
     pub fn has_task_planning_capability(&self, session_id: u32) -> Result<bool> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM backlog_task_planning_capabilities WHERE session_id = ?1)",
-            [session_id], |row| row.get(0),
+            [session_id],
+            |row| row.get(0),
         )?)
     }
 
@@ -1792,7 +1893,10 @@ impl Db {
     pub fn task_planning_session_ids(&self) -> Result<Vec<u32>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare("SELECT c.session_id FROM backlog_task_planning_capabilities c JOIN sessions s ON s.id = c.session_id WHERE c.state = 'active'")?;
-        Ok(stmt.query_map([], |r| r.get(0))?.collect::<std::result::Result<Vec<_>, _>>()?)
+        let rows = stmt
+            .query_map([], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn submit_task_plan(
@@ -1812,13 +1916,22 @@ impl Db {
              AND c.session_id = ?2 AND c.task_revision = ?3 AND c.state = 'active')",
             rusqlite::params![task_id, session_id, expected_task_revision], |r| r.get(0),
         )?;
-        if !valid { return Ok(None); }
-        let previous: Option<String> = tx.query_row(
-            "SELECT plan_json FROM backlog_task_domain WHERE task_id = ?1", [task_id], |r| r.get(0),
-        ).optional()?.flatten();
-        let revision = previous.as_deref()
+        if !valid {
+            return Ok(None);
+        }
+        let previous: Option<String> = tx
+            .query_row(
+                "SELECT plan_json FROM backlog_task_domain WHERE task_id = ?1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        let revision = previous
+            .as_deref()
             .and_then(|raw| serde_json::from_str::<proto::TaskPlan>(raw).ok())
-            .map(|p| p.revision + 1).unwrap_or(1);
+            .map(|p| p.revision + 1)
+            .unwrap_or(1);
         let plan = proto::TaskPlan {
             revision,
             proposal: proposal.clone(),
@@ -1836,19 +1949,47 @@ impl Db {
         Ok(Some(plan))
     }
 
-    pub fn answer_task_plan(&self, task_id: i64, expected_task_revision: i64, question: &str, answer: &str) -> Result<Option<proto::TaskPlan>> {
+    pub fn answer_task_plan(
+        &self,
+        task_id: i64,
+        expected_task_revision: i64,
+        question: &str,
+        answer: &str,
+    ) -> Result<Option<proto::TaskPlan>> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
-        let task_revision: Option<i64> = tx.query_row("SELECT revision FROM backlog_tasks WHERE id = ?1", [task_id], |r| r.get(0)).optional()?;
-        if task_revision != Some(expected_task_revision) { return Ok(None); }
-        let raw: Option<String> = tx.query_row("SELECT plan_json FROM backlog_task_domain WHERE task_id = ?1", [task_id], |r| r.get(0)).optional()?.flatten();
-        let Some(raw) = raw else { return Ok(None); };
+        let task_revision: Option<i64> = tx
+            .query_row(
+                "SELECT revision FROM backlog_tasks WHERE id = ?1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if task_revision != Some(expected_task_revision) {
+            return Ok(None);
+        }
+        let raw: Option<String> = tx
+            .query_row(
+                "SELECT plan_json FROM backlog_task_domain WHERE task_id = ?1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
         let mut plan: proto::TaskPlan = serde_json::from_str(&raw)?;
-        if !plan.proposal.questions.iter().any(|q| q == question) { return Ok(None); }
+        if !plan.proposal.questions.iter().any(|q| q == question) {
+            return Ok(None);
+        }
         if let Some(existing) = plan.answers.iter_mut().find(|a| a.question == question) {
             existing.answer = answer.to_string();
         } else {
-            plan.answers.push(proto::TaskPlanAnswer { question: question.to_string(), answer: answer.to_string() });
+            plan.answers.push(proto::TaskPlanAnswer {
+                question: question.to_string(),
+                answer: answer.to_string(),
+            });
         }
         plan.revision += 1;
         plan.approved_revision = None;
@@ -1860,29 +2001,52 @@ impl Db {
         Ok(Some(plan))
     }
 
-    pub fn approve_task_plan(&self, task_id: i64, expected_task_revision: i64, plan_revision: i64, now_ms: i64) -> Result<Option<proto::TaskPlan>> {
+    pub fn approve_task_plan(
+        &self,
+        task_id: i64,
+        expected_task_revision: i64,
+        plan_revision: i64,
+        now_ms: i64,
+    ) -> Result<Option<proto::TaskPlan>> {
         let mut conn = self.conn.lock().expect("db lock");
         let tx = conn.transaction()?;
         let current: Option<(i64, String, String)> = tx.query_row(
             "SELECT t.revision, t.description, d.plan_json FROM backlog_tasks t JOIN backlog_task_domain d ON d.task_id = t.id WHERE t.id = ?1",
             [task_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         ).optional()?;
-        let Some((revision, _old_description, raw)) = current else { return Ok(None); };
-        if revision != expected_task_revision { return Ok(None); }
+        let Some((revision, _old_description, raw)) = current else {
+            return Ok(None);
+        };
+        if revision != expected_task_revision {
+            return Ok(None);
+        }
         let mut plan: proto::TaskPlan = serde_json::from_str(&raw)?;
-        if plan.revision != plan_revision || plan.proposal.questions.iter().any(|q| !plan.answers.iter().any(|a| a.question == *q && !a.answer.trim().is_empty())) { return Ok(None); }
+        if plan.revision != plan_revision
+            || plan.proposal.questions.iter().any(|q| {
+                !plan
+                    .answers
+                    .iter()
+                    .any(|a| a.question == *q && !a.answer.trim().is_empty())
+            })
+        {
+            return Ok(None);
+        }
         let new_revision = revision + 1;
         plan.approved_revision = Some(new_revision);
         let changes = serde_json::json!({
             "description":{"to":plan.proposal.description},
             "acceptance":{"to":plan.proposal.acceptance},
             "approved_plan_revision":plan.revision
-        }).to_string();
+        })
+        .to_string();
         tx.execute(
             "UPDATE backlog_tasks SET description = ?2, revision = ?3, updated_at = ?4 WHERE id = ?1 AND revision = ?5",
             rusqlite::params![task_id, plan.proposal.description, new_revision, now_ms, revision],
         )?;
-        tx.execute("DELETE FROM backlog_task_acceptance WHERE task_id = ?1", [task_id])?;
+        tx.execute(
+            "DELETE FROM backlog_task_acceptance WHERE task_id = ?1",
+            [task_id],
+        )?;
         for (position, text) in plan.proposal.acceptance.iter().enumerate() {
             tx.execute(
                 "INSERT INTO backlog_task_acceptance(task_id, position, text) VALUES (?1, ?2, ?3)",
@@ -1906,8 +2070,10 @@ impl Db {
         let mut stmt = conn.prepare(
             "SELECT blocked_by_id FROM backlog_task_blocks WHERE task_id = ?1 ORDER BY blocked_by_id",
         )?;
-        Ok(stmt.query_map([task_id], |r| r.get(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?)
+        let rows = stmt
+            .query_map([task_id], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn unfinished_task_blockers(&self, task_id: i64) -> Result<Vec<i64>> {
@@ -1916,8 +2082,10 @@ impl Db {
             "SELECT b.blocked_by_id FROM backlog_task_blocks b JOIN backlog_tasks t ON t.id = b.blocked_by_id \
              WHERE b.task_id = ?1 AND t.status != 'done' ORDER BY b.blocked_by_id",
         )?;
-        Ok(stmt.query_map([task_id], |r| r.get(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?)
+        let rows = stmt
+            .query_map([task_id], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn delivery_slice_progress(&self, delivery_id: i64) -> Result<(u32, u32)> {
@@ -1944,19 +2112,29 @@ impl Db {
         )?)
     }
 
-    pub fn delivery_slice_statuses(&self, delivery_id: i64) -> Result<Vec<(proto::TaskStatus, u32)>> {
+    pub fn delivery_slice_statuses(
+        &self,
+        delivery_id: i64,
+    ) -> Result<Vec<(proto::TaskStatus, u32)>> {
         let conn = self.conn.lock().expect("db lock");
         let mut stmt = conn.prepare(
             "SELECT t.status, COUNT(*) FROM backlog_tasks t JOIN backlog_task_domain d ON d.task_id = t.id \
              WHERE t.parent_id = ?1 AND d.kind = 'slice' GROUP BY t.status",
         )?;
-        Ok(stmt.query_map([delivery_id], |r| {
-            let raw: String = r.get(0)?;
-            let status = from_wire::<proto::TaskStatus>(&raw).ok_or_else(|| {
-                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(anyhow::anyhow!("unknown task status {raw:?}")))
-            })?;
-            Ok((status, r.get(1)?))
-        })?.collect::<std::result::Result<Vec<_>, _>>()?)
+        let rows = stmt
+            .query_map([delivery_id], |r| {
+                let raw: String = r.get(0)?;
+                let status = from_wire::<proto::TaskStatus>(&raw).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        format!("unknown task status {raw:?}").into(),
+                    )
+                })?;
+                Ok((status, r.get(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn delivery_slice_projects(&self, delivery_id: i64) -> Result<Vec<(i64, Option<i64>)>> {
@@ -1965,8 +2143,10 @@ impl Db {
             "SELECT t.id, d.project_id FROM backlog_tasks t JOIN backlog_task_domain d ON d.task_id = t.id \
              WHERE t.parent_id = ?1 AND d.kind = 'slice' ORDER BY t.id",
         )?;
-        Ok(stmt.query_map([delivery_id], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<std::result::Result<Vec<_>, _>>()?)
+        let rows = stmt
+            .query_map([delivery_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn set_task_blockers(
@@ -1982,7 +2162,9 @@ impl Db {
         let mut unique = std::collections::BTreeSet::new();
         for blocker in blockers {
             if *blocker == task_id || !unique.insert(*blocker) {
-                bail!("blocked-by list for task {task_id} contains self or duplicate task {blocker}");
+                bail!(
+                    "blocked-by list for task {task_id} contains self or duplicate task {blocker}"
+                );
             }
             let exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM backlog_tasks WHERE id = ?1)",
@@ -2010,7 +2192,10 @@ impl Db {
         if changed == 0 {
             return Ok(false);
         }
-        tx.execute("DELETE FROM backlog_task_blocks WHERE task_id = ?1", [task_id])?;
+        tx.execute(
+            "DELETE FROM backlog_task_blocks WHERE task_id = ?1",
+            [task_id],
+        )?;
         for blocker in &unique {
             tx.execute(
                 "INSERT INTO backlog_task_blocks(task_id, blocked_by_id) VALUES (?1, ?2)",
@@ -2040,14 +2225,25 @@ mod planning_capability_tests {
             [],
         ).expect("task row");
 
-        assert!(db.begin_task_planning(1, 1, 77).expect("reserve planning pane"));
-        assert_eq!(db.task_planning_session(77).expect("active plan"), Some((1, 1)));
-        assert!(db.has_task_planning_capability(77).expect("persistent capability"));
+        assert!(db
+            .begin_task_planning(1, 1, 77)
+            .expect("reserve planning pane"));
+        assert_eq!(
+            db.task_planning_session(77).expect("active plan"),
+            Some((1, 1))
+        );
+        assert!(db
+            .has_task_planning_capability(77)
+            .expect("persistent capability"));
 
         assert!(db.finish_task_planning_session(77).expect("settle plan"));
         assert_eq!(db.task_planning_session(77).expect("inactive plan"), None);
-        assert!(db.has_task_planning_capability(77).expect("retained capability"));
+        assert!(db
+            .has_task_planning_capability(77)
+            .expect("retained capability"));
 
-        assert!(!db.begin_task_planning(1, 1, 77).expect("session ids cannot be rebound"));
+        assert!(!db
+            .begin_task_planning(1, 1, 77)
+            .expect("session ids cannot be rebound"));
     }
 }
