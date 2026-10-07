@@ -559,7 +559,7 @@ fn a_restored_session_keeps_its_original_identity() {
 }
 
 #[test]
-fn boot_keeps_an_unresumable_child_ended_under_its_restored_parent() {
+fn boot_defers_an_unresumable_child_when_its_parent_starts_fresh() {
     let _env = env_lock();
     std::env::set_var("SHELL", "/bin/sh");
     std::env::remove_var("HOUSTON_RESTORE_BUDGET");
@@ -585,12 +585,16 @@ fn boot_keeps_an_unresumable_child_ended_under_its_restored_parent() {
     );
     std::fs::write(state.path().join("clean-shutdown"), b"").unwrap();
 
-    let (sessions, _) = boot_and_list(state.path());
+    let (sessions, summary) = boot_and_list(state.path());
     let child = sessions
         .iter()
         .find(|s| s.title == "Husk-2")
         .expect("unresumable child kept");
-    assert_eq!(child.state, proto::SessionState::Exited);
+    assert_eq!(child.state, proto::SessionState::Interrupted);
+    assert_eq!(
+        child.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
+    );
     let parent = sessions
         .iter()
         .find(|s| s.title == "Husk-1")
@@ -600,9 +604,10 @@ fn boot_keeps_an_unresumable_child_ended_under_its_restored_parent() {
         proto::SessionState::Running,
         "and its parent still comes back live: {parent:?}"
     );
-    assert_eq!(child.spawned_by, Some(parent.id));
+    assert_eq!(child.spawned_by, Some(1));
+    assert_ne!(child.spawned_by, Some(parent.id));
     assert!(
-        parent.inbox_unread > 0,
-        "the restored parent receives the notice"
+        summary.unwrap().deferred > 0,
+        "recovery reports the child that cannot resume"
     );
 }
