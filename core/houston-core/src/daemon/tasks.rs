@@ -2284,9 +2284,6 @@ impl Daemon {
                 operation,
             ));
         }
-        if let Some(refusal) = self.task_readiness_refusal(id, operation)? {
-            return Ok(refusal);
-        }
         if row.archived_at_ms.is_some() {
             return Ok(Self::task_invalid(
                 Some(id),
@@ -2330,6 +2327,9 @@ impl Daemon {
                 ));
             }
             row = self.db.task(id)?.expect("assigned task still exists");
+        }
+        if let Some(refusal) = self.task_readiness_refusal(id, operation)? {
+            return Ok(refusal);
         }
         // Claiming binds the caller's pane to the task: a run with this
         // session and no worktree, so a pane that merely claims follows the
