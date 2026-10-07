@@ -45,13 +45,18 @@ export const cmTheme = CmView.theme({
     color: 'var(--text-primary)'
   },
   '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.55' },
-  '.cm-content': { caretColor: 'var(--accent)' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
   '&.cm-focused': { outline: 'none' },
+  // CodeMirror's base theme paints a light gutter; hosts that want a tinted gutter
+  // override it with a more specific rule.
   '.cm-gutters': {
+    backgroundColor: 'transparent',
     color: 'var(--text-faint)',
-    border: 'none'
+    border: 'none',
+    paddingLeft: 'var(--space-2)'
   },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 var(--space-2) 0 var(--space-1)' },
+  '.cm-content': { caretColor: 'var(--accent)', paddingLeft: 'var(--space-1-5)' },
   '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent) 7%, transparent)' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--text-muted)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground':

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FilesSurfaceClass, filesSurfaceClass } from '../ui/FilesSurfaceElement'
 import { searchFilePaths, type FileSearchResult } from '../../houston/bridge'
-import { IconEye, IconSearch } from '../icons'
+import { IconSearch } from '../icons'
+import { fileTypeIcon } from './fileTypeIcons'
 import { Icon } from '../ui/Icon'
 
 export function rankQuickOpenResults(query: string, paths: readonly FileSearchResult[]): FileSearchResult[] {
@@ -23,28 +24,9 @@ export function rankQuickOpenResults(query: string, paths: readonly FileSearchRe
 }
 
 function QuickOpenMark({ item }: { item: FileSearchResult }): React.JSX.Element {
-  const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext))
-    return (
-      <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon, FilesSurfaceClass.image)}>
-        <Icon glyph={IconEye} role="ui" />
-      </span>
-    )
-  const chips: Record<string, [string, string]> = {
-    ts: ['TS', '#7fb0ff'],
-    tsx: ['TS', '#7fb0ff'],
-    rs: ['RS', '#f59e0b'],
-    md: ['MD', '#b4b4bd'],
-    json: ['{}', '#fbbf24'],
-    toml: ['TM', '#9ca3af'],
-    yml: ['YM', '#f472b6'],
-    yaml: ['YM', '#f472b6'],
-    csv: ['CSV', '#4ade80'],
-  }
-  const [label, color] = chips[ext] ?? ['··', '#7a7a85']
   return (
-    <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon, FilesSurfaceClass.chip)} style={{ backgroundColor: color }}>
-      {label}
+    <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon)}>
+      <Icon glyph={fileTypeIcon(item.name)} role="ui" />
     </span>
   )
 }

@@ -5,10 +5,10 @@ import type { GitFileStatus } from '../../houston/client'
 import { basename } from '../../editor/buffers'
 import { flattenTree } from './filesTree'
 import { gitTreeStatus } from './fileActions'
-import { IconChevronDown, IconChevronRight, IconEye, IconFolder, IconPlus, IconRefresh, IconSearch } from '../icons'
+import { IconChevronDown, IconChevronRight, IconFolder, IconFolderOpen, IconPlus, IconRefresh, IconSearch } from '../icons'
 import { Icon } from '../ui/Icon'
 import { Tooltip } from '../ui/Tooltip'
-import { fileIconForPath, IMAGE_EXTENSIONS } from './fileIconMap'
+import { fileTypeIcon } from './fileTypeIcons'
 
 export interface ExplorerProps {
   root: string
@@ -238,7 +238,7 @@ function ExplorerTreeRow({
         <span className={filesSurfaceClass(FilesSurfaceClass.fileTwisty, row.expanded && FilesSurfaceClass.open)}>
           {row.dir ? <Icon glyph={IconChevronRight} role="ui" /> : null}
         </span>
-        <FileMark name={row.name} dir={row.dir} />
+        <FileMark name={row.name} dir={row.dir} open={row.expanded} />
         {mutating ? (
           <ExplorerEditInput
             kind="rename"
@@ -503,24 +503,10 @@ type ExplorerEditInputProps = {
   submitMutation: ExplorerProps['submitMutation']
 }
 
-function FileMark({ name, dir }: { name: string; dir: boolean }): React.JSX.Element {
-  if (dir)
-    return (
-      <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon)}>
-        <Icon glyph={IconFolder} role="ui" />
-      </span>
-    )
-  const ext = name.split('.').at(-1)?.toLowerCase() ?? ''
-  if (IMAGE_EXTENSIONS.has(ext))
-    return (
-      <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon, FilesSurfaceClass.image)}>
-        <Icon glyph={IconEye} role="ui" />
-      </span>
-    )
-  const chip = fileIconForPath(name)
+function FileMark({ name, dir, open = false }: { name: string; dir: boolean; open?: boolean }): React.JSX.Element {
   return (
-    <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon, FilesSurfaceClass.chip)} style={{ backgroundColor: chip.color }}>
-      {chip.label}
+    <span className={filesSurfaceClass(FilesSurfaceClass.fileIcon)}>
+      <Icon glyph={dir ? (open ? IconFolderOpen : IconFolder) : fileTypeIcon(name)} role="ui" />
     </span>
   )
 }

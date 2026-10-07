@@ -2,7 +2,7 @@ import { createElement, type ComponentPropsWithoutRef, type ElementType, type Re
 
 export const FilesSurfaceClass = {
   floatingGlass: 'floating-glass',
-  banner: 'files-banner', bannerGhost: 'files-banner-ghost', chip: 'files-chip', context: 'files-context', contextSeparator: 'files-context-separator',
+  banner: 'files-banner', bannerGhost: 'files-banner-ghost', context: 'files-context', contextSeparator: 'files-context-separator',
   crumbs: 'files-crumbs', crumbMore: 'files-crumb-more', crumbMenu: 'files-crumbmenu', deleteActions: 'files-delete-actions',
   dirty: 'files-dirty', divider: 'files-divider', explorer: 'files-explorer', explorerHead: 'files-explorer-head',
   explorerInner: 'files-explorer-inner', fileIcon: 'files-ficon', fileImage: 'files-image', fileImageBoard: 'files-image-board',
@@ -18,7 +18,7 @@ export const FilesSurfaceClass = {
   openInLabel: 'files-openin-label', openInOption: 'files-openin-option', openInSeparator: 'files-openin-separator',
   iconButton: 'files-icon-button', responsiveAction: 'files-responsive-action',
   overflow: 'overflow', open: 'open', collapsing: 'collapsing', nested: 'nested', selected: 'sel', current: 'cur',
-  flash: 'flash', ignored: 'ign', menuOpen: 'menu-on', modified: 'M', added: 'A', deleted: 'D', image: 'image',
+  flash: 'flash', ignored: 'ign', menuOpen: 'menu-on', modified: 'M', added: 'A', deleted: 'D',
   danger: 'danger', sheet: 'sheet', active: 'on', dock: 'dock', shut: 'shut', highlighted: 'hi', wrap: 'wrap',
   quickOpenName: 'files-qname', quickOpenPath: 'd', quickOpenCount: 'r', searchName: 'search-name',
 } as const
