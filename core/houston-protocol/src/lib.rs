@@ -611,7 +611,7 @@ pub struct TaskDomain {
     pub task_id: i64,
     pub kind: TaskDomainKind,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub project_id: Option<i64>,
     #[serde(default)]
     #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
@@ -3780,7 +3780,7 @@ pub enum ClientMsg {
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         kind: Option<TaskDomainKind>,
         #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
+        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         project_id: Option<Option<i64>>,
         #[serde(default)]
         #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<number> | null"))]
