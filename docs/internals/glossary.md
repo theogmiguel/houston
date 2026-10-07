@@ -20,6 +20,8 @@ named.
 | **settled child** | A retained completed delegation. The roster places only ended sessions under Settled; a live reusable Done-and-idle child remains Working. Retained for inspection, outside the live-child cap, until explicit close, parent close or retention expiry. |
 | **roster** | The orchestrator's child list, grouped into Needs you, Working and Settled. Selecting a child swaps the inspected terminal without changing session ownership. |
 | **overview tab** | A closable side-panel view of one orchestrator's children, checkouts, result excerpts and operator queue. Closing it does not close sessions. |
+| **card** | A rail item representing one grid, with its status, unread state and optional checkout, pull request, diff, task, agent, context and tag details. | `rail/railCardModel.ts` |
+| **surface** | A tab in the side panel for Browser, Files, Diff, Pull request or Linked pull requests. Grid layouts do not own these surfaces. | `scmPanel.ts::SurfaceKind` |
 | **headless child** | A live child without a separate grid cell. Its PTY remains available through the orchestrator's roster. |
 | **side panel** | A per-workspace host for pinned Source control and Files tabs and closable overview and browser tabs. Its layout is renderer-local. |
 | **operator queue** | Durable inbox rows addressed to session zero, visible to the human operator and updated by push. Acknowledgement records delivery; resolution records handling. |
@@ -35,6 +37,7 @@ named.
 | **pane** | A session's cell in the grid. Its identity (`LeafNode.id`) outlives the session in it. | `layout/tree.ts` |
 | **workspace** | A project directory the daemon knows. Sessions belong to one; hooks are installed per workspace. `workspace_id` on the wire and in `pane_inbox` is the workspace's own path — Houston's only workspace key, so no separate id table can drift from it. | `db.rs::workspaces` |
 | **checkout** | The working tree at one `toplevel`: a workspace directory, or a linked worktree of one. Two panes in one checkout share a branch move; a main checkout and its worktree are separate checkouts of one repository (equal `common_dir`). A worktree is a separate checkout, never the same workspace. | `git.rs::checkout_facts` |
+| **checkout identity** | A session's explicit primary, managed worktree or folder identity, including its root and current branch or detached HEAD. It is refreshed from the checkout's HEAD watcher. | `SessionCheckout`, `checkout_watch.rs` |
 | **grid** | A named layout under a workspace holding a split tree. Renderer state only (`tr-grids:<path>`, `tr-layout:<path>::<gridId>`). | `layout/tree.ts::GridMeta` |
 | **tag** | A named colour from `TAG_PALETTE`, in the daemon's tag registry. A **pane tag** is on the session (`SessionInfo.tags`, daemon state); a **grid tag** is on `GridMeta.tags` (renderer state). Neither is derived from the other. Tag ids are never reused; the renderer removes ids missing from an authoritative registry snapshot from every saved grid. | `db.rs::tags`, `layout/tree.ts::GridMeta` |
 | **stack** | A tabbed group of panes in one grid slot, capped at 4. | `StackTabs.tsx` |

@@ -1,20 +1,19 @@
 # Changes
 
-## Opening source control
+## Opening Diff and Pull request
 
-Open Source control from the top bar or use the `g` shortcut outside terminal typing
-mode. It opens beside your grid as the inspector of the focused pane, with Changes, PR
-and Files tabs; a pane that has started child panes also offers their Overview. The
-header names the pane, its checkout and how many commits it is ahead. Drag its left
-edge to resize it; double-click the edge to reset the width. Closing the panel
-leaves your terminal sessions running.
+Open the side panel and choose **Diff** or **Pull request**, or press the prefix key followed
+by `D` or `P` in a terminal. Diff shows working tree changes for the focused checkout;
+Pull request shows the current branch's PR summary and details. Drag the panel edge to
+resize it; double-click the edge to reset the width. Closing the panel leaves your
+terminal sessions running.
 
 The panel follows the selected workspace. In All workspaces, it follows the
 focused terminal's workspace. Check the workspace in the header before acting.
 
-## What Changes shows
+## What Diff shows
 
-Changes lists modified, staged, added,
+Diff lists modified, staged, added,
 deleted, renamed and untracked files, and shows how far your branch is ahead of or
 behind its upstream. A scope toggle switches between "Working tree" (your uncommitted
 changes) and "Branch vs `<base>`" (everything your branch has that the base branch
@@ -34,6 +33,28 @@ Review with agent opens a picker with the six engines Houston can spawn — Clau
 Codex, Cursor Agent, Antigravity, OpenCode or Grok — and starts the one you choose in a
 new pane, with the prepared diff as its brief. Nothing is sent until you press Start
 review; Cancel sends nothing at all.
+
+## Pull requests
+
+Open **Pull requests** from the rail footer or press the prefix key followed by `R` to
+browse pull requests for the repository. Filter by state or involvement, search, sort and
+refresh the list, then open a row to inspect its PR. Ctrl-click a PR number to open it on
+GitHub.
+
+In a PR's **Checks** popover, open a failing check to view its available log tail. Choose
+**Fix with agent** to send the failure context to a selected agent. Checks without an
+available Actions log say so.
+
+The Pull request surface also shows reviews and the merge gate. If no PR exists, create one
+for the branch or link an existing PR by number. Reply to review comments or send one to the
+orchestrator pane. PR details let you edit the title and description, reviewers and labels,
+resolve discussions and submit a review. Choose a merge method from the merge menu; merge
+when green enables GitHub auto-merge after the repository's required checks and reviews
+pass. Refresh before reviewing the latest state or retrying a blocked merge.
+
+To open Diff automatically after the focused agent stops, enable **Open Diff when an agent
+stops** in Settings ▸ Appearance ▸ Panels. Houston opens it when the workspace has changes
+and you have not interacted with the panel after the agent's turn.
 
 ## Staging, committing, pushing
 
@@ -116,20 +137,6 @@ fetches nothing.
 Fetch brings remote-tracking branches up to date and reports what changed. Pull is
 fast-forward only: it refuses a branch with no upstream, and it refuses a divergence
 rather than creating a merge commit behind your back.
-
-## Pull requests
-
-The PR tab shows the branch's GitHub PR, its checks and its open review comments.
-It requires the GitHub CLI (`gh`) to be installed and signed in. If no PR exists,
-you can create one for the branch or link an existing PR by number. Reply to a comment
-in place or send it to the orchestrator pane. Details holds the title and description
-editor, reviewers and labels, resolving discussions and submitting a review. Choose the
-merge method from the merge button's menu. Merge when green turns on GitHub auto-merge,
-which merges once the repository's required checks and reviews pass.
-
-Refresh before reviewing the latest state. Merge is available only when the PR is
-ready; an unavailable action explains what blocks it. If new commits arrive after
-you review the PR, refresh and review them before trying to merge again.
 
 Push remains independent of GitHub: it needs a configured git remote and credentials,
 not the GitHub CLI.

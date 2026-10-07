@@ -384,9 +384,13 @@ In memory only, by design: live `sessions` and restored `dead` husks; `swarm_act
 
 ## Background loops
 
-`boot::spawn_background_loops` is called only by the daemon host and spawns six tasks:
+`boot::spawn_background_loops` is called only by the daemon host and spawns seven tasks:
 `swarm_mail_loop`, `delegation_watch_loop`, `routine_fire_loop`, `update_check_loop`,
-`worktree_cleanup_loop` and `task_pr_watch_loop`. The task PR watch is not gated by
+`worktree_cleanup_loop`, `task_pr_watch_loop` and `checkout_watch_loop`. The checkout
+watcher tracks distinct Git HEAD files for live sessions, refcounts shared checkouts,
+debounces changes and broadcasts updated checkout identity. It caps filesystem watches at
+256; excess checkouts use a 30-second poll so a large workspace set cannot grow watcher
+use without bound. The task PR watch is not gated by
 `worktree_cleanup_enabled`: every `TASK_PR_WATCH_INTERVAL_MS` it runs one `gh pr view` in
 the worktree of each in-review task that has a run branch. A merged PR records `done` with
 `houston:pr-merged` in history; a missing or unauthenticated `gh`, or a branch with no PR,
@@ -511,7 +515,10 @@ Subprocesses run with `GIT_TERMINAL_PROMPT=0`, and diffs pass `redact_review_sec
 display. `gh.rs` wraps the GitHub CLI through `crate::spawn::command("gh")`: `state()`
 probes install and auth, `pr_status()` reads `gh pr view --json …`, `pr_create()` runs
 `gh pr create --fill` then re-reads. A missing or unauthenticated `gh` is a **typed state**,
-never a wire error — a wire error here becomes a toast loop.
+never a wire error — a wire error here becomes a toast loop. Pull-request check logs are
+returned as bounded tails of at most `MAX_CHECK_LOG_LINES` lines and
+`MAX_CHECK_LOG_BYTES` bytes, keeping a failing run's output from growing a control reply
+without limit.
 
 ## Voice
 

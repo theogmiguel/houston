@@ -14,9 +14,9 @@ grids for different arrangements of the same project.
 Add a project directory as a workspace, then open a pane and pick which CLI runs in it.
 Your home directory can also be a workspace. The disk root (`/`), credential directories
 such as `.ssh`, `.gnupg` and `.aws`, and paths containing secrets cannot be workspaces.
-Panes are not only terminals: a workspace can also hold a Files pane, an editor, a
-browser pane, or a Skills pane (see `docs/user/files-editor-browser.md`). Git changes
-and pull requests open in Source control beside the grid (see `docs/user/changes.md`).
+A grid can also hold Files or editor panes. Browser, Diff, Pull request and Linked pull
+requests are side-panel surfaces; see [Files, editor and browser](files-editor-browser.md)
+and [Changes](changes.md).
 
 ## Launching sessions
 
@@ -66,26 +66,61 @@ workspace from the pane it names.
 
 ## Tags
 
-A tag is a named colour you attach to mark work, such as `code review`. Grids and panes
-carry tags independently: a grid's tags are set from its context menu in the sidebar and
-appear on its sidebar row, and a pane's tags are set from the pane's ··· menu or its
-right-click menu and appear in the pane header. Adding a tag to a grid does not add it to
-the grid's panes, and a pane's tag does not appear on its grid's row. Each grid and each
-pane carries at most five tags.
+A tag is a named colour you attach to mark work, such as `code review`. Choose a preset or
+enter a custom `#rrggbb` colour when creating or editing a tag. Tag controls open the same
+anchored popover next to the control that invoked it. Grids and panes carry tags
+independently: a grid's tags are set from its card, and a pane's tags are set from the
+pane's actions or context menu.
+Adding a tag to a grid does not add it to the grid's panes, and a pane's tag does not
+appear on its grid card. Each grid and each pane carries at most five tags.
 
-The sidebar tag filter keeps a grid when the grid itself or any of its panes carries an
-active tag. Create, rename, recolour and delete tags from Manage tags in a grid's context
-menu; deleting a tag removes it from every grid and pane that carries it.
+The rail's tag filter keeps a grid when the grid itself or any of its panes carries an
+active tag. Create, rename, recolour and delete tags from the tag popover; deleting a tag
+removes it from every grid and pane that carries it.
 
 Grids saved by a version in which a grid's tags were its panes' combined tags keep those
 tags as the grid's own the first time they open; their panes' copies are removed.
 
+## Grid cards
+
+The navigation rail shows one card for each grid. **Detailed** cards can show the primary
+pane's checkout, pull request, CI, diff totals, task, inline agents, context use and tags.
+Detailed cards show the primary checkout and a `+N` count for other checkouts; hover the
+card to see every checkout. The
+compact layout keeps the grid name with compact status and unread indicators, plus optional
+tags, pull request, checkout branch and agent count; hover it for the details card. Agent
+activity can show a compact summary or the full list of agents, their prompt and latest
+message. Prompt and message previews stay local to Houston.
+The unread marker reflects inbox messages and waiting child panes; use it to mark a grid
+read or unread. Smart sort places unread cards after cards that need input or are working.
+
+Open **Sidebar options** to group cards by workspace, status, pull-request state or not at
+all; sort manually, smartly, by recent activity or by name; choose a card layout and agent
+activity display; and choose which card properties to show. Status and unread indicators
+are always shown. Filters can hide idle grids, grids on `main` or `master`, empty grids or
+grids without selected tags. When tags are hidden from cards, the tag filter offers to show
+them before applying a tag filter.
+
+Pin a grid from its card menu to place it in the Pinned section. Drag cards to reorder
+them, or use `Mod+Shift+↑` and `Mod+Shift+↓` for the selected card. Manual reordering is
+available only with Manual sort and within one workspace. Smart sorting waits for status
+changes to settle before moving cards. Resize the rail between 220 and 500 pixels by
+dragging its divider; dragging below 160 pixels collapses it, and expanding restores its
+saved width.
+
+The rail footer opens Settings, Pull requests and Usage, switches the chrome theme, and
+has an update button for checking update status or opening its install details. Right-click
+a navigation row and choose **Hide from sidebar** to remove it from the rail. Restore hidden
+rows in Settings ▸ Appearance ▸ Sidebar; hidden destinations remain available from the
+command palette.
+
 ## The branch and shared checkouts
 
-A pane whose directory is inside a git work tree shows the branch that checkout is on,
-beside the pane title; hover or focus the chip for the full branch name. The branch is read
-when you focus the pane, so a `git switch` made inside a pane appears the next time you
-focus it. A pane outside a repository, on a detached HEAD, or over SSH shows no branch.
+A pane whose directory is inside a git work tree shows its checkout beside the pane title;
+hover or focus the chip for its full identity. The chip updates when the checkout's HEAD
+changes, including after `git switch`, without requiring a focus change. Detached HEADs
+show the commit instead of a branch; directories outside a repository have no checkout
+chip, and SSH sessions identify the remote host instead of a local checkout.
 
 When other live panes share the same checkout or sit in another checkout of the same
 repository, the chip's tooltip names them. This is information to consult, not a warning:

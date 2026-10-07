@@ -163,6 +163,8 @@ startup readiness: a bounded observer reads the loaded root thread's native stat
 writes one SessionStart drop through the same guarded path. It never reads terminal
 content or changes the thread. See [agent lifecycle](agent-lifecycle.md). Three
 exceptions are named; anything beyond them must be named and recorded here, not blended in.
+Session activity previews are separate display metadata delivered from provider hooks;
+they are never inferred from terminal text.
 
 1. **OS process liveness** (`has_child_procs` / `has_running_procs` in `daemon.rs`) is a
    kernel fact read from procfs on demand — never on a timer, never from terminal content.

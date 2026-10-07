@@ -83,10 +83,13 @@ All of the following are rebindable from Settings ▸ Shortcuts unless noted.
 | Back to the last workspace (after the prefix) | Tab |
 | Previous / next grid in this workspace | , / . |
 | Open the command palette (after the prefix) | Space |
+| Open Browser / Files / Diff / Pull request / Linked pull requests (after the prefix) | B / F / D / P / L |
+| Open the Pull Requests screen (after the prefix) | R |
+| Move the selected rail card up / down (Manual sort) | Mod+Shift+↑ / Mod+Shift+↓ |
+| Open Files Quick Open outside a terminal | Mod+P |
 | Select pane (visual order) | 1–9 |
 | New terminal in this workspace | t |
 | Open a file in the editor | o |
-| New browser pane | b |
 | Expand / collapse pane | z |
 | Split right | d |
 | Split up | w |
