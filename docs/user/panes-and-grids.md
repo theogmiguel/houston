@@ -132,9 +132,10 @@ the pane remains visible and does not wake when focused. Choose Wake to resume i
 conversation. If the provider no longer has that transcript, Wake explains why and leaves
 the pane resumable; Start fresh remains a separate action.
 
-Sleep is refused while the agent is working or waiting for input, while orchestration or
-external child work is active, and for child, routine, harness, shell and unsupported
-provider sessions. Non-Linux platforms report Sleep as unavailable until graceful
+Sleep is refused while the agent is working or waiting for input, while terminal input
+is still being delivered, while orchestration or external child work is active, and for
+child, routine, harness, shell and unsupported provider sessions. Non-Linux platforms
+report Sleep as unavailable until graceful
 process-tree shutdown is supported there.
 
 Choose **Measure process memory** from an agent pane's actions to read its current process-tree
