@@ -14,6 +14,7 @@ export interface GitToolsBarProps {
   upstream: string | null
   fallbackBase: string | null
   onAddWorkspace: (path: string) => void
+  compact?: boolean
 }
 
 // The strip's Git menu and the dialogs it opens, in one place: the menu owns
@@ -27,7 +28,8 @@ export function GitToolsBar({
   behind,
   upstream,
   fallbackBase,
-  onAddWorkspace
+  onAddWorkspace,
+  compact = false
 }: GitToolsBarProps): React.JSX.Element {
   const [open, setOpen] = useState<GitToolKind | null>(null)
 
@@ -58,7 +60,8 @@ export function GitToolsBar({
         onFetch={onFetch}
         onBranches={() => openTool('branches')}
         onWorktrees={() => openTool('worktrees')}
-        onCheckpoints={() => openTool('checkpoints')}
+      onCheckpoints={() => openTool('checkpoints')}
+      embedded={compact}
       />
       <GitToolsDialogs
         open={open}

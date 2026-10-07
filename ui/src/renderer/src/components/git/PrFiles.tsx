@@ -92,6 +92,7 @@ function FileSection({
           return (
             <PrTab as="div" surface="pr-code-line" key={index} data-kind={line.kind}>
               <ReviewDiffLine variant="pr" kind={line.kind} drafted={draft !== undefined} oldLine={line.oldLine} newLine={line.newLine} text={line.text} action={anchor !== null && (
+                  <Tooltip label={`Comment on line ${anchor.line}`}>
                   <ReviewButton variant="diff-line-action"
                     type="button"
                     data-testid={`pr-line-comment-${anchor.side}-${anchor.line}`}
@@ -110,6 +111,7 @@ function FileSection({
                   >
                     <Icon glyph={IconPlus} role="small" />
                   </ReviewButton>
+                  </Tooltip>
                 )} />
               {isComposer && composer !== null && (
                 <DiffCommentComposer data-testid="pr-line-composer">
@@ -214,7 +216,7 @@ export function PrFiles({
         <PrTab as="div" surface="pr-code-actions">
           <Tooltip label="Hide whitespace changes"><PrTab as="button" surface="pr-code-action" type="button" aria-pressed={hideWhitespace} onClick={() => setHideWhitespace((value) => !value)}>¶</PrTab></Tooltip>
           <Tooltip label={allClosed ? 'Expand all' : 'Collapse all'}><PrTab as="button" surface="pr-code-action" type="button" onClick={() => setOpenOverrides(new Map<string, boolean>(files.map((file) => [file.path, allClosed])))}><Icon glyph={allClosed ? IconExpand : IconCollapse} role="small" /></PrTab></Tooltip>
-          <PrTab as="span" surface="pr-code-layout" role="group" aria-label="Diff layout"><PrTab as="button" surface="pr-code-action" type="button" aria-label="Stacked diff" aria-pressed={!split} onClick={() => setSplit(false)}><Icon glyph={IconSplitDown} role="small" /></PrTab><PrTab as="button" surface="pr-code-action" type="button" aria-label="Split diff" aria-pressed={split} onClick={() => setSplit(true)}><Icon glyph={IconSplitRight} role="small" /></PrTab></PrTab>
+          <PrTab as="span" surface="pr-code-layout" role="group" aria-label="Diff layout"><Tooltip label="Stacked diff"><PrTab as="button" surface="pr-code-action" type="button" aria-label="Stacked diff" aria-pressed={!split} onClick={() => setSplit(false)}><Icon glyph={IconSplitDown} role="small" /></PrTab></Tooltip><Tooltip label="Split diff"><PrTab as="button" surface="pr-code-action" type="button" aria-label="Split diff" aria-pressed={split} onClick={() => setSplit(true)}><Icon glyph={IconSplitRight} role="small" /></PrTab></Tooltip></PrTab>
           <Tooltip label={wrapped ? 'Disable line wrapping' : 'Wrap lines'}><PrTab as="button" surface="pr-code-action" type="button" aria-pressed={wrapped} onClick={() => setWrapped((value) => !value)}><Icon glyph={IconCode} role="small" /></PrTab></Tooltip>
           <Tooltip label="File tree"><PrTab as="button" surface="pr-code-action" type="button" aria-expanded={treeOpen} onClick={() => setTreeOpen((value) => !value)}><Icon glyph={IconFile} role="small" /></PrTab></Tooltip>
         </PrTab>

@@ -5,6 +5,7 @@ import { Icon } from './Icon'
 import { IconChevronDown } from '../icons'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { Tooltip } from './Tooltip'
+import type { ReactNode } from 'react'
 import './floatingSurface.css'
 
 export interface SplitButtonItem {
@@ -24,6 +25,7 @@ export interface SplitButtonProps {
   disabledReason?: string
   menuSide?: 'above' | 'below'
   glass?: boolean
+  icon?: ReactNode
 }
 
 export function SplitButton({
@@ -34,7 +36,8 @@ export function SplitButton({
   disabled = false,
   disabledReason,
   menuSide = 'above',
-  glass = false
+  glass = false,
+  icon
 }: SplitButtonProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -50,9 +53,10 @@ export function SplitButton({
           disabled={disabled}
           onClick={onClick}
         >
-          {label}
+          {icon}{label}
         </button>
       </Tooltip>
+      <Tooltip label={`${label} options`} className="inline-flex">
       <button
         type="button"
         aria-label={`${label} options`}
@@ -64,6 +68,7 @@ export function SplitButton({
       >
         <Icon glyph={IconChevronDown} role="small" />
       </button>
+      </Tooltip>
       {open && (
         <div
           role="menu"

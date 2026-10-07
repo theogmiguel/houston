@@ -1168,8 +1168,12 @@ describe('PullRequestTab — stacks', () => {
 describe('compact side panel pull request', () => {
   it('opens a pull request selected from Linked pull requests', () => {
     const client = mount({ compact: true, requestedPr: { number: 73, nonce: 1 } })
-    emit(client, detailMsg({ detail: detail() }))
-    expect(client.prDetailNumbers).toEqual([undefined, 73])
+    expect(client.prDetailNumbers).toEqual([73])
+    expect(q('[data-testid="pr-loading"]')).not.toBeNull()
+    emit(client, detailMsg({ link: link({ number: 73 }), detail: detail() }))
+    expect(q('[data-testid="pr-loading"]')).toBeNull()
+    expect(q('[data-testid="pr-number"]')?.textContent).toContain('73')
+    expect(q('[data-testid="pr-browsed"]')).toBeNull()
   })
 
   it('keeps the approved header layout stable while scrolling the summary', () => {

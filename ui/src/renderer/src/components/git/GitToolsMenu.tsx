@@ -1,5 +1,5 @@
 import { LazyLegacyButton } from '../ui/LazyLegacyButtonRoles'
-import { DiffLoadingMark, GitToolMenuItem, GitToolMenuSeparator, GitToolMenuSurface } from '../ui'
+import { DiffLoadingMark, GitToolMenuItem, GitToolMenuSeparator, GitToolMenuSection, GitToolMenuSurface } from '../ui'
 import { useState } from 'react'
 import { IconEllipsis, IconGitBranch, IconGitFork, IconHistory, IconRefresh, IconArrowDown } from '../icons'
 import { Icon } from '../ui/Icon'
@@ -16,6 +16,7 @@ export interface GitToolsMenuProps {
   onBranches: () => void
   onWorktrees: () => void
   onCheckpoints: () => void
+  embedded?: boolean
 }
 
 export function GitToolsMenu({
@@ -28,13 +29,35 @@ export function GitToolsMenu({
   onFetch,
   onBranches,
   onWorktrees,
-  onCheckpoints
+  onCheckpoints,
+  embedded = false
 }: GitToolsMenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
 
   const run = (fn: () => void): void => {
     setOpen(false)
     fn()
+  }
+
+  const menuItems = <>
+    <Tooltip label={pullDisabledReason ?? undefined} className="w-full">
+      <GitToolMenuItem data-testid="git-tools-pull" disabled={disabled || busy || pullDisabledReason !== null} onClick={() => run(onPull)}>
+        <Icon glyph={IconArrowDown} role="small" />{behind > 0 ? `Pull ${behind} commit${behind === 1 ? '' : 's'}` : 'Pull'}
+      </GitToolMenuItem>
+    </Tooltip>
+    <Tooltip label={fetchDisabledReason ?? undefined} className="w-full">
+      <GitToolMenuItem data-testid="git-tools-fetch" disabled={disabled || busy || fetchDisabledReason !== null} onClick={() => run(onFetch)}>
+        <Icon glyph={IconRefresh} role="small" />Fetch
+      </GitToolMenuItem>
+    </Tooltip>
+    <GitToolMenuSeparator />
+    <GitToolMenuItem data-testid="git-tools-branches" disabled={disabled} onClick={() => run(onBranches)}><Icon glyph={IconGitBranch} role="small" />Branches…</GitToolMenuItem>
+    <GitToolMenuItem data-testid="git-tools-worktrees" disabled={disabled} onClick={() => run(onWorktrees)}><Icon glyph={IconGitFork} role="small" />Worktrees…</GitToolMenuItem>
+    <GitToolMenuItem data-testid="git-tools-checkpoints" disabled={disabled} onClick={() => run(onCheckpoints)}><Icon glyph={IconHistory} role="small" />Checkpoints…</GitToolMenuItem>
+  </>
+
+  if (embedded) {
+    return <GitToolMenuSection>{menuItems}</GitToolMenuSection>
   }
 
   return (
@@ -58,55 +81,7 @@ export function GitToolsMenu({
           )}
         </LazyLegacyButton>
       </Tooltip>
-      {open && (
-        <GitToolMenuSurface>
-          <Tooltip label={pullDisabledReason ?? undefined} className="w-full">
-            <GitToolMenuItem
-              data-testid="git-tools-pull"
-              disabled={disabled || busy || pullDisabledReason !== null}
-              onClick={() => run(onPull)}
-            >
-              <Icon glyph={IconArrowDown} role="small" />
-              {behind > 0 ? `Pull ${behind} commit${behind === 1 ? '' : 's'}` : 'Pull'}
-            </GitToolMenuItem>
-          </Tooltip>
-          <Tooltip label={fetchDisabledReason ?? undefined} className="w-full">
-            <GitToolMenuItem
-              data-testid="git-tools-fetch"
-              disabled={disabled || busy || fetchDisabledReason !== null}
-              onClick={() => run(onFetch)}
-            >
-              <Icon glyph={IconRefresh} role="small" />
-              Fetch
-            </GitToolMenuItem>
-          </Tooltip>
-          <GitToolMenuSeparator />
-          <GitToolMenuItem
-            data-testid="git-tools-branches"
-            disabled={disabled}
-            onClick={() => run(onBranches)}
-          >
-            <Icon glyph={IconGitBranch} role="small" />
-            Branches…
-          </GitToolMenuItem>
-          <GitToolMenuItem
-            data-testid="git-tools-worktrees"
-            disabled={disabled}
-            onClick={() => run(onWorktrees)}
-          >
-            <Icon glyph={IconGitFork} role="small" />
-            Worktrees…
-          </GitToolMenuItem>
-          <GitToolMenuItem
-            data-testid="git-tools-checkpoints"
-            disabled={disabled}
-            onClick={() => run(onCheckpoints)}
-          >
-            <Icon glyph={IconHistory} role="small" />
-            Checkpoints…
-          </GitToolMenuItem>
-        </GitToolMenuSurface>
-      )}
+      {open && <GitToolMenuSurface>{menuItems}</GitToolMenuSurface>}
     </div>
   )
 }

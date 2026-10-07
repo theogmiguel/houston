@@ -163,7 +163,8 @@ function ChangesStrip({
   toolsError,
   behind,
   upstream,
-  onAddWorkspace
+  onAddWorkspace,
+  compact
 }: {
   scope: 'working' | 'branch'
   setScope: (scope: 'working' | 'branch') => void
@@ -178,6 +179,7 @@ function ChangesStrip({
   behind: number
   upstream: string | null
   onAddWorkspace: (path: string) => void
+  compact: boolean
 }): React.JSX.Element {
   const labels = scopeLabels(defaultBase)
   return (
@@ -237,6 +239,7 @@ function ChangesStrip({
         upstream={upstream}
         fallbackBase={defaultBase}
         onAddWorkspace={onAddWorkspace}
+        compact={compact}
       />
     </GitChangesToolbarSurface>
   )
@@ -587,14 +590,14 @@ function CompactDiffToolbar({ scope, setScope, stagedOnly, setStagedOnly, scopeM
     <PrTab as="div" surface="changes-diff-refs"><span>{defaultBase ?? 'main'}</span><span aria-hidden>←</span><span>{branchLabel}</span></PrTab>
     <PrTab as="span" surface="changes-diff-stat"><span data-tone="added">+{visibleAdded}</span><span data-tone="deleted">−{visibleDeleted}</span></PrTab>
     <PrTab as="div" surface="changes-diff-actions">
-      <button type="button" aria-label="Refresh diff" onClick={refresh}><Icon glyph={IconRefresh} role="small" /></button>
-      <button type="button" aria-label={expanded ? 'Collapse all' : 'Expand all'} onClick={toggleAllDiffs}><Icon glyph={expanded ? IconCollapse : IconExpand} role="small" /></button>
+      <Tooltip label="Refresh diff"><button type="button" aria-label="Refresh diff" onClick={refresh}><Icon glyph={IconRefresh} role="small" /></button></Tooltip>
+      <Tooltip label={expanded ? 'Collapse all' : 'Expand all'}><button type="button" aria-label={expanded ? 'Collapse all' : 'Expand all'} onClick={toggleAllDiffs}><Icon glyph={expanded ? IconCollapse : IconExpand} role="small" /></button></Tooltip>
       <PrTab as="span" surface="changes-diff-segment" role="group" aria-label="Diff layout">
-        <button type="button" aria-label="Stacked diff" aria-pressed={!splitDiff} onClick={() => setSplitDiff(false)}><Icon glyph={IconSplitDown} role="small" /></button>
-        <button type="button" aria-label="Split diff" aria-pressed={splitDiff} onClick={() => setSplitDiff(true)}><Icon glyph={IconSplitRight} role="small" /></button>
+        <Tooltip label="Stacked diff"><button type="button" aria-label="Stacked diff" aria-pressed={!splitDiff} onClick={() => setSplitDiff(false)}><Icon glyph={IconSplitDown} role="small" /></button></Tooltip>
+        <Tooltip label="Split diff"><button type="button" aria-label="Split diff" aria-pressed={splitDiff} onClick={() => setSplitDiff(true)}><Icon glyph={IconSplitRight} role="small" /></button></Tooltip>
       </PrTab>
-      <button type="button" aria-label="Wrap lines" aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}><span aria-hidden>↪</span></button>
-      <button type="button" aria-label="File tree" aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}><Icon glyph={IconFolderOpen} role="small" /></button>
+      <Tooltip label={wrapDiff ? 'Disable line wrapping' : 'Wrap lines'}><button type="button" aria-label="Wrap lines" aria-pressed={wrapDiff} onClick={() => setWrapDiff((value) => !value)}><span aria-hidden>↪</span></button></Tooltip>
+      <Tooltip label="File tree"><button type="button" aria-label="File tree" aria-pressed={treeVisible} onClick={() => setTreeVisible((value) => !value)}><Icon glyph={IconFolderOpen} role="small" /></button></Tooltip>
       <ChangesToolbar compact strip={strip} />
     </PrTab>
   </PrTab>
@@ -966,6 +969,7 @@ export function ChangesPane({
       behind={behind}
       upstream={upstream}
       onAddWorkspace={addWorkspace}
+      compact={compact === true}
     />
   )
 

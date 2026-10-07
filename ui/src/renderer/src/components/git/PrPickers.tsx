@@ -63,8 +63,8 @@ export function PrReactions({
       {open && (
         <ReactionOptionList data-testid="pr-reaction-picker">
           {REACTION_ORDER.map((content) => (
+            <Tooltip key={content} label={REACTION_LABEL[content]}>
             <ReviewButton variant="reaction-option"
-              key={content}
               type="button"
               aria-label={REACTION_LABEL[content]}
               data-testid={`pr-reaction-pick-${content}`}
@@ -76,6 +76,7 @@ export function PrReactions({
             >
               <span aria-hidden>{REACTION_GLYPH[content]}</span>
             </ReviewButton>
+            </Tooltip>
           ))}
         </ReactionOptionList>
       )}
@@ -154,6 +155,7 @@ export function PrReviewerPicker({
         <ReviewerValue data-testid="pr-reviewers-value">
           {detail.reviewers.length === 0 ? (compact ? 'None' : 'none requested') : requestedReviewers(detail.reviewers)}
         </ReviewerValue>
+        <Tooltip label={compact ? 'Add reviewer' : 'Manage reviewers'}>
         <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-reviewers-manage"
@@ -172,6 +174,7 @@ export function PrReviewerPicker({
             compact ? <><Icon glyph={IconUser} role="small" /><Icon glyph={IconPlus} role="small" /></> : 'Manage'
           )}
         </ReviewButton>
+        </Tooltip>
       </MetadataRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (
@@ -278,6 +281,7 @@ export function PrLabelPicker({
             ))
           )}
         </LabelSummary>
+        <Tooltip label={compact ? 'Add label' : 'Manage labels'}>
         <ReviewButton variant="compact-action"
           type="button"
           data-testid="pr-labels-manage"
@@ -296,6 +300,7 @@ export function PrLabelPicker({
             compact ? <Icon glyph={IconTag} role="small" /> : 'Edit'
           )}
         </ReviewButton>
+        </Tooltip>
       </LabelSummaryRow>
       {message !== null && <PickerErrorMessage>{message}</PickerErrorMessage>}
       {open && candidates !== null && (

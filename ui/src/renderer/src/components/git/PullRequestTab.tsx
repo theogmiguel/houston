@@ -25,7 +25,7 @@ import { Segmented, type SegmentedOption } from '../ui/SegmentedControl'
 import { ScmNotice } from './ScmNotice'
 import { Disclosure } from '../ui/Disclosure'
 import { Icon } from '../ui/Icon'
-import { IconLoaderCircle, IconPencil, IconExternal, IconGitPullRequest, IconCheck, IconFile, IconClose, IconChevronDown, IconMessageSquare } from '../icons'
+import { IconPencil, IconExternal, IconGitPullRequest, IconCheck, IconFile, IconClose, IconChevronDown, IconMessageSquare } from '../icons'
 import { Tooltip } from '../ui/Tooltip'
 import { useExitAnimation } from '../ui/AnimOut'
 import { prDecisionLabel } from './changes'
@@ -33,6 +33,7 @@ import { PrBrowse } from './PrBrowse'
 import { PrComments, PrInspectorComments, PrThreads } from './PrDiscussion'
 import { PrFiles } from './PrFiles'
 import { PrEmptyStates } from './PrEmptyStates'
+import { PrDetailSkeleton } from '../ui/PrDetailSkeleton'
 import { PrLabelPicker, PrReactions, PrReviewerPicker } from './PrPickers'
 import { PrReviewBar } from './PrReviewBar'
 import { PrSummary } from './PrSummary'
@@ -1380,11 +1381,7 @@ function PullRequestTabContent({
   if (view === null) {
     return (
       <PrWatchContent rows={watchRows}>
-        <PullRequestRole data-testid="pr-loading" as="div" role="empty-panel">
-          <PullRequestRole as="span" role="loading-indicator">
-            <Icon glyph={IconLoaderCircle} role="subhead" />
-          </PullRequestRole>
-        </PullRequestRole>
+        <PrDetailSkeleton />
       </PrWatchContent>
     )
   }
@@ -1455,8 +1452,7 @@ export function PullRequestTab({
   compact = false,
   requestedPr = null
 }: PullRequestTabProps): React.JSX.Element {
-  const pr = usePrDetail(client, dir, active, refreshSignal)
-  const handledRequestedPr = useRef<string | null>(null)
+  const pr = usePrDetail(client, dir, active, refreshSignal, requestedPr?.number ?? null, requestedPr?.nonce ?? null)
   const watches = usePrWatch(client, session)
   const watchRows = watches.map((watch) => (
     <PrWatchRow
@@ -1482,14 +1478,6 @@ export function PullRequestTab({
   useEffect(() => {
     setBrowsing(false)
   }, [dir])
-
-  useEffect(() => {
-    const requestKey = requestedPr ? `${requestedPr.number}:${requestedPr.nonce}` : null
-    if (requestedPr && active && pr.view !== null && pr.view.link?.number !== requestedPr.number && handledRequestedPr.current !== requestKey) {
-      handledRequestedPr.current = requestKey
-      pr.show(requestedPr.number)
-    }
-  }, [active, pr.show, pr.view, requestedPr?.number, requestedPr?.nonce])
 
   return (
     <PullRequestTabContent

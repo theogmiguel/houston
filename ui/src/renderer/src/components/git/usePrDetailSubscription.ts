@@ -127,7 +127,9 @@ export function usePrDetail(
   client: HoustonClient | null,
   dir: string | null,
   active: boolean,
-  refreshSignal: number
+  refreshSignal: number,
+  requestedNumber: number | null = null,
+  requestedNonce: number | null = null
 ): PrDetailController {
   const [view, setView] = useState<PrDetailView | null>(null)
   const [busy, setBusy] = useState(false)
@@ -171,10 +173,10 @@ export function usePrDetail(
   const latestStack = useRef(0)
 
   const request = useCallback(
-    (number: number | null = viewedRef.current) => {
+    (number: number | null = viewedRef.current, force = false) => {
       // A mutation in flight owns the next detail read (its own push), and a read
       // already in flight is the newest one; neither may be superseded by this.
-      if (!client || !dir || busyRef.current || linkBusyRef.current || mergeBusyRef.current) return
+      if (!client || !dir || (!force && busyRef.current) || linkBusyRef.current || mergeBusyRef.current) return
       busyRef.current = true
       setBusy(true)
       watermark.current = client.prDetail(dir, number ?? undefined)
@@ -229,8 +231,13 @@ export function usePrDetail(
 
   useEffect(() => {
     if (!client || !dir || !active) return
-    request()
-  }, [client, dir, active, refreshSignal, request])
+    if (requestedNumber !== null) {
+      viewedRef.current = null
+      setViewed(null)
+      setView(null)
+    }
+    request(requestedNumber, requestedNumber !== null)
+  }, [client, dir, active, refreshSignal, request, requestedNumber, requestedNonce])
 
   useEffect(() => {
     if (!client) return

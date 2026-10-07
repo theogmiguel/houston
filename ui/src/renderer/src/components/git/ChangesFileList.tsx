@@ -319,6 +319,7 @@ function FileRow({
       <StageToggleButton stage={stage} onStageToggle={onStageToggle} />
       <FileCounts row={row} />
       <GitStatusMark aria-hidden status={row.state} kind="compact" data-status={row.state}>{MARK_GLYPH[row.state]}</GitStatusMark>
+      <Tooltip label={`Actions for ${row.path}`}>
       <button
         type="button"
         data-testid="changes-row-menu"
@@ -329,6 +330,7 @@ function FileRow({
       >
         <span aria-hidden>···</span>
       </button>
+      </Tooltip>
       {menuOpen && <FileRowMenu row={row} stage={stage} discard={discard} absPath={absPath} onStageToggle={onStageToggle} onDiscard={onDiscard} onOpenInEditor={onOpenInEditor} onOpenInEditorError={onOpenInEditorError} onCloseMenu={onCloseMenu} />}
     </div>
   )

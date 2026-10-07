@@ -27,6 +27,7 @@ import { filterPullRequests, groupPullRequests, type PullRequestSort } from './p
 import { PullRequestTab } from '../git/PullRequestTab'
 import { PanelTab } from '../ui/PanelTab'
 import { ShellElement } from '../ui/ShellPrimitives'
+import { Tooltip } from '../ui/Tooltip'
 import type { SurfaceKind } from '../../scmPanel'
 import '../ui/floatingSurface.css'
 
@@ -216,9 +217,11 @@ function PrScreenDetail({ item, client, directory, requestNonce, onClose, onOpen
             onClose={onClose}
           />
         </div>
-        <button type="button" className={PRS_CLASSES.PRS_DETAIL_ADD} aria-label="Open a surface" aria-expanded={surfaceMenuOpen} onClick={() => setSurfaceMenuOpen((open) => !open)}>
-          <Icon glyph={IconPlus} role="small" />
-        </button>
+        <Tooltip label="Open a surface">
+          <button type="button" className={PRS_CLASSES.PRS_DETAIL_ADD} aria-label="Open a surface" aria-expanded={surfaceMenuOpen} onClick={() => setSurfaceMenuOpen((open) => !open)}>
+            <Icon glyph={IconPlus} role="small" />
+          </button>
+        </Tooltip>
         {surfaceMenuOpen && <ShellElement as="div" shellRole="panel-add-menu" role="menu" aria-label="Open a surface">
           {([
             ['browser', 'Browser', 'B'],
@@ -396,6 +399,7 @@ export function PullRequestsScreen({
         </div>
         {folded && (
           <div className={PRS_CLASSES.PRS_CLASS_28}>
+            <Tooltip label="Search pull requests">
             <button
               type="button"
               className={PRS_CLASSES.PRS_CLASS_29}
@@ -404,6 +408,8 @@ export function PullRequestsScreen({
             >
               <Icon glyph={IconSearch} role="small" />
             </button>
+            </Tooltip>
+            <Tooltip label="Refresh pull requests">
             <button
               type="button"
               className={PRS_CLASSES.PRS_CLASS_29}
@@ -412,6 +418,7 @@ export function PullRequestsScreen({
             >
               <Icon glyph={IconRefresh} role="small" />
             </button>
+            </Tooltip>
           </div>
         )}
       </header>
@@ -444,6 +451,7 @@ export function PullRequestsScreen({
             Open on GitHub
           </button>
           {onCheckoutInWorktree && (
+            <Tooltip label="Refresh pull requests">
             <button
               type="button"
               role="menuitem"
@@ -455,6 +463,7 @@ export function PullRequestsScreen({
             >
               Check out in new worktree
             </button>
+            </Tooltip>
           )}
         </div>
       )}
