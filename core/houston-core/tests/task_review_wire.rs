@@ -529,7 +529,7 @@ fn a_restored_task_child_flips_its_interrupted_run_back_to_running() {
                 ref_url: None,
                 created_by: "user",
                 now_ms: 1,
-                acceptance: &["The restored task child retains its run binding"],
+                acceptance: &["The restored task child retains its run binding".into()],
             })
             .unwrap();
         task_id = task.id;
