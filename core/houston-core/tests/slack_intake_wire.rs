@@ -471,6 +471,30 @@ impl Rig {
         }
     }
 
+    fn set_acceptance(&self, task_id: i64, acceptance: &str) {
+        let proto::ServerMsg::TaskDetail { task, .. } =
+            self.daemon.task_get_in(&self.workspace(), task_id).unwrap()
+        else {
+            panic!("expected task detail for {task_id}");
+        };
+        let updated = self
+            .daemon
+            .task_save(
+                &self.workspace(),
+                Some(task_id),
+                Some(task.revision),
+                proto::TaskPatch {
+                    acceptance: Some(vec![acceptance.to_string()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(
+            matches!(updated, proto::ServerMsg::TaskChanged { .. }),
+            "task acceptance update was refused: {updated:?}"
+        );
+    }
+
     async fn await_output(&self, session: u32, needle: &str) -> String {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
         loop {
@@ -635,6 +659,7 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
         "the requester's own check mark starts nothing"
     );
 
+    r.set_acceptance(tasks[0].0, "The footer no longer overlaps its content.");
     r.fake
         .send_event("e5", check_mark("1800000000.000100", OWNER));
     let runs = r.await_runs(1).await;
@@ -660,6 +685,45 @@ async fn a_mention_is_filed_pending_and_only_the_owners_check_mark_starts_it() {
 }
 
 #[tokio::test]
+async fn an_owners_check_mark_keeps_an_unready_request_pending_and_reports_readiness() {
+    let _guard = SERIAL.lock().await;
+    let r = rig("slack-unready").await;
+    r.fake.send_event(
+        "u1",
+        mention("1800000000.000100", REQUESTER, "fix the footer overlap"),
+    );
+    let task_id = r.await_tasks(1).await[0].0;
+
+    r.fake
+        .send_event("u2", check_mark("1800000000.000100", OWNER));
+    let dm = r.fake.await_dm("task is not ready").await;
+    assert!(
+        dm.to_string()
+            .contains("at least one verifiable acceptance item"),
+        "the owner is told what readiness is missing: {dm}"
+    );
+    r.fake
+        .await_reactions("1800000000.000100", &["warning"])
+        .await;
+    assert!(r.runs().is_empty(), "an unready request does not spawn");
+    let state: String = r
+        .db()
+        .query_row("SELECT state FROM intake_events", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        state, "pending",
+        "the owner can retry after fixing readiness"
+    );
+
+    r.set_acceptance(task_id, "The footer no longer overlaps its content.");
+    r.fake
+        .send_event("u3", check_mark("1800000000.000100", OWNER));
+    r.await_runs(1).await;
+    r.fake.await_reactions("1800000000.000100", &["gear"]).await;
+    r.finish();
+}
+
+#[tokio::test]
 async fn the_owners_accept_button_starts_the_request_and_nobody_elses_does() {
     let _guard = SERIAL.lock().await;
     let r = rig("slack-accept-button").await;
@@ -667,7 +731,8 @@ async fn the_owners_accept_button_starts_the_request_and_nobody_elses_does() {
         "e1",
         mention("1800000000.000100", REQUESTER, "rename the button"),
     );
-    r.await_tasks(1).await;
+    let task_id = r.await_tasks(1).await[0].0;
+    r.set_acceptance(task_id, "The button label is updated to Submit.");
     let dm = r.fake.await_dm("Novo pedido").await;
     let id = accept_value(&dm);
 
@@ -933,7 +998,8 @@ async fn a_question_has_a_button_per_option_and_only_the_requester_or_owner_answ
         "q1",
         mention("1800000001.000100", REQUESTER, "rename the button"),
     );
-    r.await_tasks(1).await;
+    let task_id = r.await_tasks(1).await[0].0;
+    r.set_acceptance(task_id, "The button label is updated to Submit.");
     r.fake
         .send_event("q2", check_mark("1800000001.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1055,6 +1121,7 @@ async fn a_question_goes_to_the_thread_and_a_result_comes_back_to_it() {
         mention("1800000001.000100", REQUESTER, "rename the button"),
     );
     let task_id = r.await_tasks(1).await[0].0;
+    r.set_acceptance(task_id, "The button label is updated to Submit.");
     r.fake
         .send_event("q2", check_mark("1800000001.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1269,6 +1336,7 @@ async fn a_task_canceled_after_its_hand_back_posts_the_dropped_note() {
         mention("1800000004.000100", REQUESTER, "rename the button"),
     );
     let task_id = r.await_tasks(1).await[0].0;
+    r.set_acceptance(task_id, "The button label is updated to Submit.");
     r.fake
         .send_event("d2", check_mark("1800000004.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1322,6 +1390,7 @@ async fn a_refusal_at_triage_tells_the_thread_why_and_marks_the_request() {
         mention("1800000003.000100", REQUESTER, "email every client"),
     );
     let task_id = r.await_tasks(1).await[0].0;
+    r.set_acceptance(task_id, "The task is evaluated before emailing clients.");
     r.fake
         .send_event("t2", check_mark("1800000003.000100", OWNER));
     let session = r.await_runs(1).await[0].1;
@@ -1381,7 +1450,16 @@ async fn accepted_requests_past_the_working_cap_wait_in_a_queue() {
             ),
         );
     }
-    r.await_tasks(3).await;
+    let tasks = r.await_tasks(3).await;
+    for (index, (task_id, _, _)) in tasks.iter().enumerate() {
+        r.set_acceptance(
+            *task_id,
+            &format!(
+                "Request {} receives a summary in its Slack thread.",
+                index + 1
+            ),
+        );
+    }
     for i in 1..=3 {
         r.fake.send_event(
             &format!("a{i}"),
@@ -1437,6 +1515,14 @@ async fn a_reconnect_replays_what_was_missed_while_offline() {
         .unwrap();
     let tasks = r.await_tasks(1).await;
     assert_eq!(tasks[0].1, format!("slack:{REQUESTER}"));
+    r.fake.await_dm("task is not ready").await;
+    assert!(r.runs().is_empty(), "catchup cannot bypass readiness");
+    r.set_acceptance(
+        tasks[0].0,
+        "The offline request receives a summary in its Slack thread.",
+    );
+    r.fake
+        .send_event("catchup-retry", check_mark(&offline_ts, OWNER));
     r.await_runs(1).await;
     assert!(r.daemon.slack_info().last_catchup_at_ms.is_some());
     r.finish();
@@ -1521,6 +1607,7 @@ async fn a_reply_after_the_result_is_an_adjustment_the_owner_accepts_into_a_new_
     r.fake
         .send_event("a1", mention(request, REQUESTER, "rename the button"));
     let task_id = r.await_tasks(1).await[0].0;
+    r.set_acceptance(task_id, "The button label is updated to Submit.");
     r.fake.send_event("a2", check_mark(request, OWNER));
     let session = r.await_runs(1).await[0].1;
     r.daemon
@@ -1721,6 +1808,7 @@ async fn a_reply_before_the_work_joins_the_task_and_one_during_it_reaches_the_ow
     r.fake
         .send_event("c1", mention(request, REQUESTER, "add a team column"));
     let task_id = r.await_tasks(1).await[0].0;
+    r.set_acceptance(task_id, "The table shows the team column.");
     let reply = |user: &str, text: &str, ts: &str| {
         json!({"type": "message", "channel": CHANNEL, "user": user, "team": "T1", "ts": ts,
             "thread_ts": request, "text": text})
