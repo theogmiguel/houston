@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { ClientMsg } from '../../houston/client'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import type { TaskDomain, TaskProject, TaskTrackerLink, TaskTrackerProvider } from '../../houston/taskDomain'
@@ -14,6 +14,7 @@ const PROJECT: TaskProject = {
 }
 
 describe('ProjectsSurface', () => {
+  afterEach(cleanup)
   it('creates a new project instead of saving over the selected project', () => {
     const listeners = new Set<(message: ServerMsg) => void>()
     const sent: ClientMsg[] = []

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientMsg } from '../../houston/client'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import type { TaskDetailData } from '../../houston/useTasks'
@@ -26,6 +26,7 @@ const DOMAIN: TaskDomain = {
 }
 
 describe('task workflow panel', () => {
+  afterEach(cleanup)
   it('keeps the not-ready bypass explicit and opens planning in its recorded pane', async () => {
     const handlers = new Set<(message: ServerMsg) => void>()
     const sent: ClientMsg[] = []

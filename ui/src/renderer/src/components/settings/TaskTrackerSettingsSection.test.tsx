@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { ClientMsg } from '../../houston/client'
 import type { ServerMsg } from '../../houston/generated/ServerMsg'
 import type { TaskTrackerProvider, TaskTrackerWorkspaceSettings } from '../../houston/taskDomain'
@@ -22,6 +22,7 @@ function settings(provider: TaskTrackerProvider, repository: string | null): Tas
 }
 
 describe('workspace tracker settings', () => {
+  afterEach(cleanup)
   it('edits each provider independently and keeps Notion credentials ephemeral', () => {
     const listeners = new Set<(message: ServerMsg) => void>()
     const sent: ClientMsg[] = []

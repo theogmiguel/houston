@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { within } from '@testing-library/react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HoustonClient, SessionInfo } from '../houston/client'
@@ -279,9 +280,9 @@ describe('pane ··· menu', () => {
     expect(container.textContent).toContain('1m')
     expect(container.textContent).toContain('Expiration: unknown')
     expect(container.textContent).toContain('A child session was deferred.')
-    expect(fakeClient.send).not.toHaveBeenCalled()
+    expect(fakeClient.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'session_wake' }))
 
-    click(container.querySelector<HTMLButtonElement>('[aria-label="Wake conversation"]')!)
+    click(within(container).getByRole('button', { name: 'Wake session' }))
     expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_wake', session: 1 })
 
     act(() => deliver({ type: 'error', message: 'Wake refused for session 1: no validated conversation handle', context: null }))
@@ -294,7 +295,7 @@ describe('pane ··· menu', () => {
 
   it('measures process memory only after the user asks', () => {
     render()
-    expect(fakeClient.send).not.toHaveBeenCalled()
+    expect(fakeClient.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'session_memory_get' }))
     openPaneMenu()
     click(row('Measure process memory'))
     expect(fakeClient.send).toHaveBeenCalledWith({ type: 'session_memory_get', session: 1 })

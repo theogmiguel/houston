@@ -23,7 +23,8 @@ function navRow(container: HTMLElement, view: string): HTMLButtonElement {
   return el
 }
 
-const surface = (c: HTMLElement): Element | null => c.querySelector('[data-testid="nav-surface"]')
+const surface = (c: HTMLElement): Element | null =>
+  c.querySelector('[data-testid="nav-surface"], [data-testid="projects-surface"]')
 
 describe('the rail nav rows drive the content area', () => {
   it.each(RAIL_VIEWS)('the %s page fills the content region, so its column centres', async (view) => {
