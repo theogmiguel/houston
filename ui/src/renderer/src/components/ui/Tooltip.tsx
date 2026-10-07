@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { createContext, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './floatingSurface.css'
 
@@ -9,6 +9,8 @@ export const HOVER_DELAY_MS = 400
 const OFFSET_PX = 6
 
 const VIEWPORT_MARGIN_PX = 4
+
+export const TooltipContext = createContext<string | null>(null)
 
 interface Props {
   label?: string | null
@@ -120,7 +122,7 @@ export function Tooltip({ label, side = 'top', className, inline = false, openOn
   }, [open, hide])
 
   return (
-    <span
+    <TooltipContext.Provider value={label ?? null}><span
       ref={wrapRef}
       className={className ?? (inline ? 'inline-flex' : 'contents')}
       onPointerEnter={showAfterDelay}
@@ -152,6 +154,6 @@ export function Tooltip({ label, side = 'top', className, inline = false, openOn
           </div>,
           document.body
         )}
-    </span>
+    </span></TooltipContext.Provider>
   )
 }

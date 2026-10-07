@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { HoustonClient } from '../../houston/client'
 import { openExternal } from '../../houston/bridge'
 import { Icon } from '../ui/Icon'
+import { Tooltip } from '../ui/Tooltip'
 import { ShellBrowserRoot, ShellElement } from '../ui/ShellPrimitives'
 import { BrowserViewport, type BrowserViewportHandle } from '../BrowserViewport'
 import {
@@ -150,15 +151,15 @@ export function BrowserSurface({
   return (
     <ShellBrowserRoot ref={hostRef} data-active={isActive || undefined}>
       <ShellElement as="div" shellRole="browser-toolbar">
-        <button aria-label="Back" disabled={!isActive || !active.canGoBack} onClick={nav.goBack}>
+        <Tooltip label="Back"><button aria-label="Back" disabled={!isActive || !active.canGoBack} onClick={nav.goBack}>
           <Icon glyph={IconChevronLeft} role="ui" />
-        </button>
-        <button aria-label="Forward" disabled={!isActive || !active.canGoForward} onClick={nav.goForward}>
+        </button></Tooltip>
+        <Tooltip label="Forward"><button aria-label="Forward" disabled={!isActive || !active.canGoForward} onClick={nav.goForward}>
           <Icon glyph={IconChevronRight} role="ui" />
-        </button>
-        <button aria-label="Reload" disabled={!isActive || !active.url} onClick={() => nav.reload()}>
+        </button></Tooltip>
+        <Tooltip label="Reload"><button aria-label="Reload" disabled={!isActive || !active.url} onClick={() => nav.reload()}>
           <Icon glyph={IconRefresh} role="ui" />
-        </button>
+        </button></Tooltip>
         <ShellElement as="label" shellRole="browser-address">
           {favicon ? (
             <img src={favicon} alt="" />
@@ -183,6 +184,7 @@ export function BrowserSurface({
           />
         </ShellElement>
         <ShellElement as="div" shellRole="browser-server-menu">
+          <Tooltip label="Local servers">
           <ShellElement
             as="button"
             shellRole="browser-server-button"
@@ -194,6 +196,7 @@ export function BrowserSurface({
             <Icon glyph={IconMonitor} role="ui" />
             <ShellElement as="span" shellRole="browser-count">{localServers.servers.length}</ShellElement>
           </ShellElement>
+          </Tooltip>
           {serversMenu && (
             <ShellElement as="div" shellRole="browser-menu" role="menu">
               <ShellElement as="div" shellRole="browser-menu-label">Local servers</ShellElement>
@@ -215,7 +218,7 @@ export function BrowserSurface({
             </ShellElement>
           )}
         </ShellElement>
-        <button
+        <Tooltip label="Open in system browser"><button
           aria-label="Open in system browser"
           disabled={!isActive || !active.url}
           onClick={() =>
@@ -224,7 +227,7 @@ export function BrowserSurface({
           }
         >
           <Icon glyph={IconExternal} role="ui" />
-        </button>
+        </button></Tooltip>
       </ShellElement>
       <ShellElement as="div" shellRole="browser-load">{loading && <span />}</ShellElement>
       {active.url ? (
@@ -318,7 +321,7 @@ export function BrowserSurface({
                       <small>{entry.url.replace(/^https?:\/\//i, '')}</small>
                     </span>
                   </ShellElement>
-                  <ShellElement
+                  <Tooltip label={`Remove ${entry.url} from recent`}><ShellElement
                     as="button"
                     shellRole="browser-remove"
                     aria-label={`Remove ${entry.url} from recent`}
@@ -329,7 +332,7 @@ export function BrowserSurface({
                     }}
                   >
                     <Icon glyph={IconClose} role="label" />
-                  </ShellElement>
+                  </ShellElement></Tooltip>
                 </ShellElement>
               ))}
             </ShellElement>

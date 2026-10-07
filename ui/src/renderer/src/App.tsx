@@ -9,6 +9,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -94,7 +95,7 @@ import {
 import { useShellFocus } from "./Shell/useShellFocus";
 import { BrowserActConfirmModal } from "./components/BrowserActConfirm";
 import { useBrowserConfirm } from "./houston/browserConfirm";
-import { TerminalTuningContext, type OutputSink } from "./pane/TerminalPane";
+import { TERMINAL_SYNC_FIT_EVENT, TerminalTuningContext, type OutputSink } from "./pane/TerminalPane";
 import { CHROME_THEME_LABELS, THEME_LABELS } from "./theme";
 import { revealThemeFromClick } from "./themeReveal";
 import {
@@ -329,6 +330,7 @@ import { Icon } from "./components/ui/Icon";
 import {
   Button,
   AppTitlebar,
+  TitlebarBrand,
   ContentRegion,
   ContentsSwitch,
   EmptyGridHint,
@@ -984,6 +986,9 @@ export function App(): React.JSX.Element {
   // comes back with the panel already open.
   const [scmOpen, setScmOpen] = useState<boolean>(() => loadScmOpen());
   const { mounted: sidePanelPresent, finishExit: finishSidePanelExit } = useExitAnimation(scmOpen, 240);
+  useLayoutEffect(() => {
+    window.dispatchEvent(new Event(TERMINAL_SYNC_FIT_EVENT));
+  }, [sidePanelPresent]);
   const [scmTab, setScmTab] = useState<ScmTab>("changes");
   const [panelMountEpoch, setPanelMountEpoch] = useState(0);
   const scmWidth = useScmWidth();
@@ -3573,20 +3578,22 @@ export function App(): React.JSX.Element {
             onDoubleClick={handleTitlebarDoubleClick}
           >
             <div className="flex items-center gap-1.5 min-w-0 pl-2.5">
+              <TitlebarBrand>
+                {sidebarRail && (
+                  <Tooltip label="Show sidebar (Ctrl+B)">
+                    <Button
+                      type="button"
+                      variant="legacy-titlebar-icon"
+                      className="relative"
+                      aria-label="Show sidebar"
+                      onClick={() => setSidebarRail(false)}
+                    >
+                      <Icon glyph={IconPanelLeft} role="ui" />
+                    </Button>
+                  </Tooltip>
+                )}
+              </TitlebarBrand>
               <SettingsBreadcrumb open={settings} section={settingsSectionLabel()} />
-              {sidebarRail && (
-                <Tooltip label="Show sidebar (Ctrl+B)">
-                  <Button
-                    type="button"
-                    variant="legacy-titlebar-icon"
-                    className="relative"
-                    aria-label="Show sidebar"
-                    onClick={() => setSidebarRail(false)}
-                  >
-                    <Icon glyph={IconPanelLeft} role="ui" />
-                  </Button>
-                </Tooltip>
-              )}
             </div>
             <ToolbarActions>
               <VoiceMicChip

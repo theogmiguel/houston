@@ -1,10 +1,11 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
+import { useContext, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
 import type { AgentStatus } from '../../houston/client'
 import { Text } from './Text'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
 import { BTN_ICO_STRUCTURE } from './buttonChrome'
 import { RING_ACCENT_ICON } from './shadowChrome'
 import { HIT_TARGET_28 } from '../hitTarget'
+import { Tooltip, TooltipContext } from './Tooltip'
 
 export function PaneHeadActions({ children }: { children: ReactNode }): React.JSX.Element {
   return <span className="head-actions ml-auto flex items-center gap-px flex-none">{children}</span>
@@ -58,7 +59,10 @@ export function PaneHeadButton({
 }: { tone?: PaneHeadButtonTone; ladder?: boolean; size?: keyof typeof HEAD_BUTTON_SIZE } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
   const target = size === 'tabClose' || size === 'tabOverflow' ? HIT_TARGET_28 : ''
   const buttonClass = size === 'tabClose' ? 'btn' : ''
-  return <button {...rest} className={`${buttonClass} ${BTN_ICO_STRUCTURE} ${HEAD_BUTTON_SIZE[size]} ${target} ${HEAD_BUTTON_STYLE} ${ladder ? HEAD_BUTTON_LADDER : ''} ${HEAD_BUTTON_TONE[tone]} ${className}`.trim()} />
+  const button = <button {...rest} className={`${buttonClass} ${BTN_ICO_STRUCTURE} ${HEAD_BUTTON_SIZE[size]} ${target} ${HEAD_BUTTON_STYLE} ${ladder ? HEAD_BUTTON_LADDER : ''} ${HEAD_BUTTON_TONE[tone]} ${className}`.trim()} />
+  const parentTooltip = useContext(TooltipContext)
+  const label = rest['aria-label']
+  return label && !parentTooltip ? <Tooltip label={label}>{button}</Tooltip> : button
 }
 
 /** A label-sized note in a session header, such as the protocol mode or account profile. */

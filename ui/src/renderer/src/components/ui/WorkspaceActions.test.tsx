@@ -40,7 +40,9 @@ describe('WorkspaceActions', () => {
   it('keeps row actions hidden until hover or keyboard focus', () => {
     const el = mount()
     const group = el.querySelector('[data-testid="workspace-actions"]')!
-    const menu = el.querySelector('[aria-label="More actions for test"]')!.parentElement!
+    let menu = el.querySelector('[aria-label="More actions for test"]')!.parentElement!
+    // The trigger's Tooltip wrapper is display:contents and carries no layout.
+    while (menu.classList.contains('contents')) menu = menu.parentElement!
     expect(group.className).toContain('border-t')
     expect(menu.className).toContain('opacity-0')
     expect(menu.className).toContain('group-hover:opacity-100')

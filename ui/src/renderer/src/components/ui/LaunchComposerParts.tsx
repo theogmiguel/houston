@@ -2,6 +2,7 @@ import type { ButtonHTMLAttributes, HTMLAttributes, LabelHTMLAttributes, ReactNo
 import { BTN_PRIMARY } from './buttonChrome'
 import { MATERIAL_CLS, materialAttrs } from './material'
 import { Text } from './Text'
+import { Tooltip } from './Tooltip'
 
 type NoClass<T> = Omit<T, 'className'>
 
@@ -79,9 +80,9 @@ export function CountStepper({ value, min, max, onChange }: {
 }): React.JSX.Element {
   return (
     <div className="flex h-[var(--h-ctl)] items-center rounded-[var(--tr-radius-sm)] border border-[var(--border)]">
-      <button type="button" aria-label="Fewer" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))} className="h-full w-[var(--w-stepper-button)] border-0 bg-transparent disabled:opacity-40"><Text tone="secondary">−</Text></button>
+      <Tooltip label="Fewer"><button type="button" aria-label="Fewer" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))} className="h-full w-[var(--w-stepper-button)] border-0 bg-transparent disabled:opacity-40"><Text tone="secondary">−</Text></button></Tooltip>
       <Text data-testid="new-session-count" size="small" tabular className="min-w-[var(--h-ctl-mini)] text-center">{value}</Text>
-      <button type="button" aria-label="More" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))} className="h-full w-[var(--w-stepper-button)] border-0 bg-transparent disabled:opacity-40"><Text tone="secondary">+</Text></button>
+      <Tooltip label="More"><button type="button" aria-label="More" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))} className="h-full w-[var(--w-stepper-button)] border-0 bg-transparent disabled:opacity-40"><Text tone="secondary">+</Text></button></Tooltip>
     </div>
   )
 }

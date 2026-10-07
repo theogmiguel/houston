@@ -7,6 +7,7 @@ import { FOCUS_HALO, GLOW_ACCENT, GLOW_DANGER, GLOW_WARNING, RING_ACCENT_ICON } 
 import { Icon } from './Icon'
 import { URL_INPUT_CLS, WEBVIEW_HOST_CLS } from './panelChrome'
 import { Text } from './Text'
+import { Tooltip } from './Tooltip'
 import { Select, type SelectProps } from './Select'
 
 const JOIN = (...parts: Array<string | false | null | undefined>): string => parts.filter(Boolean).join(' ')
@@ -180,9 +181,9 @@ export function BrowserStatusBand({
         </button>
       )}
       {dismiss && (
-        <button type="button" className={BAND_ICON_BTN} aria-label={dismiss.label} onClick={dismiss.onClick}>
+        <Tooltip label={dismiss.label}><button type="button" className={BAND_ICON_BTN} aria-label={dismiss.label} onClick={dismiss.onClick}>
           <Icon glyph={IconClose} role="label" />
-        </button>
+        </button></Tooltip>
       )}
     </Text>
   )

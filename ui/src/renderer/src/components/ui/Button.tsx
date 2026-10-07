@@ -1,10 +1,11 @@
-import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
+import { useContext, type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react'
 import { BTN_DANGER_SOLID, BTN_GHOST, BTN_GHOST_DANGER_ARM, BTN_GHOST_DANGER_HOVER, BTN_ICO, BTN_PRIMARY } from './buttonChrome'
 import type { IconComponent } from '../icons'
 import { variants } from './variants'
 import { FOCUS_HALO } from './shadowChrome'
 import './button.css'
 import { CONTROL_SIZE_SQUARE_CLS } from '../controlSize'
+import { Tooltip, TooltipContext } from './Tooltip'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'field' | 'ghost' | 'link' | 'danger' | 'danger-solid' | 'icon' | 'icon-selected' | 'icon-structure' | 'text' | 'badge' | 'ghost-icon' | 'ghost-icon-danger' | 'confirm-primary' | 'compact-outline' | 'danger-confirmation' | 'legacy-primary' | 'legacy-ghost' | 'legacy-danger' | 'legacy-danger-solid' | 'legacy-icon' | 'legacy-roster-footer' | 'legacy-icon-warning' | 'legacy-titlebar-icon' | 'legacy-ghost-compact' | 'roster-open' | 'mini-primary-action' | 'action-primary' | 'surface' | 'surface-large' | 'subtle-icon' | 'compact-icon' | 'compact-icon-secondary' | 'disclosure-icon' | 'small-icon' | 'status-chip'
 export type ButtonSize = 'md' | 'sm' | 'lg'
@@ -149,6 +150,10 @@ function buttonChrome(variant: CoreButtonVariant): string {
 }
 
 const BARE_ICON_VARIANTS: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>(['subtle-icon', 'compact-icon', 'compact-icon-secondary', 'disclosure-icon', 'small-icon', 'status-chip'])
+const TOOLTIP_ICON_VARIANTS: ReadonlySet<CoreButtonVariant> = new Set<CoreButtonVariant>([
+  'icon', 'icon-selected', 'icon-structure', 'subtle-icon', 'compact-icon', 'compact-icon-secondary',
+  'small-icon', 'ghost-icon', 'ghost-icon-danger', 'legacy-icon', 'legacy-icon-warning', 'legacy-titlebar-icon'
+])
 
 // Prefix rewrites for variants whose recipe drops part of the shared `btn inline-flex …` head.
 const HEAD_REWRITE: Partial<Record<CoreButtonVariant, [RegExp, string]>> = {
@@ -200,5 +205,8 @@ export function Button(props: ButtonProps): React.JSX.Element {
     ...buttonProps
   } = props
   const classes = `${structureClasses(variant, size, contentAlign)} ${variant === 'roster-open' ? 'children-open' : ''} ${buttonChrome(variant)} ${stateClasses(variant, selected, armed, status)} ${noDrag ? '[-webkit-app-region:no-drag]' : ''} ${className}`
-  return <ButtonFrame {...buttonProps} size={size} armed={armed} selected={selected} status={status} contentAlign={contentAlign} icon={icon} iconEnd={iconEnd} noDrag={noDrag} children={children} type={type} ref={ref} className={classes} />
+  const button = <ButtonFrame {...buttonProps} size={size} armed={armed} selected={selected} status={status} contentAlign={contentAlign} icon={icon} iconEnd={iconEnd} noDrag={noDrag} children={children} type={type} ref={ref} className={classes} />
+  const label = buttonProps['aria-label']
+  const parentTooltip = useContext(TooltipContext)
+  return TOOLTIP_ICON_VARIANTS.has(variant) && label && !parentTooltip ? <Tooltip label={label}>{button}</Tooltip> : button
 }

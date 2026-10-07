@@ -3,6 +3,7 @@ import { HIT_TARGET_28 } from '../hitTarget'
 import { IconAlertTriangle, IconCheck, IconClose, IconInfo, type IconComponent } from '../icons'
 import { ICON_ROLE_CLS } from './Icon'
 import { Text } from './Text'
+import { Tooltip } from './Tooltip'
 
 export type NoticeToastKind = 'info' | 'success' | 'warning' | 'error'
 export type NoticeToastAnchor = 'workspace-top' | 'workspace-top-right' | 'pane-corner'
@@ -104,14 +105,14 @@ export function NoticeToast({ anchor, code, kind, heading, body, action, onDismi
         </button>
       )}
       {onDismiss && (
-        <button
+        <Tooltip label={`Dismiss ${heading}`}><button
           type="button"
           aria-label={`Dismiss ${heading}`}
           onClick={onDismiss}
           className={`${ACTION_CLS} inline-flex items-center justify-center`}
         >
           <IconClose className={ICON_ROLE_CLS.label} />
-        </button>
+        </button></Tooltip>
       )}
     </div>
   )

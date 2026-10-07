@@ -91,6 +91,12 @@ describe('components/ui primitives', () => {
     expect(icon.className).not.toMatch(/(?:^|\s)(?:px-|gap-)/)
     expect(icon.className).toContain('w-6')
     expect(icon.className).toContain('p-0')
+    expect(icon.parentElement?.getAttribute('data-tooltip')).toBe('Close')
+  })
+
+  it('icon Button variants render their accessible name as a tooltip label', () => {
+    const { container } = render(<Button variant="icon" icon={() => <svg aria-hidden="true" />} aria-label="Refresh usage" />)
+    expect(container.querySelector('[data-tooltip="Refresh usage"]')).not.toBeNull()
   })
 
   it('Count omits zero by default, shows metric zero and adds no punctuation', () => {
