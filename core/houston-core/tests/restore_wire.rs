@@ -604,8 +604,8 @@ fn boot_defers_an_unresumable_child_when_its_parent_starts_fresh() {
         proto::SessionState::Running,
         "and its parent still comes back live: {parent:?}"
     );
-    assert_eq!(child.spawned_by, Some(1));
-    assert_ne!(child.spawned_by, Some(parent.id));
+    assert_eq!(child.spawned_by, Some(parent.id));
+    assert_ne!(parent.id, 1);
     assert!(
         summary.unwrap().deferred > 0,
         "recovery reports the child that cannot resume"
