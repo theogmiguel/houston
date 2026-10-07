@@ -37,7 +37,7 @@ function makeSession(id: number, status: SessionInfo['status'] = 'idle'): Sessio
   } as SessionInfo
 }
 
-const fakeClient = {} as unknown as HoustonClient
+const fakeClient = { subscribe: () => () => {} } as unknown as HoustonClient
 
 describe('LayoutView tab stacks', () => {
   let container: HTMLDivElement

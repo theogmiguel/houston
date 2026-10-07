@@ -19,6 +19,7 @@ import {
   ActionEmptyState,
   ActivityDotSpecimen,
   Button,
+  BulletListSpecimen,
   AppTitlebarSpecimen,
   Card,
   Caption as UiCaption,
@@ -29,6 +30,7 @@ import {
   DefinitionTable,
   Disclosure,
   IntegrationCard,
+  Inset,
   KeyCapSpecimen,
   Chip,
   Count,
@@ -845,6 +847,16 @@ export function UiPrimitivesStory(): React.JSX.Element {
         <SpecimenGroup heading="Text">
           <TextSpecimen />
         </SpecimenGroup>
+        <SpecimenGroup heading="Renderer task content roles">
+          <div className="grid gap-[var(--space-2)]">
+            <Text as="p" preserveWhitespace tone="secondary">A text block preserves intentional line breaks while remaining readable.</Text>
+            <Inset space="screen"><Text size="small" tone="muted">Screen content keeps a consistent edge inset.</Text></Inset>
+            <BulletListSpecimen />
+            <Inline wrap><Button variant="secondary">A long secondary action</Button><Button variant="secondary">Another action</Button></Inline>
+            <Notice tone="info" inset="compact-inline">A notice inset inside a pane.</Notice>
+            <Card padding="md" layout="sleeping-session"><Text center>Centered recovery content</Text><Card padding="sm" layout="scrolling-copy">Previous output keeps line breaks and scrolls when it is long.</Card></Card>
+          </div>
+        </SpecimenGroup>
         <SpecimenGroup heading="Callout">
           <CalloutSpecimen />
         </SpecimenGroup>
@@ -1449,7 +1461,7 @@ export function UiPrimitivesStory(): React.JSX.Element {
             </InlineCluster>
             <CenteredEmptyNote>No report yet.</CenteredEmptyNote>
             <ReportFrame><Text as="h2" size="ui" weight="semibold" tone="primary" flush>Report</Text></ReportFrame>
-            <BulletList><li>One</li><li>Two</li></BulletList>
+            <BulletList items={['One', 'Two']} />
           </div>
         </SpecimenGroup>
 

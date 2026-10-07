@@ -44,6 +44,8 @@ export function trayStatusFor(session: SessionInfo): TrayStatus {
       return 'done'
     case 'interrupted':
       return 'error'
+    case 'sleeping':
+      return 'idle'
   }
 }
 

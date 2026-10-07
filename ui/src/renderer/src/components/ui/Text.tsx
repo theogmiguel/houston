@@ -116,10 +116,11 @@ export interface TextProps extends HTMLAttributes<HTMLElement> {
   /** Zero margin, for paragraphs and headings that sit in a gap-spaced stack. */
   flush?: boolean
   center?: boolean
+  preserveWhitespace?: boolean
   htmlFor?: string
 }
 
-export function Text({ as: Tag = 'span', size, weight, tone, leading, caps, tight, mono, tabular, breakAll, flush, center, className = '', ...props }: TextProps): React.JSX.Element {
+export function Text({ as: Tag = 'span', size, weight, tone, leading, caps, tight, mono, tabular, breakAll, flush, center, preserveWhitespace, className = '', ...props }: TextProps): React.JSX.Element {
   const classes = [
     flush ? 'm-0' : '',
     size ? SIZE[size] : '',
@@ -132,6 +133,7 @@ export function Text({ as: Tag = 'span', size, weight, tone, leading, caps, tigh
     tabular ? 'tabular-nums' : '',
     breakAll ? 'break-all' : '',
     center ? 'text-center' : '',
+    preserveWhitespace ? 'whitespace-pre-wrap' : '',
     className
   ].filter(Boolean).join(' ')
   return <Tag {...props} className={classes} />

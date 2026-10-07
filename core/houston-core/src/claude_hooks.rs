@@ -434,6 +434,37 @@ pub fn run_hook_client(args: &[String]) {
         tool_use_id: payload.tool_use_id,
         tool_input_fingerprint: payload.tool_input_fingerprint,
         request_id: payload.request_id,
+        resume_evidence: if matches!(provider, proto::AgentKind::Claude | proto::AgentKind::Codex)
+            && matches!(
+                event.as_str(),
+                "SessionStart" | "UserPromptSubmit" | "Stop" | "notify"
+            ) {
+            let profile_dir = match provider {
+                proto::AgentKind::Claude => "CLAUDE_CONFIG_DIR",
+                proto::AgentKind::Codex => "CODEX_HOME",
+                _ => unreachable!(),
+            };
+            Some(crate::hook_drop::ResumeHookEvidence {
+                source: payload.source.clone(),
+                profile_dir: std::env::var_os(profile_dir).and_then(|value| {
+                    let value = match value.into_string() {
+                        Ok(value) => value,
+                        Err(_) => {
+                            return Some("<Houston omitted an unrepresentable profile path>".into())
+                        }
+                    };
+                    if value.is_empty() {
+                        None
+                    } else if value.len() <= 4096 {
+                        Some(value)
+                    } else {
+                        Some("<Houston omitted an oversized profile path>".into())
+                    }
+                }),
+            })
+        } else {
+            None
+        },
         stop_continued,
         session_id: payload.session_id,
         fully_idle: payload.fully_idle,
@@ -614,6 +645,7 @@ fn stop_hook_try_continue(session: u32, provider: proto::AgentKind) -> bool {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct HookPayload {
     pub session_id: Option<String>,
+    pub source: Option<String>,
     pub cwd: Option<String>,
     pub prompt: Option<String>,
     pub last_message: Option<String>,
@@ -751,6 +783,7 @@ pub(crate) fn parse_hook_payload(input: &str, provider: proto::AgentKind) -> Hoo
                     .then(|| field("conversationId"))
                     .flatten()
             }),
+        source: field("source"),
         cwd: field("cwd"),
         last_message: clean(
             grok_field("last_assistant_message", "lastAssistantMessage")

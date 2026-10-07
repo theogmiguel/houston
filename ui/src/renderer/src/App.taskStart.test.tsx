@@ -173,6 +173,7 @@ describe('Start places the pane the daemon creates', () => {
     deliverClientMsg('task_run_changed', { type: 'task_run_changed', run: run() })
 
     expect(storedOrder()).toEqual([1, 3, 2])
+    await until(() => q('[data-panekey="3"]') !== null, 'new task pane')
     expect(q('[data-panekey="1"]')).not.toBeNull()
     expect(q('[data-panekey="2"]')).not.toBeNull()
     expect(q('[data-panekey="3"]')).not.toBeNull()

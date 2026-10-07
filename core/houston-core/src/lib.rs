@@ -71,6 +71,7 @@ pub mod ssh_config;
 pub mod ssh_credentials;
 pub mod statusline_sweep;
 pub mod supervisor;
+pub mod task_trackers;
 pub mod tasks_cli;
 pub mod updates;
 pub mod usage;

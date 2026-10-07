@@ -25,14 +25,21 @@ static SHIM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// Records its argv (and the profile env) per pane, then waits like a CLI; with
 /// `RESUME_FAKE_EXIT` set, a `--resume` launch exits with that code instead.
 const FAKE_CLI: &str = r#"#!/bin/sh
+if [ "$RESUME_IGNORE_TERM" = "1" ]; then trap '' TERM; fi
+if [ "$RESUME_FAKE_DESCENDANT" = "1" ]; then sleep 60 & fi
+if [ "$RESUME_BLOCK_STDIN" = "1" ]; then stty raw -echo; fi
 out="$RESUME_ARGV_DIR/$HOUSTON_SESSION"
 : > "$out.tmp"
 for a in "$@"; do printf '%s\n' "$a" >> "$out.tmp"; done
 printf 'env:CLAUDE_CONFIG_DIR=%s\n' "$CLAUDE_CONFIG_DIR" >> "$out.tmp"
+printf 'env:CODEX_HOME=%s\n' "$CODEX_HOME" >> "$out.tmp"
 mv "$out.tmp" "$out"
 case " $* " in
   *" --resume "*) [ -n "$RESUME_FAKE_EXIT" ] && exit "$RESUME_FAKE_EXIT" ;;
 esac
+if [ "$RESUME_BLOCK_STDIN" = "1" ]; then
+  while [ ! -f "$RESUME_STDIN_RELEASE" ]; do sleep 0.05; done
+fi
 exec cat
 "#;
 
@@ -72,10 +79,15 @@ async fn setup() -> Env {
     std::env::set_var("SHELL", "/bin/sh");
     for var in [
         "RESUME_FAKE_EXIT",
+        "RESUME_IGNORE_TERM",
+        "RESUME_FAKE_DESCENDANT",
+        "RESUME_BLOCK_STDIN",
+        "RESUME_STDIN_RELEASE",
         "HOUSTON_RESTORE_BUDGET",
         "HOUSTON_SAFE_MODE",
         "HOUSTON_DISABLE_AUTO_RESTORE",
         "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
     ] {
         std::env::remove_var(var);
     }
@@ -142,6 +154,13 @@ fn config_dir_of(argv: &[String]) -> String {
         .to_string()
 }
 
+fn codex_home_of(argv: &[String]) -> String {
+    argv.iter()
+        .find_map(|a| a.strip_prefix("env:CODEX_HOME="))
+        .expect("the fake CLI records its Codex home")
+        .to_string()
+}
+
 fn handle_in(env: &Env, id: u32) -> Option<(String, Option<String>)> {
     Db::open(&env.db_path())
         .unwrap()
@@ -191,12 +210,72 @@ fn claude_pane(daemon: &Arc<Daemon>, dir: &Path, profile: Option<u32>) -> proto:
         .unwrap()
 }
 
+fn shell_pane(daemon: &Arc<Daemon>, dir: &Path) -> proto::SessionInfo {
+    daemon
+        .create_session(CreateParams {
+            agent: proto::AgentKind::Shell,
+            project_dir: dir.to_path_buf(),
+            cmd: None,
+            cols: 80,
+            rows: 24,
+            cwd_from: None,
+            shell_integration: false,
+            auto_approve: false,
+            acp: None,
+            profile: None,
+            prompt: None,
+            model: None,
+            effort: None,
+        })
+        .unwrap()
+}
+
 fn restored_from(sessions: &[proto::SessionInfo], old: u32) -> &proto::SessionInfo {
     sessions
         .iter()
         .filter(|s| s.session_origin == Some(old))
         .max_by_key(|s| s.id)
         .unwrap_or_else(|| panic!("session {old} was not restored: {sessions:?}"))
+}
+
+async fn wait_restored_child(daemon: &Arc<Daemon>, old: u32) -> proto::SessionInfo {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        if let Some(child) = daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id != old && info.session_origin == Some(old) && info.state.is_live())
+        {
+            return child;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "child {old} did not restore"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn close_after_shell_restore(daemon: &Arc<Daemon>, parent: u32) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        match daemon.close(parent) {
+            Ok(()) => return,
+            Err(error) => {
+                assert!(
+                    error
+                        .to_string()
+                        .contains("restoring orchestration children"),
+                    "{error:#}"
+                );
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "parent {parent} recovery did not finish"
+                );
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 fn fixture(name: &str, conversation: &str, transcript: &str, cwd: &Path) -> String {
@@ -214,16 +293,42 @@ fn fixture(name: &str, conversation: &str, transcript: &str, cwd: &Path) -> Stri
 
 /// Runs the real hook helper on a Claude payload, as the CLI's hook would.
 async fn run_hook(event: &str, session: u32, stdin: String) -> HookDrop {
+    run_hook_as(event, session, stdin, None).await
+}
+
+async fn run_hook_as(event: &str, session: u32, stdin: String, agent: Option<&str>) -> HookDrop {
+    run_hook_with_profile(event, session, stdin, agent, None).await
+}
+
+async fn run_hook_with_profile(
+    event: &str,
+    session: u32,
+    stdin: String,
+    agent: Option<&str>,
+    profile_dir: Option<String>,
+) -> HookDrop {
     let home = tempfile::tempdir().unwrap();
     let event = event.to_string();
     let home_path = home.path().to_path_buf();
+    let agent = agent.map(str::to_string);
     tokio::task::spawn_blocking(move || {
         let mut cmd = houston_core::spawn::command(env!("CARGO_BIN_EXE_houston-core"));
         cmd.arg("hook").arg(&event).arg("--houston-managed");
+        if let Some(agent) = &agent {
+            cmd.arg("--agent").arg(agent);
+        }
         cmd.env_clear();
         cmd.env("HOME", &home_path);
         cmd.env("HOUSTON_CHANNEL", "resumetest");
         cmd.env("TR_SESSION", session.to_string());
+        for name in ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] {
+            if let Ok(value) = std::env::var(name) {
+                cmd.env(name, value);
+            }
+        }
+        if let Some(directory) = profile_dir {
+            cmd.env("CLAUDE_CONFIG_DIR", directory);
+        }
         cmd.stdin(std::process::Stdio::piped());
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::piped());
@@ -282,12 +387,566 @@ async fn hook(
     cwd: &Path,
 ) {
     let stdin = fixture(fixture_name, conversation, transcript, cwd);
-    let drop = run_hook(event, session, stdin).await;
+    let selected_profile = daemon.list().iter().any(|info| {
+        info.id == session && info.agent == proto::AgentKind::Claude && info.profile_label.is_some()
+    });
+    let profile_dir = if selected_profile {
+        Some(config_dir_of(&argv_of(env, session).await))
+    } else {
+        None
+    };
+    let drop = run_hook_with_profile(event, session, stdin, None, profile_dir).await;
+    apply_drop(env, daemon, drop).await;
+}
+
+async fn hook_as(
+    env: &Env,
+    daemon: &Arc<Daemon>,
+    session: u32,
+    agent: &str,
+    event: &str,
+    stdin: String,
+) {
+    let drop = run_hook_as(event, session, stdin, Some(agent)).await;
     apply_drop(env, daemon, drop).await;
 }
 
 const START: &str = "claude-2.1.263-01-SessionStart.json";
 const PROMPT: &str = "claude-2.1.263-02-UserPromptSubmit.json";
+
+#[tokio::test]
+async fn shell_hosted_claude_hook_is_recorded_and_restart_resumes_inside_shell() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-parent");
+    let hook_cwd = dir.join("nested");
+    std::fs::create_dir_all(&hook_cwd).unwrap();
+    let hook_cwd = std::fs::canonicalize(hook_cwd).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000078";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &hook_cwd,
+    )
+    .await;
+    assert_eq!(
+        handle_in(&env, shell.id),
+        Some((conversation.into(), Some(transcript)))
+    );
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    assert_eq!(restored.agent, proto::AgentKind::Shell);
+    assert_eq!(restored.session_origin, Some(shell.id));
+    assert_eq!(restored.cwd, hook_cwd.display().to_string());
+    assert_eq!(restored.detected_agent, Some(proto::AgentKind::Claude));
+    assert_eq!(
+        resume_of(&argv_of(&env, restored.id).await).as_deref(),
+        Some(conversation),
+        "the restored shell must relaunch the exact Claude conversation"
+    );
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_hook_profile_is_captured_and_reused_when_daemon_profile_switches() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-profile");
+    let profile = env.state.path().join("claude-manual-account");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::env::set_var("CLAUDE_CONFIG_DIR", &profile);
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000079";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &dir,
+    )
+    .await;
+    assert_eq!(
+        Db::open(&env.db_path())
+            .unwrap()
+            .session_profile_config_dir(shell.id)
+            .unwrap()
+            .as_deref(),
+        Some(profile.to_str().unwrap()),
+    );
+
+    std::env::remove_var("CLAUDE_CONFIG_DIR");
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    let argv = argv_of(&env, restored.id).await;
+    assert_eq!(resume_of(&argv).as_deref(), Some(conversation));
+    assert_eq!(config_dir_of(&argv), profile.display().to_string());
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn deleted_manual_shell_profile_is_reported_and_does_not_resume_elsewhere() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-profile-deleted");
+    let profile = env.state.path().join("claude-deleted-account");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::env::set_var("CLAUDE_CONFIG_DIR", &profile);
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "00000000-0000-4000-8000-000000000080";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &dir,
+    )
+    .await;
+    std::env::remove_var("CLAUDE_CONFIG_DIR");
+    std::fs::remove_dir_all(&profile).unwrap();
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    assert!(restored
+        .resume_notice
+        .as_deref()
+        .unwrap_or_default()
+        .contains("profile directory"));
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_hook_captures_and_reuses_codex_home_for_exact_thread_resume() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-codex-profile");
+    let profile = env.state.path().join("codex-manual-account");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::env::set_var("CODEX_HOME", &profile);
+    let shell = shell_pane(&daemon, &dir);
+    let conversation = "019a0000-0000-4000-8000-000000000082";
+    let transcript = transcript(&env, conversation, b"codex transcript fixture\n");
+    let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/hooks/codex/codex-0.153.4-03-Stop.json");
+    let mut payload: Value = serde_json::from_slice(&std::fs::read(fixture_path).unwrap()).unwrap();
+    payload["session_id"] = conversation.into();
+    payload["transcript_path"] = transcript.into();
+    payload["cwd"] = dir.display().to_string().into();
+    hook_as(
+        &env,
+        &daemon,
+        shell.id,
+        "codex",
+        "Stop",
+        payload.to_string(),
+    )
+    .await;
+    std::env::remove_var("CODEX_HOME");
+
+    let restarted = reboot(&env, &daemon);
+    let restored = restored_from(&restarted.list(), shell.id).clone();
+    let argv = argv_of(&env, restored.id).await;
+    assert_eq!(resume_of(&argv).as_deref(), Some(conversation));
+    assert_eq!(codex_home_of(&argv), profile.display().to_string());
+    assert_eq!(restored.agent, proto::AgentKind::Shell);
+    assert_eq!(restored.detected_agent, Some(proto::AgentKind::Codex));
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_children_stay_deferred_when_the_resumed_cli_exits_before_root_hook() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-child-recovery");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    daemon.set_orchestration_caps(4, 2).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon
+        .orchestrate_spawn(
+            shell.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("child result stays held".to_string()),
+            Some(false),
+            None,
+            Some("recovery-child".to_string()),
+        )
+        .unwrap();
+    let child_conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let child_transcript = transcript(&env, &child_conversation, b"child transcript\n");
+    hook(
+        &env,
+        &daemon,
+        child.id,
+        "UserPromptSubmit",
+        PROMPT,
+        &child_conversation,
+        &child_transcript,
+        &dir,
+    )
+    .await;
+    let nested = daemon
+        .orchestrate_spawn(
+            child.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("nested result remains held".to_string()),
+            Some(false),
+            None,
+            Some("nested-recovery-child".to_string()),
+        )
+        .unwrap();
+    let nested_conversation = flag(&argv_of(&env, nested.id).await, "--session-id").unwrap();
+    let nested_transcript = transcript(&env, &nested_conversation, b"nested transcript\n");
+    hook(
+        &env,
+        &daemon,
+        nested.id,
+        "UserPromptSubmit",
+        PROMPT,
+        &nested_conversation,
+        &nested_transcript,
+        &dir,
+    )
+    .await;
+    let root_conversation = "00000000-0000-4000-8000-000000000081";
+    let root_transcript = transcript(&env, root_conversation, b"root transcript\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        root_conversation,
+        &root_transcript,
+        &dir,
+    )
+    .await;
+
+    std::env::set_var("RESUME_FAKE_EXIT", "1");
+    let restarted = reboot(&env, &daemon);
+    let sessions = restarted.list();
+    let restored_parent = restored_from(&sessions, shell.id);
+    assert!(restarted
+        .inbox_rows_for_test(restored_parent.id)
+        .iter()
+        .any(|row| row.summary.contains("child recovery deferred")
+            || row.body.contains("child recovery is deferred")));
+    assert!(sessions.iter().all(|session| {
+        (session.session_origin != Some(child.id) && session.session_origin != Some(nested.id))
+            || !session.state.is_live()
+    }));
+    assert_eq!(
+        sessions
+            .iter()
+            .find(|session| session.id == nested.id)
+            .unwrap()
+            .restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed),
+    );
+    for child_id in [child.id, nested.id] {
+        let deferred = sessions
+            .iter()
+            .find(|session| session.id == child_id)
+            .unwrap();
+        assert_eq!(deferred.state, proto::SessionState::Interrupted);
+        assert_eq!(
+            deferred.restore_deferred,
+            Some(proto::RestoreReason::SpawnFailed)
+        );
+    }
+    assert_eq!(
+        resume_of(&argv_of(&env, restored_parent.id).await).as_deref(),
+        Some(root_conversation)
+    );
+    daemon.close(shell.id).unwrap();
+    restarted.close(restored_parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_without_a_root_handle_names_the_failure_and_defers_children() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-without-root-handle");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon
+        .orchestrate_spawn(
+            shell.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("remain held".to_string()),
+            Some(false),
+            None,
+            Some("no-root-child".to_string()),
+        )
+        .unwrap();
+    let restarted = reboot(&env, &daemon);
+    let sessions = restarted.list();
+    let parent = restored_from(&sessions, shell.id);
+    assert!(parent
+        .resume_notice
+        .as_deref()
+        .unwrap_or_default()
+        .contains("no validated root conversation handle"));
+    let deferred_child = sessions
+        .iter()
+        .find(|session| session.id == child.id)
+        .unwrap();
+    assert_eq!(deferred_child.state, proto::SessionState::Interrupted);
+    assert_eq!(
+        deferred_child.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
+    );
+    daemon.close(shell.id).unwrap();
+    restarted.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+async fn shell_children_resume_only_after_the_matching_root_native_resume_hook() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-child-confirmed");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon
+        .orchestrate_spawn(
+            shell.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("restore after parent".to_string()),
+            Some(false),
+            None,
+            Some("confirmed-child".to_string()),
+        )
+        .unwrap();
+    let child_conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let child_transcript = transcript(&env, &child_conversation, b"child transcript\n");
+    hook(
+        &env,
+        &daemon,
+        child.id,
+        "UserPromptSubmit",
+        PROMPT,
+        &child_conversation,
+        &child_transcript,
+        &dir,
+    )
+    .await;
+    let root_conversation = "00000000-0000-4000-8000-000000000083";
+    let root_transcript = transcript(&env, root_conversation, b"root transcript\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        root_conversation,
+        &root_transcript,
+        &dir,
+    )
+    .await;
+
+    let restarted = reboot(&env, &daemon);
+    let parent = restored_from(&restarted.list(), shell.id).clone();
+    let child_placeholder = restarted
+        .list()
+        .into_iter()
+        .find(|session| session.id == child.id)
+        .unwrap();
+    assert_eq!(child_placeholder.state, proto::SessionState::Interrupted);
+    assert_eq!(
+        child_placeholder.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
+    );
+    hook(
+        &env,
+        &restarted,
+        parent.id,
+        "SessionStart",
+        RESUMED,
+        "00000000-0000-4000-8000-000000000099",
+        &root_transcript,
+        &dir,
+    )
+    .await;
+    let child_placeholder = restarted
+        .list()
+        .into_iter()
+        .find(|session| session.id == child.id)
+        .unwrap();
+    assert_eq!(child_placeholder.state, proto::SessionState::Interrupted);
+    assert_eq!(
+        child_placeholder.restore_deferred,
+        Some(proto::RestoreReason::SpawnFailed)
+    );
+    hook(
+        &env,
+        &restarted,
+        parent.id,
+        "SessionStart",
+        RESUMED,
+        root_conversation,
+        &root_transcript,
+        &dir,
+    )
+    .await;
+    assert!(wait_restored_child(&restarted, child.id).await.resumable);
+    daemon.close(shell.id).unwrap();
+    close_after_shell_restore(&restarted, parent.id).await;
+}
+
+#[tokio::test]
+async fn delayed_shell_child_recovery_does_not_block_unrelated_pane_input() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let dir = project(&env, "shell-child-recovery-input");
+    daemon.workspace_add(&dir.display().to_string()).unwrap();
+    daemon.orchestration_set(true).unwrap();
+    let shell = shell_pane(&daemon, &dir);
+    let child = daemon
+        .orchestrate_spawn(
+            shell.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            houston_core::orchestrate::Brief::from("restore a delayed child".to_string()),
+            Some(false),
+            None,
+            Some("delayed-recovery-child".to_string()),
+        )
+        .unwrap();
+    let child_conversation = flag(&argv_of(&env, child.id).await, "--session-id").unwrap();
+    let child_transcript = transcript(&env, &child_conversation, b"child transcript\n");
+    hook(
+        &env,
+        &daemon,
+        child.id,
+        "UserPromptSubmit",
+        PROMPT,
+        &child_conversation,
+        &child_transcript,
+        &dir,
+    )
+    .await;
+    let root_conversation = "00000000-0000-4000-8000-000000000084";
+    let root_transcript = transcript(&env, root_conversation, b"root transcript\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        root_conversation,
+        &root_transcript,
+        &dir,
+    )
+    .await;
+
+    let restarted = reboot(&env, &daemon);
+    let parent = restored_from(&restarted.list(), shell.id).clone();
+    let unrelated = shell_pane(&restarted, &dir);
+    let marker = env.argv.path().join("delayed-child-resume-started");
+    let restore_marker = marker.clone();
+    restarted.set_shell_child_restore_observer_for_test(Arc::new(move |_| {
+        std::fs::write(&restore_marker, b"started").unwrap();
+        std::thread::sleep(Duration::from_secs(2));
+    }));
+    let drop = run_hook(
+        "SessionStart",
+        parent.id,
+        fixture(RESUMED, root_conversation, &root_transcript, &dir),
+    )
+    .await;
+    houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &drop,
+        houston_core::daemon::now_ms(),
+    )
+    .unwrap();
+    let applying_daemon = restarted.clone();
+    let applying = tokio::task::spawn_blocking(move || applying_daemon.hook_drop_tick_for_test());
+    let marker_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while !marker.exists() {
+        assert!(
+            tokio::time::Instant::now() < marker_deadline,
+            "restored child did not reach the delayed launch"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    let started = std::time::Instant::now();
+    restarted
+        .write_stdin(unrelated.id, b"input during child recovery\n")
+        .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "unrelated pane input waited for restored child recovery"
+    );
+    let hook_conversation = "00000000-0000-4000-8000-000000000085";
+    let hook_transcript = transcript(&env, hook_conversation, b"unrelated hook fixture\n");
+    let hook_started = std::time::Instant::now();
+    hook(
+        &env,
+        &restarted,
+        unrelated.id,
+        "UserPromptSubmit",
+        PROMPT,
+        hook_conversation,
+        &hook_transcript,
+        &dir,
+    )
+    .await;
+    assert!(
+        hook_started.elapsed() < Duration::from_secs(1),
+        "unrelated hook waited for restored child recovery"
+    );
+    for error in [
+        restarted.kill(parent.id).unwrap_err().to_string(),
+        restarted.close(parent.id).unwrap_err().to_string(),
+        restarted
+            .respawn(parent.id, true, None, None, false)
+            .unwrap_err()
+            .to_string(),
+    ] {
+        assert!(
+            error.contains("restoring orchestration children"),
+            "{error}"
+        );
+    }
+    applying.await.unwrap();
+    assert!(wait_restored_child(&restarted, child.id).await.resumable);
+    daemon.close(shell.id).unwrap();
+    restarted.close(unrelated.id).unwrap();
+    close_after_shell_restore(&restarted, parent.id).await;
+}
 const STOP: &str = "claude-2.1.263-05-Stop.json";
 const CLEAR: &str = "claude-2.1.284-02-SessionStart-clear.json";
 const RESUMED: &str = "claude-2.1.284-01-SessionStart-resume.json";
@@ -373,6 +1032,10 @@ fn seed_claude(env: &Env, id: u32, dir: &Path, cwd: &Path, handle: Option<(&str,
         resume_notice: None,
         compactions: None,
         task: None,
+        sleep_notice: None,
+        latest_prompt: None,
+        last_agent_message: None,
+        slept_at_ms: None,
     })
     .unwrap();
     db.set_session_resume_handle(id, handle).unwrap();
@@ -608,6 +1271,7 @@ async fn with_restore_resume_off_every_pane_restores_fresh() {
 }
 
 fn upsert_profile(daemon: &Daemon, name: &str, dir: &str) -> u32 {
+    std::fs::create_dir_all(dir).unwrap();
     let proto::ServerMsg::AgentProfileState { profiles, .. } = daemon
         .agent_profile_upsert(None, proto::AgentKind::Claude, name, dir)
         .unwrap()
@@ -921,6 +1585,461 @@ async fn restart_over_the_wire_resumes_by_default() {
         Some(conversation),
         "the forced kill does not clear the handle it carries"
     );
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_survives_boot_and_wake_resumes_the_exact_conversation() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-wake");
+    let (pane, conversation, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    apply_drop(
+        &env,
+        &daemon,
+        HookDrop {
+            v: houston_core::hook_drop::DROP_V,
+            event: "UserPromptSubmit".into(),
+            session: pane.id,
+            agent: Some("claude".into()),
+            prompt: Some("Keep this bounded sleep cue".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    hook(
+        &env,
+        &daemon,
+        pane.id,
+        "Stop",
+        STOP,
+        &conversation,
+        &transcript(&env, &conversation, b"{}\n"),
+        &ws,
+    )
+    .await;
+
+    daemon.sleep_session(pane.id).unwrap();
+    let asleep = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == pane.id)
+        .unwrap();
+    assert_eq!(asleep.state, proto::SessionState::Sleeping);
+    assert_eq!(
+        asleep.latest_prompt.as_deref(),
+        Some("Keep this bounded sleep cue")
+    );
+    assert_eq!(
+        asleep.last_agent_message.as_deref(),
+        Some("Agent launched in background. Waiting for completion.")
+    );
+    assert!(asleep.slept_at_ms.is_some());
+    assert_eq!(
+        handle_in(&env, pane.id).map(|h| h.0),
+        Some(conversation.clone())
+    );
+
+    let restored = reboot(&env, &daemon);
+    let asleep_after_boot = restored
+        .list()
+        .into_iter()
+        .find(|info| info.id == pane.id)
+        .unwrap();
+    assert_eq!(asleep_after_boot.state, proto::SessionState::Sleeping);
+    assert_eq!(asleep_after_boot.latest_prompt, asleep.latest_prompt);
+    assert_eq!(
+        asleep_after_boot.last_agent_message,
+        asleep.last_agent_message
+    );
+    assert_eq!(asleep_after_boot.context, asleep.context);
+    assert!(asleep_after_boot.slept_at_ms.is_some());
+
+    let awake = restored.wake_session(pane.id).unwrap();
+    assert_eq!(
+        resume_of(&argv_of(&env, awake.id).await).as_deref(),
+        Some(conversation.as_str())
+    );
+    assert!(restored.list().iter().all(|info| info.id != pane.id));
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_a_shell_that_has_detected_claude() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "shell-sleep-refusal");
+    let shell = shell_pane(&daemon, &ws);
+    let conversation = "00000000-0000-4000-8000-000000000078";
+    let transcript = transcript(&env, conversation, b"transcript fixture\n");
+    hook(
+        &env,
+        &daemon,
+        shell.id,
+        "UserPromptSubmit",
+        PROMPT,
+        conversation,
+        &transcript,
+        &ws,
+    )
+    .await;
+
+    let error = daemon.sleep_session(shell.id).unwrap_err().to_string();
+    assert!(error.contains("provider Shell is unsupported"), "{error}");
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id == shell.id)
+            .unwrap()
+            .state,
+        proto::SessionState::Running
+    );
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_pending_stdin_without_blocking_other_panes() {
+    let env = setup().await;
+    let release = env.state.path().join("release-stdin");
+    std::env::set_var("RESUME_BLOCK_STDIN", "1");
+    std::env::set_var("RESUME_STDIN_RELEASE", &release);
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-pending-stdin");
+    let (pane, _, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    std::env::remove_var("RESUME_BLOCK_STDIN");
+    std::env::remove_var("RESUME_STDIN_RELEASE");
+    let unrelated = shell_pane(&daemon, &ws);
+
+    let writer_daemon = daemon.clone();
+    let session_id = pane.id;
+    let writing =
+        std::thread::spawn(move || writer_daemon.write_stdin(session_id, &vec![b'x'; 1024 * 1024]));
+    let admission_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while !daemon.stdin_write_in_progress_for_test(pane.id) {
+        if tokio::time::Instant::now() >= admission_deadline {
+            std::fs::write(&release, b"release").unwrap();
+            writing.join().unwrap().unwrap();
+            panic!("stdin delivery was not admitted");
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    let sleeping_daemon = daemon.clone();
+    let (refusal_tx, refusal_rx) = std::sync::mpsc::channel();
+    let sleeping = std::thread::spawn(move || {
+        let _ = refusal_tx.send(sleeping_daemon.sleep_session(session_id));
+    });
+    let unrelated_daemon = daemon.clone();
+    let unrelated_id = unrelated.id;
+    let (input_tx, input_rx) = std::sync::mpsc::channel();
+    let independent_input = std::thread::spawn(move || {
+        let _ = input_tx.send(unrelated_daemon.write_stdin(unrelated_id, b"independent input\n"));
+    });
+    let refusal = refusal_rx.recv_timeout(Duration::from_secs(2));
+    let input = input_rx.recv_timeout(Duration::from_secs(2));
+    std::fs::write(&release, b"release").unwrap();
+    sleeping.join().unwrap();
+    independent_input.join().unwrap();
+    writing.join().unwrap().unwrap();
+    let error = refusal
+        .expect("Sleep must refuse pending stdin without waiting for the PTY writer")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("stdin delivery"), "{error}");
+    assert!(!daemon.stdin_write_in_progress_for_test(pane.id));
+    input
+        .expect("pending stdin must not block input to an unrelated pane")
+        .unwrap();
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|info| info.id == pane.id)
+            .unwrap()
+            .state,
+        proto::SessionState::Running
+    );
+    daemon.sleep_session(pane.id).unwrap();
+    daemon.close(pane.id).unwrap();
+    daemon.close(unrelated.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_timeout_keeps_pty_usable_without_blocking_other_sessions() {
+    let env = setup().await;
+    std::env::set_var("RESUME_IGNORE_TERM", "1");
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-timeout");
+    let (pane, conversation, transcript_path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let unrelated = shell_pane(&daemon, &ws);
+
+    let sleeping_daemon = daemon.clone();
+    let session_id = pane.id;
+    let started = std::time::Instant::now();
+    let sleep = tokio::task::spawn_blocking(move || sleeping_daemon.sleep_session(session_id));
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let pending_hook_path = houston_core::hook_drop::write_drop(
+        &houston_core::hook_drop::drop_dir(env.state.path()),
+        &HookDrop {
+            v: houston_core::hook_drop::DROP_V,
+            event: "UserPromptSubmit".into(),
+            session: pane.id,
+            agent: Some("claude".into()),
+            session_id: Some(conversation.clone()),
+            transcript_path: Some(transcript_path),
+            prompt: Some("This hook must wait for Sleep".into()),
+            ..Default::default()
+        },
+        houston_core::daemon::now_ms(),
+    )
+    .unwrap();
+    daemon.hook_drop_tick_for_test();
+    assert!(
+        pending_hook_path.exists(),
+        "hooks for a sleeping session must be retried"
+    );
+    let same_session_write = daemon
+        .write_stdin(pane.id, b"wait for Sleep")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        same_session_write.contains("Sleep transition"),
+        "{same_session_write}"
+    );
+    let kill = daemon.kill(pane.id).unwrap_err().to_string();
+    assert!(kill.contains("Sleep transition"), "{kill}");
+    let close = daemon.close(pane.id).unwrap_err().to_string();
+    assert!(close.contains("Sleep transition"), "{close}");
+    let wake = daemon.wake_session(pane.id).unwrap_err().to_string();
+    assert!(wake.contains("Sleep transition"), "{wake}");
+    let input_started = std::time::Instant::now();
+    daemon
+        .write_stdin(unrelated.id, b"independent input\n")
+        .unwrap();
+    assert!(input_started.elapsed() < Duration::from_secs(1));
+
+    let error = sleep.await.unwrap().unwrap_err().to_string();
+    daemon.hook_drop_tick_for_test();
+    assert!(
+        !pending_hook_path.exists(),
+        "the retried hook should apply after Sleep releases"
+    );
+    assert!(error.contains("timed out after 15 seconds"), "{error}");
+    assert!(started.elapsed() >= Duration::from_secs(15));
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|session| session.id == pane.id)
+            .unwrap()
+            .state,
+        proto::SessionState::Running
+    );
+    assert_eq!(
+        handle_in(&env, pane.id).map(|handle| handle.0),
+        Some(conversation)
+    );
+    daemon
+        .write_stdin(pane.id, b"usable after timeout\n")
+        .unwrap();
+    daemon.close(pane.id).unwrap();
+    daemon.close(unrelated.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_an_external_running_descendant() {
+    let env = setup().await;
+    std::env::set_var("RESUME_FAKE_DESCENDANT", "1");
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-descendant-refusal");
+    let (pane, _, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+
+    let error = daemon.sleep_session(pane.id).unwrap_err().to_string();
+    assert!(
+        error.contains("external child processes are still running"),
+        "{error}"
+    );
+    assert_eq!(
+        daemon
+            .list()
+            .into_iter()
+            .find(|session| session.id == pane.id)
+            .unwrap()
+            .state,
+        proto::SessionState::Running
+    );
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_missing_resume_handle_and_a_busy_agent() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-eligibility-refusal");
+    let pane = claude_pane(&daemon, &ws, None);
+    argv_of(&env, pane.id).await;
+
+    let missing = daemon.sleep_session(pane.id).unwrap_err().to_string();
+    assert!(
+        missing.contains("no validated conversation handle"),
+        "{missing}"
+    );
+    daemon.close(pane.id).unwrap();
+
+    let (pane, conversation, path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let mut busy_prompt: Value =
+        serde_json::from_str(&fixture(PROMPT, &conversation, &path, &ws)).unwrap();
+    busy_prompt["prompt_id"] = "resume-wire-sleep-busy".into();
+    let drop = run_hook("UserPromptSubmit", pane.id, busy_prompt.to_string()).await;
+    apply_drop(&env, &daemon, drop).await;
+    let busy = daemon.sleep_session(pane.id).unwrap_err().to_string();
+    assert!(busy.contains("agent status is not idle"), "{busy}");
+    daemon.close(pane.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_a_routine_run_pane() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-routine-refusal");
+    let proto::ServerMsg::Routines { routines, .. } = daemon
+        .routine_create_for_test(
+            "sleep-refusal",
+            "do the thing",
+            proto::Cadence::Interval { seconds: 86_400 },
+            Some(ws.display().to_string()),
+            proto::AgentKind::Claude,
+            None,
+            None,
+        )
+        .unwrap()
+    else {
+        panic!("routine_create answers Routines");
+    };
+    daemon.set_routine_pane_cmd_for_test(vec![shim_dir().join("claude").display().to_string()]);
+    daemon.routine_run_now(routines[0].id).unwrap();
+    let proto::ServerMsg::RoutineRuns { runs } = daemon.routine_runs_list(Some(routines[0].id))
+    else {
+        panic!("routine_runs_list answers RoutineRuns");
+    };
+    let pane_id = runs[0].session_id.expect("routine run opened a pane");
+    argv_of(&env, pane_id).await;
+
+    let error = daemon.sleep_session(pane_id).unwrap_err().to_string();
+    assert!(
+        error.contains("custom-command, routine, and harness sessions are unsupported"),
+        "{error}"
+    );
+    daemon.close(pane_id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn sleep_refuses_an_orchestration_child_session() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "sleep-child-refusal");
+    daemon.orchestration_set(true).unwrap();
+    let (parent, _, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    let child = daemon
+        .orchestrate_spawn(
+            parent.id,
+            proto::AgentKind::Claude,
+            None,
+            None,
+            "sleep refusal child".to_string().into(),
+            Some(false),
+            None,
+            Some("sleep-refusal-child".into()),
+        )
+        .unwrap();
+    argv_of(&env, child.id).await;
+
+    let error = daemon.sleep_session(child.id).unwrap_err().to_string();
+    assert!(
+        error.contains("orchestration child sessions must be closed through their parent"),
+        "{error}"
+    );
+    daemon.close(parent.id).unwrap();
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn wake_with_an_expired_transcript_keeps_the_placeholder_and_never_starts_fresh() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "expired-sleep");
+    let (pane, conversation, path) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    daemon.sleep_session(pane.id).unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    let error = daemon.wake_session(pane.id).unwrap_err().to_string();
+    assert!(error.contains("Wake refused"), "{error}");
+    assert!(error.contains("Choose fresh explicitly"), "{error}");
+    let retained = daemon
+        .list()
+        .into_iter()
+        .find(|info| info.id == pane.id)
+        .unwrap();
+    assert_eq!(retained.state, proto::SessionState::Sleeping);
+    assert!(retained
+        .sleep_notice
+        .as_deref()
+        .is_some_and(|notice| notice.contains("Wake refused")));
+    assert_eq!(handle_in(&env, pane.id).map(|h| h.0), Some(conversation));
+    assert_eq!(
+        daemon.list().len(),
+        1,
+        "Wake validation must not spawn a fresh pane"
+    );
+}
+
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn an_early_wake_exit_returns_to_sleep_without_a_fresh_fallback() {
+    let env = setup().await;
+    let daemon = boot(&env);
+    let ws = project(&env, "wake-early-exit");
+    let (pane, conversation, _) = pane_with_a_turn(&env, &daemon, &ws, None).await;
+    daemon.sleep_session(pane.id).unwrap();
+    std::env::set_var("RESUME_FAKE_EXIT", "1");
+
+    let waking = daemon.wake_session(pane.id).unwrap();
+    assert_eq!(
+        resume_of(&argv_of(&env, waking.id).await).as_deref(),
+        Some(conversation.as_str())
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(info) = daemon.list().into_iter().find(|info| info.id == waking.id) {
+            if info.state == proto::SessionState::Sleeping {
+                assert!(info
+                    .sleep_notice
+                    .as_deref()
+                    .is_some_and(|notice| notice.contains("Wake failed")));
+                assert_eq!(
+                    handle_in(&env, waking.id).map(|handle| handle.0),
+                    Some(conversation)
+                );
+                assert_eq!(
+                    daemon.list().len(),
+                    1,
+                    "an early Wake error must not launch a fresh session"
+                );
+                return;
+            }
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "failed Wake did not return to Sleep"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 #[tokio::test]

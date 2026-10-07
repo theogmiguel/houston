@@ -35,7 +35,7 @@ const AXIS = {
 export type StackGap = keyof typeof GAP
 export type StackAxis = keyof typeof AXIS
 export type StackInset = keyof typeof INSET
-export type InsetSpace = 'preview' | 'compact-top'
+export type InsetSpace = 'preview' | 'compact-top' | 'screen'
 
 export type StackProps = Omit<HTMLAttributes<HTMLElement>, 'className'> & {
   as?: 'div' | 'header' | 'footer' | 'section'
@@ -75,9 +75,9 @@ export function StackSpecimen(): React.JSX.Element {
 }
 
 /** Padding around a settings group body that has no row chrome of its own. */
-export function Inset({ children, space }: { children: ReactNode; space: InsetSpace }): React.JSX.Element {
+export function Inset({ children, space, className = '' }: { children: ReactNode; space: InsetSpace; className?: string }): React.JSX.Element {
   const classes = space === 'preview'
     ? 'px-[var(--space-4)] pt-[var(--space-4)] pb-[var(--space-3)]'
-    : 'pt-[var(--space-2)]'
-  return <div className={classes}>{children}</div>
+    : space === 'compact-top' ? 'pt-[var(--space-2)]' : 'p-[var(--space-5)]'
+  return <div className={`${classes} ${className}`}>{children}</div>
 }

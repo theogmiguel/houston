@@ -18,10 +18,13 @@ pub use intake::{
     STATE_PENDING as INTAKE_PENDING, STATE_QUEUED as INTAKE_QUEUED,
     STATE_REFUSED as INTAKE_REFUSED, STATE_STARTED as INTAKE_STARTED,
 };
+mod task_trackers;
 mod tasks;
+pub use task_trackers::TaskTrackerOutboxRow;
 pub use tasks::{
-    SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskHistoryRow, TaskQuery, TaskRow,
-    TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate, TaskWrite,
+    SessionTaskBindingRow, TaskAcceptanceRow, TaskCommentRow, TaskDomainRow, TaskHistoryRow,
+    TaskProjectRow, TaskQuery, TaskRow, TaskRunRow, TaskRunWrite, TaskSummaryRow, TaskUpdate,
+    TaskWrite,
 };
 
 // Seven days and 4096 receipts cover ordinary retries without unbounded local storage.
@@ -94,6 +97,7 @@ pub struct Db {
 fn state_str(s: proto::SessionState) -> &'static str {
     match s {
         proto::SessionState::Running => "running",
+        proto::SessionState::Sleeping => "sleeping",
         proto::SessionState::Exited => "exited",
         proto::SessionState::Killed => "killed",
         proto::SessionState::Interrupted => "interrupted",
@@ -1444,6 +1448,15 @@ impl Db {
             "resume_transcript_path",
             "resume_transcript_path TEXT",
         )?;
+        add_column_if_missing(&conn, "sessions", "latest_prompt", "latest_prompt TEXT")?;
+        add_column_if_missing(
+            &conn,
+            "sessions",
+            "last_agent_message",
+            "last_agent_message TEXT",
+        )?;
+        add_column_if_missing(&conn, "sessions", "slept_at_ms", "slept_at_ms INTEGER")?;
+        add_column_if_missing(&conn, "sessions", "context_json", "context_json TEXT")?;
         ensure_tag_ids_are_monotonic(&conn)?;
         add_column_if_missing(&conn, "sessions", "tags", "tags TEXT NOT NULL DEFAULT '[]'")?;
         add_column_if_missing(
@@ -1602,6 +1615,7 @@ impl Db {
         )?;
         harness::migrate(&conn)?;
         tasks::migrate(&conn)?;
+        task_trackers::migrate(&conn)?;
         intake::migrate(&conn)?;
         add_column_if_missing(
             &conn,
@@ -1984,9 +1998,10 @@ impl Db {
         let mut stmt = conn.prepare(
             "SELECT id, agent, project_dir, cwd, title, codename, title_source, detected_agent, ssh_host,
                     (SELECT sa.id FROM swarm_agents sa WHERE sa.session_id = sessions.id),
-                    spawned_by, acp, profile_label, tags, COALESCE(session_origin, id)
+                    spawned_by, acp, profile_label, tags, COALESCE(session_origin, id),
+                    latest_prompt, last_agent_message, slept_at_ms, state, context_json
              FROM sessions
-             WHERE (state = 'interrupted' OR (state = 'exited' AND spawned_by IS NOT NULL)) AND agent != 'custom'
+             WHERE (state IN ('interrupted', 'sleeping') OR (state = 'exited' AND spawned_by IS NOT NULL)) AND agent != 'custom'
                    AND NOT EXISTS (SELECT 1 FROM swarm_agents sa WHERE sa.session_id = sessions.id)
              ORDER BY id",
         )?;
@@ -2008,19 +2023,26 @@ impl Db {
                     r.get::<_, Option<String>>(12)?,
                     r.get::<_, String>(13)?,
                     r.get::<_, u32>(14)?,
+                    r.get::<_, Option<String>>(15)?,
+                    r.get::<_, Option<String>>(16)?,
+                    r.get::<_, Option<u64>>(17)?,
+                    r.get::<_, String>(18)?,
+                    r.get::<_, Option<String>>(19)?,
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         drop(stmt);
         let mut used: std::collections::HashSet<String> = rows
             .iter()
-            .filter_map(|(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _)| {
-                if codename.is_empty() {
-                    (!title.is_empty()).then(|| title.clone())
-                } else {
-                    Some(codename.clone())
-                }
-            })
+            .filter_map(
+                |(_, _, _, _, title, codename, _, _, _, _, _, _, _, _, _, _, _, _, _, _)| {
+                    if codename.is_empty() {
+                        (!title.is_empty()).then(|| title.clone())
+                    } else {
+                        Some(codename.clone())
+                    }
+                },
+            )
             .collect();
         let mut out = Vec::with_capacity(rows.len());
         for (
@@ -2039,6 +2061,11 @@ impl Db {
             profile_label,
             tags_json,
             session_origin,
+            latest_prompt,
+            last_agent_message,
+            slept_at_ms,
+            persisted_state,
+            context_json,
         ) in rows
         {
             if codename.is_empty() && !title.is_empty() {
@@ -2061,7 +2088,11 @@ impl Db {
                     agent: kind,
                     project_dir,
                     cwd,
-                    state: if conn.query_row("SELECT state FROM sessions WHERE id = ?1", [id], |r| r.get::<_, String>(0))? == "exited" { proto::SessionState::Exited } else { proto::SessionState::Interrupted },
+                    state: match persisted_state.as_str() {
+                        "sleeping" => proto::SessionState::Sleeping,
+                        "exited" => proto::SessionState::Exited,
+                        _ => proto::SessionState::Interrupted,
+                    },
                     title,
                     codename,
                     detected_agent: detected.and_then(|d| {
@@ -2072,7 +2103,7 @@ impl Db {
                     restore_deferred: None,
                     status: None,
                     status_since_ms: None,
-                    context: None,
+                    context: context_json.and_then(|json| serde_json::from_str(&json).ok()),
                     swarm_agent,
                     spawned_by,
                     acp,
@@ -2095,6 +2126,10 @@ impl Db {
                     resume_notice: None,
                     compactions: None,
                     task: None,
+                    sleep_notice: None,
+                    latest_prompt,
+                    last_agent_message,
+                    slept_at_ms,
                 }),
                 Err(_) => tracing::warn!(
                     "session {id} has unknown agent {agent:?} in the db; not restoring it"
@@ -2161,8 +2196,9 @@ impl Db {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT INTO sessions (id, agent, project_dir, cwd, state, title, codename, title_source,
-                                   ssh_host, spawned_by, acp, profile_label, tags, session_origin, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, unixepoch())",
+                                   ssh_host, spawned_by, acp, profile_label, tags, session_origin,
+                                   latest_prompt, last_agent_message, slept_at_ms, context_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, unixepoch())",
             rusqlite::params![
                 info.id,
                 serde_json::to_string(&info.agent)?.trim_matches('"'),
@@ -2178,6 +2214,10 @@ impl Db {
                 info.profile_label,
                 serde_json::to_string(&info.tags)?,
                 info.session_origin.unwrap_or(info.id),
+                info.latest_prompt,
+                info.last_agent_message,
+                info.slept_at_ms,
+                info.context.map(|context| serde_json::to_string(&context)).transpose()?,
             ],
         )?;
         Ok(())
@@ -2403,6 +2443,24 @@ impl Db {
         Ok(())
     }
 
+    pub fn set_session_profile_label(&self, id: u32, label: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET profile_label = ?2 WHERE id = ?1",
+            rusqlite::params![id, label],
+        )?;
+        Ok(())
+    }
+
+    pub fn session_profile_label(&self, id: u32) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        Ok(conn.query_row(
+            "SELECT profile_label FROM sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn session_profile_config_dir(&self, id: u32) -> Result<Option<String>> {
         let conn = self.conn.lock().expect("db lock");
         Ok(conn.query_row(
@@ -2598,6 +2656,18 @@ impl Db {
         Ok(())
     }
 
+    pub fn update_session_cwd(&self, id: u32, cwd: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let n = conn.execute(
+            "UPDATE sessions SET cwd = ?2 WHERE id = ?1 AND state != 'closed'",
+            rusqlite::params![id, cwd],
+        )?;
+        if n == 0 {
+            anyhow::bail!("no open session row with id {id} to record hook cwd {cwd:?}");
+        }
+        Ok(())
+    }
+
     pub fn update_session_state(
         &self,
         id: u32,
@@ -2610,8 +2680,65 @@ impl Db {
         conn.execute(
             "UPDATE sessions SET state = ?2, exit_code = COALESCE(?3, exit_code),
                     ended_at = CASE WHEN ?4 THEN unixepoch() ELSE ended_at END
-             WHERE id = ?1 AND state != 'closed'",
+             WHERE id = ?1 AND state NOT IN ('closed', 'sleeping')",
             rusqlite::params![id, state_str(state), exit_code, ended],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_session_sleeping(&self, id: u32, slept_at_ms: u64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let changed = conn.execute(
+            "UPDATE sessions SET state = 'sleeping', exit_code = NULL, ended_at = unixepoch(), slept_at_ms = ?2
+             WHERE id = ?1 AND state != 'closed'",
+            rusqlite::params![id, slept_at_ms],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("session {id} was closed before Sleep could be recorded");
+        }
+        Ok(())
+    }
+
+    pub fn cancel_session_sleep(&self, id: u32, state: proto::SessionState) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let changed = conn.execute(
+            "UPDATE sessions SET state = ?2, slept_at_ms = NULL,
+                    ended_at = CASE WHEN ?2 = 'running' THEN NULL ELSE ended_at END
+             WHERE id = ?1 AND state = 'sleeping'",
+            rusqlite::params![id, state_str(state)],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("session {id} no longer has a pending Sleep to cancel");
+        }
+        Ok(())
+    }
+
+    pub fn update_session_sleep_cues(
+        &self,
+        id: u32,
+        latest_prompt: Option<&str>,
+        last_agent_message: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE sessions SET latest_prompt = ?2, last_agent_message = ?3 WHERE id = ?1 AND state != 'closed'",
+            rusqlite::params![id, latest_prompt, last_agent_message],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_session_context(
+        &self,
+        id: u32,
+        context: Option<proto::SessionContext>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let json = context
+            .map(|value| serde_json::to_string(&value))
+            .transpose()?;
+        conn.execute(
+            "UPDATE sessions SET context_json = ?2 WHERE id = ?1 AND state != 'closed'",
+            rusqlite::params![id, json],
         )?;
         Ok(())
     }
@@ -2630,6 +2757,7 @@ impl Db {
                 "killed" => proto::SessionState::Killed,
                 "interrupted" => proto::SessionState::Interrupted,
                 "exited" => proto::SessionState::Exited,
+                "sleeping" => proto::SessionState::Sleeping,
                 _ => proto::SessionState::Running,
             };
             (state, code)
@@ -5718,6 +5846,10 @@ mod tests {
             resume_notice: None,
             compactions: None,
             task: None,
+            sleep_notice: None,
+            latest_prompt: None,
+            last_agent_message: None,
+            slept_at_ms: None,
         }
     }
 

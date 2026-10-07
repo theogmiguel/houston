@@ -624,6 +624,8 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::SessionPolicyGet
             | proto::ClientMsg::UpdateGet
             | proto::ClientMsg::SlackGet
+            | proto::ClientMsg::TaskTrackerSettingsGet { .. }
+            | proto::ClientMsg::TaskTrackerLinksGet { .. }
             | proto::ClientMsg::KeymapGet
             | proto::ClientMsg::WaitForIdle { .. }
             | proto::ClientMsg::BrowserToolResult { .. }
@@ -631,6 +633,9 @@ fn is_read_only_during_shutdown(msg: &proto::ClientMsg) -> bool {
             | proto::ClientMsg::DelegationResultsList { .. }
             | proto::ClientMsg::TaskSnapshot { .. }
             | proto::ClientMsg::TaskGet { .. }
+            | proto::ClientMsg::TaskProjectsList { .. }
+            | proto::ClientMsg::TaskProjectGet { .. }
+            | proto::ClientMsg::TaskDomainGet { .. }
             | proto::ClientMsg::TasksAccessGet { .. }
             | proto::ClientMsg::TaskStartSettingsGet { .. }
             | proto::ClientMsg::TaskReviewSettingsGet { .. }
@@ -651,6 +656,7 @@ fn runs_on_connection_task(msg: &proto::ClientMsg) -> bool {
         msg,
         proto::ClientMsg::SessionCreate { .. }
             | proto::ClientMsg::SessionRespawn { .. }
+            | proto::ClientMsg::SessionWake { .. }
             | proto::ClientMsg::SessionAttach { .. }
             | proto::ClientMsg::SessionVisibility { .. }
     )
@@ -667,12 +673,24 @@ async fn handle_control(
     let msg: proto::ClientMsg = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
-            send_error(
-                sink,
-                format!("unparseable control message: {e}"),
-                Some(text.chars().take(200).collect()),
-            )
-            .await;
+            let credential_message = text.contains("credential")
+                || serde_json::from_str::<serde_json::Value>(text).is_ok_and(|value| {
+                    value
+                        .as_object()
+                        .is_some_and(|fields| fields.contains_key("token"))
+                });
+            let (message, context) = if credential_message {
+                (
+                    "unparseable credential message: check its type and required fields".into(),
+                    None,
+                )
+            } else {
+                (
+                    format!("unparseable control message: {e}"),
+                    Some(text.chars().take(200).collect()),
+                )
+            };
+            send_error(sink, message, context).await;
             return;
         }
     };
@@ -1255,6 +1273,178 @@ async fn dispatch(
             let _ = send_msg(sink, &msg).await;
             Ok(())
         }
+        proto::ClientMsg::TaskTrackerSettingsGet { workspace } => {
+            let msg = daemon.task_tracker_settings(&workspace)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerSettingsSet { settings } => {
+            let msg = daemon.task_tracker_settings_set(*settings).await?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerCredentialSet {
+            workspace,
+            provider,
+            token,
+        } => {
+            let msg = daemon.task_tracker_credential_set(&workspace, provider, &token)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerCredentialClear {
+            workspace,
+            provider,
+        } => {
+            let msg = daemon.task_tracker_credential_clear(&workspace, provider)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerLinksGet { task_id } => {
+            let msg = daemon.task_tracker_links(task_id)?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerConflictResolve {
+            task_id,
+            expected_task_revision,
+            expected_project_revision,
+            provider,
+            external_id,
+            field,
+            expected_revision,
+            resolution,
+        } => {
+            let msg = daemon.task_tracker_conflict_resolve(
+                task_id,
+                expected_task_revision,
+                expected_project_revision,
+                provider,
+                &external_id,
+                &field,
+                expected_revision,
+                resolution,
+            )?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskTrackerSyncNow { workspace } => {
+            let msg = daemon.task_tracker_sync_now(&workspace).await?;
+            let _ = send_msg(sink, &msg).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskProjectsList { workspace } => {
+            let _ = send_msg(sink, &daemon.task_projects_list(&workspace)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskProjectGet { id } => {
+            let _ = send_msg(sink, &daemon.task_project_get(id)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskProjectSave {
+            workspace,
+            id,
+            expected_revision,
+            name,
+            external_url,
+            tracker_description,
+            local_decisions,
+        } => match daemon.task_project_save(
+            &workspace,
+            id,
+            expected_revision,
+            &name,
+            external_url,
+            tracker_description,
+            local_decisions,
+        )? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskProjectArchive {
+            id,
+            archived,
+            expected_revision,
+        } => match daemon.task_project_archive(id, expected_revision, archived)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskDomainGet { id } => {
+            let _ = send_msg(sink, &daemon.task_domain_state(id)?).await;
+            Ok(())
+        }
+        proto::ClientMsg::TaskDomainSave {
+            id,
+            expected_revision,
+            kind,
+            project_id,
+            blocked_by,
+        } => match daemon.task_domain_save(id, expected_revision, kind, project_id, blocked_by)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskPlanStart {
+            id,
+            expected_revision,
+            agent,
+        } => {
+            match daemon.task_plan_start(id, expected_revision, agent)? {
+                msg @ proto::ServerMsg::TaskRefused { .. } => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+                msg => {
+                    let _ = send_msg(sink, &msg).await;
+                }
+            }
+            Ok(())
+        }
+        proto::ClientMsg::TaskPlanAnswer {
+            id,
+            expected_revision,
+            question,
+            answer,
+        } => match daemon.task_plan_answer(id, expected_revision, &question, &answer)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
+        proto::ClientMsg::TaskPlanApprove {
+            id,
+            expected_revision,
+            plan_revision,
+        } => match daemon.task_plan_approve(id, expected_revision, plan_revision)? {
+            msg @ proto::ServerMsg::TaskRefused { .. } => {
+                let _ = send_msg(sink, &msg).await;
+                Ok(())
+            }
+            msg => {
+                daemon.broadcast_control(&msg);
+                Ok(())
+            }
+        },
         proto::ClientMsg::TaskSave {
             workspace,
             id,
@@ -1368,8 +1558,10 @@ async fn dispatch(
             agent,
             base,
             workspace,
+            override_readiness,
         } => {
-            let started = daemon.task_start_in(id, agent, base, workspace)?;
+            let started =
+                daemon.task_start_with_override(id, agent, base, workspace, override_readiness)?;
             match started {
                 msg @ proto::ServerMsg::TaskRefused { .. } => {
                     let _ = send_msg(sink, &msg).await;
@@ -1565,6 +1757,44 @@ async fn dispatch(
             .map(|info| {
                 frames_wanted.insert(info.id);
             })
+        }
+        proto::ClientMsg::SessionWake { session } => {
+            let frames_wanted =
+                frames_wanted.expect("an attach-family message runs on the connection task");
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.wake_session(session))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("Wake task panicked: {e}")))
+                .map(|info| {
+                    frames_wanted.insert(info.id);
+                })
+        }
+        proto::ClientMsg::SessionSleep { session } => {
+            let daemon = Arc::clone(daemon);
+            tokio::task::spawn_blocking(move || daemon.sleep_session(session))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("Sleep task panicked: {e}")))
+        }
+        proto::ClientMsg::SessionMemoryGet { session } => {
+            let daemon = Arc::clone(daemon);
+            let (bytes, unavailable_reason) =
+                tokio::task::spawn_blocking(move || daemon.session_memory(session))
+                    .await
+                    .unwrap_or_else(|e| {
+                        (None, Some(format!("memory measurement task failed: {e}")))
+                    });
+            let measured_at_ms = bytes.map(|_| crate::daemon::now_ms());
+            let _ = send_msg(
+                sink,
+                &proto::ServerMsg::SessionMemory {
+                    session,
+                    bytes,
+                    measured_at_ms,
+                    unavailable_reason,
+                },
+            )
+            .await;
+            Ok(())
         }
         proto::ClientMsg::SessionCwd { session } => match daemon.session_cwd(session) {
             Ok(cwd) => {

@@ -133,6 +133,7 @@ import { RenameTitleStory } from './renameTitleStories'
 
 document.documentElement.setAttribute('data-motion-paused', '')
 import { TasksPageStory } from './tasksPageStory'
+import { ProjectsConflictStory, ProjectsPageStory, ProjectsPlanStory, TrackerSettingsStory } from './projectsStories'
 import { UsagePageStory } from './usagePageStory'
 import { AddPanePopover } from '../src/components/AddPanePopover'
 import { WorkspaceEmpty } from '../src/components/WorkspaceEmpty'
@@ -172,7 +173,7 @@ import { createSessionsStore, SessionsStoreContext } from '../src/sessionsStore'
 import { SlackConnectionsStory } from './integrationStories'
 import { BootFailureStory, BootLoadingStory, FirstRunOrchestrationStory, FirstRunWorkspaceStory, HostKeyChangedStory, ShortcutsOffStory, SshAdvancedStory, UpdateEmptyStory, UpdateInstallingStory, UpdateKeepStory, UpdateRunningStory, UpdateStopStory, UpdateUnsupportedStory } from './modalStates'
 import { PrActionsCapture, PrBrowseCapture, PrBrowseStatesCapture, PrCommentEditCapture, PrDiscussionCapture, PrEmptyCapture, PrFilesCapture, PrFilesStatesCapture, PrPickerCapture, PrReviewCapture, ReviewProviderCapture, ReviewProviderSelectedCapture } from './prCloseoutStories'
-import { PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneTerminalStatesStory, TagEditorStory, TagsFormsStory } from './paneChromeStories'
+import { PaneEndedStory, PaneMenuStory, PaneMiscStory, PaneRecoveryDeferredStory, PaneSleepingStory, PaneTerminalStatesStory, TagEditorStory, TagsFormsStory } from './paneChromeStories'
 import { SkillsDeleteConfirm, SkillsEmbeddedA, SkillsEmbeddedB, SkillsEmbeddedC, SkillsEmbeddedD, SkillsInstallBlank, SkillsInstallConflict, SkillsInstallPreview, SkillsInstallUrl, SkillsRowActions, SkillsStandaloneA, SkillsStandaloneB, SkillsStandaloneC } from './skillsStories'
 import { RAIL_STORIES } from './railStories'
 
@@ -458,11 +459,17 @@ export const STORIES: Record<string, () => React.JSX.Element> = {
   'usage/stale': () => <UsagePageStory state="stale" />,
   'usage/empty': () => <UsagePageStory state="empty" />,
   'tasks/page': () => <TasksPageStory />,
+  'projects/page': () => <ProjectsPageStory />,
+  'projects/conflicts': () => <ProjectsConflictStory />,
+  'projects/plan': () => <ProjectsPlanStory />,
+  'settings/tasks-tracker': () => <TrackerSettingsStory />,
   'tasks/detail': () => <TasksDetailStory />,
   'tasks/start-card': () => <TasksStartStory />,
   'panes/lifecycle': () => <PaneLifecycleStory />,
   'panes/chrome-menu': () => <PaneMenuStory />,
   'panes/chrome-ended': () => <PaneEndedStory />,
+  'panes/sleeping': () => <PaneSleepingStory />,
+  'panes/recovery-deferred': () => <PaneRecoveryDeferredStory />,
   'panes/chrome-terminal': () => <PaneTerminalStatesStory />,
   'panes/chrome-misc': () => <PaneMiscStory />,
   'panes/title-controls': () => <RenameTitleStory />,

@@ -1009,19 +1009,19 @@ mod tests {
              codex gateway {gateway_bytes} B / {gateway_count} tools"
         );
 
-        assert_eq!(enabled_count, 34, "{enabled_specs:?}");
-        assert_eq!(disabled_count, 22, "{disabled_specs:?}");
+        assert_eq!(enabled_count, 40, "{enabled_specs:?}");
+        assert_eq!(disabled_count, 28, "{disabled_specs:?}");
         assert_eq!(gateway_count, 2, "{gateway_specs:?}");
         assert!(
-            enabled_bytes < 24_100,
-            "claude/enabled grew to {enabled_bytes} B (measured ~23,956 B: ~16,433 B of \
+            enabled_bytes < 28_000,
+            "claude/enabled grew to {enabled_bytes} B (measured ~27,825 B: ~16,433 B of \
              orchestration and browser tools, 823 B of pane_pr_watch / pane_pr_unwatch, plus the \
-             eleven task_* tools)"
+             seventeen task_* tools)"
         );
         assert!(
-            disabled_bytes < 13_200,
-            "claude/disabled grew to {disabled_bytes} B (measured ~13,096 B: ~7,800 B plus the \
-             nine task_* tools offered without orchestration)"
+            disabled_bytes < 16_700,
+            "claude/disabled grew to {disabled_bytes} B (measured ~16,520 B: ~7,800 B plus the \
+             fifteen task_* tools offered without orchestration)"
         );
         assert!(
             gateway_bytes < 1_300,

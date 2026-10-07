@@ -44,6 +44,7 @@ describe('pane Restart: Resume conversation and Start fresh', () => {
 
   function render(info: SessionInfo): void {
     const client = {
+      subscribe: () => () => {},
       resizeSession: vi.fn(),
       attachSession: vi.fn(),
       sessionVisibility: vi.fn(),

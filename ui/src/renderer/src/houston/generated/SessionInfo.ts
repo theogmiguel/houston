@@ -27,4 +27,4 @@ compactions?: number | null,
  * pane launched or claimed by a task carries it so the header can show a
  * chip without the Tasks tab being open.
  */
-task?: SessionTask | null, };
+task?: SessionTask | null, sleep_notice?: string | null, latest_prompt?: string | null, last_agent_message?: string | null, slept_at_ms?: number | null, };

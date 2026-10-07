@@ -52,7 +52,7 @@ function mountPane(): HTMLElement {
   act(() => {
     root!.render(
       <SessionPane
-        client={{} as unknown as HoustonClient}
+        client={{ subscribe: () => () => {} } as unknown as HoustonClient}
         info={info}
         theme="black"
         active

@@ -8,6 +8,7 @@ import { IconPlus } from '../icons'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { formatAge, queueActionOf, queueGroupOf, queueGroups, taskAgentLabel } from '../tasks/format'
+import { isPullRequestUrl } from '../../houston/taskDomain'
 import type { InboxRow } from '../../houston/generated/InboxRow'
 
 export function TasksSurface({
@@ -134,6 +135,8 @@ export function TasksSurface({
       <Drawer open={!create && detailId !== null} heading="Task detail" onClose={close} hideHeader tone="content">
         {tasks.detail ? (
           <TaskDetail
+            client={client}
+            onStartRequested={onStartRequested}
             detail={tasks.detail}
             access={tasks.access}
             refusal={tasks.refusal}
@@ -199,8 +202,8 @@ function metaOf(task: TaskSummary, now: number, sessions: ReadonlyMap<number, Se
     const question = questionFor(task, sessions, inboxRows)
     return question ? `${queueAgentLabel(task.open_run.provider)} asks: “${question}”` : `${queueAgentLabel(task.open_run.provider)} needs input`
   }
-  if (task.status === 'in_review' && task.ref_url) {
-    const number = pullRequestNumber(task.ref_url)
+  if (task.status === 'in_review' && task.open_run?.pr_url && isPullRequestUrl(task.open_run.pr_url)) {
+    const number = pullRequestNumber(task.open_run.pr_url)
     return number ? `#${number}` : 'Pull request'
   }
   if (task.open_run) return <>{taskAgentLabel(task.open_run.provider)} · {formatAge(task.open_run.started_at_ms, now)}</>
@@ -247,8 +250,8 @@ function runAction({ task, client, tasks, startSettings, sessions, onStartReques
   open: (id: number) => void
 }): void {
   const action = queueActionOf(task)
-  if (action === 'Open PR' && task.ref_url) {
-    onOpenExternal(task.ref_url)
+  if (action === 'Open PR' && task.open_run?.pr_url && isPullRequestUrl(task.open_run.pr_url)) {
+    onOpenExternal(task.open_run.pr_url)
     return
   }
   if ((action === 'Answer' || action === 'Open pane') && task.open_run?.session_id != null) {

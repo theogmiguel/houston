@@ -118,6 +118,26 @@ export function PaneEndedStory(): React.JSX.Element {
   )
 }
 
+export function PaneSleepingStory(): React.JSX.Element {
+  const sleeping = mkInfo({
+    state: 'sleeping', status: 'idle', resumable: true, tags: [1, 3],
+    latest_prompt: 'Trace the daemon recovery path and preserve the last user request.',
+    last_agent_message: 'The session has been saved and is waiting for an explicit wake.',
+    slept_at_ms: Date.now() - 25 * 60_000,
+    sleep_notice: 'A deferred child remains visible in the recovery notice.'
+  })
+  const sessions = new Map([[sleeping.id, sleeping]])
+  const store = React.useMemo(() => createSessionsStore(sessions), [])
+  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={sleeping} branch="feature/session-recovery" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
+}
+
+export function PaneRecoveryDeferredStory(): React.JSX.Element {
+  const shell = mkInfo({ agent: 'shell', state: 'running', restore_deferred: 'spawn-failed' })
+  const sessions = new Map([[shell.id, shell]])
+  const store = React.useMemo(() => createSessionsStore(sessions), [])
+  return <TagsContext.Provider value={TAGS}><SessionsStoreContext.Provider value={store}><div style={{ height: '100%', padding: 12, display: 'flex', background: 'var(--content-bg)' }}><PaneFor info={shell} branch="feature/session-recovery" /></div></SessionsStoreContext.Provider></TagsContext.Provider>
+}
+
 export function PaneTerminalStatesStory(): React.JSX.Element {
   const actions = React.useRef<TermActions | null>(null)
   const client = React.useMemo(proxyClient, [])

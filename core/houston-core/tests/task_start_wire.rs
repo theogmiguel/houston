@@ -284,7 +284,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
     let r = rig("start-refusals").await;
 
     // A second live run while the first is running.
-    let first = r.create_task("Held", "", &[]);
+    let first = r.create_task("Held", "", &["The task can be claimed"]);
     r.daemon
         .task_start(first, proto::AgentKind::Grok, None)
         .unwrap();
@@ -311,7 +311,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
     assert!(message.contains("pane"), "{message}");
 
     // An archived task.
-    let archived = r.create_task("Archived", "", &[]);
+    let archived = r.create_task("Archived", "", &["The archived task is not startable"]);
     let proto::ServerMsg::TaskChanged { revision, .. } =
         r.daemon.task_archive(archived, true, 1).unwrap()
     else {
@@ -328,7 +328,11 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
     assert_eq!(kind, proto::TaskErrorKind::Invalid);
     assert!(message.contains("archived"), "{message}");
 
-    let guarded = r.create_task("Guarded", "", &[]);
+    let guarded = r.create_task(
+        "Guarded",
+        "",
+        &["The task starts despite agent access being off"],
+    );
     let _ = r
         .daemon
         .tasks_access_set(&r.workspace(), proto::TasksAccess::Off)
@@ -355,7 +359,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
         .unwrap();
 
     // A provider Houston cannot spawn, refused by name.
-    let droid = r.create_task("Droid task", "", &[]);
+    let droid = r.create_task("Droid task", "", &["The provider refusal is reached"]);
     let msg = r
         .daemon
         .task_start(droid, proto::AgentKind::Droid, None)
@@ -372,7 +376,7 @@ async fn start_refusals_name_the_limit_the_actual_and_the_operation() {
 async fn a_restart_reuses_the_same_branch_and_worktree() {
     let _guard = SERIAL.lock().await;
     let r = rig("start-restart").await;
-    let id = r.create_task("Reuse me", "desc", &[]);
+    let id = r.create_task("Reuse me", "desc", &["The task can be started again"]);
 
     r.daemon
         .task_start(id, proto::AgentKind::Grok, None)
@@ -408,7 +412,11 @@ async fn a_restart_reuses_the_same_branch_and_worktree() {
 async fn a_brief_over_the_cap_is_refused_before_anything_is_created() {
     let _guard = SERIAL.lock().await;
     let r = rig("start-cap").await;
-    let id = r.create_task("Too big", &"x".repeat(proto::TASK_BRIEF_MAX_BYTES), &[]);
+    let id = r.create_task(
+        "Too big",
+        &"x".repeat(proto::TASK_BRIEF_MAX_BYTES),
+        &["The brief size limit is checked"],
+    );
 
     let msg = r
         .daemon
@@ -443,7 +451,7 @@ async fn a_long_brief_gets_a_unique_prompt_file_per_attempt() {
     let id = r.create_task(
         "Long brief",
         &"y".repeat(proto::TASK_BRIEF_MAX_BYTES - 2_000),
-        &[],
+        &["The prompt file preserves the task brief across attempts"],
     );
 
     r.daemon
@@ -590,6 +598,9 @@ async fn start_requires_workspace_and_can_assign_an_unassigned_task() {
             None,
             proto::TaskPatch {
                 title: Some("Unassigned start".to_string()),
+                acceptance: Some(vec![
+                    "The task can start after workspace assignment".to_string()
+                ]),
                 ..Default::default()
             },
         )
