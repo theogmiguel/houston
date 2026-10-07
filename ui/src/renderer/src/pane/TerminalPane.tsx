@@ -225,6 +225,8 @@ export function TerminalPane({
   const expandedId = useContext(ExpandedContext)
   const gridHidden = useContext(GridHiddenContext)
   const hiddenByExpand = gridHidden || (expandedId != null && expandedId !== info.id)
+  const hiddenRef = useRef(hiddenByExpand)
+  hiddenRef.current = hiddenByExpand
   const warm = useContext(WarmContext)
   const keymapOverrides = useContext(KeymapOverridesContext)
   const keymapOverridesRef = useRef(keymapOverrides)
@@ -1129,6 +1131,10 @@ export function TerminalPane({
 
     let resizeFrame: number | undefined
     const observer = new ResizeObserver(() => {
+      // A hidden pane keeps its box under `visibility:hidden`; resizing its PTY
+      // makes the CLI repaint into a hibernated pane, which then misses bytes and
+      // re-syncs from scratch. The reveal path re-measures before it re-attaches.
+      if (hiddenRef.current) return
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
       resizeFrame = requestAnimationFrame(() => {
         resizeFrame = undefined

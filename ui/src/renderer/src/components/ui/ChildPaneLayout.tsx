@@ -20,7 +20,7 @@ export function SettledChildFooter({ children }: { children: ReactNode }): React
       as="footer"
       aria-label="Settled child"
       size="small" tone="muted"
-      className="flex items-center flex-wrap gap-[var(--space-1)] px-[var(--space-2)] py-[var(--space-1)] border-t border-[var(--divider)] bg-[var(--card-bg)]"
+      className="absolute inset-x-0 bottom-0 flex items-center flex-wrap gap-[var(--space-1)] px-[var(--space-2)] py-[var(--space-1)] border-t border-[var(--divider)] bg-[var(--card-bg)]"
     >
       {children}
     </Text>

@@ -750,15 +750,19 @@ function ChildrenRoom({ info, children, roster, client, peek, selectChild, moveC
   return (<><RosterSplit mode={mode}>
         {children.length > 0 && <ChildrenRoster parent={info} children={children} roster={roster} client={client} selected={peek?.id ?? null} onSelect={selectChild} onMove={moveChild} collapsed={mode === 'collapsed'} onCollapse={() => onMode('collapsed')} onExpand={() => onMode('expanded')} />}
         <ChildrenColumn>
-          {peek && <RosterPeekbar>
-            <PeekBarButton onClick={() => selectChild(null)}>Orchestrator</PeekBarButton><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
-            <span className="flex-1" /><PeekBarButton shrink onClick={() => moveChild(peek.id)}>Move to grid</PeekBarButton>
-            <Tooltip label="Return to orchestrator"><PeekBarIconButton aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></PeekBarIconButton></Tooltip>
+          {/* The bar stays while the pane has children: shown only while peeking, it
+              would resize every kept-mounted terminal and make each CLI repaint on switch. */}
+          {children.length > 0 && <RosterPeekbar>
+            {peek ? <>
+              <PeekBarButton onClick={() => selectChild(null)}>Orchestrator</PeekBarButton><span>/</span><strong className="truncate min-w-0">{peek.delegation?.role ?? peek.title}</strong>
+              <span className="flex-1" /><PeekBarButton shrink onClick={() => moveChild(peek.id)}>Move to grid</PeekBarButton>
+              <Tooltip label="Return to orchestrator"><PeekBarIconButton aria-label="Return to orchestrator" onClick={() => selectChild(null)}><Icon glyph={IconClose} role="ui" /></PeekBarIconButton></Tooltip>
+            </> : <strong className="truncate min-w-0">Orchestrator</strong>}
           </RosterPeekbar>}
           <div className="relative flex-1 min-h-0 min-w-0">
             {terminals}
+            {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
           </div>
-          {peek && !isLive(peek.state) && <SettledChildBar info={peek} client={client} onMove={moveChild} />}
         </ChildrenColumn>
       </RosterSplit>
       <DictationIndicator session={info.id} /></>)
