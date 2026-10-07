@@ -1453,6 +1453,7 @@ struct PendingShellChildren {
     children: Vec<proto::SessionInfo>,
 }
 
+#[cfg(target_os = "linux")]
 struct SleepReservation<'a> {
     sessions: &'a Mutex<HashSet<u32>>,
     id: u32,
@@ -1472,6 +1473,7 @@ impl Drop for ShellRestoreReservation<'_> {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for SleepReservation<'_> {
     fn drop(&mut self) {
         self.sessions
@@ -10524,7 +10526,7 @@ impl Daemon {
 
     pub fn sleep_session(&self, id: u32) -> Result<()> {
         #[cfg(not(target_os = "linux"))]
-        bail!("Sleep is unavailable on this platform because Linux process-tree identity and graceful shutdown are not implemented");
+        bail!("Sleep refused for session {id}: unavailable on this platform because Linux process-tree identity and graceful shutdown are not implemented");
         #[cfg(target_os = "linux")]
         {
             let _sleep = self.reserve_sleep(id)?;
@@ -11673,6 +11675,7 @@ impl Daemon {
         })
     }
 
+    #[cfg(target_os = "linux")]
     fn reserve_sleep(&self, id: u32) -> Result<SleepReservation<'_>> {
         let _lifecycle = self
             .session_lifecycle_lock
